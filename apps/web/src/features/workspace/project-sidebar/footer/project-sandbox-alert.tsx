@@ -66,7 +66,7 @@ const SEVERITY_LABEL: Record<SandboxAlertSeverity, string> = {
 
 /**
  * The member view: what a viewer who can neither open the sandbox settings
- * (`project.customize.read`) nor rebuild (`project.write`) is told.
+ * (`project.settings.write`) nor rebuild (`project.sandbox.write`) is told.
  *
  * The operator card names the build category, its age and its cause
  * ("Runtime artifact missing · 1m ago"). None of that is actionable for a
@@ -248,13 +248,13 @@ function SandboxAlertContent({
   // The alert TEXT is information a plain member needs — "new sessions can't
   // start until this image builds" explains why the composer is refusing them.
   // Its CONTROLS are not: "Details" routes into Customize → Settings → Sandbox
-  // (project.customize.read) and both recovery actions rebuild the project's
-  // image (project.write). Neither leaf is in the member floor role (#6522), so
+  // (project.settings.write) and both recovery actions rebuild the project's
+  // image (project.sandbox.write). Neither leaf is in the member floor role, so
   // for a member every one of those buttons was a "forbidden" waiting to
   // happen. Hidden on a RECEIVED denial only, one batched probe for both.
   const caps = useProjectPageCans(projectId);
-  const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;
-  const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;
+  const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed !== false;
+  const canRecover = caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]?.allowed !== false;
   const status = selectSandboxStatus(health);
   const failure = selectCurrentSandboxFailure(health);
   const failedAt = failure ? relativeTime(failure.finished_at ?? failure.started_at) : '';
@@ -401,8 +401,8 @@ export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
   const severity = resolveSandboxAlertSeverity(data);
   if (!severity || !data) return null;
 
-  const details = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ];
-  const write = caps[PROJECT_ACTIONS.PROJECT_WRITE];
+  const details = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE];
+  const write = caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE];
   // Wait for the verdict: a member must never see the operator card flash
   // before it swaps to the member one.
   if (details?.isLoading || write?.isLoading) return null;

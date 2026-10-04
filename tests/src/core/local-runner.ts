@@ -34,6 +34,7 @@ export interface LocalTestPlan {
     | 'target-api-full'
     | 'target-browser-full'
     | 'latency'
+    | 'agentic'
     | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
@@ -89,7 +90,7 @@ function assertShardValue(value: string | undefined, flag: string): void {
 
 export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const full = args.includes('--full');
-  const flowsOnly = args.includes('--flows-only') || hasFlowFilter(args);
+  const flowsOnly = args.includes('--flows-only') || (!args.includes('--agentic-only') && hasFlowFilter(args));
   const sdkOnly = args.includes('--sdk-only');
   const dbOnly = args.includes('--db-only');
   const browserOnly = args.includes('--browser-only');
@@ -109,6 +110,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // preview or staging tomorrow). tests/bin/latency-bench.ts owns its own
   // minimal target validation and health probe instead.
   const latencyOnly = args.includes('--latency');
+  const agenticOnly = args.includes('--agentic-only');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
   const modes = [
@@ -123,10 +125,11 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     targetApiFullOnly,
     targetBrowserFullOnly,
     latencyOnly,
+    agenticOnly,
   ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, or --latency',
+      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, --latency, or --agentic-only',
     );
   }
   if (browserShardArgs.length > 1) {
@@ -270,6 +273,13 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     },
   };
 
+  if (agenticOnly) {
+    const agentic: LocalTestLane = {
+      name: 'agentic',
+      command: ['bun', 'tests/bin/agentic.ts', ...args.filter((arg) => arg !== '--agentic-only' && arg !== '--')],
+    };
+    return { mode: 'agentic', lanes: [agentic], stages: [[agentic]] };
+  }
   if (flowsOnly) return { mode: 'flows', lanes: [flows], stages: [[flows]] };
   if (sdkOnly) return { mode: 'sdk', lanes: [sdk], stages: [[sdk]] };
   if (dbOnly) return { mode: 'db', lanes: [dbSuites], stages: [[dbSuites]] };
