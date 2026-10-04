@@ -36,6 +36,8 @@ export {
   DEFAULT_AGENT_SENTINEL,
   OPENCODE_BUILTIN_AGENT_NAMES,
   grantFromLoadedAgents,
+  grantsByAgent,
+  grantsOfManifestText,
   isLaunchableAgentName,
   legacyReadWorkspaceFromLoadedAgents,
   projectRequiresDeclaredAgents,

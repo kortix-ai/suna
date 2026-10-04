@@ -114,7 +114,7 @@ Options:
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
-Pinning a provider needs the \`project.customize.write\` permission.
+Pinning a provider needs the \`project.settings.write\` permission.
 `;
 
 /** The `sandboxes` flags. Values arrive as strings; each use parses its own. */

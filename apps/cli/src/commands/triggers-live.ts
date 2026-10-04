@@ -204,15 +204,16 @@ export async function triggersSetLive(
     ...(access ? { session_access: access } : {}),
     ...(live.filters.length > 0 ? { filter } : {}),
   };
+  // A bare schedule update must not clobber the trigger's stored timezone with
+  // a UTC default (KRTX-1338): send timezone only when the caller passes one.
   if (tf.cron) {
     body.cron = tf.cron;
     body.run_at = null;
-    body.timezone = tf.timezone ?? 'UTC';
   } else if (tf.runAt) {
     body.run_at = tf.runAt;
     body.cron = null;
-    body.timezone = tf.timezone ?? 'UTC';
-  } else if (tf.timezone) {
+  }
+  if (tf.timezone) {
     body.timezone = tf.timezone;
   }
   if (Object.keys(body).length === 0) {
