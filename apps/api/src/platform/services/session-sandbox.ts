@@ -16,6 +16,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
+import type { SessionDriveMounts } from '../../drives/service';
 import { db } from '../../shared/db';
 import {
   patchedSandboxMetadata,
@@ -327,6 +328,10 @@ export function restorePlatinumCreateAttempt(metadata: Record<string, unknown> |
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+/** Platinum itself did not answer (as opposed to refusing a request). */
+const PLATINUM_UNREACHABLE =
+  /Unable to connect|ECONNREFUSED|ECONNRESET|ConnectionRefused|socket connection was closed|fetch failed|provider state is unknown|The operation timed out/i;
+
 export async function provisionSessionSandbox(opts: {
   sandboxId: string;
   accountId: string;
@@ -413,6 +418,14 @@ export async function provisionSessionSandbox(opts: {
     if (!opts.resolveGitProject) return opts.gitProject;
     return opts.resolveGitProject();
   };
+  // Kortix Drive: a project with drives boots its sessions on Platinum only,
+  // and never without their drives (see drives/service.ts sessionVolumeMounts).
+  const drivesRequirePlatinum =
+    slug !== META_SANDBOX_SLUG &&
+    slug !== PI_WORKER_SANDBOX_SLUG &&
+    (await import('../../drives/service')
+      .then((m) => m.sessionDrivesEnabled(projectId))
+      .catch(() => false));
   const resolveImage = (
     gitProject: GitBackedProject,
     targetProvider: string,
@@ -647,6 +660,11 @@ export async function provisionSessionSandbox(opts: {
       );
     }
     let idBootDisabled = false;
+    // Drives mount on Platinum only: resolved on the first Platinum attempt and
+    // reused by every later one, so a retry keeps the same create body. The
+    // provider drops them itself when Platinum refuses the create over them.
+    let driveMounts: SessionDriveMounts | undefined;
+    let driveMountsResolved = false;
     let lastProvisionAttempt = SANDBOX_INIT_MAX_ATTEMPTS;
     let lastProvisionMaxAttempts = SANDBOX_INIT_MAX_ATTEMPTS;
     // S1: MONOTONIC Platinum create-attempt counter — restored from the row's
@@ -695,6 +713,31 @@ export async function provisionSessionSandbox(opts: {
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
+      if (drivesRequirePlatinum && providerName !== 'platinum') {
+        const { DriveMountError } = await import('../../drives/service');
+        throw new DriveMountError(
+          'This project’s sessions mount drives, and drives run on Platinum only. Platinum is not available for this session right now, so it did not start. Try again in a minute.',
+          [],
+        );
+      }
+      if (providerName === 'platinum' && slug !== META_SANDBOX_SLUG && slug !== PI_WORKER_SANDBOX_SLUG) {
+        // Imported lazily for the same reason as ensurePiWorkerImage above.
+        if (!driveMountsResolved) {
+          driveMounts = await import('../../drives/service').then(({ sessionVolumeMounts }) =>
+            sessionVolumeMounts({
+              accountId,
+              projectId,
+              sessionId: sandbox.sandboxId,
+              bootingUserId: userId,
+              agentName: opts.agentName ?? 'default',
+            }),
+          );
+          driveMountsResolved = true;
+        }
+        providerCreateInput.volumes = driveMounts?.volumes;
+      } else {
+        providerCreateInput.volumes = undefined;
+      }
       console.log(
         `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
         `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
@@ -828,6 +871,12 @@ export async function provisionSessionSandbox(opts: {
       }
       bgExternalId = result.externalId;
       tl.mark(`provider-create:${attempts}x`);
+      // What this sandbox really mounted: the session's drive chip reads it back.
+      const mountedDrives = providerCreateInput.volumes && driveMounts ? driveMounts.mounts : [];
+      // And the drives that did not fit, which the chip and the agent's notes name.
+      const driveAdmission = providerCreateInput.volumes && driveMounts
+        ? { driveMountsSkipped: driveMounts.skipped, driveMountSlots: driveMounts.slots }
+        : { driveMountsSkipped: [] };
       const timeline = tl.summary();
 
       const [currentSession] = await db
@@ -887,6 +936,8 @@ export async function provisionSessionSandbox(opts: {
                 ...result.metadata,
                 provisionTimeline: timeline,
                 providerExternalId: result.externalId,
+                driveMounts: mountedDrives,
+                ...driveAdmission,
               },
               attempts,
               lastProvisionMaxAttempts,
@@ -947,6 +998,8 @@ export async function provisionSessionSandbox(opts: {
             provisioningStage: firstStage?.id,
             provisionTimeline: timeline,
             providerExternalId: result.externalId,
+            driveMounts: mountedDrives,
+            ...driveAdmission,
             runtimeArtifact: {
               artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
               providerArtifactRef: imageInfo!.snapshotName,
@@ -1034,6 +1087,10 @@ export async function provisionSessionSandbox(opts: {
         totalMs: okTl.totalMs, marks: okTl.marks, attempts,
         sessionId: sandbox.sandboxId, accountId,
       });
+      // The agent's map of its drives (/drives/README.md). Detached, best effort.
+      if (mountedDrives.length) {
+        void import('../../drives/service').then(({ refreshDriveNotes }) => refreshDriveNotes(sandbox.sandboxId));
+      }
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Billed at the size of the image that booted (computeMeteringSpec).
@@ -1097,7 +1154,8 @@ export async function provisionSessionSandbox(opts: {
       // state and re-enter the loop.
       {
         const next = nextFailoverProvider({
-          providerLocked: providerWasExplicitlySelected,
+          // Drives run on Platinum only: no hand-off to another provider.
+          providerLocked: providerWasExplicitlySelected || drivesRequirePlatinum,
           fallbackAttempted,
           fallbackEnabled: providerFallbackSetting().enabled,
           current: providerName,
@@ -1164,7 +1222,16 @@ export async function provisionSessionSandbox(opts: {
 
       // Keep provider SDK text in diagnostic metadata. Show one stable contract
       // for E2B, Daytona, Platinum, and future providers.
-      const failure = classifySandboxProvisioningFailure(bgErr);
+      // A project with drives runs on Platinum only: when Platinum cannot be
+      // reached at all, say that, instead of a generic provider failure.
+      const failure = classifySandboxProvisioningFailure(
+        drivesRequirePlatinum && PLATINUM_UNREACHABLE.test(bgMessage)
+          ? new Error(
+              '[drives] Platinum, which runs this project’s sessions and their drives, is not reachable right now. ' +
+                'The session did not start. Try again in a minute.',
+            )
+          : bgErr,
+      );
       const { isCapacity, isGitAuth, userMessage } = failure;
       const failureCategory = failure.category;
       if (isCapacity) {
