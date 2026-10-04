@@ -1,0 +1,34 @@
+{
+  "source_hash": "c4fcf3718d0a59ab0650be0eb9ca670902b9e7a55291c596d29ec4ae362e34ef",
+  "diff_files": [
+    "apps/api/src/mcp/cli.test.ts",
+    "apps/api/src/mcp/cli.ts",
+    "apps/cli/src/__tests__/__snapshots__/mcp-tools-list.characterization.test.ts.snap",
+    "apps/cli/src/__tests__/dispatch-characterization.test.ts",
+    "apps/cli/src/__tests__/mcp-plain-errors.characterization.test.ts",
+    "apps/cli/src/__tests__/mcp-tools-list.characterization.test.ts",
+    "apps/cli/src/api/auth.ts",
+    "apps/cli/src/api/sdk.ts",
+    "apps/cli/src/connector-gateway/mcp-run.ts",
+    "apps/cli/src/connector-gateway/mcp-tools.ts",
+    "apps/cli/src/connector-gateway/mcp.ts",
+    "apps/cli/src/dockerfile-lint.ts",
+    "apps/cli/src/index.ts",
+    "apps/cli/src/manifest.ts",
+    "apps/cli/src/self-host/__tests__/__snapshots__/compose-assets.characterization.test.ts.snap",
+    "apps/cli/src/self-host/__tests__/compose-assets.characterization.test.ts",
+    "apps/cli/src/self-host/compose-assets.ts",
+    "apps/cli/src/tui-select.characterization.test.ts",
+    "apps/cli/src/tui-select.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "b0ab1d06a29009f699e81ee74afc2867026f4b9ea5d6fcd4bd23479c7f2e135d",
+  "head": "bb9aa461aac62439ce751a797c008aa3bde5f1a4",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T04:28:55.567Z"
+}
