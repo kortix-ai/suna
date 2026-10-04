@@ -31,7 +31,6 @@ async function openWorld(ctx: FlowContext) {
   const team = await ctx.fixtures.team();
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  await world.setFeature('agent_principal', true);
   await world.setFeature('reminders', true);
   await world.writeManifest(MANIFEST, 'ke2e: reminders agent');
   return { team, project, world };

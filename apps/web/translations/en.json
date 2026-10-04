@@ -934,7 +934,7 @@
       "noMatches": "No matches for {query}.",
       "emptyTitle": "No experimental features",
       "emptyDescription": "This deployment exposes no per-project feature flags.",
-      "permission": "You need the project's customize-write permission to change a feature flag.",
+      "permission": "You need the project's settings permission to change a feature flag.",
       "updateFailed": "Failed to update {key}",
       "flags": {
         "marketplace": {
@@ -984,10 +984,6 @@
         "pi_harness": {
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
-        "agent_principal": {
-          "name": "Agents as Principals",
-          "description": "Agents act as themselves: their Kortix permissions, capped by their role. Whoever runs an agent adds only their own accounts."
         },
         "config_releases": {
           "name": "Config Releases",
@@ -2495,9 +2491,7 @@
     "openWithoutGrant": "No grant needed",
     "grantNote": "The agent also needs project.app.read in its Kortix permissions.",
     "emptyTitle": "No Apps yet",
-    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from.",
-    "flagOffHint": "Agent principal is off for this project, so this grant is stored but does not gate an App yet.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from."
   },
   "errors": {
     "generic": "An error occurred",
@@ -9622,7 +9616,7 @@
       "text062b7c4143e2": "Its own branch, cut per session",
       "text062bccfdad1c": "No sandboxes match this search",
       "text062dddbbb151": "A frontier without an ecosystem is not stable",
-      "text06346e4d9c35": "You need the project's customize-write permission to change a feature flag.",
+      "text6d484ed8c1a0": "You need the project's settings permission to change a feature flag.",
       "text06475633ed3e": "Last activity",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Change what {value0} {value1} can do in {value2}.",
@@ -19207,7 +19201,9 @@
       "text48b78a9ab65b": "How do runs stay isolated?",
       "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
       "text39207bf34111": "Related skills",
-      "text73112526c03a": "Agent turn failed. No reason was reported."
+      "text73112526c03a": "Agent turn failed. No reason was reported.",
+      "text85b7a59cdbd5": "Platform agent",
+      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

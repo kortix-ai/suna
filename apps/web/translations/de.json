@@ -1108,7 +1108,7 @@
       "noMatches": "Keine Treffer für {query}.",
       "emptyTitle": "Keine experimentellen Funktionen",
       "emptyDescription": "Diese Installation bietet keine projektbezogenen Funktionsschalter.",
-      "permission": "Zum Ändern einer Funktion benötigen Sie die Berechtigung zum Bearbeiten der Projektanpassung.",
+      "permission": "Sie benötigen die Einstellungsberechtigung des Projekts, um ein Feature-Flag zu ändern.",
       "updateFailed": "{key} konnte nicht aktualisiert werden",
       "flags": {
         "marketplace": {
@@ -1158,10 +1158,6 @@
         "pi_harness": {
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
-        },
-        "agent_principal": {
-          "name": "Agenten als Prinzipale",
-          "description": "Agenten handeln als sie selbst: mit ihren Kortix-Berechtigungen, begrenzt durch ihre Rolle. Wer einen Agenten ausführt, bringt nur die eigenen Konten ein."
         },
         "config_releases": {
           "name": "Config-Releases",
@@ -9609,7 +9605,7 @@
       "text062b7c4143e2": "Seinem eigenen, pro Sitzung erstellten Branch",
       "text062bccfdad1c": "Zu dieser Suche passen keine Sandboxen",
       "text062dddbbb151": "Eine Frontier ohne Ökosystem ist nicht stabil",
-      "text06346e4d9c35": "Sie benötigen die Berechtigung „Anpassen/Schreiben“ des Projekts, um ein Feature-Flag zu ändern.",
+      "text6d484ed8c1a0": "Sie benötigen die Einstellungsberechtigung des Projekts, um ein Feature-Flag zu ändern.",
       "text06475633ed3e": "Letzte Aktivität",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Ändern Sie, was {value0} {value1} in {value2} tun kann.",
@@ -19194,7 +19190,9 @@
       "text48b78a9ab65b": "Wie bleiben Läufe isoliert?",
       "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt.",
       "text39207bf34111": "Ähnliche Fähigkeiten",
-      "text73112526c03a": "Der Agent-Durchlauf ist fehlgeschlagen. Es wurde kein Grund gemeldet."
+      "text73112526c03a": "Der Agent-Durchlauf ist fehlgeschlagen. Es wurde kein Grund gemeldet.",
+      "text85b7a59cdbd5": "Plattform-Agent",
+      "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20210,9 +20208,7 @@
     "openWithoutGrant": "Keine Freigabe nötig",
     "grantNote": "Der Agent benötigt außerdem project.app.read in seinen Kortix-Berechtigungen.",
     "emptyTitle": "Noch keine Apps",
-    "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten.",
-    "flagOffHint": "Agent-Prinzipal ist für dieses Projekt aus. Die Freigabe wird gespeichert, steuert aber noch keinen App-Zugriff.",
-    "featureFlags": "Feature-Flags"
+    "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten."
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"

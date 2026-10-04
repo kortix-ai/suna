@@ -1108,7 +1108,7 @@
       "noMatches": "No hay resultados para {query}.",
       "emptyTitle": "No hay funciones experimentales",
       "emptyDescription": "Esta instalación no ofrece indicadores de función por proyecto.",
-      "permission": "Necesitas permiso para editar la personalización del proyecto para cambiar una función.",
+      "permission": "Necesitas el permiso de configuración del proyecto para cambiar un indicador de función.",
       "updateFailed": "No se pudo actualizar {key}",
       "flags": {
         "marketplace": {
@@ -1158,10 +1158,6 @@
         "pi_harness": {
           "name": "Harness Pi (en el sandbox)",
           "description": "Ejecuta las sesiones con el harness Pi dentro del sandbox de la sesión en lugar de OpenCode. Desactivado, `runtime: pi` en el manifiesto sigue seleccionando Pi."
-        },
-        "agent_principal": {
-          "name": "Agentes como principales",
-          "description": "Los agentes actúan como sí mismos: con sus permisos de Kortix, limitados por su rol. Quien ejecuta un agente solo aporta sus propias cuentas."
         },
         "config_releases": {
           "name": "Versiones de configuración",
@@ -9609,7 +9605,7 @@
       "text062b7c4143e2": "Su propia rama, creada por sesión",
       "text062bccfdad1c": "No hay sandboxes que coincidan con esta búsqueda",
       "text062dddbbb151": "Una frontera sin ecosistema no es estable",
-      "text06346e4d9c35": "Necesita el permiso de personalización y escritura del proyecto para cambiar un indicador de función.",
+      "text6d484ed8c1a0": "Necesitas el permiso de configuración del proyecto para cambiar un indicador de función.",
       "text06475633ed3e": "Última actividad",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Cambiar lo que {value0} {value1} puede hacer en {value2}.",
@@ -19194,7 +19190,9 @@
       "text48b78a9ab65b": "¿Cómo se mantienen aisladas las ejecuciones?",
       "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
       "text39207bf34111": "Habilidades relacionadas",
-      "text73112526c03a": "El turno del agente falló. No se informó ningún motivo."
+      "text73112526c03a": "El turno del agente falló. No se informó ningún motivo.",
+      "text85b7a59cdbd5": "Agente de la plataforma",
+      "textd9c0c74b514b": "Meta es un agente de la plataforma que coordina tu trabajo. Su configuración es fija: puedes iniciar una sesión con él, pero no se puede configurar aquí."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20210,9 +20208,7 @@
     "openWithoutGrant": "No requiere concesión",
     "grantNote": "El agente también necesita project.app.read en sus permisos de Kortix.",
     "emptyTitle": "Aún no hay Apps",
-    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija.",
-    "flagOffHint": "Agente como principal está desactivado en este proyecto, así que la concesión se guarda pero todavía no controla ninguna App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija."
   },
   "connectorsAppReturn": {
     "done": "Listo. Volver a la app de Kortix"

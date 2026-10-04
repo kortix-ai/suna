@@ -31,9 +31,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    // The guide text is the source's META_AGENT_GUIDE (rewritten by #9017);
-    // these assert the contract the runtime relies on, not its prose.
-    expect(dockerfile).toContain('# Meta');
+    expect(dockerfile).toContain('# Meta\n');
     expect(dockerfile).toContain('NEVER do project work in this sandbox.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
