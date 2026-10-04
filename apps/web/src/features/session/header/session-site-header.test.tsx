@@ -410,8 +410,11 @@ describe('SessionConfigIndicator wiring', () => {
     // a runaway session they did not start.
     expect(source).toContain('projectSession.can_manage_sharing !== false');
     expect(source).toContain('projectSession.can_manage_lifecycle !== false');
-    // Stop is lifecycle. It must not ride on the sharing verdict.
-    expect(source).toContain("projectSession.status === 'running' && canManageLifecycle");
+    // Stop is lifecycle. It must not ride on the sharing verdict. The status
+    // half lives in `sessionCanBeStopped` (a warm shell reported
+    // `provisioning` keeps its Stop control, KRTX-1466); the lifecycle
+    // verdict stays here.
+    expect(source).toContain('sessionCanBeStopped(projectSession) && canManageLifecycle');
   });
 
   test('the ⋯ item and the chip share ONE mutation, so pending state cannot disagree', () => {
