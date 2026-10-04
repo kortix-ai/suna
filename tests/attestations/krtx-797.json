@@ -1,24 +1,27 @@
 {
   "source_hash": "08898445c415e34c8b429ed89723d74621b168105055dfaeb750155fe74b2f53",
   "diff_files": [
-    "packages/db/migrations/20261003225300000_session_lifecycle_commands_account_created_index.concurrent.ts",
-    "packages/db/migrations/20261003225300001_session_lifecycle_commands_account_updated_index.concurrent.ts",
-    "packages/db/migrations/20261003225300002_connector_calls_account_created_index.concurrent.ts",
-    "packages/db/migrations/20261003225300003_connector_calls_account_resolved_index.concurrent.ts",
-    "packages/db/migrations/20261003225300004_provider_events_account_created_index.concurrent.ts",
-    "packages/db/migrations/20261003225300005_tunnel_audit_account_created_index.concurrent.ts",
-    "packages/db/migrations/20261003225300006_project_sessions_account_created_index.concurrent.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261004023054_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261004030100000_session_lifecycle_commands_account_created_index.concurrent.ts",
+    "packages/db/migrations/20261004030100001_session_lifecycle_commands_account_updated_index.concurrent.ts",
+    "packages/db/migrations/20261004030100002_connector_calls_account_created_index.concurrent.ts",
+    "packages/db/migrations/20261004030100003_connector_calls_account_resolved_index.concurrent.ts",
+    "packages/db/migrations/20261004030100004_provider_events_account_created_index.concurrent.ts",
+    "packages/db/migrations/20261004030100005_tunnel_audit_account_created_index.concurrent.ts",
+    "packages/db/migrations/20261004030100006_project_sessions_account_created_index.concurrent.ts",
     "packages/db/scripts/audit-reconciliation-account-time-indexes.integration.test.ts",
     "packages/db/src/schema/kortix.test.ts",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "fef6506088f284c1b27b4624538a0da635c1af5412a83097cee64fb20583c4d3",
-  "head": "a6ce1a5a03e2d8c7a3744204dce46142dc6c7610",
+  "diff_hash": "8bfe1fb76ae2c99986a6aa8857d0e15677a7dc2ece376fea1d8b7ea3f64f1189",
+  "head": "e8eafda25582a2feba9c6ab13e38608ee9b481f5",
   "passed": false,
   "lanes": {
-    "core": "pass",
+    "core": "fail",
     "packages": "fail",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T02:42:59.145Z"
+  "at": "2026-10-04T02:55:02.498Z"
 }
