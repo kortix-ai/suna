@@ -1,5 +1,5 @@
 {
-  "source_hash": "38ce358aa54584610272853ab031b12eae3bec9523c603e992c348bd9e6c94a5",
+  "source_hash": "48d1c65fe104510fdab4bbd123f7d25878cec29303f4972d4c9c23ec23babd3e",
   "diff_files": [
     "apps/mobile/components/session/QuestionPrompt.test.tsx",
     "apps/mobile/components/session/QuestionPrompt.tsx",
@@ -10,12 +10,12 @@
     "tests/unit/no-docs-tree.test.ts"
   ],
   "diff_hash": "87dc5173cd980d2d4e12b738a8737f0f407b18abd7625c543c0c43d1f99a52b3",
-  "head": "eccb7cf48b0e532c65b4ada9638bf6f81a816742",
+  "head": "7c70590ed10e9e63ffa5918be26353c56bdd4ad9",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
-    "db-suites": "pass"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T05:47:32.326Z"
+  "at": "2026-10-04T07:53:38.507Z"
 }
