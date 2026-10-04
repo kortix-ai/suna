@@ -161,6 +161,24 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
     body?.account_id ??
     body?.accountId,
   );
+  // A malformed account_id is caller input, not a lookup miss: past this point
+  // it reaches the account-membership query, whose account_id comparison is a
+  // uuid column, and Postgres answers SQLSTATE 22P02 — a 500. Refuse the shape
+  // before any lookup (see shared/validate.ts for the shape contract).
+  if (requested && !isUuid(requested)) {
+    throw new HTTPException(400, {
+      message: 'account_id must be a valid id',
+      res: new Response(
+        JSON.stringify({
+          error: true,
+          message: 'account_id must be a valid id',
+          status: 400,
+          code: 'invalid_account_id',
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
   // ACT-AS: the grant, not the query string, decides the account. Defense in
   // depth — under impersonation `/v1/accounts` returns only the target, so a
   // correct client already sends the target id. A stale one that still holds
