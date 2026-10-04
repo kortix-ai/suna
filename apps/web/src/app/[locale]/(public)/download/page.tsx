@@ -115,7 +115,7 @@ export default async function DownloadPage({
       <DownloadCloseButton />
 
       <header className="mb-10 text-center">
-        <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+        <h1 className="text-foreground text-3xl font-normal tracking-tight text-balance sm:text-4xl">
           {hero.title}
         </h1>
         <p className="text-muted-foreground mx-auto mt-3 max-w-md text-balance">{hero.sub}</p>
