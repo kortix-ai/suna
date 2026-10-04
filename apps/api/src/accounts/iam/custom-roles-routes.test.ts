@@ -52,7 +52,7 @@ describe('custom role and policy route registration', () => {
   test('registers custom roles before every other IAM route group', () => {
     // The effective order in production: a project route imported custom-roles
     // early, so its routes registered first. The explicit calls keep that order.
-    const calls = [...barrel.matchAll(/^(registerIam\w+Routes)\(\);/gm)].map((m) => m[1]);
+    const calls = [...barrel.matchAll(/^\s*(registerIam\w+Routes)\(\);/gm)].map((m) => m[1]);
     expect(calls[0]).toBe('registerIamCustomRolesRoutes');
     expect(calls).toContain('registerIamServiceAccountsRoutes');
     expect(calls.at(-1)).toBe('registerIamAssignmentsRoutes');

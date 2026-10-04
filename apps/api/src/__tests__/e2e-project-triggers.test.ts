@@ -791,8 +791,10 @@ const {
   drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
+  registerAllProjectRoutes,
   runProjectTriggerSweep,
 } = await import('../projects/index');
+registerAllProjectRoutes();
 const { resetRateLimiters } = await import('../shared/rate-limit');
 
 function createApp() {

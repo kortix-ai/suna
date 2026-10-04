@@ -40,12 +40,12 @@ import { oauthApp } from './oauth';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { projectWebhooksApp, projectsApp } from './projects';
+import { projectWebhooksApp, projectsApp, registerAllProjectRoutes } from './projects';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
-import { scimRouter } from './scim';
+import { registerScimRoutes, scimRouter } from './scim';
 import { setupApp } from './setup';
 import { skillsApp } from './skills';
 import { tunnelApp } from './tunnel';
@@ -79,6 +79,7 @@ app.route('/v1/auth', headlessAuthRouter);
 app.route('/v1/auth', authRouter);
 // SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
 // Mounted outside /v1 so IdPs configure the documented protocol URL.
+registerScimRoutes();
 app.route('/scim/v2', scimRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
@@ -156,6 +157,7 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 // pins this route too.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+registerAllProjectRoutes();
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.

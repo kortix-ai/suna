@@ -29,10 +29,12 @@ import { registerScimServiceProviderRoutes } from './service-provider';
 import { registerScimUsersRoutes } from './users';
 import { registerScimGroupsRoutes } from './groups';
 
-// Register routes in their original order.
-registerScimServiceProviderRoutes();
-registerScimUsersRoutes();
-registerScimGroupsRoutes();
+/** Registers the SCIM routes in their original order. app.ts calls it once, before it mounts `scimRouter`. */
+export function registerScimRoutes(): void {
+  registerScimServiceProviderRoutes();
+  registerScimUsersRoutes();
+  registerScimGroupsRoutes();
+}
 
 // `accounts` import kept only so future endpoints (e.g. /Me) can resolve
 // the account by URL without re-importing. Silences unused-import lints.

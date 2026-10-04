@@ -459,7 +459,8 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+registerAllProjectRoutes();
 
 function createApp() {
   const app = new Hono();

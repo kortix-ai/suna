@@ -83,79 +83,87 @@ import { registerChannelBindingsRoutes } from './routes/channel-bindings';
 import { registerMonitorsRoutes } from './routes/monitors';
 import { registerAppsRoutes } from '../apps/routes';
 
-// Hono dispatches in registration order, so the order of these calls IS the
-// route order. registerProjectsRoutes() registers the global `/*` auth
-// middleware first (its first statement), then the remaining route groups.
-registerProjectsRoutes();
-registerTriggerWebhooksRoutes();
-registerProjectGitRoutes();
-registerGithubInstallationsRoutes();
-registerGithubRepositoriesRoutes();
-registerGitBackendRoutes();
-registerProjectFromRepositoryRoutes();
-registerManifestValidationRoutes();
-registerSandboxesRoutes();
-registerSandboxTemplatesRoutes();
-registerProjectCredentialsRoutes();
-registerSecretsRoutes();
-registerSecretDeliveryRoutes();
-registerProviderOauthRoutes();
-registerRepositoryReplacementRoutes();
-registerSecretBrokerRoutes();
-registerSecretRelayRoutes();
-registerSetupLinksRoutes();
-registerConnectionsRoutes();
-registerConnectionActionsRoutes();
-registerComputersRoutes();
-registerTriggersRoutes();
-registerChannelSlackRoutes();
-registerChannelTeamsRoutes();
-registerChannelEmailRoutes();
-registerTurnStreamRoutes();
-registerModelsRoutes();
-registerTurnQuestionsRoutes();
-registerTurnPermissionsRoutes();
-registerOauth2ConnectorsRoutes();
-registerProjectDetailRoutes();
-registerProjectFilesRoutes();
-registerProjectSettingsRoutes();
-registerProjectAccessRoutes();
-registerAccessRequestsRoutes();
-registerProjectInvitesRoutes();
-registerGroupGrantsRoutes();
-registerWarmSessionsRoutes();
-registerProviderSecretPoolsRoutes();
-registerProjectSessionsRoutes();
-registerSessionEnvironmentRoutes();
-registerSessionTranscriptsRoutes();
-registerSessionAttachmentsRoutes();
-registerSessionOpenBundleRoutes();
-registerSessionStreamRoutes();
-registerProjectAuditRoutes();
-registerApprovalsRoutes();
-registerResourceGrantsRoutes();
-registerSessionScopeRoutes();
-registerSessionConfigRoutes();
-registerConfigReleaseRoutes();
-registerPublicSharesRoutes();
-registerSessionRuntimeRoutes();
-registerSessionPresenceRoutes();
-registerSessionParticipantsRoutes();
-registerSessionPromptsRoutes();
-registerSessionRemindersRoutes();
-registerChangeRequestsRoutes();
-registerPromptAttachmentsRoutes();
-registerChangeRequestActionsRoutes();
-registerMarketplaceInstallSessionRoutes();
-registerReviewItemsRoutes();
-registerAgentScopeRoutes();
-registerAgentConfigRoutes();
-registerGatewayRoutes();
-registerChannelBindingsRoutes();
-registerMonitorsRoutes();
-registerAppsRoutes();
+/**
+ * Registers every project route on `projectsApp` / `projectWebhooksApp`.
+ * app.ts calls it once, before it mounts them. Called at the mount site, never at import time:
+ * a route module that reaches this file through an import cycle would
+ * otherwise be registered before its own body ran.
+ */
+export function registerAllProjectRoutes(): void {
+  // Hono dispatches in registration order, so the order of these calls IS the
+  // route order. registerProjectsRoutes() registers the global `/*` auth
+  // middleware first (its first statement), then the remaining route groups.
+  registerProjectsRoutes();
+  registerTriggerWebhooksRoutes();
+  registerProjectGitRoutes();
+  registerGithubInstallationsRoutes();
+  registerGithubRepositoriesRoutes();
+  registerGitBackendRoutes();
+  registerProjectFromRepositoryRoutes();
+  registerManifestValidationRoutes();
+  registerSandboxesRoutes();
+  registerSandboxTemplatesRoutes();
+  registerProjectCredentialsRoutes();
+  registerSecretsRoutes();
+  registerSecretDeliveryRoutes();
+  registerProviderOauthRoutes();
+  registerRepositoryReplacementRoutes();
+  registerSecretBrokerRoutes();
+  registerSecretRelayRoutes();
+  registerSetupLinksRoutes();
+  registerConnectionsRoutes();
+  registerConnectionActionsRoutes();
+  registerComputersRoutes();
+  registerTriggersRoutes();
+  registerChannelSlackRoutes();
+  registerChannelTeamsRoutes();
+  registerChannelEmailRoutes();
+  registerTurnStreamRoutes();
+  registerModelsRoutes();
+  registerTurnQuestionsRoutes();
+  registerTurnPermissionsRoutes();
+  registerOauth2ConnectorsRoutes();
+  registerProjectDetailRoutes();
+  registerProjectFilesRoutes();
+  registerProjectSettingsRoutes();
+  registerProjectAccessRoutes();
+  registerAccessRequestsRoutes();
+  registerProjectInvitesRoutes();
+  registerGroupGrantsRoutes();
+  registerWarmSessionsRoutes();
+  registerProviderSecretPoolsRoutes();
+  registerProjectSessionsRoutes();
+  registerSessionEnvironmentRoutes();
+  registerSessionTranscriptsRoutes();
+  registerSessionAttachmentsRoutes();
+  registerSessionOpenBundleRoutes();
+  registerSessionStreamRoutes();
+  registerProjectAuditRoutes();
+  registerApprovalsRoutes();
+  registerResourceGrantsRoutes();
+  registerSessionScopeRoutes();
+  registerSessionConfigRoutes();
+  registerConfigReleaseRoutes();
+  registerPublicSharesRoutes();
+  registerSessionRuntimeRoutes();
+  registerSessionPresenceRoutes();
+  registerSessionParticipantsRoutes();
+  registerSessionPromptsRoutes();
+  registerSessionRemindersRoutes();
+  registerChangeRequestsRoutes();
+  registerPromptAttachmentsRoutes();
+  registerChangeRequestActionsRoutes();
+  registerMarketplaceInstallSessionRoutes();
+  registerReviewItemsRoutes();
+  registerAgentScopeRoutes();
+  registerAgentConfigRoutes();
+  registerGatewayRoutes();
+  registerChannelBindingsRoutes();
+  registerMonitorsRoutes();
+  registerAppsRoutes();
+}
 
-// The wired Hono app instances (every route registered above).
+// The Hono app instances. app.ts registers their routes and mounts them.
 export { projectsApp, projectWebhooksApp };
 
 // Git-proxy public API (consumed by ../git-proxy).

@@ -45,18 +45,21 @@ import { registerIamCustomRolesRoutes } from './iam/custom-roles';
 import { registerIamAssignmentsRoutes } from './iam/assignments';
 import { iamRouter } from './iam/app';
 
-registerIamCustomRolesRoutes(); // IAM v1: custom roles + action sets + principal→role policies
-registerIamGroupsRoutes(); // groups, group members, group→project grants
-registerIamMembersRoutes(); // super-admin, member groups / project-access / effective(+batch)
-registerIamResourceGrantsRoutes(); // account-wide resource-grants rollup (agent/skill grants across every project)
-registerIamMfaRoutes(); // account-wide MFA enforcement
-registerIamScimTokensRoutes(); // SCIM provisioning tokens
-registerIamSsoRoutes(); // SAML SSO provider + group mappings
-registerIamEnterpriseDemoRoutes(); // self-serve enterprise-preview toggle
-registerIamPoliciesRoutes(); // session policy, active sessions / revoke, PAT policy
-registerIamServiceAccountsRoutes(); // service accounts (non-human IAM principals)
-registerIamOauthClientsRoutes(); // Sign in with Kortix: OAuth client registry
-registerIamSessionOversightRoutes(); // owner/admin access to every session (owner-only toggle)
-registerIamAssignmentsRoutes(); // canonical: role_assignments CRUD + the permission catalog
+/** Registers every IAM route on `iamRouter`. accounts/index.ts calls it once, before it mounts the router. */
+export function registerIamRoutes(): void {
+  registerIamCustomRolesRoutes(); // IAM v1: custom roles + action sets + principal→role policies
+  registerIamGroupsRoutes(); // groups, group members, group→project grants
+  registerIamMembersRoutes(); // super-admin, member groups / project-access / effective(+batch)
+  registerIamResourceGrantsRoutes(); // account-wide resource-grants rollup (agent/skill grants across every project)
+  registerIamMfaRoutes(); // account-wide MFA enforcement
+  registerIamScimTokensRoutes(); // SCIM provisioning tokens
+  registerIamSsoRoutes(); // SAML SSO provider + group mappings
+  registerIamEnterpriseDemoRoutes(); // self-serve enterprise-preview toggle
+  registerIamPoliciesRoutes(); // session policy, active sessions / revoke, PAT policy
+  registerIamServiceAccountsRoutes(); // service accounts (non-human IAM principals)
+  registerIamOauthClientsRoutes(); // Sign in with Kortix: OAuth client registry
+  registerIamSessionOversightRoutes(); // owner/admin access to every session (owner-only toggle)
+  registerIamAssignmentsRoutes(); // canonical: role_assignments CRUD + the permission catalog
+}
 
 export { iamRouter };
