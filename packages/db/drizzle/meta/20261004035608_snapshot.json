@@ -1,6 +1,6 @@
 {
-  "id": "70386229-b448-4bc9-b4c0-83f4d4175b6c",
-  "prevId": "fa283177-4bf6-4777-aa5c-a4c6a91339a5",
+  "id": "ef7e3787-7dee-4e0e-9e97-574c8ab9c8fa",
+  "prevId": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -19115,6 +19115,28 @@
           ],
           "isUnique": false,
           "where": "\"kortix\".\"session_sandboxes\".\"external_id\" is not null and \"kortix\".\"session_sandboxes\".\"metadata\" ?| array['runtimeWakeId', 'runtimeWakeCleanupUntilAt']",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_sandboxes_parked_verified": {
+          "name": "idx_session_sandboxes_parked_verified",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'parkedVerifiedAt') ASC NULLS FIRST",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"session_sandboxes\".\"external_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
