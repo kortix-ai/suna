@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { resolveDesiredRelease, type DesiredReleaseDeps } from '../desired';
 import type { ConfigRelease, ConfigReleaseVariant } from '../builder';
 import type { DeclaredAgentRoster } from '../session-agent';
-import { MemoryConfigReleaseLedger } from '../quarantine';
+import { MemoryConfigReleaseLedger } from './fakes';
 
 const PROJECT = {
   projectId: '33333333-3333-4333-8333-333333333333',
