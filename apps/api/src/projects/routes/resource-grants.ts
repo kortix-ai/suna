@@ -24,6 +24,7 @@ import { and, eq, inArray, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -90,6 +91,12 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     );
     stages.capability = Math.round(performance.now() - started);
+
+    // A page view: serve the warm git mirror, refresh it behind the response.
+    // Without this the config load pays the mirror's GitHub fetch (or an
+    // evicted-mirror cold clone) inline whenever the refresh interval has
+    // elapsed — the measured config stage behind this route's slow tail.
+    allowStaleMirrorReads();
 
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
