@@ -45,7 +45,7 @@ export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCode
     opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
-    projectTarget: '/workspace',
+    projectTarget: `/tmp/kortix-test-workspace-${process.pid}`,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,

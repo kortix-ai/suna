@@ -1,3 +1,4 @@
+import { AccountSummarySchema as ContractAccountSummarySchema } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
 import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
 import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -63,18 +64,7 @@ export const EffectiveBrandingSchema = z
   .nullable()
   .optional();
 
-export const AccountSummarySchema = z
-  .object({
-    account_id: z.string(),
-    name: z.string(),
-    slug: z.string(),
-    created_at: z.string(),
-    updated_at: z.string(),
-    account_role: z.string().optional(),
-    is_primary_owner: z.boolean().optional(),
-    branding: EffectiveBrandingSchema,
-  })
-  .openapi('AccountSummary');
+export const AccountSummarySchema = ContractAccountSummarySchema.openapi('AccountSummary');
 
 export const AccountDetailSchema = z
   .object({

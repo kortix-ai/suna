@@ -19,14 +19,11 @@
  * Nothing else is buffered. Long-lived session streams remain active.
  */
 
-import { getRequestSession } from '@/server/auth';
-import { buildUpstreamPath } from '@/server/upstream-path';
+import { type SessionPayload, getRequestSession } from '@/server/auth';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
-import {
-  recordRuntimeProject,
-  resolveRuntimeProject,
-} from '@/server/runtime-access';
+import { recordRuntimeProject, resolveRuntimeProject } from '@/server/runtime-access';
+import { buildUpstreamPath, upstreamBase } from '@/server/upstream-path';
 import { addOwnedProject, isOwner, listOwnedProjects } from '@/server/users';
 import { forwardKortixRequest } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
@@ -34,27 +31,14 @@ import type { NextRequest } from 'next/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function upstreamBase(): string {
-  return (process.env.KORTIX_UPSTREAM ?? 'https://api.kortix.com/v1').replace(
-    /\/+$/,
-    '',
-  );
-}
-
 function jsonError(status: number, error: string, extraHeaders?: HeadersInit) {
   return Response.json({ error }, { status, headers: extraHeaders });
 }
 
-async function handle(
-  req: NextRequest,
-  ctx: { params: Promise<{ path?: string[] }> },
-) {
+async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
   const apiKey = process.env.KORTIX_API_KEY;
   if (!apiKey) {
-    return jsonError(
-      500,
-      'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).',
-    );
+    return jsonError(500, 'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).');
   }
 
   const session = getRequestSession(req);
@@ -91,12 +75,26 @@ async function handle(
     token: apiKey,
   });
 
+  if (policy.filterProjectsList || policy.recordProvisionOwner || policy.recordRuntimeProjectId) {
+    return await rewriteOwnedResponse(upstreamRes, policy, session);
+  }
+
+  // The SDK returns a sanitized, streaming response.
+  return upstreamRes;
+}
+
+/**
+ * Buffer only responses that update or filter wrapper ownership state, apply
+ * the record/filter side effects, and re-serialize. Everything else streams
+ * through untouched.
+ */
+async function rewriteOwnedResponse(
+  upstreamRes: Response,
+  policy: ReturnType<typeof evaluatePolicy>,
+  session: SessionPayload,
+) {
   // Buffer only responses that update or filter wrapper ownership state.
-  if (
-    policy.filterProjectsList ||
-    policy.recordProvisionOwner ||
-    policy.recordRuntimeProjectId
-  ) {
+  if (policy.filterProjectsList || policy.recordProvisionOwner || policy.recordRuntimeProjectId) {
     const text = await upstreamRes.text();
     let body: unknown;
     let isJson = true;
@@ -112,8 +110,7 @@ async function handle(
       return new Response(text, {
         status: upstreamRes.status,
         headers: {
-          'content-type':
-            upstreamRes.headers.get('content-type') ?? 'text/plain',
+          'content-type': upstreamRes.headers.get('content-type') ?? 'text/plain',
         },
       });
     }
@@ -124,30 +121,18 @@ async function handle(
     }
 
     if (policy.recordRuntimeProjectId && upstreamRes.ok) {
-      const runtimeId = (body as { sandbox?: { external_id?: string } } | null)
-        ?.sandbox?.external_id;
-      if (runtimeId)
-        recordRuntimeProject(runtimeId, policy.recordRuntimeProjectId);
+      const runtimeId = (body as { sandbox?: { external_id?: string } } | null)?.sandbox
+        ?.external_id;
+      if (runtimeId) recordRuntimeProject(runtimeId, policy.recordRuntimeProjectId);
     }
 
     if (policy.filterProjectsList && Array.isArray(body)) {
       const owned = new Set(listOwnedProjects(session.userId));
-      body = body.filter((item) =>
-        owned.has((item as { project_id?: string })?.project_id ?? ''),
-      );
+      body = body.filter((item) => owned.has((item as { project_id?: string })?.project_id ?? ''));
     }
 
     return Response.json(body, { status: upstreamRes.status });
   }
-
-  // The SDK returns a sanitized, streaming response.
-  return upstreamRes;
 }
 
-export {
-  handle as DELETE,
-  handle as GET,
-  handle as PATCH,
-  handle as POST,
-  handle as PUT,
-};
+export { handle as DELETE, handle as GET, handle as PATCH, handle as POST, handle as PUT };

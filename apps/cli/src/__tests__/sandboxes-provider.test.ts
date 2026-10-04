@@ -169,7 +169,7 @@ describe('kortix sandboxes provider', () => {
     expect(r.stdout).toContain('provider <name>');
     expect(r.stdout).toContain('provider --clear');
     expect(r.stdout).toContain('provider status');
-    expect(r.stdout).toContain('project.customize.write');
+    expect(r.stdout).toContain('project.settings.write');
   });
 
   test('bare `provider` prints the pin and what this host offers; --json is machine-readable', async () => {

@@ -24,11 +24,7 @@
  * claims it sends can be asserted without rendering anything.
  */
 
-import {
-  NO_OVERRIDES,
-  buildSessionCreateInput,
-  type SessionOverrides,
-} from './session-overrides';
+import { NO_OVERRIDES, type SessionOverrides, buildSessionCreateInput } from './session-overrides';
 
 /** Rendered wherever a real secret value would otherwise go. */
 export const SECRET_VALUE_PLACEHOLDER = '$SECRET_VALUE';
@@ -46,7 +42,6 @@ const PLACEHOLDER = {
   envKey: '{ENV_KEY}',
   model: 'anthropic/claude-sonnet-4-5',
   projectName: 'Acme workspace',
-  connector: '{connector}',
 } as const;
 
 /**
@@ -83,8 +78,6 @@ export interface SnippetContext {
   overrides?: SessionOverrides;
   /** The agent a prompt would name, when one is picked. */
   agent?: string | null;
-  /** The model a mid-session change would move to. */
-  model?: string | null;
   executionId?: string;
   /** The project name a provision would send, when the field is filled in. */
   projectName?: string;
@@ -93,8 +86,6 @@ export interface SnippetContext {
    * type is the boundary that keeps secret material out of every snippet.
    */
   secret?: { identifier?: string; name?: string };
-  /** The connector alias a setup link would be minted for. */
-  connector?: string;
 }
 
 /**
@@ -104,7 +95,7 @@ export interface SnippetContext {
  * Printing a path there would teach hand-rolling the one thing the SDK exists
  * to hold.
  */
-export type HttpForm =
+type HttpForm =
   | {
       kind: 'rest';
       method: string;
@@ -143,11 +134,7 @@ function json(value: unknown): string {
  */
 export function renderHttp(form: HttpForm): string {
   if (form.kind === 'runtime') return form.summary;
-  const lines = [
-    `${form.method} ${form.path}`,
-    AUTHORIZATION_HEADER,
-    ...(form.headers ?? []),
-  ];
+  const lines = [`${form.method} ${form.path}`, AUTHORIZATION_HEADER, ...(form.headers ?? [])];
   if (form.body === undefined) return lines.join('\n');
   lines.push('Content-Type: application/json', '', json(form.body));
   return lines.join('\n');
@@ -167,8 +154,7 @@ function projectProvision(ctx: SnippetContext): CallSnippet {
   return {
     id: 'project.provision',
     title: 'Provision a project',
-    summary:
-      'The create path that lets the wrapper record local project ownership.',
+    summary: 'The create path that lets the wrapper record local project ownership.',
     sdk: [
       `await kortix.projects.provision(${json(body)});`,
       '',
@@ -195,8 +181,7 @@ function connectionsList(ctx: SnippetContext): CallSnippet {
   return {
     id: 'connections.list',
     title: 'List the connections a session may bind',
-    summary:
-      'What the picker is made of — and why some connectors have nothing to pick.',
+    summary: 'What the picker is made of — and why some connectors have nothing to pick.',
     sdk: 'await kortix.project(projectId).connectors.connections.list();',
     http: {
       kind: 'rest',
@@ -227,8 +212,7 @@ function sessionCreate(ctx: SnippetContext): CallSnippet {
   return {
     id: 'session.create',
     title: 'Start a session with overrides',
-    summary:
-      'The create call sets the initial session scope and runtime options.',
+    summary: 'The create call sets the initial session scope and runtime options.',
     sdk: [
       "import { generateSessionId } from '@kortix/sdk';",
       '',
@@ -256,8 +240,7 @@ function sessionPrompt(ctx: SnippetContext): CallSnippet {
   return {
     id: 'session.prompt',
     title: 'Send a prompt (and switch agent per message)',
-    summary:
-      'Each message names the agent that runs it — the one override that moves mid-session.',
+    summary: 'Each message names the agent that runs it — the one override that moves mid-session.',
     sdk: [
       'await kortix',
       '  .session(projectId, sessionId)',
@@ -318,15 +301,14 @@ function sessionRescope(ctx: SnippetContext): CallSnippet {
 }
 
 function sessionModel(ctx: SnippetContext): CallSnippet {
-  const model = ctx.model ?? PLACEHOLDER.model;
+  const model = PLACEHOLDER.model;
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
 
   return {
     id: 'session.model',
     title: 'Change the model mid-session',
-    summary:
-      'The one create-time override that is still movable once a session is running.',
+    summary: 'The one create-time override that is still movable once a session is running.',
     sdk: [
       '// Server side (src/app/api/session-model/route.ts):',
       `await kortix.session(projectId, sessionId).changeModel('${model}');`,
@@ -379,8 +361,7 @@ function sessionDelete(ctx: SnippetContext): CallSnippet {
   return {
     id: 'session.delete',
     title: 'Restart or delete a session',
-    summary:
-      'The two ways a session ends — one keeps the sandbox, one destroys it.',
+    summary: 'The two ways a session ends — one keeps the sandbox, one destroys it.',
     sdk: [
       '// Reboots the runtime, keeps the session and its sandbox identity.',
       'await kortix.session(projectId, sessionId).restart();',
@@ -522,10 +503,7 @@ const BUILDERS: Record<CallSnippetId, (ctx: SnippetContext) => CallSnippet> = {
 };
 
 /** One action's snippet, filled in with whatever the screen actually knows. */
-export function callSnippet(
-  id: CallSnippetId,
-  ctx: SnippetContext = {},
-): CallSnippet {
+export function callSnippet(id: CallSnippetId, ctx: SnippetContext = {}): CallSnippet {
   return BUILDERS[id](ctx);
 }
 

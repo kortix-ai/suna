@@ -7,7 +7,6 @@ import {
   AUDIT_HTTP_ROUTES,
   describeAuditAction,
   formatResourcePill,
-  humanizeAuditAction,
 } from './audit-display-helpers';
 
 const UID = '8fb490fe-4765-480e-9e83-08b4b41a3f06';
@@ -146,7 +145,7 @@ describe('audit HTTP route registry', () => {
   });
 });
 
-describe('humanizeAuditAction — IAM action codes', () => {
+describe('describeAuditAction — IAM action codes', () => {
   test('maps every named action emitted by the audit writers', () => {
     const actions = [
       'admin.account.session_limit.set',
@@ -208,26 +207,26 @@ describe('humanizeAuditAction — IAM action codes', () => {
   });
 
   test('iam.group.create → Created group', () => {
-    expect(humanizeAuditAction('iam.group.create', testUiTranslator)).toEqual({
+    expect(describeAuditAction('iam.group.create', testUiTranslator)).toMatchObject({
       title: 'Created group',
       kind: 'create',
     });
   });
   test('iam.member.super_admin.grant → Granted super-admin', () => {
-    expect(humanizeAuditAction('iam.member.super_admin.grant', testUiTranslator).title).toBe(
+    expect(describeAuditAction('iam.member.super_admin.grant', testUiTranslator).title).toBe(
       'Granted super-admin',
     );
   });
   test('iam.project.group.detach → Detached…', () => {
-    const r = humanizeAuditAction('iam.project.group.detach', testUiTranslator);
+    const r = describeAuditAction('iam.project.group.detach', testUiTranslator);
     expect(r.title).toBe('Detached group from project');
     expect(r.kind).toBe('detach');
   });
 });
 
-describe('humanizeAuditAction — HTTP routes', () => {
+describe('describeAuditAction — HTTP routes', () => {
   test('POST /v1/projects/:id/group-grants → Attached group', () => {
-    expect(humanizeAuditAction(`POST /v1/projects/${UID}/group-grants`, testUiTranslator)).toEqual({
+    expect(describeAuditAction(`POST /v1/projects/${UID}/group-grants`, testUiTranslator)).toMatchObject({
       title: 'Attached group to project',
       kind: 'attach',
     });
@@ -235,8 +234,8 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('PATCH /v1/projects/:id/group-grants/:gid → Changed role', () => {
     expect(
-      humanizeAuditAction(`PATCH /v1/projects/${UID}/group-grants/${UID2}`, testUiTranslator),
-    ).toEqual({
+      describeAuditAction(`PATCH /v1/projects/${UID}/group-grants/${UID2}`, testUiTranslator),
+    ).toMatchObject({
       title: 'Changed group role on project',
       kind: 'update',
     });
@@ -244,15 +243,15 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('DELETE /v1/projects/:id/group-grants/:gid → Detached', () => {
     expect(
-      humanizeAuditAction(`DELETE /v1/projects/${UID}/group-grants/${UID2}`, testUiTranslator),
-    ).toEqual({
+      describeAuditAction(`DELETE /v1/projects/${UID}/group-grants/${UID2}`, testUiTranslator),
+    ).toMatchObject({
       title: 'Detached group from project',
       kind: 'detach',
     });
   });
 
   test('PUT shared secret carries the name as detail', () => {
-    expect(humanizeAuditAction(`PUT /v1/projects/${UID}/secrets/MY_KEY`, testUiTranslator)).toEqual(
+    expect(describeAuditAction(`PUT /v1/projects/${UID}/secrets/MY_KEY`, testUiTranslator)).toMatchObject(
       {
         title: 'Set shared secret',
         detail: 'MY_KEY',
@@ -262,7 +261,7 @@ describe('humanizeAuditAction — HTTP routes', () => {
   });
 
   test('PUT personal secret distinguishes from shared', () => {
-    const r = humanizeAuditAction(
+    const r = describeAuditAction(
       `PUT /v1/projects/${UID}/secrets/TEST/personal`,
       testUiTranslator,
     );
@@ -273,8 +272,8 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('DELETE personal secret', () => {
     expect(
-      humanizeAuditAction(`DELETE /v1/projects/${UID}/secrets/X/personal`, testUiTranslator),
-    ).toEqual({
+      describeAuditAction(`DELETE /v1/projects/${UID}/secrets/X/personal`, testUiTranslator),
+    ).toMatchObject({
       title: 'Removed personal secret',
       detail: 'X',
       kind: 'delete',
@@ -283,19 +282,19 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('POST /v1/projects/:id/access/invite → Invited project member', () => {
     expect(
-      humanizeAuditAction(`POST /v1/projects/${UID}/access/invite`, testUiTranslator).title,
+      describeAuditAction(`POST /v1/projects/${UID}/access/invite`, testUiTranslator).title,
     ).toBe('Invited project member');
   });
 
   test('PATCH /v1/accounts/:id/members/:uid → Changed member role', () => {
     expect(
-      humanizeAuditAction(`PATCH /v1/accounts/${UID}/members/${UID2}`, testUiTranslator).title,
+      describeAuditAction(`PATCH /v1/accounts/${UID}/members/${UID2}`, testUiTranslator).title,
     ).toBe('Changed member role');
   });
 
   test('PATCH /v1/accounts/:id/iam/members/:uid/super-admin → Set super-admin status', () => {
     expect(
-      humanizeAuditAction(
+      describeAuditAction(
         `PATCH /v1/accounts/${UID}/iam/members/${UID2}/super-admin`,
         testUiTranslator,
       ).title,
@@ -303,14 +302,14 @@ describe('humanizeAuditAction — HTTP routes', () => {
   });
 
   test('POST /v1/accounts/:id/iam/groups → Created group', () => {
-    expect(humanizeAuditAction(`POST /v1/accounts/${UID}/iam/groups`, testUiTranslator).title).toBe(
+    expect(describeAuditAction(`POST /v1/accounts/${UID}/iam/groups`, testUiTranslator).title).toBe(
       'Created group',
     );
   });
 
   test('DELETE /v1/accounts/:id/iam/groups/:gid/members/:uid → Removed member from group', () => {
     expect(
-      humanizeAuditAction(
+      describeAuditAction(
         `DELETE /v1/accounts/${UID}/iam/groups/${UID2}/members/${UID}`,
         testUiTranslator,
       ).title,
@@ -319,33 +318,33 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('PATCH /v1/accounts/:id/iam/mfa-required → Changed MFA requirement', () => {
     expect(
-      humanizeAuditAction(`PATCH /v1/accounts/${UID}/iam/mfa-required`, testUiTranslator).title,
+      describeAuditAction(`PATCH /v1/accounts/${UID}/iam/mfa-required`, testUiTranslator).title,
     ).toBe('Changed MFA requirement');
   });
 
   test('PATCH /v1/accounts/:id/iam/session-policy → Updated session policy', () => {
     expect(
-      humanizeAuditAction(`PATCH /v1/accounts/${UID}/iam/session-policy`, testUiTranslator).title,
+      describeAuditAction(`PATCH /v1/accounts/${UID}/iam/session-policy`, testUiTranslator).title,
     ).toBe('Updated session policy');
   });
 
   // ── Patterns added for the screenshots in the audit-log polish pass ──
 
   test('PATCH /v1/accounts/:id → Renamed account', () => {
-    expect(humanizeAuditAction(`PATCH /v1/accounts/${UID}`, testUiTranslator).title).toBe(
+    expect(describeAuditAction(`PATCH /v1/accounts/${UID}`, testUiTranslator).title).toBe(
       'Renamed account',
     );
   });
 
   test('DELETE /v1/accounts/:id → Deleted account', () => {
-    expect(humanizeAuditAction(`DELETE /v1/accounts/${UID}`, testUiTranslator)).toEqual({
+    expect(describeAuditAction(`DELETE /v1/accounts/${UID}`, testUiTranslator)).toMatchObject({
       title: 'Deleted account',
       kind: 'delete',
     });
   });
 
   test('POST /v1/accounts/:id/iam/policy-templates/:slug/apply → Applied template + slug detail', () => {
-    const r = humanizeAuditAction(
+    const r = describeAuditAction(
       `POST /v1/accounts/${UID}/iam/policy-templates/project-readonly-auditor/apply`,
       testUiTranslator,
     );
@@ -355,14 +354,14 @@ describe('humanizeAuditAction — HTTP routes', () => {
   });
 
   test('iam.policy_template.apply → Applied policy template', () => {
-    expect(humanizeAuditAction('iam.policy_template.apply', testUiTranslator)).toEqual({
+    expect(describeAuditAction('iam.policy_template.apply', testUiTranslator)).toMatchObject({
       title: 'Applied policy template',
       kind: 'grant',
     });
   });
 
   test('DELETE /v1/projects/:id/access/pending-invites/:inviteId → Revoked pending invitation', () => {
-    const r = humanizeAuditAction(
+    const r = describeAuditAction(
       `DELETE /v1/projects/${UID}/access/pending-invites/${UID2}`,
       testUiTranslator,
     );
@@ -372,12 +371,12 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('GET /v1/projects/:id/access/pending-invites → Listed pending invites', () => {
     expect(
-      humanizeAuditAction(`GET /v1/projects/${UID}/access/pending-invites`, testUiTranslator).title,
+      describeAuditAction(`GET /v1/projects/${UID}/access/pending-invites`, testUiTranslator).title,
     ).toBe('Listed pending project invites');
   });
 
   test('POST /v1/projects/:id/sessions → Created session', () => {
-    expect(humanizeAuditAction(`POST /v1/projects/${UID}/sessions`, testUiTranslator)).toEqual({
+    expect(describeAuditAction(`POST /v1/projects/${UID}/sessions`, testUiTranslator)).toMatchObject({
       title: 'Created session',
       kind: 'create',
     });
@@ -385,31 +384,31 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('POST /v1/projects/:id/sessions/:sid/exec → Ran session command', () => {
     expect(
-      humanizeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/exec`, testUiTranslator).title,
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/exec`, testUiTranslator).title,
     ).toBe('Ran session command');
   });
 
   test('POST /v1/projects/:id/sessions/:sid/stop → Stopped session', () => {
     expect(
-      humanizeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/stop`, testUiTranslator).title,
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/stop`, testUiTranslator).title,
     ).toBe('Stopped session');
   });
 
   test('POST /v1/projects/:id/triggers/:tid/fire → Fired trigger', () => {
     expect(
-      humanizeAuditAction(`POST /v1/projects/${UID}/triggers/${UID2}/fire`, testUiTranslator).title,
+      describeAuditAction(`POST /v1/projects/${UID}/triggers/${UID2}/fire`, testUiTranslator).title,
     ).toBe('Fired trigger');
   });
 
   test('POST /v1/projects/:id/secrets (root, no name) → Set project secret', () => {
-    expect(humanizeAuditAction(`POST /v1/projects/${UID}/secrets`, testUiTranslator)).toEqual({
+    expect(describeAuditAction(`POST /v1/projects/${UID}/secrets`, testUiTranslator)).toMatchObject({
       title: 'Set project secret',
       kind: 'update',
     });
   });
 
   test('POST /v1/accounts/:id/iam/policies → Created IAM policy', () => {
-    expect(humanizeAuditAction(`POST /v1/accounts/${UID}/iam/policies`, testUiTranslator)).toEqual({
+    expect(describeAuditAction(`POST /v1/accounts/${UID}/iam/policies`, testUiTranslator)).toMatchObject({
       title: 'Created IAM policy',
       kind: 'create',
     });
@@ -417,46 +416,46 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('DELETE /v1/accounts/:id/iam/policies/:pid → Deleted IAM policy', () => {
     expect(
-      humanizeAuditAction(`DELETE /v1/accounts/${UID}/iam/policies/${UID2}`, testUiTranslator)
+      describeAuditAction(`DELETE /v1/accounts/${UID}/iam/policies/${UID2}`, testUiTranslator)
         .title,
     ).toBe('Deleted IAM policy');
   });
 
   test('iam.policy.create → Created IAM policy (legacy code)', () => {
-    expect(humanizeAuditAction('iam.policy.create', testUiTranslator)).toEqual({
+    expect(describeAuditAction('iam.policy.create', testUiTranslator)).toMatchObject({
       title: 'Created IAM policy',
       kind: 'create',
     });
   });
 
   test('iam.policy.delete → Deleted IAM policy', () => {
-    expect(humanizeAuditAction('iam.policy.delete', testUiTranslator).title).toBe(
+    expect(describeAuditAction('iam.policy.delete', testUiTranslator).title).toBe(
       'Deleted IAM policy',
     );
   });
 });
 
-describe('humanizeAuditAction — fallbacks', () => {
+describe('describeAuditAction — fallbacks', () => {
   test('central session and agent actions use concise labels', () => {
-    expect(humanizeAuditAction('session.created', testUiTranslator)).toEqual({
+    expect(describeAuditAction('session.created', testUiTranslator)).toMatchObject({
       title: 'Recorded session creation',
       kind: 'create',
     });
-    expect(humanizeAuditAction('connector.gmail.send_email', testUiTranslator)).toEqual({
+    expect(describeAuditAction('connector.gmail.send_email', testUiTranslator)).toMatchObject({
       title: 'Ran connector call',
       detail: 'gmail.send_email',
       kind: 'update',
     });
-    expect(humanizeAuditAction('connector.approval.denied', testUiTranslator)).toEqual({
+    expect(describeAuditAction('connector.approval.denied', testUiTranslator)).toMatchObject({
       title: 'Denied connector action',
       kind: 'revoke',
     });
-    expect(humanizeAuditAction('computer.shell.exec', testUiTranslator)).toEqual({
+    expect(describeAuditAction('computer.shell.exec', testUiTranslator)).toMatchObject({
       title: 'Ran computer operation',
       detail: 'shell.exec',
       kind: 'update',
     });
-    expect(humanizeAuditAction('connector.computer.shell.exec', testUiTranslator)).toEqual({
+    expect(describeAuditAction('connector.computer.shell.exec', testUiTranslator)).toMatchObject({
       title: 'Ran computer operation',
       detail: 'shell.exec',
       kind: 'update',
@@ -464,21 +463,48 @@ describe('humanizeAuditAction — fallbacks', () => {
   });
 
   test('unknown HTTP route collapses long UUIDs to "/…"', () => {
-    const r = humanizeAuditAction(`POST /v1/widgets/${UID}/refresh`, testUiTranslator);
+    const r = describeAuditAction(`POST /v1/widgets/${UID}/refresh`, testUiTranslator);
     expect(r.title).toBe('POST /v1/widgets/…/refresh');
     expect(r.kind).toBe('create');
   });
 
   test('unknown HTTP method gets method-derived kind', () => {
-    expect(humanizeAuditAction(`DELETE /v1/foo/${UID}`, testUiTranslator).kind).toBe('delete');
-    expect(humanizeAuditAction(`PATCH /v1/foo/${UID}`, testUiTranslator).kind).toBe('update');
+    expect(describeAuditAction(`DELETE /v1/foo/${UID}`, testUiTranslator).kind).toBe('delete');
+    expect(describeAuditAction(`PATCH /v1/foo/${UID}`, testUiTranslator).kind).toBe('update');
   });
 
   test('non-HTTP, non-IAM action falls back to the raw string', () => {
-    expect(humanizeAuditAction('garbage', testUiTranslator)).toEqual({
+    expect(describeAuditAction('garbage', testUiTranslator)).toMatchObject({
       title: 'garbage',
       kind: 'other',
     });
+  });
+
+  test('an action with no family detail carries no detail key', () => {
+    // The wrapper this file used to call asserted detail-absence by exact
+    // object equality on these fifteen cases; `describeAuditAction` keeps the
+    // same contract — the detail key exists only when the catalog or route
+    // produced one — so the audit row renders no empty secondary descriptor.
+    const noDetailCases = [
+      'iam.group.create',
+      `POST /v1/projects/${UID}/group-grants`,
+      `PATCH /v1/projects/${UID}/group-grants/${UID2}`,
+      `DELETE /v1/projects/${UID}/group-grants/${UID2}`,
+      `DELETE /v1/accounts/${UID}`,
+      'iam.policy_template.apply',
+      `POST /v1/projects/${UID}/sessions`,
+      `POST /v1/projects/${UID}/secrets`,
+      `POST /v1/accounts/${UID}/iam/policies`,
+      'iam.policy.create',
+      'session.created',
+      'connector.approval.denied',
+      'garbage',
+      'secret.consumer.used',
+      'iam.assignment.expired',
+    ];
+    for (const action of noDetailCases) {
+      expect('detail' in describeAuditAction(action, testUiTranslator), action).toBe(false);
+    }
   });
 });
 
@@ -531,18 +557,18 @@ describe('describeAuditAction — catalog labels', () => {
   });
 
   test('an event label shows its title', () => {
-    expect(humanizeAuditAction('secret.consumer.used', testUiTranslator)).toEqual({
+    expect(describeAuditAction('secret.consumer.used', testUiTranslator)).toMatchObject({
       title: 'Used secret',
       kind: 'other',
     });
-    expect(humanizeAuditAction('iam.assignment.expired', testUiTranslator)).toEqual({
+    expect(describeAuditAction('iam.assignment.expired', testUiTranslator)).toMatchObject({
       title: 'Expired a role',
       kind: 'revoke',
     });
   });
 
   test('a request no endpoint matched reads as such', () => {
-    expect(humanizeAuditAction('api.route.unmatched', testUiTranslator).title).toBe(
+    expect(describeAuditAction('api.route.unmatched', testUiTranslator).title).toBe(
       'Requested unknown API route',
     );
   });

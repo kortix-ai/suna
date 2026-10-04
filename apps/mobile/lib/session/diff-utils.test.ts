@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { generateLineDiff, getDiffStats, MAX_LCS_CELLS } from './diff-utils';
+import { type DiffLine, generateLineDiff, getDiffStats, MAX_LCS_CELLS } from './diff-utils';
 
 describe('generateLineDiff', () => {
   test('small fixture — unchanged, removed, added lines', () => {
@@ -42,6 +42,27 @@ describe('generateLineDiff', () => {
     expect(addedCount).toBeGreaterThan(0);
     expect(removedCount).toBeGreaterThan(0);
   });
+});
+
+describe('literal backslash-n in source code', () => {
+  // 1 line runs the exact LCS path; 501 lines puts n·m (251 001) over
+  // MAX_LCS_CELLS (250 000), so the bounded fallback paths run too.
+  for (const lineCount of [1, 501]) {
+    test(`${lineCount} lines preserve escapes in rows and replacement counts`, () => {
+      const prefix = Array.from({ length: lineCount - 1 }, (_, i) => `line-${i}`);
+      const oldLine = String.raw`print("\n")`;
+      const newLine = String.raw`const nl = '\n\n';`;
+      const oldText = [...prefix, oldLine].join('\n');
+      const newText = [...prefix, newLine].join('\n');
+      expect(getDiffStats(oldText, newText)).toEqual({ additions: 1, deletions: 1 });
+      expect(getDiffStats(newText, oldText)).toEqual({ additions: 1, deletions: 1 });
+      expect(generateLineDiff(oldText, newText)).toEqual([
+        ...prefix.map((text): DiffLine => ({ type: 'unchanged', text })),
+        { type: 'removed', text: oldLine },
+        { type: 'added', text: newLine },
+      ]);
+    });
+  }
 });
 
 describe('getDiffStats', () => {

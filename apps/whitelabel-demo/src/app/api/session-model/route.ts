@@ -13,23 +13,11 @@
  */
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner, isValidProjectId } from '@/server/users';
+import { upstreamBase } from '@/server/upstream-path';
+import { isOwner, isValidProjectId, isValidSessionId } from '@/server/users';
 import { sessionModelPin } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function upstreamBase(): string {
-  // KORTIX_UPSTREAM first, like the proxy and every other server route. Reading
-  // only KORTIX_API_URL sent the model control to the PUBLIC api on any
-  // deployment that configures the documented variable, so every change 404'd.
-  return (
-    process.env.KORTIX_UPSTREAM ??
-    process.env.KORTIX_API_URL ??
-    'https://api.kortix.com/v1'
-  ).replace(/\/+$/, '');
-}
 
 async function scoped(req: NextRequest) {
   const apiKey = process.env.KORTIX_API_KEY;
@@ -46,7 +34,7 @@ async function scoped(req: NextRequest) {
   const sessionId = url.searchParams.get('sessionId') ?? '';
   // Validate before interpolating into an upstream path, and check ownership
   // before touching anything — both are house rules for this boundary.
-  if (!isValidProjectId(projectId) || !UUID.test(sessionId)) {
+  if (!isValidProjectId(projectId) || !isValidSessionId(sessionId)) {
     return { error: Response.json({ error: 'Invalid identifiers' }, { status: 400 }) };
   }
   if (!isOwner(session.userId, projectId)) {
