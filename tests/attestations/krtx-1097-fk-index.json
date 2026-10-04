@@ -1,0 +1,20 @@
+{
+  "source_hash": "542a095bb4f99d9dad74e136ef7d4756794342a3a99dddfc9da1e97f6387777f",
+  "diff_files": [
+    "packages/db/drizzle/meta/20261003231026_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003231036339_chat_pending_auth_messages_project_index.concurrent.ts",
+    "packages/db/scripts/chat-pending-auth-messages-fk-index.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/src/fixtures/cli.ts"
+  ],
+  "diff_hash": "e2431e7db5fcd06b2b7cd1dce70f30eab516b0054297f9e819f255baf0ca2726",
+  "head": "8a8aeb43703110b4f8af5835f0172ae721dad19f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T01:15:46.223Z"
+}
