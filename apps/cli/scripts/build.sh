@@ -2,7 +2,7 @@
 #
 # Compile the `kortix` CLI to a self-contained binary at dist/kortix — the
 # artifact the layered snapshot builder bakes into every cloud sandbox
-# (apps/api/src/snapshots/providers/daytona.ts reads
+# (apps/api/src/services/sandboxes/daytona/images.ts reads
 # KORTIX_SNAPSHOT_CLI_BIN_PATH, default apps/cli/dist/kortix). Mirrors
 # apps/kortix-sandbox-agent-server/scripts/build.sh so both runtime binaries
 # are produced the same way (CI, dev-local.sh, the snapshot test harness).

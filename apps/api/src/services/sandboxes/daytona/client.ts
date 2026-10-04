@@ -47,7 +47,7 @@ function daytonaApiBase(): string {
 }
 
 // Same class of bug as the Daytona SDK's own 24h axios default (see
-// platform/providers/daytona.ts for the full incident writeup): bare
+// services/sandboxes/daytona/runtime.ts for the full incident writeup): bare
 // `fetch()` has NO default timeout. These two calls are invoked from
 // snapshots/quota-gc.ts's reconcileSnapshotQuota(), which runs inside
 // maintenance.ts's Promise.all every cycle — an unbounded hang here wedges

@@ -114,7 +114,7 @@ mock.module('../services/sandboxes/daytona/client', () => ({
   listDaytonaSnapshots: async () => [],
 }));
 
-const { daytonaProvider } = await import('../snapshots/providers/daytona');
+const { daytonaProvider } = await import('../services/sandboxes/daytona/images');
 
 afterAll(() => {
   rmSync(fixtureRoot, { recursive: true, force: true });

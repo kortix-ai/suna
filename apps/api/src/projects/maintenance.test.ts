@@ -200,7 +200,7 @@ describe('maintenance sweeps run with bounded concurrency', () => {
 // call inside a maintenance cycle left `maintenanceRunning` stuck `true`
 // forever (its `finally` never ran), silently killing the idle-sandbox
 // reaper for hours and accumulating $39k+ in unbilled-idle compute across
-// prod. Per-call timeouts (platform/providers/daytona.ts, services/sandboxes/platinum/client.ts)
+// prod. Per-call timeouts (services/sandboxes/daytona/runtime.ts, services/sandboxes/platinum/client.ts)
 // fix the known cause; this watchdog is the independent backstop against an
 // unknown future one — a held lock past the threshold must be force-reset,
 // not trusted forever.

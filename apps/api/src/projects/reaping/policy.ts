@@ -54,7 +54,7 @@ export function isLifecycleTransitionInProgress(err: unknown): boolean {
   return (
     msg.includes('state change in progress') ||
     msg.includes('transition in progress') ||
-    // KRTX-667: Platinum's `stop()` (platform/providers/platinum.ts) ACKs the
+    // KRTX-667: Platinum's `stop()` (services/sandboxes/platinum/runtime.ts) ACKs the
     // stop and polls for the terminal state; its own `stopping` transition
     // outlasts the 10s bound (the window MIDTURN_STOP_CONFIRMATION_MS documents
     // at 60s), so a timeout while the box is still stopping is that transition,

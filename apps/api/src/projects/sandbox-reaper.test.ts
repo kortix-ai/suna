@@ -2793,7 +2793,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   // provider read of `stopped` durably parked a box that was running a turn,
   // `stopReason: provider_reconcile`, and Daytona's own autoStopInterval was 720
   // — the provider never stopped it. `stopping` and `pending_stop` both map to
-  // `stopped` (platform/providers/daytona-state.ts), so a box mid-transition, or
+  // `stopped` (services/sandboxes/daytona/state.ts), so a box mid-transition, or
   // one transient misread, settled its turns `runtime_gone` and kicked its
   // client to the wake flow. While turn authority exists the park needs TWO
   // observations, one pass apart — the wake fence, mirrored to the stop side.

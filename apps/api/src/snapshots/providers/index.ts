@@ -9,9 +9,9 @@
  * adapter by that string and delegates the actual snapshot build / state check.
  */
 
-import { daytonaProvider } from './daytona';
-import { e2bProvider } from './e2b';
-import { platinumProvider } from './platinum';
+import { daytonaProvider } from '../../services/sandboxes/daytona/images';
+import { e2bProvider } from '../../services/sandboxes/e2b/images';
+import { platinumProvider } from '../../services/sandboxes/platinum/images';
 
 interface SandboxResourceSpec {
   cpu?: number;

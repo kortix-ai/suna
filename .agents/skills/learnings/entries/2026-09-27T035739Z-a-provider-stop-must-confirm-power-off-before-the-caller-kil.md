@@ -16,10 +16,10 @@ silently on an ACK alone.
 `stop`/`pause`/`archive` method, especially one with an async provider-side
 power-off that lags its HTTP ACK.
 
-**Incident:** `PlatinumProvider.stop()` (`apps/api/src/platform/providers/platinum.ts`)
+**Incident:** `PlatinumProvider.stop()` (`apps/api/src/services/sandboxes/platinum/runtime.ts`)
 returned right after the stop-request ACK; `start()` already polled to
 confirm state for the symmetric reopen race, but `stop()` never did. 76h prod
 window: 404,982 `401 Session token is not active` rejections across 95
 projects, one VM posting for its full 12h idle timeout after its lease closed.
 
-**Enforcement:** `apps/api/src/platform/providers/platinum-stop-confirm.test.ts`.
+**Enforcement:** `apps/api/src/services/sandboxes/platinum/runtime-stop-confirm.test.ts`.

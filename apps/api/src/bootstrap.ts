@@ -2,7 +2,7 @@ import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { captureException, flushSentry } from './lib/sentry';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
-import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from './platform/services/pi-worker-pool';
+import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from './services/sandboxes/daytona/pi-worker-pool';
 import { stopModelPricing } from './llm-gateway/models/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';

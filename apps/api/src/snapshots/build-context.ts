@@ -9,7 +9,7 @@
  * is byte-identical across providers and keeps the artifact paths in one place.
  *
  * Extracted verbatim from the Daytona adapter (no behaviour change); see
- * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
+ * services/sandboxes/daytona/images.ts (Daytona) + services/sandboxes/platinum/images.ts.
  */
 
 import { createHash } from 'node:crypto';

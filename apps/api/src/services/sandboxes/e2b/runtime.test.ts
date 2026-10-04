@@ -1,0 +1,1000 @@
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+mock.module('../../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
+
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'e2b';
+process.env.E2B_API_KEY = 'e2b_test_key';
+process.env.E2B_TEMPLATE = 'kortix-test';
+process.env.KORTIX_URL = 'https://api.example.com';
+process.env.INTERNAL_KORTIX_ENV = 'dev';
+process.env.DATABASE_URL ??= 'postgres://x';
+// The persisted runtime environment is sealed with a key derived from this, so
+// the cases below cover the real envelope rather than a bypass.
+process.env.API_KEY_SECRET ??= 'e2b-test-runtime-env-secret';
+process.env.SUPABASE_URL = 'http://supabase.test';
+process.env.FRONTEND_URL = 'https://app.example.com';
+
+type FakeSandbox = ReturnType<typeof fakeSandbox>;
+
+let createdTemplate: string | undefined;
+let createdOpts: Record<string, unknown> | undefined;
+let connected: Array<{ sandboxId: string; opts: Record<string, unknown> }> = [];
+let timeoutRenewals: Array<{
+  sandboxId: string;
+  timeoutMs: number;
+  opts: Record<string, unknown>;
+}> = [];
+let staticPauses: Array<{ sandboxId: string; opts: Record<string, unknown> }> = [];
+let killed: string[] = [];
+let infoState: 'running' | 'paused' | 'missing' = 'running';
+let infoEndAt: Date | null = null;
+let infoReads = 0;
+let infoFactory: () => void | Promise<void> = () => {};
+let listed: Array<{ sandboxId: string; startedAt: Date | null }> = [];
+let listOpts: Record<string, unknown> | undefined;
+let connectFactory: (sandboxId: string) => FakeSandbox | Promise<FakeSandbox> = (sandboxId) =>
+  fakeSandbox(sandboxId);
+let createFactory: () => FakeSandbox = () => fakeSandbox('sb-created');
+let killFactory: (sandboxId: string) => boolean | Promise<boolean> = (sandboxId) => {
+  killed.push(sandboxId);
+  return true;
+};
+let timeoutRenewalFactory: () => void | Promise<void> = () => {};
+let staticPauseFactory: () => boolean | Promise<boolean> = () => true;
+
+class FakeSandboxNotFoundError extends Error {
+  override name = 'SandboxNotFoundError';
+}
+
+function fakeSandbox(sandboxId: string, trafficAccessToken = `traffic-${sandboxId}`) {
+  const pauses: Array<Record<string, unknown>> = [];
+  const runs: Array<{ command: string; opts: Record<string, unknown> }> = [];
+  const fileWrites: Array<{ path: string; data: string; opts: Record<string, unknown> }> = [];
+  // The pre-envelope plain JSON map. Boxes paused before the runtime env was
+  // sealed still hold this shape, and a resume is the one moment they have no
+  // other copy of their own environment — so it stays the default fixture and
+  // every resume case below doubles as the back-compat case.
+  const files = new Map<string, string>([
+    ['/etc/kortix/runtime-env.json', JSON.stringify({ KORTIX_TOKEN: 'persisted-token' })],
+  ]);
+  const sandbox = {
+    sandboxId,
+    trafficAccessToken,
+    pauses,
+    runs,
+    fileWrites,
+    persistedFiles: files,
+    files: {
+      write: async (path: string, data: string, opts: Record<string, unknown>) => {
+        fileWrites.push({ path, data, opts });
+        files.set(path, data);
+        return { path };
+      },
+      read: async (path: string) => {
+        const value = files.get(path);
+        if (value === undefined) throw new Error(`missing file: ${path}`);
+        return value;
+      },
+    },
+    commands: {
+      list: async () => [],
+      run: async (command: string, opts: Record<string, unknown>) => {
+        runs.push({ command, opts });
+        return { exitCode: 0 };
+      },
+    },
+    pause: async (opts: Record<string, unknown>) => {
+      pauses.push(opts);
+      return true;
+    },
+    kill: async () => {
+      killed.push(sandboxId);
+      return true;
+    },
+    getHost: (port: number) => `${port}-${sandboxId}.e2b.test`,
+  };
+  return sandbox;
+}
+
+class FakeSandboxApi {
+  static async create(template: string, opts: Record<string, unknown>) {
+    createdTemplate = template;
+    createdOpts = opts;
+    return createFactory();
+  }
+
+  static async connect(sandboxId: string, opts: Record<string, unknown>) {
+    connected.push({ sandboxId, opts });
+    return connectFactory(sandboxId);
+  }
+
+  static async setTimeout(sandboxId: string, timeoutMs: number, opts: Record<string, unknown>) {
+    timeoutRenewals.push({ sandboxId, timeoutMs, opts });
+    await timeoutRenewalFactory();
+  }
+
+  static async pause(sandboxId: string, opts: Record<string, unknown>) {
+    staticPauses.push({ sandboxId, opts });
+    return staticPauseFactory();
+  }
+
+  static async kill(sandboxId: string) {
+    return killFactory(sandboxId);
+  }
+
+  static async getInfo() {
+    infoReads += 1;
+    await infoFactory();
+    if (infoState === 'missing') throw new FakeSandboxNotFoundError('sandbox not found');
+    return { state: infoState, ...(infoEndAt ? { endAt: infoEndAt } : {}) };
+  }
+
+  static list(opts: Record<string, unknown>) {
+    listOpts = opts;
+    let hasNext = true;
+    return {
+      get hasNext() {
+        return hasNext;
+      },
+      nextItems: async () => {
+        hasNext = false;
+        return listed;
+      },
+    };
+  }
+}
+
+mock.module('e2b', () => ({
+  Sandbox: FakeSandboxApi,
+  SandboxNotFoundError: FakeSandboxNotFoundError,
+}));
+
+mock.module('../../../platform/service-key', () => ({
+  serviceKeyForExternalId: async () => 'service-key-test',
+}));
+
+const { config } = await import('../../../lib/config');
+const { E2BProvider, E2B_INGRESS_HANDLE_TTL_MS, E2B_RUNNING_STATUS_CACHE_TTL_MS } =
+  await import('./runtime');
+const { getProvider } = await import('../../../platform/providers/index');
+
+beforeEach(() => {
+  createdTemplate = undefined;
+  createdOpts = undefined;
+  connected = [];
+  timeoutRenewals = [];
+  staticPauses = [];
+  killed = [];
+  infoState = 'running';
+  infoEndAt = null;
+  infoReads = 0;
+  infoFactory = () => {};
+  listed = [];
+  listOpts = undefined;
+  connectFactory = (sandboxId) => fakeSandbox(sandboxId);
+  createFactory = () => fakeSandbox('sb-created');
+  killFactory = (sandboxId) => {
+    killed.push(sandboxId);
+    return true;
+  };
+  timeoutRenewalFactory = () => {};
+  staticPauseFactory = () => true;
+});
+
+describe('E2B provider admission and registry', () => {
+  test('ALLOWED_SANDBOX_PROVIDERS=e2b admits E2B as a configured provider', () => {
+    expect(config.ALLOWED_SANDBOX_PROVIDERS).toEqual(['e2b']);
+    expect(config.isProviderEnabled('e2b')).toBe(true);
+    expect(config.getDefaultProvider()).toBe('e2b');
+  });
+
+  test('the runtime registry resolves E2B through the shared interface', () => {
+    expect(getProvider('e2b').name).toBe('e2b');
+  });
+});
+
+describe('E2B provider lifecycle', () => {
+  test('renews the provider deadline without reconnecting or waking the sandbox', async () => {
+    const provider = new E2BProvider();
+
+    await provider.renewLifecycle('sb-active-turn');
+
+    expect(timeoutRenewals).toEqual([
+      {
+        sandboxId: 'sb-active-turn',
+        timeoutMs: 3_600_000,
+        opts: expect.objectContaining({
+          apiKey: 'e2b_test_key',
+          domain: 'e2b.dev',
+          requestTimeoutMs: 20_000,
+        }),
+      },
+    ]);
+    expect(connected).toEqual([]);
+  });
+
+  test('accepts a renewal the provider actually applied (endAt moved to now + backstop)', async () => {
+    infoEndAt = new Date(Date.now() + 3_600_000 - 5_000);
+    const provider = new E2BProvider();
+
+    await provider.renewLifecycle('sb-honored');
+
+    expect(timeoutRenewals.map((r) => r.sandboxId)).toEqual(['sb-honored']);
+    expect(infoReads).toBe(1);
+    expect(connected).toEqual([]);
+  });
+
+  test('refuses to report a renewal the provider clamped (endAt pinned by max_length_hours)', async () => {
+    // SampleCo 2026-08-25: tier base_v1 max_length_hours=1 → every 204 left
+    // endAt at startedAt+1h; here the sandbox has 20 minutes left.
+    infoEndAt = new Date(Date.now() + 20 * 60_000);
+    const provider = new E2BProvider();
+
+    await expect(provider.renewLifecycle('sb-capped')).rejects.toMatchObject({
+      name: 'E2BLifecycleRenewalIgnoredError',
+      code: 'e2b_lifecycle_renewal_ignored',
+      message: expect.stringContaining('max_length_hours'),
+    });
+    expect(timeoutRenewals.map((r) => r.sandboxId)).toEqual(['sb-capped']);
+    expect(connected).toEqual([]);
+  });
+
+  test('bounds a hung provider deadline renewal', async () => {
+    timeoutRenewalFactory = () => new Promise<void>(() => {});
+    const provider = new E2BProvider(25_000, 10);
+
+    await expect(provider.renewLifecycle('sb-hung-renewal')).rejects.toThrow(
+      'E2B lifecycle renewal(sb-hung-renewal) timed out after 10ms',
+    );
+    expect(connected).toEqual([]);
+  });
+
+  test('propagates a stopped-sandbox renewal refusal without waking it', async () => {
+    timeoutRenewalFactory = async () => {
+      throw new Error('sandbox is paused');
+    };
+    const provider = new E2BProvider();
+
+    await expect(provider.renewLifecycle('sb-stopped')).rejects.toThrow('sandbox is paused');
+    expect(connected).toEqual([]);
+  });
+
+  test('bounds a hung static pause used by the idle reaper', async () => {
+    staticPauseFactory = () => new Promise<boolean>(() => {});
+    const provider = new E2BProvider(25_000, 25_000, 10);
+
+    await expect(provider.stop('sb-hung-stop')).rejects.toThrow(
+      'E2B stop(sb-hung-stop) timed out after 10ms',
+    );
+  });
+
+  test('create is private, filesystem-persistent, explicit-resume-only, and launches Kortix', async () => {
+    const sandbox = fakeSandbox('sb-secure', 'traffic-secret');
+    createFactory = () => sandbox;
+    const provider = new E2BProvider();
+
+    const result = await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'session-1',
+      snapshot: 'kortix-template-1',
+      envVars: { KORTIX_TOKEN: 'sandbox-token' },
+    });
+
+    expect(createdTemplate).toBe('kortix-template-1');
+    expect(createdOpts).toMatchObject({
+      timeoutMs: 3_600_000,
+      secure: true,
+      allowInternetAccess: true,
+      network: { allowPublicTraffic: false },
+      lifecycle: {
+        onTimeout: { action: 'pause', keepMemory: false },
+        autoResume: false,
+      },
+      metadata: {
+        kortix_managed: 'v2-owner-a',
+        kortix_env: 'dev',
+        kortix_account_id: 'acc-1',
+        kortix_created_by: 'usr-1',
+      },
+    });
+    expect(sandbox.fileWrites).toHaveLength(1);
+    expect(sandbox.fileWrites[0]).toMatchObject({
+      path: '/etc/kortix/runtime-env.json',
+      opts: { user: 'root' },
+    });
+    expect(sandbox.fileWrites[0].data).not.toContain('sandbox-token');
+    expect(sandbox.fileWrites[0].data).not.toContain('KORTIX_API_URL');
+    expect(sandbox.runs).toHaveLength(3);
+    expect(sandbox.runs[0].command).toBe('chmod 600 /etc/kortix/runtime-env.json');
+    expect(sandbox.runs[1]).toMatchObject({
+      command: expect.stringContaining(
+        'flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint',
+      ),
+      opts: {
+        background: true,
+        timeoutMs: 0,
+        envs: expect.objectContaining({ KORTIX_TOKEN: 'sandbox-token' }),
+      },
+    });
+    expect(sandbox.runs[2].command).toContain('http://127.0.0.1:8000/kortix/health');
+    expect(result).toMatchObject({
+      externalId: 'sb-secure',
+      metadata: { lifecycle: 'pause-filesystem-explicit-resume' },
+    });
+  });
+
+  test('the session credential never lands readable on the guest disk yet survives a resume', async () => {
+    const sandbox = fakeSandbox('sb-sealed');
+    createFactory = () => sandbox;
+    const provider = new E2BProvider();
+
+    await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'session-1',
+      snapshot: 'tpl',
+      envVars: {
+        KORTIX_TOKEN: 'kortix_pat_session',
+        STRIPE_API_KEY: 'sk_live_project_secret',
+      },
+    });
+
+    const persisted = sandbox.persistedFiles.get('/etc/kortix/runtime-env.json')!;
+    expect(persisted).not.toContain('kortix_pat_session');
+    expect(persisted).not.toContain('sk_live_project_secret');
+
+    // A fresh handle on the same identity is what a cold resume after an API
+    // restart actually has: the paused box's file and nothing else.
+    const resumed = fakeSandbox('sb-sealed');
+    resumed.persistedFiles.set('/etc/kortix/runtime-env.json', persisted);
+    connectFactory = () => resumed;
+
+    await provider.start('sb-sealed');
+
+    expect(resumed.runs[0]).toMatchObject({
+      command: expect.stringContaining('/usr/local/bin/kortix-entrypoint'),
+      opts: {
+        envs: expect.objectContaining({
+          KORTIX_TOKEN: 'kortix_pat_session',
+          STRIPE_API_KEY: 'sk_live_project_secret',
+        }),
+      },
+    });
+  });
+
+  test('a runtime environment sealed for one sandbox does not open on another', async () => {
+    const original = fakeSandbox('sb-seal-origin');
+    createFactory = () => original;
+    const provider = new E2BProvider();
+    await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'session-1',
+      snapshot: 'tpl',
+      envVars: { KORTIX_TOKEN: 'kortix_pat_session' },
+    });
+
+    const stolen = fakeSandbox('sb-seal-thief');
+    stolen.persistedFiles.set(
+      '/etc/kortix/runtime-env.json',
+      original.persistedFiles.get('/etc/kortix/runtime-env.json')!,
+    );
+    connectFactory = () => stolen;
+
+    await expect(provider.start('sb-seal-thief')).rejects.toThrow(
+      'cannot restore runtime environment',
+    );
+    expect(stolen.runs).toHaveLength(0);
+  });
+
+  test('private sandbox creation fails closed when E2B omits the traffic token', async () => {
+    createFactory = () => fakeSandbox('sb-tokenless', '');
+    const provider = new E2BProvider();
+
+    await expect(
+      provider.create({
+        accountId: 'acc-1',
+        userId: 'usr-1',
+        name: 'session-1',
+        snapshot: 'tpl',
+        envVars: { KORTIX_TOKEN: 'sandbox-token' },
+      }),
+    ).rejects.toThrow('private traffic access token');
+
+    expect(killed).toEqual(['sb-tokenless']);
+  });
+
+  test('App creation persists appd auth and launches only the App entrypoint', async () => {
+    const sandbox = fakeSandbox('app-secure');
+    createFactory = () => sandbox;
+    const provider = new E2BProvider();
+
+    const result = await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'app-1',
+      snapshot: 'app-template-1',
+      workloadType: 'app',
+      envVars: { KORTIX_APPD_TOKEN: 'appd-token' },
+      publishedPorts: [7331, 8080],
+    });
+
+    expect(result.baseUrl).toBe('https://api.example.com/v1/p/app-secure/8080');
+    expect(createdOpts).toMatchObject({
+      metadata: { kortix_workload: 'app' },
+      envs: { KORTIX_WORKLOAD_TYPE: 'app', KORTIX_APPD_TOKEN: 'appd-token' },
+    });
+    expect(sandbox.runs.map((run) => run.command)).toEqual([
+      'chmod 600 /etc/kortix/runtime-env.json',
+      expect.stringContaining('/kortix/bin/kortix-appd'),
+      expect.stringContaining('http://127.0.0.1:7331/v1/health'),
+    ]);
+    expect(sandbox.runs.map((run) => run.command).join('\n')).not.toContain(
+      '/usr/local/bin/kortix-entrypoint',
+    );
+    expect(sandbox.fileWrites[0]!.data).not.toContain('appd-token');
+  });
+
+  test('App cold resume relaunches appd and skips the session entrypoint', async () => {
+    const resumed = fakeSandbox('app-resume');
+    resumed.persistedFiles.set(
+      '/etc/kortix/runtime-env.json',
+      JSON.stringify({
+        KORTIX_WORKLOAD_TYPE: 'app',
+        KORTIX_APPD_TOKEN: 'persisted-appd-token',
+      }),
+    );
+    connectFactory = () => resumed;
+
+    await new E2BProvider().start('app-resume');
+
+    expect(resumed.runs.map((run) => run.command)).toEqual([
+      expect.stringContaining('/kortix/bin/kortix-appd'),
+      expect.stringContaining('http://127.0.0.1:7331/v1/health'),
+    ]);
+    expect(resumed.runs.map((run) => run.command).join('\n')).not.toContain(
+      '/usr/local/bin/kortix-entrypoint',
+    );
+  });
+
+  test('ensureAppRuntimeStarted relaunches a dead appd instead of doing nothing', async () => {
+    // This used to be a no-op, on the reasoning that E2B honors the image
+    // ENTRYPOINT. The App template start command is overridden with
+    // `sleep infinity`, so nothing restarted appd — and this is exactly the
+    // call AppHostingProvider.waitUntilReady makes to recover a stalled App.
+    const sandbox = fakeSandbox('app-recover');
+    sandbox.persistedFiles.set(
+      '/etc/kortix/runtime-env.json',
+      JSON.stringify({
+        KORTIX_WORKLOAD_TYPE: 'app',
+        KORTIX_APPD_TOKEN: 'persisted-appd-token',
+      }),
+    );
+    connectFactory = () => sandbox;
+
+    await new E2BProvider().ensureAppRuntimeStarted('app-recover');
+
+    expect(sandbox.runs.map((run) => run.command)).toEqual([
+      expect.stringContaining('/kortix/bin/kortix-appd'),
+      expect.stringContaining('http://127.0.0.1:7331/v1/health'),
+    ]);
+    // The relaunch carries the persisted appd credential, so the recovered
+    // daemon answers the control port instead of 401ing the readiness poll.
+    expect(sandbox.runs[0]!.opts).toMatchObject({
+      envs: { KORTIX_APPD_TOKEN: 'persisted-appd-token' },
+      user: 'root',
+    });
+  });
+
+  test('ensureAppRuntimeStarted leaves a session sandbox alone', async () => {
+    // The persisted default fixture is a SESSION runtime. Launching appd into
+    // one would put a second supervisor in a box that never wanted it.
+    const sandbox = fakeSandbox('session-box');
+    connectFactory = () => sandbox;
+
+    await new E2BProvider().ensureAppRuntimeStarted('session-box');
+
+    expect(sandbox.runs).toEqual([]);
+  });
+
+  test('rejects an App workload without KORTIX_APPD_TOKEN', async () => {
+    await expect(
+      new E2BProvider().create({
+        accountId: 'acc-1',
+        userId: 'usr-1',
+        name: 'app-1',
+        snapshot: 'app-template-1',
+        workloadType: 'app',
+        envVars: { KORTIX_TOKEN: 'session-token-is-not-valid-for-apps' },
+      }),
+    ).rejects.toThrow(/KORTIX_APPD_TOKEN/);
+  });
+
+  test('stop drops RAM but preserves disk, and start explicitly reconnects the same identity', async () => {
+    const sandbox = fakeSandbox('sb-lifecycle');
+    createFactory = () => sandbox;
+    const provider = new E2BProvider();
+    await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'session-1',
+      snapshot: 'tpl',
+      envVars: { KORTIX_TOKEN: 'sandbox-token' },
+    });
+
+    await provider.stop('sb-lifecycle');
+    expect(sandbox.pauses).toEqual([
+      expect.objectContaining({ apiKey: 'e2b_test_key', keepMemory: false }),
+    ]);
+
+    await provider.start('sb-lifecycle');
+    expect(connected).toHaveLength(1);
+    expect(connected[0]).toMatchObject({ sandboxId: 'sb-lifecycle' });
+  });
+
+  test('cold resume verifies the Kortix entrypoint on the same sandbox identity', async () => {
+    const resumed = fakeSandbox('sb-cold-resume');
+    connectFactory = () => resumed;
+    const provider = new E2BProvider();
+
+    await provider.start('sb-cold-resume');
+
+    expect(connected.map((call) => call.sandboxId)).toEqual(['sb-cold-resume']);
+    expect(resumed.runs).toEqual([
+      expect.objectContaining({
+        command: expect.stringContaining(
+          'flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint',
+        ),
+        opts: expect.objectContaining({
+          background: true,
+          timeoutMs: 0,
+          envs: expect.objectContaining({ KORTIX_TOKEN: 'persisted-token' }),
+        }),
+      }),
+      expect.objectContaining({
+        command: expect.stringContaining('http://127.0.0.1:8000/kortix/health'),
+      }),
+    ]);
+  });
+
+  // E2B's filesystem-only pause has no autostart contract: `lifecycle.autoResume`
+  // needs a MEMORY snapshot, and Kortix sets no template `startCmd`. So apps/api
+  // is the ONLY thing that starts the runtime after a resume — and a resume that
+  // brings the VM back with a DEAD process tree (SampleCo box
+  // igu3qpz1ctv0pg2agda1x: no new boot lines in /opt/kortix/logs/daemon.log after
+  // the pause) used to burn the caller's whole wake budget on the 190 s health
+  // wait and hand back an unreachable box. Only a human restart healed it.
+  function reviveBox(id: string, opts: { healthy: boolean; entrypointAlive?: boolean }) {
+    const box = fakeSandbox(id);
+    const baseRun = box.commands.run;
+    box.commands.list = (async () =>
+      opts.entrypointAlive ? aliveEntrypointProcess() : []) as typeof box.commands.list;
+    box.commands.run = async (command: string, runOpts: Record<string, unknown>) => {
+      await baseRun(command, runOpts);
+      // The SHORT resume probe only. The 180-attempt wait is the re-verify.
+      if (command.includes('seq 1 15') && !opts.healthy) throw new Error('exit code 1');
+      return { exitCode: 0 };
+    };
+    return box;
+  }
+  const aliveEntrypointProcess = () => [
+    { cmd: '/usr/local/bin/kortix-entrypoint', args: [] as string[] },
+  ];
+
+  test('a resume that left the process tree DEAD is revived, then re-verified', async () => {
+    const box = reviveBox('sb-dead-resume', { healthy: false });
+    connectFactory = () => box;
+
+    await new E2BProvider().start('sb-dead-resume');
+
+    const commands = box.runs.map((run) => run.command);
+    expect(commands).toEqual([
+      expect.stringContaining('flock -n /run/kortix-entrypoint.lock'),
+      expect.stringContaining('seq 1 15'),
+      // The stale lock is what stops `flock -n` from ever taking the daemon back.
+      'rm -f /run/kortix-entrypoint.lock',
+      expect.stringContaining('flock -n /run/kortix-entrypoint.lock'),
+      // Re-verified: the revive is not trusted, it is proven.
+      expect.stringContaining('seq 1 180'),
+    ]);
+  });
+
+  test('a healthy resume touches nothing and skips the long wait', async () => {
+    const box = reviveBox('sb-live-resume', { healthy: true });
+    connectFactory = () => box;
+
+    await new E2BProvider().start('sb-live-resume');
+
+    const commands = box.runs.map((run) => run.command);
+    expect(commands.some((command) => command.startsWith('rm -f'))).toBe(false);
+    expect(commands.filter((c) => c.includes('kortix-entrypoint') && c.includes('flock'))).toHaveLength(1);
+    expect(commands).toEqual([
+      expect.stringContaining('flock -n /run/kortix-entrypoint.lock'),
+      expect.stringContaining('seq 1 15'),
+    ]);
+  });
+
+  test('a resume that is merely SLOW is never double-started', async () => {
+    // The entrypoint is alive, it just has not bound port 8000 yet. Removing the
+    // lock here would not release the live holder's flock — it would let a second
+    // daemon win a different inode.
+    const box = reviveBox('sb-slow-resume', { healthy: false, entrypointAlive: true });
+    connectFactory = () => box;
+
+    await new E2BProvider().start('sb-slow-resume');
+
+    const commands = box.runs.map((run) => run.command);
+    expect(commands.some((command) => command.startsWith('rm -f'))).toBe(false);
+    expect(commands.filter((command) => command.includes('flock -n'))).toHaveLength(0);
+    expect(commands).toEqual([
+      expect.stringContaining('seq 1 15'),
+      expect.stringContaining('seq 1 180'),
+    ]);
+  });
+
+  test('a resume never consults a template or an image build', async () => {
+    connectFactory = () => fakeSandbox('sb-no-image');
+
+    await new E2BProvider().start('sb-no-image');
+
+    // A RESUME wakes a powered-down VM whose disk already holds the image. It
+    // must never touch the snapshot builder: `self-host update` rebuilds took
+    // 14m11s on SampleCo and a resume that waited on one was the 10-34 minute
+    // `open-session:starting` stall.
+    expect(createdTemplate).toBeUndefined();
+    expect(createdOpts).toBeUndefined();
+  });
+
+  test('overlapping cold-resume calls share one provider start operation', async () => {
+    const resumed = fakeSandbox('sb-concurrent-resume');
+    let releaseConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      releaseConnect = resolve;
+    });
+    connectFactory = async () => {
+      await connectGate;
+      return resumed;
+    };
+    const provider = new E2BProvider();
+
+    const first = provider.start('sb-concurrent-resume');
+    const second = provider.start('sb-concurrent-resume');
+    await Promise.resolve();
+
+    expect(connected.map((call) => call.sandboxId)).toEqual(['sb-concurrent-resume']);
+    releaseConnect();
+    await Promise.all([first, second]);
+    expect(
+      resumed.runs.filter((run) => run.command.includes('/usr/local/bin/kortix-entrypoint')),
+    ).toHaveLength(1);
+  });
+
+  test.each([
+    ['missing', undefined, 'missing file'],
+    ['malformed', '{not-json', 'JSON'],
+    ['non-string', JSON.stringify({ KORTIX_TOKEN: 42 }), 'non-string'],
+    [
+      'tokenless',
+      JSON.stringify({ KORTIX_API_URL: 'https://api.example.com/v1' }),
+      'no KORTIX_TOKEN',
+    ],
+  ] as const)(
+    'cold resume fails closed for a %s persisted runtime environment',
+    async (_case, persisted, expectedMessage) => {
+      const resumed = fakeSandbox(`sb-cold-${_case}`);
+      if (persisted === undefined) resumed.persistedFiles.delete('/etc/kortix/runtime-env.json');
+      else resumed.persistedFiles.set('/etc/kortix/runtime-env.json', persisted);
+      connectFactory = () => resumed;
+      const provider = new E2BProvider();
+
+      await expect(provider.start(resumed.sandboxId)).rejects.toThrow(expectedMessage);
+      expect(resumed.runs).toHaveLength(0);
+    },
+  );
+
+  test('a process restart can pause by ID without first resuming the sandbox', async () => {
+    const provider = new E2BProvider();
+    await provider.stop('sb-uncached');
+    expect(staticPauses).toEqual([
+      { sandboxId: 'sb-uncached', opts: expect.objectContaining({ keepMemory: false }) },
+    ]);
+    expect(connected).toHaveLength(0);
+  });
+
+  test('ingress reconnects explicitly and forwards the private traffic token', async () => {
+    connectFactory = (sandboxId) => fakeSandbox(sandboxId, 'traffic-private');
+    const provider = new E2BProvider();
+
+    const ingress = await provider.resolveIngress('sb-ingress', {
+      port: 3000,
+      transport: 'websocket',
+    });
+
+    expect(connected.map((call) => call.sandboxId)).toEqual(['sb-ingress']);
+    expect(ingress).toEqual({
+      url: 'https://3000-sb-ingress.e2b.test',
+      headers: { 'e2b-traffic-access-token': 'traffic-private' },
+      effectivePort: 3000,
+    });
+  });
+
+  test('ingress refreshes the private traffic token after the bounded cache window', async () => {
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => now;
+    let connects = 0;
+    connectFactory = (sandboxId) => {
+      connects += 1;
+      return fakeSandbox(sandboxId, `traffic-${connects}`);
+    };
+    try {
+      const provider = new E2BProvider();
+      const first = await provider.resolveIngress('sb-ingress-rotation', {
+        port: 8000,
+        transport: 'http',
+      });
+      now += 1_000;
+      const cached = await provider.resolveIngress('sb-ingress-rotation', {
+        port: 8000,
+        transport: 'http',
+      });
+      now += 5_000;
+      const refreshed = await provider.resolveIngress('sb-ingress-rotation', {
+        port: 8000,
+        transport: 'http',
+      });
+
+      expect(E2B_INGRESS_HANDLE_TTL_MS).toBe(5_000);
+      expect(first.headers).toEqual({ 'e2b-traffic-access-token': 'traffic-1' });
+      expect(cached.headers).toEqual({ 'e2b-traffic-access-token': 'traffic-1' });
+      expect(refreshed.headers).toEqual({ 'e2b-traffic-access-token': 'traffic-2' });
+      expect(connects).toBe(2);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  test('concurrent ingress refreshes share one E2B connect', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    let connects = 0;
+    connectFactory = async (sandboxId) => {
+      connects += 1;
+      await connectGate;
+      return fakeSandbox(sandboxId, 'traffic-single-flight');
+    };
+    const provider = new E2BProvider();
+
+    const first = provider.resolveIngress('sb-ingress-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    const second = provider.resolveIngress('sb-ingress-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    for (let attempt = 0; attempt < 10 && connects === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+
+    expect(connects).toBe(1);
+    finishConnect();
+    expect(await Promise.all([first, second])).toEqual([
+      expect.objectContaining({
+        headers: { 'e2b-traffic-access-token': 'traffic-single-flight' },
+      }),
+      expect.objectContaining({
+        headers: { 'e2b-traffic-access-token': 'traffic-single-flight' },
+      }),
+    ]);
+  });
+
+  test('a start and concurrent ingress refresh share one E2B connect', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    let connects = 0;
+    connectFactory = async (sandboxId) => {
+      connects += 1;
+      await connectGate;
+      return fakeSandbox(sandboxId, 'traffic-start-single-flight');
+    };
+    const provider = new E2BProvider();
+
+    const starting = provider.start('sb-start-ingress-single-flight');
+    const ingress = provider.resolveIngress('sb-start-ingress-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    await Promise.resolve();
+
+    expect(connects).toBe(1);
+    finishConnect();
+    await starting;
+    expect(await ingress).toMatchObject({
+      headers: { 'e2b-traffic-access-token': 'traffic-start-single-flight' },
+    });
+  });
+
+  test('an ingress refresh and later start share one E2B connect', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    let connects = 0;
+    connectFactory = async (sandboxId) => {
+      connects += 1;
+      await connectGate;
+      return fakeSandbox(sandboxId, 'traffic-ingress-first-single-flight');
+    };
+    const provider = new E2BProvider();
+
+    const ingress = provider.resolveIngress('sb-ingress-start-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    for (let attempt = 0; attempt < 10 && connects === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+    const starting = provider.start('sb-ingress-start-single-flight');
+
+    expect(connects).toBe(1);
+    finishConnect();
+    await starting;
+    expect(await ingress).toMatchObject({
+      headers: { 'e2b-traffic-access-token': 'traffic-ingress-first-single-flight' },
+    });
+  });
+
+  test('a cold start begins the ingress TTL after runtime readiness', async () => {
+    let now = 1_000;
+    let connects = 0;
+    connectFactory = (sandboxId) => {
+      connects += 1;
+      const sandbox = fakeSandbox(sandboxId, 'traffic-ready-ttl');
+      const run = sandbox.commands.run;
+      sandbox.commands.run = async (command, opts) => {
+        const result = await run(command, opts);
+        if (command.includes('/kortix/health')) now += E2B_INGRESS_HANDLE_TTL_MS + 1;
+        return result;
+      };
+      return sandbox;
+    };
+    const provider = new E2BProvider(25_000, 25_000, 25_000, () => now);
+
+    await provider.start('sb-ready-ttl');
+    await provider.resolveIngress('sb-ready-ttl', { port: 8000, transport: 'http' });
+
+    expect(connects).toBe(1);
+  });
+
+  test('ingress refresh never resumes a provider-paused sandbox', async () => {
+    infoState = 'paused';
+    const provider = new E2BProvider();
+
+    await expect(
+      provider.resolveIngress('sb-paused-ingress', { port: 8000, transport: 'http' }),
+    ).rejects.toThrow('is not running');
+    expect(connected).toHaveLength(0);
+  });
+
+  test('ingress fails closed rather than exposing a tokenless private URL', async () => {
+    connectFactory = (sandboxId) => fakeSandbox(sandboxId, '');
+    const provider = new E2BProvider();
+
+    await expect(
+      provider.resolveIngress('sb-tokenless-ingress', { port: 3000, transport: 'http' }),
+    ).rejects.toThrow('private traffic access token');
+  });
+
+  test('missing provider identity is terminal and permanent removal is idempotent', async () => {
+    const provider = new E2BProvider();
+    infoState = 'missing';
+    expect(await provider.getStatus('sb-missing')).toBe('removed');
+
+    await provider.remove('sb-remove');
+    expect(killed).toEqual(['sb-remove']);
+
+    killFactory = () => {
+      throw new FakeSandboxNotFoundError('sandbox not found');
+    };
+    await expect(provider.remove('sb-remove')).resolves.toBeUndefined();
+  });
+
+  test('a confirmed running status is cached across the session-start polling interval', async () => {
+    const provider = new E2BProvider();
+
+    expect(await provider.getStatus('sb-running-cache')).toBe('running');
+    expect(await provider.getStatus('sb-running-cache')).toBe('running');
+
+    expect(infoReads).toBe(1);
+    expect(E2B_RUNNING_STATUS_CACHE_TTL_MS).toBeGreaterThan(1_500);
+  });
+
+  test('an explicit stop invalidates the confirmed-running status cache', async () => {
+    const provider = new E2BProvider();
+    expect(await provider.getStatus('sb-running-then-stopped')).toBe('running');
+
+    await provider.stop('sb-running-then-stopped');
+    infoState = 'paused';
+
+    expect(await provider.getStatus('sb-running-then-stopped')).toBe('stopped');
+    expect(infoReads).toBe(2);
+  });
+
+  test('a status read started before stop cannot repopulate the running cache after stop', async () => {
+    let finishInfo!: () => void;
+    const infoGate = new Promise<void>((resolve) => {
+      finishInfo = resolve;
+    });
+    infoFactory = () => infoGate;
+    const provider = new E2BProvider();
+
+    const staleRead = provider.getStatus('sb-stop-race');
+    await Promise.resolve();
+    await provider.stop('sb-stop-race');
+    finishInfo();
+    expect(await staleRead).toBe('running');
+
+    infoFactory = () => {};
+    infoState = 'paused';
+
+    expect(await provider.getStatus('sb-stop-race')).toBe('stopped');
+    expect(infoReads).toBe(2);
+  });
+
+  test('a start that finishes after stop cannot repopulate the running cache', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    connectFactory = async (sandboxId) => {
+      await connectGate;
+      return fakeSandbox(sandboxId);
+    };
+    const provider = new E2BProvider();
+
+    const starting = provider.start('sb-start-stop-race');
+    await Promise.resolve();
+    await provider.stop('sb-start-stop-race');
+    finishConnect();
+    await starting;
+    infoState = 'paused';
+
+    expect(await provider.getStatus('sb-start-stop-race')).toBe('stopped');
+    expect(infoReads).toBe(1);
+  });
+
+  test('permanent removal rejects within its outer timeout when the E2B SDK never settles', async () => {
+    killFactory = () => new Promise<boolean>(() => {});
+    const provider = new E2BProvider(25);
+
+    const startedAt = performance.now();
+    await expect(provider.remove('sb-hung')).rejects.toThrow(
+      'E2B kill(sb-hung) timed out after 25ms',
+    );
+    expect(performance.now() - startedAt).toBeLessThan(500);
+  });
+
+  test('the orphan reaper list is scoped to Kortix and the current environment', async () => {
+    listed = [
+      { sandboxId: 'sb-1', startedAt: new Date('2026-07-13T12:00:00Z') },
+      { sandboxId: 'sb-2', startedAt: null },
+    ];
+    const provider = new E2BProvider();
+
+    expect(await provider.listManagedRunningSandboxes()).toEqual([
+      { externalId: 'sb-1', createdAt: new Date('2026-07-13T12:00:00Z') },
+      { externalId: 'sb-2', createdAt: null },
+    ]);
+    expect(listOpts).toMatchObject({
+      query: {
+        metadata: { kortix_managed: 'v2-owner-a', kortix_env: 'dev' },
+        state: ['running'],
+      },
+    });
+  });
+});

@@ -2738,7 +2738,7 @@ describe('project session API contract', () => {
   // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
   // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
   // This endpoint is polled every second and Daytona folds `stopping` and
-  // `pending_stop` into `stopped` (platform/providers/daytona-state.ts), so ONE
+  // `pending_stop` into `stopped` (services/sandboxes/daytona/state.ts), so ONE
   // transitional read parked the row, settled the live turn's ledger
   // `runtime_gone` and kicked the client into the wake flow with the turn's work
   // lost. Unlike account deletion or the orphan sweep, this caller has NOT

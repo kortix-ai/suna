@@ -125,9 +125,9 @@ mock.module('../sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.com',
 }));
 
-const { DaytonaProvider } = await import('./daytona');
-const { E2BProvider } = await import('./e2b');
-const { PlatinumProvider } = await import('./platinum');
+const { DaytonaProvider } = await import('../../services/sandboxes/daytona/runtime');
+const { E2BProvider } = await import('../../services/sandboxes/e2b/runtime');
+const { PlatinumProvider } = await import('../../services/sandboxes/platinum/runtime');
 
 const CREATE_OPTS = {
   accountId: 'acc-1',

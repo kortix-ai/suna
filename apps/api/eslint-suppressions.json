@@ -1269,7 +1269,7 @@
       "count": 1
     }
   },
-  "src/platform/providers/daytona-state.ts": {
+  "src/services/sandboxes/daytona/state.ts": {
     "kortix-api/replica-local": {
       "count": 1
     },
@@ -1277,7 +1277,7 @@
       "count": 1
     }
   },
-  "src/platform/providers/daytona.ts": {
+  "src/services/sandboxes/daytona/runtime.ts": {
     "kortix-api/replica-local": {
       "count": 1
     },
@@ -1288,7 +1288,7 @@
       "count": 1
     }
   },
-  "src/platform/providers/e2b.ts": {
+  "src/services/sandboxes/e2b/runtime.ts": {
     "kortix-api/replica-local": {
       "count": 6
     },
@@ -1301,7 +1301,7 @@
       "count": 1
     }
   },
-  "src/platform/providers/platinum.ts": {
+  "src/services/sandboxes/platinum/runtime.ts": {
     "kortix-api/replica-local": {
       "count": 1
     },
@@ -1365,7 +1365,7 @@
       "count": 1
     }
   },
-  "src/platform/services/pi-worker-pool.ts": {
+  "src/services/sandboxes/daytona/pi-worker-pool.ts": {
     "no-console": {
       "count": 9
     }
@@ -2984,7 +2984,7 @@
       "count": 1
     }
   },
-  "src/snapshots/providers/daytona.ts": {
+  "src/services/sandboxes/daytona/images.ts": {
     "kortix-api/replica-local": {
       "count": 1
     },
@@ -2992,7 +2992,7 @@
       "count": 3
     }
   },
-  "src/snapshots/providers/e2b.ts": {
+  "src/services/sandboxes/e2b/images.ts": {
     "no-console": {
       "count": 2
     },
@@ -3005,12 +3005,12 @@
       "count": 1
     }
   },
-  "src/snapshots/providers/platinum-templates.ts": {
+  "src/services/sandboxes/platinum/images-templates.ts": {
     "no-restricted-properties": {
       "count": 1
     }
   },
-  "src/snapshots/providers/platinum-upload.ts": {
+  "src/services/sandboxes/platinum/images-upload.ts": {
     "no-console": {
       "count": 1
     },
@@ -3018,7 +3018,7 @@
       "count": 1
     }
   },
-  "src/snapshots/providers/platinum.ts": {
+  "src/services/sandboxes/platinum/images.ts": {
     "no-console": {
       "count": 3
     },

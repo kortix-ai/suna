@@ -34,7 +34,7 @@ const WORKERS: Record<string, string> = {
   'provider-transition': 'projects/provider-transition/provider-transition-worker.ts',
   'app-deployments': 'apps/deployment-worker.ts',
   'app-idle-reaper': 'apps/idle-reaper.ts',
-  'pi-worker-pool': 'platform/services/pi-worker-pool.ts',
+  'pi-worker-pool': 'services/sandboxes/daytona/pi-worker-pool.ts',
   'audit-webhooks': 'services/audit/audit-webhooks.ts',
   'audit-reconciliation': 'services/audit/audit-reconciliation-worker.ts',
   'audit-partitions': 'services/audit/audit-partition-worker.ts',

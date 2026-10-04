@@ -1,7 +1,7 @@
 // Regression coverage for the 2026-07-02 incident: bare `fetch()` has no
 // default timeout, so a stalled Platinum connection hung the caller
 // indefinitely — the same failure class as the Daytona SDK's 24h axios
-// default (see platform/providers/daytona.ts). Platinum is dev's default
+// default (see services/sandboxes/daytona/runtime.ts). Platinum is dev's default
 // sandbox provider and getStatus()/stop()/start() sit on the reaper hot
 // path, so an unbounded hang there wedges the maintenance loop forever
 // (maintenance.ts's `finally` never runs). This spins up a real local server

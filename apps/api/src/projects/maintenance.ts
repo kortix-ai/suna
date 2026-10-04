@@ -83,7 +83,7 @@ function maintenanceIntervalMs(): number {
 // later tick then silently no-ops via `if (maintenanceRunning) return`, with
 // zero error logs, until the process restarts. That is exactly what happened
 // 2026-07-02 (unbounded Daytona SDK calls in sandbox-reaper.ts, now bounded —
-// see platform/providers/daytona.ts). Per-call timeouts fix the KNOWN cause;
+// see services/sandboxes/daytona/runtime.ts). Per-call timeouts fix the KNOWN cause;
 // this watchdog protects against an UNKNOWN future one: if the lock has been
 // held for longer than any real cycle plausibly takes, a tick force-breaks it
 // (loudly) instead of leaving the loop dead for good.

@@ -206,7 +206,7 @@ function retryOnGlobalOrigin(err: unknown, method: string, signal: AbortSignal):
 
 // Bare `fetch()` has NO default timeout — a stalled connection to Platinum
 // hangs the caller forever, same failure class as the Daytona SDK's 24h axios
-// default (see platform/providers/daytona.ts for the full incident writeup).
+// default (see services/sandboxes/daytona/runtime.ts for the full incident writeup).
 // Platinum is dev's default sandbox provider, and getStatus()/stop()/start()
 // here sit on the exact same reaper hot path, so this is bounded by default.
 // A caller that needs a longer/no bound (e.g. a deliberately long-poll) can

@@ -579,7 +579,7 @@ describe('reconcileSandboxStoppedByExternalId', () => {
 // Incident 2026-08-17T20:40:03Z (a prod session on a Daytona sandbox): ONE
 // provider read of `stopped` durably parked a box that was running a turn,
 // `stopReason: provider_reconcile`. `stopping` and `pending_stop` both map to
-// `stopped` (platform/providers/daytona-state.ts), so a box mid-transition — or
+// `stopped` (services/sandboxes/daytona/state.ts), so a box mid-transition — or
 // a single misread — settles its turns `runtime_gone` and kicks its client to
 // the wake flow with no way back. This is the wake fence, mirrored to the stop
 // direction: while turn authority exists the park needs TWO observations.

@@ -19,7 +19,7 @@ setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
 setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
 
 const { ensureMetaSandboxImage } = await import('./builder');
-const { platinumProvider } = await import('./providers/platinum');
+const { platinumProvider } = await import('../services/sandboxes/platinum/images');
 
 const originalIsConfigured = platinumProvider.isConfigured;
 const originalGetSnapshotState = platinumProvider.getSnapshotState;

@@ -114,7 +114,7 @@ const {
   PLATINUM_MIN_BUILD_SIZE_MB,
   PLATINUM_SIZE_CAP_LOG_TOKEN,
   platinumBuildSizeMb,
-} = await import('../snapshots/providers/platinum');
+} = await import('../services/sandboxes/platinum/images');
 
 beforeEach(() => {
   fromBuildPayloads = [];
@@ -364,8 +364,8 @@ describe('Platinum size-cap build-failure classification', () => {
 describe('Daytona / E2B build payloads are unaffected by the Platinum build-size knob', () => {
   test('daytona.ts and e2b.ts have zero source coupling to PLATINUM_BUILD_SIZE_MB', async () => {
     const { readFile } = await import('node:fs/promises');
-    const daytonaSrc = await readFile(join(import.meta.dir, '../snapshots/providers/daytona.ts'), 'utf8');
-    const e2bSrc = await readFile(join(import.meta.dir, '../snapshots/providers/e2b.ts'), 'utf8');
+    const daytonaSrc = await readFile(join(import.meta.dir, '../services/sandboxes/daytona/images.ts'), 'utf8');
+    const e2bSrc = await readFile(join(import.meta.dir, '../services/sandboxes/e2b/images.ts'), 'utf8');
     for (const src of [daytonaSrc, e2bSrc]) {
       expect(src).not.toContain('PLATINUM_BUILD_SIZE_MB');
       expect(src).not.toContain('platinumBuildSizeMb');

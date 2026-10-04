@@ -86,7 +86,7 @@ const TRANSIENT_GATEWAY_STATUS_CODES = new Set<number>([502, 503, 504]);
 
 // Message substrings the Daytona SDK (and the underlying axios / node fetch)
 // uses for connection / timeout failures. Matched case-insensitively. These
-// are the same substrings `apps/api/src/snapshots/providers/daytona.ts`'s own
+// are the same substrings `apps/api/src/services/sandboxes/daytona/images.ts`'s own
 // `isTransientDaytonaError` already treats as retryable on the snapshot
 // build path — kept in sync so the global classifier agrees with the
 // per-call-site retry loop.

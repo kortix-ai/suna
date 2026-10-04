@@ -1106,7 +1106,7 @@ describe('pi worker pool claim (P1.8)', () => {
 
 describe('pi worker pool — stale-label hazard', () => {
   test('reap and claim both re-verify the park label on the direct object', async () => {
-    const source = await Bun.file(new URL('./pi-worker-pool.ts', import.meta.url)).text();
+    const source = await Bun.file(new URL('../../services/sandboxes/daytona/pi-worker-pool.ts', import.meta.url)).text();
     // Maintain: every listed box passes verifyStillParked BEFORE the
     // dead/stale/over-age triage that feeds the reap list.
     const verify = source.indexOf('async function verifyStillParked');

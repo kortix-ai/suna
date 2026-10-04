@@ -10,4 +10,4 @@ incident_date: 2026-09-30
 
 **Incident:** 2026-09-30, a self-host still on v0.13.39. The idle reaper stopped a session box. 34 s later a stray request through the edge auto-resumed it, and the row stayed `stopped`. The token was dead, so the old daemon exited 0 and nothing listened on :8000 for 53 min. Every `/start` resumed the same corpse. A later stop was resumed 1.3 s after `stop.done`, which beats the PATCH-after-confirm in #8277. 500 older session boxes still had `autoResume: true`; they were backfilled by hand.
 
-**Enforcement:** `apps/api/src/platform/providers/platinum-stop-confirm.test.ts` "stop() turns auto-resume off before it asks Platinum to stop" asserts the order `patch`, `stop`. The backfill has no enforcer. To build one: a divergence-sweep check that counts session boxes with `autoResume: true`.
+**Enforcement:** `apps/api/src/services/sandboxes/platinum/runtime-stop-confirm.test.ts` "stop() turns auto-resume off before it asks Platinum to stop" asserts the order `patch`, `stop`. The backfill has no enforcer. To build one: a divergence-sweep check that counts session boxes with `autoResume: true`.

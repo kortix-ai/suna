@@ -1,8 +1,8 @@
 import { config } from '../../lib/config';
 import type { ProviderName, SandboxProvider } from './contract';
-import { DaytonaProvider } from './daytona';
-import { E2BProvider } from './e2b';
-import { PlatinumProvider } from './platinum';
+import { DaytonaProvider } from '../../services/sandboxes/daytona/runtime';
+import { E2BProvider } from '../../services/sandboxes/e2b/runtime';
+import { PlatinumProvider } from '../../services/sandboxes/platinum/runtime';
 
 export * from './contract';
 

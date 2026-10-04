@@ -16,7 +16,7 @@ the team's `max_length_hours`; the SampleCo team sat on tier `base_v1`
 paused the box (`sandbox_pause_initiated pause_reason=timeout`).
 
 **Rules.**
-1. `renewLifecycle` (`apps/api/src/platform/providers/e2b.ts`) reads `endAt`
+1. `renewLifecycle` (`apps/api/src/services/sandboxes/e2b/runtime.ts`) reads `endAt`
    back after `setTimeout` and throws `E2BLifecycleRenewalIgnoredError` when the
    deadline did not advance to within `KORTIX_E2B_RENEWAL_TOLERANCE_MS` of the
    backstop. The reaper and the active-turn renewal loop count it as an error
@@ -32,5 +32,5 @@ paused the box (`sandbox_pause_initiated pause_reason=timeout`).
    `tokens 0/0/0` and no parts, created seconds before a provider pause; the
    OpenCode log ends at `llm runtime selected` with no stream line after it.
 
-*Automation:* `apps/api/src/platform/providers/e2b.test.ts` — "refuses to
+*Automation:* `apps/api/src/services/sandboxes/e2b/runtime.test.ts` — "refuses to
 report a renewal the provider clamped".

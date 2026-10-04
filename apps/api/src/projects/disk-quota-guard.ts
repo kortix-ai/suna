@@ -28,7 +28,7 @@
  */
 
 // Deliberately no runtime import from '../services/sandboxes/daytona/client' — only the type,
-// which is erased at compile time. Callers (platform/providers/daytona.ts)
+// which is erased at compile time. Callers (services/sandboxes/daytona/runtime.ts)
 // wire in the real list/archive functions explicitly via `deps`. This keeps
 // the module free of any Daytona-client/config side effects, which matters
 // for testability (a bare `deps` contract needs no module mocking at all).
