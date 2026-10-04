@@ -95,18 +95,18 @@ export function resolveChangeRequestOrigin(input: {
 
 /**
  * The permissions that writing these manifest sections takes on the direct
- * routes: agent blocks (`PUT /agents/:name/config|scope`), triggers
- * (`POST|PATCH|DELETE /triggers`), and the default agent. A merge that lands
- * such a change needs the same permission, for an agent as for a person. A
- * person's role holds them through `project.gitops.merge`'s `implies`; an
- * agent's `kortix_permissions` list is flat, so it must name them (or `all`).
+ * routes: agent blocks and the default agent (`PUT /agents/:name/config|scope`,
+ * `PUT /default-agent`) and triggers (`POST|PATCH|DELETE /triggers`). A merge
+ * that lands such a change needs the same permission, for an agent as for a
+ * person. The Manager role lists them, and the role editor adds them to any
+ * role that gets `project.gitops.merge` (its catalog `implies`); an agent's
+ * `kortix_permissions` list is flat, so it must name them (or `all`).
  */
 export const MANIFEST_WRITE_ACTIONS = [
   'project.agent.write',
   'project.trigger.create',
   'project.trigger.update',
   'project.trigger.delete',
-  'project.customize.write',
 ] as const;
 
 /**
@@ -133,9 +133,11 @@ export function requiredManifestActions(
   const after = read(headText, headFormat);
   if (before === null || after === null) return [...MANIFEST_WRITE_ACTIONS];
   const required = new Set<string>();
-  if (canonicalJson(before.agents) !== canonicalJson(after.agents)) required.add('project.agent.write');
-  if (canonicalJson(before.default_agent) !== canonicalJson(after.default_agent)) {
-    required.add('project.customize.write');
+  if (
+    canonicalJson(before.agents) !== canonicalJson(after.agents) ||
+    canonicalJson(before.default_agent) !== canonicalJson(after.default_agent)
+  ) {
+    required.add('project.agent.write');
   }
   const was = triggersByKey(before.triggers);
   const now = triggersByKey(after.triggers);
