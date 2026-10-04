@@ -128,6 +128,8 @@
     "chooseSharedKeys": "选择此会话可以使用的共享密钥。",
     "sessionKeyPool": "会话密钥池",
     "sharedSessionKeys": "此会话已与项目共享，因此这里只能使用与整个项目共享的密钥。授予您的密钥可在您的私有会话中使用。",
+    "promptedSessionKeys": "另一位成员已在此会话中发送消息，因此它不再代表其所有者。这里只能使用与整个项目共享的密钥。",
+    "noPersonSessionKeys": "此会话不代表任何人：它在个人密钥出现之前或在无人值守时启动。这里只能使用与整个项目共享的密钥。开始新会话即可使用你自己的密钥。",
     "projectDefaultShort": "项目默认值",
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
@@ -577,7 +579,7 @@
       "keepMyAccount": "保留我的帐户",
       "deleteDialogTitle": "删除您的帐户？",
       "immediateWarning": "这会立即删除您的帐户。没有宽限期，也没有办法撤销。",
-      "gracePeriodWarning": "您的帐户计划在 30 天的宽限期后删除，在此期间您可以取消。",
+      "gracePeriodWarning": "您的帐户将在 30 天的宽限期后删除，在此期间您可以取消。",
       "whenDeleted": "当您的帐户被删除时：",
       "agentsDeleted": "您拥有的每个代理都将被删除",
       "threadsDeleted": "所有会话和消息都将被删除",
@@ -19201,6 +19203,8 @@
       "text4af0b7d8bfb1": "每个会话都运行在自己的沙盒中，位于自己的 git 分支上。运行之间不共享任何内容。",
       "text39207bf34111": "相关技能",
       "text73112526c03a": "智能体这一轮运行失败，未报告原因。",
+      "text0e5f7f6732e0": "分叉对话",
+      "text32ad3abe4479": "分叉对话失败",
       "text85b7a59cdbd5": "平台智能体",
       "textd9c0c74b514b": "Meta 是协调你工作的平台智能体。它的设置是固定的：你可以与它开始会话，但无法在这里配置它。",
       "text4ee2ff5e821c": "领先的开源替代方案，可替代 Claude Cowork 和 ChatGPT Work",
@@ -19294,7 +19298,8 @@
       "text4e2e4291b764": "在你自己的基础设施上运行",
       "text5f4339690d5f": "发布了什么，何时发布",
       "text72e9cb3a34a8": "AI Operating System",
-      "textcfc0925e41a1": "一个开源操作系统，服务你的智能体、团队和工具：智能体、技能、记忆、连接器和电脑，都在一个归你所有的 git 仓库里。"
+      "textcfc0925e41a1": "一个开源操作系统，服务你的智能体、团队和工具：智能体、技能、记忆、连接器和电脑，都在一个归你所有的 git 仓库里。",
+      "text6c4af31cd4ab": "已在此设备上退出登录，但服务器未能确认退出操作。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

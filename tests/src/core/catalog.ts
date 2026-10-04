@@ -3,6 +3,7 @@ import { resolve, dirname } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { discoverFlows } from "./runner";
 import { allFlows } from "./flow";
+import { flowSteps } from "./flow-steps";
 
 const FLOWS_DIR = resolve(import.meta.dir, "../flows");
 
@@ -24,27 +25,11 @@ export interface Catalog {
 }
 
 async function stepsByFlowId(): Promise<Map<string, string[]>> {
-  const byId = new Map<string, string[]>();
   const glob = new Glob("*.flow.ts");
   const files: string[] = [];
   for await (const f of glob.scan({ cwd: FLOWS_DIR, absolute: true })) files.push(f);
   files.sort();
-  const token = /flow\(\s*["'`]([A-Za-z0-9_.-]+)["'`]|(?:ctx\.)?step\(\s*["'`]([^"'`]+)["'`]/g;
-  for (const file of files) {
-    const text = await Bun.file(file).text();
-    let current = "";
-    let m: RegExpExecArray | null;
-    token.lastIndex = 0;
-    while ((m = token.exec(text)) !== null) {
-      if (m[1] !== undefined) {
-        current = m[1];
-        if (!byId.has(current)) byId.set(current, []);
-      } else if (m[2] !== undefined && current) {
-        byId.get(current)!.push(m[2]);
-      }
-    }
-  }
-  return byId;
+  return flowSteps(await Promise.all(files.map((file) => Bun.file(file).text())));
 }
 
 export async function buildCatalog(): Promise<Catalog> {

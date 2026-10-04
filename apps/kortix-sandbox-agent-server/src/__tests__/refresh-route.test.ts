@@ -166,6 +166,20 @@ describe('auth', () => {
     expect(res.status).toBe(401)
   })
 
+  it('refreshes a materialized repo whose config names no repoUrl', async () => {
+    // The credential boundary refuses a CONFIGURED non-proxy origin; a repo
+    // with no repoUrl in env must not 500 on that refusal — the checkout's
+    // own file origin answers. Red-witnesses resolveCloneCredential: before
+    // the unset-repoUrl early return, this route answered 500.
+    const { worktree } = clonedRepo()
+    const res = await app({ projectTarget: worktree }).request('/kortix/refresh', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true })
+  })
+
   it('lets a direct API call with both proofs reach the repo work for base=1', async () => {
     // No repo here, so the repo work answers 409; the gate did not refuse it.
     const res = await app({ projectTarget: emptyTarget() }).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })

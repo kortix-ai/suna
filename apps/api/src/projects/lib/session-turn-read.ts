@@ -23,46 +23,23 @@ import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-rec
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
 import { ABORT_END_ERROR_NAMES, isRequestedStopName } from '../session-turn-ledger';
 
-/** One turn the control plane is holding open, in wire shape. */
-export interface SessionTurnView {
-  turn_token: string;
-  state: string;
-  message_id: string | null;
-  runtime_session_id: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
-  started_at: string | null;
-  accepted_at: string | null;
-}
-
-/** The `/turn` response body. `last_ended` is OMITTED, never null — see below. */
-export interface SessionTurnState {
-  turns: SessionTurnView[];
-  last_ended?: {
-    turn_token: string;
-    /** The user message the turn answered. OMITTED for a turn nobody named. */
-    message_id?: string;
-    end_reason: string | null;
-    ended_at: string | null;
-    /** Why a `failed` turn ended. OMITTED when nobody named the failure. */
-    error?: { name: string | null; message: string | null };
-  };
-  /**
-   * Recent turns that FAILED, newest first, with the cause when one was named.
-   * OMITTED when there are none. A turn the user stopped is not a failure and is
-   * never listed. Reported whether or not a turn is running: `last_ended` is one
-   * row and vanishes the moment the next turn starts, and a queued prompt starts
-   * it seconds after a failure — the outcome has to stay findable by `message_id`.
-   */
-  recent_failures?: SessionTurnFailure[];
-}
-
-export interface SessionTurnFailure {
-  message_id: string;
-  ended_at: string | null;
-  /** Null when the turn failed and nobody named why (a bare abort, or nothing). */
-  error: { name: string | null; message: string | null } | null;
-}
+/**
+ * The `/turn` wire shapes live in `@kortix/api-contract`. `last_ended` and
+ * `recent_failures` are OMITTED, never null: `last_ended` is one row and
+ * vanishes the moment the next turn starts, and a queued prompt starts it
+ * seconds after a failure, so `recent_failures` keeps the outcome findable by
+ * `message_id`. A turn the user stopped is not a failure and is never listed.
+ */
+export type {
+  SessionTurn as SessionTurnView,
+  SessionTurnStatus as SessionTurnState,
+  SessionTurnFailure,
+} from '@kortix/api-contract';
+import type {
+  SessionTurn as SessionTurnView,
+  SessionTurnStatus as SessionTurnState,
+  SessionTurnFailure,
+} from '@kortix/api-contract';
 
 /** How many of a session's newest turns are searched for named failures. */
 const RECENT_FAILURE_TURN_WINDOW = 50;

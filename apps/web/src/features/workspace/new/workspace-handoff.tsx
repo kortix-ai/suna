@@ -19,19 +19,13 @@ const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
 const CAPTION_IN = { duration: 0.24, delay: 0.12, ease: EASE_OUT };
 
 /**
- * The bridge between `/new`'s create form and the onboarding wizard.
+ * The bridge between `/new`'s create form and the created workspace's page.
  *
- * ONE component covers BOTH waiting windows, and that is the whole point:
- * 1. `create` is in flight (`submitting`) — no project id yet.
- * 2. the project exists and `/new?onboarding=<id>` is set, but the wizard is
- *    still `null` while `getProjectDetail` settles.
- *
- * These used to be two different screens — a phase checklist, then a bare
- * `size-4` spinner with a link — so the moment the create SUCCEEDED was
- * rendered as the UI being torn down and replaced. Nothing about that read as
- * progress. Holding one mark across both means the successful create has no
- * visual event at all: the mark keeps breathing and the wizard arrives on top
- * of it.
+ * It holds the page for the ONE waiting window there is: the create is in
+ * flight and no project id exists yet. On success the orchestration stamps the
+ * project onboarded and navigates straight to `/projects/<id>` (KRTX-1419), so
+ * there is no second window to cover and no moment where the successful create
+ * is rendered as the UI being torn down and replaced.
  *
  * Two ambient loops, and neither claims to know more than it does. The mark
  * pulses; the caption shimmers. That is the whole signal, because it is all
@@ -50,15 +44,7 @@ const CAPTION_IN = { duration: 0.24, delay: 0.12, ease: EASE_OUT };
  * role) makes the caption the announced content; the mark is decoration and is
  * hidden.
  */
-export function WorkspaceHandoff({
-  workspaceName,
-  projectId,
-}: {
-  workspaceName: string;
-  /** `null` during window 1 — there is nowhere to link to until the project
-   *  exists, so the escape hatch is not rendered at all rather than disabled. */
-  projectId: string | null;
-}) {
+export function WorkspaceHandoff({ workspaceName }: { workspaceName: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion();
 

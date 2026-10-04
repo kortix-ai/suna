@@ -5,13 +5,13 @@ import { db } from '../../shared/db';
 import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/account-limits';
 
 // Enforce the per-account project cap (free → 1, paid → effectively uncapped).
-// Returns a 403 Response to send, or null when the account may create another
+// Returns a typed 403 response to send, or null when the account may create another
 // project. Every isolated project counts, even when another project uses the
 // same Git repository or branch.
 export async function enforceProjectQuota(
   c: Context,
   accountId: string,
-): Promise<Response | null> {
+) {
   const limit = await maxProjectsForAccount(accountId);
   if (limit >= Number.MAX_SAFE_INTEGER) return null;
 

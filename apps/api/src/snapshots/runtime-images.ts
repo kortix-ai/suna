@@ -33,6 +33,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
     artifacts: [
       { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
       { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
+      { label: 'api-contract', path: resolve(root, 'packages/api-contract/src') },
       { label: 'cli', path: resolve(root, 'apps/cli/src') },
       { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },

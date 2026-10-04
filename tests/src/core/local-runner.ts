@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
@@ -508,6 +509,16 @@ const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
 /** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
 const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
 
+/** The Kortix agent-box marker: the platform bakes its model catalog and the
+ *  rest of the box state (/opt/kortix/{scaffold.git,managed-skills},
+ *  /etc/pt-env) into every sandbox image, and nothing writes them elsewhere.
+ *  The agent-server suites read that state, so the `packages` lane cannot
+ *  attest a PR here; the scheduled Tests run on a clean CI runner is the
+ *  backstop. */
+export function onKortixSandboxImage(catalog = '/opt/kortix/llm-catalog.json'): boolean {
+  return existsSync(catalog);
+}
+
 function dockerAvailable(): boolean {
   try {
     return Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
@@ -518,15 +529,25 @@ function dockerAvailable(): boolean {
 
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   const plan = buildLocalTestPlan(args);
-  // No Docker (a factory sandbox): the DB lanes cannot run. Record them as
-  // skipped-no-db. verify-attestation.mjs never counts a skip as a pass.
-  const skipped: string[] = [];
-  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode) && !dockerAvailable()) {
-    for (const lane of plan.lanes.filter((l) => DOCKER_LANES.has(l.name))) skipped.push(lane.name);
-    plan.lanes = plan.lanes.filter((l) => !skipped.includes(l.name));
-    plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.includes(l.name)));
-    console.log(`[test] SKIP ${skipped.join(',')}: Docker is not available (skipped-no-db, not a pass)`);
-    if (plan.lanes.length === 0) return 1;
+  // Sanctioned environment skips: verify-attestation.mjs records them, never
+  // counts a skip as a pass, and `--strict` (a push to main) rejects them.
+  const skipped = new Map<string, string>();
+  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
+    if (!dockerAvailable()) {
+      // No Docker (a factory sandbox): the DB lanes cannot run.
+      for (const lane of plan.lanes)
+        if (DOCKER_LANES.has(lane.name)) skipped.set(lane.name, 'skipped-no-db');
+    }
+    if (onKortixSandboxImage()) {
+      for (const lane of plan.lanes)
+        if (lane.name === 'package-quality') skipped.set(lane.name, 'skipped-sandbox-image');
+    }
+    if (skipped.size > 0) {
+      plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));
+      plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.has(l.name)));
+      for (const [name, value] of skipped) console.log(`[test] SKIP ${name} (${value}, not a pass)`);
+      if (plan.lanes.length === 0) return 1;
+    }
   }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
@@ -626,10 +647,10 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     const lanes: Record<string, string> = {};
     for (const [group, members] of Object.entries(GROUPS)) {
       const ran = results.filter((r) => members.includes(r.name));
-      const skip = skipped.filter((n) => members.includes(n));
+      const skipValues = members.map((m) => skipped.get(m)).filter((v) => v !== undefined);
       if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
-      else if (ran.length + skip.length === members.length) {
-        lanes[group] = skip.length ? 'skipped-no-db' : 'pass';
+      else if (ran.length + skipValues.length === members.length) {
+        lanes[group] = skipValues[0] ?? 'pass';
       }
     }
     Bun.spawnSync(

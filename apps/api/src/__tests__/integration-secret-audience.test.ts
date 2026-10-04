@@ -37,7 +37,6 @@ import {
 import { resolveGrantedSecretSelection } from '../projects/secrets/grant-policy';
 import {
   clearSecretAudience,
-  secretAudiencePerson,
   secretAudienceSubject,
   sessionPersonOnlyPlaintextSecrets,
   setSecretAudience,
@@ -189,16 +188,16 @@ describe('secret audience — who may use one value', () => {
   });
 
   test('the session person: private session → its human; shared session and trigger → nobody', async () => {
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_PRIVATE })).toBe(OWNER);
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_SHARED })).toBeNull();
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_TRIGGER })).toBeNull();
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_PRIVATE })).personId).toBe(OWNER);
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_SHARED })).personId).toBeNull();
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_TRIGGER })).personId).toBeNull();
     // No session: the direct caller.
-    expect(await secretAudiencePerson({ projectId: PROJECT, actorUserId: TEAMMATE })).toBe(TEAMMATE);
+    expect((await secretAudienceSubject({ projectId: PROJECT, actorUserId: TEAMMATE })).personId).toBe(TEAMMATE);
   });
 
   test('a token minted before on_behalf_of existed resolves by the mint rule; a cleared one stays nobody', async () => {
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_LEGACY })).toBe(OWNER);
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_CLEARED })).toBeNull();
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_LEGACY })).personId).toBe(OWNER);
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_CLEARED })).personId).toBeNull();
   });
 
   test('shared with an AGENT: every session of that agent gets it, a trigger included; another agent and a person do not', async () => {

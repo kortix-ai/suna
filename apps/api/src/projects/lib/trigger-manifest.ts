@@ -44,6 +44,27 @@ function hasResolvedGitAuth(project: ManifestProject): project is ProjectRow & {
 }
 
 /**
+ * The git-auth ladder both commit paths share: a caller whose project row
+ * already carries the resolved credential fields (`resolved !== null`) uses
+ * them as-is; anyone else resolves here, and a failed resolution is the 502
+ * the edit surfaces. `resolved` is `null` only for "not resolved yet" — a
+ * pre-resolved row without a token passes `undefined` through (the GitHub
+ * Contents API then reads anonymously).
+ */
+async function gitAuthOr502<T>(
+  resolved: T | null,
+  resolve: () => Promise<T>,
+  kind: string,
+): Promise<{ ok: true; value: T } | { ok: false; error: string; status: number }> {
+  if (resolved !== null) return { ok: true, value: resolved };
+  try {
+    return { ok: true, value: await resolve() };
+  } catch (err) {
+    return { ok: false, error: `${kind} auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
+  }
+}
+
+/**
  * The manifest a Customize editor shows or rewrites. Always read after a forced
  * mirror refresh: each API replica refreshes its own git mirror at most every
  * 60 s, and a write refreshes only the replica that handled it, so an
@@ -125,52 +146,50 @@ async function commitGitHubRepoFile(
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const branch = project.defaultBranch;
-    let auth: GitHubAuthContext | undefined;
-    if (hasResolvedGitAuth(project)) {
-      auth = project.gitAuthToken
-        ? { token: project.gitAuthToken, source: 'project_credential' }
-        : undefined;
-    } else {
-      try {
-        auth = (await resolveProjectGitAuth(project)).auth ?? undefined;
-      } catch (err) {
-        return {
-          error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`,
-          status: 502,
-        };
-      }
-    }
-    try {
-      const existingSha = await getFileSha({
-        owner: repo.owner,
-        repo: repo.repo,
-        path,
-        branch,
-        auth,
-      });
-      await commitFile({
-        owner: repo.owner,
-        repo: repo.repo,
-        path,
-        content,
-        message,
-        branch,
-        existingSha: existingSha ?? undefined,
-        auth,
-      });
-    } catch (err) {
-      return {
-        error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
-        status: 502,
-      };
-    }
-    invalidateProjectMirror(project.projectId);
-    // The base branch moved through the Contents API. The git-CLI path below
-    // notifies from `commitMultipleFilesToBranch`.
-    void import('./config-convergence-triggers')
-      .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'manifest-write'))
-      .catch(() => {});
-    return { ok: true };
+  // A pre-resolved row passes its token straight through (an anonymous read
+  // when it has none); anything else resolves here.
+  const preResolved: GitHubAuthContext | null | undefined = hasResolvedGitAuth(project)
+    ? project.gitAuthToken
+      ? { token: project.gitAuthToken, source: 'project_credential' }
+      : undefined
+    : null;
+  const auth = await gitAuthOr502(
+    preResolved,
+    async () => (await resolveProjectGitAuth(project)).auth ?? undefined,
+    'GitHub',
+  );
+  if (!auth.ok) return auth;
+  try {
+    const existingSha = await getFileSha({
+      owner: repo.owner,
+      repo: repo.repo,
+      path,
+      branch,
+      auth: auth.value,
+    });
+    await commitFile({
+      owner: repo.owner,
+      repo: repo.repo,
+      path,
+      content,
+      message,
+      branch,
+      existingSha: existingSha ?? undefined,
+      auth: auth.value,
+    });
+  } catch (err) {
+    return {
+      error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
+      status: 502,
+    };
+  }
+  invalidateProjectMirror(project.projectId);
+  // The base branch moved through the Contents API. The git-CLI path below
+  // notifies from `commitMultipleFilesToBranch`.
+  void import('./config-convergence-triggers')
+    .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'manifest-write'))
+    .catch(() => {});
+  return { ok: true };
 }
 
 async function commitGitCliRepoFile(
@@ -188,27 +207,14 @@ async function commitGitCliRepoFile(
   // not a GitHub URL", which broke every connector and trigger manifest edit
   // on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
   // GitHub-fast-path / git-CLI-fallback split.
-  let gitProject: ProjectRow & {
-    gitAuthToken: string | null;
-    gitAuthHeaders?: Record<string, string>;
-  };
-  if (hasResolvedGitAuth(project)) {
-    gitProject = {
-      ...project,
-      gitAuthToken: project.gitAuthToken ?? null,
-    };
-  } else {
-    try {
-      gitProject = await withProjectGitAuth(project);
-    } catch (err) {
-      return {
-        error: `Git auth unavailable: ${(err as Error).message || String(err)}`,
-        status: 502,
-      };
-    }
-  }
-  const localRepository = process.env.KORTIX_LOCAL_DEV === '1' && isAbsolute(gitProject.repoUrl);
-  if (!gitProject.gitAuthToken && !localRepository) {
+  const gitProject = await gitAuthOr502(
+    hasResolvedGitAuth(project) ? { ...project, gitAuthToken: project.gitAuthToken ?? null } : null,
+    () => withProjectGitAuth(project),
+    'Git',
+  );
+  if (!gitProject.ok) return gitProject;
+  const localRepository = process.env.KORTIX_LOCAL_DEV === '1' && isAbsolute(gitProject.value.repoUrl);
+  if (!gitProject.value.gitAuthToken && !localRepository) {
     return { error: 'No git credentials available to write to the project repo', status: 502 };
   }
 
@@ -217,7 +223,7 @@ async function commitGitCliRepoFile(
     if (extra) {
       // A manifest with `imports:` — every changed source file in ONE commit,
       // guarded by the root revision plus every imported file's revision.
-      await commitMultipleFilesToBranch(gitProject, {
+      await commitMultipleFilesToBranch(gitProject.value, {
         ...commit,
         files: [{ path, content }, ...(extra.files ?? [])],
         alsoExpect: extra.alsoExpect,
@@ -231,7 +237,7 @@ async function commitGitCliRepoFile(
               },
       });
     } else {
-      await commitFileToBranch(gitProject, {
+      await commitFileToBranch(gitProject.value, {
         ...commit,
         path,
         content,

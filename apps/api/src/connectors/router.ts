@@ -1612,11 +1612,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         params: ProjectParam,
         body: { content: { 'application/json': { schema: lenientBody({
             slug: z.string().openapi({ description: 'Connector slug (its name in kortix.yaml).' }),
-            provider: z.enum(['composio,pipedream,mcp,openapi,postman,graphql,http,channel']).openapi({ description: 'Connector provider. Use composio for managed SaaS apps.' }),
+            provider: z.enum(['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel']).openapi({ description: 'Connector provider. Use composio for managed SaaS apps.' }),
             name: z.string().optional().openapi({ description: 'Display name.' }),
             app: z.string().optional().openapi({ description: 'Composio app slug, e.g. gmail (composio providers).' }),
             url: z.string().optional().openapi({ description: 'MCP server URL (provider mcp).' }),
-            transport: z.enum(['http,sse']).optional().openapi({ description: 'MCP transport (provider mcp).' }),
+            transport: z.enum(['http', 'sse']).optional().openapi({ description: 'MCP transport (provider mcp).' }),
             endpoint: z.string().optional().openapi({ description: 'GraphQL endpoint (provider graphql).' }),
             baseUrl: z.string().optional().openapi({ description: 'Base URL (provider http or openapi).' }),
             spec: z.string().optional().openapi({ description: 'OpenAPI or Postman spec URL.' }),
@@ -2324,7 +2324,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       summary: 'Start an easy-connect authorization',
       ...auth,
       request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: lenientBody({
-          owner: z.enum(['me,project']).optional().openapi({ description: 'Whose account is connected: me or project.' }),
+          owner: z.enum(['me', 'project']).optional().openapi({ description: 'Whose account is connected: me or project.' }),
           success_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after success.' }),
           error_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after failure.' }),
         }) } } } },
