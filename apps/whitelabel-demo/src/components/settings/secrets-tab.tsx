@@ -1,5 +1,15 @@
 'use client';
 
+/**
+ * The whole secret lifecycle in one tab: create (with an identifier that need
+ * not be the env KEY), rotate, delete — plus the two things about a secret that
+ * are invisible in the row itself and cost a session create to discover: which
+ * rows share an env KEY, and which rows are not runtime-scoped at all.
+ *
+ * The upsert form and the git credential card own their own mutations; the row
+ * stays here with the shared delete mutation.
+ */
+
 import Loading from '@/components/ui/loading';
 
 import { CallSnippet } from '@/components/dev/call-snippet';
@@ -17,49 +27,21 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import {
-  collidingIdentifiers,
-  normalizeSecretKey,
-  pendingKeyCollision,
-} from '@/lib/secret-collisions';
+import { collidingIdentifiers } from '@/lib/secret-collisions';
 import { scopeExplanation, secretScope } from '@/lib/secret-scope';
-import {
-  type SecretWriteIntent,
-  buildSecretRotateInput,
-  defaultIdentifier,
-  normalizeSecretDraft,
-  secretWriteIntent,
-} from '@/lib/secret-upsert';
+import { buildSecretRotateInput } from '@/lib/secret-upsert';
 import type { ProjectSecret } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, GitBranch, KeyRound, Plug, RotateCw, Trash2, UserCog } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { AlertTriangle, Plug, RotateCw, Trash2, UserCog } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from 'sonner';
-
-/**
- * The whole secret lifecycle in one tab: create (with an identifier that need
- * not be the env KEY), rotate, delete — plus the two things about a secret that
- * are invisible in the row itself and cost a session create to discover: which
- * rows share an env KEY, and which rows are not runtime-scoped at all.
- */
-
-/** Said wherever someone would otherwise expect this tab to affect a live run. */
-const ALLOWLIST_IS_CREATE_ONLY =
-  'A session’s secret allowlist is fixed when the session is created — there is no update path for it. Adding, rotating or removing a secret here never widens or narrows what a session that is already running may read; that takes a new session.';
-
-/**
- * True of rotation because a live process cannot have its environment rewritten:
- * the platform does push the new value out to active sandboxes, but the agent
- * there is already running with the old one. Only a session started after the
- * rotation is reliably using the new value.
- */
-const ROTATION_REACHES_RUNNING_SESSIONS_LATE =
-  'Sessions already running keep the old value until they restart — their agent was started with the old environment and it cannot be replaced in place.';
+import { GitCredentialCard } from './secrets/git-credential-card';
+import { SecretUpsertForm } from './secrets/secret-upsert-form';
+import { Notice, ROTATION_REACHES_RUNNING_SESSIONS_LATE, ALLOWLIST_IS_CREATE_ONLY } from './secrets/shared';
 
 export function SecretsTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -71,37 +53,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
     queryFn: () => kortix.project(projectId).secrets.list(),
   });
 
-  const [name, setName] = useState('');
-  // The identifier follows the KEY until someone edits it. Tracking that
-  // separately is what lets the field be BOTH a sensible default and editable —
-  // clearing the flag on an empty edit puts it back in step.
-  const [identifier, setIdentifier] = useState('');
-  const [identifierEdited, setIdentifierEdited] = useState(false);
-  const [value, setValue] = useState('');
-  const [gitToken, setGitToken] = useState('');
-
   const items: ProjectSecret[] = secrets.data?.items ?? [];
-  const draftIdentifier = identifierEdited ? identifier : defaultIdentifier(name);
-  const draft = { identifier: draftIdentifier, name, value };
-  // A half-typed row has no intent yet — reading one from an empty KEY would
-  // accuse every existing identifier of retargeting itself mid-keystroke.
-  const intent: SecretWriteIntent = name.trim()
-    ? secretWriteIntent(items, draft)
-    : { kind: 'create' };
-  const collidesWith = pendingKeyCollision(items, draft);
-
-  const upsert = useMutation({
-    mutationFn: () => kortix.project(projectId).secrets.upsert(normalizeSecretDraft(draft)),
-    onSuccess: () => {
-      setName('');
-      setIdentifier('');
-      setIdentifierEdited(false);
-      setValue('');
-      refresh();
-      toast.success(intent.kind === 'rotate' ? 'Secret rotated' : 'Secret saved');
-    },
-    onError: () => toast.error('Could not save secret'),
-  });
 
   const remove = useMutation({
     // By IDENTIFIER, not by env KEY — several identifiers can share one KEY, and
@@ -114,133 +66,9 @@ export function SecretsTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Could not remove secret'),
   });
 
-  const setGitCredential = useMutation({
-    mutationFn: () =>
-      kortix.project(projectId).secrets.setGitCredential({ token: gitToken.trim() }),
-    onSuccess: () => {
-      setGitToken('');
-      toast.success('Git credential saved');
-    },
-    onError: () => toast.error('Could not save git credential'),
-  });
-
-  const blocked = intent.kind === 'retarget';
-  const canSubmit = Boolean(name.trim()) && Boolean(value) && !blocked && !upsert.isPending;
-
   return (
     <div className="space-y-4">
-      <Card className="p-5">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <KeyRound className="size-4 text-muted-foreground" /> Shared secrets
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Environment variables + API keys available to every member at runtime. A secret has a
-          unique <span className="font-mono">identifier</span> and an env{' '}
-          <span className="font-mono">KEY</span>: agents and session allowlists reference the
-          identifier, the sandbox receives the KEY. They are the same thing until you make them
-          different.
-        </p>
-        <form
-          className="mt-3 space-y-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (canSubmit) upsert.mutate();
-          }}
-        >
-          <div className="flex flex-wrap gap-2">
-            <div className="min-w-[10rem] flex-1 space-y-1">
-              <Label htmlFor="secret-identifier" className="text-xs text-muted-foreground">
-                Identifier
-              </Label>
-              <Input
-                id="secret-identifier"
-                value={draftIdentifier}
-                onChange={(e) => {
-                  setIdentifier(e.target.value);
-                  setIdentifierEdited(e.target.value.length > 0);
-                }}
-                placeholder="STRIPE_KEY"
-                className="font-mono"
-              />
-            </div>
-            <div className="min-w-[10rem] flex-1 space-y-1">
-              <Label htmlFor="secret-name" className="text-xs text-muted-foreground">
-                Env KEY
-              </Label>
-              <Input
-                id="secret-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="STRIPE_KEY"
-                className="font-mono"
-              />
-            </div>
-            <div className="min-w-[10rem] flex-1 space-y-1">
-              <Label htmlFor="secret-value" className="text-xs text-muted-foreground">
-                Value
-              </Label>
-              <Input
-                id="secret-value"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder="value"
-                type="password"
-                className="font-mono"
-              />
-            </div>
-          </div>
-
-          {intent.kind === 'retarget' && (
-            <Notice tone="destructive">
-              <span className="font-mono">{draftIdentifier}</span> already stores{' '}
-              <span className="font-mono">{intent.existingKey}</span>. An identifier is a stable
-              handle — pointing it at another KEY would re-aim every agent grant that names it, so
-              the server refuses it. Delete that secret first, or choose another identifier.
-            </Notice>
-          )}
-          {intent.kind === 'rotate' && (
-            <Notice>
-              <span className="font-mono">{draftIdentifier}</span> already exists — saving replaces
-              its value. {ROTATION_REACHES_RUNNING_SESSIONS_LATE}
-            </Notice>
-          )}
-          {collidesWith.length > 0 && (
-            <Notice tone="destructive">
-              <span className="font-mono">{name.trim().toUpperCase()}</span> is already stored by{' '}
-              <span className="font-mono">{collidesWith.join(', ')}</span>. Both may exist, but one
-              session cannot allowlist both identifiers — that create is refused with 409
-              SECRET_IDENTIFIER_KEY_COLLISION.
-            </Notice>
-          )}
-
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">{ALLOWLIST_IS_CREATE_ONLY}</p>
-            <Button type="submit" disabled={!canSubmit}>
-              {upsert.isPending && <Loading className="size-4" />}
-              {intent.kind === 'rotate' ? 'Rotate' : 'Save'}
-            </Button>
-          </div>
-        </form>
-
-        {/* Create and rotate are one call, and the snippet takes the identifier
-            and the KEY only — the typed value is never rendered anywhere. */}
-        <div className="mt-3">
-          <CallSnippet
-            id="secret.upsert"
-            context={{
-              projectId,
-              // normalizeSecretKey, not raw trim — the upsert uppercases the KEY
-              // before sending, and KEY collisions are adjudicated on the
-              // uppercased value. A snippet whose whole job is teaching the
-              // identifier-vs-KEY distinction must not print the wrong KEY.
-              secret: {
-                identifier: draftIdentifier || undefined,
-                name: name.trim() ? normalizeSecretKey(name) : undefined,
-              },
-            }}
-          />
-        </div>
-      </Card>
+      <SecretUpsertForm projectId={projectId} items={items} onSaved={refresh} />
 
       <Card className="divide-y divide-border p-0">
         {secrets.isLoading && (
@@ -264,51 +92,8 @@ export function SecretsTab({ projectId }: { projectId: string }) {
         ))}
       </Card>
 
-      <Card className="p-5">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <GitBranch className="size-4 text-muted-foreground" /> Git credential
-        </div>
-        <p className="text-xs text-muted-foreground">
-          A token the agent uses to clone and push to the project repository.
-        </p>
-        <form
-          className="mt-3 flex flex-wrap gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (gitToken.trim()) setGitCredential.mutate();
-          }}
-        >
-          <Input
-            value={gitToken}
-            onChange={(e) => setGitToken(e.target.value)}
-            placeholder="ghp_…"
-            type="password"
-            className="min-w-[12rem] flex-1 font-mono"
-          />
-          <Button type="submit" disabled={!gitToken.trim() || setGitCredential.isPending}>
-            {setGitCredential.isPending && <Loading className="size-4" />}
-            Save credential
-          </Button>
-        </form>
-      </Card>
+      <GitCredentialCard projectId={projectId} />
     </div>
-  );
-}
-
-function Notice({
-  tone = 'muted',
-  children,
-}: {
-  tone?: 'muted' | 'destructive';
-  children: ReactNode;
-}) {
-  return (
-    <Marker className={tone === 'destructive' ? 'items-start text-destructive' : 'items-start'}>
-      <MarkerIcon className="mt-0.5">
-        <AlertTriangle />
-      </MarkerIcon>
-      <MarkerContent className="whitespace-normal">{children}</MarkerContent>
-    </Marker>
   );
 }
 

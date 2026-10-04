@@ -12,8 +12,13 @@ import Loading from '@/components/ui/loading';
  *   kortix.project(id).files.read(path, ref?) → the monospace viewer (right pane)
  *   kortix.project(id).files.history(path, …) → the per-file "History" popover
  *   kortix.project(id).files.archive(ref, …)  → the "Download" button
+ *
+ * The right pane (`FileViewer`) and the archive download (`useProjectArchive`)
+ * live under `files/`.
  */
 
+import { useProjectArchive } from '@/components/workbench/files/use-project-archive';
+import { FileViewer } from '@/components/workbench/files/file-viewer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,9 +28,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
+import { fmtDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { ProjectCommit, ProjectFileEntry, ProjectFileSearchMatch } from '@kortix/sdk';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   Download,
   File as FileIcon,
@@ -35,26 +41,9 @@ import {
   Search,
 } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
-import { toast } from 'sonner';
-
-/** Ref archived/read by default — the repo tip. */
-const DEFAULT_REF = 'HEAD';
 
 function basename(p: string): string {
   return p.split('/').filter(Boolean).pop() ?? p;
-}
-
-function fmtSize(size: unknown): string | null {
-  if (typeof size !== 'number' || !Number.isFinite(size)) return null;
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fmtDate(value: unknown): string {
-  if (!value) return '';
-  const d = new Date(value as string);
-  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
 }
 
 export function FilesPanel({ projectId }: { projectId: string }) {
@@ -76,29 +65,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
     enabled: searching,
   });
 
-  // .files.read — content for the selected file (right pane).
-  const content = useQuery({
-    queryKey: ['project-files', projectId, 'content', selected],
-    queryFn: () => kortix.project(projectId).files.read(selected as string),
-    enabled: !!selected,
-  });
-
-  // .files.archive — download a zip of the whole repo at HEAD.
-  const download = useMutation({
-    mutationFn: () => kortix.project(projectId).files.archive(DEFAULT_REF),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `project-${projectId}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Archive downloaded');
-    },
-    onError: () => toast.error('Could not download archive'),
-  });
+  const download = useProjectArchive(projectId);
 
   const listItems: ProjectFileEntry[] = list.data ?? [];
   const searchItems: ProjectFileSearchMatch[] = search.data?.results ?? [];
@@ -214,42 +181,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
         {/* Right — content viewer */}
         <div className="flex min-h-0 flex-1 flex-col">
           {selected ? (
-            <>
-              <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-xs">
-                <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate font-mono text-foreground">{selected}</span>
-                {(() => {
-                  const match = listItems.find((f) => f?.path === selected);
-                  const size = fmtSize(match?.size);
-                  return size ? (
-                    <Badge
-                      variant="outline"
-                      className="ml-auto px-1.5 py-0 text-[0.65rem] text-muted-foreground"
-                    >
-                      {size}
-                    </Badge>
-                  ) : null;
-                })()}
-              </div>
-              <Separator />
-              <ScrollArea className="min-h-0 flex-1">
-                {content.isLoading && (
-                  <div className="space-y-2 p-4">
-                    {Array.from({ length: 10 }).map((_, i) => (
-                      <Skeleton key={i} className="h-4 w-full" />
-                    ))}
-                  </div>
-                )}
-                {content.isError && (
-                  <div className="p-4 text-xs text-destructive">Could not read file.</div>
-                )}
-                {content.isSuccess && (
-                  <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[0.7rem] leading-relaxed text-foreground/80">
-                    {content.data?.content ?? ''}
-                  </pre>
-                )}
-              </ScrollArea>
-            </>
+            <FileViewer projectId={projectId} path={selected} files={listItems} />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
               <FileText className="size-6 text-muted-foreground" />

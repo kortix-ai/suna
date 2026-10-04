@@ -19,14 +19,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
 import { PreviewPanel } from '@/components/workbench/preview-panel';
-import { kortix } from '@/lib/kortix';
-import { qk } from '@/lib/query-keys';
+import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { toast } from 'sonner';
 
 /** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
 export function WorkbenchTabs({
@@ -84,6 +81,7 @@ export function WorkbenchTabs({
  * The chat thread. Reads everything off the single `useSession` result — messages,
  * optimistic send, interactive prompts, the model/agent picks, and the runtime
  * phase. No second chat hook, provider-session resolver, or infrastructure wiring.
+ * The restart/down-recovery plumbing lives in `useRuntimeRecovery`.
  */
 function Thread({ session: c }: { session: UseSessionResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -93,38 +91,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [c.messages, c.isBusy, c.hasPending]);
 
-  // ── Runtime recovery ──────────────────────────────────────────────────────
-  // Sandboxes idle-stop (and die) in the real world. Rather than silently
-  // disabling the composer (so Enter "does nothing"), surface the state and
-  // recover: restart() wakes the box and re-arms useSession's /start poll.
-  const qc = useQueryClient();
-  const restart = useMutation({
-    mutationFn: () => kortix.session(c.projectId, c.sessionId).restart(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.sessionStart(c.projectId, c.sessionId) });
-      toast.success('Reconnecting the runtime…');
-    },
-    onError: () => toast.error('Could not reconnect the runtime'),
-  });
-
-  const runtimeReady = c.runtimePhase === 'ready';
-  // "Down" = was connected, now confirmed unreachable (a drop, not the initial boot).
-  const runtimeDown = c.switched && c.runtimePhase === 'unreachable';
-
-  // Auto-reconnect ONCE per down-episode. The ref guard prevents a restart loop
-  // on a box that can't recover; the flag resets when the runtime comes back, so
-  // a later drop is retried again.
-  const autoTriedRef = useRef(false);
-  useEffect(() => {
-    if (!runtimeDown) {
-      autoTriedRef.current = false;
-      return;
-    }
-    if (autoTriedRef.current || restart.isPending) return;
-    autoTriedRef.current = true;
-    restart.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runtimeDown]);
+  const { restart, runtimeReady, runtimeDown } = useRuntimeRecovery(c);
 
   // No stall watchdog here any more. `c.isBusy` is the working projection
   // (bounded, fed by GET .../turn), and the server closes wedged turns itself

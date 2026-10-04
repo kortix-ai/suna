@@ -32,15 +32,22 @@ function fmtDate(value: unknown): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
 }
 
-const TABS = [
-  'general',
-  'capabilities',
-  'secrets',
-  'members',
-  'connectors',
-  'triggers',
-  'policies',
-] as const;
+/**
+ * One registry drives BOTH the tab list and the tab panels: adding a tab is
+ * one row plus its import, never a second place to forget.
+ */
+const TABS: ReadonlyArray<{
+  name: string;
+  render: (projectId: string) => React.ReactNode;
+}> = [
+  { name: 'general', render: () => <GeneralTab /> },
+  { name: 'capabilities', render: (id) => <CapabilitiesTab projectId={id} /> },
+  { name: 'secrets', render: (id) => <SecretsTab projectId={id} /> },
+  { name: 'members', render: (id) => <MembersTab projectId={id} /> },
+  { name: 'connectors', render: (id) => <ConnectorsTab projectId={id} /> },
+  { name: 'triggers', render: (id) => <TriggersTab projectId={id} /> },
+  { name: 'policies', render: (id) => <PoliciesTab projectId={id} /> },
+];
 
 export default function SettingsPage() {
   const projectId = String(useParams().id);
@@ -51,33 +58,17 @@ export default function SettingsPage() {
           <h1 className="text-xl font-semibold tracking-tight">Project settings</h1>
           <Tabs defaultValue="general" className="mt-6">
             <TabsList className="flex-wrap">
-              {TABS.map((t) => (
-                <TabsTrigger key={t} value={t} className="capitalize">
-                  {t}
+              {TABS.map((tab) => (
+                <TabsTrigger key={tab.name} value={tab.name} className="capitalize">
+                  {tab.name}
                 </TabsTrigger>
               ))}
             </TabsList>
-            <TabsContent value="general" className="mt-5">
-              <GeneralTab />
-            </TabsContent>
-            <TabsContent value="capabilities" className="mt-5">
-              <CapabilitiesTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="secrets" className="mt-5">
-              <SecretsTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="members" className="mt-5">
-              <MembersTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="connectors" className="mt-5">
-              <ConnectorsTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="triggers" className="mt-5">
-              <TriggersTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="policies" className="mt-5">
-              <PoliciesTab projectId={projectId} />
-            </TabsContent>
+            {TABS.map((tab) => (
+              <TabsContent key={tab.name} value={tab.name} className="mt-5">
+                {tab.render(projectId)}
+              </TabsContent>
+            ))}
           </Tabs>
         </div>
       </div>

@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import ts from 'typescript';
+import { sourceFiles } from '../../../scripts/lib/sdk-boundary-scan.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -148,23 +149,6 @@ function isQueryKey(array) {
   );
 }
 
-function productionSourceFiles(root) {
-  const files = [];
-  const visit = (directory) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        visit(absolute);
-        continue;
-      }
-      if (!SOURCE_EXTENSIONS.has(extname(entry.name)) || TEST_FILE.test(entry.name)) continue;
-      files.push(absolute);
-    }
-  };
-  visit(root);
-  return files.sort();
-}
-
 function lineOf(sourceFile, node) {
   return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
@@ -193,7 +177,7 @@ function networkTargetText(node) {
 
 export function scanSdkBoundary(sourceRoot) {
   const violations = [];
-  for (const absolute of productionSourceFiles(sourceRoot)) {
+  for (const absolute of sourceFiles(sourceRoot, { extensions: SOURCE_EXTENSIONS, skip: (path) => TEST_FILE.test(path), sort: true })) {
     const code = readFileSync(absolute, 'utf8');
     const sourceFile = ts.createSourceFile(
       absolute,

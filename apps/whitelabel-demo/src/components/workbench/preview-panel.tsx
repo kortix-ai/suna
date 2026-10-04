@@ -3,40 +3,19 @@
 import Loading from '@/components/ui/loading';
 
 /**
- * The live-preview and sharing surface for a session.
+ * The live-preview surface for a session.
  *
  * Session data uses the shared SDK client. The same-origin preview BFF resolves
- * readiness, the final URL, and scoped authentication on the server.
+ * readiness, the final URL, and scoped authentication on the server. The
+ * sharing controls and the public-shares list live beside it in
+ * `session-sharing.tsx`.
  */
 
 import { useWrapperMode } from '@/app/providers';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Copy,
-  ExternalLink,
-  Globe,
-  Link2,
-  MonitorPlay,
-  Plus,
-  RefreshCw,
-  Share2,
-  Trash2,
-} from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-
+import { SessionSharing, PublicSharesList } from '@/components/workbench/session-sharing';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -49,29 +28,22 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { authHeaders, getSessionToken } from '@/lib/session';
-import { cn } from '@/lib/utils';
-import { resolvePublicShareUrl } from '@kortix/sdk';
-
-// Session sharing intent — a subset of the SDK's ConnectorSharing union that
-// needs no extra ids (private requires an ownerId, so it's omitted here).
-const SHARING_OPTIONS = [
-  { value: 'project', label: 'Everyone in project', intent: { mode: 'project' } as const },
-  { value: 'members', label: 'Specific members only', intent: { mode: 'members' } as const },
-];
+import { qk } from '@/lib/query-keys';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import {
+  ExternalLink,
+  Globe,
+  Link2,
+  MonitorPlay,
+  RefreshCw,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 function statusVariant(status?: string) {
   if (status === 'online') return 'default' as const;
   if (status === 'offline') return 'destructive' as const;
   return 'secondary' as const;
-}
-
-async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard');
-  } catch {
-    toast.error('Could not copy');
-  }
 }
 
 interface PreviewUrlResponse {
@@ -124,38 +96,22 @@ export function PreviewPanel({
   projectId: string;
   sessionId: string;
 }) {
-  const qc = useQueryClient();
   const wrapperMode = useWrapperMode();
   const session = useMemo(() => kortix.session(projectId, sessionId), [projectId, sessionId]);
 
-  const previewsKey = ['session-previews', projectId, sessionId];
-  const sharesKey = ['session-shares', projectId, sessionId];
-
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const [sharingMode, setSharingMode] = useState<string>('project');
-
-  // Create-share dialog state.
-  const [createOpen, setCreateOpen] = useState(false);
-  const [shareLabel, setShareLabel] = useState('');
-  const [shareInteractive, setShareInteractive] = useState('interactive');
 
   // "Open a localhost link" state — paste a URL the agent printed.
   const [localhostUrl, setLocalhostUrl] = useState('');
 
   const previewsQuery = useQuery({
-    queryKey: previewsKey,
+    queryKey: qk.sessionPreviews(projectId, sessionId),
     queryFn: () => session.previews(),
     refetchInterval: 5000,
   });
 
-  const sharesQuery = useQuery({
-    queryKey: sharesKey,
-    queryFn: () => session.publicShares.list(),
-  });
-
   const candidates = previewsQuery.data?.candidates ?? [];
-  const shares = sharesQuery.data?.shares ?? [];
 
   // Default the selection to the first candidate once they arrive / keep a
   // valid selection if the previously-selected port disappears.
@@ -224,54 +180,6 @@ export function PreviewPanel({
     openLocalhostMut.mutate({ targetUrl, popup });
   }
 
-  const setSharingMut = useMutation({
-    mutationFn: (value: string) => {
-      const opt = SHARING_OPTIONS.find((o) => o.value === value) ?? SHARING_OPTIONS[0];
-      return session.setSharing(opt.intent);
-    },
-    onSuccess: (_data, value) => {
-      setSharingMode(value);
-      qc.invalidateQueries({ queryKey: sharesKey });
-      toast.success('Sharing updated');
-    },
-    onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to update sharing'),
-  });
-
-  const createMut = useMutation({
-    mutationFn: () => {
-      if (!selected) throw new Error('No preview selected');
-      return session.publicShares.create({
-        preview_id: selected.id,
-        preview: {
-          label: selected.label,
-          port: selected.port,
-          path: selected.path,
-        },
-        mode: shareInteractive === 'interactive' ? 'interactive' : 'view',
-        label: shareLabel.trim() || selected.label,
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: sharesKey });
-      toast.success('Public share created');
-      setCreateOpen(false);
-      setShareLabel('');
-    },
-    onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to create share'),
-  });
-
-  const revokeMut = useMutation({
-    mutationFn: (shareId: string) => session.publicShares.revoke(shareId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: sharesKey });
-      toast.success('Share revoked');
-    },
-    onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to revoke share'),
-  });
-
   const loadingPreviews = previewsQuery.isLoading || (!!selected && previewUrlQuery.isLoading);
 
   return (
@@ -332,103 +240,7 @@ export function PreviewPanel({
       </div>
 
       {/* Sharing controls */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Share2 className="size-4 shrink-0 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">Session visibility</span>
-        <Select
-          value={sharingMode}
-          onValueChange={(v) => setSharingMut.mutate(v)}
-          disabled={setSharingMut.isPending}
-        >
-          <SelectTrigger className="h-8 w-[200px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SHARING_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value} className="text-xs">
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {setSharingMut.isPending && <Loading className="size-3.5 text-muted-foreground" />}
-
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="ml-auto h-8 gap-1.5"
-              disabled={!selected}
-            >
-              <Plus className="size-3.5" />
-              Create public share
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Create public share</DialogTitle>
-              <DialogDescription>
-                Mint a public link for{' '}
-                <span className="font-mono text-foreground">
-                  {selected ? `:${selected.port}${selected.path ?? ''}` : 'the preview'}
-                </span>
-                .
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-1">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Label</label>
-                <Input
-                  value={shareLabel}
-                  onChange={(e) => setShareLabel(e.target.value)}
-                  placeholder={selected?.label || 'My preview'}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Mode</label>
-                <Select value={shareInteractive} onValueChange={setShareInteractive}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="interactive" className="text-xs">
-                      Interactive
-                    </SelectItem>
-                    <SelectItem value="view" className="text-xs">
-                      View only
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCreateOpen(false)}
-                disabled={createMut.isPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                className="gap-1.5"
-                onClick={() => createMut.mutate()}
-                disabled={createMut.isPending || !selected}
-              >
-                {createMut.isPending ? (
-                  <Loading className="size-3.5" />
-                ) : (
-                  <Share2 className="size-3.5" />
-                )}
-                Create link
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+      <SessionSharing projectId={projectId} sessionId={sessionId} selected={selected} />
 
       {/* Preview surface */}
       <Card className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-border bg-card/50 p-0">
@@ -460,7 +272,7 @@ export function PreviewPanel({
             <Globe className="size-8 text-muted-foreground/50" />
             <p className="text-sm font-medium text-foreground">No preview yet</p>
             <p className="max-w-xs text-xs text-muted-foreground">
-              The agent hasn&apos;t exposed a port. Once it starts a dev server the preview will
+              The agent hasn't exposed a port. Once it starts a dev server the preview will
               appear here automatically.
             </p>
           </div>
@@ -468,79 +280,7 @@ export function PreviewPanel({
       </Card>
 
       {/* Public shares */}
-      <div className="shrink-0 space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-foreground">Public shares</span>
-          <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
-            {shares.length}
-          </Badge>
-          {sharesQuery.isFetching && <Loading className="size-3 text-muted-foreground" />}
-        </div>
-        <Separator />
-        {shares.length === 0 ? (
-          <p className="py-2 text-xs text-muted-foreground">
-            No public links yet. Create one to share this preview outside the workspace.
-          </p>
-        ) : (
-          <ul className="max-h-48 space-y-1.5 overflow-auto scrollbar-thin">
-            {shares.map((share) => {
-              // Relative paths resolve against this page's origin; the SDK
-              // function owns the field fallback order beside the type.
-              const url = resolvePublicShareUrl(
-                share,
-                typeof window !== 'undefined' ? window.location.origin : undefined,
-              );
-              const revoked = !!share.revoked_at;
-              return (
-                <li
-                  key={share.share_id}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-2.5 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-xs font-medium text-foreground">
-                        {share.label || `Port ${share.port ?? '—'}`}
-                      </span>
-                      {revoked ? (
-                        <Badge variant="destructive" className="px-1.5 py-0 text-[0.65rem]">
-                          revoked
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="px-1.5 py-0 text-[0.65rem]">
-                          {share.mode || 'view'}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="truncate font-mono text-[0.7rem] text-muted-foreground">
-                      {url || '—'}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 shrink-0"
-                    disabled={!url}
-                    onClick={() => copy(url)}
-                    title="Copy URL"
-                  >
-                    <Copy className="size-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 shrink-0 text-destructive hover:text-destructive"
-                    disabled={revoked || revokeMut.isPending}
-                    onClick={() => revokeMut.mutate(share.share_id)}
-                    title="Revoke share"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+      <PublicSharesList projectId={projectId} sessionId={sessionId} />
 
       {/* Open a localhost link — proxy a URL the agent printed */}
       <div className="shrink-0 space-y-2">

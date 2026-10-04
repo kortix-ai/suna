@@ -2,20 +2,10 @@
 
 import Loading from '@/components/ui/loading';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { MemberRow, type AccountMemberRole } from '@/components/account/member-row';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -27,14 +17,12 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { ApiError } from '@kortix/sdk';
-import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, UserMinus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-const ROLES = ['owner', 'admin', 'member'] as const;
-type Role = (typeof ROLES)[number];
+const ROLES: AccountMemberRole[] = ['owner', 'admin', 'member'];
+type Role = AccountMemberRole;
 
 /**
  * Members section — `accounts.members` to list, `accounts.invite` to add,
@@ -149,64 +137,19 @@ export function MembersSection({ accountId }: { accountId: string }) {
           <div className="p-6 text-center text-sm text-muted-foreground">Just you so far.</div>
         )}
         {items.map((m, i) => {
-          const label = m.email ?? m.user_id ?? 'Member';
-          const initial = label.charAt(0).toUpperCase();
-          const memberRole = m.account_role;
           const userId = m.user_id;
           const busy =
             (changeRole.isPending && changeRole.variables?.userId === userId) ||
             (remove.isPending && remove.variables === userId);
           return (
-            <div key={userId ?? m.email ?? i} className="flex items-center gap-3 px-4 py-3">
-              <Avatar size="sm">
-                <AvatarFallback>{initial}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{label}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {m.joined_at ? `Joined ${relativeTime(m.joined_at)}` : (userId ?? '')}
-                </div>
-              </div>
-              <Badge variant="outline" className="capitalize">
-                {memberRole}
-              </Badge>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    disabled={!userId || busy}
-                    aria-label={`Manage ${label}`}
-                  >
-                    {busy ? <Loading className="size-4" /> : <MoreHorizontal className="size-4" />}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuLabel>Change role</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={memberRole}
-                    onValueChange={(v) => {
-                      if (userId && v !== memberRole)
-                        changeRole.mutate({ userId, role: v as Role });
-                    }}
-                  >
-                    {ROLES.map((r) => (
-                      <DropdownMenuRadioItem key={r} value={r} className="capitalize">
-                        {r}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => userId && remove.mutate(userId)}
-                  >
-                    <UserMinus className="size-4" /> Remove from account
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <MemberRow
+              key={userId ?? m.email ?? i}
+              member={m}
+              index={i}
+              busy={busy}
+              onChangeRole={(v: { userId: string; role: Role }) => changeRole.mutate(v)}
+              onRemove={(id: string) => remove.mutate(id)}
+            />
           );
         })}
       </Card>
