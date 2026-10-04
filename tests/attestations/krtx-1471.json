@@ -1,5 +1,5 @@
 {
-  "source_hash": "7391a5e73f253d3074c75717a97b579b83caeb5dccffeef498cf86f70a9eca6c",
+  "source_hash": "847877d2c01bc7f1d7b6e2b61c9444925905a2dabb96d7646d1d71477fa07ff1",
   "diff_files": [
     "apps/api/src/__tests__/billing/mocks.ts",
     "apps/api/src/__tests__/e2e-billing-routes.test.ts",
@@ -15,13 +15,13 @@
     "packages/sdk/src/core/rest/projects-client/account-lifecycle.ts",
     "scripts/dev-local.sh"
   ],
-  "diff_hash": "210f8f017dfd7c88009385c61fa825bbd8373e8374f918817b3a7745e9c3adc3",
-  "head": "e6b6f5f162cf20e5118a82905122f97c3b1c0de9",
+  "diff_hash": "37001ec9840d6777f29cd9f1d39479c015d09c3b103567090cb7d12ffcfb2dff",
+  "head": "35a3d75d8238c28941376a5d77d3ebb1e23db069",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "skipped-sandbox-image",
-    "db-suites": "pass"
+    "db-suites": "pass",
+    "packages": "skipped-sandbox-image"
   },
-  "at": "2026-10-04T03:00:55.919Z"
+  "at": "2026-10-04T03:37:07.563Z"
 }
