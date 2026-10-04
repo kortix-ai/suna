@@ -61,12 +61,15 @@ export interface AdminEntitlementOverrideEntry {
 export type AdminEntitlementOverrides = Record<string, AdminEntitlementOverrideEntry>;
 
 /**
- * Every override key the server accepts. Anything else is a 400 from
- * `validateOverridePatch`, so the console builds its rows from this list rather
- * than from free-form strings.
+ * Every override key the server accepts, plus one retired key. Anything else is
+ * a 400 from `validateOverridePatch`, so the console builds its rows from this
+ * list rather than from free-form strings.
  *
  * Mirrors `OVERRIDE_KEYS` in
- * `apps/api/src/billing/services/entitlement-overrides.ts`.
+ * `apps/api/src/billing/services/entitlement-overrides.ts`, except
+ * `maxConcurrentSessions`: sessions are uncapped and the server now rejects that
+ * key with a 400. It stays in the union because removing a member is a breaking
+ * change; drop it on the next major.
  */
 export const ADMIN_OVERRIDE_KEYS = [
   'enterpriseEntitled',

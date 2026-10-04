@@ -31,6 +31,12 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (name.startsWith('KORTIX_') && !RUNNER_CONTROLS.has(name)) continue;
+    // The session also exports BASH_ENV=/dev/shm/kortix/agent-env.sh. A bash
+    // script started while the stack under test has written that file sources
+    // it at startup and injects the host's project identity into every test
+    // worker (the compiled-runtime identity checks then fail on the ambient
+    // value). Dropping it here reproduces CI, where BASH_ENV is unset.
+    if (name === 'BASH_ENV') continue;
     env[name] = value;
   }
   env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
@@ -238,3 +244,9 @@ await runAll([
     2,
   ),
 ]);
+// apps/kortix-worker sits outside the pnpm workspace (own bun.lock, supply-chain
+// cooldown), so the workspace fan-out above cannot reach it. Install its deps
+// the way the sandbox-agent job does in ci.yml, then run its tests here — no
+// lane ran them before this.
+await run(['bun', 'install', '--frozen-lockfile'], { cwd: resolve(root, 'apps/kortix-worker') });
+await run(['bun', 'test', 'src/'], { cwd: resolve(root, 'apps/kortix-worker') });

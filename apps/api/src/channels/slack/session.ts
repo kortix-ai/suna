@@ -173,7 +173,7 @@ export async function createOrJoinThreadSession(input: {
 
   if (result.status === 'queued' || result.status === 'pending') {
     if (handle) {
-      await finalizeTurn(handle, { answer: queuedMessage(result.reason) });
+      await finalizeTurn(handle, { answer: queuedMessage() });
     }
     return;
   }
@@ -246,7 +246,6 @@ async function launchSlackSession(
       // Slack markup with them: `<@U0…>` reads `@Sam`, as Slack shows it.
       title_source: event.text ? slackPlainText(labels.text) : null,
     },
-    enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
     // Per-message key allows retry after a failed first start; claim serializes races.
     idempotencyKey: teamId && threadId && event.ts ? `slack:create:${teamId}:${threadId}:${event.ts}` : claimKey,
@@ -361,11 +360,7 @@ async function joinExistingThread(
   return claimKey;
 }
 
-function queuedMessage(reason?: string): string {
-  if (reason === 'account session cap') {
-    return "This workspace is at its concurrent-session limit, so I've queued your task. I'll start it and reply right here as soon as a running session frees up a slot.";
-  }
-  // 'project provisioning backpressure' or an unspecified queue reason.
+function queuedMessage(): string {
   return "I've queued your task behind the sessions already starting up in this project, and I'll reply right here the moment it begins.";
 }
 
