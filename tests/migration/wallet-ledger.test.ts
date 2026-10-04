@@ -27,7 +27,11 @@ function psql(query: string): string {
 }
 
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  // Probe the container's own TCP listener, never the Unix socket: the
+  // entrypoint's temporary init server answers the socket while the real
+  // server (the one the published port proxies to) is not up yet, so a
+  // socket-ready poll lets runMigrate's first psql die mid-init.
+  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'postgres']).ok;
 }
 
 type Buckets = { daily?: number; expiring?: number; nonExpiring?: number };
