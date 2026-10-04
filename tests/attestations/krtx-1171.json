@@ -1,0 +1,16 @@
+{
+  "source_hash": "8434978b77c46c4aed010d709093b7fcf931253ce7091a2f8a15cd653e4e687c",
+  "diff_files": [
+    "packages/db/migrations/20261004061056662_agents_backup_cleanup_pk.sql",
+    "tests/migration/agents-backup-cleanup-primary-key.test.ts"
+  ],
+  "diff_hash": "fc3ba2ba2cbb50fabefb3ef9ae9722b84506e892575b4a23355d53f648cffd51",
+  "head": "42bb88d2810ab800d863eb8ba97277b259d1e59f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:33:00.026Z"
+}
