@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -12,10 +12,8 @@ import { join, resolve } from 'node:path';
 
 const CLI_ENTRY = resolve(import.meta.dir, '..', 'index.ts');
 
-let tmp: string;
-
 async function runCli(args: string[]): Promise<{ code: number; stdout: string }> {
-  tmp = mkdtempSync(join(tmpdir(), 'kortix-hosts-help-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'kortix-hosts-help-'));
   const env: Record<string, string | undefined> = {
     ...process.env,
     HOME: tmp,
@@ -48,12 +46,9 @@ async function runCli(args: string[]): Promise<{ code: number; stdout: string }>
     return { code, stdout };
   } finally {
     clearTimeout(timeout);
+    rmSync(tmp, { recursive: true, force: true });
   }
 }
-
-afterEach(() => {
-  rmSync(tmp, { recursive: true, force: true });
-});
 
 /** The URL in a built-in host's help line (`name  description (url)`). */
 function helpUrlFor(help: string, name: string): string | null {
