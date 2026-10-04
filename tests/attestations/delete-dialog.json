@@ -13,13 +13,13 @@
     "apps/web/translations/pt.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "82c83429f2a2df2c19c8b49051ff85ed8887435a551f90eee991dc0946af3189",
-  "head": "2bbbcfc223ccfc943e9bfa2874da54eb417c3257",
+  "diff_hash": "bcda0983e488f1ed8b25401571b3f086eb063e13ba300025fb1cd78cd30b5e69",
+  "head": "251c934c1e48cb27bbc0fb1b958093cf53ef7d5b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T03:43:38.085Z"
+  "at": "2026-10-04T03:44:32.480Z"
 }

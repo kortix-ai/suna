@@ -64,12 +64,14 @@ mock.module('@/i18n/use-translations', () => ({
 const { ProfileTab } = await import('./profile-tab');
 
 async function mountTab() {
+  const { ProfileTab } = await import('./profile-tab');
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let renderer: ReturnType<typeof create> | undefined;
   await act(async () => {
     renderer = create(createElement(QueryClientProvider, { client }, createElement(ProfileTab)));
   });
-  return { renderer: renderer!, client };
+  if (!renderer) throw new Error('ProfileTab did not mount');
+  return { renderer, client };
 }
 
 const confirmInput = (root: ReactTestInstance) =>
