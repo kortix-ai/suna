@@ -1,5 +1,5 @@
 {
-  "source_hash": "7a0f2fd219ae6d139d232144bad43adc071b5a3950ae371d6b9e81c3c032d13d",
+  "source_hash": "4b75154f19e6495b57195180b76fbb115e168f91e55aae486792845287df14ff",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
@@ -9,7 +9,6 @@
     "apps/web/src/features/session/message-parsing.test.ts",
     "apps/web/src/features/session/reply-context.test.ts",
     "apps/web/src/features/session/turn/channel-message.test.ts",
-    "apps/web/src/lib/menu-registry.flags.test.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/lib/utils/kortix-system-tags.test.ts",
     "packages/agent-tunnel/package.json",
@@ -24,13 +23,13 @@
     "packages/starter/package.json",
     "tests/bin/package-quality.ts"
   ],
-  "diff_hash": "e25c42583d1c6c712874f774a745a30b5691ae79c8319a2a6ddb4d00068335ef",
-  "head": "28e164103ec0276b0919c5b83159b2fc2a2b166b",
-  "passed": true,
+  "diff_hash": "6d7f91df3456e0fb77840b90b4b28468b6864516cba4761433955bd0712c8c93",
+  "head": "8813ef0ff95633782cce985aedbc156ea3420be4",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T01:37:47.179Z"
+  "at": "2026-10-04T02:30:19.024Z"
 }
