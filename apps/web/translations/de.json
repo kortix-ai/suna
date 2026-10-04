@@ -20935,22 +20935,24 @@
     },
     "dialog": {
       "title": "Diesen Computer aufnehmen",
-      "record": "Diesen Computer für {project} aufnehmen",
-      "offHint": "Aus. Schalte es ein, um diesen Computer in das Projekt aufzunehmen.",
-      "signingIn": "Wird angemeldet…",
-      "state": {
-        "recording": "Nimmt auf",
+      "status": {
+        "off": "Aus",
+        "turningOn": "Startet",
+        "signInRequired": "Abgemeldet",
+        "error": "Gestoppt",
+        "needsPermission": "Braucht eine Berechtigung",
         "paused": "Pausiert",
-        "permission_missing": "Braucht eine Berechtigung",
-        "not_recording": "Nimmt nicht auf",
-        "starting": "Startet…",
-        "crashed": "Gestoppt",
-        "off": "Aus"
+        "pausedUntil": "Pausiert bis {time}",
+        "pausedByProject": "Vom Projekt pausiert",
+        "starting": "Startet",
+        "recording": "Nimmt auf",
+        "unavailable": "Nicht verfügbar",
+        "projectOff": "Für dieses Projekt aus"
       },
-      "unavailableTitle": "Nicht verfügbar",
       "unavailable": "Diese Desktop-App enthält kein Kortix Capture. Aktualisiere Kortix auf die neueste Version.",
       "projectOff": "Capture ist für dieses Projekt aus. Personen, die es verwalten, können es unter Einstellungen → Feature-Flags einschalten.",
-      "layersTitle": "Was Capture aufnimmt",
+      "intro": "Nimmt diesen Computer in {project} auf, damit du und deine Agents durchsuchen könnt, was du getan hast. Du und die Personen, die das Projekt verwalten, können es sehen.",
+      "layersTitle": "Was aufgenommen wird",
       "layers": {
         "screen": "Bildschirm",
         "screenDescription": "Etwa alle 2 Sekunden ein Screenshot, mit seinem Text.",
@@ -20959,21 +20961,30 @@
         "audio": "Audio",
         "audioDescription": "Dein Mikrofon und was dieser Computer abspielt."
       },
-      "noLayers": "Keine Ebene nimmt auf",
-      "layerOffByPolicy": "Für dieses Projekt aus. Die Personen, die es verwalten, entscheiden.",
-      "otherProject": "Dieser Computer nimmt gerade in ein anderes Projekt auf. Einschalten hier wechselt zu diesem.",
-      "waitingOnPage": "Bestätige die Anmeldung auf der Seite, die sich in deinem Browser geöffnet hat.",
-      "signInRequired": "Dieser Computer hat den Zugriff auf Capture in diesem Projekt verloren. Schalte es wieder ein, um aufzunehmen.",
-      "policyNotice": "Von den Personen, die dieses Projekt verwalten",
-      "setup": {
-        "title": "Capture fertig einrichten",
-        "hint": "macOS fragt jede Berechtigung unten einmal ab. Sie gehen an Kortix, damit Capture ohne erneute Nachfrage aufnehmen kann.",
+      "noLayers": "Nichts wird aufgenommen: Alle Ebenen sind aus.",
+      "turningOn": {
+        "progress": "Dieser Computer wird bei {project} angemeldet…",
+        "waitingOnPage": "Bestätige die Anmeldung auf der Seite, die sich in deinem Browser geöffnet hat."
+      },
+      "layerOffByPolicy": "Für dieses Projekt aus",
+      "notice": "Von den Personen, die {project} verwalten",
+      "otherProject": "Dieser Computer nimmt gerade in ein anderes Projekt auf. Ein Start hier wechselt zu diesem.",
+      "signInRequired": {
+        "title": "Dieser Computer wurde abgemeldet",
+        "hint": "Capture ist für das Projekt vielleicht aus, oder jemand hat diesen Computer entfernt. Melde dich erneut an, um aufzunehmen."
+      },
+      "error": {
+        "title": "Capture gestoppt",
+        "fallback": "Die Aufnahme wurde gestoppt. Versuche es erneut oder öffne die Logs."
+      },
+      "permissions": {
+        "title": "Kortix das Aufnehmen erlauben",
+        "hint": "macOS fragt jede Berechtigung einmal ab. Sie gehen an Kortix, damit Capture ohne erneute Nachfrage aufnimmt.",
         "needed": "Noch nicht erlaubt",
         "waiting": "Wartet auf dich",
-        "allowAll": "Alle erlauben",
-        "settingsHint": "Wenn sich die Systemeinstellungen öffnen, schalte Kortix in der Liste ein. Das aktualisiert sich von selbst."
-      },
-      "grants": {
+        "allowed": "Erlaubt",
+        "allow": "Zugriff erlauben",
+        "settingsHint": "Wenn sich die Systemeinstellungen öffnen, schalte Kortix in der Liste ein. Das aktualisiert sich von selbst.",
         "screen": "Bildschirmaufnahme",
         "screenDescription": "Sehen und aufnehmen, was auf dem Bildschirm ist",
         "accessibility": "Bedienungshilfen",
@@ -20981,17 +20992,34 @@
         "microphone": "Mikrofon",
         "microphoneDescription": "Aufnehmen, was gesagt wird, nur wenn Audio an ist"
       },
-      "openTimeline": "Zeitleiste öffnen",
-      "showLogs": "Logs anzeigen",
-      "signOutEllipsis": "Stoppen und abmelden…",
-      "signOutTitle": "Aufnahme dieses Computers stoppen?",
-      "signOutDescription": "Capture stoppt auf diesem Computer, und dieser Computer verliert den Zugriff auf das Projekt. Aufnahmen bleiben im Projekt. Um wieder aufzunehmen, schalte es wieder ein.",
-      "signOut": "Stoppen und abmelden",
-      "signedOut": "Capture gestoppt",
-      "signOutFailed": "Capture konnte nicht gestoppt werden. Versuche es erneut.",
-      "changeFailed": "Capture konnte nicht geändert werden. Versuche es erneut.",
-      "signInCancelled": "Anmeldung abgebrochen",
-      "signInFailed": "Capture konnte nicht angemeldet werden. Versuche es erneut."
+      "actions": {
+        "close": "Schließen",
+        "cancel": "Abbrechen",
+        "start": "Aufnahme starten",
+        "starting": "Startet…",
+        "signInAgain": "Erneut anmelden",
+        "tryAgain": "Erneut versuchen",
+        "resume": "Fortsetzen",
+        "pause": "1 Stunde pausieren",
+        "openTimeline": "Zeitleiste öffnen",
+        "more": "Weitere Aktionen",
+        "showLogs": "Logs anzeigen",
+        "stop": "Aufnahme stoppen",
+        "signOut": "Von Capture abmelden…"
+      },
+      "signOut": {
+        "title": "Von Capture abmelden?",
+        "description": "Capture stoppt auf diesem Computer, und dieser Computer verliert den Zugriff auf das Projekt. Aufnahmen bleiben im Projekt. Um wieder aufzunehmen, starte die Aufnahme erneut.",
+        "confirm": "Abmelden"
+      },
+      "toast": {
+        "started": "Aufnahme gestartet",
+        "stopped": "Aufnahme gestoppt",
+        "paused": "Aufnahme pausiert",
+        "resumed": "Aufnahme fortgesetzt",
+        "signedOut": "Von Capture abgemeldet"
+      },
+      "changeFailed": "Capture konnte nicht geändert werden. Versuche es erneut."
     }
   }
 }

@@ -20935,22 +20935,24 @@
     },
     "dialog": {
       "title": "Record this computer",
-      "record": "Record this computer for {project}",
-      "offHint": "Off. Turn it on to record this computer into the project.",
-      "signingIn": "Signing in…",
-      "state": {
-        "recording": "Recording",
+      "status": {
+        "off": "Off",
+        "turningOn": "Starting",
+        "signInRequired": "Signed out",
+        "error": "Stopped",
+        "needsPermission": "Needs permission",
         "paused": "Paused",
-        "permission_missing": "Needs permission",
-        "not_recording": "Not recording",
-        "starting": "Starting…",
-        "crashed": "Stopped",
-        "off": "Off"
+        "pausedUntil": "Paused until {time}",
+        "pausedByProject": "Paused by the project",
+        "starting": "Starting",
+        "recording": "Recording",
+        "unavailable": "Not available",
+        "projectOff": "Off for this project"
       },
-      "unavailableTitle": "Not available",
       "unavailable": "This desktop app has no Kortix Capture. Update Kortix to the newest version.",
       "projectOff": "Capture is off for this project. The people who manage it can turn it on in Settings → Feature flags.",
-      "layersTitle": "What Capture records",
+      "intro": "Records this computer into {project}, so you and your agents can search what you did. You and the people who manage the project can see it.",
+      "layersTitle": "What is recorded",
       "layers": {
         "screen": "Screen",
         "screenDescription": "A screenshot about every 2 seconds, with its text.",
@@ -20959,21 +20961,30 @@
         "audio": "Audio",
         "audioDescription": "Your microphone and what this computer plays."
       },
-      "noLayers": "No layer records",
-      "layerOffByPolicy": "Off for this project. The people who manage it decide.",
-      "otherProject": "This computer records into another project now. Turning it on here moves it to this one.",
-      "waitingOnPage": "Approve the sign-in on the page that opened in your browser.",
-      "signInRequired": "This computer lost access to Capture in this project. Turn it on again to record.",
-      "policyNotice": "From the people who manage this project",
-      "setup": {
-        "title": "Finish setting up Capture",
-        "hint": "macOS asks once for each permission below. They go to Kortix, so Capture can record without asking again.",
+      "noLayers": "Nothing records: every layer is off.",
+      "turningOn": {
+        "progress": "Signing this computer in to {project}…",
+        "waitingOnPage": "Approve the sign-in on the page that opened in your browser."
+      },
+      "layerOffByPolicy": "Off for this project",
+      "notice": "From the people who manage {project}",
+      "otherProject": "This computer records into another project now. Starting here moves it to this one.",
+      "signInRequired": {
+        "title": "This computer was signed out",
+        "hint": "Capture may be off for the project, or someone removed this computer. Sign in again to record."
+      },
+      "error": {
+        "title": "Capture stopped",
+        "fallback": "The recorder stopped. Try again, or open the logs."
+      },
+      "permissions": {
+        "title": "Allow Kortix to record",
+        "hint": "macOS asks once for each. They go to Kortix, so Capture records without asking again.",
         "needed": "Not allowed yet",
         "waiting": "Waiting for you",
-        "allowAll": "Allow all",
-        "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself."
-      },
-      "grants": {
+        "allowed": "Allowed",
+        "allow": "Allow access",
+        "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself.",
         "screen": "Screen Recording",
         "screenDescription": "See and record what is on the screen",
         "accessibility": "Accessibility",
@@ -20981,17 +20992,34 @@
         "microphone": "Microphone",
         "microphoneDescription": "Record what is said, only while Audio is on"
       },
-      "openTimeline": "Open timeline",
-      "showLogs": "Show logs",
-      "signOutEllipsis": "Stop and sign out…",
-      "signOutTitle": "Stop recording this computer?",
-      "signOutDescription": "Capture stops on this computer, and this computer loses access to the project. Recordings stay in the project. To record again, turn it on again.",
-      "signOut": "Stop and sign out",
-      "signedOut": "Capture stopped",
-      "signOutFailed": "Could not stop Capture. Try again.",
-      "changeFailed": "Could not change Capture. Try again.",
-      "signInCancelled": "Sign-in cancelled",
-      "signInFailed": "Could not sign in Capture. Try again."
+      "actions": {
+        "close": "Close",
+        "cancel": "Cancel",
+        "start": "Start recording",
+        "starting": "Starting…",
+        "signInAgain": "Sign in again",
+        "tryAgain": "Try again",
+        "resume": "Resume",
+        "pause": "Pause for 1 hour",
+        "openTimeline": "Open timeline",
+        "more": "More actions",
+        "showLogs": "Show logs",
+        "stop": "Stop recording",
+        "signOut": "Sign out of Capture…"
+      },
+      "signOut": {
+        "title": "Sign out of Capture?",
+        "description": "Capture stops on this computer, and this computer loses access to the project. Recordings stay in the project. To record again, start recording again.",
+        "confirm": "Sign out"
+      },
+      "toast": {
+        "started": "Recording started",
+        "stopped": "Recording stopped",
+        "paused": "Recording paused",
+        "resumed": "Recording resumed",
+        "signedOut": "Signed out of Capture"
+      },
+      "changeFailed": "Could not change Capture. Try again."
     }
   }
 }

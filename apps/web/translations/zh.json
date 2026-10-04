@@ -20935,22 +20935,24 @@
     },
     "dialog": {
       "title": "记录这台电脑",
-      "record": "为 {project} 记录这台电脑",
-      "offHint": "已关闭。开启后会将这台电脑记录到该项目。",
-      "signingIn": "正在登录…",
-      "state": {
-        "recording": "正在记录",
+      "status": {
+        "off": "关闭",
+        "turningOn": "正在启动",
+        "signInRequired": "已退出",
+        "error": "已停止",
+        "needsPermission": "需要权限",
         "paused": "已暂停",
-        "permission_missing": "需要权限",
-        "not_recording": "未在记录",
-        "starting": "正在启动…",
-        "crashed": "已停止",
-        "off": "关闭"
+        "pausedUntil": "暂停至 {time}",
+        "pausedByProject": "项目已暂停",
+        "starting": "正在启动",
+        "recording": "正在记录",
+        "unavailable": "不可用",
+        "projectOff": "此项目已关闭"
       },
-      "unavailableTitle": "不可用",
       "unavailable": "此桌面应用不包含 Kortix Capture。请将 Kortix 更新到最新版本。",
       "projectOff": "此项目已关闭 Capture。项目管理者可在“设置 → 功能开关”中开启。",
-      "layersTitle": "Capture 记录的内容",
+      "intro": "将这台电脑记录到 {project}，让你和你的智能体可以搜索你做过的事。你和项目管理者可以查看。",
+      "layersTitle": "记录的内容",
       "layers": {
         "screen": "屏幕",
         "screenDescription": "大约每 2 秒一张截图及其文字。",
@@ -20959,21 +20961,30 @@
         "audio": "音频",
         "audioDescription": "你的麦克风和这台电脑播放的声音。"
       },
-      "noLayers": "没有正在记录的层",
-      "layerOffByPolicy": "此项目已关闭。由项目管理者决定。",
-      "otherProject": "这台电脑正在记录到另一个项目。在这里开启会把它切换到此项目。",
-      "waitingOnPage": "请在浏览器中打开的页面上批准登录。",
-      "signInRequired": "这台电脑在此项目中已失去 Capture 访问权限。请重新开启以记录。",
-      "policyNotice": "来自此项目的管理者",
-      "setup": {
-        "title": "完成 Capture 设置",
-        "hint": "macOS 会对下面每项权限询问一次。权限授予 Kortix，Capture 之后无需再次询问即可记录。",
+      "noLayers": "没有记录任何内容：所有层都已关闭。",
+      "turningOn": {
+        "progress": "正在将这台电脑登录到 {project}…",
+        "waitingOnPage": "请在浏览器中打开的页面上批准登录。"
+      },
+      "layerOffByPolicy": "此项目已关闭",
+      "notice": "来自 {project} 的管理者",
+      "otherProject": "这台电脑正在记录到另一个项目。在这里开始会把它切换到此项目。",
+      "signInRequired": {
+        "title": "这台电脑已退出",
+        "hint": "可能是项目关闭了 Capture，或有人移除了这台电脑。请重新登录以继续记录。"
+      },
+      "error": {
+        "title": "Capture 已停止",
+        "fallback": "记录已停止。请重试，或打开日志。"
+      },
+      "permissions": {
+        "title": "允许 Kortix 记录",
+        "hint": "macOS 对每项权限只询问一次。权限授予 Kortix，Capture 之后无需再次询问即可记录。",
         "needed": "尚未允许",
         "waiting": "等待你操作",
-        "allowAll": "全部允许",
-        "settingsHint": "如果系统设置打开，请在列表中开启 Kortix。会自动更新。"
-      },
-      "grants": {
+        "allowed": "已允许",
+        "allow": "允许访问",
+        "settingsHint": "如果系统设置打开，请在列表中开启 Kortix。会自动更新。",
         "screen": "屏幕录制",
         "screenDescription": "查看并记录屏幕上的内容",
         "accessibility": "辅助功能",
@@ -20981,17 +20992,34 @@
         "microphone": "麦克风",
         "microphoneDescription": "记录说话内容，仅在开启音频时"
       },
-      "openTimeline": "打开时间线",
-      "showLogs": "显示日志",
-      "signOutEllipsis": "停止并退出…",
-      "signOutTitle": "停止记录这台电脑？",
-      "signOutDescription": "Capture 会在这台电脑上停止，这台电脑会失去对项目的访问。记录会保留在项目中。要再次记录，请重新开启。",
-      "signOut": "停止并退出",
-      "signedOut": "Capture 已停止",
-      "signOutFailed": "无法停止 Capture。请重试。",
-      "changeFailed": "无法更改 Capture。请重试。",
-      "signInCancelled": "已取消登录",
-      "signInFailed": "无法登录 Capture。请重试。"
+      "actions": {
+        "close": "关闭",
+        "cancel": "取消",
+        "start": "开始记录",
+        "starting": "正在启动…",
+        "signInAgain": "重新登录",
+        "tryAgain": "重试",
+        "resume": "继续",
+        "pause": "暂停 1 小时",
+        "openTimeline": "打开时间线",
+        "more": "更多操作",
+        "showLogs": "显示日志",
+        "stop": "停止记录",
+        "signOut": "退出 Capture…"
+      },
+      "signOut": {
+        "title": "退出 Capture？",
+        "description": "Capture 会在这台电脑上停止，这台电脑会失去对项目的访问。记录会保留在项目中。要再次记录，请重新开始记录。",
+        "confirm": "退出"
+      },
+      "toast": {
+        "started": "已开始记录",
+        "stopped": "已停止记录",
+        "paused": "已暂停记录",
+        "resumed": "已继续记录",
+        "signedOut": "已退出 Capture"
+      },
+      "changeFailed": "无法更改 Capture。请重试。"
     }
   }
 }

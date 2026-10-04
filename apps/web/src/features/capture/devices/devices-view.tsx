@@ -37,7 +37,8 @@ import { relativeTime } from '../capture-time';
 import { desktopDownloadUrl } from '@/lib/desktop';
 import Link from 'next/link';
 
-import { CaptureDialog, useDesktopCaptureStatus } from '../capture-dialog';
+import { CaptureDialog } from '../desktop/capture-dialog';
+import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
 import { useCaptureMembers, useCaptureViewer } from '../use-capture-viewer';
 import { computerForDevice, deviceStatus, type DeviceStatusView } from './device-status';
 

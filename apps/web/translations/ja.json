@@ -20935,22 +20935,24 @@
     },
     "dialog": {
       "title": "このコンピューターを記録",
-      "record": "このコンピューターを {project} に記録",
-      "offHint": "オフです。オンにすると、このコンピューターをプロジェクトに記録します。",
-      "signingIn": "サインイン中…",
-      "state": {
-        "recording": "記録中",
+      "status": {
+        "off": "オフ",
+        "turningOn": "起動中",
+        "signInRequired": "サインアウト済み",
+        "error": "停止",
+        "needsPermission": "権限が必要",
         "paused": "一時停止中",
-        "permission_missing": "権限が必要",
-        "not_recording": "記録していません",
-        "starting": "起動中…",
-        "crashed": "停止",
-        "off": "オフ"
+        "pausedUntil": "{time} まで一時停止",
+        "pausedByProject": "プロジェクトにより一時停止",
+        "starting": "起動中",
+        "recording": "記録中",
+        "unavailable": "利用できません",
+        "projectOff": "このプロジェクトではオフ"
       },
-      "unavailableTitle": "利用できません",
       "unavailable": "このデスクトップアプリには Kortix Capture が含まれていません。Kortix を最新版に更新してください。",
       "projectOff": "このプロジェクトでは Capture がオフです。管理者が「設定 → 機能フラグ」でオンにできます。",
-      "layersTitle": "Capture が記録するもの",
+      "intro": "このコンピューターを {project} に記録し、あなたとエージェントがあなたの作業を検索できるようにします。あなたとプロジェクトの管理者が閲覧できます。",
+      "layersTitle": "記録される内容",
       "layers": {
         "screen": "画面",
         "screenDescription": "約 2 秒ごとのスクリーンショットとそのテキスト。",
@@ -20959,21 +20961,30 @@
         "audio": "音声",
         "audioDescription": "マイクと、このコンピューターで再生される音声。"
       },
-      "noLayers": "記録中のレイヤーはありません",
-      "layerOffByPolicy": "このプロジェクトではオフです。管理者が決めます。",
-      "otherProject": "このコンピューターは別のプロジェクトに記録中です。ここでオンにすると、このプロジェクトに切り替わります。",
-      "waitingOnPage": "ブラウザーで開いたページでサインインを承認してください。",
-      "signInRequired": "このコンピューターはこのプロジェクトの Capture へのアクセスを失いました。記録するにはもう一度オンにしてください。",
-      "policyNotice": "このプロジェクトの管理者から",
-      "setup": {
-        "title": "Capture の設定を完了",
-        "hint": "macOS は以下の権限をそれぞれ一度だけ確認します。権限は Kortix に付与され、Capture は再確認なしで記録できます。",
+      "noLayers": "何も記録されていません。すべてのレイヤーがオフです。",
+      "turningOn": {
+        "progress": "このコンピューターを {project} にサインインしています…",
+        "waitingOnPage": "ブラウザーで開いたページでサインインを承認してください。"
+      },
+      "layerOffByPolicy": "このプロジェクトではオフ",
+      "notice": "{project} の管理者より",
+      "otherProject": "このコンピューターは別のプロジェクトに記録中です。ここで開始すると、このプロジェクトに切り替わります。",
+      "signInRequired": {
+        "title": "このコンピューターはサインアウトされました",
+        "hint": "プロジェクトで Capture がオフになったか、誰かがこのコンピューターを削除した可能性があります。記録するにはもう一度サインインしてください。"
+      },
+      "error": {
+        "title": "Capture が停止しました",
+        "fallback": "記録が停止しました。もう一度試すか、ログを開いてください。"
+      },
+      "permissions": {
+        "title": "Kortix に記録を許可",
+        "hint": "macOS は各権限を一度だけ確認します。権限は Kortix に付与され、Capture は再確認なしで記録します。",
         "needed": "まだ許可されていません",
         "waiting": "あなたを待っています",
-        "allowAll": "すべて許可",
-        "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。自動で更新されます。"
-      },
-      "grants": {
+        "allowed": "許可済み",
+        "allow": "アクセスを許可",
+        "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。自動で更新されます。",
         "screen": "画面収録",
         "screenDescription": "画面に表示されているものを見て記録する",
         "accessibility": "アクセシビリティ",
@@ -20981,17 +20992,34 @@
         "microphone": "マイク",
         "microphoneDescription": "話された内容を記録する（音声がオンのときのみ）"
       },
-      "openTimeline": "タイムラインを開く",
-      "showLogs": "ログを表示",
-      "signOutEllipsis": "停止してサインアウト…",
-      "signOutTitle": "このコンピューターの記録を停止しますか?",
-      "signOutDescription": "このコンピューターで Capture が停止し、このコンピューターはプロジェクトへのアクセスを失います。記録はプロジェクトに残ります。再び記録するにはもう一度オンにします。",
-      "signOut": "停止してサインアウト",
-      "signedOut": "Capture を停止しました",
-      "signOutFailed": "Capture を停止できませんでした。もう一度お試しください。",
-      "changeFailed": "Capture を変更できませんでした。もう一度お試しください。",
-      "signInCancelled": "サインインをキャンセルしました",
-      "signInFailed": "Capture にサインインできませんでした。もう一度お試しください。"
+      "actions": {
+        "close": "閉じる",
+        "cancel": "キャンセル",
+        "start": "記録を開始",
+        "starting": "起動中…",
+        "signInAgain": "もう一度サインイン",
+        "tryAgain": "再試行",
+        "resume": "再開",
+        "pause": "1 時間一時停止",
+        "openTimeline": "タイムラインを開く",
+        "more": "その他の操作",
+        "showLogs": "ログを表示",
+        "stop": "記録を停止",
+        "signOut": "Capture からサインアウト…"
+      },
+      "signOut": {
+        "title": "Capture からサインアウトしますか?",
+        "description": "このコンピューターで Capture が停止し、このコンピューターはプロジェクトへのアクセスを失います。記録はプロジェクトに残ります。再び記録するには、もう一度記録を開始します。",
+        "confirm": "サインアウト"
+      },
+      "toast": {
+        "started": "記録を開始しました",
+        "stopped": "記録を停止しました",
+        "paused": "記録を一時停止しました",
+        "resumed": "記録を再開しました",
+        "signedOut": "Capture からサインアウトしました"
+      },
+      "changeFailed": "Capture を変更できませんでした。もう一度お試しください。"
     }
   }
 }

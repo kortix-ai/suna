@@ -475,6 +475,8 @@ export const desktopCaptureSignInCancel = () => desktopAction<null>('capture_sig
 /** Rejects with the desktop app's message. */
 export const desktopCaptureSet = (input: { on?: boolean } & Partial<Record<DesktopCaptureLayer, boolean>>) =>
   desktopAction<DesktopCaptureStatus>('capture_set', input);
+export const desktopCapturePause = (minutes = 60) => desktopAction<DesktopCaptureStatus>('capture_pause', { minutes });
+export const desktopCaptureResume = () => desktopAction<DesktopCaptureStatus>('capture_resume');
 /** "Allow all": asks macOS for Screen Recording, Accessibility, and the Microphone when `audio`, for Kortix. */
 export const desktopCaptureRequestGrants = (input: { audio: boolean }) =>
   desktopAction<DesktopCaptureStatus>('capture_grants_request', input);

@@ -20935,22 +20935,24 @@
     },
     "dialog": {
       "title": "Registra questo computer",
-      "record": "Registra questo computer per {project}",
-      "offHint": "Disattivato. Attivalo per registrare questo computer nel progetto.",
-      "signingIn": "Accesso in corso…",
-      "state": {
-        "recording": "In registrazione",
+      "status": {
+        "off": "Disattivato",
+        "turningOn": "Avvio",
+        "signInRequired": "Disconnesso",
+        "error": "Fermato",
+        "needsPermission": "Serve un’autorizzazione",
         "paused": "In pausa",
-        "permission_missing": "Serve un’autorizzazione",
-        "not_recording": "Non registra",
-        "starting": "Avvio…",
-        "crashed": "Fermato",
-        "off": "Disattivato"
+        "pausedUntil": "In pausa fino alle {time}",
+        "pausedByProject": "Messo in pausa dal progetto",
+        "starting": "Avvio",
+        "recording": "In registrazione",
+        "unavailable": "Non disponibile",
+        "projectOff": "Disattivato per questo progetto"
       },
-      "unavailableTitle": "Non disponibile",
       "unavailable": "Questa app desktop non include Kortix Capture. Aggiorna Kortix all’ultima versione.",
       "projectOff": "Capture è disattivato per questo progetto. Chi lo gestisce può attivarlo in Impostazioni → Funzionalità sperimentali.",
-      "layersTitle": "Cosa registra Capture",
+      "intro": "Registra questo computer in {project}, così tu e i tuoi agenti potete cercare ciò che hai fatto. Tu e chi gestisce il progetto potete vederlo.",
+      "layersTitle": "Cosa viene registrato",
       "layers": {
         "screen": "Schermo",
         "screenDescription": "Uno screenshot circa ogni 2 secondi, con il suo testo.",
@@ -20959,21 +20961,30 @@
         "audio": "Audio",
         "audioDescription": "Il tuo microfono e ciò che riproduce questo computer."
       },
-      "noLayers": "Nessun livello registra",
-      "layerOffByPolicy": "Disattivato per questo progetto. Decide chi lo gestisce.",
-      "otherProject": "Questo computer ora registra in un altro progetto. Attivarlo qui lo sposta in questo.",
-      "waitingOnPage": "Approva l’accesso nella pagina che si è aperta nel browser.",
-      "signInRequired": "Questo computer ha perso l’accesso a Capture in questo progetto. Riattivalo per registrare.",
-      "policyNotice": "Da chi gestisce questo progetto",
-      "setup": {
-        "title": "Completa la configurazione di Capture",
-        "hint": "macOS chiede ogni autorizzazione qui sotto una volta. Vanno a Kortix, così Capture registra senza chiedere di nuovo.",
+      "noLayers": "Non si registra niente: tutti i livelli sono disattivati.",
+      "turningOn": {
+        "progress": "Collegamento di questo computer a {project}…",
+        "waitingOnPage": "Approva l’accesso nella pagina che si è aperta nel browser."
+      },
+      "layerOffByPolicy": "Disattivato per questo progetto",
+      "notice": "Da chi gestisce {project}",
+      "otherProject": "Questo computer ora registra in un altro progetto. Avviarlo qui lo sposta in questo.",
+      "signInRequired": {
+        "title": "Questo computer è stato disconnesso",
+        "hint": "Capture potrebbe essere disattivato per il progetto, oppure qualcuno ha rimosso questo computer. Accedi di nuovo per registrare."
+      },
+      "error": {
+        "title": "Capture si è fermato",
+        "fallback": "La registrazione si è fermata. Riprova o apri i log."
+      },
+      "permissions": {
+        "title": "Consenti a Kortix di registrare",
+        "hint": "macOS chiede ogni autorizzazione una volta. Vanno a Kortix, così Capture registra senza chiedere di nuovo.",
         "needed": "Non ancora consentito",
         "waiting": "In attesa",
-        "allowAll": "Consenti tutto",
-        "settingsHint": "Se si aprono le Impostazioni di Sistema, attiva Kortix nell’elenco. Si aggiorna da solo."
-      },
-      "grants": {
+        "allowed": "Consentito",
+        "allow": "Consenti accesso",
+        "settingsHint": "Se si aprono le Impostazioni di Sistema, attiva Kortix nell’elenco. Si aggiorna da solo.",
         "screen": "Registrazione schermo",
         "screenDescription": "Vedere e registrare ciò che è sullo schermo",
         "accessibility": "Accessibilità",
@@ -20981,17 +20992,34 @@
         "microphone": "Microfono",
         "microphoneDescription": "Registrare ciò che viene detto, solo con Audio attivo"
       },
-      "openTimeline": "Apri cronologia",
-      "showLogs": "Mostra log",
-      "signOutEllipsis": "Interrompi e disconnetti…",
-      "signOutTitle": "Smettere di registrare questo computer?",
-      "signOutDescription": "Capture si ferma su questo computer, e questo computer perde l’accesso al progetto. Le registrazioni restano nel progetto. Per registrare di nuovo, riattivalo.",
-      "signOut": "Interrompi e disconnetti",
-      "signedOut": "Capture interrotto",
-      "signOutFailed": "Impossibile interrompere Capture. Riprova.",
-      "changeFailed": "Impossibile modificare Capture. Riprova.",
-      "signInCancelled": "Accesso annullato",
-      "signInFailed": "Impossibile collegare Capture. Riprova."
+      "actions": {
+        "close": "Chiudi",
+        "cancel": "Annulla",
+        "start": "Avvia registrazione",
+        "starting": "Avvio…",
+        "signInAgain": "Accedi di nuovo",
+        "tryAgain": "Riprova",
+        "resume": "Riprendi",
+        "pause": "Pausa di 1 ora",
+        "openTimeline": "Apri cronologia",
+        "more": "Altre azioni",
+        "showLogs": "Mostra log",
+        "stop": "Interrompi registrazione",
+        "signOut": "Disconnetti da Capture…"
+      },
+      "signOut": {
+        "title": "Disconnettersi da Capture?",
+        "description": "Capture si ferma su questo computer, e questo computer perde l’accesso al progetto. Le registrazioni restano nel progetto. Per registrare di nuovo, avvia di nuovo la registrazione.",
+        "confirm": "Disconnetti"
+      },
+      "toast": {
+        "started": "Registrazione avviata",
+        "stopped": "Registrazione interrotta",
+        "paused": "Registrazione in pausa",
+        "resumed": "Registrazione ripresa",
+        "signedOut": "Disconnesso da Capture"
+      },
+      "changeFailed": "Impossibile modificare Capture. Riprova."
     }
   }
 }

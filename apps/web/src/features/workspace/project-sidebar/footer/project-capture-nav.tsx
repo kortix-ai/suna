@@ -9,7 +9,7 @@ import { MonitorPlayIcon } from '@phosphor-icons/react';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
-import { CaptureDialogHost } from '@/features/capture/capture-dialog';
+import { CaptureDialogHost } from '@/features/capture/desktop/capture-dialog';
 import { isDesktop } from '@/lib/desktop';
 
 /**

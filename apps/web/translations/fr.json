@@ -20935,22 +20935,24 @@
     },
     "dialog": {
       "title": "Enregistrer cet ordinateur",
-      "record": "Enregistrer cet ordinateur pour {project}",
-      "offHint": "Désactivé. Activez-le pour enregistrer cet ordinateur dans le projet.",
-      "signingIn": "Connexion…",
-      "state": {
-        "recording": "Enregistrement",
+      "status": {
+        "off": "Désactivé",
+        "turningOn": "Démarrage",
+        "signInRequired": "Déconnecté",
+        "error": "Arrêté",
+        "needsPermission": "Autorisation requise",
         "paused": "En pause",
-        "permission_missing": "Autorisation requise",
-        "not_recording": "N’enregistre pas",
-        "starting": "Démarrage…",
-        "crashed": "Arrêté",
-        "off": "Désactivé"
+        "pausedUntil": "En pause jusqu’à {time}",
+        "pausedByProject": "Mis en pause par le projet",
+        "starting": "Démarrage",
+        "recording": "Enregistrement",
+        "unavailable": "Indisponible",
+        "projectOff": "Désactivé pour ce projet"
       },
-      "unavailableTitle": "Indisponible",
       "unavailable": "Cette app de bureau n’inclut pas Kortix Capture. Mettez Kortix à jour vers la dernière version.",
       "projectOff": "Capture est désactivé pour ce projet. Les personnes qui le gèrent peuvent l’activer dans Réglages → Fonctionnalités expérimentales.",
-      "layersTitle": "Ce que Capture enregistre",
+      "intro": "Enregistre cet ordinateur dans {project}, pour que vous et vos agents puissiez rechercher ce que vous avez fait. Vous et les personnes qui gèrent le projet pouvez le voir.",
+      "layersTitle": "Ce qui est enregistré",
       "layers": {
         "screen": "Écran",
         "screenDescription": "Une capture d’écran environ toutes les 2 secondes, avec son texte.",
@@ -20959,21 +20961,30 @@
         "audio": "Audio",
         "audioDescription": "Votre micro et ce que cet ordinateur diffuse."
       },
-      "noLayers": "Aucune couche n’enregistre",
-      "layerOffByPolicy": "Désactivé pour ce projet. Les personnes qui le gèrent en décident.",
-      "otherProject": "Cet ordinateur enregistre dans un autre projet. L’activer ici le déplace vers celui-ci.",
-      "waitingOnPage": "Approuvez la connexion sur la page ouverte dans votre navigateur.",
-      "signInRequired": "Cet ordinateur a perdu l’accès à Capture dans ce projet. Réactivez-le pour enregistrer.",
-      "policyNotice": "De la part des personnes qui gèrent ce projet",
-      "setup": {
-        "title": "Terminer la configuration de Capture",
-        "hint": "macOS demande chaque autorisation ci-dessous une fois. Elles vont à Kortix, pour que Capture enregistre sans redemander.",
+      "noLayers": "Rien n’est enregistré : toutes les couches sont désactivées.",
+      "turningOn": {
+        "progress": "Connexion de cet ordinateur à {project}…",
+        "waitingOnPage": "Approuvez la connexion sur la page ouverte dans votre navigateur."
+      },
+      "layerOffByPolicy": "Désactivé pour ce projet",
+      "notice": "De la part des personnes qui gèrent {project}",
+      "otherProject": "Cet ordinateur enregistre dans un autre projet. Démarrer ici le déplace vers celui-ci.",
+      "signInRequired": {
+        "title": "Cet ordinateur a été déconnecté",
+        "hint": "Capture est peut-être désactivé pour le projet, ou quelqu’un a retiré cet ordinateur. Reconnectez-vous pour enregistrer."
+      },
+      "error": {
+        "title": "Capture s’est arrêté",
+        "fallback": "L’enregistrement s’est arrêté. Réessayez ou ouvrez les journaux."
+      },
+      "permissions": {
+        "title": "Autoriser Kortix à enregistrer",
+        "hint": "macOS demande chaque autorisation une fois. Elles vont à Kortix, pour que Capture enregistre sans redemander.",
         "needed": "Pas encore autorisé",
         "waiting": "En attente",
-        "allowAll": "Tout autoriser",
-        "settingsHint": "Si Réglages Système s’ouvre, activez Kortix dans la liste. Cela se met à jour seul."
-      },
-      "grants": {
+        "allowed": "Autorisé",
+        "allow": "Autoriser l’accès",
+        "settingsHint": "Si Réglages Système s’ouvre, activez Kortix dans la liste. Cela se met à jour seul.",
         "screen": "Enregistrement de l’écran",
         "screenDescription": "Voir et enregistrer ce qui est à l’écran",
         "accessibility": "Accessibilité",
@@ -20981,17 +20992,34 @@
         "microphone": "Micro",
         "microphoneDescription": "Enregistrer ce qui est dit, seulement quand Audio est activé"
       },
-      "openTimeline": "Ouvrir la chronologie",
-      "showLogs": "Afficher les journaux",
-      "signOutEllipsis": "Arrêter et se déconnecter…",
-      "signOutTitle": "Arrêter d’enregistrer cet ordinateur ?",
-      "signOutDescription": "Capture s’arrête sur cet ordinateur, et cet ordinateur perd l’accès au projet. Les enregistrements restent dans le projet. Pour enregistrer à nouveau, réactivez-le.",
-      "signOut": "Arrêter et se déconnecter",
-      "signedOut": "Capture arrêté",
-      "signOutFailed": "Impossible d’arrêter Capture. Réessayez.",
-      "changeFailed": "Impossible de modifier Capture. Réessayez.",
-      "signInCancelled": "Connexion annulée",
-      "signInFailed": "Impossible de connecter Capture. Réessayez."
+      "actions": {
+        "close": "Fermer",
+        "cancel": "Annuler",
+        "start": "Démarrer l’enregistrement",
+        "starting": "Démarrage…",
+        "signInAgain": "Se reconnecter",
+        "tryAgain": "Réessayer",
+        "resume": "Reprendre",
+        "pause": "Mettre en pause 1 heure",
+        "openTimeline": "Ouvrir la chronologie",
+        "more": "Plus d’actions",
+        "showLogs": "Afficher les journaux",
+        "stop": "Arrêter l’enregistrement",
+        "signOut": "Se déconnecter de Capture…"
+      },
+      "signOut": {
+        "title": "Se déconnecter de Capture ?",
+        "description": "Capture s’arrête sur cet ordinateur, et cet ordinateur perd l’accès au projet. Les enregistrements restent dans le projet. Pour enregistrer à nouveau, redémarrez l’enregistrement.",
+        "confirm": "Se déconnecter"
+      },
+      "toast": {
+        "started": "Enregistrement démarré",
+        "stopped": "Enregistrement arrêté",
+        "paused": "Enregistrement en pause",
+        "resumed": "Enregistrement repris",
+        "signedOut": "Déconnecté de Capture"
+      },
+      "changeFailed": "Impossible de modifier Capture. Réessayez."
     }
   }
 }

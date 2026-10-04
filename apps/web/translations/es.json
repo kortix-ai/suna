@@ -20935,22 +20935,24 @@
     },
     "dialog": {
       "title": "Grabar este ordenador",
-      "record": "Grabar este ordenador para {project}",
-      "offHint": "Desactivado. Actívalo para grabar este ordenador en el proyecto.",
-      "signingIn": "Iniciando sesión…",
-      "state": {
-        "recording": "Grabando",
+      "status": {
+        "off": "Desactivado",
+        "turningOn": "Iniciando",
+        "signInRequired": "Sesión cerrada",
+        "error": "Detenido",
+        "needsPermission": "Necesita un permiso",
         "paused": "En pausa",
-        "permission_missing": "Necesita un permiso",
-        "not_recording": "Sin grabar",
-        "starting": "Iniciando…",
-        "crashed": "Detenido",
-        "off": "Desactivado"
+        "pausedUntil": "En pausa hasta las {time}",
+        "pausedByProject": "En pausa por el proyecto",
+        "starting": "Iniciando",
+        "recording": "Grabando",
+        "unavailable": "No disponible",
+        "projectOff": "Desactivado en este proyecto"
       },
-      "unavailableTitle": "No disponible",
       "unavailable": "Esta app de escritorio no incluye Kortix Capture. Actualiza Kortix a la versión más reciente.",
       "projectOff": "Capture está desactivado en este proyecto. Quienes lo gestionan pueden activarlo en Ajustes → Funciones experimentales.",
-      "layersTitle": "Qué graba Capture",
+      "intro": "Graba este ordenador en {project}, para que tú y tus agentes podáis buscar lo que hiciste. Tú y quienes gestionan el proyecto podéis verlo.",
+      "layersTitle": "Qué se graba",
       "layers": {
         "screen": "Pantalla",
         "screenDescription": "Una captura de pantalla cada 2 segundos aproximadamente, con su texto.",
@@ -20959,21 +20961,30 @@
         "audio": "Audio",
         "audioDescription": "Tu micrófono y lo que reproduce este ordenador."
       },
-      "noLayers": "Ninguna capa graba",
-      "layerOffByPolicy": "Desactivado para este proyecto. Lo deciden quienes lo gestionan.",
-      "otherProject": "Este ordenador graba ahora en otro proyecto. Activarlo aquí lo pasa a este.",
-      "waitingOnPage": "Aprueba el inicio de sesión en la página que se abrió en tu navegador.",
-      "signInRequired": "Este ordenador perdió el acceso a Capture en este proyecto. Actívalo de nuevo para grabar.",
-      "policyNotice": "De quienes gestionan este proyecto",
-      "setup": {
-        "title": "Termina de configurar Capture",
-        "hint": "macOS pide cada permiso de abajo una vez. Van a Kortix, así Capture puede grabar sin volver a preguntar.",
+      "noLayers": "No se graba nada: todas las capas están desactivadas.",
+      "turningOn": {
+        "progress": "Conectando este ordenador a {project}…",
+        "waitingOnPage": "Aprueba el inicio de sesión en la página que se abrió en tu navegador."
+      },
+      "layerOffByPolicy": "Desactivado en este proyecto",
+      "notice": "De quienes gestionan {project}",
+      "otherProject": "Este ordenador graba ahora en otro proyecto. Iniciar aquí lo pasa a este.",
+      "signInRequired": {
+        "title": "Se cerró la sesión de este ordenador",
+        "hint": "Puede que Capture esté desactivado en el proyecto o que alguien haya quitado este ordenador. Inicia sesión de nuevo para grabar."
+      },
+      "error": {
+        "title": "Capture se detuvo",
+        "fallback": "La grabación se detuvo. Inténtalo de nuevo o abre los registros."
+      },
+      "permissions": {
+        "title": "Permite que Kortix grabe",
+        "hint": "macOS pide cada permiso una vez. Van a Kortix, así Capture graba sin volver a preguntar.",
         "needed": "Aún no permitido",
         "waiting": "Esperándote",
-        "allowAll": "Permitir todo",
-        "settingsHint": "Si se abre Ajustes del Sistema, activa Kortix en la lista. Se actualiza solo."
-      },
-      "grants": {
+        "allowed": "Permitido",
+        "allow": "Permitir acceso",
+        "settingsHint": "Si se abre Ajustes del Sistema, activa Kortix en la lista. Se actualiza solo.",
         "screen": "Grabación de pantalla",
         "screenDescription": "Ver y grabar lo que hay en la pantalla",
         "accessibility": "Accesibilidad",
@@ -20981,17 +20992,34 @@
         "microphone": "Micrófono",
         "microphoneDescription": "Grabar lo que se dice, solo con Audio activado"
       },
-      "openTimeline": "Abrir cronología",
-      "showLogs": "Mostrar registros",
-      "signOutEllipsis": "Detener y cerrar sesión…",
-      "signOutTitle": "¿Dejar de grabar este ordenador?",
-      "signOutDescription": "Capture se detiene en este ordenador, y este ordenador pierde el acceso al proyecto. Las grabaciones se quedan en el proyecto. Para volver a grabar, actívalo de nuevo.",
-      "signOut": "Detener y cerrar sesión",
-      "signedOut": "Capture detenido",
-      "signOutFailed": "No se pudo detener Capture. Inténtalo de nuevo.",
-      "changeFailed": "No se pudo cambiar Capture. Inténtalo de nuevo.",
-      "signInCancelled": "Inicio de sesión cancelado",
-      "signInFailed": "No se pudo iniciar sesión en Capture. Inténtalo de nuevo."
+      "actions": {
+        "close": "Cerrar",
+        "cancel": "Cancelar",
+        "start": "Empezar a grabar",
+        "starting": "Iniciando…",
+        "signInAgain": "Iniciar sesión de nuevo",
+        "tryAgain": "Intentar de nuevo",
+        "resume": "Reanudar",
+        "pause": "Pausar 1 hora",
+        "openTimeline": "Abrir cronología",
+        "more": "Más acciones",
+        "showLogs": "Mostrar registros",
+        "stop": "Dejar de grabar",
+        "signOut": "Cerrar sesión de Capture…"
+      },
+      "signOut": {
+        "title": "¿Cerrar la sesión de Capture?",
+        "description": "Capture se detiene en este ordenador, y este ordenador pierde el acceso al proyecto. Las grabaciones se quedan en el proyecto. Para volver a grabar, empieza a grabar de nuevo.",
+        "confirm": "Cerrar sesión"
+      },
+      "toast": {
+        "started": "Grabación iniciada",
+        "stopped": "Grabación detenida",
+        "paused": "Grabación en pausa",
+        "resumed": "Grabación reanudada",
+        "signedOut": "Sesión de Capture cerrada"
+      },
+      "changeFailed": "No se pudo cambiar Capture. Inténtalo de nuevo."
     }
   }
 }
