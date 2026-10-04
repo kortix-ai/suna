@@ -52,4 +52,10 @@ const HOST_SANDBOX_ENV_KEYS = [
 
 export function scrubHostSandboxEnv(): void {
   for (const key of HOST_SANDBOX_ENV_KEYS) delete process.env[key];
+  // The sandbox also exports the session env file's PATH as BASH_ENV; every
+  // non-interactive bash — including each workspace's `bash scripts/test.sh` —
+  // sources it at startup and re-injects every key above (measured: a compiled
+  // runtime then rejects the foreign KORTIX_PROJECT_ID with exit 78). CI and
+  // laptops carry no BASH_ENV. (Reflect.deleteProperty: biome noDelete.)
+  Reflect.deleteProperty(process.env, 'BASH_ENV');
 }
