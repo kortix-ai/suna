@@ -1,5 +1,5 @@
 {
-  "source_hash": "f00540e412c04ba5d7713cd700aa59883e7652fa804a6e0d1c5ee1c00a6b462f",
+  "source_hash": "f51245b4184cbb05841457434acba3ba5f678d3b4a6519a944916f1fce0b4aa4",
   "diff_files": [
     "apps/web/src/app/[locale]/(app)/layout.tsx",
     "apps/web/src/features/auth/mfa-step-up.test.tsx",
@@ -11,12 +11,12 @@
     "apps/web/src/lib/supabase/mfa.ts"
   ],
   "diff_hash": "b3b586fd0931791a0e507aecab2bf5a5e9ba1d556a29cf9d8ca9e5d368735a6c",
-  "head": "366c201201db20840dbc84d21024d8f357f16b8e",
+  "head": "df7ae06963cd5d4b619247908d940e492ff1f384",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:42:59.350Z"
+  "at": "2026-10-04T02:23:32.853Z"
 }
