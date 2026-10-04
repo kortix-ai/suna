@@ -35,7 +35,7 @@
 
 export const hero = {
   eyebrow: 'About Kortix',
-  title: 'We are building the open-source AI Management System.',
+  title: 'We are building the open-source AI Operating System.',
   lead: 'Every company should own all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',
@@ -57,7 +57,7 @@ export const statements = [
     id: 'closed',
     n: '02',
     title: 'The closed platforms are becoming AGI operating systems too.',
-    body: 'Claude Cowork, ChatGPT Work and the rest are heading for full agent management systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.',
+    body: 'Claude Cowork, ChatGPT Work and the rest are heading for full AI operating systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.',
   },
   {
     id: 'shift',
