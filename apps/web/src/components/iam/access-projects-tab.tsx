@@ -220,7 +220,11 @@ const GROUP_INHERITED_HINT =
 
 /** The project-scoped custom-role policy the principal holds DIRECTLY. A
  *  group-sourced policy on a member row is not that member's to edit. */
-function directProjectPolicy(
+/** The direct custom-role binding on a row: project-scoped, and not one the
+ *  row inherits through a group. Group rows carry their own policies with no
+ *  `source` — those are the group's own binding and count as direct there.
+ *  Exported for the response pass-through test beside its sibling derivations. */
+export function directProjectPolicy(
   policies: CustomRolePolicyEntry[] | undefined,
 ): CustomRolePolicyEntry | undefined {
   return (policies ?? []).find((p) => p.scope_type === 'project' && p.source !== 'group');

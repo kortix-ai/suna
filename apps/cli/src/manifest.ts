@@ -118,16 +118,6 @@ export function lintManifest(
   return classifyIssues(issues);
 }
 
-/**
- * Validate a manifest from raw text. Returns a syntax-error issue when it
- * doesn't parse; otherwise runs the canonical schema. Pass the `format` so a
- * `kortix.yaml` is parsed as YAML (defaults to TOML for back-compat).
- */
-export function lintManifestText(raw: string, format: ManifestFormat = 'toml'): ManifestIssues {
-  const { issues } = validateManifest(raw, format);
-  return classifyIssues(issues);
-}
-
 function classifyIssues(issues: ManifestIssue[]): ManifestIssues {
   const errors: string[] = [];
   const warnings: string[] = [];

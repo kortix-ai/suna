@@ -17,7 +17,7 @@
  * `Result.err` rather than letting them escape.
  */
 
-import { makeTransport, type RpcTransport } from './rpc-transport.ts';
+import { makeTransport, ResponseError, type RpcTransport } from './rpc-transport.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
@@ -37,6 +37,26 @@ class FileErrorLike extends Error {
     this.path = path;
   }
 }
+
+/**
+ * A failure of the transport itself — `transport.call` threw before any
+ * response was received, so the operation never reached the daemon and
+ * retrying cannot repeat it. A FileErrorLike subclass keeps the
+ * caller-visible error shape; rpc() retries it once. A failure AFTER a
+ * response was received (`ResponseError`) is delivered, may have executed,
+ * and never retries.
+ */
+class TransportErrorLike extends FileErrorLike {
+  constructor(message: string) {
+    super('unknown', message);
+  }
+}
+
+/**
+ * The per-call timeout rejection, identity-checked in rpcOnce. A timeout is
+ * not a transport failure: the call may still land, so it never retries.
+ */
+const RPC_TIMEOUT = new Error('rpc timeout');
 
 class ExecutionErrorLike extends Error {
   code: string;
@@ -60,8 +80,8 @@ export interface KortixEnvOptions {
   headers?: Record<string, string>;
   /** Per-call timeout. */
   timeoutMs?: number;
-  /** Which transport carries the RPC. See src/rpc-transport.ts and the gate. */
-  transport?: TransportKind;
+  /** Which transport carries the RPC. See src/rpc-transport.ts and the gate. A prebuilt transport overrides the kind — tests inject a stub. */
+  transport?: TransportKind | RpcTransport;
 }
 
 export class KortixExecutionEnv {
@@ -82,7 +102,10 @@ export class KortixExecutionEnv {
     this.headers = opts.headers ?? {};
     // Default to keepalive: one pooled connection, handshake paid once per
     // session rather than once per tool call. See the RPC-tax gate.
-    this.transport = makeTransport(opts.transport ?? 'keepalive', this.baseUrl, this.headers);
+    this.transport =
+      typeof opts.transport === 'object'
+        ? opts.transport
+        : makeTransport(opts.transport ?? 'keepalive', this.baseUrl, this.headers);
     this.timeoutMs = opts.timeoutMs ?? 120_000;
   }
 
@@ -95,27 +118,32 @@ export class KortixExecutionEnv {
    */
   private async rpc<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
     this.calls.push({ op, args });
-    // One retry: a pooled keep-alive socket retired by the peer between calls
-    // is a transport artifact, not a tool failure. See the note in
-    // stub-environment.ts — the real fix is a multiplexed connection.
+    // One retry, on transport failures only: a pooled keep-alive socket retired
+    // by the peer between calls is a transport artifact, not a tool failure —
+    // the operation never reached the daemon. A daemon error Result is an
+    // answer, and the operation may already have applied, so it never retries.
     const first = await this.rpcOnce<T>(op, args);
-    if (first.ok) return first;
-    const msg = String((first.error as any)?.message ?? '');
-    if (/socket|ECONNRESET|closed|EPIPE/i.test(msg)) return this.rpcOnce<T>(op, args);
+    if (!first.ok && first.error instanceof TransportErrorLike) return this.rpcOnce<T>(op, args);
     return first;
   }
 
   private async rpcOnce<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
     const timer = new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error('rpc timeout')), this.timeoutMs).unref?.(),
+      setTimeout(() => rej(RPC_TIMEOUT), this.timeoutMs).unref?.(),
     );
     try {
       const body: any = await Promise.race([this.transport.call(op, args, this.cwd), timer]);
       if (body?.ok) return ok(body.value as T);
       return err(new FileErrorLike(body?.error?.code ?? 'unknown', body?.error?.message ?? 'environment error', body?.error?.path));
     } catch (e: any) {
-      // Never throw. A dead environment is a Result, not an exception.
-      return err(new FileErrorLike('unknown', String(e?.message ?? e)));
+      // Never throw. A dead environment is a Result, not an exception. A
+      // transport throw is classified here, at the boundary, so rpc() can
+      // retry exactly the failures that never received a response. A
+      // response-received failure (HTTP status, malformed body) means the
+      // request was delivered and the operation may have run — never retried.
+      if (e === RPC_TIMEOUT) return err(new FileErrorLike('unknown', RPC_TIMEOUT.message));
+      if (e instanceof ResponseError) return err(new FileErrorLike('unknown', String(e?.message ?? e)));
+      return err(new TransportErrorLike(String(e?.message ?? e)));
     }
   }
 

@@ -1,0 +1,15 @@
+{
+  "source_hash": "ce195746f6de1ae7c92d02492d061b527d1e0479419d8eef529dc9567d242171",
+  "diff_files": [
+    "apps/cli/src/__tests__/accounts.test.ts"
+  ],
+  "diff_hash": "2f1a8780e5576f98b42e3184ae93d9283bcf5f90e07049fe9f9af4a1ea2b3fbd",
+  "head": "62b356ce3983f6d09e59d29036e67cb4bab663fa",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T08:02:53.899Z"
+}

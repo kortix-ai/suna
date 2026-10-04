@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 
 import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
+import { MfaGate } from '@/features/auth/mfa-step-up';
 import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watcher';
 
 /**
@@ -38,7 +39,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <AccountHubPanel />
       </Suspense>
-      {children}
+      {/* The app is gated on the TOTP step-up: an aal1 session with a verified
+          second factor gets the code prompt instead of these routes until the
+          session is aal2 (KRTX-1386). */}
+      <MfaGate>{children}</MfaGate>
     </>
   );
 }

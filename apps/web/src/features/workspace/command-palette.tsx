@@ -1040,8 +1040,6 @@ export function CommandPalette() {
         id: `terminal:${pty.id}`,
         title: pty.title || pty.command || 'Terminal',
         type: 'terminal',
-        // LEGACY: terminal tabs only surface through <SidebarRight />, which
-        // both AppProviders call sites mount with showRightSidebar={false}.
         // `/terminal/<id>` is not a route.
         href: `/terminal/${pty.id}`,
       });

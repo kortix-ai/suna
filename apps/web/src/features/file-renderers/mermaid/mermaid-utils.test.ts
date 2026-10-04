@@ -139,6 +139,11 @@ describe('hasOwnMermaidConfig reads the front matter in linear time', () => {
   test('front matter holding 240k blank lines', () => {
     const started = performance.now();
     hasOwnMermaidConfig(`---\n${'\n'.repeat(240_000)}x\n---\nflowchart TD`);
-    expect(performance.now() - started).toBeLessThan(100);
+    // The budget discriminates complexity, not latency: the linear scan runs
+    // ~10-35 ms alone and ~100 ms on a box running the rest of the lane, while
+    // any per-line rescan (the quadratic shape this guards against) lands in
+    // tens of seconds at this size. One order of magnitude above the loaded
+    // measurement keeps that gap.
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });

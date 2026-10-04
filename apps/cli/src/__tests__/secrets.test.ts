@@ -26,7 +26,7 @@ let originalCwd: string;
 let stdout = '';
 let stderr = '';
 type RequestBody = Record<string, unknown> | string | undefined;
-let requests: Array<{ url: string; method: string; body: RequestBody }> = [];
+let requests: Array<{ url: string; method: string; body: RequestBody; auth: string }> = [];
 
 /** Shared secret rows the mocked GET returns; mutate per-test. */
 let secretItems: Array<{
@@ -36,10 +36,22 @@ let secretItems: Array<{
   effective_source?: 'mine' | 'shared' | 'none';
   strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
   consumer?:
-    'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
+    | 'sandbox'
+    | 'llm_gateway'
+    | 'connector'
+    | 'git_proxy'
+    | 'http_broker'
+    | 'network'
+    | null;
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   requires_rotation?: boolean;
-  shared_with?: Array<{ grant_id: string; principal_type: 'member' | 'group' | 'project'; principal_id: string; label: string; expires_at: null }>;
+  shared_with?: Array<{
+    grant_id: string;
+    principal_type: 'member' | 'group' | 'project';
+    principal_id: string;
+    label: string;
+    expires_at: null;
+  }>;
   usable?: boolean;
 }>;
 let manifestRequired: string[];
@@ -60,11 +72,23 @@ function secret(
     effective_source?: 'mine' | 'shared' | 'none';
     strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
     consumer?:
-      'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
+      | 'sandbox'
+      | 'llm_gateway'
+      | 'connector'
+      | 'git_proxy'
+      | 'http_broker'
+      | 'network'
+      | null;
     delivery_status?: 'available' | 'unavailable' | 'disabled';
     network_boundary_available?: boolean;
     requires_rotation?: boolean;
-    shared_with?: Array<{ grant_id: string; principal_type: 'member' | 'group' | 'project'; principal_id: string; label: string; expires_at: null }>;
+    shared_with?: Array<{
+      grant_id: string;
+      principal_type: 'member' | 'group' | 'project';
+      principal_id: string;
+      label: string;
+      expires_at: null;
+    }>;
     usable?: boolean;
   } = {},
 ) {
@@ -135,7 +159,10 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function mockApi() {
+/** An optional first-hit handler, so a describe can serve URLs the shared
+ *  mock doesn't know (a second host's base). Returning undefined falls
+ *  through to the shared proj_1 responses. */
+function mockApi(extra?: (url: string, method: string) => Response | undefined) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
@@ -147,7 +174,11 @@ function mockApi() {
         body = init.body;
       }
     }
-    requests.push({ url, method, body });
+    const auth = new Headers(init?.headers).get('authorization') ?? '';
+    requests.push({ url, method, body, auth: auth.replace(/^Bearer\s+/i, '') });
+
+    const custom = extra?.(url, method);
+    if (custom) return custom;
 
     if (url.endsWith('/accounts/me') && method === 'GET') {
       return json({ user_id: 'user_1', email: 'user@example.test' });
@@ -157,7 +188,14 @@ function mockApi() {
     }
     if (url.endsWith('/projects/proj_1/agent-identities') && method === 'GET') {
       return json({
-        agents: [{ service_account_id: 'sa_reporter', name: 'agent', project_id: 'proj_1', agent_name: 'reporter' }],
+        agents: [
+          {
+            service_account_id: 'sa_reporter',
+            name: 'agent',
+            project_id: 'proj_1',
+            agent_name: 'reporter',
+          },
+        ],
       });
     }
     if (url.endsWith('/accounts/account_1/members') && method === 'GET') {
@@ -255,17 +293,19 @@ beforeEach(() => {
     synced: 1,
     failed: 0,
     exported: 2,
-    results: [{
-      session_id: 'session-1',
-      sandbox_id: 'sandbox-1',
-      status: 'synced',
-      scope: 'inherit',
-      revision: 'revision-1',
-      exported: 2,
-      managed: 2,
-      withheld: 0,
-      agent_env_written: true,
-    }],
+    results: [
+      {
+        session_id: 'session-1',
+        sandbox_id: 'sandbox-1',
+        status: 'synced',
+        scope: 'inherit',
+        revision: 'revision-1',
+        exported: 2,
+        managed: 2,
+        withheld: 0,
+        agent_env_written: true,
+      },
+    ],
   };
   mockApi();
 });
@@ -383,7 +423,9 @@ describe('kortix secrets sync — verified delivery', () => {
     const code = await runSecrets(['sync']);
 
     expect(code).toBe(0);
-    expect(stripAnsi(stdout)).toContain('Verified 2 secret export(s) across 1/1 active sandbox(es).');
+    expect(stripAnsi(stdout)).toContain(
+      'Verified 2 secret export(s) across 1/1 active sandbox(es).',
+    );
     expect(stripAnsi(stdout)).toContain('session-1: 2 exported');
     expect(stripAnsi(stdout)).toContain('revision revision-1');
     expect(stripAnsi(stdout)).not.toContain('Synced true secret(s)');
@@ -397,18 +439,20 @@ describe('kortix secrets sync — verified delivery', () => {
       synced: 0,
       failed: 1,
       exported: 0,
-      results: [{
-        session_id: 'session-broken',
-        sandbox_id: 'sandbox-broken',
-        status: 'failed',
-        scope: 'inherit',
-        revision: 'revision-broken',
-        exported: 0,
-        managed: null,
-        withheld: null,
-        agent_env_written: false,
-        reason: 'env sync did not confirm agent-env.sh write',
-      }],
+      results: [
+        {
+          session_id: 'session-broken',
+          sandbox_id: 'sandbox-broken',
+          status: 'failed',
+          scope: 'inherit',
+          revision: 'revision-broken',
+          exported: 0,
+          managed: null,
+          withheld: null,
+          agent_env_written: false,
+          reason: 'env sync did not confirm agent-env.sh write',
+        },
+      ],
     };
 
     const code = await runSecrets(['sync']);
@@ -427,23 +471,27 @@ describe('kortix secrets sync — verified delivery', () => {
       synced: 1,
       failed: 0,
       exported: 0,
-      results: [{
-        session_id: 'session-zero',
-        sandbox_id: 'sandbox-zero',
-        status: 'synced',
-        scope: 'none',
-        revision: 'revision-zero',
-        exported: 0,
-        managed: 54,
-        withheld: 54,
-        agent_env_written: true,
-      }],
+      results: [
+        {
+          session_id: 'session-zero',
+          sandbox_id: 'sandbox-zero',
+          status: 'synced',
+          scope: 'none',
+          revision: 'revision-zero',
+          exported: 0,
+          managed: 54,
+          withheld: 54,
+          agent_env_written: true,
+        },
+      ],
     };
 
     const code = await runSecrets(['sync']);
 
     expect(code).toBe(0);
-    expect(stripAnsi(stdout)).toContain('0 exported · revision revision-zero · scope permits zero secrets');
+    expect(stripAnsi(stdout)).toContain(
+      '0 exported · revision revision-zero · scope permits zero secrets',
+    );
   });
 
   test('states when no active sandbox needs synchronization', async () => {
@@ -690,7 +738,7 @@ describe('kortix secrets ls — inside an agent session', () => {
     expect(out).not.toContain('required secret missing');
     expect(out).toContain('1 secret is not granted to agent analyst');
     expect(out).toContain('Customize → Agents → analyst → Secrets');
-    expect(out).toContain("Listed: only the secrets agent analyst is granted");
+    expect(out).toContain('Listed: only the secrets agent analyst is granted');
     expect(out).toContain('Then run `kortix secrets sync` to pull it into this session');
   });
 
@@ -738,7 +786,9 @@ describe('kortix secrets request', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('https://app.test/secret-intake/ksl_test');
     expect(out).toContain('This session will not receive STRIPE_API_KEY');
-    expect(out).toContain('STRIPE_API_KEY is not in agent "analyst"\'s secrets grant. Fix: Customize.');
+    expect(out).toContain(
+      'STRIPE_API_KEY is not in agent "analyst"\'s secrets grant. Fix: Customize.',
+    );
   });
 
   test('a fully delivered request prints no warning', async () => {
@@ -761,9 +811,7 @@ describe('kortix secrets delivery', () => {
     const code = await runSecrets(['delivery', 'ANTHROPIC_API_KEY', 'plaintext']);
     expect(code).toBe(2);
     expect(requests).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain(
-      'Exposure must be environment, enforced, or none',
-    );
+    expect(stripAnsi(stderr)).toContain('Exposure must be environment, enforced, or none');
   });
 
   test('configures an HTTPS broker policy from explicit allow and injection flags', async () => {
@@ -1097,6 +1145,87 @@ describe('kortix secrets delivery', () => {
       'Host and injection flags describe a policy, which only an enforced secret has.',
     );
   });
+
+  test('rejects --consumer outside the broker alias, and an unknown consumer', async () => {
+    // --consumer names the service that spends a none-exposure secret; on any
+    // other exposure there is no spender to name.
+    const onEnvironment = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'environment',
+      '--consumer',
+      'llm-gateway',
+    ]);
+    expect(onEnvironment).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('Pass it with the `broker` alias');
+
+    captureOutput();
+    const unknown = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--consumer',
+      'no-such-service',
+    ]);
+    expect(unknown).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain(
+      '--consumer must be llm-gateway, connector, or http-broker.',
+    );
+  });
+
+  test('rejects a --template without --inject-header, and one without the placeholder', async () => {
+    const orphan = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host',
+      'api.anthropic.com',
+      '--template',
+      '{{secret}}',
+    ]);
+    expect(orphan).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('--template requires --inject-header.');
+
+    captureOutput();
+    const withoutPlaceholder = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+      '--template',
+      'Bearer static-value',
+    ]);
+    expect(withoutPlaceholder).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('--template must contain {{secret}}.');
+  });
+
+  test('delivery accepts the --flag=value spelling of a repeatable flag', async () => {
+    // `takeFlagValues` is the shared helper, which takes `--allow-host=host`
+    // as well as `--allow-host host`; the delivery path must accept both.
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host=api.anthropic.com',
+    ]);
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({
+      strategy: 'egress',
+      egress_policy: {
+        rules: [{ host: 'api.anthropic.com' }],
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+    });
+  });
 });
 
 describe('kortix secrets call', () => {
@@ -1210,7 +1339,14 @@ describe('kortix secrets — who can use a value', () => {
   test('share --user me --user <email> --group <id> resolves people and sends the exact audience', async () => {
     secretItems = [{ identifier: 'deel-marko', name: 'DEEL_API_TOKEN' }];
     const code = await runSecrets([
-      'share', 'deel-marko', '--user', 'me', '--user', 'finance@example.test', '--group', '11111111-1111-4111-8111-111111111111',
+      'share',
+      'deel-marko',
+      '--user',
+      'me',
+      '--user',
+      'finance@example.test',
+      '--group',
+      '11111111-1111-4111-8111-111111111111',
     ]);
     expect(code).toBe(0);
     expect(objectBody(posts()[0]!)).toEqual({
@@ -1266,7 +1402,15 @@ describe('kortix secrets — who can use a value', () => {
       {
         identifier: 'DEEL_API_TOKEN',
         name: 'DEEL_API_TOKEN',
-        shared_with: [{ grant_id: 'g1', principal_type: 'member', principal_id: 'user_2', label: 'finance@example.test', expires_at: null }],
+        shared_with: [
+          {
+            grant_id: 'g1',
+            principal_type: 'member',
+            principal_id: 'user_2',
+            label: 'finance@example.test',
+            expires_at: null,
+          },
+        ],
         usable: false,
       },
     ];
@@ -1282,7 +1426,15 @@ describe('kortix secrets — who can use a value', () => {
       {
         identifier: 'DEEL_API_TOKEN',
         name: 'DEEL_API_TOKEN',
-        shared_with: [{ grant_id: 'g1', principal_type: 'member', principal_id: 'user_1', label: 'user@example.test', expires_at: null }],
+        shared_with: [
+          {
+            grant_id: 'g1',
+            principal_type: 'member',
+            principal_id: 'user_1',
+            label: 'user@example.test',
+            expires_at: null,
+          },
+        ],
         usable: true,
       },
     ];
@@ -1290,5 +1442,111 @@ describe('kortix secrets — who can use a value', () => {
     const row = JSON.parse(stdout).secrets[0];
     expect(row.shared_with).toEqual(['user@example.test']);
     expect(row.usable).toBe(true);
+  });
+});
+
+describe('secrets set --host', () => {
+  /** Two logged-in hosts — `test` (active) and `other` — each with its own
+   *  API base and token, mirroring the cross-host setup a second
+   *  `kortix login --host` produces. */
+  function writeTwoHostConfig(): void {
+    const file = join(tmp, 'config.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: 'https://api.test',
+            token: 'tok_test',
+            user_id: 'user_1',
+            user_email: 'user@example.test',
+            account_id: 'account_1',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+          other: {
+            url: 'https://api.other',
+            token: 'tok_other',
+            user_id: 'user_9',
+            user_email: 'user9@example.test',
+            account_id: 'account_9',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+            default_project: { project_id: 'proj_on_other', account_id: 'account_9' },
+          },
+        },
+      }),
+      'utf8',
+    );
+    process.env.KORTIX_CONFIG_FILE = file;
+  }
+
+  /** Serve only the named host's write; anything else (an accidental ride on
+   *  the ambient base) answers 500 and fails the test. */
+  function serveOtherPost(): void {
+    mockApi((url, method) => {
+      if (url === 'https://api.other/v1/projects/proj_on_other/secrets' && method === 'POST') {
+        return json({ identifier: 'STRIPE_API_KEY', name: 'STRIPE_API_KEY' });
+      }
+      return undefined;
+    });
+  }
+
+  test('writes with the named host token, never the ambient session principal', async () => {
+    writeTwoHostConfig();
+    // The platform-injected session credential of a sandbox: with the
+    // pre-fix routing the write rode this token and 403'd cross-project.
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://api.sandbox';
+    serveOtherPost();
+
+    const code = await runSecrets([
+      'set',
+      'STRIPE_API_KEY=sk_live_1',
+      '--host',
+      'other',
+      '--project',
+      'proj_on_other',
+    ]);
+    expect(code).toBe(0);
+    expect(requests).toHaveLength(1);
+    const [post] = posts();
+    expect(post?.url).toBe('https://api.other/v1/projects/proj_on_other/secrets');
+    expect(post?.auth).toBe('tok_other');
+    expect(stripAnsi(stdout)).toContain('1/1 set');
+  });
+
+  test('resolves the project from the named host default and writes with its token', async () => {
+    writeTwoHostConfig();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://api.sandbox';
+    serveOtherPost();
+
+    const code = await runSecrets(['set', 'STRIPE_API_KEY=sk_live_1', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(requests).toHaveLength(1);
+    const [post] = posts();
+    expect(post?.url).toBe('https://api.other/v1/projects/proj_on_other/secrets');
+    expect(post?.auth).toBe('tok_other');
+    expect(stripAnsi(stdout)).toContain('1/1 set');
+  });
+
+  test('fails fast when --host names a host with no stored credentials', async () => {
+    writeTwoHostConfig();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://api.sandbox';
+
+    const code = await runSecrets([
+      'set',
+      'STRIPE_API_KEY=sk_live_1',
+      '--host',
+      'ghost',
+      '--project',
+      'proj_on_other',
+    ]);
+    expect(code).toBe(1);
+    expect(requests).toHaveLength(0);
+    const out = stripAnsi(stderr);
+    expect(out).toContain('Host "ghost" (--host) is not logged in');
+    expect(out).toContain('kortix login --host ghost');
   });
 });

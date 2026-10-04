@@ -200,6 +200,7 @@ export interface RuntimeClient {
     >;
     share: Method<Scope & { sessionID: string }, Session>;
     unshare: Method<Scope & { sessionID: string }, Session>;
+    fork: Method<Scope & { sessionID: string; messageID?: string }, Session>;
     diff: Method<Scope & { sessionID: string; messageID?: string }, KortixFileDiff[]>;
     todo: Method<Scope & { sessionID: string }, KortixTodo[]>;
   };
@@ -365,6 +366,7 @@ export const RUNTIME_REST_ROUTES = {
   'session.command': r('POST', '/session/{sessionID}/command', SCOPE, ['messageID', 'agent', 'model', 'arguments', 'command', 'variant', 'parts']),
   'session.share': r('POST', '/session/{sessionID}/share'),
   'session.unshare': r('DELETE', '/session/{sessionID}/share'),
+  'session.fork': r('POST', '/session/{sessionID}/fork', SCOPE, ['messageID']),
   'session.diff': r('GET', '/session/{sessionID}/diff', [...SCOPE, 'messageID']),
   'session.todo': r('GET', '/session/{sessionID}/todo'),
   'permission.list': r('GET', '/permission'),
@@ -610,6 +612,7 @@ export function createRuntimeRestClient(config: RuntimeClientConfig): RuntimeCli
       command: call('session.command'),
       share: call('session.share'),
       unshare: call('session.unshare'),
+      fork: call('session.fork'),
       diff: call('session.diff'),
       todo: call('session.todo'),
     },
