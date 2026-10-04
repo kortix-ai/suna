@@ -70,7 +70,7 @@ export function DefinitionRows({
   keyClassName?: string;
 }): ReactNode {
   return (
-    <dl className="border-border bg-card overflow-hidden rounded-sm border">
+    <dl className="border-border bg-card overflow-hidden rounded-xl border">
       {rows.map((row, i) => (
         <div
           key={row.k}

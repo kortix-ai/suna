@@ -190,3 +190,28 @@ export const BeamsShader = memo(function BeamsShader({
     </div>
   );
 });
+
+/** How the Beams art fades into the page under the copy that sits on it. */
+const BEAMS_FADE = {
+  // Copy centred on the pane: dim the top under the bar, settle into the page.
+  hero: 'from-background/90 via-background/40 to-background bg-linear-to-b',
+  // Copy on the pane's floor: a calm band at the bottom, beams above.
+  floor: 'from-background/90 via-background/30 to-transparent bg-linear-to-t',
+  // A card's caption at its foot.
+  card: 'from-background via-background/60 to-transparent bg-linear-to-t',
+  // A band between two dark sections: dark at both edges, beams in the middle.
+  band: 'from-background via-background/30 to-background bg-linear-to-b',
+} as const;
+
+/**
+ * Beams plus the fade that keeps copy on it legible, as one art layer. The
+ * pane it sits in must be dark in both themes (`dark` on the container).
+ */
+export function BeamsBackdrop({ fade }: { fade: keyof typeof BEAMS_FADE }) {
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+      <BeamsShader />
+      <div className={`absolute inset-0 ${BEAMS_FADE[fade]}`} />
+    </div>
+  );
+}

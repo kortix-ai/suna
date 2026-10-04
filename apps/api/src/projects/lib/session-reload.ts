@@ -32,6 +32,8 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
+import { TimeoutError, withTimeout } from '../../shared/with-timeout';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
 import { resolveCommitSha } from '../git/commits';
@@ -549,69 +551,115 @@ export async function readSandboxConfigState(
 }
 
 /**
- * "Latest" has to mean latest — drop the mirror's TTL before compiling.
- *
- * The git mirror is TTL-cached (60s by default) and every read through
- * `readRepoFile` / `resolveCommitSha` takes the warm hit. On an ordinary
- * endpoint that is right. On THIS one it is self-defeating: the whole feature is
- * "I merged a change, get it into my session", and the merge is by definition
- * seconds old. Reloading inside the window recompiled the PRE-merge manifest,
- * produced an unchanged etag, and answered "already up to date" — the exact
- * confusion the reload exists to end, moved one layer up.
- *
- * Invalidating rather than force-fetching keeps it to a single network op: the
- * compile's own first read does the fetch and re-stamps `lastRefreshAt`, so the
- * reads after it in the same request are warm again.
+ * Wall-clock budget for one `latestAgentConfigEtag` resolution, and for the
+ * other mirror-reading stages of the same GET /config request. The mirror fetch
+ * it can block on has a 30s per-op timeout and retries 3 times, so an unbounded
+ * wait outran the 25s request deadline on every poll against a slow mirror
+ * (KRTX-818). The budget must stay comfortably under that deadline; GET /config
+ * spends it across its stages, so a slow fetch degrades to `stale: null`
+ * ("could not tell") instead of a 503.
  */
+export const LATEST_ETAG_BUDGET_MS = 20_000;
+
 /**
  * The etag this session WOULD get if it were reloaded right now.
  *
  * Recompiles from the session's own ref; delivers nothing.
+ *
+ * "Latest" has to mean latest. The git mirror is TTL-cached (60s by default)
+ * and every read through `readRepoFile` / `resolveCommitSha` takes the warm
+ * hit. On an ordinary endpoint that is right. On THIS one it is self-defeating:
+ * the whole feature is "I merged a change, get it into my session", and the
+ * merge is by definition seconds old. A TTL-served read recompiled the
+ * PRE-merge manifest and answered "already up to date" — the exact confusion
+ * the reload exists to end, moved one layer up.
+ *
+ * So the compile reads force a REF-scoped refresh
+ * (`CompileReadOptions.forceRefresh`): `readManifestFromRepo` proves the
+ * session's ref against the remote with one `git ls-remote` (~1s) and only runs
+ * the whole-mirror fetch when the branch actually moved. That is exact
+ * freshness for every read this request makes (they all read the session's base
+ * ref) at a fraction of the old cost, which paid a full `git fetch --prune` on
+ * every poll.
+ *
+ * The whole resolution is bounded (`LATEST_ETAG_BUDGET_MS`): on a mirror whose
+ * fetch is slow the old unbounded wait outran the request deadline and 503'd
+ * the poll; the bounded wait answers `null` and `stale` reads null ("could not
+ * tell") — the state every client of this route already handles.
  */
-export async function latestAgentConfigEtag(input: {
-  projectId: string;
-  accountId: string;
-  sessionId?: string;
-  baseRef?: string | null;
-}): Promise<string | null> {
-  const [[project], [session]] = await Promise.all([
-    db
-      .select({
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
-      })
-      .from(projects)
-      .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
-      .limit(1),
-    input.sessionId
-      ? db
+export async function latestAgentConfigEtag(
+  input: {
+    projectId: string;
+    accountId: string;
+    sessionId?: string;
+    baseRef?: string | null;
+  },
+  /**
+   * Wall-clock budget for the whole resolution. Callers that coordinate several
+   * mirror-reading stages under one request deadline (GET /config) pass the
+   * budget that is left; everyone else takes the default.
+   */
+  opts?: { budgetMs?: number },
+): Promise<string | null> {
+  // The ref-scoped force replaces the old `invalidateProjectMirror` here:
+  // invalidating dropped the mirror's freshness stamp, which made the LATER
+  // unforced reads in the same request (agent files, the config-dir compare,
+  // the desired release) pay their own full fetch. The proof keeps the stamp
+  // intact, so one request does at most one network op.
+  // The WHOLE resolution — the row reads and the compile — races the budget:
+  // a slow database or a slow mirror both mean "cannot be told", and either
+  // one unbounded is a 503 on the next poll.
+  const compiled = await withTimeout(
+    (async () => {
+      const [[project], [session]] = await Promise.all([
+        db
           .select({
-            agentName: projectSessions.agentName,
-            metadata: projectSessions.metadata,
+            repoUrl: projects.repoUrl,
+            defaultBranch: projects.defaultBranch,
+            manifestPath: projects.manifestPath,
           })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, input.sessionId))
-          .limit(1)
-      : Promise.resolve([]),
-  ]);
-  if (!project?.defaultBranch) return null;
-  const gitProject: GitBackedProject = {
-    projectId: input.projectId,
-    repoUrl: project.repoUrl,
-    defaultBranch: project.defaultBranch,
-    manifestPath: project.manifestPath ?? 'kortix.yaml',
-    gitAuthToken: null,
-  };
-  // Without this, `stale: false` is answerable from a cache that predates the
-  // very commit the caller is asking about.
-  invalidateProjectMirror(input.projectId);
-  const compiled = await (
-    !repositoryAccessFromSessionMetadata(session?.metadata) &&
-    session?.agentName
-      ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef)
-      : resolveCompiledAgentConfigForSession(gitProject, input.baseRef)
-  ).catch(() => null);
+          .from(projects)
+          .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
+          .limit(1),
+        input.sessionId
+          ? db
+              .select({
+                agentName: projectSessions.agentName,
+                metadata: projectSessions.metadata,
+              })
+              .from(projectSessions)
+              .where(eq(projectSessions.sessionId, input.sessionId))
+              .limit(1)
+          : Promise.resolve([]),
+      ]);
+      if (!project?.defaultBranch) return null;
+      const gitProject: GitBackedProject = {
+        projectId: input.projectId,
+        repoUrl: project.repoUrl,
+        defaultBranch: project.defaultBranch,
+        manifestPath: project.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      };
+      return (
+        !repositoryAccessFromSessionMetadata(session?.metadata) && session?.agentName
+          ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef, {
+              forceRefresh: true,
+            })
+          : resolveCompiledAgentConfigForSession(gitProject, input.baseRef, { forceRefresh: true })
+      ).catch(() => null);
+    })(),
+    opts?.budgetMs ?? LATEST_ETAG_BUDGET_MS,
+    'latest agent-config etag',
+  ).catch((error) => {
+    if (error instanceof TimeoutError) {
+      logger.warn(
+        '[session-config] latest etag unresolved within its budget; answering unknown',
+        { budget_ms: opts?.budgetMs ?? LATEST_ETAG_BUDGET_MS },
+      );
+      return null;
+    }
+    throw error;
+  });
   return agentConfigEtag(compiled);
 }
 

@@ -20,7 +20,7 @@
  * the right one: "why would someone convert a docx to markdown with this
  * powerful tool?" A prompt has to name a REASON, not a capability.
  *
- * Worse, that rule excluded the things that make this an AI Management System
+ * Worse, that rule excluded the things that make this an AI Operating System
  * rather than a chat box. The most valuable prompts here operate on Kortix's
  * OWN primitives — they are the first group below, and they are first on
  * purpose:
