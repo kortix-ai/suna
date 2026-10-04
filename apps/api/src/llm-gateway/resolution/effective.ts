@@ -1,5 +1,4 @@
 import { canonicalManagedModelId, isRuntimeManagedModelId } from '../models/managed-models';
-import { isPlatformDefaultModelId } from '../models/served-managed-models';
 
 // One definition of how a default model/agent is chosen across scopes. Keeping
 // the precedence here means Slack, the web picker, and the gateway agree.
@@ -58,6 +57,11 @@ export function chooseEffectiveModel(params: {
   projectDefault?: string | null;
   accountDefault?: string | null;
   freeModelsOnly?: boolean;
+  /** The caller's resolved platform default: the ONE managed model free tier
+   *  may use (KRTX-1067). A parameter, not a config read — this module stays
+   *  pure, and the batch-mocked config of one test cannot steer another's
+   *  cached chain decision. */
+  platformDefault?: string | null;
 }): { model: string | null; source: ModelSource } {
   let candidate: string | null = null;
   let source: ModelSource = 'platform';
@@ -79,7 +83,7 @@ export function chooseEffectiveModel(params: {
   if (
     params.freeModelsOnly &&
     isManagedRef(candidate) &&
-    !isPlatformDefaultModelId(toWireModel(candidate))
+    toWireModel(candidate) !== params.platformDefault
   ) {
     return { model: null, source: 'platform' };
   }

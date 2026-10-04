@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { platformDefaultModelId } from '../models/served-managed-models';
 import {
   chooseEffectiveAgent,
   chooseEffectiveModel,
@@ -61,13 +60,12 @@ describe('chooseEffectiveModel', () => {
   });
 
   test('free tier: the platform default managed candidate is kept (KRTX-1067)', () => {
-    const platform = platformDefaultModelId();
-    expect(platform).not.toBe('');
+    const platform = 'deepseek-v4.1-flash';
     expect(
-      chooseEffectiveModel({ accountDefault: platform, freeModelsOnly: true }),
+      chooseEffectiveModel({ accountDefault: platform, freeModelsOnly: true, platformDefault: platform }),
     ).toEqual({ model: platform, source: 'account' });
     expect(
-      chooseEffectiveModel({ projectDefault: `kortix/${platform}`, freeModelsOnly: true }),
+      chooseEffectiveModel({ projectDefault: `kortix/${platform}`, freeModelsOnly: true, platformDefault: platform }),
     ).toEqual({ model: `kortix/${platform}`, source: 'project' });
   });
 });

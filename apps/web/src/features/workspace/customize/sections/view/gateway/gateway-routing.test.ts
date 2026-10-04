@@ -150,10 +150,10 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('the header selector reads and writes the project default scope', () => {
-    // The read chain moved into the SDK: `resolveModelDefault` resolves
-    // project → account → platform, and the platform default now resolves on
-    // free tier too (KRTX-1067). The selector's read side is that one call.
-    expect(gatewayViewSource).toContain('resolveModelDefault(modelDefaults.data, undefined)');
+    // The read goes through the SDK's one default chain (`resolveModelDefault`),
+    // so the page cannot grow a second copy of the agent → project → account →
+    // platform precedence.
+    expect(gatewayViewSource).toContain('resolveModelDefault(modelDefaults.data');
     expect(gatewayViewSource).toContain('.setProjectDefault(m)');
     expect(gatewayViewSource).toContain('useProjectModels(projectId)');
     expect(gatewayViewSource).not.toContain('useRuntimeProviders');

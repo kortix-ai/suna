@@ -55,6 +55,7 @@ describe('chooseDefaultModel — free tier', () => {
         accountDefault: PLATFORM_DEFAULT_MODEL_ID,
         agentDefaults: {},
         freeModelsOnly: true,
+        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBe(PLATFORM_DEFAULT_MODEL_ID);
   });
@@ -65,6 +66,7 @@ describe('chooseDefaultModel — free tier', () => {
         accountDefault: PAID_MANAGED,
         agentDefaults: {},
         freeModelsOnly: true,
+        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });
@@ -75,6 +77,7 @@ describe('chooseDefaultModel — free tier', () => {
         accountDefault: `kortix/${PAID_MANAGED}`,
         agentDefaults: {},
         freeModelsOnly: true,
+        platformDefault: PLATFORM_DEFAULT_MODEL_ID,
       }),
     ).toBeUndefined();
   });
