@@ -1108,7 +1108,7 @@
       "noMatches": "No hay resultados para {query}.",
       "emptyTitle": "No hay funciones experimentales",
       "emptyDescription": "Esta instalación no ofrece indicadores de función por proyecto.",
-      "permission": "Necesitas permiso para editar la personalización del proyecto para cambiar una función.",
+      "permission": "Necesitas el permiso de configuración del proyecto para cambiar un indicador de función.",
       "updateFailed": "No se pudo actualizar {key}",
       "flags": {
         "marketplace": {
@@ -9605,7 +9605,7 @@
       "text062b7c4143e2": "Su propia rama, creada por sesión",
       "text062bccfdad1c": "No hay sandboxes que coincidan con esta búsqueda",
       "text062dddbbb151": "Una frontera sin ecosistema no es estable",
-      "text06346e4d9c35": "Necesita el permiso de personalización y escritura del proyecto para cambiar un indicador de función.",
+      "text6d484ed8c1a0": "Necesitas el permiso de configuración del proyecto para cambiar un indicador de función.",
       "text06475633ed3e": "Última actividad",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Cambiar lo que {value0} {value1} puede hacer en {value2}.",
