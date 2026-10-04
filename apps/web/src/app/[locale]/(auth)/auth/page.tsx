@@ -396,9 +396,27 @@ function AuthCardForm({
 
       // Magic link is the default path: Continue emails a link and lands the
       // user on the link step (the link signs in existing accounts and
-      // registers new ones — no mode needed). Password-only deployments go
-      // through the existence check instead, so the password step opens
-      // already knowing whether this is a sign-in or a registration.
+      // registers new ones — no mode needed). One exception: an EXISTING
+      // account opens the password form directly — the link stays one
+      // explicit choice away ("Email me a link instead") and no auth email is
+      // sent until the customer asks for it. (Whether the account's password
+      // is one the visitor still knows is not observable server-side — GoTrue
+      // stores a random hash for passwordless users too — so the existence
+      // check is the signal we act on, and the password screen itself carries
+      // both escape hatches: "Forgot your password?" and the link.) New
+      // accounts and a degraded existence check keep the magic-link default
+      // (the link action re-checks closed/SSO server-side). Password-only
+      // deployments go through the existence check below, so the password
+      // step opens already knowing whether this is a sign-in or a
+      // registration.
+      if (magicLinkEnabled && passwordEnabled) {
+        const { mode: resolved } = await resolveAuthMode(trimmed);
+        if (resolved === 'signin') {
+          setCredMode('signin');
+          setStep('credentials');
+          return;
+        }
+      }
       if (magicLinkEnabled) {
         await sendMagic(trimmed, 'continue');
         return;
