@@ -39,6 +39,10 @@ extraResources:
   # bundle as an ES module.
   - from: ../../packages/agent-tunnel/package.json
     to: agent-tunnel/package.json
+  # The Kortix Capture service (scripts/ensure-runtime.js builds it): the OS
+  # service runs it with this app's binary as Node (ELECTRON_RUN_AS_NODE=1).
+  - from: vendor/capture-service.js
+    to: capture-service/capture-service.js
 
 # Registers the kortix:// deep-link scheme (auth callbacks) in the OS bundle.
 protocols:

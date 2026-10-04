@@ -317,6 +317,26 @@ function supervise({ name, start, onChange = () => {}, now = Date.now, timers = 
   };
 }
 
+/* ─── The OS service (capture-service.js) ──────────────────────────────── */
+
+/**
+ * What the desktop app does to the Capture service, from the person's switch,
+ * the sign-in, and `capture-service.js status`: `install` (missing, or the
+ * unit points at an old app path: an update or a move), `resume` (disabled),
+ * `repair` (installed and enabled, but not running: reinstall, throttled),
+ * `pause` (Capture off: disabled, so login does not start it), `uninstall`
+ * (signed out), or null.
+ */
+function serviceAction({ desktopOn, signedIn, signInRequired, service }) {
+  const installed = service?.installed === true;
+  if (!signedIn && !signInRequired) return installed ? 'uninstall' : null;
+  if (!desktopOn) return installed && service.enabled !== false ? 'pause' : null;
+  if (!installed || service.upToDate === false) return 'install';
+  if (service.enabled === false) return 'resume';
+  if (!service.heartbeat?.running && service.active !== true) return 'repair';
+  return null;
+}
+
 /* ─── Status ───────────────────────────────────────────────────────────── */
 
 const PERMISSION_KEYS = ['screen', 'accessibility', 'microphone'];
@@ -457,6 +477,7 @@ module.exports = {
   readDesktop,
   restartDelay,
   runEngine,
+  serviceAction,
   signIn,
   supervise,
   writeDesktop,

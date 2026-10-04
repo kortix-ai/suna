@@ -582,11 +582,11 @@ function trayMenuTemplate(
   ];
 }
 
-/** The computer is an OS service and stays connected; Capture runs inside the app and stops. */
+/** The computer agent and Capture are OS services: both keep running after Quit. */
 function quitLabel(computerStays, captureRuns) {
-  if (computerStays && captureRuns) return 'Quit Kortix (Capture stops; your computer stays connected)';
+  if (computerStays && captureRuns) return 'Quit Kortix (your computer and Capture keep running)';
   if (computerStays) return 'Quit Kortix (your computer stays connected)';
-  if (captureRuns) return 'Quit Kortix (Capture stops)';
+  if (captureRuns) return 'Quit Kortix (Capture keeps recording)';
   return 'Quit Kortix';
 }
 
