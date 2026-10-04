@@ -15,7 +15,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *  - per session: "Allow everything" writes a blanket allow ruleset onto the
  *    runtime session (survives tab close) + auto-approves anything already
  *    pending; a client-side auto-approver backstops any ask that still arrives.
- *  - persistent (footer, gated on `project.customize.write` and an editable v2
+ *  - persistent (footer, gated on `project.agent.write` and an editable v2
  *    agent): writes `allow` into the session agent's permission rules (its
  *    `.md`, through the agent-config route) — sessions started after the
  *    commit stop asking; this one allows the capability for the rest of its run.
@@ -146,7 +146,7 @@ export function SessionPermissionPrompt({
   // on plain /sessions/[id], `id` IS the session, so no config surface.
   const params = useParams<{ id?: string; sessionId?: string }>();
   const projectId = params?.sessionId ? params.id : undefined;
-  const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE];
+  const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_AGENT_WRITE];
 
   const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
   const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);

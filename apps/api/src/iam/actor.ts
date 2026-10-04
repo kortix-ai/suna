@@ -72,11 +72,9 @@ export type Credential =
       agentGrant: AgentGrant | null;
       serviceAccountId: string;
       activated: boolean;
-      /** The project flag `agent_principal` is on and the grant is governed:
-       *  the session
-       *  authorizes AS the agent, capped by its ceiling, never as the
-       *  launcher. Optional so a literal built by an older caller reads as
-       *  the legacy model. */
+      /** The grant is governed: the session authorizes AS the agent, capped
+       *  by its ceiling, never as the launcher. Optional so a literal built
+       *  by an older caller reads as ungoverned. */
       agentPrincipal?: boolean;
       /** The human this session acts on behalf of, or null for an unattended
        *  run or once another human prompted it (spec §2.3). Decides personal
@@ -163,7 +161,7 @@ export function credentialProjectId(actor: Actor): string | null {
 
 /**
  * True when this request authorizes under the agent-principal model: an agent
- * session whose project has `agent_principal` on and whose grant is governed.
+ * session whose grant is governed.
  */
 export function isAgentPrincipalActor(actor: Actor): boolean {
   return actor.credential.kind === 'agent_session' && actor.credential.agentPrincipal === true;
