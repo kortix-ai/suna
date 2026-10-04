@@ -934,7 +934,7 @@
       "noMatches": "No matches for {query}.",
       "emptyTitle": "No experimental features",
       "emptyDescription": "This deployment exposes no per-project feature flags.",
-      "permission": "You need the project's customize-write permission to change a feature flag.",
+      "permission": "You need the project's settings permission to change a feature flag.",
       "updateFailed": "Failed to update {key}",
       "flags": {
         "marketplace": {
@@ -9616,7 +9616,7 @@
       "text062b7c4143e2": "Its own branch, cut per session",
       "text062bccfdad1c": "No sandboxes match this search",
       "text062dddbbb151": "A frontier without an ecosystem is not stable",
-      "text06346e4d9c35": "You need the project's customize-write permission to change a feature flag.",
+      "text6d484ed8c1a0": "You need the project's settings permission to change a feature flag.",
       "text06475633ed3e": "Last activity",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Change what {value0} {value1} can do in {value2}.",

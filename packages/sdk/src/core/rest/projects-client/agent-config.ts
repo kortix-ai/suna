@@ -13,7 +13,7 @@ import { unwrap } from './shared';
 // response/request shape — see apps/api/src/projects/routes/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
 // secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
-// server-side (project.customize.write). v2-only: `editable:false` on the GET
+// server-side (project.agent.write). v2-only: `editable:false` on the GET
 // means a v1 project — the UI degrades to the limited scope editor.
 
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
