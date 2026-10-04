@@ -1,16 +1,16 @@
 {
-  "source_hash": "4aed6c36bc599cbe3fa13f0ad3ee678fe642ed2773df9cfec8dd2ce238fb011b",
+  "source_hash": "5623564c00e289fc66599b18d8a1274804dd2e9d5c12442e4d4b69b40236740d",
   "diff_files": [
     "packages/db/migrations/20261004063333758_add_agent_templates_backup_primary_key.sql",
     "packages/db/scripts/agent-templates-backup-primary-key.integration.test.ts"
   ],
   "diff_hash": "51f4d266d1880288f35ac5fe37f2645445f9a7b46581d0e23edb1e79547e6362",
-  "head": "5027f631b6dd8d13ff476d18f48452aaca57df84",
+  "head": "0dac36075409c01db76e043f545b501e317d37c5",
   "passed": true,
   "lanes": {
-    "db-suites": "pass",
     "core": "pass",
-    "packages": "pass"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T07:27:20.954Z"
+  "at": "2026-10-04T07:39:57.999Z"
 }
