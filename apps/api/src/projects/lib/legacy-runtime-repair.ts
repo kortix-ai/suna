@@ -282,10 +282,12 @@ interface FailedAttemptBudget {
  * `LEGACY_BOOTSTRAP_MAX_ATTEMPTS`, and the escalating cooldown window — that
  * both `describeLegacyBootstrapRetry` (the metadata summary) and the repair's
  * own budget gate apply. They used to be two hand-encodings of the same
- * running/staged/failed/exhausted/cooldown decisions.
+ * running/staged/failed/exhausted/cooldown decisions. Callers pre-guard on the
+ * record being `failed` on the current build, so the arithmetic itself is
+ * unconditional.
  */
-function failedAttemptBudget(record: LegacyBootstrapRecord, sameBuild: boolean): FailedAttemptBudget {
-  const attempts = sameBuild ? record.attempts : 0;
+function failedAttemptBudget(record: LegacyBootstrapRecord): FailedAttemptBudget {
+  const attempts = record.attempts;
   if (attempts >= LEGACY_BOOTSTRAP_MAX_ATTEMPTS) {
     return { attempts, exhausted: true, cooldownEndsAtMs: null };
   }
@@ -343,7 +345,7 @@ export function describeLegacyBootstrapRetry(
     return { status: 'staged', classification, attempts: record.attempts, lastAttemptAt: record.lastAttemptAt, lastError: null, nextRetryAt: null };
   }
   if (record.state === 'failed' && sameBuild) {
-    const budget = failedAttemptBudget(record, true);
+    const budget = failedAttemptBudget(record);
     if (budget.exhausted) {
       return { status: 'exhausted', classification, attempts: budget.attempts, lastAttemptAt: record.lastAttemptAt, lastError: record.error ?? null, nextRetryAt: null };
     }
@@ -363,10 +365,6 @@ export function describeLegacyBootstrapRetry(
   return { status: 'idle', classification, attempts: attemptsAgainstBuild(record, currentManifestBuild), lastAttemptAt: record.lastAttemptAt, lastError: record.error ?? null, nextRetryAt: null };
 }
 
-/**
- * Decide, and when warranted do, the bootstrap for one sandbox. Pure over
- * `deps`; every side effect is injected so the policy is unit-testable and the
- * wiring (DB, provider, ingress, audit) lives in one place.
 /** One bootstrap pass in flight: what every phase reads, and the refined classification it acts on. */
 interface RepairPass {
   readonly deps: LegacyBootstrapDeps;
@@ -456,7 +454,7 @@ function repairBudgetGate(
   const sameBuild = record?.manifestBuild === build;
   const attempts = attemptsAgainstBuild(record, build);
   if (record && sameBuild && record.state === 'failed' && !input.force) {
-    const budget = failedAttemptBudget(record, true);
+    const budget = failedAttemptBudget(record);
     if (budget.exhausted) {
       return { outcome: 'skipped-exhausted', detail: `${attempts} attempts on build ${build}`, classification };
     }

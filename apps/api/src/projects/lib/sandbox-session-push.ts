@@ -103,6 +103,8 @@ async function resolveSandboxPushTarget(
   what: string,
   input: { sessionId: string; projectId: string },
   missingRowReason: string,
+  /** A caller's own read between the env snapshot and the ingress resolution, so each push keeps its exact side-effect order. */
+  beforeIngress?: () => Promise<void>,
 ): Promise<
   | { ok: false; reason: string }
   | {
@@ -134,6 +136,7 @@ async function resolveSandboxPushTarget(
   if (!serviceKey) return { ok: false, reason: 'sandbox has no service key' };
   const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
   if (!snapshot) return { ok: false, reason: 'no env snapshot' };
+  await beforeIngress?.();
   const { url, headers } = await resolveSandboxIngress(row.externalId, {
     port: SANDBOX_SERVICE_PORT,
     transport: 'http',
@@ -341,15 +344,15 @@ export async function pushSessionScopeToSandbox(input: {
   sessionId: string;
 }): Promise<{ applied: boolean; reason?: string }> {
   try {
-    const target = await resolveSandboxPushTarget('scope push', input, 'no active sandbox');
+    let llmGatewayEnabled = false;
+    const target = await resolveSandboxPushTarget('scope push', input, 'no active sandbox', async () => {
+      // Re-derive from the row the route JUST committed — `resolveOwnerRawEnv`
+      // reads `secretsAllowlist` fresh, so this reflects the new scope, not the
+      // boot snapshot the daemon is still running.
+      llmGatewayEnabled = await projectLlmGatewayEnabledById(input.projectId);
+    });
     if (!target.ok) return { applied: false, reason: target.reason };
     const { url, headers, serviceKey, snapshot, provider } = target;
-
-    // Re-derive from the row the route JUST committed — `resolveOwnerRawEnv`
-    // reads `secretsAllowlist` fresh, so this reflects the new scope, not the
-    // boot snapshot the daemon is still running.
-
-    const llmGatewayEnabled = await projectLlmGatewayEnabledById(input.projectId);
     await postEnvToDaemon({
       previewUrl: url,
       providerHeaders: headers,

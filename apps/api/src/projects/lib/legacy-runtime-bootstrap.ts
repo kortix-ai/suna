@@ -40,9 +40,6 @@
  * and in the audit ledger, never silent. The script restores the legacy
  * entrypoint and relaunches the old chain if the new daemon does not answer.
  */
-import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtime-relay';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
 /**
  * The one import surface (facade). The implementation lives in three modules
