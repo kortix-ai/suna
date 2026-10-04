@@ -1,6 +1,6 @@
 import { Reveal } from '@/components/home/reveal';
-import { Button } from '@/components/ui/marketing/button';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import { PillLink } from '@/features/marketing/os/primitives';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { ROLES_TRANSLATION_KEYS } from '@/i18n/roles-translation-keys.generated';
@@ -71,7 +71,7 @@ export function RolePage({ role: sourceRole }: { role: RoleContent }): ReactNode
             {role.handoff.jobs.map((job, i) => (
               <li
                 key={job.id}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
               >
                 <Eyebrow>{String(i + 1).padStart(2, '0')}</Eyebrow>
                 <h3 className="text-foreground mt-3 text-base leading-tight font-medium">
@@ -113,7 +113,7 @@ export function RolePage({ role: sourceRole }: { role: RoleContent }): ReactNode
               {role.output.notes.map((note) => (
                 <div
                   key={note.id}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6"
+                  className="border-border bg-card flex h-full flex-col rounded-xl border p-6"
                 >
                   <h3 className="text-foreground text-base leading-tight font-medium">
                     {note.title}
@@ -162,7 +162,7 @@ export function RolePage({ role: sourceRole }: { role: RoleContent }): ReactNode
         />
 
         <Reveal delay={0.06}>
-          <ol className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border lg:grid-cols-3">
+          <ol className="border-border bg-card mt-10 grid overflow-hidden rounded-xl border lg:grid-cols-3">
             {role.cadence.modes.map((mode, i) => (
               <li
                 key={mode.id}
@@ -203,12 +203,8 @@ export function RolePage({ role: sourceRole }: { role: RoleContent }): ReactNode
 
         <Reveal delay={0.1}>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button size="lg" variant="secondary" asChild>
-              <Link href="/security">{tI18nComplete.raw('text35cf7d0a206e')}</Link>
-            </Button>
-            <Button size="lg" variant="secondary" asChild>
-              <Link href="/connectors">{tI18nComplete.raw('text0922d984c6b6')}</Link>
-            </Button>
+            <PillLink tone="outline" href="/security">{tI18nComplete.raw('text35cf7d0a206e')}</PillLink>
+            <PillLink tone="outline" href="/connectors">{tI18nComplete.raw('text0922d984c6b6')}</PillLink>
           </div>
         </Reveal>
       </Section>
@@ -218,7 +214,7 @@ export function RolePage({ role: sourceRole }: { role: RoleContent }): ReactNode
       {/* ── 6 · the other teams ─────────────────────────────────────────── */}
       <Section id="other-teams">
         <Reveal>
-          <h2 className="text-foreground text-2xl font-medium tracking-tight sm:text-3xl">
+          <h2 className="text-foreground text-3xl font-normal tracking-tight text-balance sm:text-5xl">
             {tI18nComplete.raw('textbc06bb3d377c')}
           </h2>
           <p className="text-muted-foreground mt-4 max-w-2xl text-base leading-relaxed">
@@ -232,7 +228,7 @@ export function RolePage({ role: sourceRole }: { role: RoleContent }): ReactNode
               <li key={item.slug}>
                 <Link
                   href={`/solutions/${item.slug}`}
-                  className="border-border bg-card hover:bg-accent/40 flex h-full flex-col rounded-sm border p-5 transition-colors"
+                  className="border-border bg-card hover:bg-accent/40 flex h-full flex-col rounded-xl border p-5 transition-colors"
                 >
                   <span className="text-foreground text-sm font-medium">{item.name}</span>
                   <span className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
