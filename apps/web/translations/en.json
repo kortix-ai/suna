@@ -260,10 +260,6 @@
       "fallbackName": "it",
       "confetti": "Throw some confetti"
     },
-    "runtime": {
-      "metaLabel": "Meta runtime",
-      "metaDescription": "Meta uses a fixed minimal sandbox. It starts specialized sessions for project work."
-    },
     "sandbox": {
       "label": "Sandbox template",
       "agentEnvironment": "Agent environment",
@@ -971,7 +967,7 @@
         },
         "warm_sessions": {
           "name": "Warm Sessions",
-          "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute and a concurrent-session slot."
+          "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute."
         },
         "secrets_egress": {
           "name": "Network-Enforced Secrets",
@@ -988,10 +984,6 @@
         "pi_harness": {
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
-        "agent_principal": {
-          "name": "Agents as Principals",
-          "description": "Agents act as themselves: their Kortix permissions, capped by their role. Whoever runs an agent adds only their own accounts."
         },
         "config_releases": {
           "name": "Config Releases",
@@ -1438,7 +1430,7 @@
     "sessionViewOptions": "Session view options",
     "sectionOptions": "Section options",
     "allSectionsHidden": "All sections are hidden.",
-    "metaCoordinator": "Meta coordinator",
+    "metaCoordinator": "Meta",
     "files": "Files",
     "retry": "Try again",
     "review": "Review",
@@ -2499,9 +2491,7 @@
     "openWithoutGrant": "No grant needed",
     "grantNote": "The agent also needs project.app.read in its Kortix permissions.",
     "emptyTitle": "No Apps yet",
-    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from.",
-    "flagOffHint": "Agent principal is off for this project, so this grant is stored but does not gate an App yet.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from."
   },
   "errors": {
     "generic": "An error occurred",
@@ -9473,7 +9463,6 @@
       "text0154297a0f48": "Any phase",
       "text01676385135f": "It is a draft, and it says so",
       "text016cec7c484d": "Revoked connector",
-      "text016e549e6831": "Max concurrent sessions override",
       "text017245d54fdb": "in Slack.",
       "text018069eabbfd": "The definition",
       "text018912e44371": "Downloaded compiled project checkout",
@@ -10268,7 +10257,6 @@
       "text197300839f83": "Copy \"{value0}\"",
       "text19766ed6ccb2": "Cancel",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "Plan cap",
       "text19890c7ac88a": "Failed to load project access",
       "text1994b6869b97": "SP Entity ID",
       "text19962f19ebb6": "# Customers",
@@ -11742,7 +11730,6 @@
       "text445d71b74731": "It matches the ledger against the statement, groups what did not match by likely cause, and leaves the genuinely ambiguous ones flagged rather than force-matched. The unmatched list is the deliverable; a clean run that hid three problems is not.",
       "text446f4eabf99f": "What this agent is for",
       "text4471a7e4e487": "# Incident response",
-      "text44912abd87c3": "Concurrent sessions",
       "text449992e55737": "3,000+ apps in a click",
       "text449a509f5f87": "Advanced RBAC",
       "text44a57b22e03d": "Alert",
@@ -12907,7 +12894,6 @@
       "text654f8c9688a8": "Reads run, writes wait",
       "text65511e543224": "Add one more parameter with Field name \"groups\". In its Value dropdown pick \"User Roles\" (that is the entry that emits the user’s role names — OneLogin’s separate \"Groups\" concept is a different attribute). Tick \"Include in SAML assertion\", AND enable the multi-value flag so every role is sent as its own value.",
       "text65562e698ff8": "How a list or management page is assembled: header, search bar, rows, empty state.",
-      "text655a03fa2bea": "Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Every project member can open these sessions.",
       "text6562d4f7e6fb": "The floor role for the account. No implicit project access — they see only the projects they've been added to, directly or via a group.",
@@ -16444,7 +16430,6 @@
       "textca3bcc681e99": "Directory Sync pushes users and groups from Entra proactively — deactivations apply without waiting for a sign-in. It reuses the same enterprise application you already registered for SAML SSO; nothing new to create.",
       "textca3f00ae4063": "Settings · Feature flags",
       "textca3ff6018449": "Search CSV",
-      "textca41e8913ee7": "Session cap for the whole account. Blank inherits the plan cap.",
       "textca44d7470fff": "3 statements, 0 errors.",
       "textca519bb35fbb": "Enable application",
       "textca566c8968e7": "Signed in",
@@ -17028,7 +17013,6 @@
       "textdaaf5ab03267": "Not set — using the default instructions",
       "textdacd5f120ffe": "Credentials encrypted, brokered server-side, never handed to the model.",
       "textdad35b178f11": "Entra admin center — Enterprise applications list with New application highlighted",
-      "textdae85d16887b": "Max concurrent sessions",
       "textdaee28c0c883": "You own all of it.",
       "textdaee7606b339": "Reset",
       "textdaf44c9faf1b": "Couldn't load version history",
@@ -19217,7 +19201,9 @@
       "text48b78a9ab65b": "How do runs stay isolated?",
       "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
       "text39207bf34111": "Related skills",
-      "text73112526c03a": "Agent turn failed. No reason was reported."
+      "text73112526c03a": "Agent turn failed. No reason was reported.",
+      "text85b7a59cdbd5": "Platform agent",
+      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20203,7 +20189,7 @@
     "ceilingDefault": "Default agent ceiling",
     "changeCeiling": "Change",
     "humanOnly": "Human only",
-    "humanOnlyHelp": "Managing members, deleting the project, and issuing credentials stay with people.",
+    "humanOnlyHelp": "Issuing project credentials stays with people.",
     "humanOnlyValue": "Never granted",
     "effective": "Effective permissions",
     "effectiveHelp": "Kortix permissions within the ceiling role, minus human-only permissions. project.read is always granted.",

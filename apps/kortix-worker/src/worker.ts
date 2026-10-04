@@ -529,8 +529,21 @@ export async function startWorker(cfg = configFromEnv()) {
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
+        // Parse before any header write. A malformed body is a client error
+        // answered with 400 — the old ordering wrote the SSE headers first, so
+        // the thrown parse escaped every guard as an unhandled rejection that
+        // killed the worker and left the client on a 200 stream without end.
+        let text: unknown;
+        let script: unknown;
+        try {
+          ({ text, script } = JSON.parse(body || '{}'));
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          res.writeHead(400, { 'content-type': 'application/json' })
+             .end(JSON.stringify({ ok: false, error: message }));
+          return;
+        }
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-        const { text, script } = JSON.parse(body || '{}');
         if (faux && Array.isArray(script)) {
           faux.setResponses(
             script.map((step: any) =>
