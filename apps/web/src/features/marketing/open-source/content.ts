@@ -83,7 +83,7 @@ export const openSource = {
    * The whole note. Sentence one is `/about` → `hero.title` verbatim; sentence
    * two is the first clause of `hero.lead`. Keep the two files in step.
    */
-  title: 'We are building the open-source AI Operating System. Every company should own all of it.',
+  title: 'We are building the open-source AI Management System. Every company should own all of it.',
 
   /** Primary way out: the rest of the reason. */
   aboutLabel: 'Why we are building it',

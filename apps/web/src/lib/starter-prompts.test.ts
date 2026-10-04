@@ -104,7 +104,7 @@ describe('the pool sells the product, not a list of file conversions', () => {
   const allPrompts = STARTER_PROMPTS.map((prompt) => prompt.prompt.toLowerCase()).join(' ');
 
   /*
-   * The rows that make this an AI Operating System rather than a chat box.
+   * The rows that make this an AI Management System rather than a chat box.
    * An earlier pool had NONE of these — it was written under a rule that only
    * admitted `general-knowledge-worker` skills, and produced "Convert docs to
    * markdown". Asserted by primitive so a future trim has to be a decision.

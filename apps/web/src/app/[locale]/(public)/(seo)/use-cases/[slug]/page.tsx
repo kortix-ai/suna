@@ -185,7 +185,7 @@ export default async function UseCasePage(props: PageProps) {
                   {archetype}
                 </span>
               )}
-              <h1 className="text-foreground mt-4 text-3xl font-normal tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
+              <h1 className="text-foreground mt-4 text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
                 {data.title}
               </h1>
               {data.description && (

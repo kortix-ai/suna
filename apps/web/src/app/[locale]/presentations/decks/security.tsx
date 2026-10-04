@@ -311,7 +311,7 @@ export function useSlides(): SlideDef[] {
       id: 'close',
       label: tI18nComplete.raw('textf049d5d66ce7'),
       notes:
-        'That is the whole model. Isolation, so a mistake cannot spread. Credentials the agent never holds. A human gate before anything ships. A full trail of everything.\n\nIt is built to survive a security review, not slip past one. On-prem, in your VPC, or fully isolated if that is what you need.\n\nAnd because it is open source, you do not have to take my word for any of it. Read the code.\n\nKortix. Your AI Operating System.',
+        'That is the whole model. Isolation, so a mistake cannot spread. Credentials the agent never holds. A human gate before anything ships. A full trail of everything.\n\nIt is built to survive a security review, not slip past one. On-prem, in your VPC, or fully isolated if that is what you need.\n\nAnd because it is open source, you do not have to take my word for any of it. Read the code.\n\nKortix. Your AGI management system.',
       node: (
         <Slide>
           <Rise i={0}>

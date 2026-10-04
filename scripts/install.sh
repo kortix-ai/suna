@@ -47,7 +47,7 @@ print_banner() {
     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝╚═╝  ╚═╝
 EOF
   printf "${N}\n"
-  printf "    ${W}The open-source AI Operating System${N}\n"
+  printf "    ${W}The open-source AI Management System${N}\n"
   printf "    ${F}One-click CLI installer${N}\n"
   printf "\n"
 }
