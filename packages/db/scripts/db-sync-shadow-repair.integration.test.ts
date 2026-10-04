@@ -107,9 +107,6 @@ process.exit(result.status ?? 1);
       expect(result.exitCode).toBe(0);
     };
     execute();
-    // The script's export is deliberately unordered (KRTX-1074). Pin the
-    // read-back to byte order so the fixture names (A/z/é) verify content, not
-    // whatever collation the cluster's default locale gives json_agg().
     const rows = sql(
       target.href,
       'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;',
