@@ -72,6 +72,7 @@ describe('buildTeamsManifest', () => {
     const fingerprint = createHash('sha256').update(JSON.stringify(manifest)).digest('hex').slice(0, 16);
     const released: Record<string, string> = {
       '1.6.1': '677e28d110223694',
+      '1.6.2': 'b5e6260aac81fc37',
     };
     expect({ version, fingerprint }).toEqual({ version, fingerprint: released[version] ?? 'no fingerprint for this version' });
   });
