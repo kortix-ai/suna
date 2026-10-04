@@ -16,13 +16,15 @@ import type { UiTranslator } from '@/i18n/translator';
 /**
  * Hero variants. The product pitch — what Kortix IS — not a use-case pitch.
  * Anchored on the README's opening: "The open-source AI Operating System".
+ * The sub carries the two lead pillars (brand decision D11): multiplayer AI,
+ * and build any agent on OpenCode or pi.
  *
  * Append `?hero=1` (or 2, 3, 4) to the URL to preview an alternative; the
  * selector is dev-only and renders nothing in production.
  */
 export const hero = {
   title: 'The open-source AI Operating System',
-  sub: 'Your agents, their skills, your company memory and every connector in one git repo you own. Any model, your keys, self-hosted or managed cloud.',
+  sub: 'Multiplayer AI for your whole team. Share agents, skills and company context in one git repo you own, and build any agent on OpenCode or pi, down to each tool it may call.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Request demo',
   trust: 'Open source · Any model, your keys · Self-host, VPC, or on-prem',

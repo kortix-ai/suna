@@ -40,7 +40,7 @@ export const hero = {
   specs: [
     { k: 'Isolation', v: 'One machine per session', visual: 'isolation' },
     { k: 'Boots with', v: 'Your repo, tools, dependencies', visual: 'boot' },
-    { k: 'Agent harness', v: 'OpenCode', visual: 'terminal' },
+    { k: 'Agent harness', v: 'OpenCode or pi', visual: 'terminal' },
     { k: 'Work lands via', v: 'Change request to main', visual: 'diff' },
   ],
 } as const;
@@ -185,7 +185,7 @@ export const files = {
       note: 'sandbox image, triggers, channels, connectors, secrets',
       depth: 1,
     },
-    { path: 'agents/', note: 'one OpenCode agent per file', depth: 1 },
+    { path: 'agents/', note: 'one agent per file', depth: 1 },
     { path: 'skills/', note: 'how this company does a specific job', depth: 1 },
     { path: 'harnesses/opencode/', note: 'the runtime your agents think in', depth: 1 },
     { path: 'commands/', note: 'the shortcuts everyone shares', depth: 2 },

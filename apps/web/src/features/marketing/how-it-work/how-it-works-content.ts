@@ -33,7 +33,8 @@
  *     config. The manifest declares the machine image, connectors and triggers.
  *   - "Open source", never a licence name. SOC 2 Type II is in progress, never
  *     "certified" or "compliant".
- *   - OpenCode is the only harness that may be named.
+ *   - OpenCode and pi are the only harnesses that may be named; this step
+ *     shows OpenCode, the default (brand decision D11).
  *
  * Three claims that read fine but do not survive the code, so they are not here:
  *   - "the Cursor subscription you already pay for" — there is no Cursor auth,

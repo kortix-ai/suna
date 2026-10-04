@@ -24,7 +24,8 @@ import type { UiTranslator } from '@/i18n/translator';
  *  - Say "agent computer" / "cloud computer" / "sandbox". NEVER "container".
  *  - Never claim a certification. Never name a licence — "open source" and stop.
  *  - No invented metrics, no customer names. Northwind is a placeholder.
- *  - The harness is OpenCode. Nothing else is shipped.
+ *  - The harness is OpenCode (default) or pi (experimental, `runtime: pi`).
+ *    Nothing else is shipped. Brand decision D11.
  *  - Nothing merges itself: work reaches `main` through a change request a
  *    person approves. Never write "deploys" for an agent's output.
  */
@@ -41,7 +42,7 @@ export const hero = {
   /** Four mono facts the rest of the page proves. Every value is defensible. */
   specs: [
     { k: 'Configuration', v: 'Files in a repo you own', visual: 'repo' },
-    { k: 'Runtime', v: 'OpenCode, declared in the repo', visual: 'declare' },
+    { k: 'Runtime', v: 'OpenCode or pi, declared in the repo', visual: 'declare' },
     { k: 'Every change', v: 'A commit you can diff and revert', visual: 'commits' },
     { k: 'Work lands via', v: 'Change request to main', visual: 'diff' },
   ],
@@ -175,7 +176,7 @@ export const repo = {
   tree: [
     { path: 'northwind/', note: 'the repo, and the company', depth: 0 },
     { path: 'kortix.yaml', note: 'the Kortix layer', depth: 1 },
-    { path: 'agents/', note: 'one OpenCode agent per file', depth: 1 },
+    { path: 'agents/', note: 'one agent per file', depth: 1 },
     { path: 'kortix.md', note: '', depth: 2 },
     { path: 'invoice-clerk.md', note: '', depth: 2 },
     { path: 'skills/', note: 'how this company does a job', depth: 1 },

@@ -44,7 +44,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
  *     showed both and neither would have parsed. Do not add them.
  *   - Opening a change request is real: `project.cr.open` is a `kortix_permissions`
  *     grant in the shipped starter manifest, and layer 06 is where it lands.
- *   - OpenCode is the only harness that may be named, and it is named plainly.
+ *   - OpenCode and pi are the only harnesses that may be named (D11). This
+ *     visual shows OpenCode, the default, and names it plainly.
  *   - A denied step is not a failure and must never be coloured like one in the
  *     summary — the run did exactly what it was told to do.
  */

@@ -36,12 +36,21 @@ diffable, and shared by the whole company. The agents work on real **cloud compu
 isolated sandbox per session, on its own branch — and land what they produce through a **change
 request** a human approves.
 
+- **Multiplayer AI.** Your whole team works with one set of agents, skills and company context.
+  Give an agent to everyone, a group or specific people, and share a session the same way: everyone
+  with access reads it and continues it.
+- **Build any agent.** An agent runs on [OpenCode](https://opencode.ai) or pi (experimental), and you
+  control every part of it: the prompt, the model, allow, ask or deny for every tool, the
+  connectors, secrets and skills it reaches, and the harness's own tools, plugins and extensions.
+
 Any model, your own API keys, your own infrastructure or our managed cloud.
 
 ---
 
 ## Kortix is right for you if
 
+- ✅ You want **multiplayer AI**: your whole team shares the same agents, skills and company context → [details](#multiplayer-ai-for-your-whole-team)
+- ✅ You want to **build custom agents on OpenCode or pi**, with a rule for every tool, model and permission → [details](#custom-agents-on-opencode-or-pi)
 - ✅ You want an **open-source, self-hosted alternative to Claude Cowork or ChatGPT Work** for your whole team → [details](#an-open-source-claude-cowork-for-your-whole-team)
 - ✅ You want **AI agents in Slack or Microsoft Teams** that use your tools and reply in the thread → [details](#ai-agents-in-slack-and-microsoft-teams)
 - ✅ You want **background coding agents in the cloud**: a sandbox and a branch per task, and a change request you review → [details](#background-coding-agents-in-the-cloud)
@@ -133,6 +142,48 @@ You can `grep` your entire company.
 ---
 
 ## What people build with Kortix
+
+### Multiplayer AI for your whole team
+
+One repo is the team's shared brain: the agents, the skills and the company memory every session
+reads. An improvement one person merges reaches everyone. Agents are closed by default: give one to
+everyone in the project, a group or specific people. Share a session with specific people or the
+whole project, and everyone with access reads it and continues it. A shared session runs only on
+model keys shared with the project, never on one person's own keys.
+
+```bash
+kortix sessions new --label weekly-report   # start a session; share it from Session access
+```
+
+### Custom agents on OpenCode or pi
+
+An agent is a markdown file: its prompt, its model, and allow, ask or deny for every tool, down to
+glob rules per command. Its block in `kortix.yaml` decides what it reaches. On OpenCode, add your
+own TypeScript tools, plugins and commands beside it. On pi (experimental), add extensions and pi
+packages. Both harnesses read the same agent files and skills.
+
+```markdown
+---
+description: Curates memory/ and opens one change request per run.
+mode: primary
+permission:
+  edit: allow
+  bash:
+    "git *": allow
+    "kortix cr *": allow
+    "*": ask
+---
+```
+
+```yaml
+# kortix.yaml
+runtime: pi                  # optional: the default harness is OpenCode
+agents:
+  memory-curator:
+    file: agents/memory-curator.md
+    connectors: [github]     # what it may reach; a grant you leave out is none
+    skills: [kortix-memory]
+```
 
 ### An open-source Claude Cowork for your whole team
 

@@ -41,7 +41,7 @@ describe('marketing trees and boundaries characterization', () => {
     expect(rows[3]).toContain('<span aria-hidden="true" class="relative w-6 shrink-0"><span class="bg-border absolute top-0 left-0 w-px bottom-0"></span></span>');
     expect(rows[3]).toContain('>kortix.md</span>');
     expect(rows[4]).toContain('w-px h-1/2');
-    expect(rows[4]).toContain('>memory-reflector.md</span>');
+    expect(rows[4]).toContain('>harness-reflector.md</span>');
   });
 
   for (const [name, Component, variants] of [

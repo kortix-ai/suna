@@ -283,7 +283,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'One honest limit: the card carries the decision and a link back into Kortix. Reading the actual diff of a change request happens in the web app, where a diff belongs — Slack is not a code review tool and we are not going to pretend it is.':
     'text635ccd16e45c',
   'One is live. Three are behind a switch. We will say which.': 'text738439725624',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
+  'one agent per file': 'text7c9b009973cd',
   'One repo': 'texta086ad00c629',
   'One search, whole company': 'text0948fa9a3378',
   'One session per conversation. session_key renders from the payload, so a single trigger fans out into a session per chat, per customer, or per repository — separate threads rather than one blended transcript.':
@@ -294,7 +294,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
   'Open the repo': 'text1fa449139a48',
-  'OpenCode, declared in the repo': 'text8eb07f243576',
+  'OpenCode or pi, declared in the repo': 'text962d2a1f7cac',
   'opencode:': 'text4ba79f911c93',
   'opened by invoice-clerk': 'textad42c6b4c691',
   'Operator switch': 'text7d92aa0e75c4',

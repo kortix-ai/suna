@@ -997,4 +997,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'How do runs stay isolated?': 'text48b78a9ab65b',
   'Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.':
     'text4af0b7d8bfb1',
+  'Can my whole team use the same agents?': 'text6f5e38d96104',
+  'Yes — Kortix is multiplayer. The agents, the skills and the company memory live in one repo the whole project shares, so an improvement one person merges reaches everyone. Give an agent to everyone in the project, a group or specific people, and share a session the same way: everyone with access reads it and continues it.': 'text4b72a8fdf7ce',
+  'How far can I customize an agent?': 'text2e3f6d4825ff',
+  'Down to each tool it may call. An agent is a markdown file that sets its prompt, its model and allow, ask or deny for every tool, and its grant in kortix.yaml decides which connectors, secrets and skills it reaches. Past that, run it on OpenCode with your own TypeScript tools and plugins, or on pi, the experimental second harness, with extensions and pi packages.': 'text46821b9e9397',
 };

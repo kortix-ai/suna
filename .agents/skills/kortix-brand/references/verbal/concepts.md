@@ -38,18 +38,18 @@ Six beats. Tell them in this order. Each beat ends where the next one starts.
 
 - **Category:** AI Operating System (AI OS).
 - **Roof (promise):** Run your whole company from one place you own: a workforce of AI agents that does real work.
-- **Four pillars:**
-  1. **Open and yours.** Open source and self-hostable. Your data, your models, your infrastructure. No lock-in, fully auditable.
-  2. **A workforce, not one assistant.** Org-scale specialist agents run in parallel and compound a shared memory.
+- **Four pillars** (D11, 2026-10-05; lead with 1 and 2):
+  1. **Multiplayer AI.** The whole team works with one set of agents, skills and company context. They live in one repo the project shares. Give an agent to everyone, a group or specific people, and share a session the same way. Specialist agents run in parallel and compound a shared memory.
+  2. **Build any agent.** An agent runs on OpenCode or pi (experimental), and you control every part of it: prompt, model, a permission rule per tool, its grants and skills, and the harness's own tools, plugins, extensions and packages. Every agent is a file in git: versioned, reviewable, never a black box.
   3. **Real work, not chat.** Agents run on real cloud computers, return finished deliverables, and take real actions in your tools.
-  4. **Everything is code.** Versioned, reviewable, portable, governable. Never a black box.
+  4. **Open and yours.** Open source and self-hostable. Your data, your models, your infrastructure. No lock-in, fully auditable.
 - **Foundation (proof):** the sanctioned proof points in `claims.md`. Nothing outside that list.
 
 **Rule.** Hang every headline, subhead and caption on one pillar. — *Why:* A line that supports no pillar adds noise. A line that supports two pillars splits the reader's attention. — *Where:* marketing | deck | social | store listing. — *When silent:* name the pillar before you write. If you cannot, cut the line.
 
 **Rule.** Do not add a fifth pillar and do not rename the four. — *Why:* The house is the shared frame. A fifth pillar breaks "four answers" and invites unreviewed claims. — *Where:* every surface. — *When silent:* put the new idea under the closest pillar as a proof point, after it passes `claims.md`.
 
-**Rule.** Write the pillar names in sentence case with the period. — *Why:* They read as short declarative sentences ("Open and yours."). — *Where:* marketing | deck. — *When silent:* copy the string from this list.
+**Rule.** Write the pillar names in sentence case with the period. — *Why:* They read as short declarative sentences ("Multiplayer AI.", "Open and yours."). — *Where:* marketing | deck. — *When silent:* copy the string from this list.
 
 ### The three ways work runs
 
@@ -67,7 +67,7 @@ Three concepts have an approved metaphor. Use it only as stated. Every other con
 | --- | --- | --- |
 | Project | "A company you can clone." | Intro, developer pitch. |
 | Change request | "CI/CD, but for the work of an organization, not just its code." | Explaining governance and self-improvement. |
-| Memory | "The living company brain." | Pillar 2. |
+| Memory | "The living company brain." | Pillar 1. |
 
 **Rule.** Use "a company you can clone", "CI/CD, but for the work of an organization, not just its code" and "the WordPress of AGI" as the only sanctioned analogies. Use at most one per paragraph. — *Why:* They come from the manifesto and the founder approved them. Stacked analogies blur the product. The "WordPress of AGI" line names one open core platform you own and extend; it is founder voice, so keep it out of category lines (D1). — *Where:* marketing | deck | social | press. — *When silent:* use none. State the mechanism instead.
 
