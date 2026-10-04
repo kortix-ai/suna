@@ -49,7 +49,11 @@ const RUNNER_CONTROLS = new Set([
  */
 function discoverChromiumPath(): string | undefined {
   if (process.env.CHROMIUM_PATH?.trim()) return process.env.CHROMIUM_PATH;
-  if (process.env.CI === 'true') return undefined;
+  // Any truthy CI marker means a CI runner: the registry browser the workflow
+  // installed IS the lane's browser there, so discovery stays off rather than
+  // silently swapping it for a runner image's system Chrome (tests.yml sets
+  // CI: "1"; match the repo's truthy-CI convention, update-check.ts).
+  if (process.env.CI) return undefined;
   for (const binary of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
     const found = Bun.which(binary);
     if (found) return found;
