@@ -1437,3 +1437,25 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 `AGP-10` Merging agents/triggers. A merge that changes `agents`, `triggers` or `default_agent` needs the permission the direct route asserts: `project.agent.write`, `project.trigger.create|update|delete`, `project.customize.write`. A person holds them through `project.gitops.merge`'s `implies`; an agent's list is flat and names them. Agent `builder` holds push, merge, `agent.write` and `trigger.create`. Through the Kortix Git proxy it pushes its own branch. A README-only CR is merged by the agent (200). A CR that widens `agents.builder.kortix_permissions` is merged by the agent (200) and `main` carries it. A CR that only adds a trigger is merged by the agent (200) and `main` carries it. Agent `drafter` holds push but not merge: its merge of a CR widening `drafter` → 403 `agent_scope_insufficient` (`action: project.gitops.merge`), `main` does not move, the owner closes it. Agent `merger` holds push, merge and `ref.any` but not `agent.write`: its merge of a CR making `merger` `all` → 403 `agent_scope_insufficient` (`action: project.agent.write`) and `main` does not move; its `git push HEAD:main` is refused with "skips change-request review" and `main` does not move.
 `AGP-11` Audit. On an enterprise team, a correlated `GET /projects/:id/files` from a human's private `reader` run records `actor_type: agent`, `agent_name: reader`, `on_behalf_of_user_id` = the human, and `initiator_actor_type: human` with the human's id. The same request from a trigger run records `initiator_actor_type: trigger`, `on_behalf_of_user_id: null`, and no human id in `actor_user_id`, `initiator_actor_id`, or `on_behalf_of_user_id`. A human's private `shipper` run that clones and pushes its own branch through the Git proxy (real `git` processes) records one `git.clone` and one `git.push` row for the session (`resource_type: git_repository`, `outcome: success`) with the same agent, on-behalf-of, and initiator fields; the `git.push` row's `metadata.refs` names `refs/heads/<session>` as a `create` from the zero sha to the pushed commit.
 `AGP-12` Denial bodies. Each denial carries `code` and `action`: `project_role_insufficient` (member JWT, files), `agent_scope_insufficient` (secrets outside the list), `agent_ceiling_insufficient` (files under a `member` ceiling), `agent_not_accessible` (spawning an agent the human may not run). The real CLI chooses its hint from the code: `kortix secrets ls` names `agents.scoped.kortix_permissions` and `project.secret.read`; `kortix files ls` under the ceiling asks an admin, names `capped`, and does not name `kortix_permissions`.
+
+## Browser-agent pilot (opt-in)
+
+The experimental browser contract **AGENTIC-1** lives in
+`tests/session-prompt.e2e.ts`. It is not a REST/CLI catalog flow or a release gate.
+Run it through `pnpm test -- --agentic-only` in an isolated database worktree.
+
+Reject a deterministic API test profile before creating fixtures.
+Create and authenticate a synthetic owner. Fund its local credit account.
+Provision one starter project and one real cloud session. Open that session
+with the authenticated browser. Assert that an empty composer cannot send.
+Ask the browser agent to submit one unique prompt. Observe exactly one POST to
+`/projects/:projectId/sessions/:sessionId/prompts` with the exact text part.
+Observe an assistant reply. Read the durable `transcript?shape=sync` and prove
+that both the user prompt and assistant reply exist. Reload the same session
+and prove that the reply remains visible without another submission.
+Remove the session, purge only the newly created managed repository, and remove
+the synthetic account and auth user. Fail if cleanup fails.
+
+The [evaluation and runbook](../../.agents/skills/testing/references/e2e-evaluation.md)
+defines the pilot's scope and promotion criteria. Existing route-coverage and
+release contracts remain required.
