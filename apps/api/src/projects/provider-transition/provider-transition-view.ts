@@ -19,14 +19,14 @@ import type { ProviderTransitionRow } from './provider-transition-store';
  * string: the hand-written OpenAPI copy used to loosen it and drift from the
  * `PreparationView` type below, which is now derived from this schema.
  */
+/** The eight row statuses plus the two synthetic PATCH outcomes `status` carries on the wire. */
+const WIRE_STATUSES = [...LIVE_TRANSITION_STATUSES, ...TERMINAL_TRANSITION_STATUSES] as const;
+
 export const PreparationViewSchema = z.object({
   kind: z.literal('preparation'),
   transition_id: z.string().nullable(),
   project_id: z.string(),
-  status: z
-    .enum([...LIVE_TRANSITION_STATUSES, ...TERMINAL_TRANSITION_STATUSES] as const)
-    .or(z.literal('noop'))
-    .or(z.literal('cleared')),
+  status: z.enum(WIRE_STATUSES).or(z.literal('noop')).or(z.literal('cleared')),
   source_provider: z.string().nullable(),
   target_provider: z.string().nullable(),
   active_provider: z.string().nullable(),
@@ -53,10 +53,7 @@ export type PreparationView = z.infer<typeof PreparationViewSchema>;
 export const PublicTransitionViewSchema = z.object({
   transition_id: z.string().nullable(),
   project_id: z.string(),
-  status: z
-    .enum([...LIVE_TRANSITION_STATUSES, ...TERMINAL_TRANSITION_STATUSES] as const)
-    .or(z.literal('noop'))
-    .or(z.literal('cleared')),
+  status: z.enum(WIRE_STATUSES).or(z.literal('noop')).or(z.literal('cleared')),
   source_provider: z.string().nullable(),
   target_provider: z.string().nullable(),
   generation: z.number().nullable(),
