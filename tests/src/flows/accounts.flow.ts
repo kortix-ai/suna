@@ -614,12 +614,18 @@ flow(
 // mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
-// Immediate self-deletion removes the auth identity and invalidates its token.
+// Immediate self-deletion removes the auth identity, invalidates its token and
+// removes the account row itself: the account answers 404 to a nonmember.
 flow(
   'DEL-4',
   {
     domain: 'accounts',
-    routes: ['DELETE /v1/account/delete-immediately', 'GET /v1/account/deletion-status', 'GET /v1/accounts/me'],
+    routes: [
+      'DELETE /v1/account/delete-immediately',
+      'GET /v1/account/deletion-status',
+      'GET /v1/accounts/me',
+      'GET /v1/accounts/:accountId',
+    ],
   },
   async (ctx) => {
     const victim = await ctx.fixtures.user({ label: 'DEL-4' });
@@ -641,6 +647,18 @@ flow(
         .has('$.deletion_scheduled_for', null)
         .has('$.can_cancel', false);
     });
+    let victimAccountId = '';
+    await ctx.step('a nonmember is forbidden from the throwaway account → 403', async () => {
+      // The personal account is the victim's first (and only) membership.
+      const me = await asVictim.get('/v1/accounts/me');
+      me.status(200).body().exists('$.accounts[0].account_id');
+      victimAccountId = me.json().accounts[0].account_id;
+      (
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
+      ).status(403);
+    });
     await ctx.step('throwaway account deletes itself immediately → 200', async () => {
       const r = await asVictim.del('/v1/account/delete-immediately');
       r.status(200).body().has('$.success', true).has('$.message', 'Account deleted');
@@ -648,6 +666,13 @@ flow(
     await ctx.step('old token cannot read account or deletion status → 401', async () => {
       (await asVictim.get('/v1/accounts/me')).status(401);
       (await asVictim.get('/v1/account/deletion-status')).status(401);
+    });
+    await ctx.step('the deleted account is gone for a nonmember → 404', async () => {
+      (
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
+      ).status(404);
     });
     await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
       (await asVictim.del('/v1/account/delete-immediately')).status(401);
