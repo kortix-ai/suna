@@ -1,0 +1,28 @@
+{
+  "source_hash": "9154077547b149a1cdc9bc1bcf6b779f6756df0b37372c2923a389e7ef03db56",
+  "diff_files": [
+    "apps/mobile/components/session/tool/shared/styles.ts",
+    "apps/mobile/components/session/tool/tools/image-gen-tool.tsx",
+    "apps/mobile/components/session/tool/tools/show-content-renderer.tsx",
+    "apps/mobile/components/session/turn/use-sandbox-image.test.ts",
+    "apps/mobile/components/session/turn/use-sandbox-image.ts",
+    "apps/mobile/components/session/turn/user-message.tsx",
+    "apps/mobile/lib/session/image-load.test.ts",
+    "apps/mobile/lib/session/image-load.ts",
+    "packages/sdk/src/core/http/auth.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json",
+    "packages/sdk/src/react/index.ts",
+    "packages/sdk/src/react/use-sandbox-image.test.ts",
+    "packages/sdk/src/react/use-sandbox-image.ts"
+  ],
+  "diff_hash": "63bbf4468241f2d11bd20b44c36fa230d4264f2caec939f34a1a8ae830e4c672",
+  "head": "8271a9224ec78167beea0f9e03cc54a6f1818b5f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:31:49.593Z"
+}
