@@ -1,5 +1,5 @@
 {
-  "source_hash": "fdc93159ea509374b9de28588b957f12f8a1185757cc13af91a067a45333b1c9",
+  "source_hash": "b9bed8d9e0711e9673c78b3616231b858538402699619e684aa0caa490a45304",
   "diff_files": [
     ".agents/skills/worktree/SKILL.md",
     ".agents/skills/worktree/references/capture-local-store.md",
@@ -46,6 +46,8 @@
     "apps/desktop-electron/scripts/fetch-capture-engine.js",
     "apps/desktop-electron/src/capture-engine-fetch.test.js",
     "apps/desktop-electron/src/capture-host.js",
+    "apps/desktop-electron/src/capture-service.js",
+    "apps/desktop-electron/src/capture-service.test.js",
     "apps/desktop-electron/src/capture.js",
     "apps/desktop-electron/src/capture.test.js",
     "apps/desktop-electron/src/computer-tray.js",
@@ -117,11 +119,13 @@
     "infra/terraform/modules/ecs-api/main.tf",
     "infra/terraform/modules/ecs-api/outputs.tf",
     "infra/terraform/modules/ecs-api/variables.tf",
+    "packages/agent-tunnel/src/agent/service-drivers.ts",
+    "packages/agent-tunnel/src/agent/service-paths.ts",
     "packages/api-contract/src/__tests__/schemas.test.ts",
     "packages/api-contract/src/index.ts",
-    "packages/db/drizzle/meta/20261003174143_snapshot.json",
+    "packages/db/drizzle/meta/20261004171316_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261003232659000_capture_timeline.sql",
+    "packages/db/migrations/20261004171316098_capture_timeline.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/sdk/src/core/client/kortix.ts",
@@ -194,11 +198,11 @@
     "tests/src/flows/capture.flow.ts",
     "tests/unit/desktop-build-bun.test.ts"
   ],
-  "diff_hash": "f57fb9cc66a87f124716424511d7ed5d515f8b8e1acadcfedf2fdeb4fd4a137e",
-  "head": "87c1e4af82b3306a8475787d4573c7998f4d0d26",
+  "diff_hash": "e3f7d19bf06fcd359be4bf2700cc522861c40f8c8e3faa3b8f6c21caeecb15bb",
+  "head": "6baca80bc2312327f707042154de58cf2930fd04",
   "passed": true,
   "lanes": {
     "browser": "pass"
   },
-  "at": "2026-10-03T23:58:46.887Z"
+  "at": "2026-10-04T17:18:18.955Z"
 }
