@@ -624,7 +624,7 @@ async function grantAssignment(
     );
     return 2;
   }
-  if (f.everyone && !object) {
+  if (f.everyone && (!object || f.role)) {
     process.stderr.write(
       `${status.err('--everyone holds an agent or a connection, never a role.')} ` +
         `Add --agent <name> or --connection <id>.\n`,
