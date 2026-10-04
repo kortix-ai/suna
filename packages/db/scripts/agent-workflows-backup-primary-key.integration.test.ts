@@ -10,8 +10,8 @@ if (!databaseUrl) throw new Error('TEST_DATABASE_URL is required');
 const client = new pg.Client({ connectionString: databaseUrl });
 const directory = mkdtempSync(join(tmpdir(), 'backup-key-'));
 const migrations = [
-  '20261004031600000_agent_workflows_backup_id_index.concurrent.ts',
-  '20261004031600100_agent_workflows_backup_primary_key.sql',
+  '20261004034047400_agent_workflows_backup_id_index.concurrent.ts',
+  '20261004034047500_agent_workflows_backup_primary_key.sql',
 ];
 for (const name of migrations) copyFileSync(join(import.meta.dir, '../migrations', name), join(directory, name));
 

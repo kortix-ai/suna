@@ -91,7 +91,7 @@ export function Reveal() {
       </div>
 
       <div className="absolute top-1/2 mt-6 flex max-w-4xl flex-col items-center gap-5 text-center">
-        <Headline lead="The open-source" rest="AI Operating System" f={f} at={92} stack />
+        <Headline lead="The open-source" rest="AI Management System" f={f} at={92} stack />
         <p className="text-muted-foreground max-w-2xl text-xl leading-relaxed" style={rise(f, 132)}>
           Your agents, skills, memory and connectors — in one repo you own.
         </p>

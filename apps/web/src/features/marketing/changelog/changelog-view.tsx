@@ -6,14 +6,13 @@ import { LocalTime } from '@/components/ui/local-time';
 import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
-import { PageHero } from '@/features/marketing/component/page-hero';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
-import { ChangelogAnchorRedirect } from './anchor-redirect';
 import { CopyLinkButton } from './copy-link-button';
-import { changelogPageHref } from './paging';
+import { ChangelogAnchorRedirect } from './anchor-redirect';
 import { CHANGELOG_REPO } from './releases';
+import { changelogPageHref } from './paging';
 import type { ChangelogPage } from './types';
 
 const RELEASE_DATE_FORMAT: Intl.DateTimeFormatOptions = {
@@ -120,8 +119,13 @@ export async function ChangelogView({ data }: { data: ChangelogPage }) {
   return (
     <main className="bg-background min-h-screen">
       <ChangelogAnchorRedirect page={page} tagPages={tagPages} />
-      <PageHero size="band" title={tI18nComplete.raw('textead07c84baac')} />
-      <div className="mx-auto max-w-6xl px-6 pt-8 pb-24 sm:pb-32">
+      <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
+        <header className="pt-28 pb-16 sm:pt-36 sm:pb-28">
+          <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+            {tI18nComplete.raw('textead07c84baac')}
+          </h1>
+        </header>
+
         {releases.length === 0 ? (
           <div>
             <Separator />
@@ -166,7 +170,7 @@ export async function ChangelogView({ data }: { data: ChangelogPage }) {
                         ) : null}
                         <CopyLinkButton anchor={release.tag} />
                       </div>
-                      <h2 className="text-foreground mt-3 text-2xl font-normal tracking-tight text-balance sm:text-3xl">
+                      <h2 className="text-foreground mt-3 text-2xl font-medium tracking-tight text-balance sm:text-3xl">
                         {release.headline}
                       </h2>
                       <div className="mt-5 flex flex-wrap items-center gap-2">

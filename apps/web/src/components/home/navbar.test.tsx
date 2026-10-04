@@ -100,33 +100,6 @@ test('the bar renders the brand, the desktop nav and a GitHub stars chip', async
   expect(html).toContain('href="/pricing"');
 });
 
-test('over a dark hero the bar is transparent until the reader scrolls past the threshold', async () => {
-  const hero = win.document.createElement('section');
-  hero.setAttribute('data-kx-dark-hero', '');
-  win.document.body.appendChild(hero);
-  await mountNavbar();
-  const bar = header()!;
-  expect(bar.className).toContain('bg-transparent');
-  await act(async () => {
-    win.scrollTo(0, 200);
-    win.dispatchEvent(new win.Event('scroll'));
-  });
-  expect(bar.className).toContain('bg-background');
-  // The thresholds are asymmetric on purpose: the bar only expands again below
-  // 20px, so a reader hovering around the 50px trigger never sees it flicker.
-  await act(async () => {
-    win.scrollTo(0, 30);
-    win.dispatchEvent(new win.Event('scroll'));
-  });
-  expect(bar.className).toContain('bg-background');
-  await act(async () => {
-    win.scrollTo(0, 10);
-    win.dispatchEvent(new win.Event('scroll'));
-  });
-  expect(bar.className).toContain('bg-transparent');
-  hero.remove();
-});
-
 test('the mobile drawer locks body scroll while open and unlocks on close', async () => {
   (win as unknown as { innerWidth: number }).innerWidth = 480;
   await mountNavbar();

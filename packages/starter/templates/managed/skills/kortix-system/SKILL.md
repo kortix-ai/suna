@@ -112,7 +112,7 @@ Rules for both harnesses:
 <capabilities>
 ## What Kortix can do
 
-Kortix is an open-source AI Operating System. Your agents, skills, memory,
+Kortix is an open-source AI Management System. Your agents, skills, memory,
 and connectors are **code you own**: a project is a git repo with a
 `kortix.yaml` at its root; a session is one unit of agent work on its own
 cloud computer and branch; work becomes permanent only via a

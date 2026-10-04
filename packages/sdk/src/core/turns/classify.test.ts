@@ -181,9 +181,9 @@ describe('classifyPart — exhaustive part model', () => {
     const output = JSON.stringify({
       query: 'kortix ai',
       success: true,
-      answer: 'Kortix is an open-source AI Operating System.',
+      answer: 'Kortix is an open AI command center.',
       results: [
-        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source AI Operating System.' },
+        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open AI command center.' },
       ],
     });
     const part = {

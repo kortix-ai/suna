@@ -347,7 +347,7 @@ export function EndCard() {
         <KortixLogo variant="brandmark" size={64} className="text-foreground" />
       </div>
       <p className="text-muted-foreground text-2xl" style={rise(f, 24)}>
-        The open-source AI Operating System
+        The open-source AI Management System
       </p>
       <p className="text-foreground font-mono text-lg" style={rise(f, 48)}>
         kortix.com

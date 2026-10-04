@@ -626,7 +626,7 @@ export function useSlides(): SlideDef[] {
       ),
     },
 
-    /* 9 — AI OS OVERVIEW ──────────────────────────────────────────────── */
+    /* 9 — COMMAND CENTER OVERVIEW ───────────────────────────────────────── */
     {
       id: 'command-center',
       label: tI18nHardcoded.raw('i18nComplete.text2522f9d16f3b'),
