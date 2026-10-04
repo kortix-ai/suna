@@ -77,28 +77,32 @@ export async function countPass(nowMs?: number): Promise<{ counted: number }> {
     const [nowRow] = Array.from(await db.execute<{ now: string | Date }>(sql`SELECT now() AS now`));
     now = nowRow ? new Date(nowRow.now).getTime() : Date.now();
   }
-  const windowStart = new Date(slotStartOf(now - LOOKBACK_MS));
-  const windowEnd = new Date(slotStartOf(now));
+  // Timestamps bind as ISO strings with an explicit cast, the pattern every
+  // other worker uses (audit-reconciliation.ts): drizzle's postgres.js session
+  // fails to bind a raw Date parameter (the integration suite caught it).
+  const windowStart = new Date(slotStartOf(now - LOOKBACK_MS)).toISOString();
+  const windowEnd = new Date(slotStartOf(now)).toISOString();
   const countedSlots = Array.from(
     await db.execute<{ slot_start: string | Date }>(sql`
       SELECT slot_start FROM kortix.audit_event_counts
-      WHERE slot_start >= ${windowStart} AND slot_start < ${windowEnd}
+      WHERE slot_start >= ${windowStart}::timestamptz AND slot_start < ${windowEnd}::timestamptz
     `),
   );
   const counted = new Set(countedSlots.map((row) => new Date(row.slot_start).getTime()));
   const pending = pendingSlotStarts(now, counted);
   for (const start of pending) {
-    const end = new Date(start + SLOT_MS);
+    const begin = new Date(start).toISOString();
+    const end = new Date(start + SLOT_MS).toISOString();
     const [countRow] = Array.from(
       await db.execute<{ count: string | number }>(sql`
         SELECT count(*)::bigint AS count FROM kortix.audit_events
-        WHERE occurred_at >= ${new Date(start)} AND occurred_at < ${end}
+        WHERE occurred_at >= ${begin}::timestamptz AND occurred_at < ${end}::timestamptz
       `),
     );
     const events = Number(countRow?.count ?? 0);
     await db.execute(sql`
       INSERT INTO kortix.audit_event_counts (slot_start, events, counted_at)
-      VALUES (${new Date(start)}, ${events}, now())
+      VALUES (${begin}::timestamptz, ${events}, now())
       ON CONFLICT (slot_start) DO UPDATE
         SET events = EXCLUDED.events, counted_at = now()
     `);

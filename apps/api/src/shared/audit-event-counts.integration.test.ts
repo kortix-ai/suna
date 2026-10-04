@@ -111,7 +111,7 @@ describe.skipIf(!databaseUrl)('audit event count slots — migrated PostgreSQL',
         firstRow(
           await q<{ n: number }>(
             `SELECT count(*)::int AS n FROM kortix.audit_event_counts
-             WHERE slot_start < $1 - interval '7 days'`,
+             WHERE slot_start < $1::timestamptz - interval '7 days'`,
             [new Date(NOW)],
           ),
         ).n,
