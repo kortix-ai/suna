@@ -1,0 +1,19 @@
+{
+  "source_hash": "1b99705b2f5e1417780a80ab438c18b761a7a4f49fb06f14dd662778a763cec2",
+  "diff_files": [
+    "apps/web/sentry.client.config.ts",
+    "apps/web/src/app/sentry-ignore-errors.test.ts",
+    "apps/web/src/lib/browser-error-noise.test.mts",
+    "apps/web/src/lib/browser-noise/golden-verdicts.json",
+    "apps/web/src/lib/browser-noise/rules/messages.ts"
+  ],
+  "diff_hash": "8fc126228c3c8eab4f7b8898af18dede3cf06de111c906a809cce63c5fee6a49",
+  "head": "3155c0120b7fc18abee69e77993183997c41a0f9",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T04:54:27.042Z"
+}
