@@ -1,11 +1,10 @@
 // What a project MEMBER may see of the Customize surface.
 //
-// `project.customize.read` moved out of the member floor role in #6522
-// (`apps/api/src/iam/role-perms.ts`): a plain project member is a read + RUN
-// role and reaches no part of Customize. The sidebar's Customize row already
-// disappeared for them on that change alone, but the tab bar did not — direct
-// navigation still rendered seven tabs, five of which 403 on load. These tests
-// pin the gate that fixed it, and the exact leaf each tab costs.
+// Permissions decide: each tab shows when the caller holds that tab's own read
+// leaf, and there is no separate surface leaf (the retired
+// `project.customize.read`). A plain project member holds `project.agent.read`
+// and `project.trigger.read`, so it sees exactly Agents and Triggers. These
+// tests pin that rule and the exact leaf each tab costs.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -48,23 +47,18 @@ describe('visibleCapabilityTabs', () => {
     expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key));
   });
 
-  // The whole point. A member holds project.read, project.trigger.read and
-  // project.agent.read, so a per-tab-only filter would still leave Models,
-  // Agents and Triggers on the bar — a Customize surface for someone who
-  // cannot open Customize.
-  test('a project member (no project.customize.read) sees NO tabs at all', () => {
+  // A member holds project.read, project.agent.read and project.trigger.read,
+  // and none of the manager-tier reads: it sees exactly the two tabs it can
+  // open, read-only.
+  test('a project member sees exactly the tabs whose read leaf it holds', () => {
     const member = allowExcept(
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
       PROJECT_ACTIONS.PROJECT_SKILL_READ,
       PROJECT_ACTIONS.PROJECT_SECRET_READ,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_MODEL_READ,
+      PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
     );
-    expect(visibleCapabilityTabs(member)).toEqual([]);
-  });
-
-  test('holding every per-tab leaf does not survive a customize.read denial', () => {
-    expect(visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ))).toEqual([]);
+    expect(visibleCapabilityTabs(member).map((t) => t.key).sort()).toEqual(['agent', 'triggers']);
   });
 
   // A custom role can hold the surface and still have one capability switched
@@ -86,9 +80,6 @@ describe('visibleCapabilityTabs', () => {
   // rather than `!caps[…]?.allowed`.
   test('an in-flight probe is a denial for this helper — the caller keeps it optimistic', () => {
     expect(visibleCapabilityTabs(stillLoading())).toEqual([]);
-    expect(code(source)).toContain(
-      'caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false',
-    );
     expect(code(source)).toContain('caps[pref.action]?.allowed !== false');
   });
 });
@@ -124,10 +115,7 @@ describe('CapabilityTabs gate wiring', () => {
   // a tab that costs one action here and another there is a tab that shows up
   // in one place and 403s from the other.
   test('the per-tab leaves come from TAB_PREFERENCE, not a second local map', () => {
-    expect(CAPABILITY_TAB_GATE_ACTIONS).toEqual([
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
-      ...new Set(TAB_PREFERENCE.map((t) => t.action)),
-    ]);
+    expect(CAPABILITY_TAB_GATE_ACTIONS).toEqual([...new Set(TAB_PREFERENCE.map((t) => t.action))]);
     for (const tab of CAPABILITY_TABS) {
       expect(TAB_PREFERENCE.some((t) => t.key === tab.key)).toBe(true);
     }

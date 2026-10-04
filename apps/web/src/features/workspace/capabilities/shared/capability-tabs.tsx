@@ -28,32 +28,22 @@ import {
 } from './capability-tab-routes';
 
 /**
- * Every leaf this bar probes, in one batched request: the surface gate
- * (`project.customize.read`) plus each tab's own read leaf, taken from
- * `TAB_PREFERENCE` so the bar and the sidebar's Customize row can never
- * disagree about which action a tab costs.
+ * Every leaf this bar probes, in one batched request: each tab's own read
+ * leaf, taken from `TAB_PREFERENCE` so the bar and the sidebar's Customize
+ * row can never disagree about which action a tab costs.
  *
  * Module-level and frozen — `useProjectCans` keys its query on the action
  * list, so a fresh array per render would refetch forever.
  */
 export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
-  ...new Set([PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, ...TAB_PREFERENCE.map((t) => t.action)]),
+  ...new Set(TAB_PREFERENCE.map((t) => t.action)),
 ];
 
 /**
- * Which tabs to draw for this caller.
- *
- * Two gates, the same two the sidebar's Customize row applies, because this
- * bar IS that row's destination:
- *
- *  1. `project.customize.read` — the whole Customize surface. It moved out of
- *     the member floor role in #6522 (`apps/api/src/iam/role-perms.ts`), so a
- *     plain project member gets NO tabs here. They had none of the entry
- *     points either, but a direct URL still renders this layout, and a bar of
- *     seven tabs that every one of them 403s on is exactly the "shown but not
- *     openable" surface this gate exists to remove.
- *  2. Each tab's own read leaf — a custom role can hold the surface and still
- *     have one capability deactivated.
+ * Which tabs to draw for this caller: each tab whose own read leaf the caller
+ * holds. There is no separate surface gate — permissions decide, so a project
+ * member who holds `project.agent.read` and `project.trigger.read` sees those
+ * two tabs (read-only) and nothing else.
  *
  * Optimistic while a probe is in flight: a tab disappears only on a denial we
  * actually received, so a slow `/effective` never blanks the bar for a
@@ -65,7 +55,6 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
 export function visibleCapabilityTabs(
   caps: Record<string, { allowed: boolean }>,
 ): readonly CapabilityTab[] {
-  if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
   return CAPABILITY_TABS.filter((tab) => {
     const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
     return pref ? caps[pref.action]?.allowed !== false : true;
