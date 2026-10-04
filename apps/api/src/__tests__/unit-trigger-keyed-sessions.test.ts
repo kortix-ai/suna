@@ -130,21 +130,24 @@ describe('keyed lookups never bind to an unusable session', () => {
     'utf8',
   );
 
-  test('both trigger-session lookups exclude soft-deleted sessions', () => {
+  test('both trigger-session lookups route through the one shared finder that carries the guards', () => {
     // deleteSession() is a SOFT delete: metadata.deletedAt is stamped and the
     // row stays 'stopped', so a status filter alone still selects it. For a
     // KEYED trigger that is not a one-off miss — the key keeps resolving to the
     // same dead session, so every later message in that chat is swallowed
-    // instead of starting a new one.
+    // instead of starting a new one. Dead-lettering a continue_session parks
+    // the target session 'failed' (store.markCommandFailed); the lookup must
+    // skip failed sessions or that recovery never takes effect.
+    //
+    // KRTX-1497 collapsed the two lookups into one shared WHERE, so each
+    // guard must appear exactly once (enforced by construction for both
+    // callers), and both exports must delegate to the shared finder — neither
+    // may grow a second, unguarded WHERE again.
     const guards = SOURCE.match(/->> 'deletedAt' IS NULL/g) ?? [];
-    expect(guards.length).toBe(2); // findKeyedTriggerSession + findReusableTriggerSession
-  });
-
-  test("a wedged session still self-heals via the 'failed' park", () => {
-    // Dead-lettering a continue_session parks the target session 'failed'
-    // (store.markCommandFailed). Both lookups must skip failed sessions or that
-    // recovery never takes effect.
+    expect(guards.length).toBe(1); // findTriggerSession — findReusable + findKeyed delegate
     const failedGuards = SOURCE.match(/ne\(projectSessions\.status, 'failed'\)/g) ?? [];
-    expect(failedGuards.length).toBe(2);
+    expect(failedGuards.length).toBe(1);
+    expect(SOURCE).toMatch(/export async function findReusableTriggerSession[\s\S]{0,300}?return findTriggerSession\(projectId, slug\)/);
+    expect(SOURCE).toMatch(/export async function findKeyedTriggerSession[\s\S]{0,300}?return findTriggerSession\(\s*projectId,\s*slug,\s*sql`/);
   });
 });

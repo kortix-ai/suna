@@ -2,9 +2,9 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionCommand, resolveAgentRunAttribution, resolveProjectAutomationActor } from '../session-lifecycle';
+import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionCommand, resolveProjectAutomationActor } from '../session-lifecycle';
 import type { GitTriggerSpec } from '../triggers';
 import type { ProjectRow, RequestAuditContext } from './serializers';
 import { renderSessionKey } from './trigger-payload';
@@ -12,16 +12,6 @@ import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
 import type { TriggerFireSource } from './trigger-webhook-auth';
-
-/**
- * Find a user we can attribute trigger-spawned sessions to. Git-backed
- * triggers don't have a `created_by` like the DB-backed ones do — we pick
- * the account's first owner as a stable, audit-friendly stand-in.
- */
-
-export async function resolveGitTriggerActor(accountId: string): Promise<string | null> {
-  return resolveProjectAutomationActor(accountId);
-}
 
 /**
  * Resolve the identity a trigger's automated session PROVISIONS as — the
@@ -38,37 +28,6 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
  */
 export async function resolveTriggerActor(project: ProjectRow): Promise<string | null> {
   return resolveProjectAutomationActor(project.accountId);
-}
-
-/**
- * Preserve the internal attribution helper for callers that create trigger
- * sessions outside the durable create-session action. The primary trigger
- * fire path does not call this helper. Its action applies attribution and the
- * complete access policy in one transaction.
- */
-export async function attributeFiredTriggerSession(input: {
-  project: ProjectRow;
-  sessionId: string;
-  agentName: string;
-}): Promise<void> {
-  const serviceAccountId = await resolveAgentRunAttribution({
-    accountId: input.project.accountId,
-    projectId: input.project.projectId,
-    agentName: input.agentName,
-  });
-  if (!serviceAccountId) return;
-  try {
-    await db
-      .update(projectSessions)
-      .set({ createdBy: serviceAccountId })
-      .where(eq(projectSessions.sessionId, input.sessionId));
-  } catch (err) {
-    console.warn('[triggers] failed to attribute fired session to agent service account', {
-      sessionId: input.sessionId,
-      agentName: input.agentName,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 }
 
 export async function getGitTriggerRuntime(projectId: string, slug: string) {
@@ -139,15 +98,16 @@ export async function markGitTriggerAttemptFailed(
 }
 
 /**
- * Find the canonical session to reuse for a `session_mode = "reuse"` trigger:
- * the most recent NON-failed session this trigger created. Sessions are matched
- * via the `trigger_slug` + `trigger_kind` we stamp into `project_sessions.metadata`
- * at fire time (no extra column / migration needed). Failed sessions are skipped
- * so a dead run is abandoned in favor of a freshly-created canonical session.
+ * The session lookup both `session_mode` reuse shapes share: the most recent
+ * non-failed session this trigger created, matched via the `trigger_slug` +
+ * `trigger_kind` we stamp into `project_sessions.metadata` at fire time (no
+ * extra column / migration needed), excluding soft-deleted and retired
+ * sessions. `extra` carries the one predicate that differs per caller.
  */
-export async function findReusableTriggerSession(
+async function findTriggerSession(
   projectId: string,
   slug: string,
+  extra?: SQL,
 ): Promise<{ sessionId: string } | null> {
   const [row] = await db
     .select({ sessionId: projectSessions.sessionId })
@@ -158,7 +118,12 @@ export async function findReusableTriggerSession(
         ne(projectSessions.status, 'failed'),
         sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
-        // Same soft-delete guard as the keyed lookup above.
+        extra,
+        // deleteSession() is a SOFT delete: it stamps metadata.deletedAt and
+        // leaves the row 'stopped'. Selecting one would bind this trigger (or
+        // key) to a session that can never run again — and because a keyed
+        // trigger keeps resolving to the same session, every later message for
+        // that chat would be swallowed silently rather than starting a new one.
         sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
         // A session whose history no longer fits the model, even after
         // compaction, fails every run. recordTriggerRunEnd retires it.
@@ -168,6 +133,19 @@ export async function findReusableTriggerSession(
     .orderBy(desc(projectSessions.createdAt))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Find the canonical session to reuse for a `session_mode = "reuse"` trigger:
+ * the most recent NON-failed session this trigger created. Failed sessions are
+ * skipped so a dead run is abandoned in favor of a freshly-created canonical
+ * session.
+ */
+export async function findReusableTriggerSession(
+  projectId: string,
+  slug: string,
+): Promise<{ sessionId: string } | null> {
+  return findTriggerSession(projectId, slug);
 }
 
 /**
@@ -184,28 +162,11 @@ export async function findKeyedTriggerSession(
   slug: string,
   sessionKey: string,
 ): Promise<{ sessionId: string } | null> {
-  const [row] = await db
-    .select({ sessionId: projectSessions.sessionId })
-    .from(projectSessions)
-    .where(
-      and(
-        eq(projectSessions.projectId, projectId),
-        ne(projectSessions.status, 'failed'),
-        sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
-        sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
-        sql`${projectSessions.metadata} ->> 'trigger_session_key' = ${sessionKey}`,
-        // deleteSession() is a SOFT delete: it stamps metadata.deletedAt and
-        // leaves the row 'stopped'. Selecting one would bind this key to a
-        // session that can never run again — and because a keyed trigger keeps
-        // resolving to the same session, every later message for that chat
-        // would be swallowed silently rather than starting a new one.
-        sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
-        sql`${projectSessions.metadata} ->> ${TRIGGER_REUSE_RETIRED_AT} IS NULL`,
-      ),
-    )
-    .orderBy(desc(projectSessions.createdAt))
-    .limit(1);
-  return row ?? null;
+  return findTriggerSession(
+    projectId,
+    slug,
+    sql`${projectSessions.metadata} ->> 'trigger_session_key' = ${sessionKey}`,
+  );
 }
 
 /**

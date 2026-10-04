@@ -117,7 +117,6 @@ export {
 export {
   drainTriggerExecutionQueue,
   runProjectTriggerSweep,
-  resolveGitTriggerActor,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
   getTriggerSchedulerHealth,
