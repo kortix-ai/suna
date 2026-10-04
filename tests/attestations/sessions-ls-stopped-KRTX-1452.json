@@ -1,0 +1,17 @@
+{
+  "source_hash": "8032c5126630005a98cd20aee630561db533fe8fef35d6a2b6d7ca132c9d0a60",
+  "diff_files": [
+    "apps/api/src/projects/lib/session-inventory.test.ts",
+    "apps/api/src/projects/lib/session-inventory.ts",
+    "apps/api/src/projects/suna-migration/suna-migration-phases.ts"
+  ],
+  "diff_hash": "29512f655585d0c64da15cb1214f1134a05c48ef60bbecfafd2daf945e360357",
+  "head": "13653e33e9d612ff00e0ef80c16dedd304653849",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:59:33.536Z"
+}
