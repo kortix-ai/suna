@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 50;
-const KINDS = new Set<PublicContentKind>(['marketing', 'blog', 'docs', 'use-case']);
+const KINDS = new Set<PublicContentKind>(['marketing', 'docs', 'use-case']);
 
 function clientKey(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
@@ -85,7 +85,7 @@ export function GET(request: Request): Response {
     );
   }
 
-  // Recency-first ordering: dated content (blog posts + dated use-cases) leads
+  // Recency-first ordering: dated content (dated use-cases) leads
   // by lastModified desc so answer-engine crawlers reading top-N see the
   // freshest high-intent comparison content first; undated content (marketing,
   // most docs) follows in a stable alphabetical-by-path order. The sort is

@@ -755,7 +755,7 @@
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
           "connectors": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -768,6 +768,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -847,6 +848,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -926,6 +928,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -933,7 +936,7 @@
             "deprecated": true
           },
           "env": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -946,13 +949,14 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
             ]
           },
           "apps": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -965,6 +969,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }

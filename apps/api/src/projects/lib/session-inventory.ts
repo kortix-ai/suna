@@ -107,7 +107,7 @@ export function selectSessionRowsForViewer(input: {
    */
   accountSessionOversight?: boolean;
   /**
-   * The caller is an agent session under the `agent_principal` model (spec §2).
+   * The caller is an agent session under the agent-principal model (spec §2).
    * It lists only its own session, its children, and project-visible sessions —
    * never the launcher's other private or restricted ones.
    */
@@ -153,7 +153,19 @@ export function selectSessionRowsForViewer(input: {
     // A list row is a disclosure. Keep manager-only lifecycle coverage for
     // sessions the manager can open, including warm and soft-deleted rows, but
     // never return an inaccessible session as a redacted breadcrumb.
-    return { authorized: true, items: items.filter((item) => item.canAccess) };
+    //
+    // A soft-deleted warm draft is the one exception: it was never prompted, so
+    // its tombstone holds no conversation or work to audit, and listing it kept
+    // the Sessions page's empty state unreachable on a fresh project. A warm
+    // row that dropped its marker deletes like any other real session.
+    return {
+      authorized: true,
+      items: items.filter(
+        (item) =>
+          item.canAccess &&
+          !(item.deletedAt && isWarmProjectSession(item.row.metadata)),
+      ),
+    };
   }
 
   return {
