@@ -2136,7 +2136,7 @@ export const sessionSandboxes = kortixSchema.table(
     // stopped-with-external rows). The `?|` predicate and the statement's
     // matching clause are what make the plan stable; the reasoning is
     // canonical in
-    // 20261003204822592_session_sandboxes_wake_fence_index.concurrent.ts.
+    // 20261004020000000_session_sandboxes_wake_fence_index.concurrent.ts.
     index('idx_session_sandboxes_wake_fences')
       .on(table.status)
       .where(

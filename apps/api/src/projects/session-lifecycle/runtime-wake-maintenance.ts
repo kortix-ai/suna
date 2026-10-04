@@ -82,7 +82,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
         // the planner seq-scans every stopped box instead of using
         // idx_session_sandboxes_wake_fences. Keep in sync with the index's
         // WHERE — the reasoning is canonical in
-        // packages/db/migrations/20261003204822592_session_sandboxes_wake_fence_index.concurrent.ts.
+        // packages/db/migrations/20261004020000000_session_sandboxes_wake_fence_index.concurrent.ts.
         sql`${sessionSandboxes.metadata} ?| array['runtimeWakeId', 'runtimeWakeCleanupUntilAt']`,
         sql`(
           (
