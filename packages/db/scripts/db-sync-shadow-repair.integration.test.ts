@@ -109,8 +109,6 @@ process.exit(result.status ?? 1);
     execute();
     const rows = sql(
       target.href,
-      // Pin the collation: the assertion text below assumes byte order, and
-      // the cluster's default collation varies by image.
       'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;',
     );
     expect(JSON.parse(rows)).toEqual([
