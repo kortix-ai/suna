@@ -1,30 +1,30 @@
 {
-  "source_hash": "4c328fa50ce6861ee58de838ced77bc97c93fc9ddb0ac743c63790642fe7ac8e",
+  "source_hash": "514005bd89dfa915ccf37e2ec17d642bafc93bb3824acce16c4778bc9ce47039",
   "diff_files": [
     "apps/api/scripts/test.sh",
-    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
     "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
     "apps/api/src/shared/platinum.test.ts",
+    "apps/api/src/snapshots/quota-gc-io.test.ts",
     "apps/cli/package.json",
     "apps/cli/scripts/test.sh",
     "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/true",
     "apps/whitelabel-demo/tests/e2e/harness.ts",
     "packages/agent-tunnel/src/client/cli.test.ts",
     "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
+    "packages/shared/src/host-config/test-sandbox-env.ts",
     "tests/bin/package-quality.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "c9e6b50b7548fbfc5c3482dac0a315f40a96e20e6bf2d29eaeed1ff4399facbd",
-  "head": "15b8e9250503fc7e40fad4605ce386640066c878",
+  "diff_hash": "a9a42f3e297714848e5153414e46231315cf810f997d4eb14eacbf85f3b9b500",
+  "head": "70829cde7f1a2bc011fca973e1f479cec6c4cac7",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T02:30:13.253Z"
+  "at": "2026-10-04T03:06:17.127Z"
 }
