@@ -1,5 +1,5 @@
 {
-  "source_hash": "60289594656949cf0aeb400fc8d5ea8222173fd0f7ada10960878c4d460bd4ae",
+  "source_hash": "fa35b90b7b7f8485e410347544564a597074d39516e68f198a1a81cdf3d8be46",
   "diff_files": [
     "apps/cli/DESIGN.md",
     "apps/cli/src/__tests__/cli-blackbox.test.ts",
@@ -12,13 +12,13 @@
     "apps/cli/src/host-notice.ts",
     "apps/cli/src/project-link.ts"
   ],
-  "diff_hash": "bdb6020958a3af61538058225d79dafbcf38354f4d96def7c380b9c5785e5a7f",
-  "head": "43348ff44f875d8b8bf9a5550ed5e325a4142034",
+  "diff_hash": "f34cf0dec1fbdf42a7ce0740c382962e5c6805978ff49a244d27b4468d7220b0",
+  "head": "0905290a32ca3f75e5c40edf8580c78e34846baf",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:14:01.499Z"
+  "at": "2026-10-04T05:41:43.735Z"
 }
