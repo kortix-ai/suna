@@ -1,5 +1,5 @@
 {
-  "source_hash": "c4fcf3718d0a59ab0650be0eb9ca670902b9e7a55291c596d29ec4ae362e34ef",
+  "source_hash": "64fbdf858c23aee6a890b9eeddedd369355a4fe0c1164d24d524f11d9f1f3f58",
   "diff_files": [
     "apps/api/src/mcp/cli.test.ts",
     "apps/api/src/mcp/cli.ts",
@@ -19,16 +19,15 @@
     "apps/cli/src/self-host/__tests__/compose-assets.characterization.test.ts",
     "apps/cli/src/self-host/compose-assets.ts",
     "apps/cli/src/tui-select.characterization.test.ts",
-    "apps/cli/src/tui-select.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "apps/cli/src/tui-select.ts"
   ],
-  "diff_hash": "b0ab1d06a29009f699e81ee74afc2867026f4b9ea5d6fcd4bd23479c7f2e135d",
-  "head": "bb9aa461aac62439ce751a797c008aa3bde5f1a4",
+  "diff_hash": "22d01d04e70c2479397760c5ab61997b0b5d595d7df80faa83909b5796747585",
+  "head": "c0eaf19b6d6943e7ccbdea48b9f70e93d32b8bdb",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:28:55.567Z"
+  "at": "2026-10-04T06:05:24.053Z"
 }
