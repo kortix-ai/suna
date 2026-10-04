@@ -198,14 +198,14 @@ export class CliSandbox {
       GIT_COMMITTER_EMAIL: 'ke2e@kortix.test',
       // Force non-TTY so prompt-driven branches take their headless path.
       CI: '1',
-      // Cut off the Kortix-shared `sandboxEnvValue()` path (packages/shared/
-      // host-config/sandbox-env.ts): inside a Kortix sandbox the platform
-      // bakes /dev/shm/kortix/agent-env.sh with the SESSION's own host, token
-      // and project id, which would override this fixture's isolated config
-      // and aim every CLI command at the platform instead of the ke2e target.
-      // The flag every other spawn harness in the repo already sets
-      // (tests/bin/package-quality.ts, apps/cli unit tests); on a laptop or a
-      // GitHub runner the file does not exist and this is a no-op.
+      // A Kortix sandbox writes the agent session's identity (KORTIX_TOKEN,
+      // KORTIX_API_URL, KORTIX_PROJECT_ID) to /dev/shm/kortix/agent-env.sh, and
+      // the CLI resolves the synthetic sandbox host from it (host-config
+      // activeHost) — overriding KORTIX_CONFIG_FILE and pointing every flow's
+      // CLI at the session's own host instead of the ke2e target. CI has no
+      // such file, so cutting the read here reproduces exactly what CI sees
+      // (the same scrub tests/bin/package-quality.ts applies to the packages
+      // lane).
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     };
   }
