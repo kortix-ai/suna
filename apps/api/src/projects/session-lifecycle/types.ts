@@ -247,5 +247,5 @@ export interface SessionLifecycleResult {
   deduped?: boolean;
   retryable?: boolean;
   reason?: string;
-  error?: SessionCreateError | { status: number; body: Record<string, unknown> };
+  error?: SessionCreateError;
 }

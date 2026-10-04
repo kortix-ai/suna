@@ -1891,6 +1891,11 @@ export const chatPendingAuthMessages = kortixSchema.table(
       table.expiresAt,
     ),
     index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+    // Covers the project_id FK (chat_pending_auth_messages_project_id_fkey, built
+    // by the chat_pending_auth_messages_project_index migration): a project
+    // delete cascades here by project_id, and that lookup otherwise seq-scans
+    // the table (Supabase advisor: unindexed_foreign_keys, KRTX-1097).
+    index('idx_chat_pending_auth_messages_project').on(table.projectId),
   ],
 );
 
@@ -2146,7 +2151,7 @@ export const sessionSandboxes = kortixSchema.table(
     // The predicate is the query's own, so the index only holds rows the reaper
     // can act on, and its key carries the sort so LIMIT 50 reads the due rows
     // in order with no sort. Built by
-    // 20261004030607968_session_sandboxes_provider_removal_pending_index.concurrent.ts.
+    // 20261004175323668_session_sandboxes_provider_removal_pending_index.concurrent.ts.
     index('idx_session_sandboxes_provider_removal_pending')
       .on(table.status, sql`(${table.metadata} ->> 'providerRemovalRetryAfterAt') asc nulls first`)
       .where(

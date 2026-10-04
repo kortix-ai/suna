@@ -195,6 +195,41 @@ export function useUpdateRuntimeSession() {
   });
 }
 
+/** Fork the conversation at `sessionId` (the runtime's `POST /session/{id}/fork`):
+ *  a new session in the same sandbox that carries the copied history up to
+ *  `messageID` (every message when absent), titled `"<title> (fork #N)"`. The
+ *  runtime capability is `session.fork`; a caller gates the control with
+ *  `useRuntimeSupports('session.fork')` — pi does not serve it. */
+export function useForkSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sessionId, messageID }: { sessionId: string; messageID?: string }) => {
+      const client = getClient();
+      const result = await client.session.fork({
+        sessionID: sessionId,
+        ...(messageID !== undefined && { messageID }),
+      });
+      return unwrap(result);
+    },
+    onSuccess: (forkedSession) => {
+      // Surgically insert into cache — SSE session.created will also fire.
+      const session = forkedSession as Session;
+      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
+        if (!old) return [session];
+        const idx = old.findIndex((s) => s.id === session.id);
+        if (idx >= 0) {
+          const next = [...old];
+          next[idx] = session;
+          return next.sort((a, b) => b.time.updated - a.time.updated);
+        }
+        return [session, ...old].sort((a, b) => b.time.updated - a.time.updated);
+      });
+      queryClient.setQueryData(runtimeKeys.runtimeSession(session.id), session);
+    },
+  });
+}
+
 export function useRuntimeSessionDiff(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);

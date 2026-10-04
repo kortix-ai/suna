@@ -165,7 +165,7 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             github_username: z.string().openapi({ description: 'GitHub login to invite.' }),
-            permission: z.enum(['read,write']).optional().openapi({ description: 'read or write. Default write.' }),
+            permission: z.enum(['read', 'write']).optional().openapi({ description: 'read or write. Default write.' }),
           }) } } },
       },
     responses: {

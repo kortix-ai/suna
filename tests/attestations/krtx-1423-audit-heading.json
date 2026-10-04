@@ -1,0 +1,17 @@
+{
+  "source_hash": "4e6eaf0be5f0d510016b673e313670bd1a44fc09df2e37ba9df59bb2a5541ed1",
+  "diff_files": [
+    "apps/web/src/features/accounts/hub/sections.test.ts",
+    "apps/web/src/features/accounts/hub/sections.ts",
+    "apps/web/src/i18n/account-hub-translation-keys.generated.ts"
+  ],
+  "diff_hash": "923b34d0c90580e47c88942647536b4fd6f0ff42b6c07491d6fadcf46ec45a49",
+  "head": "f9acf2c2b92c0ee029a64729d762a831bc20265e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:43:09.807Z"
+}

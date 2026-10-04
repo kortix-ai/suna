@@ -1,3 +1,4 @@
+import { AGENT_ENV_FILE } from '@kortix/api-contract/sandbox-layout'
 import { isHarnessInternalVariable } from '../harness'
 import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
@@ -11,8 +12,7 @@ import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 // disk — Daytona hibernate/archive keeps the disk, /dev/shm is never captured.
 // Also shredded on shutdown (see shutdown.ts). 0600, sourced by every shell via
 // BASH_ENV + the image-baked /etc/profile.d + /etc/bash.bashrc hooks.
-export const AGENT_ENV_DIR = '/dev/shm/kortix'
-export const AGENT_ENV_SH = `${AGENT_ENV_DIR}/agent-env.sh`
+export const AGENT_ENV_SH = AGENT_ENV_FILE
 
 /**
  * What every harness adds to its agent's shells. A non-interactive `bash -c`

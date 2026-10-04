@@ -40,6 +40,11 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
     env[name] = value;
   }
   env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+  // The platform points BASH_ENV at its agent-env file; every bash a lane
+  // spawns (apps/api/scripts/test.sh) would source it and re-export the
+  // ambient platform env right back. ENV covers the same hook for /bin/sh.
+  delete env.BASH_ENV;
+  delete env.ENV;
   // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
   // the session env file the daemon's readiness gate reads, and the image's
   // baked model catalog. Neither exists on a laptop or a GitHub runner, so the
@@ -196,9 +201,16 @@ await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
   run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+  run(['node', '--test', 'scripts/dev-local.test.mjs']),
   run(['node', '--test', 'scripts/prod-us-east-2/*.test.mjs']),
 ]);
 await rejectFocusedTests();
+// apps/web's download-layout test launches Playwright Chromium. CI installs
+// the browser in the workflow before this lane; a worker sandbox that runs the
+// lane bare does not, and the test then fails with "Executable doesn't exist".
+// `playwright install` is idempotent (near-instant when the browser is
+// present) and honors PLAYWRIGHT_BROWSERS_PATH, so a CI cache still hits.
+await run(['pnpm', '--dir', 'tests', 'run', 'playwright:install']);
 await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),

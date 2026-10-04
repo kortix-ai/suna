@@ -8,8 +8,13 @@ import {
   generateApiKeyPair,
   generateSandboxKeyPair,
   isApiKeySecretConfigured,
+  isGatewayKey,
   isKortixToken,
+  isAccountToken,
+  isServiceAccountToken,
+  isTunnelToken,
 } from '../shared/crypto';
+import { isOAuthAccessToken, isOAuthRefreshToken } from '../oauth/access-token';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -174,6 +179,23 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
 
   if (!isKortixToken(secretKey)) {
     return { isValid: false, error: 'Invalid API key format — expected kortix_ prefix' };
+  }
+
+  // A credential minted into one of the platform's other tables — a session or
+  // CLI PAT, a service account, a gateway key, a tunnel token, an OAuth token —
+  // can never match kortix_api_keys. Refuse it by shape: no doomed indexed
+  // probe and an error that names the presented credential, not "not found"
+  // (prod 2026-10-03: one client presenting its session PAT to /v1/router/*
+  // wrote 71 "Token not found in DB" warns in a minute; the token was valid).
+  const foreign = isAccountToken(secretKey) ? 'a personal access token (kortix_pat_)'
+    : isServiceAccountToken(secretKey) ? 'a service-account token (kortix_sa_)'
+    : isGatewayKey(secretKey) ? 'a gateway key (kortix_gw_)'
+    : isTunnelToken(secretKey) ? 'a tunnel token (kortix_tnl_)'
+    : isOAuthAccessToken(secretKey) ? 'an OAuth access token (kortix_oat_)'
+    : isOAuthRefreshToken(secretKey) ? 'an OAuth refresh token (kortix_ort_)'
+    : null;
+  if (foreign) {
+    return { isValid: false, error: `Invalid API key format — ${foreign} is not an API key` };
   }
 
   try {

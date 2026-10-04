@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Изаберите дељене кључеве које ова сесија може да користи.",
     "sessionKeyPool": "Скуп кључева сесије",
     "sharedSessionKeys": "Ова сесија је дељена са пројектом, па овде раде само кључеви дељени са целим пројектом. Кључеви додељени вама раде у вашим приватним сесијама.",
+    "promptedSessionKeys": "Други члан је писао у овој сесији, па она више не ради у име свог власника. Овде раде само кључеви дељени са целим пројектом.",
+    "noPersonSessionKeys": "Ова сесија не ради ни у чије име: покренута је пре личних кључева или без надзора. Овде раде само кључеви дељени са целим пројектом. Покрени нову сесију да би користио своје кључеве.",
     "projectDefaultShort": "Подразумевано за пројекат",
     "rateLimitDescription": "Мрежни пролаз мења изабране кључеве када провајдер пријави ограничење захтева.",
     "enableGateway": "Укључите LLM мрежни пролаз у подешавањима пројекта да бисте користили скупове кључева.",
@@ -1978,7 +1980,11 @@
       "topupWalletHint": "Допуните стање да би агенти наставили да раде.",
       "addCredits": "Додај кредите",
       "billingPortal": "Портал за обрачун",
-      "portalDescription": "Управљајте претплатом, начинима плаћања и фактурама."
+      "portalDescription": "Управљајте претплатом, начинима плаћања и фактурама.",
+      "cancelSubscription": "Otkaži pretplatu",
+      "cancelSubscriptionDescription": "Vaš plan ostaje aktivan do kraja tekućeg perioda naplate, a zatim se završava. Do tada ga možete ponovo aktivirati.",
+      "reactivateSubscription": "Ponovo aktiviraj pretplatu",
+      "commitmentCancelHint": "Vaša obaveza traje do {date}. Nakon toga možete otkazati."
     },
     "topup": {
       "minimum": "Минимална допуна је {amount}.",
@@ -19197,6 +19203,8 @@
       "text4af0b7d8bfb1": "Свака сесија ради у сопственом sandbox окружењу, на сопственој git грани. Између покретања ништа се не дели.",
       "text39207bf34111": "Сродне вештине",
       "text73112526c03a": "Корак агента није успео. Разлог није пријављен.",
+      "text0e5f7f6732e0": "Разграни разговор",
+      "text32ad3abe4479": "Разгранање разговора није успело",
       "text85b7a59cdbd5": "Agent platforme",
       "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti.",
       "text4ee2ff5e821c": "Водећа алтернатива отвореног кода за Claude Cowork и ChatGPT Work",
@@ -19290,7 +19298,8 @@
       "text4e2e4291b764": "Покрените га на сопственој инфраструктури",
       "text5f4339690d5f": "Шта је објављено и када",
       "text72e9cb3a34a8": "AI Operating System",
-      "textcfc0925e41a1": "Један оперативни систем отвореног кода за ваше агенте, људе и алате: агенти, вештине, меморија, конектори и рачунари у једном git репозиторијуму који је ваш."
+      "textcfc0925e41a1": "Један оперативни систем отвореног кода за ваше агенте, људе и алате: агенти, вештине, меморија, конектори и рачунари у једном git репозиторијуму који је ваш.",
+      "text6c4af31cd4ab": "Odjavljeni ste na ovom uređaju, ali server nije potvrdio odjavu."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

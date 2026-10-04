@@ -10,7 +10,7 @@
  * seq-scanned every archived row and decoded its jsonb to find nothing.
  *
  * `idx_session_sandboxes_provider_removal_pending`
- * (`20261004030607968_session_sandboxes_provider_removal_pending_index.concurrent.ts`)
+ * (`20261004175323668_session_sandboxes_provider_removal_pending_index.concurrent.ts`)
  * carries the exact predicate AND the query's sort expression, so the lane
  * probes a (usually empty) partial index instead of the whole archived set.
  * `status` is the index's leading KEY, not a partial predicate: the app binds
