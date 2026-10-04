@@ -1073,6 +1073,12 @@ agents:
 });
 
 describe('resolveGrantSet — v1 default-all vs v2 default-none', () => {
+  test('"*" is a synonym of "all", alone or inside a list', () => {
+    expect(resolveGrantSet('*', 'none')).toBe('all');
+    expect(resolveGrantSet(['*'], 'none')).toBe('all');
+    expect(resolveGrantSet(['*', 'project.gitops.merge'], 'none')).toBe('all');
+    expect(resolveGrantSet(['github', ' * '], 'none')).toBe('all');
+  });
   test('v1 semantics: an omitted grant resolves to "all"', () => {
     expect(resolveGrantSet(undefined, 'all')).toBe('all');
     expect(resolveGrantSet(null, 'all')).toBe('all');

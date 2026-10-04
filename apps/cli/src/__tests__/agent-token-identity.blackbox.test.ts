@@ -160,12 +160,13 @@ test('a refused session read reports the CLI as authenticated and names the agen
   expect(first.stderr).toContain('agents.osp-vision-route-agent.kortix_permissions');
   expect(first.code).toBe(1);
 
-  // 3. The identity was resolved once and cached, so the NEXT command names the
-  //    agent in its standing line without any further /accounts/me call.
+  // 3. The identity was cached, so the NEXT command names the agent in its
+  //    standing line from the cache. Its denial footer reads the identity live
+  //    once (the grant can change between prompts): exactly one more call.
   const meCallsAfterFirst = requests.filter((r) => r.endsWith('/v1/accounts/me')).length;
   const second = await runCli(['sessions', 'restart', SESSION_ID]);
   expect(second.stderr).toContain('agent osp-vision-route-agent');
-  expect(requests.filter((r) => r.endsWith('/v1/accounts/me')).length).toBe(meCallsAfterFirst);
+  expect(requests.filter((r) => r.endsWith('/v1/accounts/me')).length).toBe(meCallsAfterFirst + 1);
 });
 
 test('the bare landing screen shows the agent row instead of a logged-out host', async () => {

@@ -1109,9 +1109,8 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_parent')
       .on(table.parentSessionId, table.updatedAt.desc(), table.sessionId.desc())
       .where(sql`${table.parentSessionId} is not null`),
-    // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
-    // origin_ref's live sessions, checked on every backend session create.
-    // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
+    // Served the retired per-END-USER Kortix-as-a-Backend session cap (COUNT
+    // of one origin_ref's live sessions); no query reads it now. Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
     // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
     // NULL, so it indexes only live backend sessions — a small fraction of the
     // table, and nothing at all for non-KaaB projects.
@@ -1134,16 +1133,15 @@ export const projectSessions = kortixSchema.table(
     // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
     // session per project+creator) USED to be declared here. It arbitrated a
     // create race that no longer exists: a warm session is now an ordinary
-    // session and a duplicate costs one extra box, bounded by the reserved
-    // concurrent-session slot. Dropped by
+    // session and a duplicate costs one extra box. Dropped by
     // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: three more indexes exist, built CONCURRENTLY and listed in
     // scripts/schema-contract-sql-only.ts:
     //   `idx_project_sessions_created_at` (created_at) — the admin activity
     //     dashboard's global `created_at >= $1` window scan.
     //   `idx_project_sessions_account_active` ((account_id) WHERE status IN the
-    //     active set) — keeps the concurrency-cap COUNT O(active). Its predicate
-    //     mirrors ACTIVE_SESSION_STATUSES.
+    //     active set) — served the retired account session cap COUNT; no
+    //     reader now. Its predicate mirrors ACTIVE_SESSION_STATUSES.
     //   `idx_project_sessions_project_updated` — the session list's keyset page.
   ],
 );
@@ -3856,12 +3854,8 @@ export const creditAccounts = kortixSchema.table(
     // preview) and from `config.ENTERPRISE_LICENSE_AVAILABLE` (a platform-wide
     // self-host license): this is the per-account, real-contract flag.
     enterpriseEntitled: boolean('enterprise_entitled').default(false).notNull(),
-    // Operator-set concurrent-session cap for this account. NULL (the default)
-    // means "no override" — the account's plan tier decides the limit
-    // (TierConfig.concurrentSessionLimit). When set, it takes precedence over
-    // the tier limit in BOTH directions (raise for enterprise deals, lower for
-    // abuse containment). Set out-of-band (data migration / operator SQL),
-    // like tier='enterprise'.
+    // RETIRED: the operator-set concurrent-session cap. Sessions are uncapped
+    // and no code reads or writes this column; drop it in its own migration.
     maxConcurrentSessions: integer('max_concurrent_sessions'),
     // Admin-issued trial. The trial NEVER writes `tier` — the Stripe webhook
     // (webhooks.ts syncSubscriptionState) overwrites `tier` on every

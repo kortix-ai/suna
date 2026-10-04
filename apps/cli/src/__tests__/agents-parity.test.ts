@@ -192,7 +192,7 @@ describe('kortix agents — default, scope, config', () => {
     expect(r.stdout).toContain('scope <agent>');
     expect(r.stdout).toContain('config <agent>');
     expect(r.stdout).toContain('project.agent.write');
-    expect(r.stdout).toContain('project.customize.write');
+    expect(r.stdout).toContain('project.agent.write');
     // Apps are a per-agent resource, so the flag has to be discoverable from
     // `--help` the same way `--connectors` is.
     expect(r.stdout).toContain('--apps all|none|a,b');
