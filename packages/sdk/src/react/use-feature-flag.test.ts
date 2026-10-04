@@ -90,10 +90,10 @@ describe('useFeatureFlag', () => {
   });
 
   test('one flag never reads another flag`s slot', () => {
-    withDetail({ apps: true, teams: false });
+    withDetail({ apps: true, monitors: false });
 
     expect(useFeatureFlag('p', 'apps').enabled).toBe(true);
-    expect(useFeatureFlag('p', 'teams').enabled).toBe(false);
+    expect(useFeatureFlag('p', 'monitors').enabled).toBe(false);
   });
 
   test('a graduated flag is enabled for every project, whatever the map says', () => {
@@ -113,5 +113,36 @@ describe('useFeatureFlag', () => {
     expect(useFeatureFlag('p', 'review_center').enabled).toBe(true);
 
     expect(useFeatureFlag(null, 'review_center').enabled).toBe(true);
+  });
+
+  test('agent_tunnel graduated: computers are on for every project', () => {
+    withDetail({ agent_tunnel: false });
+    expect(useFeatureFlag('p', 'agent_tunnel').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'agent_tunnel').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'agent_tunnel').enabled).toBe(true);
+  });
+
+  test('session_transcript_history graduated: saved history is on for every project', () => {
+    withDetail({ session_transcript_history: false });
+    expect(useFeatureFlag('p', 'session_transcript_history').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'session_transcript_history').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'session_transcript_history').enabled).toBe(true);
+  });
+
+  test('teams graduated: Microsoft Teams is on for every project', () => {
+    // A `false` a project stored while Teams was a flag is inert.
+    withDetail({ teams: false });
+    expect(useFeatureFlag('p', 'teams').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'teams').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'teams').enabled).toBe(true);
   });
 });

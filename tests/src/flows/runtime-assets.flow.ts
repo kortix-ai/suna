@@ -289,7 +289,7 @@ flow(
 // ── RTA-4 — entrypoint: served, never converged ─────────────────────────────
 //
 // The manifest advertised `components.entrypoint` and NO box has ever consumed
-// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/runtime-assets.ts
+// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
 // apps/kortix-sandbox-agent-server/src/harness` returns doc comments only. An
 // advertised-but-unconsumed component reads as a fifth convergeable asset, which
 // is how a "current" box can be quietly wrong. This pins the decision that was
@@ -391,7 +391,7 @@ flow(
 // NEITHER RUNS AGAINST A LOCAL STACK, and not because of the capability flag: a
 // local-target project is a database project whose `repo_url` is unreachable
 // from a cloud box, so the box boots to
-// `opencodeBootPhase=…|repo_materialization_failed` and is stopped with
+// `runtimeBootPhase=…|repo_materialization_failed` and is stopped with
 // `stopReason=runtime_boot_failed` (observed 2026-09-26). That is what
 // `EXTERNAL_CAPABILITIES` excludes from the local profile, and it is why these
 // are deployed-target flows.
@@ -421,7 +421,28 @@ interface RunningAssets {
   managed_skills_hash: string | null;
   agent_sha256: string | null;
   staged_agent_sha256: string | null;
-  opencode_version: string | null;
+  /** The harness `harness_version` belongs to (W3 E17). */
+  harness: string | null;
+  harness_version: string | null;
+}
+
+/**
+ * The WHICH-BYTES identity a "reading must not change it" check may compare.
+ * The raw `runtime.running` payload also carries `build`/`at` (the daemon's
+ * last reconciliation PASS) and other operational fields (managed model ids,
+ * catalog fallback reason, agent path) that legitimately advance between two
+ * health reads a few seconds apart — this file's own comment on `bootBox`
+ * says so: "`build`/`at` describe the last PASS and may legitimately be null
+ * on a box whose daemon restarted; `running` may not." Comparing the full raw
+ * object caught that legitimate advance as a false "the lane applied
+ * something" (gate run 36497729410: `build` went `null` → `1790636576`
+ * between two reads 8s apart on a real Platinum box; every earlier gate ran
+ * against a stub that always reported `null`, so this never fired). Compare
+ * only the typed identity fields.
+ */
+function identityOf(running: RunningAssets): RunningAssets {
+  const { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, harness, harness_version } = running;
+  return { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, harness, harness_version };
 }
 
 interface BootedBox {
@@ -499,7 +520,8 @@ async function assertBoxIsCurrent(ctx: FlowContext, running: RunningAssets): Pro
     ['managed-skills', m.components['managed-skills'].hash, running.managed_skills_hash],
     ['cli', m.components.cli?.sha256, running.cli_sha256],
     ['agent', m.components.agent?.sha256, running.agent_sha256],
-    ['opencode', m.components.opencode.version, running.opencode_version],
+    // The manifest's OpenCode release applies to an OpenCode box only.
+    ['opencode', m.components.opencode.version, running.harness === 'opencode' ? running.harness_version : null],
   ];
   for (const [name, want, have] of pairs) {
     if (!want || !have) continue; // this deploy or this box states nothing to compare
@@ -557,9 +579,12 @@ flow(
 
     await ctx.step('and the lane APPLIED nothing while it was being read', async () => {
       const after = (await booted.runtimeBlock()).running;
-      if (JSON.stringify(after) !== JSON.stringify(running)) {
+      if (!after) throw new Error('`runtime.running` is missing on the second read');
+      const before = identityOf(running);
+      const afterIdentity = identityOf(after);
+      if (JSON.stringify(afterIdentity) !== JSON.stringify(before)) {
         throw new Error(
-          `reading a current box must not change it: ${JSON.stringify(running)} → ${JSON.stringify(after)}`,
+          `reading a current box must not change it: ${JSON.stringify(before)} → ${JSON.stringify(afterIdentity)}`,
         );
       }
     });
@@ -664,9 +689,12 @@ flow(
 
     await ctx.step('and it APPLIED nothing: the box runs the same bytes it started with', async () => {
       const after = (await booted.runtimeBlock()).running;
-      if (JSON.stringify(after) !== JSON.stringify(before)) {
+      if (!after) throw new Error('`runtime.running` is missing on the second read');
+      const beforeIdentity = identityOf(before);
+      const afterIdentity = identityOf(after);
+      if (JSON.stringify(afterIdentity) !== JSON.stringify(beforeIdentity)) {
         throw new Error(
-          `a current box must not be changed by sending prompts: ${JSON.stringify(before)} → ${JSON.stringify(after)}`,
+          `a current box must not be changed by sending prompts: ${JSON.stringify(beforeIdentity)} → ${JSON.stringify(afterIdentity)}`,
         );
       }
     });

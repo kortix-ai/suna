@@ -144,7 +144,7 @@ describe('kortix projects features', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('enable <flag>');
     expect(r.stdout).toContain('reset <flag>');
-    expect(r.stdout).toContain('project.customize.write');
+    expect(r.stdout).toContain('project.settings.write');
   });
 
   test('ls prints every flag with state + origin; --json emits the catalog', async () => {

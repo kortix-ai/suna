@@ -45,6 +45,7 @@ import {
   WORKSPACE_MODES_V2,
 } from './constants';
 import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList, validateKortixPermissionFields } from './index';
+import { safeAgentFile } from './layout';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
 //
@@ -108,12 +109,13 @@ export type GrantSetV2 = 'all' | 'none' | string[];
 
 /**
  * One entry of the v2 `agents:` map — GOVERNANCE ONLY (decision 2026-07-05,
- * "one home per concern"). OpenCode behavior (mode, model, temperature,
- * top_p, steps, variant, color, hidden, permission, and the prompt itself)
- * lives entirely in the agent's native `.kortix/opencode/agents/<name>.md`
- * frontmatter + body — a stock OpenCode agent `.md` is valid as-is, with no
- * Kortix-specific split. The agent NAME is the join between this map key and
- * that `.md` filename; there is no `prompt:`/file-ref field here anymore.
+ * "one home per concern"). Agent behavior (mode, model, temperature, top_p,
+ * steps, variant, color, hidden, permission, and the prompt itself) lives
+ * entirely in the agent's own `.md` frontmatter + body — a stock OpenCode
+ * agent `.md` is valid as-is. `file` names that `.md`; without it the agent
+ * NAME is the join (`agents/<name>.md`, then the legacy
+ * `.kortix/opencode/agents/<name>.md` — see `agentFileCandidates` in
+ * layout.ts).
  *
  * Kortix governance (this type) is enforced platform-side (IAM grants,
  * secret scoping) and has no OpenCode representation, except `skills`, which
@@ -121,14 +123,30 @@ export type GrantSetV2 = 'all' | 'none' | string[];
  * compile-agent-config.ts.
  */
 export interface AgentBlockV2 {
+  /** Repo-relative path of this agent's `.md` (e.g. `agents/support.md`).
+   *  Writers always set it; readers fall back to the conventional paths when
+   *  it is omitted. */
+  file?: string;
+  /** v3 only: inline system prompt or a repo-relative Markdown prompt file. */
+  prompt?: string;
+  prompt_file?: string;
+  /** v3: agent-specific model and native permission rules. */
+  model?: string;
+  description?: string;
+  mode?: 'primary' | 'subagent' | 'all';
+  permission?: PermissionConfigV2;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
    *  agent's own frontmatter still passes through when this is omitted) —
    *  see compile-agent-config.ts. */
   enabled?: boolean;
+  /** Built-in tool availability; omitted names retain the runtime default. */
+  tools?: Record<string, boolean>;
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
+  /** Declarative only: sandbox egress is NOT restricted until provider gateway isolation is enabled. */
+  network_egress?: { version: 1; default: 'deny'; rules: [] };
   connectors?: GrantSetV2;
   /** Connectors that must resolve before the session starts. Each
    *  entry must also exist in this agent's resolved `connectors` grant. */
@@ -145,7 +163,7 @@ export interface AgentBlockV2 {
    *  configuration error (ambiguous) — see resolveGrantedSecretEnv. This is the
    *  SOLE authorization gate on agent secret access. */
   secrets?: GrantSetV2;
-  /** Which of the project's `.kortix/opencode/skills/*` this agent may invoke —
+  /** Which of the project's skills (`skills/*`, legacy `.kortix/opencode/skills/*`) this agent may invoke —
    *  same grant-set shape as connectors/secrets (names | "all" | "none"), v2
    *  deny-by-default when omitted. Unlike connectors/secrets/kortix_permissions (pure
    *  Kortix governance with no runtime representation), `skills` DOES compile
@@ -161,8 +179,7 @@ export interface AgentBlockV2 {
    *  (slugs | "all" | "none"), deny-by-default when omitted. A `project`-mode
    *  App needs only `project.app.read` in `kortix_permissions`; a `public` App
    *  admits everyone; a `password` App never admits a Kortix credential.
-   *  Enforced by the App gate only while the project's `agent_principal`
-   *  flag is on. The validator cannot see whether the project has Apps
+   *  Enforced by the App gate. The validator cannot see whether the project has Apps
    *  enabled (a DB feature flag), so it checks shape only. */
   apps?: GrantSetV2;
   /** The project permissions (`project.*` IAM actions) this agent's session
@@ -228,20 +245,22 @@ export interface AppBlockV2 {
  * to-govern back-compat); v2 defaults to `'none'` (deny-by-default, spec
  * §2.2/§2.5) — same shape, opposite default. Shape errors (e.g. a garbage
  * string) resolve to `'none'`; `validateGrantList` is what surfaces those as
- * validation errors.
+ * validation errors. `"*"`, and any list containing `*`, is `'all'`.
  */
 export function resolveGrantSet(value: unknown, defaultWhenOmitted: 'all' | 'none'): GrantSetV2 {
   if (value === undefined || value === null) return defaultWhenOmitted;
   if (typeof value === 'string') {
     const v = value.trim().toLowerCase();
     if (v === '' || v === 'none') return 'none';
-    if (v === 'all') return 'all';
+    if (v === 'all' || v === '*') return 'all';
     return 'none';
   }
   if (Array.isArray(value)) {
-    return value
+    const items = value
       .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
       .map((item) => item.trim());
+    // `*` is a synonym of `all`, alone or beside other entries.
+    return items.includes('*') ? 'all' : items;
   }
   return defaultWhenOmitted;
 }
@@ -343,6 +362,7 @@ export type PiPackageEntryV2 = string | { source: string; extensions?: string[];
 export interface HarnessesV2 {
   /** `exclude` exists only on an agent: global packages that agent does not load. */
   pi?: { packages?: PiPackageEntryV2[]; exclude?: string[] };
+  opencode?: { plugins?: string[]; exclude?: string[] };
 }
 
 function validatePiPackageSource(source: unknown, where: string, issues: ManifestIssue[]): void {
@@ -369,13 +389,33 @@ export function validateHarnessesV2(node: unknown, path: string, issues: Manifes
   }
   for (const [harness, settings] of Object.entries(node)) {
     const where = `${path}.${harness}`;
-    if (harness !== 'pi') {
-      issues.push({ path: where, message: 'only the pi harness takes settings here.', severity: 'error' });
+    if (harness !== 'pi' && harness !== 'opencode') {
+      issues.push({ path: where, message: 'only pi and opencode take settings here.', severity: 'error' });
       continue;
     }
     if (settings === undefined || settings === null) continue;
     if (!isTable(settings)) {
       issues.push({ path: where, message: 'must be a map.', severity: 'error' });
+      continue;
+    }
+    if (harness === 'opencode') {
+      for (const key of Object.keys(settings)) {
+        if (key !== 'plugins' && !(scope === 'agent' && key === 'exclude')) {
+          issues.push({ path: `${where}.${key}`, message: 'unknown OpenCode setting; use plugins or agent-level exclude.', severity: 'error' });
+        }
+      }
+      for (const key of ['plugins', 'exclude'] as const) {
+        if (settings[key] === undefined) continue;
+        if (!Array.isArray(settings[key])) {
+          issues.push({ path: `${where}.${key}`, message: 'must be a list of plugin filenames.', severity: 'error' });
+          continue;
+        }
+        settings[key].forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !/^[a-zA-Z0-9_-]+\.[cm]?[jt]s$/.test(name)) {
+            issues.push({ path: `${where}.${key}[${index}]`, message: 'must name a plugins/ filename (for example, audit.ts).', severity: 'error' });
+          }
+        });
+      }
       continue;
     }
     const keys = scope === 'agent' ? ['packages', 'exclude'] : ['packages'];
@@ -528,7 +568,7 @@ const MOVED_TO_AGENT_MD_KEYS = [
 ] as const;
 
 /**
- * Validate an agent's native `.md` frontmatter as parsed OpenCode behavior
+ * Validate an agent's `.md` frontmatter: its behavior on every harness
  * (spec §2.2, 2026-07-05 redirect — the ONE home for mode/model/temperature/
  * top_p/steps/variant/color/hidden/permission/description). This is NOT part
  * of `validateManifest`'s pipeline (frontmatter lives in a repo file the
@@ -536,8 +576,8 @@ const MOVED_TO_AGENT_MD_KEYS = [
  * (compile-agent-config.ts), which DOES read the file, to reuse the exact
  * same field rules instead of re-deriving them. A stock OpenCode agent `.md`
  * with none of these fields set is valid as-is (every field optional); the
- * deprecated upstream `tools`/`maxSteps` fields are still flagged so an
- * author gets a pointer instead of a silently-ignored key.
+ * retired `tools`/`maxSteps` names are still flagged so an author gets a
+ * pointer instead of a silently-ignored key.
  */
 export function validateAgentMdFrontmatter(
   frontmatter: Record<string, unknown>,
@@ -607,18 +647,18 @@ export function validateAgentMdFrontmatter(
     validatePermissionConfig(frontmatter.permission, `${where}.permission`, issues);
   }
 
-  // Deprecated upstream fields — pointer errors, not silent pass-through.
+  // Retired field names — pointer errors, not silent pass-through.
   if (frontmatter.tools !== undefined) {
     issues.push({
       path: `${where}.tools`,
-      message: '`tools` is deprecated upstream — use `permission` instead.',
+      message: '`tools` is not an agent setting — use `permission` instead.',
       severity: 'error',
     });
   }
   if (frontmatter.maxSteps !== undefined) {
     issues.push({
       path: `${where}.maxSteps`,
-      message: '`maxSteps` is deprecated upstream — use `steps` instead.',
+      message: '`maxSteps` is not an agent setting — use `steps` instead.',
       severity: 'error',
     });
   }
@@ -628,10 +668,14 @@ export function validateAgentMdFrontmatter(
  *  redirect). Behavior lives in the agent's own `.md` frontmatter and is
  *  never validated here (this validator has no repo access) — see
  *  `validateAgentMdFrontmatter`. */
-function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[]): void {
+function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[], v3 = false): void {
   if (!isTable(entry)) {
     issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
     return;
+  }
+
+  if (entry.tools !== undefined && (!isTable(entry.tools) || Object.values(entry.tools).some((value) => typeof value !== 'boolean'))) {
+    issues.push({ path: `${where}.tools`, message: 'tools must map tool names to booleans.', severity: 'error' });
   }
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
@@ -649,6 +693,19 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     }
   }
 
+  // A declaration is not an enforcement point: the provider gateway must
+  // isolate all outbound traffic before any policy can be applied.
+  if (entry.network_egress !== undefined) {
+    const policy = entry.network_egress;
+    if (!isTable(policy) || policy.version !== 1 || policy.default !== 'deny' ||
+        !Array.isArray(policy.rules) || policy.rules.length !== 0 ||
+        Object.keys(policy).some((key) => !['version', 'default', 'rules'].includes(key))) {
+      issues.push({ path: `${where}.network_egress`, message: 'only version 1 default-deny with empty rules is supported; network egress is not enforced.', severity: 'error' });
+    } else {
+      issues.push({ path: `${where}.network_egress`, message: 'declaration only: network egress is not enforced until provider gateway isolation is available.', severity: 'warning' });
+    }
+  }
+
   // v1's grant-set name — renamed to `secrets` in v2 (spec §2.2/§2.4).
   if (entry.env !== undefined) {
     issues.push({
@@ -660,14 +717,34 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // Pre-redirect / pre-refactor shapes: behavioral fields authored on the
   // manifest agent block at all (flat, or nested under the now-removed
   // `opencode:`) — these live ONLY in the agent's `.md` frontmatter now.
-  for (const key of MOVED_TO_AGENT_MD_KEYS) {
+  for (const key of v3 ? ['opencode', 'disable', 'file'] : MOVED_TO_AGENT_MD_KEYS) {
     if ((entry as Record<string, unknown>)[key] !== undefined) {
       issues.push({
         path: `${where}.${key}`,
-        message: `"${key}" is OpenCode behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the agent's \`.kortix/opencode/agents/<name>.md\` frontmatter instead.`,
+        message: v3
+          ? `"${key}" is not supported in v3; declare behavior in kortix.yaml (prompt or prompt_file).`
+          : `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
         severity: 'error',
       });
     }
+  }
+
+  if (!v3 && entry.prompt_file !== undefined) {
+    issues.push({ path: `${where}.prompt_file`, message: 'v2 agent behavior lives in its .md file.', severity: 'error' });
+  }
+  if (v3) {
+    if (entry.prompt !== undefined && typeof entry.prompt !== 'string') issues.push({ path: `${where}.prompt`, message: 'must be a string.', severity: 'error' });
+    if (entry.prompt_file !== undefined && (!safeAgentFile(entry.prompt_file) || entry.prompt !== undefined)) issues.push({ path: `${where}.prompt_file`, message: 'must be a repo-relative .md path and cannot be combined with prompt.', severity: 'error' });
+    validateAgentMdFrontmatter(entry, where, issues);
+  }
+
+  if (!v3 && entry.file !== undefined && !safeAgentFile(entry.file)) {
+    issues.push({
+      path: `${where}.file`,
+      message:
+        'must be a repo-relative path to a `.md` file (e.g. `agents/<name>.md`): no leading "/" or "-", no "." or ".." segments, only letters, digits, spaces and `_ . -`.',
+      severity: 'error',
+    });
   }
 
   // Kortix governance — same grant-set shape/action rules as v1, reused as-is.
@@ -736,7 +813,7 @@ export interface AgentsV2Scan {
  * callers can cross-validate `default_agent` and `triggers[].agent` against
  * them. Dispatch: called from `index.ts`'s `validateManifestBodyV2`.
  */
-export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[]): AgentsV2Scan {
+export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[], v3 = false): AgentsV2Scan {
   const names: string[] = [];
   const disabledNames: string[] = [];
   if (node == null || (isTable(node) && Object.keys(node).length === 0)) {
@@ -770,7 +847,7 @@ export function validateAgentsV2(node: unknown, path: string, issues: ManifestIs
         disabledNames.push(name);
       }
     }
-    validateAgentBlockV2(entry, where, issues);
+    validateAgentBlockV2(entry, where, issues, v3);
   }
   return { names, disabledNames };
 }

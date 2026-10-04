@@ -39,17 +39,17 @@ Learn this once and most questions answer themselves.
    and `src/core/rest/platform-client/`, over `src/core/http/api-client.ts`
    (`backendApi`).
 
-2. **The session runtime** — OpenCode running *inside a per-session cloud
+2. **The session runtime** — the harness (OpenCode or pi) running *inside a per-session cloud
    sandbox*. The SDK reaches its REST API through the Kortix API proxy:
 
    ```
-   ${backendUrl}/p/{externalId}/{port}      →  the sandbox's opencode server
+   ${backendUrl}/p/{externalId}/{port}      →  the sandbox's daemon (kortixd)
    ```
 
 **The bridge between them is session readiness.** A session runtime does not
 exist until its sandbox is provisioned or resumed. That is what `ensureReady()`
 (and `start()`, and implicitly `send()`) does: boots or resumes the sandbox and
-resolves this session's OpenCode identity.
+resolves this session's runtime identity (`runtime_session_id`).
 
 ```ts
 const kortix = createKortix({ backendUrl, getToken })   // ← one client, one auth seam
@@ -78,7 +78,7 @@ one.
 ```
 core/http/auth + core/http/api-client  ← transport: token, fetch, ApiError
 core/rest/*-client                     ← typed REST surfaces (one file per domain)
-core/runtime/client                    ← OpenCode REST compatibility client
+core/runtime/client                    ← runtime client cache; runtime-rest-client: the REST compatibility client
 core/stream/event-stream               ← SSE reconnect/backoff/heartbeat/coalesce
 core/client/kortix.ts (createKortix)   ← the facade: binds ids, hides the seam
 core/turns/                            ← normalizes ~50 wire part types → ClassifiedPart
@@ -90,7 +90,8 @@ react/                                 ← optional glue. Nothing below this lin
 `./event-stream`, `./server-store`, …). They re-export from `core/` and stay
 until the next major. Add nothing new there.
 
-`core/turns/` deserves a note: the opencode wire format has ~50 part variants.
+`core/turns/` deserves a note: the transcript (`kortix.transcript.v1`, the same
+wire from OpenCode and pi) has ~50 part variants.
 It collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
 renderer can `switch (part.kind)` and have TypeScript prove no case is missed.
 It is framework-free on purpose — `examples/04` renders a transcript to plain
@@ -115,11 +116,28 @@ Follow the grain. Almost every feature is this shape:
 
 - **Session-scoped, never global.** See above. Never resolve a runtime from
   ambient state.
-- **Session-scoped and provider-agnostic.** The sandbox provider is a server-side
-  concern. Every session uses OpenCode REST. Host code must not add a second
+- **Session-scoped and provider-agnostic.** The sandbox provider and the harness
+  (OpenCode, pi) are server-side concerns. Host code must not add a second
   transport.
-- **Hosts never import `@opencode-ai/sdk`.** Not `apps/web`, not the demo. If a
-  host needs runtime access, it goes through `session.runtime`.
+- **The SDK owns its types and depends on no harness SDK.** The transcript is
+  `kortix.transcript.v1` (`core/runtime/transcript-types.ts`, a copy of
+  `@kortix/api-contract/transcript` that a test holds equal). The runtime REST
+  compatibility types (`core/runtime/runtime-types.ts`) and client
+  (`core/runtime/runtime-rest-client.ts`) are frozen copies of what
+  `@opencode-ai/sdk` 1.18.23 had, pinned by a recorded-request fixture. A new
+  runtime call gets a route in `RUNTIME_REST_ROUTES`, never a new dependency.
+- **Hosts reach the runtime through the session verbs** (`messages`, `pending`,
+  `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`,
+  `stream`). `session.runtime` is deprecated; no host imports `@opencode-ai/sdk`.
+- **A harness difference is a capability, never a harness check.** The daemon
+  lists what the runtime serves in `GET /kortix/health` `capabilities`
+  (`session.rewind`, `session.compact`, `session.commands`, `session.fork`,
+  `session.subagents`, `session.mcp`, `session.todo`, `session.shell`,
+  `session.attach`, `session.config`). OpenCode lists all ten; pi lists
+  `session.subagents`. A hook or a host gates on
+  `runtimeSupports(capabilities, capability)` (`core/session/health.ts`). New
+  SDK code never branches on the harness id and never assumes an OpenCode
+  route answers.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it
   to the SDK.
 - **The core never imports a framework.** Enforced statically. See the tripwire.
@@ -397,22 +415,30 @@ promote them to `dependencies`.
 
 ## Streaming is the fragile part. Treat it as a first-class target.
 
-Live SSE streaming (`session.stream()` → `openEventStream` → `client.global.event()`)
+Live SSE streaming (`session.stream()` → `openEventStream({ url })` → `client.global.event()`)
 is the single most breakable surface in this package, because it is the only one
 that depends on **streaming-body support in the host's `fetch`** — a thing that
 differs across every runtime we claim to support.
 
-The transport is **not** `EventSource`. It is, inside
-`@opencode-ai/sdk/dist/v2/gen/core/serverSentEvents.gen.js`:
+The default transport is **not** `EventSource`. It is `fetchEventTransport` in
+`src/core/runtime/runtime-rest-client.ts`:
 
 ```js
-const response = await _fetch(request);
+const response = await fetchFn(new Request(url, { method: 'GET', headers, signal }));
 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 ```
 
-So streaming requires `fetch` with a real `ReadableStream` body, plus
-`TextDecoderStream`. Reconnect, backoff, heartbeat, and event coalescing are
-ours (`src/core/stream/event-stream.ts`); the wire is theirs.
+So the default needs `fetch` with a real `ReadableStream` body, plus
+`TextDecoderStream`. Reconnect, backoff, `Last-Event-ID` resume, heartbeat, and
+event coalescing live in `eventStream` (same file) and
+`src/core/stream/event-stream.ts`, which ask the transport for exactly one
+connection attempt per connect (`sseMaxRetryAttempts: 1`).
+
+**The transport is injectable.** A host whose `fetch` cannot stream supplies
+`configureKortix({ eventStreamTransport })` (`RuntimeEventTransport`): one
+connection's messages, and nothing else. The SDK adds the auth headers and keeps
+every reconnect decision. `apps/mobile/lib/session/sse-transport.ts` is the one
+host transport today: `react-native-sse` (XHR) behind that seam.
 
 | Target | Streams? | Notes |
 |---|---|---|
@@ -420,35 +446,26 @@ ours (`src/core/stream/event-stream.ts`); the wire is theirs.
 | Node ≥ 18 | ✅ | `fetch` + `TextDecoderStream` are global |
 | Bun | ✅ | |
 | Cloudflare Workers | ✅ | |
-| **React Native / Expo** | ❌ **not supported** | RN's `fetch` has no `response.body`; Hermes has no `TextDecoderStream`. The SDK's streaming **cannot run on RN today.** |
+| **React Native / Expo** | ✅ with a host transport | `apps/mobile` injects `react-native-sse`. Observed delivering events on an Android emulator (Hermes) on 2026-10-01. Not observed on iOS or on a physical device. The default fetch transport on RN is unproven: Expo 56 installs a streaming `fetch` and `TextDecoderStream` globally, and nobody has run the SDK on it. |
 
 **This SDK ships to three hosts: `apps/web`, `apps/mobile` (RN/Expo), and
 `apps/whitelabel-demo`.** A change that works on web and breaks the others is a
-broken change, not a partial one.
+broken change, not a partial one. `apps/mobile` runs `useSession` from
+`@kortix/sdk/react`: a browser global used unguarded in that import graph
+(`document`, `window.location`, `sessionStorage`, `crypto.randomUUID`) is a
+crash on a phone. A host with no DOM events reports foreground, online and a
+manual retry through `notifyHostSignal`; it observes the stream for sounds,
+haptics and a live-updates indicator through `subscribeRuntimeStream`.
 
-> **Do not claim React Native streaming support** — in the README, the docs, or a
-> PR description. It does not work. `apps/mobile` streams today only because it
-> **bypasses the SDK entirely**: `apps/mobile/lib/opencode/event-stream.ts` is
-> **655 lines** reimplementing reconnect/backoff/heartbeat/coalescing on
-> `react-native-sse`'s `EventSource`, beside the SDK's own
-> `src/core/stream/event-stream.ts`. Two divergent copies of the most
-> failure-prone logic in the product.
+> **Do not add a second reconnect loop.** Before the seam existed, mobile kept
+> 856 lines reimplementing reconnect/backoff/heartbeat/coalescing beside the
+> SDK's own. If a host needs a different wire, it writes a transport: how bytes
+> arrive, never when to reconnect.
 >
-> It happened because the SDK left **no transport seam**. The fix — extracting an
-> injectable `EventStreamTransport`, so the platform-specific part is only *how
-> bytes arrive* and never the reconnect logic — is understood and deliberately
-> deferred.
->
-> **Do not add a third copy.** If a host needs a different wire, build the seam.
-
-**`@opencode-ai/sdk/v2/client` is browser-safe** — its import graph is only
-`error-interceptor`, `client.gen`, `sdk.gen`, `types.gen`. The `node:child_process`
-in that package lives in `dist/process.js`, reachable **only** from `v2/server.js`.
-
-> **Bundler trap.** Never let a build resolve `@opencode-ai/sdk` (root) or
-> `/server` or `/v2/server` into a browser bundle — that drags in
-> `node:child_process` and the build breaks or silently ships a broken global.
-> Import `@opencode-ai/sdk/v2/client` and nothing else.
+> **`useSession({ chatEngine: false })` mounts `useSessionSync('')`.** Mobile is
+> the first host to do that. Everything keyed by a runtime session id must be a
+> no-op for `''` (`canQueryRuntimeSession`): an unguarded path once polled
+> `GET /session//message` every 15 s.
 
 Streaming is not "done" because a unit test passes. It is done when it has been
 observed delivering events in **each distribution target you claim** — the ESM

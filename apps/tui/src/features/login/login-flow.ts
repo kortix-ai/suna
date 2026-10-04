@@ -29,8 +29,8 @@ import {
   upsertHost,
   useHost,
   validateHostName,
-} from '@kortix/cli/src/api/config.ts';
-import { sdkBackendUrl } from '@kortix/cli/src/api/sdk.ts';
+} from '@kortix/shared/host-config';
+import { sdkBackendUrl } from '@kortix/shared/host-config';
 import type { ValidateTokenResult } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 
@@ -157,10 +157,6 @@ export const defaultLoginDeps: LoginFlowDeps = {
     createScopedKortix({
       backendUrl,
       getToken: async () => token,
-      // Same surface the running client reports (`src/kortix.ts`), so a
-      // token validation and the session it unlocks are one source in the
-      // backend's audit events.
-      clientSource: 'tui',
     }).validateToken(),
   // `upsertHost`'s third argument IS the set-active seam — the CLI config
   // module has no `setActiveHost`; its rename is `useHost`. Both are called so

@@ -130,6 +130,26 @@ export async function setDatabaseEnterpriseDemo(
   }
 }
 
+/** Record a failed run on a trigger, as the API does when a trigger session's turn ends with an error. */
+export async function setDatabaseTriggerRunFailed(
+  env: Env,
+  input: { projectId: string; slug: string; error: string },
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "fail a trigger run for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `UPDATE kortix.project_trigger_runtime
+          SET last_status = 'failed', last_error = $3, last_attempt_at = now(), updated_at = now()
+        WHERE project_id = $1::uuid AND slug = $2`,
+      [input.projectId, input.slug, input.error],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 export async function fundDatabaseAccount(
   env: Env,
   accountId: string,
@@ -184,6 +204,10 @@ export async function createDatabaseSession(
     userId: string;
     visibility?: "private" | "project" | "restricted";
     metadata?: Record<string, unknown>;
+    /** Provider-reported placement, with the runtime still unready. */
+    platinumRegion?: string;
+    parentSessionId?: string;
+    initiator?: { type: "member" | "trigger" | "channel" | "api" | "system"; id: string | null };
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
@@ -199,7 +223,10 @@ export async function createDatabaseSession(
          branch_name,
          created_by,
          visibility,
-         metadata
+         metadata,
+         parent_session_id,
+         initiator_type,
+         initiator_id
        )
        VALUES (
          $1,
@@ -208,7 +235,10 @@ export async function createDatabaseSession(
          'session/' || $1,
          $4::uuid,
          $5::kortix.project_session_visibility,
-         $6::jsonb
+         $6::jsonb,
+         $7,
+         $8::kortix.project_session_initiator,
+         $9
        )`,
       [
         sessionId,
@@ -216,9 +246,23 @@ export async function createDatabaseSession(
         input.projectId,
         input.userId,
         input.visibility ?? "private",
-        JSON.stringify(input.metadata ?? {}),
+        JSON.stringify({
+          ...(input.metadata ?? {}),
+          ...(input.parentSessionId ? { spawned_by_session: input.parentSessionId } : {}),
+        }),
+        input.parentSessionId ?? null,
+        input.initiator?.type ?? "member",
+        input.initiator ? input.initiator.id : input.userId,
       ],
     );
+    if (input.platinumRegion) {
+      await client.query(
+        `INSERT INTO kortix.session_sandboxes (
+           sandbox_id, session_id, account_id, project_id, provider, status, config, metadata
+         ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'platinum', 'provisioning', '{}'::jsonb, $4::jsonb)`,
+        [sessionId, input.accountId, input.projectId, JSON.stringify({ platinumRegion: input.platinumRegion })],
+      );
+    }
   } finally {
     await client.end();
   }
@@ -350,6 +394,15 @@ export async function deleteDatabaseProject(
   const databaseUrl = assertDatabaseFixtureAllowed(env, "delete");
   const client = await open(databaseUrl);
   try {
+    // Apps first: an App delete is soft, so its deployment rows survive it, and
+    // `app_deployments.artifact_id` RESTRICTs the artifact delete the project
+    // cascade would otherwise attempt first. Deleting the apps cascades the
+    // deployments away before the project row goes.
+    await client.query(
+      `DELETE FROM kortix.apps
+       WHERE project_id = $1::uuid`,
+      [projectId],
+    );
     await client.query(
       `DELETE FROM kortix.projects
        WHERE project_id = $1::uuid`,

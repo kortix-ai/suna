@@ -18,7 +18,10 @@ describe('project session engine boundary', () => {
   });
 
   test('SessionChat consumes supplied SDK state without a second engine', () => {
-    expect(chatSource).toContain("useSessionSync(sessionState ? '' : sessionId)");
+    // The first argument is the invariant: supplied SDK state disables this
+    // hook's engine. A second argument (a sub-agent's saved-history scope)
+    // does not change that.
+    expect(chatSource).toMatch(/useSessionSync\(\s*sessionState \? '' : sessionId[,)]/);
     expect(chatSource).not.toContain('const client = getClient()');
     expect(chatSource).toContain('sessionState?.runCommand');
     expect(chatSource).not.toContain('@/stores/opencode-compaction-store');

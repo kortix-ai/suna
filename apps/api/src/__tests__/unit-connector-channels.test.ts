@@ -12,6 +12,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
+  TEAMS_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
   channelAuth,
   channelCatalog,
@@ -439,6 +440,73 @@ describe('handleCall — channel (slack)', () => {
   });
 });
 
+/**
+ * Teams refuses a read with 403 "… Resource specific consent grants on the
+ * request ''" when the Kortix app installed in that team holds no permission
+ * to read its messages. On dev (2026-10-01) the agent relayed "a Teams admin
+ * needs to grant that permission", which names nobody's next step. The
+ * refusal now names the fix; Graph's text stays after it.
+ */
+describe('handleCall — channel (teams): a read the installed app may not make', () => {
+  const TEAMS: GatewayConnector = {
+    connectorId: 'conn-teams',
+    slug: TEAMS_CHANNEL_CONNECTOR_SLUG,
+    provider: 'channel',
+    platform: 'teams',
+    baseUrl: 'https://graph.microsoft.com/v1.0',
+    auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+    hasAuth: true,
+    credentialMode: 'shared',
+    enabled: true,
+  };
+  const LIST_REPLIES: GatewayAction = {
+    path: 'teams.list_replies',
+    relPath: 'list_replies',
+    inputSchema: {
+      type: 'object',
+      properties: { 'team-id': { 'x-in': 'path' }, 'channel-id': { 'x-in': 'path' }, 'message-id': { 'x-in': 'path' } },
+      required: ['team-id', 'channel-id', 'message-id'],
+    },
+    risk: 'read',
+    binding: { kind: 'http', method: 'GET', path: '/teams/{team-id}/channels/{channel-id}/messages/{message-id}/replies' },
+  };
+  const refusal = (permissions: string) =>
+    JSON.stringify({
+      error: {
+        code: 'Forbidden',
+        message: `Missing role permissions on the request. API requires one of '${permissions}'. Roles on the request ''. Resource specific consent grants on the request ''.`,
+      },
+    });
+  const read = async (body: string, status = 403) => {
+    const { deps } = makeDeps(body, status);
+    deps.loadConnectorBySlug = async () => TEAMS;
+    deps.loadAction = async () => LIST_REPLIES;
+    return handleCall(deps, {
+      ...input,
+      connectorSlug: TEAMS_CHANNEL_CONNECTOR_SLUG,
+      actionPath: 'list_replies',
+      args: { 'team-id': 'team-1', 'channel-id': 'channel-1', 'message-id': 'message-1' },
+    });
+  };
+
+  test('a team: the reason says who updates the app, where, and what to do when no update shows', async () => {
+    const res = await read(refusal('ChannelMessage.Read.All, ChannelMessage.Read.Group'));
+    expect(res.status).toBe('error');
+    if (res.status !== 'error') return;
+    expect(res.reason).toStartWith('Kortix cannot read messages in this team yet');
+    expect(res.reason).toContain('A team owner updates the app in Teams (the team → ⋯ → Manage team → Apps → Update)');
+    expect(res.reason).toContain('Connectors → Channels → Microsoft Teams');
+    // The Graph cause stays, for whoever debugs it.
+    expect(res.reason).toContain('ChannelMessage.Read.Group');
+  });
+
+  test('any other refusal keeps the plain upstream reason', async () => {
+    const res = await read(JSON.stringify({ error: { code: 'Forbidden', message: 'Insufficient privileges.' } }));
+    if (res.status !== 'error') throw new Error('expected an error');
+    expect(res.reason).toStartWith('upstream_403');
+  });
+});
+
 describe('handleCall — slack thread auto-bind', () => {
   const SLACK_WITH_PLATFORM: GatewayConnector = { ...SLACK, platform: 'slack' };
 
@@ -818,5 +886,93 @@ describe('handleCall — channel (email)', () => {
       'https://api.agentmail.to/v0/inboxes/email-inbox%40agentmail.to/messages?limit=1',
     );
     expect(call.headers.Authorization).toBe('Bearer am_connection_token');
+  });
+});
+
+// The agent read `slack history` and `slack thread` as raw Slack messages
+// (2026-10-02): `user: "U0…"` and no name, so its answers named people by id.
+// After the read-scope gate, the gateway names each message's author as
+// `user_name`; the `user` id stays for operations.
+describe('handleCall — Slack history and thread name each author', () => {
+  const SLACK_WITH_PLATFORM: GatewayConnector = { ...SLACK, platform: 'slack' };
+  const HISTORY: GatewayAction = {
+    path: 'slack.get_history',
+    relPath: 'get_history',
+    inputSchema: { type: 'object', properties: { channel: {}, limit: {} }, required: ['channel'] },
+    risk: 'read',
+    binding: { kind: 'http', method: 'GET', path: '/conversations.history' },
+  };
+  const THREAD: GatewayAction = {
+    path: 'slack.get_thread',
+    relPath: 'get_thread',
+    inputSchema: { type: 'object', properties: { channel: {}, ts: {} }, required: ['channel', 'ts'] },
+    risk: 'read',
+    binding: { kind: 'http', method: 'GET', path: '/conversations.replies' },
+  };
+  const BODY = JSON.stringify({
+    ok: true,
+    messages: [
+      { ts: '3.0', user: 'U0TEST1', text: 'ship it' },
+      { ts: '2.0', user: 'U0TEST2', text: 'which one?' },
+      { ts: '1.0', bot_id: 'B0TEST1', text: 'deploy 42 done' },
+      { ts: '0.5', user: 'U0TEST1', text: 'first' },
+    ],
+  });
+
+  function namingDeps(action: GatewayAction, names: Record<string, string> | Error = { U0TEST1: 'Sam Rivera' }) {
+    const { deps } = makeDeps(BODY);
+    const asked: Array<{ projectId: string; token: string; userIds: string[] }> = [];
+    deps.loadConnectorBySlug = async () => SLACK_WITH_PLATFORM;
+    deps.loadAction = async () => action;
+    deps.nameSlackUsers = async (i) => {
+      asked.push(i);
+      if (names instanceof Error) throw names;
+      return new Map(Object.entries(names));
+    };
+    return { deps, asked };
+  }
+
+  const authors = (res: Awaited<ReturnType<typeof handleCall>>) =>
+    ((res as { data?: { messages?: Array<Record<string, unknown>> } }).data?.messages ?? []).map((m) => [
+      m.user ?? null,
+      m.user_name ?? null,
+    ]);
+
+  test('history: each author Slack can name gains user_name, once per person; the id stays', async () => {
+    const { deps, asked } = namingDeps(HISTORY);
+    const res = await handleCall(deps, { ...input, actionPath: 'get_history', args: { channel: 'C123' } });
+
+    expect(res.status).toBe('ok');
+    expect(asked).toEqual([{ projectId: 'proj-1', token: 'xoxb-install-token', userIds: ['U0TEST1', 'U0TEST2'] }]);
+    expect(authors(res)).toEqual([
+      ['U0TEST1', 'Sam Rivera'],
+      ['U0TEST2', null],
+      [null, null],
+      ['U0TEST1', 'Sam Rivera'],
+    ]);
+  });
+
+  test('thread: replies are named the same way', async () => {
+    const { deps } = namingDeps(THREAD, { U0TEST1: 'Sam Rivera', U0TEST2: 'Alex Kim' });
+    const res = await handleCall(deps, { ...input, actionPath: 'get_thread', args: { channel: 'C123', ts: '0.5' } });
+    expect(authors(res)).toEqual([
+      ['U0TEST1', 'Sam Rivera'],
+      ['U0TEST2', 'Alex Kim'],
+      [null, null],
+      ['U0TEST1', 'Sam Rivera'],
+    ]);
+  });
+
+  test('a naming failure keeps the read ok and unchanged', async () => {
+    const { deps } = namingDeps(HISTORY, new Error('slack down'));
+    const res = await handleCall(deps, { ...input, actionPath: 'get_history', args: { channel: 'C123' } });
+    expect(res.status).toBe('ok');
+    expect(authors(res).every(([, name]) => name === null)).toBe(true);
+  });
+
+  test('a post is never named, even when its answer carries messages', async () => {
+    const { deps, asked } = namingDeps(SEND);
+    await handleCall(deps, input);
+    expect(asked).toHaveLength(0);
   });
 });

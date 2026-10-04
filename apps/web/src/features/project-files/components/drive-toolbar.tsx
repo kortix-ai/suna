@@ -24,7 +24,6 @@ import { cn } from '@/lib/utils';
 import {
   CaretRightIcon as ChevronRight,
   DotsThreeIcon as DotsThree,
-  DownloadIcon as Download,
   FilePlusIcon,
   FolderPlusIcon,
   SquaresFourIcon as LayoutGrid,
@@ -44,6 +43,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 /**
  * The Drive chrome, split into three pieces a surface composes itself.

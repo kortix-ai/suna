@@ -22,7 +22,4 @@ export function ProjectDeleteTool({ part }: ToolProps) {
     />
   );
 }
-ToolRegistry.register('project_delete', ProjectDeleteTool);
 ToolRegistry.register('project-delete', ProjectDeleteTool);
-ToolRegistry.register('oc-project_delete', ProjectDeleteTool);
-ToolRegistry.register('oc-project-delete', ProjectDeleteTool);

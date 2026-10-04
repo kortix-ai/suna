@@ -63,6 +63,9 @@ export interface SessionStartResult {
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
+  /** Canonical runtime root pin, resolved server-side once the box is up. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /** Stable terminal failure. Provider-specific diagnostics stay internal. */
   failure?: SessionStartFailure | null;
@@ -75,6 +78,12 @@ export interface SessionStartResult {
    */
   runtime_url?: string | null;
   reason?: string;
+  /**
+   * What the session's runtime serves, as the daemon lists it in
+   * `GET /kortix/health`. Present with `stage: 'ready'` on APIs that read it;
+   * `useSession` then knows the list before its own first health probe.
+   */
+  capabilities?: string[];
 
   // ── Session-open envelope. Every field describes THIS call, not the row's
   // accumulated history. Optional: an older API omits them entirely.
@@ -135,10 +144,11 @@ export function projectSessionStartSeed(
     !session.sandbox_id ||
     !session.sandbox_provider ||
     !session.sandbox_url ||
-    !session.opencode_session_id
+    !(session.runtime_session_id ?? session.opencode_session_id)
   ) {
     return null;
   }
+  const runtimeSessionId = session.runtime_session_id ?? session.opencode_session_id;
   const externalId = session.sandbox_url.match(/\/p\/([^/]+)\//)?.[1];
   if (!externalId) return null;
   return {
@@ -160,7 +170,8 @@ export function projectSessionStartSeed(
       created_at: session.created_at,
       updated_at: session.updated_at,
     },
-    opencode_session_id: session.opencode_session_id,
+    runtime_session_id: runtimeSessionId,
+    opencode_session_id: runtimeSessionId,
     runtime_url: session.sandbox_url,
   };
 }
@@ -250,9 +261,11 @@ export async function startProjectSession(
   // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
   // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
   const externalId = result.sandbox?.external_id;
-  if (result.stage === "ready" && externalId && result.opencode_session_id) {
+  const runtimeSessionId = result.runtime_session_id ?? result.opencode_session_id;
+  if (result.stage === "ready" && externalId && runtimeSessionId) {
     setSessionRuntime(projectId, sessionId, {
-      opencodeSessionId: result.opencode_session_id,
+      runtimeSessionId,
+      opencodeSessionId: runtimeSessionId,
       runtimeUrl: getSandboxUrlForExternalId(externalId),
       sandboxId: externalId,
     });

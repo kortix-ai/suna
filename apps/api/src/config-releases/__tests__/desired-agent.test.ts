@@ -55,6 +55,7 @@ function deps(roster: DeclaredAgentRoster = ROSTER): DesiredReleaseDeps {
     },
     resolveBase: async () => TIP,
     loadRoster: async () => roster,
+    invalidate: () => {},
   };
 }
 
@@ -87,6 +88,18 @@ describe('a declared agent is untouched', () => {
       deps(),
     );
     expect(built).toEqual(['agent:kortix']);
+    expect(desired.descriptor.agent_repoint).toBeNull();
+  });
+});
+
+describe('the platform meta coordinator', () => {
+  test('never receives the project release, even when its metadata says repository access', async () => {
+    const desired = await resolveDesiredRelease(
+      { project: PROJECT, baseRef: 'main', sessionAgent: 'meta', repositoryAccess: true },
+      deps(),
+    );
+    expect(built).toEqual(['meta']);
+    expect(desired.variant).toBe('meta');
     expect(desired.descriptor.agent_repoint).toBeNull();
   });
 });

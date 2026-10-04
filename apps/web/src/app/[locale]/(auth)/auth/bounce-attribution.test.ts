@@ -47,10 +47,6 @@ mock.module('@/lib/supabase/server', () => ({
         data: { user: signedInUser(), session: { access_token: 'tok', refresh_token: 'ref' } },
         error: null,
       }),
-      verifyOtp: async () => ({
-        data: { user: signedInUser(), session: { access_token: 'tok', refresh_token: 'ref' } },
-        error: null,
-      }),
     },
   }),
 }));
@@ -66,8 +62,7 @@ mock.module('@/lib/public-env-server', () => ({
   }),
 }));
 
-const { sendEmailCode, signInWithPassword, signUpWithPassword, verifyOtp } =
-  await import('./actions');
+const { sendEmailCode, signInWithPassword, signUpWithPassword } = await import('./actions');
 const { AUTH_BOUNCE_COOKIE, serializeAuthBounce } =
   await import('@/lib/onboarding/landing-destination');
 
@@ -122,44 +117,6 @@ describe('signInWithPassword', () => {
   });
 
   test('the bounce is cleared — password sign-in never reaches /auth/callback', async () => {
-    bounce(USER_A);
-    await destination();
-
-    expect(jar.has(AUTH_BOUNCE_COOKIE)).toBe(false);
-  });
-});
-
-describe('verifyOtp', () => {
-  async function destination(): Promise<string> {
-    const result = (await verifyOtp(
-      null,
-      form({ email: 'b@example.com', token: '123456', returnUrl: A_PROJECT }),
-    )) as { redirectTo?: string };
-    return result.redirectTo as string;
-  }
-
-  test('bounced as A, signed in as B → demoted to the landing door', async () => {
-    bounce(USER_A);
-
-    expect(await destination()).toBe(LANDING);
-  });
-
-  test('bounced as A, signed in as A → keeps the path', async () => {
-    // The code was typed in the same browser that was bounced, so the full deep
-    // link survives even though the emailed link for the same request would not.
-    signedInUserId = USER_A;
-    bounce(USER_A);
-
-    expect(await destination()).toBe(A_PROJECT);
-  });
-
-  test('an UNATTRIBUTED bounce keeps the path', async () => {
-    bounce(null);
-
-    expect(await destination()).toBe(A_PROJECT);
-  });
-
-  test('the bounce is cleared — OTP sign-in never reaches /auth/callback', async () => {
     bounce(USER_A);
     await destination();
 
@@ -222,6 +179,14 @@ describe('signUpWithPassword is also a sign-IN door for an existing account', ()
 });
 
 describe('sendEmailCode mints the link, so the gate has to run there', () => {
+  test('sends a sign-in link and tells the recipient to open it', async () => {
+    const result = await sendEmailCode(
+      null,
+      form({ email: 'test@example.test', origin: 'http://localhost:3000' }),
+    );
+    expect(result).toMatchObject({ success: true, message: 'Check your email for a sign-in link' });
+    expect(otpEmailRedirectTo).toContain('/auth/callback');
+  });
   async function mintedReturnUrl(): Promise<string | null> {
     await sendEmailCode(
       null,

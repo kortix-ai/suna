@@ -25,7 +25,7 @@ import {
   projectSessions,
   projectStatuses,
   projectTranscript,
-} from '../harness/open-code/opencode-projection'
+} from '@/harness/open-code/opencode-projection'
 
 const bigPrompt = 'You are a careful engineer. '.repeat(600) // ~16 KB
 
@@ -139,7 +139,7 @@ describe('session, status, permission and question projections', () => {
         title: 'Child',
         parent_id: 'ses_root',
         directory: '/workspace',
-        time: { created: 1, updated: 9, compacting: 7 },
+        time: { created: 1, updated: 9, compacting: 7, archived: 5 },
         revert: { messageID: 'msg_3', partID: 'prt_1' },
       },
     ]
@@ -150,7 +150,7 @@ describe('session, status, permission and question projections', () => {
           title: 'Child',
           parentID: 'ses_root',
           directory: '/workspace',
-          time: { created: 1, updated: 9, compacting: 7 },
+          time: { created: 1, updated: 9, compacting: 7, archived: 5 },
           revert: { messageID: 'msg_3', partID: 'prt_1' },
         },
       ]),
@@ -165,6 +165,7 @@ describe('session, status, permission and question projections', () => {
           time_created: 1,
           time_updated: 9,
           time_compacting: 7,
+          time_archived: 5,
           revert: JSON.stringify({ messageID: 'msg_3', partID: 'prt_1' }),
         },
       ]),

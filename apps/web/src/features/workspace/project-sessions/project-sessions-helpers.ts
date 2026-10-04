@@ -1,5 +1,5 @@
 import type { UiTranslator } from '@/i18n/translator';
-import type { ProjectSession } from '@kortix/sdk';
+import { runtimeSessionsOf, type ProjectSession } from '@kortix/sdk';
 
 import {
   matchesSourceFilters,
@@ -46,86 +46,26 @@ export function sessionAccessMeta(
   return { label: tI18nComplete.raw('textda56a3718077'), canOpen: true };
 }
 
-export function sessionSearchText(session: ProjectSession, tI18nComplete: UiTranslator): string {
-  const source = sessionSource(session, tI18nComplete);
-  return [
-    getSessionDisplayTitle(session),
-    session.session_id,
-    session.branch_name,
-    session.base_ref,
-    session.agent_name,
-    session.owner_email,
-    session.owner_name,
-    session.owner_type,
-    session.sandbox_provider,
-    session.status,
-    session.visibility,
-    session.runtime_status,
-    session.deleted_at,
-    source.label,
-    source.triggerSlug,
-  ]
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-    .join(' ')
-    .toLocaleLowerCase();
-}
-
-/** Precomputed haystack per session id — see `filterProjectSessions`. */
-export type SessionSearchIndex = ReadonlyMap<string, string>;
-
 /**
- * Build the search haystack once per session.
- *
- * `sessionSearchText` reads 15 fields, resolves the session's source, joins and
- * lowercases. Doing that inside the filter meant rebuilding it for every
- * session on every keystroke; on a project with a few hundred sessions that is
- * the single most expensive thing this page does while you type. The caller
- * memoises this against the session list, so typing only re-runs `includes`.
- */
-export function buildSessionSearchIndex(
-  sessions: ProjectSession[],
-  tI18nComplete: UiTranslator,
-): SessionSearchIndex {
-  const index = new Map<string, string>();
-  for (const session of sessions) {
-    index.set(session.session_id, sessionSearchText(session, tI18nComplete));
-  }
-  return index;
-}
-
-/**
- * The sessions page's visible set: the sidebar's two multi-select facets ANDed
- * together, then the page's own free-text search.
- *
- * The facets are the SAME predicates the sidebar list applies
- * (`matchesStatusFilters` / `matchesSourceFilters`), reading the same persisted
- * store — so a filter set in either surface means the same thing in both. The
- * ordering inside each section is `groupSessions`' job; this sorts so callers
- * that skip grouping still get newest-first.
+ * The sessions page's client-side facets: the sidebar's two multi-select
+ * facets, then the page-only owner and access facets. Free-text search is NOT
+ * here — it is the server's `q`, which reaches every session the viewer may
+ * open, not only the pages already loaded. Newest activity first.
  */
 export function filterProjectSessions(
   sessions: ProjectSession[],
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
-  query: string,
   tI18nComplete: UiTranslator,
-  /** Omit and the haystack is computed inline, which is fine for one-off calls
-   *  and for tests; the view always passes its memoised index. */
-  searchIndex?: SessionSearchIndex,
-  /** The page-only facets: whose session, and who else can open it. */
   facets: { owners?: readonly string[]; access?: readonly SessionAccessFilter[] } = {},
 ): ProjectSession[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const matches = sessions.filter((session) => {
-    if (!matchesStatusFilters(session, statusFilters)) return false;
-    if (!matchesSourceFilters(session, sourceFilters, tI18nComplete)) return false;
-    if (!matchesOwnerFilters(session, facets.owners ?? [])) return false;
-    if (!matchesAccessFilters(session, facets.access ?? [])) return false;
-    if (!normalizedQuery) return true;
-    const haystack =
-      searchIndex?.get(session.session_id) ?? sessionSearchText(session, tI18nComplete);
-    return haystack.includes(normalizedQuery);
-  });
+  const matches = sessions.filter(
+    (session) =>
+      matchesStatusFilters(session, statusFilters) &&
+      matchesSourceFilters(session, sourceFilters, tI18nComplete) &&
+      matchesOwnerFilters(session, facets.owners ?? []) &&
+      matchesAccessFilters(session, facets.access ?? []),
+  );
   return sortSessionsByLastActivity(matches);
 }
 
@@ -180,9 +120,10 @@ export function sessionDetailFields(
   push('Runtime', session.sandbox_provider);
   push('Runtime state', session.runtime_status);
 
-  const conversationCount = (session.opencode_sessions ?? []).length;
+  const conversations = runtimeSessionsOf(session);
+  const conversationCount = conversations.length;
   if (conversationCount > 0) {
-    const archived = (session.opencode_sessions ?? []).filter((item) => item.archived_at).length;
+    const archived = conversations.filter((item) => item.archived_at).length;
     fields.push({
       label: tI18nComplete.raw('text1d432f58690c'),
       value: `${conversationCount}${archived > 0 ? ` · ${archived} archived` : ''}`,
@@ -198,7 +139,7 @@ export function sessionDetailFields(
   if (session.branch_name !== session.session_id) push('Branch', session.branch_name, true);
   push('Session ID', session.session_id, true);
   if (session.sandbox_id !== session.session_id) push('Sandbox ID', session.sandbox_id, true);
-  push('Root conversation ID', session.opencode_session_id, true);
+  push('Root conversation ID', session.runtime_session_id ?? session.opencode_session_id, true);
 
   return fields;
 }

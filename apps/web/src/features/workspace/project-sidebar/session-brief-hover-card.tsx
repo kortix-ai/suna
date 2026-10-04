@@ -10,7 +10,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { LocalTime } from '@/components/ui/local-time';
 import { menuRow } from '@/components/ui/menu-recipe';
 import { CR_ID_PREFIX } from '@/features/review-center/review-actions';
-import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionHoverStore } from '@/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
@@ -18,6 +18,7 @@ import { GitDiffIcon } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useEffect, type ReactElement } from 'react';
 import { shortRelative } from './project-session-list-helpers';
+import { SessionLabelBadges } from '@/features/workspace/project-sessions/session-label-badges';
 import { SOURCE_ICONS } from './session-source-icons';
 import { SessionStatusMark } from './session-status-mark';
 
@@ -57,6 +58,8 @@ interface SessionBrief {
   createdAt: string;
   source: SessionSource;
   changeRequests: readonly ChangeRequest[];
+  /** The session's free-form labels; the sidebar row has no room for them. */
+  labels?: readonly string[];
 }
 
 interface SessionBriefInteractionProps {
@@ -121,7 +124,7 @@ function ChangeRequestRow({
   // Every change opens in the Review Center inbox, the same place the footer
   // Review pill leads.
   const reviewItemId = `${CR_ID_PREFIX}${changeRequest.cr_id}`;
-  const href = `${capabilityTabHref(projectId, 'review')}?id=${encodeURIComponent(reviewItemId)}`;
+  const href = `${reviewHref(projectId)}?id=${encodeURIComponent(reviewItemId)}`;
   return (
     <HoverPrefetchLink href={href} onClick={onDismiss} className={className}>
       {content}
@@ -147,6 +150,7 @@ function SessionBriefContent({
   createdAt,
   source,
   changeRequests,
+  labels,
   projectId,
   onDismiss,
 }: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
@@ -176,6 +180,8 @@ function SessionBriefContent({
             </span>
           </div>
         ) : null}
+
+        {labels?.length ? <SessionLabelBadges session={{ labels: [...labels] }} max={6} className="flex-wrap" /> : null}
       </div>
 
       {changeRequests.length > 0 ? (

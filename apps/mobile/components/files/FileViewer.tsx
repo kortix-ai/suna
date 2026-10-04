@@ -8,9 +8,9 @@ import {
   View,
   Modal,
   Pressable,
-  Share,
   Platform,
   TextInput,
+  Keyboard,
   KeyboardAvoidingView,
   Alert,
 } from 'react-native';
@@ -29,10 +29,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { FilePreview } from './FilePreviewRenderers';
 import { useFilePreviewData } from './use-file-preview-data';
-import { useOpenCodeWriteFile, downloadOpenCodeFileToCache } from '@/lib/files/hooks';
+import { useWriteSandboxFile, downloadSandboxFileToCache } from '@/lib/files/hooks';
+import { saveFileToDevice } from '@/lib/files/save-to-device';
+import { useToast } from '@/components/kortix/toast-provider';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
@@ -82,8 +83,9 @@ export function FileViewer({
   // In-place text editing
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const writeMutation = useOpenCodeWriteFile();
+  const writeMutation = useWriteSandboxFile();
   const { confirm, dialog: confirmDialog } = useConfirmDialog({ portalHost: FILE_VIEWER_PORTAL_HOST });
+  const toast = useToast();
 
   const {
     previewType,
@@ -114,69 +116,33 @@ export function FileViewer({
     setIsDownloading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      // For binary files (images, PDFs, etc.) write to file and share
+      // The file as it is, in the cache first, then saved on the device
+      // (`saveFileToDevice`). No PDF export and no share sheet on mobile.
+      const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+      let source: string | null = null;
       if (imageBlob && isBinaryFile && !blobTooLarge) {
-        // Convert blob to base64
         const reader = new FileReader();
         const base64Data = await new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            const base64 = result.split(',')[1];
-            resolve(base64);
-          };
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
           reader.onerror = reject;
           reader.readAsDataURL(imageBlob);
         });
-
-        // Write to temporary file
-        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        // Share the file
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        }
-        return;
-      }
-      
-      // For text files, write to file and share
-      if (textContent) {
-        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+        source = fileUri;
+      } else if (textContent) {
         await FileSystem.writeAsStringAsync(fileUri, textContent);
-        
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        } else {
-          await Share.share({
-            message: textContent,
-            title: file.name,
-          });
-        }
-        return;
+        source = fileUri;
+      } else if (sandboxUrl) {
+        // Nothing loaded (over the preview limit, not previewable, or still
+        // loading): stream the file to disk natively.
+        source = await downloadSandboxFileToCache(sandboxUrl, file.path, file.name);
       }
-
-      // Nothing loaded (over the preview limit, not previewable, or still
-      // loading): stream the file to disk natively and share it.
-      if (sandboxUrl) {
-        const fileUri = await downloadOpenCodeFileToCache(sandboxUrl, file.path, file.name);
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        }
-      }
+      if (!source) return;
+      const result = await saveFileToDevice(source, file.name);
+      if (result.status === 'saved') toast.success(`Saved to ${result.folder}`);
     } catch (error) {
       log.error('Download failed:', error);
+      toast.error('Unable to save the file. Try again.');
     } finally {
       setIsDownloading(false);
     }
@@ -209,6 +175,12 @@ export function FileViewer({
     setEditing(visible && !!initialEditing);
     setDraft('');
   }, [file?.path, visible, initialEditing]);
+
+  // A native modal does not take the focus from the field behind it, so the
+  // keyboard would stay up over the viewer. Same rule as the sheets.
+  useEffect(() => {
+    if (visible) Keyboard.dismiss();
+  }, [visible]);
 
   const handleStartEdit = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -383,7 +355,7 @@ export function FileViewer({
                   </AnimatedPressable>
                 )}
                 <AnimatedPressable
-                  onPress={handleDownload}
+                  onPress={() => void handleDownload()}
                   disabled={isDownloading}
                   className="p-2"
                   style={{ opacity: isDownloading ? 0.6 : 1 }}
@@ -392,11 +364,7 @@ export function FileViewer({
                   {isDownloading ? (
                     <KortixLoader size="small" />
                   ) : (
-                    <Icon
-                      as={Download}
-                      size={22}
-                      color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                    />
+                    <Icon as={Download} size={22} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   )}
                 </AnimatedPressable>
                 <AnimatedPressable
@@ -449,7 +417,7 @@ export function FileViewer({
             </KeyboardAvoidingView>
           ) : isLoading ? (
             <View className="flex-1 items-center justify-center">
-              <KortixLoader size="large" />
+              <KortixLoader size="small" />
               <Text className="mt-4 text-sm text-muted-foreground">Loading file...</Text>
             </View>
           ) : hasError ? (

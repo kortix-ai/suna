@@ -9,7 +9,8 @@ import { MANAGED_MODELS } from '@kortix/llm-catalog';
 //
 // Imported across app boundaries ON PURPOSE: this file is the tripwire that
 // fails the moment the managed lineup and that hand-maintained table drift.
-import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/harness/open-code/lifecycle';
+import { BUNDLED_MANAGED_MODELS } from '../../../../kortix-sandbox-agent-server/src/harness/open-code/fallback-models';
+import { applyManagedOpencodeEnv } from '../../../../kortix-sandbox-agent-server/src/harness/open-code/managed-opencode-env';
 
 const managedIds = MANAGED_MODELS.map((m) => m.id).sort();
 const bundledIds = Object.keys(BUNDLED_MANAGED_MODELS).sort();
@@ -54,4 +55,12 @@ describe('daemon bundled managed set vs the managed lineup', () => {
       }
     });
   }
+});
+
+// OpenCode sends max_tokens = min(limit.output, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX
+// ?? 32_000). A cap below limit.output cuts a long tool call (one large file write)
+// at finish_reason "length": the tool never runs and the turn ends silently.
+test('OpenCode may send every managed model its full output limit', () => {
+  const cap = Number(applyManagedOpencodeEnv({}).OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX);
+  for (const managed of MANAGED_MODELS) expect(cap, managed.id).toBeGreaterThanOrEqual(managed.limit.output);
 });

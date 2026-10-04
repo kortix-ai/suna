@@ -30,18 +30,9 @@
  *    fail an entire batch.
  */
 import { type Database, auditEvents } from '@kortix/db';
-import { withAuditSessionLock } from './audit-session-serial';
 import { errorSqlstate, innermostMessage, isAuditContentionError } from './error-cause';
 
 export type AuditRow = typeof auditEvents.$inferInsert;
-
-/**
- * How the queue serializes one session's statements against the other
- * in-process audit writer (the sandbox ingest route). Defaults to the shared
- * per-session lock; injectable so a test can observe the grouping without the
- * real mutex. See `audit-session-serial.ts` for why this exists.
- */
-export type AuditSessionSerializer = (sessionId: string, fn: () => Promise<void>) => Promise<void>;
 
 /** The minimum surface the queue needs from Drizzle — keeps tests db-free. */
 export type AuditInsertClient = Pick<Database, 'insert'>;
@@ -59,8 +50,14 @@ export interface AuditQueueOptions {
   /** Called for a genuinely poison batch (a data error) that is dead-lettered. */
   onError?: (error: unknown, rowCount: number) => void;
   onDrop?: (droppedTotal: number, sinceLastLog: number) => void;
-  /** Called when a batch is requeued after lock/connection contention. */
+  /**
+   * Called when a contended batch is reported. Rate-limited to at most one
+   * call per `retryLogIntervalMs`; every requeued row is still counted in
+   * `stats().contended`.
+   */
   onRetry?: (error: unknown, rowCount: number, attempt: number, delayMs: number) => void;
+  /** Minimum gap between "Write contended" warnings. */
+  retryLogIntervalMs?: number;
   /** Base of the exponential backoff applied between contended retries. */
   retryBaseMs?: number;
   /** Ceiling the backoff never exceeds, however many consecutive contentions. */
@@ -71,18 +68,20 @@ export interface AuditQueueOptions {
   shutdownDeadlineMs?: number;
   /** Sleep primitive `shutdown()` uses between contended retries. */
   sleep?: (ms: number) => Promise<void>;
-  /** Serializes one session's statement against the in-process ingest writer. */
-  serialize?: AuditSessionSerializer;
 }
 
 export const AUDIT_FLUSH_MS_DEFAULT = 250;
-// 100, lowered from 500 (SampleCo convoy fix): each row's BEFORE INSERT trigger
-// takes a per-session FOR UPDATE lock held to the batch's COMMIT, so a large
-// batch holds every touched session's lock for the whole commit and cross-blocks
-// the other replica. Smaller batches commit sooner. Tunable via KORTIX_AUDIT_FLUSH_MAX.
+// 100 rows per statement. Tunable via KORTIX_AUDIT_FLUSH_MAX.
 export const AUDIT_FLUSH_MAX_DEFAULT = 100;
 export const AUDIT_QUEUE_MAX_DEFAULT = 5_000;
 const DROP_LOG_INTERVAL_MS = 60_000;
+// A contended batch is retried, never dropped, so a stuck session used to emit
+// one warn PER RETRY ATTEMPT. Prod, 2026-09-28: 8,528 of these lines in one
+// day, 100% expected backpressure, 0% data loss (the queue's `dropped` stayed
+// 0). It read as a new warn-pattern spike and paged. Rate-limit it like the
+// overflow warning: the FIRST contention is always reported, then at most one
+// line per interval. `stats().contended` still counts every requeued row.
+const RETRY_LOG_INTERVAL_MS = 60_000;
 
 // A contended batch is requeued, never dropped, so it must be retried without
 // hammering the same session lock every `flushMs`. Exponential backoff with
@@ -128,37 +127,14 @@ export function retryBackoffMs(
 }
 
 /**
- * Split one flush snapshot into the statements that will actually run.
- *
- * ONE STATEMENT NEVER SPANS TWO SESSIONS (SampleCo convoy, 2026-08-26).
- * `kortix.audit_prepare_event` takes a per-session row lock on
- * `kortix.audit_session_sequences` for every row, and PostgreSQL holds a row
- * lock until COMMIT. A 100-row statement built in arrival order therefore held
- * up to 100 different sessions' locks for its whole commit, and any concurrent
- * writer for ANY of those sessions — the sandbox `POST …/audit/events` ingest
- * on the other replica — queued behind it. Reproduced against a 5.09M-row
- * `audit_events`: a 100-row cross-session statement blocked a same-session
- * ingest to a hard 57014 at 10,004 ms.
- *
- * Grouping by `sessionId` means one statement holds at most ONE session lock,
- * so two sessions can never block each other. Rows with no session take no lock
- * at all and get their own group. Order WITHIN a session is preserved, which is
- * the only order `session_sequence` is defined over.
+ * Split one flush snapshot into statements of at most `max` rows, in arrival order.
+ * No statement holds a per-session lock any more (the BEFORE INSERT trigger only
+ * sets the source columns), so rows of different sessions share a statement.
  */
 export function statementBatches(rows: AuditRow[], max: number): AuditRow[][] {
-  const groups = new Map<string, AuditRow[]>();
-  for (const row of rows) {
-    // `null` and `undefined` both mean "no session"; keep them in one group.
-    const key = row.sessionId ?? '';
-    const group = groups.get(key);
-    if (group) group.push(row);
-    else groups.set(key, [row]);
-  }
   const batches: AuditRow[][] = [];
-  for (const group of groups.values()) {
-    for (let offset = 0; offset < group.length; offset += max) {
-      batches.push(group.slice(offset, offset + max));
-    }
+  for (let offset = 0; offset < rows.length; offset += max) {
+    batches.push(rows.slice(offset, offset + max));
   }
   return batches;
 }
@@ -199,6 +175,7 @@ export class AuditQueue {
   private readonly flushMax: number;
   private readonly queueMax: number;
   private readonly dropLogIntervalMs: number;
+  private readonly retryLogIntervalMs: number;
   private readonly now: () => number;
   private readonly onError: (error: unknown, rowCount: number) => void;
   private readonly onDrop: (droppedTotal: number, sinceLastLog: number) => void;
@@ -213,13 +190,14 @@ export class AuditQueue {
   private readonly random: () => number;
   private readonly shutdownDeadlineMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
-  private readonly serialize: AuditSessionSerializer;
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<void> | null = null;
   /** `null` = never warned yet. The FIRST overflow must always warn. */
   private lastDropLogAt: number | null = null;
   private droppedSinceLastLog = 0;
+  /** `null` = never warned yet. The FIRST contention must always warn. */
+  private lastRetryLogAt: number | null = null;
   /**
    * Consecutive contention events across flushes, reset by any flush that
    * completes with zero contention. Backs off `scheduleFlush`'s delay so a
@@ -244,6 +222,7 @@ export class AuditQueue {
     this.flushMax = options.flushMax ?? AUDIT_FLUSH_MAX_DEFAULT;
     this.queueMax = options.queueMax ?? AUDIT_QUEUE_MAX_DEFAULT;
     this.dropLogIntervalMs = options.dropLogIntervalMs ?? DROP_LOG_INTERVAL_MS;
+    this.retryLogIntervalMs = options.retryLogIntervalMs ?? RETRY_LOG_INTERVAL_MS;
     this.now = options.now ?? Date.now;
     this.retryBaseMs = options.retryBaseMs ?? AUDIT_RETRY_BASE_MS_DEFAULT;
     this.retryMaxMs = options.retryMaxMs ?? AUDIT_RETRY_MAX_MS_DEFAULT;
@@ -282,10 +261,6 @@ export class AuditQueue {
           `[audit] Write contended — requeuing ${rowCount} events for retry #${attempt} in ${delayMs}ms: ${describeAuditWriteFailure(error)}`,
         );
       });
-    // Off the request path: wait for our turn without a timeout. The wait is in
-    // memory, so `lock_timeout` cannot drop the batch the way it did when this
-    // row raced the sandbox ingest for the same session's sequence row lock.
-    this.serialize = options.serialize ?? ((sessionId, fn) => withAuditSessionLock(sessionId, fn));
   }
 
   /** The delay before the next contended retry, given the current streak. */
@@ -364,8 +339,7 @@ export class AuditQueue {
     if (snapshot.length === 0) return this.inFlight ?? Promise.resolve();
 
     const previous = this.inFlight;
-    let run: Promise<void>;
-    run = (previous ?? Promise.resolve())
+    const run: Promise<void> = (previous ?? Promise.resolve())
       .then(() => this.write(snapshot))
       .finally(() => {
         if (this.inFlight === run) {
@@ -391,19 +365,13 @@ export class AuditQueue {
    */
   private async write(snapshot: AuditRow[]): Promise<void> {
     const requeue: AuditRow[] = [];
-    const contentions: Array<{ error: unknown; rowCount: number }> = [];
+    // Only the first contention of the flush is ever logged (see below), so
+    // keep that one, not the whole list.
+    let firstContention: { error: unknown; rowCount: number } | null = null;
     for (const batch of statementBatches(snapshot, this.flushMax)) {
       this.flushes += 1;
-      // `statementBatches` guarantees one session per statement, so the first
-      // row names the sequence row lock this insert will take. Session-less
-      // rows take no such lock, so they are written directly.
-      const sessionId = batch[0]?.sessionId ?? null;
-      const insert = async (): Promise<void> => {
-        await this.client.insert(auditEvents).values(batch).onConflictDoNothing();
-      };
       try {
-        if (sessionId) await this.serialize(sessionId, insert);
-        else await insert();
+        await this.client.insert(auditEvents).values(batch).onConflictDoNothing();
         this.written += batch.length;
       } catch (error) {
         if (isAuditContentionError(error)) {
@@ -411,7 +379,7 @@ export class AuditQueue {
           // relative order, restored below — for the next flush attempt.
           this.contended += batch.length;
           requeue.push(...batch);
-          contentions.push({ error, rowCount: batch.length });
+          firstContention ??= { error, rowCount: batch.length };
         } else {
           // A poison batch can never succeed on retry: dead-letter it once,
           // loudly, with the count, and move on.
@@ -424,14 +392,28 @@ export class AuditQueue {
     if (requeue.length > 0) {
       // Prepend: these rows arrived before anything enqueued DURING this
       // flush (already at the tail of `this.rows`), so putting them back at
-      // the front preserves arrival order — the only order `session_sequence`
-      // is defined over.
+      // the front preserves arrival order, which the (time-ordered) event_id
+      // assigned at INSERT then reflects.
       this.rows.unshift(...requeue);
       this.consecutiveContentions += 1;
       const delayMs = this.retryDelayMs();
-      this.nextEligibleFlushAt = this.now() + delayMs;
-      for (const { error, rowCount } of contentions) {
-        this.onRetry(error, rowCount, this.consecutiveContentions, delayMs);
+      const now = this.now();
+      this.nextEligibleFlushAt = now + delayMs;
+      // Report the FIRST contention immediately, then at most one line per
+      // interval — expected backpressure must not flood the log. Every
+      // requeued row is still counted in `stats().contended`, and the rows
+      // themselves are never dropped.
+      if (
+        firstContention &&
+        (this.lastRetryLogAt === null || now - this.lastRetryLogAt >= this.retryLogIntervalMs)
+      ) {
+        this.lastRetryLogAt = now;
+        this.onRetry(
+          firstContention.error,
+          firstContention.rowCount,
+          this.consecutiveContentions,
+          delayMs,
+        );
       }
     } else {
       this.consecutiveContentions = 0;

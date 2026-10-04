@@ -33,6 +33,12 @@ export interface GatewayHooks {
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit?: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
+  /**
+   * A fresh descriptor for a refreshable login the provider refused with 401,
+   * or null when the login cannot be refreshed (the host marks it for
+   * reconnection). Called once per request.
+   */
+  refreshCredential?: (principal: AuthedPrincipal, descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
   // Resolves (or throws) once the account's billing state is checked. May
   // return a `holdUsd` when it took an atomic admission hold against the
   // wallet — the handler attaches it to the principal so settle() can

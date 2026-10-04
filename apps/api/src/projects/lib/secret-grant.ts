@@ -36,6 +36,7 @@
  */
 
 import type { AgentGrant } from '@kortix/db';
+import type { MirrorRefresh } from '../git/mirror';
 import {
   DEFAULT_AGENT_SENTINEL,
   type LoadedAgents,
@@ -59,6 +60,7 @@ export class SecretGrantResolutionError extends Error {
       `could not resolve the secrets grant for agent '${agentName}': ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
+      { cause },
     );
     this.name = 'SecretGrantResolutionError';
   }
@@ -209,8 +211,9 @@ export interface SessionSecretGrantInput {
   requestedAgent?: string | null;
   /** Bypass the process-local Git mirror TTL. Authorization paths set this so
    *  a manifest commit handled by another API replica applies on the next
-   *  request, not up to 60 seconds later. */
-  forceRefresh?: boolean;
+   *  request, not up to 60 seconds later. The turn path passes `'tip-proof'`
+   *  (see `MirrorRefresh`). */
+  forceRefresh?: MirrorRefresh;
 }
 
 /**

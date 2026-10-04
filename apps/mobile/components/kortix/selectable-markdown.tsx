@@ -16,13 +16,20 @@
  * does. Mermaid fences, and unlabelled fences that start with a diagram type,
  * render as diagrams (`components/markdown/mermaid/MermaidBlock.tsx`).
  *
- * On Android the text is natively selectable; on iOS a double tap opens a
- * sheet with the raw text.
+ * Selection is native on both platforms: long press selects a range, and the
+ * handles extend it within one block (a paragraph, heading, list item, or
+ * table cell). Android uses React Native's selectable `Text`. iOS uses a
+ * `UITextView` (`react-native-uitextview`), because React Native's iOS `Text`
+ * only copies a whole paragraph. A binary built before that native view keeps
+ * the old double-tap sheet (`IOS_TEXT_VIEW`).
  *
  * Streaming: the text is split into top-level blocks (`splitMarkdown`), and
  * each block renders in its own memoized component keyed by its position.
  * When a message grows, only the last block's string changes, so completed
- * blocks are neither re-parsed nor remounted. A block that appears after the
+ * blocks are neither re-parsed nor remounted. The last block re-parses on every
+ * change; its AST keys are node paths
+ * (`patches/react-native-markdown-display+7.0.2.patch`), so its native views
+ * update in place instead of remounting. A block that appears after the
  * message mounted fades in; a fence that is still open renders plain and
  * highlights once it closes.
  *
@@ -40,15 +47,18 @@ import {
   Pressable,
   LogBox,
   Platform,
+  UIManager,
   useWindowDimensions,
+  type TextProps,
 } from 'react-native';
+import { UITextView } from 'react-native-uitextview';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
-import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
+import type { MarkdownTextInput as MarkdownTextInputComponent } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
 import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { CopyIcon as Copy, ImageIcon } from '@/lib/icons';
+import { CopyIcon as Copy } from '@/lib/icons';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -73,7 +83,8 @@ import { mathPlugin } from '@/lib/markdown/math-plugin';
 import { markdownPalette, type MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { isMarkdownSeparatorBlock, splitMarkdown } from '@/lib/markdown/split-blocks';
 import { isSafeExternalLink } from '@/lib/markdown/safe-link';
-import { describeMarkdownImage } from '@/lib/markdown/markdown-image';
+import { groupImageBlocks, imageSourceKey } from '@/lib/markdown/markdown-image';
+import { MarkdownImage, MarkdownImageGallery, MarkdownImagesContext, type MarkdownRemoteImages } from '@/components/markdown/markdown-image';
 import {
   classifyBlock,
   collapsedGap,
@@ -87,8 +98,42 @@ import {
 } from '@/lib/markdown/markdown-layout';
 import { openLink } from '@/lib/utils/open-link';
 
+// The component's own module, not the package root: the root also exports
+// `parseExpensiMark`, which loads all of `expensify-common` (1.5 MB) at boot.
+// The app passes its own parser (`markdownParser`) and never calls it. A
+// `require`, so tsc reads the root's declarations and not the package source.
+const MarkdownTextInput: typeof MarkdownTextInputComponent =
+  require('@expensify/react-native-live-markdown/src/MarkdownTextInput').default;
+
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
+
+/**
+ * The running iOS binary has `react-native-uitextview`'s native view. An OTA
+ * update can reach a binary built before it: that binary renders plain `Text`
+ * and keeps the double-tap selection sheet.
+ */
+const IOS_TEXT_VIEW = Platform.OS === 'ios' && UIManager.hasViewManagerConfig('RNUITextView');
+
+/**
+ * Every text node of the markdown. On iOS it is a `UITextView`: the outermost
+ * one is the selectable view, nested ones are its styled spans, so every text
+ * rule must use this and never `RNText`. Elsewhere it is React Native's `Text`,
+ * which reads `selectable` from the outermost node only.
+ */
+function MarkdownText(props: TextProps) {
+  return IOS_TEXT_VIEW ? <UITextView uiTextView {...props} /> : <RNText {...props} />;
+}
+
+/**
+ * Android: a selectable text node with no press handler of its own never
+ * delivers a tap to a nested link (KRTX-562). A no-op handler on the outer node
+ * restores the link's `onPress` and keeps native selection (verified on a
+ * Pixel 9 emulator, RN 0.85). `accessibilityRole="text"` keeps the handler
+ * from announcing every paragraph as a link.
+ */
+const ANDROID_LINK_TAPS: Partial<TextProps> =
+  Platform.OS === 'android' ? { onPress: noop, accessibilityRole: 'text' } : {};
 
 export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
@@ -104,6 +149,12 @@ export interface SelectableMarkdownTextProps {
    * a finished message whose last fence was never closed still highlights.
    */
   isStreaming?: boolean;
+  /**
+   * `'load'` where the project's agent wrote the text (a reply, a project
+   * file): remote http(s) images load, as on web. Default `'placeholder'`.
+   * Sandbox images load either way.
+   */
+  remoteImages?: MarkdownRemoteImages;
 }
 
 /**
@@ -126,37 +177,6 @@ function handleLibraryLinkPress(url: string): boolean {
   return false;
 }
 
-/**
- * Stand-in for a markdown image. Remote images are not loaded: a URL can leak
- * data to its host on render, and a huge image can exhaust memory on decode.
- * An http(s) source opens in the browser on tap; data: and other sources only
- * show the label. Web's image frame (`rounded-lg`, 10% outline) is applied to
- * the placeholder, the only image surface the app draws.
- */
-function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unknown; isDark: boolean }) {
-  const { label, href } = describeMarkdownImage(src, alt);
-  return (
-    <Button
-      variant="secondary"
-      size="sm"
-      className="my-1 max-w-full self-start"
-      style={{
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
-        borderColor: markdownPalette(isDark).imageOutline,
-      }}
-      disabled={!href}
-      onPress={href ? () => openExternalLink(href) : undefined}
-      role={href ? 'link' : 'img'}
-      accessibilityLabel={`Image: ${label}`}
-    >
-      <Icon as={ImageIcon} size={16} />
-      <Text numberOfLines={1} className="shrink">
-        {label}
-      </Text>
-    </Button>
-  );
-}
 
 /**
  * The fence at the end of the current block has no closing marker yet. Code
@@ -241,14 +261,15 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     text: (node: AstNode, _children: unknown, _parent: unknown, styles: any, inheritedStyles: any = {}) => (
-      <RNText key={node.key} style={[inheritedStyles, styles.text]} selectable>
+      <MarkdownText key={node.key} style={[inheritedStyles, styles.text]}>
         {node.content}
-      </RNText>
+      </MarkdownText>
     ),
+    // The outermost text node: the one native selection reads `selectable` from.
     textgroup: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.textgroup} selectable>
+      <MarkdownText key={node.key} style={styles.textgroup} selectable {...ANDROID_LINK_TAPS}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     paragraph: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
       <View key={node.key} style={styles._VIEW_SAFE_paragraph}>
@@ -256,38 +277,39 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     strong: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.strong} selectable>
+      <MarkdownText key={node.key} style={styles.strong}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     em: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.em} selectable>
+      <MarkdownText key={node.key} style={styles.em}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     s: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.s} selectable>
+      <MarkdownText key={node.key} style={styles.s}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     // Links: only http(s) and mailto open.
     link: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText
+      <MarkdownText
         key={node.key}
         style={styles.link}
-        selectable
         accessibilityRole="link"
         onPress={() => openExternalLink(node.attributes?.href)}
       >
         {children}
-      </RNText>
+      </MarkdownText>
     ),
-    // Images: never fetched; a placeholder instead.
+    // Images: the image itself where it may load (`MarkdownImagesContext`),
+    // else the placeholder card. Node keys are positions, so the source is in
+    // the key: a different image at the same position mounts fresh load state.
     image: (node: AstNode) => (
-      <MarkdownImagePlaceholder
-        key={node.key}
-        src={node.attributes?.src}
-        alt={node.attributes?.alt}
+      <MarkdownImage
+        key={`${node.key}:${imageSourceKey(String(node.attributes?.src ?? ''))}`}
+        src={typeof node.attributes?.src === 'string' ? node.attributes.src : ''}
+        alt={typeof node.attributes?.alt === 'string' ? node.attributes.alt : ''}
         isDark={isDark}
       />
     ),
@@ -428,21 +450,21 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
         return '\n';
       case 'strong':
         return (
-          <RNText key={i} style={{ fontFamily: FONT_FAMILY.semibold, fontWeight: '600', color: palette.strong }}>
+          <MarkdownText key={i} style={{ fontFamily: FONT_FAMILY.semibold, fontWeight: '600', color: palette.strong }}>
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       case 'em':
         return (
-          <RNText key={i} style={{ fontStyle: 'italic', color: palette.em }}>
+          <MarkdownText key={i} style={{ fontStyle: 'italic', color: palette.em }}>
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       case 's':
         return (
-          <RNText key={i} style={{ textDecorationLine: 'line-through', color: palette.muted }}>
+          <MarkdownText key={i} style={{ textDecorationLine: 'line-through', color: palette.muted }}>
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       case 'code_inline':
         return <InlineCode key={i} code={n.content ?? ''} isDark={isDark} line={TYPE.sm} />;
@@ -452,7 +474,7 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
         );
       case 'link':
         return (
-          <RNText
+          <MarkdownText
             key={i}
             accessibilityRole="link"
             style={{
@@ -465,7 +487,7 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
             onPress={() => openExternalLink(n.attributes?.href)}
           >
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       default:
         return nodeText(n);
@@ -534,7 +556,7 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
                         paddingVertical: TABLE_CELL_PADDING_Y,
                       }}
                     >
-                      <RNText
+                      <MarkdownText
                         selectable
                         numberOfLines={section.isHeader ? 1 : undefined}
                         style={{
@@ -547,7 +569,7 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
                         }}
                       >
                         {renderCellContent(cell, isDark, palette)}
-                      </RNText>
+                      </MarkdownText>
                     </View>
                   ))}
                 </View>
@@ -894,6 +916,12 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
+type BlockKinds = { first: BlockKind; last: BlockKind };
+
+function blockKinds(block: string): BlockKinds {
+  return isMarkdownSeparatorBlock(block) ? { first: 'hr', last: 'hr' } : classifyBlock(block);
+}
+
 function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: boolean; isStreaming?: boolean }) {
   const { blocks, endsInOpenFence } = useMemo(() => splitMarkdown(prepareMarkdownForMath(text)), [text]);
   const fenceGrowing = useFenceStillGrowing(text, endsInOpenFence, isStreaming);
@@ -908,24 +936,41 @@ function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: b
   }
   previousText.current = text;
 
-  const kinds = useMemo(
-    () => blocks.map((block) => (isMarkdownSeparatorBlock(block) ? { first: 'hr', last: 'hr' } as const : classifyBlock(block))),
-    [blocks],
-  );
+  // `classifyBlock` reads only a block's first and last lines, so this costs
+  // little per block however long the message grows.
+  const kinds = useMemo(() => blocks.map(blockKinds), [blocks]);
+
+  // A run of image-only blocks with two or more images is one swipeable
+  // gallery; every other block renders as markdown.
+  const items = useMemo(() => groupImageBlocks(blocks), [blocks]);
 
   return (
     <View>
-      {blocks.map((block, index) => (
-        // Position is the identity: streaming only appends, so block N stays block N.
-        <MarkdownBlock
-          key={index}
-          text={block}
-          isDark={isDark}
-          openFence={fenceGrowing && index === blocks.length - 1}
-          marginTop={collapsedGap(index === 0 ? null : kinds[index - 1].last, kinds[index].first)}
-          animate={index >= (firstCount.current ?? 0)}
-        />
-      ))}
+      {items.map((item, itemIndex) => {
+        // Position is the identity: streaming only appends, so block N stays
+        // block N, and a gallery keeps the index of its first block.
+        const index = item.index;
+        const previous = itemIndex === 0 ? null : items[itemIndex - 1];
+        const previousLast = previous ? (previous.kind === 'gallery' ? previous.last : previous.index) : null;
+        const marginTop = collapsedGap(previousLast === null ? null : kinds[previousLast].last, kinds[index].first);
+        if (item.kind === 'gallery') {
+          return (
+            <View key={index} style={marginTop ? { marginTop } : undefined}>
+              <MarkdownImageGallery images={item.images} isDark={isDark} />
+            </View>
+          );
+        }
+        return (
+          <MarkdownBlock
+            key={index}
+            text={item.text}
+            isDark={isDark}
+            openFence={fenceGrowing && index === blocks.length - 1}
+            marginTop={marginTop}
+            animate={index >= (firstCount.current ?? 0)}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -935,7 +980,7 @@ const DOUBLE_TAP_DELAY_MS = 300;
 function noop() {}
 
 /**
- * iOS: a double tap opens the selection sheet. The sheet mounts on the first
+ * iOS binary without `RNUITextView` only: a double tap opens the selection sheet. The sheet mounts on the first
  * double tap, not with every text part, and stays mounted after dismiss.
  * `Pressable` is deliberate, NOT `Button`: this is a gesture target over body
  * text, so it must have no press animation at all.
@@ -984,20 +1029,25 @@ function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; is
 /**
  * SelectableMarkdownText
  *
- * Renders markdown with selectable text: natively on Android, through a
- * double-tap selection sheet on iOS.
+ * Renders markdown with natively selectable text. On an iOS binary without
+ * the `UITextView` native view, a double tap opens a selection sheet instead.
  */
 export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
-  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming }: SelectableMarkdownTextProps) {
+  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder' }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
 
     // Trailing whitespace would add empty space below the last block.
     const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
 
-    if (Platform.OS === 'ios') {
-      return <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />;
-    }
-    return <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />;
+    return (
+      <MarkdownImagesContext.Provider value={remoteImages}>
+        {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
+          <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />
+        ) : (
+          <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
+        )}
+      </MarkdownImagesContext.Provider>
+    );
   },
 );

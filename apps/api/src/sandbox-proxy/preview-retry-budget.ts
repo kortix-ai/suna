@@ -1,3 +1,5 @@
+import { classifyRuntimeRequest } from './runtime-request';
+
 // Total wall-clock budget for the preview proxy's auto-wake retry loop. Must
 // stay under the AWS ALB's 60s idle timeout: when every attempt hangs (a cold or
 // errored sandbox whose Daytona upstream never answers) the proxy has to return
@@ -35,10 +37,8 @@ export const PROXY_RETRY_DELAYS_MS = [250, 1_000, 3_000] as const;
 // non-idempotent body. One prod session recorded one `/webapp` submit as four
 // identical user messages, 11.0s / 11.8s / 13.7s apart.
 export function isLongTurnCompletionRequest(request: { method: string; path: string }): boolean {
-  return (
-    request.method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(request.path)
-  );
+  const classified = classifyRuntimeRequest(request.method, request.path);
+  return classified.kind === 'turn-start' && ['message', 'command', 'summarize'].includes(classified.verb);
 }
 
 export function isUploadRequest(request: { method: string; path: string }): boolean {
@@ -68,6 +68,21 @@ export function isFileImportRequest(request: { method: string; path: string; por
   );
 }
 
+/**
+ * The daemon's `/kortix/env-rpc`: one filesystem or shell operation per POST,
+ * answered only when it finishes. Its `exec` is not idempotent, so it is an
+ * upload for both purposes: the attempt gets the remaining budget (a 20 s
+ * command is not a stalled connection), and a replay is never sent (a replay
+ * runs the command a second time).
+ */
+export function isEnvRpcRequest(request: { method: string; path: string; port?: number }): boolean {
+  return (
+    request.port === 8000 &&
+    request.method.toUpperCase() === 'POST' &&
+    /^\/kortix\/env-rpc(?:$|[/?#])/.test(request.path)
+  );
+}
+
 // Per-attempt upstream fetch timeout, shrunk to whatever budget remains so the
 // retry loop can never run past PROXY_RETRY_BUDGET_MS even if an attempt hangs.
 export function proxyAttemptTimeoutMs(
@@ -88,7 +103,7 @@ export function proxyAttemptTimeoutMs(
   // an ordinary 20-40s turn into a manufactured 502 well before either the
   // outer budget or the ALB's idle timeout actually required one.
   if (request && isFileImportRequest(request)) return PROXY_IMPORT_ATTEMPT_TIMEOUT_MS;
-  if (request && (isUploadRequest(request) || isLongTurnCompletionRequest(request))) {
+  if (request && (isUploadRequest(request) || isEnvRpcRequest(request) || isLongTurnCompletionRequest(request))) {
     return Math.max(1_000, budgetRemainingMs - 500);
   }
   return Math.max(1_000, Math.min(PROXY_ATTEMPT_TIMEOUT_MS, budgetRemainingMs));

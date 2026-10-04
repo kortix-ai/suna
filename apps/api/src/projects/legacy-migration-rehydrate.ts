@@ -12,7 +12,7 @@
  * runs through `beforeActive` (session-sandbox.ts), and additionally restores
  * the pin at the end so a lost race self-heals on the next open.
  *
- * Mechanics proven live on prod (project 79d76143, sandbox d265e212):
+ * Mechanics proven live on a prod project and sandbox:
  * download the archive captured at migration time, re-key its project ids to the
  * workspace's opencode projectID (opencode scopes session lists by project),
  * SIGKILL the server (pattern must match `opencode.exe serve`), swap the db in,
@@ -202,7 +202,7 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
   if (spec.opencodeSessionId) {
     await db
       .update(projectSessions)
-      .set({ opencodeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
+      .set({ runtimeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
       .where(eq(projectSessions.sessionId, sessionId));
   }
 }

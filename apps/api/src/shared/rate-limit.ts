@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
@@ -133,6 +134,22 @@ async function auditRateLimitHit(c: Context, context: AuditContext, result: Rate
   });
 }
 
+async function rateLimitExceededResponse(
+  c: Context,
+  result: RateLimitResult,
+  auditContext: AuditContext,
+): Promise<Response> {
+  await auditRateLimitHit(c, auditContext, result);
+  return c.json(
+    {
+      error: 'rate_limit_exceeded',
+      message: 'Rate limit exceeded. Please retry shortly.',
+      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+    },
+    429,
+  );
+}
+
 export async function enforceRateLimit(
   c: Context,
   limiter: TokenBucketRateLimiter,
@@ -145,17 +162,11 @@ export async function enforceRateLimit(
 
   if (result.allowed) return null;
 
-  await auditRateLimitHit(c, auditContext, result);
-  return c.json(
-    {
-      error: 'rate_limit_exceeded',
-      message: 'Rate limit exceeded. Please retry shortly.',
-      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
-    },
-    429,
-  );
+  return rateLimitExceededResponse(c, result, auditContext);
 }
 
+// replica-local: every limiter below counts in this process, so the fleet allows
+// limit × API replicas. They stop runaways and floods; none meters a quota.
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
@@ -166,26 +177,7 @@ const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
   'project_webhook_manifest_refresh',
 );
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
-const projectSessionCreateLimiter = new TokenBucketRateLimiter('project_session_create');
-export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
-
-/**
- * Per-project budget on session CREATES (the 2026-08-21 storm's other half: a
- * per-minute trigger created a session every tick, forever — 60 provider
- * provisions an hour from one project, none ever cleaned up). Checked from the
- * session-create path (lib/sessions.ts), not a route mount, because creates
- * arrive through several routes (UI, triggers, channels, KaaB).
- *
- * In-process bucket — same replica-multiplied honesty as the secret-write
- * budget above, and the same verdict: this stops runaway loops, it does not
- * meter exact quotas.
- */
-export function consumeProjectSessionCreateBudget(projectId: string): RateLimitResult {
-  return projectSessionCreateLimiter.check(projectId, {
-    limit: positiveInt((config as any).KORTIX_PROJECT_SESSION_CREATES_PER_HOUR, 100),
-    windowMs: 60 * 60_000,
-  });
-}
+const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
 
 /**
  * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
@@ -228,51 +220,55 @@ export function createProjectSecretWriteRateLimitMiddleware() {
   };
 }
 
-export function createInviteAcceptRateLimitMiddleware() {
+function createAuditedRateLimitMiddleware(
+  limiter: TokenBucketRateLimiter,
+  select: (c: Context) => { key: string; policy: RateLimitPolicy; auditContext: AuditContext },
+) {
   return async (c: Context, next: Next) => {
-    const inviteId = c.req.param('inviteId') || null;
-    const denied = await enforceRateLimit(
-      c,
-      inviteAcceptLimiter,
-      requestClientKey(c),
-      {
-        limit: positiveInt((config as any).KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
-        windowMs: 60_000,
-      },
-      {
-        action: RATE_LIMIT_EXCEEDED_ACTION,
-        resourceType: 'account_invite',
-        resourceId: inviteId,
-        metadata: { limiter: 'invite_accept' },
-      },
-    );
+    const { key, policy, auditContext } = select(c);
+    const denied = await enforceRateLimit(c, limiter, key, policy, auditContext);
     if (denied) return denied;
     await next();
   };
 }
 
+export function createInviteAcceptRateLimitMiddleware() {
+  return createAuditedRateLimitMiddleware(inviteAcceptLimiter, (c) => {
+    const inviteId = c.req.param('inviteId') || null;
+    return {
+      key: requestClientKey(c),
+      policy: {
+        limit: positiveInt((config as any).KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
+        windowMs: 60_000,
+      },
+      auditContext: {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'account_invite',
+        resourceId: inviteId,
+        metadata: { limiter: 'invite_accept' },
+      },
+    };
+  });
+}
+
 export function createSandboxProxyRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
+  return createAuditedRateLimitMiddleware(sandboxProxyLimiter, (c) => {
     const sandboxId = c.req.param('sandboxId') || 'unknown';
-    const denied = await enforceRateLimit(
-      c,
-      sandboxProxyLimiter,
-      sandboxId,
-      {
+    return {
+      key: sandboxId,
+      policy: {
         limit: positiveInt((config as any).KORTIX_PROXY_REQS_PER_MIN, 600),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         actorUserId: ((c as any).get('userId') as string | undefined) ?? null,
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'sandbox_proxy',
         resourceId: sandboxId,
         metadata: { limiter: 'sandbox_proxy' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -286,7 +282,7 @@ export function createSandboxProxyRateLimitMiddleware() {
  * tighter than the plain metadata-only invite-accept limiter.
  */
 export function createPublicSessionShareRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
+  return createAuditedRateLimitMiddleware(publicSessionShareLimiter, (c) => {
     // Key on the share id when the ref names one (every visitor to one
     // shared link shares that bucket); otherwise fall back to client IP. This
     // MUST run before the raw param can key the bucket Map — an attacker
@@ -296,24 +292,20 @@ export function createPublicSessionShareRateLimitMiddleware() {
     // A `kps_` token and its share id name the same share, so both key the
     // same bucket.
     const shareId = shareIdFromPublicRef(c.req.param('shareId') ?? '') ?? `ip:${requestClientKey(c)}`;
-    const denied = await enforceRateLimit(
-      c,
-      publicSessionShareLimiter,
-      shareId,
-      {
+    return {
+      key: shareId,
+      policy: {
         limit: positiveInt((config as any).KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN, 60),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'public_session_share',
         resourceId: shareId,
         metadata: { limiter: 'public_session_share' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -323,25 +315,21 @@ export function createPublicSessionShareRateLimitMiddleware() {
  * fires an internal notification email.
  */
 export function createDemoRequestRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
-    const denied = await enforceRateLimit(
-      c,
-      demoRequestLimiter,
-      requestClientKey(c),
-      {
+  return createAuditedRateLimitMiddleware(demoRequestLimiter, (c) => {
+    return {
+      key: requestClientKey(c),
+      policy: {
         limit: positiveInt((config as any).KORTIX_DEMO_REQUEST_REQS_PER_MIN, 10),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'demo_request',
         resourceId: null,
         metadata: { limiter: 'demo_request' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -355,25 +343,21 @@ export function createDemoRequestRateLimitMiddleware() {
  * `unknown` and continues through the adaptive flow.
  */
 export function createCheckEmailRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
-    const denied = await enforceRateLimit(
-      c,
-      checkEmailLimiter,
-      requestClientKey(c),
-      {
+  return createAuditedRateLimitMiddleware(checkEmailLimiter, (c) => {
+    return {
+      key: requestClientKey(c),
+      policy: {
         limit: positiveInt((config as any).KORTIX_CHECK_EMAIL_REQS_PER_MIN, 60),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'access_check_email',
         resourceId: null,
         metadata: { limiter: 'check_email' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -414,6 +398,49 @@ export function consumeProjectWebhookManifestRefreshBudget(projectId: string): b
   }).allowed;
 }
 
+/**
+ * Per-principal budget on the LLM gateway mount (`/v1/llm/*` and its
+ * `/v1/llm-gateway/*` alias), the reverse proxy to the standalone gateway.
+ * The standalone gateway meters spend and sheds on memory pressure, but
+ * nothing throttles a principal at this boundary. This is defence-in-depth,
+ * not a quota: in-limit traffic keeps its exact behavior plus the standard
+ * `X-RateLimit-*` headers.
+ *
+ * Key: the presented credential, hashed so no raw secret is retained in the
+ * bucket Map. One gateway key or PAT belongs to exactly one account/project,
+ * so the credential is the principal — and this avoids a per-request identity
+ * database read on the inference hot path. A request without a bearer falls
+ * back to the client address, so omitting the header cannot escape the limit.
+ *
+ * The proxy answers with a raw `Response` that replaces Hono's prepared one,
+ * so headers set before `next()` would be dropped. They are applied again
+ * after `next()`, when `c` points at the final response.
+ */
+export function createLlmGatewayRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const bearer = /^Bearer\s+(\S+)$/i.exec((c.req.header('authorization') ?? '').trim());
+    const token = bearer?.[1];
+    const key = token
+      ? `tok:${createHash('sha256').update(token).digest('hex')}`
+      : `ip:${requestClientKey(c)}`;
+    const result = llmGatewayLimiter.check(key, {
+      limit: positiveInt((config as any).KORTIX_LLM_GATEWAY_REQS_PER_MIN, 600),
+      windowMs: 60_000,
+    });
+    if (!result.allowed) {
+      setHeaders(c, result);
+      return rateLimitExceededResponse(c, result, {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'llm_gateway',
+        resourceId: null,
+        metadata: { limiter: 'llm_gateway' },
+      });
+    }
+    await next();
+    setHeaders(c, result);
+  };
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
@@ -423,6 +450,5 @@ export function resetRateLimiters() {
   projectWebhookLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
   projectSecretWriteLimiter.reset();
-  projectSessionCreateLimiter.reset();
-  sessionLlmLimiter.reset();
+  llmGatewayLimiter.reset();
 }

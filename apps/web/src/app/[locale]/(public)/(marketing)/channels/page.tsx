@@ -1,25 +1,17 @@
 import { Reveal } from '@/components/home/reveal';
-import { Button } from '@/components/ui/marketing/button';
-import { Separator } from '@/components/ui/separator';
+import Link from '@/components/site-link';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedChannelsContent } from '@/features/marketing/channels/content';
 import { ChannelsHeroVisual } from '@/features/marketing/channels/hero-visual';
 import { SurfaceTable } from '@/features/marketing/channels/surface-table';
 import { ThreadMock } from '@/features/marketing/channels/thread-mock';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { PillLink } from '@/features/marketing/os/primitives';
 import { getTranslations } from '@/i18n/get-translations';
-import Link from '@/components/site-link';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
 /**
  * `/channels` — reaching the product from the thread people already sit in.
@@ -45,7 +37,11 @@ export default async function ChannelsPage(): Promise<ReactNode> {
         ctaPrimaryHref={hero.ctaPrimaryHref}
         ctaSecondary={hero.ctaSecondary}
         ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<ChannelsHeroVisual />}
+        visual={
+          <div className="dark bg-background text-foreground border-border w-full rounded-xl border p-6 sm:p-10">
+            <ChannelsHeroVisual />
+          </div>
+        }
       />
 
       {/* ── 1 · the four platforms, and the truth about each ────────────── */}
@@ -92,7 +88,7 @@ export default async function ChannelsPage(): Promise<ReactNode> {
           </Reveal>
 
           <Reveal delay={0.1} className="lg:col-span-5">
-            <ol className="border-border bg-card grid h-full overflow-hidden rounded-sm border">
+            <ol className="border-border bg-card grid h-full overflow-hidden rounded-xl border">
               {thread.steps.map((step, i) => (
                 <li
                   key={step.n}
@@ -155,7 +151,7 @@ export default async function ChannelsPage(): Promise<ReactNode> {
             {back.cards.map((card) => (
               <div
                 key={card.id}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
               >
                 <h3 className="text-foreground text-lg leading-tight font-medium">{card.title}</h3>
                 <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{card.body}</p>
@@ -182,7 +178,7 @@ export default async function ChannelsPage(): Promise<ReactNode> {
         />
 
         <Reveal delay={0.06}>
-          <div className="border-border bg-card mt-10 overflow-hidden rounded-sm border">
+          <div className="border-border bg-card mt-10 overflow-hidden rounded-xl border">
             <div className="border-border hidden border-b sm:grid sm:grid-cols-12 sm:gap-8 sm:px-8 sm:py-4">
               {commands.columns.map((column, i) => (
                 <span
@@ -240,7 +236,7 @@ export default async function ChannelsPage(): Promise<ReactNode> {
         <SectionHeader eyebrow={rules.eyebrow} title={rules.title} description={rules.sub} />
 
         <Reveal delay={0.06}>
-          <dl className="border-border bg-card mt-10 overflow-hidden rounded-sm border">
+          <dl className="border-border bg-card mt-10 overflow-hidden rounded-xl border">
             {rules.rows.map((row, i) => (
               <div
                 key={row.id}
@@ -277,7 +273,7 @@ export default async function ChannelsPage(): Promise<ReactNode> {
               {custom.points.map((point) => (
                 <div
                   key={point.id}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6"
+                  className="border-border bg-card flex h-full flex-col rounded-xl border p-6"
                 >
                   <h3 className="text-foreground text-base leading-tight font-medium">
                     {point.title}
@@ -290,9 +286,9 @@ export default async function ChannelsPage(): Promise<ReactNode> {
         </div>
 
         <Reveal delay={0.14}>
-          <Button size="lg" variant="secondary" asChild className="mt-6 w-fit">
-            <Link href={custom.ctaHref}>{custom.ctaLabel}</Link>
-          </Button>
+          <PillLink tone="outline" href={custom.ctaHref} className="mt-6 w-fit">
+            {custom.ctaLabel}
+          </PillLink>
         </Reveal>
       </section>
     </div>

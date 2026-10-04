@@ -13,8 +13,8 @@ const request = {
   projectName: 'Approval proof',
   requestedAt: '2026-08-06T00:00:00.000Z',
   argsPreview: {
-    to: ['marko@kortix.ai'],
-    cc: ['audit@kortix.ai'],
+    to: ['sam@example.test'],
+    cc: ['audit@example.test'],
     subject: 'Review this exact email',
     body: 'The approver must see the complete email content.',
     access_token: '[redacted]',
@@ -30,8 +30,8 @@ describe('ApprovalRequest', () => {
     );
 
     expect(html).toContain('gmail.send_email');
-    expect(html).toContain('marko@kortix.ai');
-    expect(html).toContain('audit@kortix.ai');
+    expect(html).toContain('sam@example.test');
+    expect(html).toContain('audit@example.test');
     expect(html).toContain('Review this exact email');
     expect(html).toContain('The approver must see the complete email content.');
     expect(html).toContain('Hidden credential');
@@ -40,6 +40,31 @@ describe('ApprovalRequest', () => {
     expect(html).not.toContain('Allow for session');
     expect(html).not.toContain('Allow everything');
     expect(html).not.toContain('Always allow');
+  });
+
+  test("shows the agent's description as unverified, next to the parameters", () => {
+    const html = renderToStaticMarkup(
+      <ApprovalRequest
+        request={{
+          ...request,
+          argsPreview: { draft_id: 'r-1' },
+          approvalContext: 'Sends draft r-1 to a@example.test, subject "Q3"',
+        }}
+        onDecision={() => undefined}
+      />,
+    );
+    expect(html).toContain('Agent&#x27;s description');
+    expect(html).toContain('not verified');
+    expect(html).toContain('Sends draft r-1 to a@example.test');
+    expect(html).toContain('r-1');
+  });
+
+  test('offers a message to the agent with the decision', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalRequest request={request} onDecision={() => undefined} />,
+    );
+    expect(html).toContain('Message to the agent (optional)');
+    expect(html).not.toContain('Agent&#x27;s description');
   });
 
   test('a SHORTENED value still leaves the call approvable', () => {
@@ -118,8 +143,8 @@ describe('ApprovalParameters', () => {
     );
 
     expect(html).toContain('Parameters');
-    expect(html).toContain('marko@kortix.ai');
-    expect(html).toContain('audit@kortix.ai');
+    expect(html).toContain('sam@example.test');
+    expect(html).toContain('audit@example.test');
     expect(html).toContain('The approver must see the complete email content.');
     expect(html).toContain('Hidden credential');
   });
@@ -155,5 +180,24 @@ describe('ApprovalDecisionActions', () => {
 
     expect(html).toContain('Deny');
     expect(html).not.toContain('Approve this call');
+  });
+});
+
+// A Slack connector call needing approval showed `channel: C0…` in the session
+// (2026-10-02). The session passes the project's bound channel names: the
+// summary reads the name, and the parameters keep the exact id beside it.
+describe('ApprovalParameters with Slack channel names', () => {
+  test('a bound channel id keeps its value and shows its name beside it', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters dense argsPreview={{ channel: 'C0TEST1', text: 'hi' }} channelNames={new Map([['C0TEST1', '#general']])} />,
+    );
+    expect(html).toContain('C0TEST1');
+    expect(html).toContain('#general');
+  });
+
+  test('without names, the value alone', () => {
+    const html = renderToStaticMarkup(<ApprovalParameters dense argsPreview={{ channel: 'C0TEST1' }} />);
+    expect(html).toContain('C0TEST1');
+    expect(html).not.toContain('#general');
   });
 });

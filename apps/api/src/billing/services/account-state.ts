@@ -1,6 +1,6 @@
-import { projectSessions, sandboxes } from '@kortix/db';
+import { sandboxes } from '@kortix/db';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -33,8 +33,6 @@ import {
 import { getAccountEntitlements } from './entitlements';
 import { currentPeriodStart, getUsageBreakdownThisPeriod } from './usage-breakdown';
 
-const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
-
 type CreditAccountRow = Awaited<ReturnType<typeof getCreditAccount>>;
 
 type InstanceSummary = AccountStateResponse['instances'][number] & {
@@ -45,20 +43,6 @@ type InstanceSummary = AccountStateResponse['instances'][number] & {
 
 function metadataString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
-}
-
-async function countActiveSessions(accountId: string): Promise<number> {
-  const [row] = await db
-    .select({ activeCount: sql<number>`count(*)::int` })
-    .from(projectSessions)
-    .where(
-      and(
-        eq(projectSessions.accountId, accountId),
-        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
-      ),
-    )
-    .limit(1);
-  return Number(row?.activeCount ?? 0);
 }
 
 export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
@@ -142,7 +126,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // All of these are independent of one another (each keyed only on accountId
   // and/or the `account` row already fetched above) — run them concurrently
   // instead of ~8 sequential round-trips.
-  const [resolved, [credits, isAdmin, entitlements, autoTopup, instances, memberCount, usageThisPeriod, activeSessions]] =
+  const [resolved, [credits, isAdmin, entitlements, autoTopup, instances, memberCount, usageThisPeriod]] =
     await Promise.all([resolvedPending, Promise.all([
       getCreditSummary(account),
       isPlatformAdmin(accountId),
@@ -157,7 +141,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       isPerSeatAccount(sub?.billingModel)
         ? getUsageBreakdownThisPeriod(accountId, currentPeriodStart(sub?.billingCycleAnchor ?? null)).catch(() => null)
         : Promise.resolve(null),
-      countActiveSessions(accountId).catch(() => 0),
     ])]);
 
   let dailyRefresh = null;
@@ -184,6 +167,11 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
   const isCancelled =
     sub?.stripeSubscriptionStatus === 'canceled' || sub?.revenuecatCancelledAt != null;
+  // Stripe is the truth; `payment_status: 'cancelling'` is its mirror —
+  // written by the customer.subscription.updated webhook and eagerly by the
+  // cancel route. This is what renders "Cancels at period end" and arms the
+  // reactivate control; it used to be hardcoded false.
+  const isCancelling = sub?.paymentStatus === 'cancelling';
   const subscriptionStatus = getSubscriptionStatus(sub, tierName, isAdmin);
   const subscriptionId =
     sub?.provider === 'revenuecat'
@@ -269,7 +257,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       provider,
       subscription_id: subscriptionId,
       current_period_end: null,
-      cancel_at_period_end: false,
+      cancel_at_period_end: isCancelling,
       is_cancelled: isCancelled,
       cancellation_effective_date: null,
       has_scheduled_change: scheduledChange !== null,
@@ -322,23 +310,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
         }
       : undefined,
     usage_this_period: isPerSeatAccount(sub?.billingModel) ? usageThisPeriod : null,
-    limits: {
-      concurrent_sessions: {
-        active: activeSessions,
-        // The number the SERVER enforces, from the same resolver
-        // resolveAccountSessionLimit uses: the per-account override
-        // (credit_accounts.max_concurrent_sessions) wins over the plan cap in
-        // both directions, the per-seat self-heal keeps stale tier data from
-        // showing a paying team the free ceiling, and an active trial shows the
-        // trial plan's cap. Deriving it independently here is exactly how the
-        // dashboard and the server came to disagree about one number.
-        limit: config.KORTIX_BILLING_INTERNAL_ENABLED
-          ? resolved.limits.concurrentSessions.value
-          : // Billing off (local / self-hosted): the cap is lifted entirely,
-            // mirroring maxConcurrentSessionsForTier.
-            Number.MAX_SAFE_INTEGER,
-      },
-    },
   };
 
   return state;

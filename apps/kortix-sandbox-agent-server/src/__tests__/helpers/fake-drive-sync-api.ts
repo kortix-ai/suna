@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { SyncMountInfo } from '../../drive-sync/remote'
+import type { SyncMountInfo } from '@/services/drive-sync/remote'
 
 /**
  * The Kortix API's drive-sync routes (apps/api projects/routes/session-drive-sync.ts)

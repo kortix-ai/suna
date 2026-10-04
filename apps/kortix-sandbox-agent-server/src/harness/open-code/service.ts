@@ -1,10 +1,11 @@
 import { OPENCODE_HOME } from './paths'
 import type { OpenCodeConfig as Config } from './config'
-import type { ProjectEnvStore } from '../../project-env'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService } from '../harness'
-import { loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
+import { bootstrapRuntimeSessionRequested, loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
 import { createOpenCodeAssetsService } from './assets'
 import { createOpenCodeProxyService } from './proxy'
+import { createOpenCodeTurnService } from './turns'
 import { createOpenCodeControlService } from './control'
 import { createOpenCodeDiagnosticsService } from './diagnostics'
 import { createOpenCodeQueryService } from './queries'
@@ -71,10 +72,12 @@ export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode):
     getInternalUrl: () => lifecycle.getInternalUrl(),
     workspace: () => cfg.workspace,
   })
+  const proxy = createOpenCodeProxyService(lifecycle, instanceGuard)
   return {
     id: 'opencode',
     environment: { home: OPENCODE_HOME },
-    proxy: createOpenCodeProxyService(lifecycle, instanceGuard),
+    proxy,
+    turns: createOpenCodeTurnService(proxy, () => cfg.workspace || '/workspace'),
     control: createOpenCodeControlService(lifecycle, quickQueue),
     diagnostics: createOpenCodeDiagnosticsService(lifecycle),
     queries: createOpenCodeQueryService(lifecycle),
@@ -113,9 +116,9 @@ export const openCodeDefinition: HarnessDefinition = {
   createBootState: () => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1',
-    initialOpenCodeSessionId: null,
-    initialOpenCodeSessionError: null,
+    initialRuntimeSessionRequired: bootstrapRuntimeSessionRequested(),
+    initialRuntimeSessionId: null,
+    initialRuntimeSessionError: null,
   }),
   bootDetails: (cfg) => {
     const native = requireOpenCodeConfig(cfg)

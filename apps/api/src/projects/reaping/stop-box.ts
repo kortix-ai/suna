@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -109,10 +110,21 @@ export async function abortLiveTurnBeforeStop(input: {
       console.warn(`[stop] pre-stop abort declined for sandbox ${sandboxId}: ${res.status}`);
     }
   } catch (err) {
-    console.warn(
-      `[stop] pre-stop abort failed for sandbox ${sandboxId}:`,
-      err instanceof Error ? err.message : err,
-    );
+    const message = err instanceof Error ? err.message : err;
+    // An unreachable daemon is the expected state of a box that is being
+    // powered off: the abort is best-effort and never gates the stop, so this
+    // is a normal miss (one warn per box spiked to 43/h — KRTX-619). Ship it
+    // at info; a daemon that answered and refused, or any other error, stays a
+    // warning above.
+    const unreachable =
+      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    if (unreachable) {
+      logger.info(`[stop] pre-stop abort unreachable for sandbox ${sandboxId}: ${message}`, {
+        sandboxId,
+      });
+    } else {
+      console.warn(`[stop] pre-stop abort failed for sandbox ${sandboxId}:`, message);
+    }
   }
 }
 

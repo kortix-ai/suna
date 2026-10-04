@@ -100,6 +100,10 @@ export interface ApprovalLinkDetails {
   /** Fully-qualified tool path, e.g. `gmail.send_email`. */
   action: string;
   connector: string | null;
+  /** The connector's display name ("Google Drive"). Absent on older servers. */
+  connector_name?: string | null;
+  /** The connector's logo. `null` when it has none; absent on older servers. */
+  connector_icon_url?: string | null;
   /** read | write | destructive | null */
   risk: string | null;
   status: string;
@@ -115,6 +119,8 @@ export interface ApprovalLinkDetails {
   review_complete?: boolean;
   /** One-line rendering of the fields that identify the target. */
   args_summary: string | null;
+  /** The agent's own description of the call's effect. Unverified. */
+  approval_context?: string | null;
   policy_source: string | null;
   requested_at: string;
   resolved_at: string | null;

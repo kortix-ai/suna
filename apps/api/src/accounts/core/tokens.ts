@@ -15,6 +15,7 @@ import {
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
+import { isUuid } from '../../shared/validate';
 import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
@@ -249,6 +250,10 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
+  // A connected app's revocable `kortix_oat_` token must not mint a durable one.
+  if (c.get('authType') === 'oauth') {
+    return c.json({ error: 'Connected apps cannot mint personal access tokens.' }, 403);
+  }
   const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) {
@@ -338,12 +343,18 @@ accountsRouter.openapi(
     },
     responses: {
       200: json(OkSchema, 'Revocation result'),
-      ...errors(401, 403, 404),
+      ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const tokenId = c.req.param('tokenId');
+  // A non-UUID id would reach the uuid-typed `account_tokens.token_id` query
+  // and surface as a 500 `22P02` (shared/validate.ts). A client-input error is
+  // answered as one, before any account or token lookup runs.
+  if (!isUuid(tokenId)) {
+    return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
+  }
   const queryAccount = c.req.query('account_id') ?? undefined;
 
   let accountId: string;

@@ -133,7 +133,23 @@ describe('repointRetiredSessionModel', () => {
     expect(metadata.opencode_model_source).toBe('repointed');
   });
 
-  test('a retired id with no successor and no resolvable project default is left untouched', async () => {
+  // REVERSED DELIBERATELY, 2026-09-28. This test previously asserted that a
+  // retired id with no successor and no project default is LEFT UNTOUCHED, so
+  // the turn-time `model_retired` error could name the real cause instead of
+  // this function inventing a substitute.
+  //
+  // That reasoning holds only if a human then picks a new model. Measured on a
+  // real dev project: 20 of 238 sessions were pinned to `glm-5.2` — retired, no
+  // declared successor — in a project that had never set a default model. Every
+  // one of them was permanently unable to complete a turn. The lineup rotation
+  // was OUR decision, not the user's, so leaving their session dead is our
+  // failure and not their choice.
+  //
+  // The substitution is NOT silent, which is what makes it acceptable: the write
+  // records `opencode_model_source: 'repointed'` and
+  // `opencode_model_repointed_from`, both already returned by the session read
+  // routes, plus an audit event naming `platform_default` as the reason.
+  test('a retired id with no successor falls back to the PLATFORM default', async () => {
     projectDefaultModel = null;
     const sessionId = await seedSessionWithModel('kortix/grok-4.6');
 
@@ -146,7 +162,18 @@ describe('repointRetiredSessionModel', () => {
       freeModelsOnly: false,
       metadata: { opencode_model: 'kortix/grok-4.6' },
     });
-    expect(nextRef).toBe('kortix/grok-4.6');
+    // Whatever the platform default is, the session must not stay on a model
+    // that cannot serve a turn.
+    expect(nextRef).not.toBe('kortix/grok-4.6');
+
+    const [row] = await db
+      .select()
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
+    expect(metadata.opencode_model_source).toBe('repointed');
+    expect(metadata.opencode_model_repointed_from).toBe('grok-4.6');
     projectDefaultModel = 'glm-5.3-flash';
   });
 

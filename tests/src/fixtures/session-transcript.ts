@@ -8,7 +8,12 @@ export async function seedSessionTranscript(
     accountId: string;
     sessionId: string;
     ensureSandbox?: boolean;
-    /** The saved transcript to write, in place of the default prompt and reply. */
+    /**
+     * The saved transcript to write, in place of the default prompt and reply.
+     * A message is stored under its own `info.sessionID` when it names one, so
+     * a sub-agent's messages land in their own OpenCode session, as a capture
+     * stores them.
+     */
     messages?: (root: string) => Array<{
       info: { id: string; role: string; time: { created: number; completed?: number } } & Record<
         string,
@@ -86,7 +91,7 @@ export async function seedSessionTranscript(
         [
           input.sessionId,
           message.info.id,
-          root,
+          typeof message.info.sessionID === 'string' ? message.info.sessionID : root,
           message.info.role,
           new Date(message.info.time.created),
           JSON.stringify(message.info),

@@ -207,6 +207,16 @@ describe('cancelSubscription', () => {
     }
   });
 
+  test('mirrors the pending cancellation into paymentStatus for the account state, without waiting on the webhook', async () => {
+    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) =>
+      createMockStripeSubscription({ ...params, cancel_at: Date.now() / 1000 + 86400 * 30 });
+
+    await cancelSubscription('acc_test_123');
+
+    const mirror = updateCreditAccountCalls.find((call) => 'paymentStatus' in call.data);
+    expect(mirror?.data.paymentStatus).toBe('cancelling');
+  });
+
   test('allows cancel after commitment expires', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
@@ -234,6 +244,13 @@ describe('reactivateSubscription', () => {
     expect(result.success).toBe(true);
     expect(updateParams.cancel_at_period_end).toBe(false);
   });
+
+  test('mirrors the reactivation into paymentStatus for the account state', async () => {
+    await reactivateSubscription('acc_test_123');
+
+    const mirror = updateCreditAccountCalls.find((call) => 'paymentStatus' in call.data);
+    expect(mirror?.data.paymentStatus).toBe('active');
+  });
 });
 
 describe('scheduleDowngrade', () => {
@@ -256,6 +273,46 @@ describe('scheduleDowngrade', () => {
     } catch (err: any) {
       expect(err.name).toBe('SubscriptionError');
     }
+  });
+});
+
+describe('scheduleDowngrade: an existing schedule that is no longer active', () => {
+  function withReleasedSchedule(release: (id: string) => Promise<unknown>) {
+    const created: unknown[] = [];
+    const base = mockRegistry.stripeClient;
+    const sub = { ...createMockStripeSubscription(), schedule: 'sub_sched_old' };
+    mockRegistry.stripeClient = createMockStripeClient({
+      subscriptionsRetrieve: async () => sub,
+      subscriptionSchedulesRetrieve: async (id: string) => ({ id, status: 'released', phases: [], metadata: {} }),
+      subscriptionSchedulesRelease: release,
+      subscriptionSchedulesCreate: async (params: any) => {
+        created.push(params);
+        return { id: 'sub_sched_new', status: 'active', phases: [], metadata: {} };
+      },
+    });
+    mockRegistry.stripeClient.subscriptions.cancel = base.subscriptions.cancel;
+    return created;
+  }
+
+  test('Stripe 400 "not releasable" is not a failure: a new schedule is created at once, no sleep', async () => {
+    const created = withReleasedSchedule(async () => {
+      throw Object.assign(new Error('You cannot release a subscription schedule that is currently in the `released` status.'), {
+        statusCode: 400,
+      });
+    });
+    const started = Date.now();
+    const result = await scheduleDowngrade('acc_test_123', 'free');
+    expect(result.success).toBe(true);
+    expect(created).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  test('a real release failure surfaces instead of being swallowed', async () => {
+    const created = withReleasedSchedule(async () => {
+      throw Object.assign(new Error('An error occurred with our connection to Stripe.'), { statusCode: 500 });
+    });
+    await expect(scheduleDowngrade('acc_test_123', 'free')).rejects.toThrow('connection to Stripe');
+    expect(created).toHaveLength(0);
   });
 });
 

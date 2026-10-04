@@ -1,6 +1,7 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import { kortixApiKeys } from '@kortix/db';
 import { db } from '../shared/db';
+import { createLastUsedTracker } from '../shared/throttled-last-used';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   hashSecretKey,
@@ -47,8 +48,9 @@ export interface CreateApiKeyResult {
 
 // ─── Throttle for last_used_at updates ───────────────────────────────────────
 
-const THROTTLE_MS = 15 * 60 * 1000;
-const lastUsedCache = new Map<string, number>();
+const updateLastUsedThrottled = createLastUsedTracker((keyId) =>
+  db.update(kortixApiKeys).set({ lastUsedAt: new Date() }).where(eq(kortixApiKeys.keyId, keyId)),
+);
 
 // ─── CRUD Operations ─────────────────────────────────────────────────────────
 
@@ -220,36 +222,5 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
   } catch (err) {
     console.error('API key validation error:', err);
     return { isValid: false, error: 'Validation error' };
-  }
-}
-
-// ─── Internal ────────────────────────────────────────────────────────────────
-
-async function updateLastUsedThrottled(keyId: string): Promise<void> {
-  const now = Date.now();
-  const lastUpdate = lastUsedCache.get(keyId) || 0;
-
-  if (now - lastUpdate < THROTTLE_MS) {
-    return;
-  }
-
-  lastUsedCache.set(keyId, now);
-
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) {
-        lastUsedCache.delete(k);
-      }
-    }
-  }
-
-  try {
-    await db
-      .update(kortixApiKeys)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(kortixApiKeys.keyId, keyId));
-  } catch (err) {
-    console.warn('Failed to update last_used_at:', err);
   }
 }

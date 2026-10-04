@@ -1,34 +1,15 @@
 'use client';
 
-import { useMemo, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase } from '@/lib/dotmatrix-core';
-import { useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
+import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
-export type DotmSquare6Props = DotMatrixCommonProps;
 
 const COLUMN_HEIGHT = 5;
 
-export function DotmSquare6({
-  speed = 2.2,
-  pattern = 'full',
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare6Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
+function makeResolver(_cycle: number, reducedMotion: boolean): DotAnimationResolver {
 
-  const animationResolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
         return { className: 'dmx-inactive' };
@@ -46,21 +27,6 @@ export function DotmSquare6({
         style: { '--dmx-col-pos': position } as CSSProperties,
       };
     };
-  }, [reducedMotion]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={animationResolver}
-    />
-  );
 }
+
+export const DotmSquare6 = createDotm5x5Component('DotmSquare6', makeResolver, { speed: 2.2 });

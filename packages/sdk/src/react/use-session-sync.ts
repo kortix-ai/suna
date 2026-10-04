@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
-import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus, Todo } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
@@ -33,7 +33,7 @@ import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-
 import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
-import { canQueryOpenCodeSession } from './use-opencode-sessions';
+import { canQueryRuntimeSession } from './use-opencode-sessions';
 
 export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
@@ -44,7 +44,7 @@ interface SyncStoreShape {
   wasTranscriptEvicted: (sessionID: string) => boolean;
 }
 
-type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
+type FileDiff = Omit<import('../core/runtime/runtime-types').SnapshotFileDiff, 'patch'> & {
   patch?: string;
   before?: string;
   after?: string;
@@ -107,6 +107,13 @@ interface UseSessionSyncOptions {
    * the live transcript where it is drawn, with `useSessionMessages`.
    */
   subscribeMessages?: boolean;
+  /**
+   * `sessionId` is a sub-agent's OpenCode session inside `kortixSessionScope`'s
+   * session (the session a sub-agent row opens). Its saved window is read by
+   * `child`, and nothing is kept on the device for it: the device slot of a
+   * scope holds the conversation's copy.
+   */
+  savedChild?: boolean;
 }
 
 /**
@@ -165,6 +172,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     serverHoldsTurn,
     mirror,
     subscribeMessages = true,
+    savedChild = false,
   } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
@@ -190,12 +198,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // disk paint exists for: eviction there would blank the transcript the user
   // is looking at. Consumers are consumers whether or not the runtime is up.
   useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId)) return;
+    if (!canQueryRuntimeSession(sessionId)) return;
     return useSyncStore.getState().retainSession(sessionId);
   }, [sessionId]);
 
   useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId) || !cacheOwnerScope) return;
+    if (!canQueryRuntimeSession(sessionId) || !cacheOwnerScope) return;
     const claim = claimSessionCacheOwnership(sessionId, cacheOwnerScope);
     if (!sessionCacheOwnerScopesConflict(claim.previousOwnerScope, cacheOwnerScope)) {
       return;
@@ -235,18 +243,25 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // negative answer is stored here; `painted` is read off the store itself.
   const mirrorKey = `${kortixSessionScope ?? ''}|${sessionId}|${
     mirror === undefined ? 'read' : mirror === null ? 'null' : 'envelope'
-  }`;
+  }${savedChild ? '|child' : ''}`;
   const [mirrorAbsentFor, setMirrorAbsentFor] = useState<string | null>(null);
   // A LAYOUT effect, so the copy kept on this device paints before the browser
   // does: the first frame of an open shows the transcript, not placeholder rows.
   useIsomorphicLayoutEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
+    if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
-    if (sessionId in useSyncStore.getState().messages) return;
+    // An earlier SAVED copy is not a live read. The host's copy arrives in a
+    // later run (`mirror` goes from null to the envelope) and reconciles
+    // into it; returning here kept a reload on the device's older copy until
+    // the computer woke.
+    const overSavedCopy = hasOnlyCacheSourcedMessages(sessionId);
+    if (sessionId in useSyncStore.getState().messages && !overSavedCopy) return;
     const abort = new AbortController();
     const scope = parseKortixSessionScope(kortixSessionScope);
-    const saved = scope ? currentSavedCopyStore() : null;
+    // A sub-agent keeps nothing on the device: the scope's slot is the
+    // conversation's copy, and writing a sub-agent there would replace it.
+    const saved = scope && !savedChild ? currentSavedCopyStore() : null;
 
     /** Paint `envelope` when the guards allow it. `overCopy`: the store holds
      *  only an earlier saved copy, which a newer one may reconcile into. */
@@ -271,13 +286,15 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     };
 
     // 1. The saved copy this device kept from the last open. Synchronous on
-    //    web, so it paints in this very commit.
+    //    web, so it paints in this very commit. Not read again over a saved
+    //    copy already on screen: that one is this copy or newer.
     let local: SessionTranscriptSyncEnvelope | null = null;
     const applyLocal = (envelope: SessionTranscriptSyncEnvelope | null) => {
       if (abort.signal.aborted || !envelope) return;
       if (paint(envelope, false)) local = envelope;
     };
-    const kept = saved && scope ? saved.read(scope.projectId, scope.sessionId) : null;
+    const kept =
+      saved && scope && !overSavedCopy ? saved.read(scope.projectId, scope.sessionId) : null;
     const localRead: Promise<void> =
       kept && typeof (kept as Promise<unknown>).then === 'function'
         ? (kept as Promise<SessionTranscriptSyncEnvelope | null>).then(applyLocal, () => undefined)
@@ -288,7 +305,11 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     //    replaces the kept copy for the next open.
     const read = mirror !== undefined
       ? Promise.resolve(mirror)
-      : loadSessionTranscriptMirror({ kortixSessionScope, signal: abort.signal });
+      : loadSessionTranscriptMirror({
+          kortixSessionScope,
+          signal: abort.signal,
+          child: savedChild ? sessionId : undefined,
+        });
     void Promise.all([read, localRead]).then(([envelope]) => {
       if (abort.signal.aborted) return;
       if (!envelope) {
@@ -303,12 +324,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
         !!envelope.captured_at &&
         !!(local as SessionTranscriptSyncEnvelope).captured_at &&
         Date.parse(envelope.captured_at) < Date.parse((local as SessionTranscriptSyncEnvelope).captured_at as string);
-      if (olderThanLocal || !paint(envelope, local !== null)) {
+      if (olderThanLocal || !paint(envelope, overSavedCopy || local !== null)) {
         if (!local) setMirrorAbsentFor(mirrorKey);
       }
     });
     return () => abort.abort();
-  }, [kortixSessionScope, sessionId, mirror, mirrorKey]);
+  }, [kortixSessionScope, sessionId, mirror, mirrorKey, savedChild]);
 
   // Keep the device's copy current: the server writes a new saved copy when a
   // turn ends, so re-read it shortly after this session goes idle. Without
@@ -318,7 +339,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   useEffect(() => {
     const endedTurn = wasWorking.current && !working;
     wasWorking.current = working === true;
-    if (!endedTurn) return;
+    if (!endedTurn || savedChild) return;
     const scope = parseKortixSessionScope(kortixSessionScope);
     const saved = currentSavedCopyStore();
     if (!scope || !saved) return;
@@ -326,7 +347,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       void refreshSavedCopy(saved, scope.projectId, scope.sessionId);
     }, SAVED_COPY_REFRESH_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [working, kortixSessionScope]);
+  }, [working, kortixSessionScope, savedChild]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.
@@ -363,7 +384,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // and the controller retries with backoff until it lands, so readiness
   // becomes a byproduct of asking for what we wanted anyway.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId) || runtimeScope === 'none') return;
+    if (!networkEnabled || !canQueryRuntimeSession(sessionId) || runtimeScope === 'none') return;
     resetSessionSyncControllersForSession(sessionId, runtimeScope);
     const release = retainSessionSyncController(sessionId, runtimeScope);
     // The ONLY thing that fills the transcript. One bounded tail, so events
@@ -383,7 +404,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // component is already mounted. `hydrate` clears the mark, so the successful
   // read is what disarms this.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    if (!networkEnabled || !canQueryRuntimeSession(sessionId)) return;
     let repairing = false;
     const check = (state: SyncStoreShape) => {
       if (repairing) return;
@@ -411,7 +432,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // shows on return was assembled from a stream nobody was watching. One
   // bounded tail read settles it.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    if (!networkEnabled || !canQueryRuntimeSession(sessionId)) return;
     return onTabVisible(() => {
       void controller.reconcile('visible');
     });
@@ -454,7 +475,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // What the saved-copy paint came to. `painted` and "a read already landed"
   // are read off the store; only a refused or empty answer needs its own slot.
   const mirrorState: 'idle' | 'loading' | 'painted' | 'absent' =
-    !canQueryOpenCodeSession(sessionId) || !kortixSessionScope
+    !canQueryRuntimeSession(sessionId) || !kortixSessionScope
       ? 'idle'
       : messages.length > 0
         ? 'painted'
@@ -463,9 +484,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           : 'loading';
 
   useEffect(() => {
+    // No runtime session to read (`''` under `useSession({ chatEngine: false })`):
+    // the controller never goes busy, so no poll and no turn-end read start.
+    const readable = canQueryRuntimeSession(sessionId);
     controller.setBusy(
-      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
-      networkEnabled && canQueryOpenCodeSession(sessionId) && runtimeScope !== 'none',
+      readable && livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+      networkEnabled && readable && runtimeScope !== 'none',
     );
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn, sessionId, runtimeScope]);
 
@@ -515,6 +539,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     const pending = loadOlderSessionTranscriptMirror({
       kortixSessionScope,
       before: mirrorCursor,
+      child: savedChild ? sessionId : undefined,
     })
       .then((envelope) => {
         if (!envelope?.available || envelope.source !== 'mirror') {
@@ -536,7 +561,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       });
     mirrorPageInFlight.current = pending;
     return pending;
-  }, [controller, kortixSessionScope, mirrorCursor, sessionId, sync.hasOlder]);
+  }, [controller, kortixSessionScope, mirrorCursor, savedChild, sessionId, sync.hasOlder]);
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a

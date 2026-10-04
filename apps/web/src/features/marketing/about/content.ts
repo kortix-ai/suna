@@ -4,7 +4,7 @@
  * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  *
- * Voice rules: the `comms` skill. Long form: `MANIFESTO.md`.
+ * Voice rules: the `kortix-brand` skill. Long form: `MANIFESTO.md`.
  *
  * ACCURACY GATE for this page specifically:
  *  - This is a vision page, so forward-looking language is wanted. It must
@@ -35,7 +35,7 @@
 
 export const hero = {
   eyebrow: 'About Kortix',
-  title: 'We are building the open AGI platform.',
+  title: 'We are building the open-source AI Operating System.',
   lead: 'Every company should own all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',
@@ -57,7 +57,7 @@ export const statements = [
     id: 'closed',
     n: '02',
     title: 'The closed platforms are becoming AGI operating systems too.',
-    body: 'Claude Cowork, ChatGPT Work and the rest are heading for full agent management systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.',
+    body: 'Claude Cowork, ChatGPT Work and the rest are heading for full AI operating systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.',
   },
   {
     id: 'shift',

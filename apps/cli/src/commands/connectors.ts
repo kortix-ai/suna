@@ -1,29 +1,29 @@
 import {
+  type ConnectionSharePrincipal,
+  renameConnection,
+  setConnectorSecretBinding,
+  shareConnection,
+} from '@kortix/sdk';
+import { withKortixScope } from '../api/sdk.ts';
+import {
   emitJson,
   fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  takeFlagBool,
 } from '../command-helpers.ts';
-import { promptSecret } from '../prompts.ts';
+import { UUID_RE, resolveUserId } from '../iam.ts';
 import {
   appendArrayBlock,
   arrayEntryExists,
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import {
-  type ConnectionSharePrincipal,
-  renameConnection,
-  setConnectorSecretBinding,
-  shareConnection,
-} from '@kortix/sdk';
-import { resolveUserId, UUID_RE } from '../iam.ts';
-import { withKortixScope } from '../api/sdk.ts';
-import { C, help, pad, status } from '../style.ts';
+import { promptSecret } from '../prompts.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
@@ -176,6 +176,10 @@ Subcommands:
                                     several accounts and none named or pinned,
                                     the call is denied (reason account_required)
                                     instead of guessing.
+       [--reason <text>]            What the call does, shown to the human if a
+                                    policy holds it for approval. Pass it when
+                                    the args are only ids (send_draft: say who
+                                    it goes to and what it says).
        [--attach <file>]...         Attach a file from /workspace/{output,
                                     artifacts,reports,deliverables}: stages the
                                     bytes and appends a reference to the
@@ -200,6 +204,10 @@ Subcommands:
                                     names \`call --account\` accepts.
        [--default <label|id>]       Pin one account as the default an unnamed
                                     call uses.
+                                    Each paired computer is an account of the
+                                    \`computer\` connector. List them with
+                                    \`accounts computer\`; pick one with
+                                    \`call computer <tool> --account "<machine name>"\`.
   connections <subcommand>          Manage configured connector connections.
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.yaml.
                                     Add --apply to skip ship/CR and apply it
@@ -236,8 +244,6 @@ Subcommands:
                                     account now: choose it per connection with
                                     \`connect --owner me|project\`, read it back
                                     with \`accounts\`.
-  machines <slug> [--show]          Which paired computers a \`computer\`
-           [--add <id>] [--rm <id>] connector may target (applies now).
   policy ls|show [--json]           Show project-wide execution policies.
   policy set --default <risk|allow_all>   Set the default execution mode in
                                     kortix.yaml. Add --apply to set it live.
@@ -374,7 +380,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
     );
     return runConnector(['ls', ...forwarded]);
   }
-  let f: Record<string, string | undefined> = {};
+  const f: Record<string, string | undefined> = {};
   let asStdin = false;
   let statusOnly = false;
   let json = false;
@@ -384,10 +390,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let allConnections = false;
   let mine = false;
   let deviceFlow = false;
-  let showOnly = false;
   let conditions: string[] = [];
-  let addIds: string[] = [];
-  let rmIds: string[] = [];
   let shareGroups: string[] = [];
   let shareUsers: string[] = [];
   let shareEveryone = false;
@@ -427,15 +430,12 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.limit = takeFlagValue(rest, ['--limit']);
     if (takeFlagBool(rest, ['--pipedream', '--legacy-pipedream'])) f.pipedream = 'true';
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
-    addIds = takeFlagValues(rest, ['--add']);
-    rmIds = takeFlagValues(rest, ['--rm']);
     shareGroups = takeFlagValues(rest, ['--group']);
     shareUsers = takeFlagValues(rest, ['--user', '--member']);
     shareEveryone = takeFlagBool(rest, ['--everyone']);
     asStdin = takeFlagBool(rest, ['--stdin']);
     statusOnly = takeFlagBool(rest, ['--status']);
     deviceFlow = takeFlagBool(rest, ['--device']);
-    showOnly = takeFlagBool(rest, ['--show']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -542,9 +542,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
       }
       case 'ls':
       case 'list': {
+        // The server includes every action's JSON Schema unless asked not to
+        // (it is the bulk of this route's payload — 1.6 MB on prod). The human
+        // view renders name/status/action count only, so it opts out; `--json`
+        // keeps the historical response.
         const { connectors } = await ctx.client.get<{
           connectors: AdminConnector[];
-        }>(`${ex}/connectors`);
+        }>(`${ex}/connectors${json ? '' : '?include_schemas=false'}`);
         if (json) {
           emitJson({ connectors });
           return 0;
@@ -580,14 +584,15 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'show': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        // The server omits each action's `inputSchema` by default (it is the
-        // dominant contributor to this route's payload — see
-        // apps/api/src/connectors/db-deps.ts `listConnectors`). `--json` is a
-        // scripting contract that historically included it, so ask for it
-        // explicitly; the human-readable view below never renders it.
+        // The server INCLUDES each action's `inputSchema` unless the caller
+        // passes `include_schemas=false` (it is the bulk of this route's
+        // payload — see apps/api/src/connectors/db-deps.ts `listConnectors`).
+        // `--json` is a scripting contract that historically included it, so
+        // ask for it explicitly; the human-readable view below never renders
+        // it, so the human path opts out.
         const { connectors } = await ctx.client.get<{
           connectors: AdminConnector[];
-        }>(`${ex}/connectors${json ? '?include_schemas=true' : ''}`);
+        }>(`${ex}/connectors${json ? '?include_schemas=true' : '?include_schemas=false'}`);
         const c = connectors.find((x) => x.slug === slug);
         if (!c) {
           process.stderr.write(`${status.err(`No connector "${slug}".`)}\n`);
@@ -923,10 +928,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
           accounts: ConnectorAccountRow[];
         }>(`${ex}/connectors/${encodeURIComponent(slug)}/accounts`);
         const accounts = response.accounts ?? [];
-        const note = `Nothing is connected to "${slug}" yet. Run 'kortix connectors connect ${slug} --owner me'.`;
+        // A computer is paired on the machine itself, never through `connect`.
+        const isComputer = slug === 'computer';
+        const note = isComputer
+          ? 'No computer is connected. Connect one from the Kortix desktop app, or run `npx @kortix/agent-tunnel connect` on the computer.'
+          : `Nothing is connected to "${slug}" yet. Run 'kortix connectors connect ${slug} --owner me'.`;
         if (json) {
           // Byte-identical to the gateway face agents already parse.
           emitJson({ connector: slug, accounts, ...(accounts.length === 0 ? { note } : {}) });
+          return 0;
+        }
+        if (accounts.length === 0 && isComputer) {
+          process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
           return 0;
         }
         if (accounts.length === 0) {
@@ -1202,68 +1215,15 @@ export async function runConnectors(argv: string[]): Promise<number> {
         return 0;
       }
 
-      // ── Which paired computers a `computer` connector may target ────────
-      // Read the current assignment, apply --add/--rm, write the whole list
-      // back through the create route (the only writer of `tunnel_ids`).
+      // Removed: a paired computer is an account of the `computer` connector.
       case 'machines':
-      case 'computers': {
-        const slug = positional[0];
-        if (!slug) return missing('a connector slug');
-        const config = await ctx.client.get<{
-          slug: string;
-          name: string;
-          provider: string;
-          tunnelIds?: string[];
-        }>(`${ex}/connectors/${encodeURIComponent(slug)}/config`);
-        if (config.provider !== 'computer') {
-          process.stderr.write(
-            `${status.err(`${slug} is a ${config.provider} connector — machines apply to a \`computer\` connector.`)}\n`,
-          );
-          return 1;
-        }
-        const current = config.tunnelIds ?? [];
-        if (showOnly || (addIds.length === 0 && rmIds.length === 0)) {
-          if (json) {
-            emitJson({ slug: config.slug, machines: current });
-            return 0;
-          }
-          if (current.length === 0) {
-            process.stdout.write(`  ${C.dim}No machines assigned to ${slug}.${C.reset}\n`);
-            return 0;
-          }
-          process.stdout.write('\n');
-          for (const id of current) process.stdout.write(`  ${id}\n`);
-          process.stdout.write(
-            `\n  ${C.dim}${current.length} machine${current.length === 1 ? '' : 's'}${C.reset}\n\n`,
-          );
-          return 0;
-        }
-        const removed = new Set(rmIds);
-        const next = [...new Set([...current.filter((id) => !removed.has(id)), ...addIds])].sort();
-        // The route refuses an empty list ("select at least one computer") —
-        // say so here rather than relaying a 400 the caller has to decode.
-        if (next.length === 0) {
-          process.stderr.write(
-            `${status.err('A Computers profile needs at least one machine.')} ${C.dim}Remove the connector instead: ${C.reset}${C.cyan}kortix connectors rm ${slug} --apply${C.reset}\n`,
-          );
-          return 2;
-        }
-        const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, {
-          slug: config.slug,
-          name: config.name,
-          provider: 'computer',
-          tunnel_ids: next,
-        });
-        if (json) {
-          emitJson({ ...resp, machines: next });
-          return 0;
-        }
-        process.stdout.write(
-          `${status.ok(`${C.bold}${slug}${C.reset} → ${next.length} machine${next.length === 1 ? '' : 's'}`)}\n`,
+      case 'computers':
+        process.stderr.write(
+          `${status.err(`"${sub}" was removed: each paired computer is an account of the \`computer\` connector.`)}\n` +
+            `  ${C.dim}List them:${C.reset} ${C.cyan}kortix connectors accounts computer${C.reset}\n` +
+            `  ${C.dim}Pick one:${C.reset}  ${C.cyan}kortix connectors call computer <tool> --account "<machine name>"${C.reset}\n`,
         );
-        for (const id of next) process.stdout.write(`  ${C.faded}${id}${C.reset}\n`);
-        return 0;
-      }
+        return 2;
 
       case 'policy':
       case 'policies': {
@@ -1963,7 +1923,7 @@ async function pollDeviceAuthorization(
 }
 
 /** `on`/`off` (and the obvious synonyms) → boolean, else null. */
-export function parseOnOff(value: string | undefined): boolean | null {
+function parseOnOff(value: string | undefined): boolean | null {
   switch ((value ?? '').toLowerCase()) {
     case 'on':
     case 'true':
@@ -1987,7 +1947,7 @@ export function parseOnOff(value: string | undefined): boolean | null {
  * an unparseable matcher, so a bad rule fails at write time rather than
  * compiling to a never-match that looks saved.
  */
-export function parsePolicyConditions(
+function parsePolicyConditions(
   raw: readonly string[],
 ): { conditions: PolicyCondition[] } | { error: string } {
   const conditions: PolicyCondition[] = [];
@@ -2010,7 +1970,7 @@ export function parsePolicyConditions(
 }
 
 /** " when to=*@corp.com, subject!=/urgent/" — or "" when unconditioned. */
-export function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
+function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
   if (!conditions || conditions.length === 0) return '';
   return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
 }
@@ -2053,7 +2013,7 @@ async function readStdin(): Promise<string> {
  * project, else the grant labels. `(not you)` marks an account the caller
  * lists only because they manage the project's connections.
  */
-export function connectionAudienceLabel(connection: Connection): string {
+function connectionAudienceLabel(connection: Connection): string {
   if (connection.owner_type !== 'project') return 'owner only';
   const shares = connection.shared_with ?? [];
   const audience =
@@ -2081,8 +2041,4 @@ function accountsCell(connector: Pick<AdminConnector, 'accounts'>): string {
   const ordered = [...accounts].sort((a, b) => Number(b.is_default) - Number(a.is_default));
   const names = ordered.map((a) => `${a.label}${a.is_default ? '*' : ''}`).join(', ');
   return `${accounts.length} · ${names}`;
-}
-
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }

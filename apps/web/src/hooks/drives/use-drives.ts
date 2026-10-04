@@ -116,11 +116,16 @@ export function useSessionDrives(projectId: string | undefined, sessionId: strin
   const flag = useFeatureFlag(projectId, 'drives');
   return useQuery({
     queryKey: qk.drives.session(projectId ?? '', sessionId ?? ''),
-    queryFn: async (): Promise<{ drives: SessionDriveMount[]; personal: boolean }> => {
+    queryFn: async (): Promise<{
+      drives: SessionDriveMount[];
+      personal: boolean;
+      skipped: Array<{ driveId: string; name: string }>;
+    }> => {
       const result = await getSessionDrives(projectId!, sessionId!);
       return {
         drives: listOf<SessionDriveMount>(result as never, 'drives'),
         personal: !!result?.personal,
+        skipped: result?.skipped ?? [],
       };
     },
     enabled: flag.enabled && !!projectId && !!sessionId,

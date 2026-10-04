@@ -80,6 +80,7 @@ interface ModelsDevModel {
   id?: string;
   name?: string;
   description?: string;
+  provider?: { npm?: string; api?: string };
   released?: string | null;
   release_date?: string | null;
   attachment?: boolean;
@@ -208,6 +209,7 @@ function normalizeModel(modelKey: string, model: ModelsDevModel) {
     ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
     ...(typeof model.family === 'string' ? { family: model.family } : {}),
     ...(typeof model.status === 'string' ? { status: model.status } : {}),
+    ...(model.provider && typeof model.provider === 'object' ? { provider: model.provider } : {}),
     ...(modalities ? { modalities } : {}),
     ...(limit ? { limit } : {}),
     ...(cost ? { cost } : {}),

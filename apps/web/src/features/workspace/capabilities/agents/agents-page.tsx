@@ -31,6 +31,7 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
@@ -41,7 +42,7 @@ import {
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { capitalizeWords } from '@kortix/shared';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   CaretRightIcon,
   MagnifyingGlassIcon,
@@ -117,7 +118,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // see `triggerStartsAgent`.
   const triggerCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const fallback = config?.open_code_default_agent ?? null;
+    const fallback = config?.default_agent ?? config?.open_code_default_agent ?? null;
     for (const trigger of triggersQuery.data?.triggers ?? []) {
       const owner = trigger.agent === 'default' && fallback ? fallback : trigger.agent;
       counts.set(owner, (counts.get(owner) ?? 0) + 1);
@@ -168,7 +169,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // them. Telling the user "No agents yet" in the second case is false and
   // points at the wrong fix (clear the filter, not create an agent).
   const emptyKind = catalogEmptyKind(agents.length, filtered.length);
-  const defaultAgent = config?.open_code_default_agent ?? null;
+  const defaultAgent = config?.default_agent ?? config?.open_code_default_agent ?? null;
 
   // One control, two labels — same rule as the Skills page. The header has a
   // title beside it and can be terse; the empty state is the whole screen and
@@ -211,7 +212,14 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         </InputGroupSearch>
       }
       filters={
-        config ? (
+        // The row holds its height while the manifest loads, so the grid
+        // below does not drop when the count and the selector land.
+        detailQuery.isLoading ? (
+          <>
+            <Skeleton className="h-4 w-40 rounded-sm py-0" />
+            <Skeleton className="h-8 w-44 rounded-md py-0" />
+          </>
+        ) : config ? (
           <>
             <p className="text-muted-foreground text-xs">
               {agents.length} {agents.length === 1 ? 'agent' : 'agents'}{' '}
@@ -259,7 +267,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             key={agent.path}
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-            title={capitalizeWords(agent.name)}
+            title={isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             meta={
@@ -398,7 +406,7 @@ function DefaultAgentSelector({
   const queryClient = useQueryClient();
   const isV2 = detectManifestVersion(config.manifest_raw) === 2;
   const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
-  const current = config.open_code_default_agent;
+  const current = config.default_agent ?? config.open_code_default_agent;
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {
@@ -437,7 +445,7 @@ function DefaultAgentSelector({
         <SelectContent align="end">
           {availableAgents.map((agent) => (
             <SelectItem key={agent.name} value={agent.name}>
-              {capitalizeWords(agent.name)}
+              {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
             </SelectItem>
           ))}
         </SelectContent>

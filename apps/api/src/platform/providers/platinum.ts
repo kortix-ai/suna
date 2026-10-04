@@ -52,12 +52,13 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
-import { platinumJson, platinumJsonResponse } from '../../shared/platinum';
+import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import type {
@@ -73,13 +74,14 @@ import type {
   SandboxProvider,
   SandboxStartOptions,
   SandboxStatus,
-} from './index';
+} from './contract';
 import {
   SandboxTemplateNotFoundError,
+  SnapshotStillBuildingError,
   assertWorkloadCredential,
   sandboxWorkloadType,
-} from './index';
-import { providerAutoStopBackstopMinutes } from './index';
+} from './contract';
+import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
@@ -104,11 +106,9 @@ function stopConfirmPollMs(): number {
 // create() does for its 60 s long-poll.
 export const START_CALL_TIMEOUT_MS = 60_000;
 // How long start() carries a box through a restore from cold storage. A 6 GB
-// session box restores in ~100 s alone on dev and past 150 s with a second
-// restore on the same host (2026-09-25); the slowest prod unarchive that day
-// took 546 s. The session wake must still confirm the box inside its
-// RUNTIME_WAKE_HARD_MS (10 min), after this and one last /start.
-export const START_RESTORE_BUDGET_MS = 8 * 60_000;
+// session box restores in ~100 s alone on dev; observed slow restores take
+// 546 s. Allow those restores to finish before the bounded wake expires.
+export const START_RESTORE_BUDGET_MS = 10 * 60_000;
 // How often a caller's lease is renewed (opts.onProgress) while a restore is
 // seen in progress. The wake and restart leases run 240 s.
 export const START_PROGRESS_INTERVAL_MS = 30_000;
@@ -118,6 +118,14 @@ interface PlatinumSandbox {
   id: string;
   state?: string;
   name?: string;
+  /** Absent on Platinum builds before #1335. */
+  autoResume?: boolean;
+  /** Public region the box was placed in (e.g. 'eu-west', 'us-east'). */
+  region?: string | null;
+  /** The control plane that owns this box. shared/platinum.ts learns it from
+   *  this field (and from `x-pt-served-by`) and sends every later call by id
+   *  straight there instead of through `PLATINUM_API_URL`'s forwarding hop. */
+  api_url?: string;
   /** Set true by Platinum's CP when an Idempotency-Key replay resolved this
    *  response to an already-committed sandbox rather than a fresh create. */
   replayed?: boolean;
@@ -136,6 +144,23 @@ interface PlatinumSandboxPage {
   total?: number;
   has_more?: boolean;
 }
+/**
+ * A box created before `auto_resume: false` shipped (see create) still lets any
+ * stray request wake it. The stop that parks it closes that, once, so no
+ * backfill is needed: every box Kortix stops from now on is covered. Only when
+ * Platinum reports the field — an older build reads a PATCH naming no field it
+ * knows as "clear the name". Best effort: the stop itself already succeeded.
+ */
+async function disableAutoResume(externalId: string, sandbox: PlatinumSandbox | null): Promise<void> {
+  if (sandbox?.autoResume !== true || sandbox.metadata?.['kortix.workload'] === 'app') return;
+  await platinumJson(`/v1/sandboxes/${externalId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ auto_resume: false }),
+  }).catch((err) =>
+    console.warn(`[platinum] could not turn auto-resume off for ${externalId}:`, err instanceof Error ? err.message : err),
+  );
+}
+
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
 
 /**
@@ -208,13 +233,11 @@ type PlatinumExecResponse = {
  * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
  * POST (the template id doesn't exist / was GC'd). ONLY a 404 qualifies: a 400
  * (bad request) or 5xx (transient outage) is NOT a GC'd pin and must NOT trigger
- * a name-boot fallback. Matches the `platinum <method> <path> -> 404 …` shape
- * platinumJson throws.
+ * a name-boot fallback.
  */
 function isDefinitiveTemplateNotFound(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
   // A 404 about a volume in the create body is not a missing template.
-  return / -> 404\b/.test(message) && !isVolumeRejection(error);
+  return platinumHttp(error).status === 404 && !isVolumeRejection(error);
 }
 
 /**
@@ -223,30 +246,14 @@ function isDefinitiveTemplateNotFound(error: unknown): boolean {
  * so no box exists, and the same body can never succeed.
  */
 function isVolumeRejection(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  const match = / -> (4\d\d|503)\b([\s\S]*)$/.exec(message);
-  return !!match && /volume|mount/i.test(match[2] ?? '');
+  const { status, code, body } = platinumHttp(error);
+  if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return false;
+  return /volume|mount/i.test(`${code ?? ''} ${body ?? ''}`);
 }
 
-function isMissingSandboxError(error: unknown): boolean {
-  const err = error as
-    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
-    | null
-    | undefined;
-  if (err?.status === 404 || err?.statusCode === 404) return true;
-  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
-  if (code === 'not_found' || code === 'notfound') return true;
-  const message =
-    typeof err?.message === 'string'
-      ? err.message.toLowerCase()
-      : String(error ?? '').toLowerCase();
-  return (
-    message.includes('-> 404') ||
-    message.includes('"code":"not_found"') ||
-    message.includes('not found') ||
-    message.includes('no such sandbox') ||
-    message.includes('sandbox does not exist')
-  );
+/** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
+function platinumHttp(error: unknown): Partial<Pick<PlatinumHttpError, 'status' | 'code' | 'body'>> {
+  return error instanceof Error ? (error as Partial<PlatinumHttpError>) : {};
 }
 
 /**
@@ -305,8 +312,35 @@ function buildDeterministicSandboxName(sandboxId: string, attempt: number): stri
  * attempt number). Always a 64-char hex string, comfortably inside Platinum's
  * 8-255 char bound.
  */
-function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: number): string {
-  return createHash('sha256').update(`${sandboxId}|${templateId}|a${attempt}`).digest('hex');
+function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: number, region?: string): string {
+  // The region joins the key only when one is asked for, so every existing
+  // no-region session keeps the exact key it had before regions existed.
+  const regionPart = region ? `|r${region}` : '';
+  return createHash('sha256').update(`${sandboxId}|${templateId}|a${attempt}${regionPart}`).digest('hex');
+}
+
+/**
+ * Platinum refuses a create in a region that does not hold the template yet:
+ * `409 template_not_resident`, with `state` 'absent', 'replicating' or
+ * 'failed'. Platinum copies the template there on its own (the copy's progress
+ * is what `state` reports), so this is the "image still building" condition in
+ * another form, and it gets the same patient retry window: it throws the
+ * `SnapshotStillBuildingError` that sandbox-init-state.ts waits out.
+ */
+function regionalTemplateNotReady(error: unknown, template: string): Error | null {
+  const http = platinumHttp(error);
+  if (http.status !== 409 || http.code !== 'template_not_resident') return null;
+  let body: { region?: unknown; state?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON; keep the defaults if not
+  }
+  const region = typeof body.region === 'string' ? body.region : 'the requested region';
+  const state = typeof body.state === 'string' ? body.state : 'absent';
+  return new SnapshotStillBuildingError(
+    `Sandbox image snapshot ${template} is building in ${region}: Platinum is copying the template there (state=${state})`,
+  );
 }
 
 /**
@@ -320,9 +354,8 @@ function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: num
  * key, which the CP replays to the already-committed box).
  */
 function isNameTakenConflict(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  if (!/ -> 409\b/.test(message)) return false;
-  return /name_taken|name[_ ]?already|name.{0,24}(exists|conflict|taken)/i.test(message);
+  const http = platinumHttp(error);
+  return http.status === 409 && http.code === 'name_taken';
 }
 
 export class PlatinumProvider implements SandboxProvider {
@@ -422,7 +455,7 @@ export class PlatinumProvider implements SandboxProvider {
       platinumCreateDedupEnabled() && opts.sandboxId
         ? {
             name: buildDeterministicSandboxName(opts.sandboxId, dedupAttempt),
-            idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt),
+            idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt, opts.location),
             sandboxId: opts.sandboxId,
           }
         : null;
@@ -432,6 +465,22 @@ export class PlatinumProvider implements SandboxProvider {
       envVars,
       type: autoStop === 0 ? 'persistent' : 'ephemeral',
       auto_stop_minutes: autoStop,
+      // Only Kortix wakes a session box. Platinum's edge resumes a stopped VM on
+      // ANY inbound request, and Kortix keeps sending some after a stop (5-min
+      // cached edge URLs, an SSE reconnect, a retry). The VM then ran while our
+      // row said `stopped`, its session credential refused: 68 prod boxes in
+      // one day, one left serving nothing for 18 h (2026-09-28). Apps keep the
+      // default: a visitor's request is supposed to wake them. Platinum builds
+      // before #1335 drop the unknown field (non-strict schema).
+      auto_resume: workloadType === 'app',
+      // The project's `us_region` flag (platform/services/sandbox-region.ts).
+      // Absent ⇒ Platinum places the box in its home region, exactly as
+      // before. A create for a region this process has already seen a box in
+      // goes straight to that region's control plane; otherwise
+      // PLATINUM_API_URL forwards it there. The answer names the owner
+      // (`api_url`), and every later call by id goes straight to it
+      // (shared/platinum.ts).
+      ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
@@ -483,14 +532,16 @@ export class PlatinumProvider implements SandboxProvider {
       sandbox = await postCreate();
     } catch (err) {
       // A full fleet stays a capacity error (retried, "try again in a minute").
-      if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(String((err as Error)?.message ?? err))) {
+      if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
         // Mounts a session cannot run without (its drives, its state): fail
         // loudly, never boot without them.
-        const reason = (err instanceof Error ? err.message : String(err)).replace(/^[\s\S]*? -> /, '').slice(0, 300);
+        const reason = (platinumHttp(err).body ?? '').slice(0, 300);
         throw new Error(
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );
       }
+      const notYetInRegion = regionalTemplateNotReady(err, template);
+      if (notYetInRegion) throw notYetInRegion;
       if (!dedup || !isNameTakenConflict(err)) throw err;
       // See isNameTakenConflict + the module doc: the name is exclusively
       // ours, so this can only be our own prior commit under this same
@@ -530,7 +581,7 @@ export class PlatinumProvider implements SandboxProvider {
         // 409'd forever on a ~15-minute retry cadence.
         const advancedAttempt = dedupAttempt + 1;
         const advancedName = buildDeterministicSandboxName(dedup.sandboxId, advancedAttempt);
-        const advancedKey = buildIdempotencyKey(dedup.sandboxId, template, advancedAttempt);
+        const advancedKey = buildIdempotencyKey(dedup.sandboxId, template, advancedAttempt, opts.location);
         console.warn(
           `[platinum] name_taken PERSISTED for ${dedup.name} after the replay retry — ` +
           `advancing to attempt ${advancedAttempt} (fresh name ${advancedName}), never touching the old box:`,
@@ -563,7 +614,7 @@ export class PlatinumProvider implements SandboxProvider {
     // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
     // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
     // an intermittent guest-boot stall surfaced as a "running" session that was
-    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // actually failed-start (proven 2026-07-07 on one session: Platinum
     // state=failed-start, comp status=active). Throw on a non-running terminal
     // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
     // another host) instead of silently returning an unusable sandbox. The
@@ -647,6 +698,10 @@ export class PlatinumProvider implements SandboxProvider {
         template,
         version: SANDBOX_VERSION,
         workloadType,
+        // Where Platinum actually placed the box, from its answer — not what
+        // we asked for — so an operator reading the session row sees the truth.
+        ...(sandbox.region ? { platinumRegion: sandbox.region } : {}),
+        ...(sandbox.api_url ? { platinumApiUrl: sandbox.api_url } : {}),
         // Persisted into session_sandboxes.metadata by the caller
         // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
         // LATER top-level provisioning call's restorePlatinumCreateAttempt
@@ -713,14 +768,13 @@ export class PlatinumProvider implements SandboxProvider {
         // 409. Keep the provider call inside this adapter until the accepted
         // stop settles, then retry start. The control plane remains stopped and
         // unbilled until its separate provider-running confirmation succeeds.
-        const message = error instanceof Error ? error.message : String(error ?? '');
         // The CALL gave up, not Platinum: a restore it started keeps going
         // server-side. Wait on the box's real state instead of failing the wake.
-        if (/ timed out after /.test(message) && Date.now() < restoreDeadline) {
+        if (error instanceof Error && error.name === 'TimeoutError' && Date.now() < restoreDeadline) {
           if (await restored()) continue;
           return;
         }
-        if (!/ -> 409\b/.test(message)) throw error;
+        if (platinumHttp(error).status !== 409) throw error;
         firstConflict ??= error;
       }
 
@@ -838,6 +892,12 @@ export class PlatinumProvider implements SandboxProvider {
    * still on.
    */
   async stop(externalId: string): Promise<void> {
+    // Auto-resume off BEFORE the stop: Platinum resumed a box on a stray request
+    // 1.3 s after `stop.done`, with its row already stopped and its token dead.
+    await disableAutoResume(
+      externalId,
+      await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(() => null),
+    );
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
     const deadlineMs = stopConfirmDeadlineMs();
     const pollMs = stopConfirmPollMs();
@@ -849,7 +909,10 @@ export class PlatinumProvider implements SandboxProvider {
         () => null,
       );
       const state = String(sandbox?.state ?? '').toLowerCase();
-      if (!sandbox || state === 'stopped' || state.includes('archiv') || state === 'failed') return;
+      if (!sandbox || state === 'stopped' || state.includes('archiv') || state === 'failed') {
+        await disableAutoResume(externalId, sandbox);
+        return;
+      }
       if (Date.now() >= deadline) {
         throw new Error(
           `Platinum stop for ${externalId} did not reach stopped within ${deadlineMs}ms (last state: ${state || 'unknown'})`,
@@ -920,7 +983,9 @@ export class PlatinumProvider implements SandboxProvider {
       const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
       const state = String(sandbox.state ?? '').toLowerCase();
       if (state === 'running') return 'running';
-      if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
+      // A stop ACK is not power-off. Keep the token and compute row alive
+      // until the provider confirms a terminal state.
+      if (state === 'stopped' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
       // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
       // reported as `unknown` is a box `decideReconcile` never acts on, and
@@ -928,7 +993,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'error' || state === 'failed') return 'terminal';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
     } catch (err) {
-      if (isMissingSandboxError(err)) return 'removed';
+      if (isProviderNotFound(err)) return 'removed';
       return 'unknown';
     }
   }
@@ -938,10 +1003,10 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
     } catch (err) {
-      if (!isMissingSandboxError(err)) return 'recovering';
+      if (!isProviderNotFound(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // already backed up to S3 (incident 2026-08-12, one Platinum sandbox:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:

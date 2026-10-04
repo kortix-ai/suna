@@ -13,6 +13,7 @@
 // counter threaded in via opts.createAttempt (see restorePlatinumCreateAttempt
 // in session-sandbox.ts for the persistence/restore side of that counter).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { platinumHttpError, timeoutError } from '../../__tests__/helpers/platinum-http-error';
 mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
@@ -112,6 +113,15 @@ beforeEach(() => {
   delete process.env.KORTIX_PLATINUM_CREATE_DEDUP;
 });
 
+describe('only Kortix wakes a session box', () => {
+  test('a session box is created with auto_resume=false, so a stale edge request cannot wake it', async () => {
+    const p = new PlatinumProvider();
+    await p.create({ ...baseOpts, createAttempt: 1 });
+
+    expect(createCalls()[0].body?.auto_resume).toBe(false);
+  });
+});
+
 describe('S1 deterministic name + Idempotency-Key derivation', () => {
   test('both derive from the FULL sandboxId, never opts.name / an 8-char truncation', async () => {
     const p = new PlatinumProvider();
@@ -164,7 +174,7 @@ describe('S1 ambiguous-retry / replay handling', () => {
     // the caller (session-sandbox.ts) retries with the SAME createAttempt,
     // and the CP's Idempotency-Key replay returns the ALREADY-committed box.
     createSequence = [
-      { error: new Error('platinum POST /v1/sandboxes?wait_for_state=running timed out after 70000ms (caller-provided budget)') },
+      { error: timeoutError('platinum POST /v1/sandboxes?wait_for_state=running timed out after 70000ms (caller-provided budget)') },
       { result: { id: 'sbx_committed', state: 'running', replayed: true } },
     ];
     const p = new PlatinumProvider();
@@ -181,7 +191,7 @@ describe('S1 ambiguous-retry / replay handling', () => {
 
   test('an unexpected 409 name_taken re-issues the SAME body+key once and adopts the replayed box (no list/GET call)', async () => {
     createSequence = [
-      { error: new Error('platinum POST /v1/sandboxes?wait_for_state=running -> 409 {"code":"name_taken","error":"name already taken"}') },
+      { error: platinumHttpError('platinum POST /v1/sandboxes?wait_for_state=running -> 409 {"code":"name_taken","error":"name already taken"}') },
       { result: { id: 'sbx_committed', state: 'running', replayed: true } },
     ];
     const p = new PlatinumProvider();
@@ -199,7 +209,7 @@ describe('S1 ambiguous-retry / replay handling', () => {
 
   test('a definitive non-name_taken error (e.g. 503) is NOT retried by the dedup layer — propagates untouched', async () => {
     createSequence = [
-      { error: new Error('platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"unavailable"}') },
+      { error: platinumHttpError('platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"unavailable"}') },
     ];
     const p = new PlatinumProvider();
 
@@ -278,7 +288,7 @@ describe('drive volumes', () => {
   test('a full fleet stays a capacity error, never a drive failure', async () => {
     createSequence = [
       {
-        error: new Error(
+        error: platinumHttpError(
           'platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"no capacity on a host that can mount these volumes"}',
         ),
       },
@@ -292,7 +302,7 @@ describe('drive volumes', () => {
   test('a create refused over its volumes fails with the drives message and never boots without them', async () => {
     createSequence = [
       {
-        error: new Error(
+        error: platinumHttpError(
           'platinum POST /v1/sandboxes?wait_for_state=running -> 409 {"error":"template has no volume support","code":"template_lacks_volume_support"}',
         ),
       },
@@ -305,7 +315,7 @@ describe('drive volumes', () => {
 
   test('a volume 404 on a pinned-template boot is a drive failure, not a missing template', async () => {
     createSequence = [
-      { error: new Error('platinum POST /v1/sandboxes -> 404 {"error":"volume kd-x not found","code":"volume_not_found"}') },
+      { error: platinumHttpError('platinum POST /v1/sandboxes -> 404 {"error":"volume kd-x not found","code":"volume_not_found"}') },
       { result: { id: 'sbx_new', state: 'running' } },
     ];
     const p = new PlatinumProvider();

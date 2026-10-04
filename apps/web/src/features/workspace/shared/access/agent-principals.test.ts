@@ -17,22 +17,28 @@ import {
 describe('computeAgentAuthority — kortix_permissions ∩ ceiling − HUMAN_ONLY', () => {
   test('no bound role: the default ceiling keeps every declared permission except human-only', () => {
     const result = computeAgentAuthority(
-      ['project.file.read', 'project.members.manage', 'project.secret.read'],
+      ['project.file.read', 'project.members.manage', 'project.credentials.issue'],
       null,
     );
-    expect(result.effective).toEqual(['project.file.read', 'project.read', 'project.secret.read']);
-    expect(result.humanOnly).toEqual(['project.members.manage']);
+    expect(result.effective).toEqual(['project.file.read', 'project.members.manage', 'project.read']);
+    expect(result.humanOnly).toEqual(['project.credentials.issue']);
     expect(result.outsideCeiling).toEqual([]);
   });
 
   test('a bound role caps the declared list; project.read is always granted', () => {
     const result = computeAgentAuthority(
-      ['project.file.read', 'project.file.write', 'project.delete'],
+      ['project.file.read', 'project.file.write', 'project.credentials.issue'],
       ['project.read', 'project.file.read'],
     );
     expect(result.effective).toEqual(['project.file.read', 'project.read']);
     expect(result.outsideCeiling).toEqual(['project.file.write']);
-    expect(result.humanOnly).toEqual(['project.delete']);
+    expect(result.humanOnly).toEqual(['project.credentials.issue']);
+  });
+
+  test('"*" alone or in a list is `all`', () => {
+    const all = computeAgentAuthority('all', null);
+    expect(computeAgentAuthority(['*', 'project.gitops.merge'], null)).toEqual(all);
+    expect(computeAgentAuthority('*', null)).toEqual(all);
   });
 
   test('`all` expands to every grantable permission and never yields a human-only one', () => {

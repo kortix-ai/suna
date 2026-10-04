@@ -7,6 +7,9 @@
  * and response knowledge inside the SDK.
  */
 
+import { auditFilterQuery } from '../projects-client/audit-filter';
+import { platformApiBase } from './shared';
+
 export interface HostRequestOptions {
   /** Kortix API base URL. Both `https://host` and `https://host/v1` are valid. */
   backendUrl: string;
@@ -27,12 +30,6 @@ export class HostBoundaryError extends Error {
     super(message);
     this.name = 'HostBoundaryError';
   }
-}
-
-function apiBase(backendUrl: string): string {
-  let trimmed = backendUrl;
-  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
-  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
 function requestHeaders(options: HostRequestOptions, json: boolean): Headers {
@@ -72,7 +69,7 @@ async function requestJson<T>(
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
   const json = init?.body !== undefined;
-  const response = await fetch(`${apiBase(options.backendUrl)}${path}`, {
+  const response = await fetch(`${platformApiBase(options.backendUrl)}${path}`, {
     method: init?.method ?? 'GET',
     headers: requestHeaders(options, json),
     ...(json ? { body: JSON.stringify(init.body) } : {}),
@@ -221,6 +218,13 @@ export interface ConnectorSetupLinkInfo {
   name?: string | null;
   /** The app's logo. `null` when the catalog has none; absent on older servers. */
   icon_url?: string | null;
+  /**
+   * An account landed on this connector after the link was minted: the ask is
+   * settled, and a card that reloads shows it as done. `false` for a link
+   * nobody has completed, even when the connector already had an account.
+   * Absent on older servers and for links minted before they recorded when.
+   */
+  connected?: boolean;
   expires_at: string;
 }
 
@@ -300,6 +304,10 @@ export interface SecretSetupLinkInfo {
     description: string | null;
   }>;
   expires_at: string;
+  /** The person whose session asked for the values, when that is a member of
+   *  the project's account; the form may keep the values to them. Absent on
+   *  older servers and for links an automation minted. */
+  requester?: { label: string | null } | null;
 }
 
 export function getSecretSetupLink(
@@ -343,10 +351,13 @@ export function submitSecretSetupLink(
   token: string,
   values: Record<string, string>,
   options: HostRequestOptions,
+  /** `only_requester`: only the person who asked may use the values (see
+   *  `SecretSetupLinkInfo.requester`). Omitted = everyone in the project. */
+  audience?: { only_requester?: boolean },
 ): Promise<SecretSetupLinkSubmitResult> {
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options, {
     method: 'POST',
-    body: { values },
+    body: { values, ...(audience?.only_requester ? { only_requester: true } : {}) },
   });
 }
 
@@ -407,46 +418,11 @@ export interface AccountAuditExport {
 
 export async function downloadAccountAudit(
   accountId: string,
-  query: {
-    format: 'csv' | 'jsonl';
-    action?: string;
-    actor?: string;
-    project_id?: string;
-    session_id?: string;
-    actor_type?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
-    source?: string;
-    phase?: string;
-    outcome?: 'success' | 'failure' | 'denied' | 'pending';
-    request_id?: string;
-    correlation_id?: string;
-    resource_type?: string;
-    since?: string;
-    until?: string;
-    q?: string;
-    cursor?: string;
-    limit?: number;
-  },
+  query: Parameters<typeof auditFilterQuery>[0] & { format: 'csv' | 'jsonl' },
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
-  const params = new URLSearchParams({ format: query.format });
-  if (query.action) params.set('action', query.action);
-  if (query.actor) params.set('actor', query.actor);
-  if (query.project_id) params.set('project_id', query.project_id);
-  if (query.session_id) params.set('session_id', query.session_id);
-  if (query.actor_type) params.set('actor_type', query.actor_type);
-  if (query.source) params.set('source', query.source);
-  if (query.phase) params.set('phase', query.phase);
-  if (query.outcome) params.set('outcome', query.outcome);
-  if (query.request_id) params.set('request_id', query.request_id);
-  if (query.correlation_id) params.set('correlation_id', query.correlation_id);
-  if (query.resource_type) params.set('resource_type', query.resource_type);
-  if (query.since) params.set('since', query.since);
-  if (query.until) params.set('until', query.until);
-  if (query.q) params.set('q', query.q);
-  if (query.cursor) params.set('cursor', query.cursor);
-  if (query.limit != null) params.set('limit', String(query.limit));
   const response = await fetch(
-    `${apiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${params}`,
+    `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
     {
       headers: requestHeaders(options, false),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -470,7 +446,7 @@ export async function openStressTestStream(
   input: Record<string, unknown>,
   options: HostRequestOptions,
 ): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(`${apiBase(options.backendUrl)}/admin/stress-test/run`, {
+  const response = await fetch(`${platformApiBase(options.backendUrl)}/admin/stress-test/run`, {
     method: 'POST',
     headers: requestHeaders(options, true),
     body: JSON.stringify(input),
@@ -490,7 +466,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 export function buildPublicTemplateUrl(backendUrl: string, shareId: string): URL | null {
   if (!UUID_PATTERN.test(shareId)) return null;
-  return new URL(`templates/public/${shareId.toLowerCase()}`, `${apiBase(backendUrl)}/`);
+  return new URL(`templates/public/${shareId.toLowerCase()}`, `${platformApiBase(backendUrl)}/`);
 }
 
 export async function getPublicTemplate<T>(

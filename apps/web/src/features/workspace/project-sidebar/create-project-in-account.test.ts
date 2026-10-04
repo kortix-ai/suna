@@ -55,7 +55,7 @@ describe('create a project in a specific account', () => {
     // The API gates on ACCOUNT_ACTIONS.PROJECT_CREATE and answers a plain
     // member with 403 "Owner or admin role required", so offering the row to
     // one would be a dead end.
-    expect(code).toContain('filterCreatableAccounts');
+    expect(code).toContain('useCreatableAccounts(accounts)');
     expect(code).toContain('creatableAccountIds.has(group.accountId)');
   });
 

@@ -8,8 +8,10 @@
  *  1. a registered worker module stops calling `runWorkerTick('<name>'`;
  *  2. a file in `apps/api/src` starts a `setInterval` and is neither a
  *     registered worker nor a classified non-job timer below;
- *  3. `startSingletonWorkers` / `startReplicaServices` in `index.ts` starts
- *     something that is neither.
+ *  3. `startSingletonWorkers` / `startReplicaServices` in `bootstrap.ts` starts
+ *     something that is neither;
+ *  4. a module starts a timer at import time: it then runs on every replica
+ *     (not leader-gated) and nothing can stop it.
  *
  * Adding a background job: wrap its tick in `runWorkerTick('<name>', …)` and
  * register it in WORKERS. A timer that only keeps a connection alive or
@@ -26,7 +28,7 @@ const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 const WORKERS: Record<string, string> = {
   'active-turn-renewal': 'projects/active-turn-renewal.ts',
   'project-maintenance': 'projects/maintenance.ts',
-  'trigger-scheduler': 'projects/lib/triggers.ts',
+  'trigger-scheduler': 'projects/lib/trigger-scheduler.ts',
   'startup-prebuild': 'snapshots/builder.ts',
   'suna-migration': 'projects/suna-migration/suna-migration-worker.ts',
   'provider-transition': 'projects/provider-transition/provider-transition-worker.ts',
@@ -35,14 +37,17 @@ const WORKERS: Record<string, string> = {
   'pi-worker-pool': 'platform/services/pi-worker-pool.ts',
   'audit-webhooks': 'shared/audit-webhooks.ts',
   'audit-reconciliation': 'shared/audit-reconciliation-worker.ts',
+  'audit-partitions': 'shared/audit-partition-worker.ts',
+  'audit-archive': 'shared/audit-archive/worker.ts',
   'project-snapshots': 'git-proxy/project-snapshot-worker.ts',
   'iam-grant-expiry': 'iam/expiry-sweeper.ts',
+  'oauth-sweep': 'oauth/sweeper.ts',
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'tunnel/index.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
-  'billing-trial-expiry': 'billing/index.ts',
-  'billing-yearly-rotation': 'billing/index.ts',
-  'billing-free-tier-rotation': 'billing/index.ts',
+  'billing-trial-expiry': 'billing/rotation-schedule.ts',
+  'billing-yearly-rotation': 'billing/rotation-schedule.ts',
+  'billing-free-tier-rotation': 'billing/rotation-schedule.ts',
   'slack-turn-gc': 'channels/slack/turn.ts',
   'teams-turn-gc': 'channels/teams/turn.ts',
   'drive-conflict-scan': 'drives/workers.ts',
@@ -51,12 +56,11 @@ const WORKERS: Record<string, string> = {
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
 const NOT_WORKERS: Record<string, string> = {
-  'apps/public-proxy.ts': 'stamps app activity while one proxied request streams; runs inside that request',
+  'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
   'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
-  'index.ts': 'measures event-loop lag',
+  'routes/system.ts': 'measures event-loop lag',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
-  'oauth/index.ts': 'expires in-memory OAuth state',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
   'projects/routes/session-stream.ts': 'heartbeat on one open session stream',
@@ -68,7 +72,6 @@ const NOT_WORKERS: Record<string, string> = {
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
   'shared/access-control-cache.ts': 'refreshes the in-memory access-control cache',
   'snapshots/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
-  'tunnel/routes/permission-requests.ts': 'keepalive on one open SSE stream',
 };
 
 /** Start calls in index.ts → the worker they run, or why they are not one. */
@@ -84,9 +87,17 @@ const STARTS: Record<string, string> = {
   startPiWorkerPoolMaintenance: 'pi-worker-pool',
   startAuditWebhookWorker: 'audit-webhooks',
   startAuditReconciliationWorker: 'audit-reconciliation',
+  startAuditPartitionWorker: 'audit-partitions',
+  startAuditArchiveWorker: 'audit-archive',
   startProjectSnapshotWorker: 'project-snapshots',
   startGrantExpirySweeper: 'iam-grant-expiry',
   startDriveWorkers: 'drive-conflict-scan',
+  startOAuthSweeper: 'oauth-sweep',
+  startBillingRotation: 'billing-trial-expiry',
+  startSlackTurnGc: 'slack-turn-gc',
+  startTeamsTurnGc: 'teams-turn-gc',
+  startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
+  startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',
   startTunnelService: 'tunnel-cleanup',
   startAccessControlCache: 'not a worker: in-memory cache',
@@ -105,7 +116,7 @@ function sourceFiles(dir: string): string[] {
 
 function functionBody(source: string, name: string): string {
   const start = source.indexOf(`function ${name}(`);
-  if (start < 0) throw new Error(`index.ts has no function ${name}`);
+  if (start < 0) throw new Error(`no function ${name}`);
   const open = source.indexOf('{', start);
   let depth = 0;
   for (let i = open; i < source.length; i += 1) {
@@ -133,10 +144,15 @@ describe('background jobs run as named workers', () => {
     expect(stale).toEqual([]);
   });
 
-  test('everything index.ts starts on the leader or every replica is classified', () => {
-    const index = read('index.ts');
+  test('no module starts a timer at import time', () => {
+    const atImport = sourceFiles(SRC).filter((file) => /^(?:setInterval|setTimeout)\(/m.test(read(file)));
+    expect(atImport).toEqual([]);
+  });
+
+  test('everything bootstrap.ts starts on the leader or every replica is classified', () => {
+    const bootstrap = read('bootstrap.ts');
     const started = ['startSingletonWorkers', 'startReplicaServices'].flatMap((fn) =>
-      [...functionBody(index, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
+      [...functionBody(bootstrap, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
     );
     expect(started.filter((call) => !(call in STARTS))).toEqual([]);
     for (const worker of Object.values(STARTS)) {

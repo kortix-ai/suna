@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const git = await import('../git');
 const branches = await import('../git/branches');
+const mirror = await import('../git/mirror');
 const github = await import('../github');
 
 let commitError: Error | null = null;
@@ -106,6 +107,59 @@ describe('manifest compare-and-swap routing', () => {
       error: 'File "kortix.yaml" changed since it was read',
       status: 409,
     });
+  });
+
+  test('returns a safe 409 for a repository-rule push rejection', async () => {
+    commitError = new mirror.GitOperationError({
+      kind: 'failed',
+      message: 'push declined due to repository rule violations',
+      gitArgs: ['push', 'origin', 'abc:refs/heads/main'],
+      exitCode: 1,
+      stderr: "To https://github.com/example/connectors.git\n ! [remote rejected] abc -> main (push declined due to repository rule violations)",
+    });
+
+    const result = await commitManifest(
+      project,
+      {
+        schemaVersion: 2,
+        format: 'yaml',
+        path: 'kortix.yaml',
+        revision: 'a'.repeat(40),
+        candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
+        raw: { kortix_version: 2, connectors: [] },
+      },
+      'protected manifest write',
+    );
+
+    expect(result).toEqual({
+      error: 'The repository rejected the push because of branch protection or repository rules. Allow the Kortix GitHub App to push to the default branch, or connect a repository where it can, then try again.',
+      status: 409,
+    });
+    expect(JSON.stringify(result)).not.toContain('github.com/example');
+  });
+
+  test('returns a safe retryable response when the private repository is temporarily unavailable', async () => {
+    commitError = new mirror.GitOperationError({
+      kind: 'failed',
+      message: "fatal: repository 'https://github.com/example/private.git/' not found",
+      gitArgs: ['push', 'origin', 'abc:refs/heads/main'],
+      stderr: "fatal: repository 'https://github.com/example/private.git/' not found",
+    });
+
+    const result = await commitManifest(
+      project,
+      {
+        schemaVersion: 2,
+        format: 'yaml',
+        path: 'kortix.yaml',
+        revision: 'a'.repeat(40),
+        raw: { kortix_version: 2, connectors: [] },
+      },
+      'manifest write',
+    );
+
+    expect(result).toEqual({ error: 'git mirror is temporarily unavailable', status: 503 });
+    expect(JSON.stringify(result)).not.toContain('github.com/example');
   });
 
   test('keeps the GitHub Contents API for unguarded writes', async () => {

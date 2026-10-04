@@ -1,6 +1,6 @@
 /**
  * Presentation metadata for Review Center items — the single place that maps a
- * kind / risk / status / source to its icon, Kortix tone, and label. Uses the
+ * kind / status / source to its icon, Kortix tone, and label. Uses the
  * tinted-icon-tile pattern: a faint Kortix-token fill behind a solid Kortix-token
  * icon.
  */
@@ -26,7 +26,6 @@ import { createElement, type ComponentType } from 'react';
 import type {
   ApprovalActionIcon,
   ReviewKind,
-  ReviewRisk,
   ReviewSource,
   ReviewStatus,
 } from './types';
@@ -87,13 +86,6 @@ export const KIND_META: Record<
 
 // Every chip in the Review Center is the one `Badge` component — no second
 // pill family (Jay, 2026-09-03: "use the badge component only").
-export const RISK_META: Record<ReviewRisk, { label: string; badge: BadgeVariant }> = {
-  none: { label: 'Safe', badge: 'success' },
-  low: { label: 'Low risk', badge: 'success' },
-  medium: { label: 'Medium risk', badge: 'warning' },
-  high: { label: 'High risk', badge: 'destructive' },
-};
-
 /** A change's verification entries carry a tone; map it onto the Badge variant. */
 export const VERIFICATION_BADGE: Record<'success' | 'warning' | 'neutral' | 'info', BadgeVariant> =
   {
@@ -135,7 +127,7 @@ export const SEGMENT_LABEL = {
 
 export function getLocalizedReviewMeta(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    { KIND_META, RISK_META, STATUS_META, SOURCE_META, SEGMENT_LABEL },
+    { KIND_META, STATUS_META, SOURCE_META, SEGMENT_LABEL },
     tI18nComplete,
     REVIEW_META_TRANSLATION_KEYS,
   );
@@ -143,10 +135,6 @@ export function getLocalizedReviewMeta(tI18nComplete: UiTranslator) {
 
 export function reviewKindLabel(kind: ReviewKind, tI18nComplete: UiTranslator): string {
   return getLocalizedReviewMeta(tI18nComplete).KIND_META[kind].label;
-}
-
-export function reviewRiskLabel(risk: ReviewRisk, tI18nComplete: UiTranslator): string {
-  return getLocalizedReviewMeta(tI18nComplete).RISK_META[risk].label;
 }
 
 export function reviewStatusLabel(status: ReviewStatus, tI18nComplete: UiTranslator): string {

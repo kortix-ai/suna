@@ -14,11 +14,11 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { materializeRelease, verifyRelease, verifyReleaseDetail, type ReleaseManifest } from '../boot-config'
-import { ensureInjectedManagedSkills } from '../managed-skills'
-import { overlayHash, reconcileRuntimeAssets, resetRuntimeConvergenceForTests } from '../runtime-assets'
+import { materializeRelease, verifyRelease, verifyReleaseDetail, type ReleaseManifest } from '@/services/config-release/boot-config'
+import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
+import { overlayHash, reconcileRuntimeAssets, resetRuntimeConvergenceForTests } from '@/services/runtime-assets/runtime-assets'
 import { buildRelease, commitAll, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
-import type { HarnessAssetsService } from '../harness/assets'
+import type { HarnessAssetsService } from '@/services/runtime-assets/port'
 
 const REL = '.kortix/opencode'
 let root: string
@@ -93,7 +93,7 @@ function overlayAssets(
   injectSkills: (configDir: string, bakedDir: string) => Promise<void>,
 ): HarnessAssetsService {
   return {
-    componentNames: [],
+    harness: 'test', componentNames: [],
     resolveConfigDir: async () => dir,
     injectSkills,
     reconcile: async () => ({ components: {}, reasons: {}, state: {} }),

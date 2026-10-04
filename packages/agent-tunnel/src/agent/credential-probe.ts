@@ -1,5 +1,5 @@
 import '../node-ws-polyfill';
-import { AGENT_REPLACED_CLOSE_CODE, AGENT_VERSION, AUTH_REJECTED_CLOSE_CODES } from './agent';
+import { AGENT_REPLACED_CLOSE_CODE, AGENT_VERSION, isCredentialRejection } from './agent';
 import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
 
 /**
@@ -78,8 +78,8 @@ export function probeCredentials(
     });
 
     socket.addEventListener('close', (event) => {
-      const { code } = event as CloseEvent;
-      if (AUTH_REJECTED_CLOSE_CODES.includes(code)) return settle('rejected');
+      const { code, reason } = event as CloseEvent;
+      if (isCredentialRejection(code, reason)) return settle('rejected');
       // The relay only replaces a socket it registered, and it only registers
       // one that authenticated. Being replaced proves the credential is good.
       if (code === AGENT_REPLACED_CLOSE_CODE) return settle('valid');

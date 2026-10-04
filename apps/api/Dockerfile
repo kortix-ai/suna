@@ -257,6 +257,9 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel
 COPY --from=deps /app/packages/starter/src ./packages/starter/src
 COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
 COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
+# starter and registry import @kortix/manifest-schema/layout. pnpm links it in
+# the package's own node_modules; the root node_modules hoists no @kortix package.
+COPY --from=deps /app/packages/starter/node_modules ./packages/starter/node_modules
 # Project-scaffold templates read at runtime: packages/starter/src/index.ts
 # resolves BASE_TEMPLATE_DIR = join(import.meta.dir,'..','templates','base').
 # Without this the "Create project" seed path throws
@@ -271,6 +274,7 @@ COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contrac
 COPY --from=deps /app/packages/registry/src ./packages/registry/src
 COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
 COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
+COPY --from=deps /app/packages/registry/node_modules ./packages/registry/node_modules
 
 # Migrations are NOT bundled into the image: deployed ensureSchema() is warn-only
 # (it never applies at boot), and migrations run in the deploy pipeline's
@@ -289,7 +293,11 @@ COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
-COPY packages/sdk ./packages/sdk
+# From deps, not the build context: the SDK imports @kortix/llm-catalog at
+# runtime (composer-model.ts), and only the deps stage carries the SDK's own
+# node_modules symlink to it. The context copy has none (.dockerignore), and the
+# API crash-looped on "Cannot find module '@kortix/llm-catalog/lite'".
+COPY --from=deps /app/packages/sdk ./packages/sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
 # SOURCE (not the compiled binaries above, which `bun build --compile` produces

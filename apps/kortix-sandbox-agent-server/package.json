@@ -1,7 +1,7 @@
 {
   "name": "kortixd",
   "version": "0.1.0",
-  "description": "kortixd — the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
+  "description": "kortixd \u2014 the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
   "type": "module",
   "main": "src/main.ts",
   "engines": {
@@ -16,7 +16,9 @@
     "build": "bash scripts/build.sh",
     "start": "./dist/kortixd",
     "typecheck": "bun tsc --noEmit",
-    "test": "bun test"
+    "lint": "eslint src",
+    "test:architecture": "node --test scripts/check-architecture.mjs",
+    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",
@@ -31,9 +33,13 @@
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@types/node": "20.19.43",
     "@types/node-forge": "^1.3.11",
     "@types/ws": "8.18.1",
+    "eslint": "9.39.5",
+    "eslint-plugin-project-structure": "3.14.4",
     "typescript": "^5.6.0",
+    "typescript-eslint": "8.70.0",
     "ws": "8.21.3"
   }
 }

@@ -123,6 +123,11 @@ export const MAX_HIGHLIGHT_LENGTH = 20_000;
 /** A single line longer than this is left unhighlighted (minified code). */
 const MAX_LINE_LENGTH = 2_000;
 
+/** Shiki's default per-line tokenize budget is 500 ms; a loaded phone crossed
+ *  it and silently painted the line's rest base-coloured. MAX_LINE_LENGTH
+ *  already bounds the work per line, so give the budget real headroom. */
+const TOKENIZE_TIME_LIMIT_MS = 5_000;
+
 const CACHE_MAX = 64;
 
 export interface HighlighterOptions {
@@ -191,6 +196,18 @@ export function ensureLanguage(language: string): Promise<boolean> {
     .then(async (core) => {
       const grammar = await LANGUAGE_LOADERS[lang]();
       await core.loadLanguage(grammar.default);
+      // Compile the grammar now, outside any real line's time budget: shiki
+      // builds the Grammar object (compiling every pattern to a RegExp)
+      // inside the first tokenize call, whose per-line 500 ms limit
+      // (`tokenizeTimeLimit` in @shikijs/primitive) then pays for the compile.
+      // A compile that crosses the limit leaves the rest of its line base
+      // colour and the truncated run lands in the token cache — on a phone,
+      // the first visible block. A one-character line absorbs both.
+      core.codeToTokensBase('x', {
+        lang,
+        theme: codeThemeFor('light'),
+        tokenizeMaxLineLength: MAX_LINE_LENGTH,
+      });
       loadedLangs.add(lang);
       return true;
     })
@@ -299,6 +316,11 @@ export function highlightToTokens(
       lang,
       theme: codeThemeFor(scheme),
       tokenizeMaxLineLength: MAX_LINE_LENGTH,
+      // Shiki's 500 ms default per line leaves the rest of a slow line base-
+      // coloured — a loaded phone or CI runner crossed it on cold cpp/php
+      // grammars (the parity test's own comment). MAX_LINE_LENGTH already
+      // bounds the work per line; give it real headroom instead.
+      tokenizeTimeLimit: TOKENIZE_TIME_LIMIT_MS,
     });
     lines = toCodeLines(raw, CODE_THEME_FOREGROUND[scheme]);
   } catch {
@@ -365,6 +387,7 @@ export function highlightToTokensAsync(
             theme,
             grammarState: state,
             tokenizeMaxLineLength: MAX_LINE_LENGTH,
+            tokenizeTimeLimit: TOKENIZE_TIME_LIMIT_MS,
           });
           state = core.getLastGrammarState(raw);
           lines.push(...toCodeLines(raw, fallback));

@@ -3,8 +3,6 @@
 import {
   ArrowsInSimpleIcon as ArrowsInSimple,
   ArrowsOutSimpleIcon as ArrowsOutSimple,
-  DownloadIcon as Download,
-  DownloadSimpleIcon,
   ArrowSquareOutIcon as ExternalLink,
   PlayIcon as Play,
   ShieldWarningIcon as ShieldAlert,
@@ -30,6 +28,7 @@ import { PublicFileShareView } from './public-file-share-view';
 import { PublicTranscriptShareView } from './public-transcript-share-view';
 import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
+import { Download } from '@/features/icon/icons/download';
 
 interface PublicShareMeta {
   share: {
@@ -263,7 +262,7 @@ export default function PublicSessionSharePage() {
                   aria-label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
                   onClick={handleDownload}
                 >
-                  <DownloadSimpleIcon />
+                  <Download />
                 </Button>
               </Hint>
             )}

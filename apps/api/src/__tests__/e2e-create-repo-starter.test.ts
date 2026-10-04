@@ -31,39 +31,42 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // marketplace installable instead.
 const BASE_STARTER_PATHS = [
   '.gitignore',
-  '.kortix/memory/MEMORY.md',
-  '.kortix/opencode/agents/harness-reflector.md',
-  '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/agents/session-reviewer.md',
-  '.kortix/opencode/bun.lock',
-  '.kortix/opencode/opencode.jsonc',
-  '.kortix/opencode/package.json',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/constants.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/buffer.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/formatters.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/permissions.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/session-lifecycle.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/types.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/wildcard.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/plugin/types.ts',
-  '.kortix/opencode/plugins/opencode-pty/src/shared/constants.ts',
-  '.kortix/opencode/plugins/pty.ts',
-  '.kortix/opencode/skills/kortix-cli/SKILL.md',
-  '.kortix/opencode/tools/image_search.ts',
-  '.kortix/opencode/tools/lib/get-env.ts',
-  '.kortix/opencode/tools/lib/tool.ts',
-  '.kortix/opencode/tools/memory.ts',
-  '.kortix/opencode/tools/scrape_webpage.ts',
-  '.kortix/opencode/tools/show.ts',
-  '.kortix/opencode/tools/web_search.ts',
+  'agents/harness-reflector.md',
+  'agents/kortix.md',
+  'agents/session-reviewer.md',
+  'harnesses/opencode/bun.lock',
+  'harnesses/opencode/opencode.jsonc',
+  'harnesses/opencode/package.json',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/constants.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/buffer.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/formatters.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/permissions.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/session-lifecycle.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/types.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/pty/wildcard.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/plugin/types.ts',
+  'harnesses/opencode/plugins/opencode-pty/src/shared/constants.ts',
+  'harnesses/opencode/plugins/pty.ts',
+  'harnesses/opencode/tools/image_search.ts',
+  'harnesses/opencode/tools/lib/get-env.ts',
+  'harnesses/opencode/tools/lib/tool.ts',
+  'harnesses/opencode/tools/memory.ts',
+  'harnesses/opencode/tools/scrape_webpage.ts',
+  'harnesses/opencode/tools/show.ts',
+  'harnesses/opencode/tools/web_search.ts',
   'kortix.yaml',
+  'memory/MEMORY.md',
   'README.md',
+  'skills/kortix-cli/SKILL.md',
 ];
 
 let repoCreateCalls: any[];
+let personalRepoCreateRefused: boolean;
 let fileShaCalls: any[];
 let commitCalls: any[];
+/** One entry per `commitFiles` call — the starter must land as ONE commit. */
+let commitBatches: any[];
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
 let installationRows: Array<typeof accountGithubInstallations.$inferSelect>;
@@ -101,12 +104,20 @@ const MANAGED_GIT_ENV_KEYS = [
 ] as const;
 for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
 
+// Characterization: every `assertAuthorized` a route performs is recorded
+// here, and `deniedIamAction` turns one action into a 403, so a test can pin
+// two routes to the same account authorization gate.
+const assertedIamActions: string[] = [];
+let deniedIamAction: string | null = null;
+
 function resetState() {
   setTestAuth();
   for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
   repoCreateCalls = [];
+  personalRepoCreateRefused = false;
   fileShaCalls = [];
   commitCalls = [];
+  commitBatches = [];
   insertedProject = null;
   grantedProjectRole = null;
   gitConnectionRows = [];
@@ -115,6 +126,8 @@ function resetState() {
   installationRepoListCalls = [];
   platformAdmin = false;
   selfHostOperator = false;
+  assertedIamActions.length = 0;
+  deniedIamAction = null;
   installationRows = [
     {
       installationRowId: '00000000-0000-4000-a000-000000000041',
@@ -131,7 +144,12 @@ function resetState() {
   ];
 }
 
-mockIamEngineAllowAll();
+mockIamEngineAllowAll((action) => {
+  assertedIamActions.push(action);
+  if (action === deniedIamAction) {
+    throw new HTTPException(403, { message: `Denied ${action}` });
+  }
+});
 
 // The hermetic db shim models the legacy tables; the read models project from
 // those rows rather than from `role_assignments`. See mockIamReadModels.
@@ -254,7 +272,14 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
+// that only lists the exports it overrides deletes every other one — and the
+// next export added to `projects/github.ts` becomes
+// `SyntaxError: Export named 'X' not found` in this file, which that change
+// never touched (.claude/skills/learnings/SKILL.md).
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   // provision-core.ts classifies rate-limited repo creates with this class.
   GitHubApiError: class GitHubApiError extends Error {
     constructor(
@@ -291,12 +316,27 @@ mock.module('../projects/github', () => ({
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
+  // The starter is written in one commit (`commitFiles`). Each file is recorded
+  // with the batch's auth / branch / message so the per-file assertions below
+  // still read every path and its content.
+  commitFiles: async (input: any) => {
+    commitBatches.push(input);
+    for (const file of input.files) {
+      commitCalls.push({ ...file, auth: input.auth, branch: input.branch, message: input.message });
+    }
+  },
   createInstallationToken: async (installationId: string) => {
     expect(['42', '84']).toContain(installationId);
     return { token: 'installation-token', expires_at: '2026-01-01T00:00:00Z' };
   },
   createRepo: async (input: any) => {
     repoCreateCalls.push(input);
+    if (personalRepoCreateRefused) {
+      const error = new Error('GitHub /user/repos failed (403): Resource not accessible by integration') as Error & { status: number; path: string };
+      error.status = 403;
+      error.path = '/user/repos';
+      throw error;
+    }
     return {
       id: 7,
       name: 'company-os',
@@ -629,6 +669,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { projectsApp } = await import('../projects/index');
+const { ACCOUNT_ACTIONS } = await import('../iam');
 const { buildStarterFiles } = await import('../projects/starter');
 
 function createApp() {
@@ -646,6 +687,28 @@ function createApp() {
 describe('create-repo starter scaffold contract', () => {
   beforeEach(() => resetState());
 
+  // GitHub refuses `POST /user/repos` for an App installation token. A personal
+  // owner with no stored user authorization is asked to authorize — an
+  // actionable 409 the web client answers with the GitHub popup — before any
+  // call reaches GitHub, so no raw GitHub error and no half-created project.
+  test('a personal owner without GitHub user authorization gets an actionable 409, not a raw GitHub error', async () => {
+    installationRows[0]!.ownerType = 'User';
+    personalRepoCreateRefused = true;
+    const res = await createApp().request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'demo', installation_id: '42' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'github_user_authorization_required',
+      owner_login: 'kortix-org',
+    });
+    expect(repoCreateCalls).toHaveLength(0);
+    expect(insertedProject).toBeNull();
+  });
+
   test('builds exactly the minimal starter scaffold', () => {
     const files = buildStarterFiles({
       projectName: 'Company OS',
@@ -659,14 +722,14 @@ describe('create-repo starter scaffold contract', () => {
 
     // The repository ships runtime tools, project skills, and agents. Managed
     // system skills are injected at session boot.
-    expect(files.find((file) => file.path === '.kortix/opencode/tools/show.ts')).toBeDefined();
+    expect(files.find((file) => file.path === 'harnesses/opencode/tools/show.ts')).toBeDefined();
     expect(
-      files.find((file) => file.path === '.kortix/opencode/skills/kortix-cli/SKILL.md'),
+      files.find((file) => file.path === 'skills/kortix-cli/SKILL.md'),
     ).toBeDefined();
     expect(
-      files.find((file) => file.path === '.kortix/opencode/skills/kortix-system/SKILL.md'),
+      files.find((file) => file.path === 'skills/kortix-system/SKILL.md'),
     ).toBeUndefined();
-    expect(files.find((file) => file.path === '.kortix/opencode/agents/kortix.md')).toBeDefined();
+    expect(files.find((file) => file.path === 'agents/kortix.md')).toBeDefined();
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.yaml');
     expect(manifest?.content).toContain('name: "Company OS"');
@@ -694,8 +757,8 @@ describe('create-repo starter scaffold contract', () => {
 
     expect(paths).toEqual(explicitPaths);
     for (const path of BASE_STARTER_PATHS) expect(paths).toContain(path);
-    expect(paths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(paths).toContain('skills/agent-browser/SKILL.md');
+    expect(paths).toContain('skills/pdf/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
     expect(paths.some((path) => path.includes('/agent-tunnel/'))).toBe(false);
   });
@@ -709,8 +772,8 @@ describe('create-repo starter scaffold contract', () => {
     const paths = files.map((file) => file.path);
 
     expect(paths).toEqual(BASE_STARTER_PATHS);
-    expect(paths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(paths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(paths).not.toContain('skills/agent-browser/SKILL.md');
+    expect(paths).not.toContain('skills/pdf/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
   });
 
@@ -785,6 +848,54 @@ describe('create-repo starter scaffold contract', () => {
       requires_installation: true,
       install_url: 'https://github.com/apps/kortix-test/installations/new',
     });
+  });
+
+  test('both account installation GET routes serve the same metadata behind the same authorization', async () => {
+    const app = createApp();
+
+    let mark = assertedIamActions.length;
+    const singular = await app.request(
+      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+    );
+    const singularActions = assertedIamActions.slice(mark);
+    mark = assertedIamActions.length;
+    const plural = await app.request(
+      `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+    );
+    const pluralActions = assertedIamActions.slice(mark);
+
+    expect(singular.status).toBe(200);
+    expect(plural.status).toBe(200);
+    const singularBody = await singular.json();
+    expect(singularBody).toMatchObject({
+      account_id: ACCOUNT_ID,
+      installed: true,
+      configured: true,
+      installation_id: '42',
+      owner_login: 'kortix-org',
+      install_url: 'https://github.com/apps/kortix-test/installations/new',
+    });
+    // One account-scoped payload, identical from both paths.
+    expect(await plural.json()).toEqual(singularBody);
+    // Both routes assert the same account action, exactly once each.
+    expect(singularActions).toEqual([ACCOUNT_ACTIONS.PROJECT_CREATE]);
+    expect(pluralActions).toEqual(singularActions);
+
+    // Refusing that action refuses both paths the same way.
+    deniedIamAction = ACCOUNT_ACTIONS.PROJECT_CREATE;
+    try {
+      const deniedSingular = await app.request(
+        `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+      );
+      const deniedPlural = await app.request(
+        `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+      );
+      expect(deniedSingular.status).toBe(403);
+      expect(deniedPlural.status).toBe(403);
+      expect(await deniedPlural.json()).toEqual(await deniedSingular.json());
+    } finally {
+      deniedIamAction = null;
+    }
   });
 
   test('lists multiple GitHub installations and imports from the selected one', async () => {
@@ -1070,28 +1181,27 @@ describe('create-repo starter scaffold contract', () => {
     });
     expect(repoCreateCalls[0].owner).toBeUndefined();
 
-    expect(fileShaCalls.map((call) => call.path)).toEqual(['README.md']);
-    expect(fileShaCalls[0]).toMatchObject({
+    // One commit, not one per file: ~180 sequential Contents-API writes ran
+    // past the API's 25 s request deadline. The tree overwrites the
+    // `auto_init` README in that same commit, so no sha lookup is needed.
+    expect(commitBatches).toHaveLength(1);
+    expect(commitBatches[0]).toMatchObject({
       owner: 'kortix-org',
       repo: 'company-os',
       branch: 'main',
+      message: 'chore: scaffold the Kortix starter',
       auth: { token: 'installation-token', source: 'app_installation' },
     });
+    expect(fileShaCalls).toEqual([]);
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
-    expect(committedPaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(committedPaths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(committedPaths).toContain('skills/agent-browser/SKILL.md');
+    expect(committedPaths).toContain('skills/pdf/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
-    expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
-    // README.md is upserted via sha because `auto_init: true` creates one
-    // on repo creation. Every other file is brand-new.
-    const readmeIdx = committedPaths.indexOf('README.md');
-    expect(commitCalls[readmeIdx]!.existingSha).toBe('existing-readme-sha');
-    expect(
-      commitCalls.filter((_, i) => i !== readmeIdx).every((call) => call.existingSha === undefined),
-    ).toBe(true);
+    // README.md replaces the `auto_init` one inside the same tree.
+    expect(committedPaths).toContain('README.md');
 
     expect(insertedProject).toMatchObject({
       accountId: ACCOUNT_ID,
@@ -1121,7 +1231,12 @@ describe('create-repo starter scaffold contract', () => {
         externalRepoId: '7',
         authMethod: 'github_app',
         installationId: '42',
-        managed: true,
+        // The repository lives in the ACCOUNT's GitHub, reached through the
+        // account's own installation. `managed: true` means "lives in the
+        // Kortix managed-git backend": with it, the mirror cloned this repo
+        // with the managed-org PAT, which cannot see it (503
+        // git_mirror_unavailable on the first session).
+        managed: false,
         visibility: 'private',
         status: 'connected',
       }),
@@ -1151,7 +1266,7 @@ describe('create-repo starter scaffold contract', () => {
 
     expect(res.status).toBe(201);
     expect(commitCalls.map((call) => call.path)).toContain(
-      '.kortix/opencode/skills/agent-browser/SKILL.md',
+      'skills/agent-browser/SKILL.md',
     );
     expect(commitCalls.find((call) => call.path === 'kortix.yaml')?.content).toContain(
       'name: "Company OS"',
@@ -1160,7 +1275,7 @@ describe('create-repo starter scaffold contract', () => {
       expect.objectContaining({
         projectId: PROJECT_ID,
         provider: 'github',
-        managed: true,
+        managed: false,
       }),
     );
   });

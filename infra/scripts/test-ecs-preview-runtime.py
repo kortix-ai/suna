@@ -27,9 +27,8 @@ credentials and never executes pull request code. The assertions follow the new
 implementation files; each obsolete assertion is kept as a comment that records
 which rule replaced it.
 
-`infra/terraform/environments/preview` still exists and is still applied, so its
-guardrails are still asserted here. `infra/scripts/ecs-preview.sh` is no longer
-reachable from any workflow; this file asserts it stays disconnected.
+The ECS preview Terraform root and `infra/scripts/ecs-preview.sh` are deleted.
+This file asserts the workflow never reconnects to them.
 """
 
 from pathlib import Path
@@ -57,9 +56,6 @@ PREVIEW_SOURCES = {
     "tests/src/core/sandbox-preview-providers.ts": PREVIEW_PROVIDERS,
     "tests/src/core/preview-stack.ts": PREVIEW_STACK,
 }
-TERRAFORM = read("infra/terraform/environments/preview/main.tf")
-VARIABLES = read("infra/terraform/environments/preview/variables.tf")
-README = read("infra/terraform/environments/preview/README.md")
 
 JOB_HEADING = re.compile(r"^  [a-z][a-z0-9-]*:$", re.MULTILINE)
 
@@ -428,9 +424,10 @@ class PreviewTeardown(unittest.TestCase):
         # off (the explicit switch) and the branch being deleted.
         teardown = job("teardown")
         self.assertNotIn("github.event.action == 'closed'", WORKFLOW)
-        self.assertIn("types: [labeled, unlabeled, synchronize]", WORKFLOW)
+        self.assertIn("types: [labeled, unlabeled]", WORKFLOW)
         self.assertIn("github.event.action == 'unlabeled' && github.event.label.name == 'preview'", WORKFLOW)
-        self.assertIn("github.event.action == 'synchronize'", WORKFLOW)
+        # A push never deploys (2026-09-28): adding the label is the one trigger.
+        self.assertNotIn("synchronize", WORKFLOW)
         # Teardown runs default-branch code, never the pull request head.
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", teardown)
         # OLD: bash infra/scripts/ecs-preview.sh teardown "$NUM".
@@ -475,21 +472,13 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("Mark GitHub deployment inactive", teardown)
         self.assertNotIn("branch-scoped Vercel", WORKFLOW)
 
-    def test_a_new_head_sha_redeploys_instead_of_revoking_the_approval(self):
-        # WAS: a push deleted the sandbox AND stripped the `preview` label, so
-        # every push cost a human re-approval and a NEW url. A labelled preview
-        # now stays online until the label comes off or the pull request closes.
-        #
-        # The approval bar is unchanged, only re-expressed: `authorize` still
-        # runs on the push, still accepts SAME-REPOSITORY pull requests only, and
-        # still requires the actor to hold write. On `synchronize` that actor is
-        # whoever pushed — who necessarily already holds write on this
-        # repository — so nothing is loosened. The exact-SHA revalidation before
-        # deploy is untouched.
+    def test_only_an_explicit_label_or_dispatch_deploys(self):
+        # Only an explicit act deploys: a writer adds the label or dispatches.
+        # A push to a labelled branch starts nothing (2026-09-28).
         authorize = job("authorize")
-        self.assertIn("github.event.action == 'synchronize'", authorize)
+        self.assertNotIn("synchronize", authorize)
         self.assertIn(
-            "contains(github.event.pull_request.labels.*.name, 'preview')", authorize
+            "github.event.action == 'labeled' && github.event.label.name == 'preview'", authorize
         )
         self.assertIn(
             "github.event.pull_request.head.repo.full_name == github.repository", authorize
@@ -520,9 +509,7 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn(
             "PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}", job("deploy")
         )
-        # The label deploys and does not test (2026-09-28: five concurrent
-        # label suites rate-limited each other for ~80 min each). Only an
-        # explicit dispatch runs --target-full against a preview.
+        # The label deploys only (~7 min). Only a dispatch runs --target-full.
         self.assertIn(
             "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
             job("deploy"),
@@ -654,48 +641,6 @@ class PreviewHealthGate(unittest.TestCase):
         self.assertNotIn("daytona", run.lower())
         self.assertIn("export type SandboxPreviewProvider = 'auto' | 'platinum';", PREVIEW_CORE)
         self.assertIn("PREVIEW_SANDBOX_PROVIDER must be auto or platinum", PREVIEW_CLI)
-
-
-class SharedPreviewEdge(unittest.TestCase):
-    """The ECS preview root no longer serves previews but is still applied."""
-
-    # `infra/terraform/environments/preview` provisions a real ALB, WAF, DNS
-    # records, and a GitHub OIDC role in account 935064898258. #6347 stopped
-    # using them; it did not destroy them. Until the root is removed, its
-    # guardrails stay gated here. Retiring it must delete this class and the
-    # root together.
-
-    def test_shared_edge_has_tls_waf_logs_and_preview_only_oidc_role(self):
-        for fragment in (
-            'name = "kortix-preview"',
-            "certificate_arn   = var.preview_certificate_arn",
-            'resource "aws_wafv2_web_acl_association" "preview"',
-            "drop_invalid_header_fields = true",
-            "enable_deletion_protection = true",
-            'name    = "*.preview-api"',
-            'name    = "*.preview"',
-            'domain_name = "*.preview.kortix.com"',
-            'resource "aws_lb_listener_certificate" "frontend"',
-            'data "aws_secretsmanager_secret" "web"',
-            'name = "kortix-preview-web-env"',
-            "proxied = false",
-            'name = "kortix-gha-preview-deploy"',
-            '"repo:kortix-ai/suna:pull_request"',
-            '"repo:kortix-ai/suna:ref:refs/heads/main"',
-            '"token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/main"',
-            'description = "DNS over UDP"',
-            'resource "aws_iam_role_policy" "execution_logs_kms"',
-            'resource "aws_wafv2_web_acl" "preview"',
-            'name        = "AWSManagedRulesKnownBadInputsRuleSet"',
-            'resource "aws_wafv2_web_acl_logging_configuration" "preview"',
-        ):
-            self.assertIn(fragment, TERRAFORM)
-
-    def test_database_egress_and_bootstrap_are_bounded(self):
-        self.assertIn("cidr_blocks = var.postgres_egress_cidrs", TERRAFORM)
-        self.assertIn('!contains(var.postgres_egress_cidrs, "0.0.0.0/0")', VARIABLES)
-        for heading in ("## Existing-resource import", "## Cutover", "## Reconciliation and rollback"):
-            self.assertIn(heading, README)
 
 
 if __name__ == "__main__":

@@ -143,133 +143,135 @@ export async function reconcileOrphanComputeSessions(
     byReason: EMPTY_REASON_COUNTS(),
   };
   let cursor = 0;
-  const worker = async () => {
-    while (cursor < rows.length) {
-      const row = rows[cursor++];
-      try {
-        const isApp = row.workloadType === 'app';
-        const isMonitor = row.workloadType === 'monitor';
-        const runtimeStatus = isApp
-          ? nonSessionRuntimeBillingStatus(row.appStatus)
-          : isMonitor
-            ? nonSessionRuntimeBillingStatus(row.monitorStatus)
-            : row.sbStatus;
-        const runtimeUpdatedAt = isApp
-          ? row.appUpdatedAt
-          : isMonitor
-            ? row.monitorUpdatedAt
-            : row.sbUpdatedAt;
-        const runtimeMetadata = (
-          isApp ? row.appMetadata : isMonitor ? row.monitorMetadata : row.sbMetadata
-        ) as Record<string, unknown> | null;
-        const provider = isApp
-          ? row.appProvider
-          : isMonitor
-            ? row.monitorProvider
-            : row.sessionProvider;
-        const externalId = isApp
-          ? row.appExternalId
-          : isMonitor
-            ? row.monitorExternalId
-            : row.sessionExternalId;
-        const startedAt = parseTimestamp(row.startedAt) ?? now;
-        const openForMs = Math.max(0, now.getTime() - startedAt.getTime());
-        const computeMetadata = (row.computeMetadata ?? {}) as Record<string, unknown>;
-        const unresolvedSince = parseTimestamp(computeMetadata.unresolvedSince);
-        const lastAliveAt = lastAliveAtOf({
-          metadata: computeMetadata,
-          startedAt: row.startedAt,
-        });
-        const livenessGraceMs = computeLivenessGraceMs();
+  const reconcileRow = async (row: (typeof rows)[number]) => {
+    try {
+      const isApp = row.workloadType === 'app';
+      const isMonitor = row.workloadType === 'monitor';
+      const runtimeStatus = isApp
+        ? nonSessionRuntimeBillingStatus(row.appStatus)
+        : isMonitor
+          ? nonSessionRuntimeBillingStatus(row.monitorStatus)
+          : row.sbStatus;
+      const runtimeUpdatedAt = isApp
+        ? row.appUpdatedAt
+        : isMonitor
+          ? row.monitorUpdatedAt
+          : row.sbUpdatedAt;
+      const runtimeMetadata = (
+        isApp ? row.appMetadata : isMonitor ? row.monitorMetadata : row.sbMetadata
+      ) as Record<string, unknown> | null;
+      const provider = isApp
+        ? row.appProvider
+        : isMonitor
+          ? row.monitorProvider
+          : row.sessionProvider;
+      const externalId = isApp
+        ? row.appExternalId
+        : isMonitor
+          ? row.monitorExternalId
+          : row.sessionExternalId;
+      const startedAt = parseTimestamp(row.startedAt) ?? now;
+      const openForMs = Math.max(0, now.getTime() - startedAt.getTime());
+      const computeMetadata = (row.computeMetadata ?? {}) as Record<string, unknown>;
+      const unresolvedSince = parseTimestamp(computeMetadata.unresolvedSince);
+      const lastAliveAt = lastAliveAtOf({
+        metadata: computeMetadata,
+        startedAt: row.startedAt,
+      });
+      const livenessGraceMs = computeLivenessGraceMs();
 
-        const base = {
-          sandboxStatus: runtimeStatus ?? null,
-          hasProviderTarget: !!externalId && !!provider,
-          runtimeStartFailed: hasFailedRuntimeStart(runtimeMetadata),
-          wakeInProgress: runtimeWakeInProgress(runtimeMetadata, now),
-          beyondLivenessCeiling: isBeyondLivenessCeiling({
-            now,
-            lastAliveAt,
-            graceMs: livenessGraceMs,
-          }),
-          openForMs,
-          unresolvedCeilingMs,
-          maxWindowMs,
-        };
+      const base = {
+        sandboxStatus: runtimeStatus ?? null,
+        hasProviderTarget: !!externalId && !!provider,
+        runtimeStartFailed: hasFailedRuntimeStart(runtimeMetadata),
+        wakeInProgress: runtimeWakeInProgress(runtimeMetadata, now),
+        beyondLivenessCeiling: isBeyondLivenessCeiling({
+          now,
+          lastAliveAt,
+          graceMs: livenessGraceMs,
+        }),
+        openForMs,
+        unresolvedCeilingMs,
+        maxWindowMs,
+      };
 
-        // Probe the DB-only rules first: `providerStatus: 'running'` and
-        // `unresolvedForMs: null` make every provider-informed rule inert, so a
-        // non-null reason here is one we reached without any provider call.
-        let decision = decideComputeClose({
-          ...base,
-          providerStatus: 'running',
-          unresolvedForMs: null,
-        });
+      // Probe the DB-only rules first: `providerStatus: 'running'` and
+      // `unresolvedForMs: null` make every provider-informed rule inert, so a
+      // non-null reason here is one we reached without any provider call.
+      let decision = decideComputeClose({
+        ...base,
+        providerStatus: 'running',
+        unresolvedForMs: null,
+      });
 
-        let providerStatus: SandboxStatus | null = null;
-        if (!decision.reason && decision.needsProviderStatus) {
-          providerStatus = await getProvider(provider as ProviderName)
-            .getStatus(externalId as string)
-            .catch(() => null);
-          // 'unknown' is the STEADY state for a box deleted out from under us
-          // (44 of 66 open prod rows answered unknown), so track how long it has
-          // been continuously unresolvable rather than treating it as transient.
-          if (providerStatus === 'running') {
-            if (unresolvedSince) {
-              await updateComputeSessionMetadata(row.computeId, {
-                ...computeMetadata,
-                unresolvedSince: null,
-              });
-            }
-          } else if (
-            providerStatus !== 'stopped' &&
-            providerStatus !== 'removed' &&
-            !unresolvedSince
-          ) {
+      let providerStatus: SandboxStatus | null = null;
+      if (!decision.reason && decision.needsProviderStatus) {
+        providerStatus = await getProvider(provider as ProviderName)
+          .getStatus(externalId as string)
+          .catch(() => null);
+        // 'unknown' is the STEADY state for a box deleted out from under us
+        // (44 of 66 open prod rows answered unknown), so track how long it has
+        // been continuously unresolvable rather than treating it as transient.
+        if (providerStatus === 'running') {
+          if (unresolvedSince) {
             await updateComputeSessionMetadata(row.computeId, {
               ...computeMetadata,
-              unresolvedSince: now.toISOString(),
+              unresolvedSince: null,
             });
           }
-          decision = decideComputeClose({
-            ...base,
-            providerStatus,
-            unresolvedForMs: unresolvedSince ? now.getTime() - unresolvedSince.getTime() : null,
+        } else if (
+          providerStatus !== 'stopped' &&
+          providerStatus !== 'removed' &&
+          !unresolvedSince
+        ) {
+          await updateComputeSessionMetadata(row.computeId, {
+            ...computeMetadata,
+            unresolvedSince: now.toISOString(),
           });
         }
-
-        if (!decision.reason) continue;
-
-        const windowEnd = computeCloseWindowEnd({
-          reason: decision.reason,
-          now,
-          startedAt,
-          sandboxUpdatedAt: parseTimestamp(runtimeUpdatedAt),
-          unresolvedSince,
-          runtimeWakeFailedAt: parseTimestamp(runtimeMetadata?.runtimeWakeFailedAt),
-          lastAliveAt,
-          livenessGraceMs,
-          maxWindowMs,
+        decision = decideComputeClose({
+          ...base,
+          providerStatus,
+          unresolvedForMs: unresolvedSince ? now.getTime() - unresolvedSince.getTime() : null,
         });
-        await pauseComputeSession(row.sandboxId, windowEnd);
-        result.closed += 1;
-        result.byReason[decision.reason] += 1;
-        logger.warn('[reaper] closed a compute window whose box was not provably alive', {
-          sandbox_id: row.sandboxId,
-          reason: decision.reason,
-          open_for_hours: Number((openForMs / 3_600_000).toFixed(2)),
-          billed_through: windowEnd.toISOString(),
-          workload_type: row.workloadType,
-          sandbox_status: runtimeStatus ?? null,
-          provider_status: providerStatus,
-        });
-      } catch (err) {
-        result.errors += 1;
-        console.warn(
-          `[reaper] orphan-compute reconcile failed for ${row.sandboxId}:`,
-          err instanceof Error ? err.message : err,
-        );
       }
+
+      if (!decision.reason) return;
+
+      const windowEnd = computeCloseWindowEnd({
+        reason: decision.reason,
+        now,
+        startedAt,
+        sandboxUpdatedAt: parseTimestamp(runtimeUpdatedAt),
+        unresolvedSince,
+        runtimeWakeFailedAt: parseTimestamp(runtimeMetadata?.runtimeWakeFailedAt),
+        lastAliveAt,
+        livenessGraceMs,
+        maxWindowMs,
+      });
+      await pauseComputeSession(row.sandboxId, windowEnd);
+      result.closed += 1;
+      result.byReason[decision.reason] += 1;
+      logger.warn('[reaper] closed a compute window whose box was not provably alive', {
+        sandbox_id: row.sandboxId,
+        reason: decision.reason,
+        open_for_hours: Number((openForMs / 3_600_000).toFixed(2)),
+        billed_through: windowEnd.toISOString(),
+        workload_type: row.workloadType,
+        sandbox_status: runtimeStatus ?? null,
+        provider_status: providerStatus,
+      });
+    } catch (err) {
+      result.errors += 1;
+      console.warn(
+        `[reaper] orphan-compute reconcile failed for ${row.sandboxId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  };
+  const worker = async () => {
+    while (cursor < rows.length) {
+      await reconcileRow(rows[cursor++]);
     }
   };
   await Promise.all(Array.from({ length: Math.min(REAP_CONCURRENCY, rows.length) }, worker));

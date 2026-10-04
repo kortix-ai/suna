@@ -23,7 +23,7 @@
  * decision for every other running box is `deadline_at <= now()`.
  */
 
-import type { SandboxStatus } from '../../platform/providers/status';
+import { isProviderNotFound, type SandboxStatus } from '../../platform/providers/status';
 
 export type ReconcileAction = 'none' | 'reconcile-stopped' | 'reconcile-removed';
 
@@ -51,15 +51,24 @@ export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction 
 
 export function isLifecycleTransitionInProgress(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return msg.includes('state change in progress') || msg.includes('transition in progress');
+  return (
+    msg.includes('state change in progress') ||
+    msg.includes('transition in progress') ||
+    // KRTX-667: Platinum's `stop()` (platform/providers/platinum.ts) ACKs the
+    // stop and polls for the terminal state; its own `stopping` transition
+    // outlasts the 10s bound (the window MIDTURN_STOP_CONFIRMATION_MS documents
+    // at 60s), so a timeout while the box is still stopping is that transition,
+    // not a refused stop — the next pass settles it. A `running` last state
+    // means the stop did not take and stays a genuine failure.
+    (msg.includes('did not reach stopped') && msg.includes('last state: stopping'))
+  );
 }
 
 export function isAlreadyNotRunning(err: unknown): boolean {
+  if (isProviderNotFound(err)) return true;
+  // legacy: a stop refused because the box is already down carries no status
+  // or code on Daytona (400 "not started"); Platinum's `sandbox_not_running`
+  // 409 text matches too. Delete when the providers type this refusal.
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    msg.includes('not started') ||
-    msg.includes('not running') ||
-    msg.includes('already stopped') ||
-    msg.includes('not found')
-  );
+  return msg.includes('not started') || msg.includes('not running') || msg.includes('already stopped');
 }

@@ -36,7 +36,7 @@ import { Session } from '@earendil-works/pi-agent-core';
 import { ChatEventAdapter } from './chat-events.ts';
 import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
-import { RuntimeSurface } from './runtime-surface.ts';
+import { RUNTIME_API_PREFIX, RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
 
 /**
@@ -334,7 +334,7 @@ export async function startWorker(cfg = configFromEnv()) {
     for (const l of listeners) l(line);
   });
 
-  // ── Kortix Runtime API (/kortix/opencode/*) ─────────────────────────────
+  // ── Kortix Runtime API (/kortix/runtime/*) ─────────────────────────────
   // The product's session surface: /state, paged /messages, ONE sequenced
   // /events SSE the API relays. One PERSISTENT adapter feeds one surface — the
   // stream and the transcript can never disagree, and message ids stay unique
@@ -410,7 +410,7 @@ export async function startWorker(cfg = configFromEnv()) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
 
-    if (url.pathname.startsWith('/kortix/opencode/')) {
+    if (RUNTIME_API_PREFIX.test(url.pathname)) {
       if (surface.handle(req, res, url)) return;
     }
     if (url.pathname === '/session' || url.pathname.startsWith('/session/')) {
@@ -529,8 +529,21 @@ export async function startWorker(cfg = configFromEnv()) {
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
+        // Parse before any header write. A malformed body is a client error
+        // answered with 400 — the old ordering wrote the SSE headers first, so
+        // the thrown parse escaped every guard as an unhandled rejection that
+        // killed the worker and left the client on a 200 stream without end.
+        let text: unknown;
+        let script: unknown;
+        try {
+          ({ text, script } = JSON.parse(body || '{}'));
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          res.writeHead(400, { 'content-type': 'application/json' })
+             .end(JSON.stringify({ ok: false, error: message }));
+          return;
+        }
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-        const { text, script } = JSON.parse(body || '{}');
         if (faux && Array.isArray(script)) {
           faux.setResponses(
             script.map((step: any) =>

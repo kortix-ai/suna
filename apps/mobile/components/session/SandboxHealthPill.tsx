@@ -3,7 +3,7 @@
  * composer card, that appears while the session's computer is not ready. Its
  * words are the SDK's (`sessionConnectionLabel`): a yellow dot and "Waking
  * computer · 53s" for a parked or booting computer; an orange dot, "Can't
- * reach computer · 53s", and the Health and Switch actions only when a dial
+ * reach computer · 53s", and the Health action only when a dial
  * failed.
  *
  * The pill self-hides as soon as the sandbox is reachable again, so it's
@@ -11,11 +11,8 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, View } from 'react-native';
-import { ArrowsLeftRightIcon as ArrowLeftRight, WarningCircleIcon as CircleAlert } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
+import { Animated, Easing } from 'react-native';
+import { WarningCircleIcon as CircleAlert } from '@/lib/icons';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { THEME } from '@/lib/utils/theme';
 import { sessionConnectionLabel } from '@kortix/sdk';
@@ -23,10 +20,9 @@ import {
   useElapsedSince,
   useSandboxReachability,
 } from '@/hooks/useSandboxReachability';
+import { ComposerStatusAction, ComposerStatusPill } from './ComposerStatusPill';
 
 interface SandboxHealthPillProps {
-  /** Opens the instances picker (= web's "Switch" target). */
-  onSwitch?: () => void;
   /** Optional — opens a detailed health sheet. Hidden when omitted. */
   onHealth?: () => void;
   /** Rendered in this slot while the sandbox is reachable: the thread's
@@ -34,7 +30,7 @@ interface SandboxHealthPillProps {
   whenReachable?: React.ReactNode;
 }
 
-export function SandboxHealthPill({ onSwitch, onHealth, whenReachable }: SandboxHealthPillProps) {
+export function SandboxHealthPill({ onHealth, whenReachable }: SandboxHealthPillProps) {
   const { sandboxUrl } = useSandboxContext();
   const { reachable, downSince, checked, connection } = useSandboxReachability(sandboxUrl);
   const elapsed = useElapsedSince(downSince);
@@ -67,51 +63,13 @@ export function SandboxHealthPill({ onSwitch, onHealth, whenReachable }: Sandbox
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] });
 
-  // The composer card, exactly (components/kortix/composer.tsx): `px-4`
-  // edge, `rounded-3xl border border-border bg-background p-2`, and the
-  // composer's `secondary` `sm` pills for the actions (Jay, 2026-09-23).
   return (
-    <View className="px-4 pb-2">
-      <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
-        {/* Orange dot with ping halo. `px-2` in the row puts it on the
-            composer's text inset (8pt card + 8pt input padding). */}
-        <View className="flex-1 flex-row items-center gap-2 px-2">
-          <View style={{ width: 8, height: 8, alignItems: 'center', justifyContent: 'center' }}>
-            <Animated.View
-              style={{
-                position: 'absolute',
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: dotColor,
-                opacity: pingOpacity,
-                transform: [{ scale: pingScale }],
-              }}
-            />
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor }} />
-          </View>
-          <Text variant="muted" className="shrink" numberOfLines={1}>
-            {wording?.label}
-            {elapsed ? <Text variant="muted" className="opacity-60">{` · ${elapsed}`}</Text> : null}
-          </Text>
-        </View>
-
-        {/* Health and Switch help only when the computer is truly unreachable:
-            a waking one needs neither. */}
-        {faulted && onHealth ? (
-          <Button variant="secondary" size="sm" className="rounded-full" onPress={onHealth}>
-            <Icon as={CircleAlert} size={14} />
-            <Text>Health</Text>
-          </Button>
-        ) : null}
-
-        {faulted && onSwitch ? (
-          <Button variant="secondary" size="sm" className="rounded-full" onPress={onSwitch}>
-            <Icon as={ArrowLeftRight} size={14} />
-            <Text>Switch</Text>
-          </Button>
-        ) : null}
-      </View>
-    </View>
+    <ComposerStatusPill
+      dotColor={dotColor}
+      ping={{ scale: pingScale, opacity: pingOpacity }}
+      label={wording?.label}
+      elapsed={elapsed}
+      actions={faulted && onHealth ? <ComposerStatusAction icon={CircleAlert} label="Health" onPress={onHealth} /> : null}
+    />
   );
 }

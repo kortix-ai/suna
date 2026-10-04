@@ -2,7 +2,7 @@
 
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
 import { wsDomain } from '@/features/session/tool/shared/web-helpers';
-import { safeHttpUrl } from '@/lib/safe-url';
+import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 
 /**

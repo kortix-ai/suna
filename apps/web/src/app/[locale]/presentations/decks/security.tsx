@@ -173,10 +173,10 @@ export function useSlides(): SlideDef[] {
       label: tI18nComplete.raw('text93fbaf02beca'),
       steps: 3,
       notes: [
-        'One. Isolation.\n\nA project is a repo. main is the thing everyone in the company actually relies on.',
+        'One. Isolation.\n\nA project is a repo.',
         'I start a session. Kortix cuts a branch and boots one machine for it — and that one-machine-per-session rule is a unique constraint in the database, not a convention two services agree to honour.\n\nThe agent in there can install packages, run code, break things.',
         'Someone starts a second session. Own branch, own machine. Nothing crosses.\n\nAnd this is the line worth sitting on: separating two of your own sessions is the same mechanism as separating two different customers. There is no weaker internal wall.',
-        'The machine is not precious. A bad install goes away with it, and the box is destroyed at the end anyway.\n\nOnly what the session commits survives — as a change request. That is the only way anything gets back to main.',
+        'The machine is not precious. A bad install goes away with it, and the box is destroyed at the end anyway.\n\nOnly what the session commits survives, as a change request.',
       ],
       node: (step) => (
         <Chapter n={0} title={tI18nComplete.raw('text9045e34e96f2')}>
@@ -232,10 +232,10 @@ export function useSlides(): SlideDef[] {
       label: tI18nComplete.raw('text9ab7f40ab45f'),
       steps: 3,
       notes: [
-        'Three. Nothing lands without you.\n\nThis is main — your live company.',
-        'The agent did its work on its own branch. Every edit lands there, invisible to main and to every other session. It does not get to push any of this into your company.',
-        'To keep anything, it commits and opens a change request pointed at main. That is the only door.\n\nAnd a change request is a diff. An agent rewriting its own prompt gets reviewed the same way a code change does, because it is one.',
-        'I read it. I approve it. Now it reaches main.\n\nAnd to be precise, because a reviewer will push on this: merging is a capability of its own, refused to every agent unless an admin grants it. That grant lives in kortix.yaml — so an agent cannot widen its own reach without a change request somebody else approves.\n\nRun a thousand agents in parallel and every one funnels through this gate.',
+        'Three. Nothing lands without you.\n\nSession work reaches main through a change request.',
+        'Each session gets its own sandbox and its own branch. The agent works there.',
+        'When it wants to keep something, it opens a change request.\n\nAnd a change request is a diff. An agent rewriting its own prompt gets reviewed the same way a code change does, because it is one.',
+        'A person approves it. Now it reaches main.\n\nAnd to be precise, because a reviewer will push on this: merge is default-deny for agents. Nothing merges itself, unless an admin granted the merge capability.\n\nRun a thousand agents in parallel and every one funnels through this gate.',
       ],
       node: (step) => (
         <Chapter n={2} title={tI18nComplete.raw('text74d1f5c328ca')}>
@@ -311,7 +311,7 @@ export function useSlides(): SlideDef[] {
       id: 'close',
       label: tI18nComplete.raw('textf049d5d66ce7'),
       notes:
-        'That is the whole model. Isolation, so a mistake cannot spread. Credentials the agent never holds. A human gate before anything ships. A full trail of everything.\n\nIt is built to survive a security review, not slip past one. On-prem, in your VPC, or fully isolated if that is what you need.\n\nAnd because it is open source, you do not have to take my word for any of it. Read the code.\n\nKortix. Your AGI management system.',
+        'That is the whole model. Isolation, so a mistake cannot spread. Credentials the agent never holds. A human gate before anything ships. A full trail of everything.\n\nIt is built to survive a security review, not slip past one. On-prem, in your VPC, or fully isolated if that is what you need.\n\nAnd because it is open source, you do not have to take my word for any of it. Read the code.\n\nKortix. Your AI Operating System.',
       node: (
         <Slide>
           <Rise i={0}>

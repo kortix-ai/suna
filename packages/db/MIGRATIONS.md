@@ -230,6 +230,34 @@ guard requires the author to state **how** they verified every environment —
 including any that were ever faked/rebaselined — actually has the value,
 rather than assuming a baseline is authoritative everywhere.
 
+### Worked example #3: swapping a hot table for a partitioned one (`audit_events`, 2026-10)
+
+A 210 GB table cannot be converted in place, and a copy needs a downtime window. The migrations
+build the new table empty and swap names. Locks on PostgreSQL 15, each verified in `pg_locks`:
+
+| Statement | Lock | Held |
+| --- | --- | --- |
+| `CREATE TABLE ... PARTITION OF` a live parent | `ACCESS EXCLUSIVE` on the parent | until commit: do not use on a live table |
+| `CREATE TABLE ... (LIKE parent)` + `ATTACH PARTITION` | `SHARE UPDATE EXCLUSIVE` on the parent, `ACCESS EXCLUSIVE` on the new child and on the DEFAULT partition | until commit; inserts continue |
+| `ALTER TABLE ... DROP CONSTRAINT` of a foreign key | `ACCESS EXCLUSIVE` on both tables | until commit |
+| `ALTER TABLE ... RENAME`, `ALTER INDEX ... RENAME` | `ACCESS EXCLUSIVE` on that relation | until commit |
+| `ALTER COLUMN ... SET DEFAULT` | `ACCESS EXCLUSIVE` | until commit |
+| `DETACH PARTITION` | `ACCESS EXCLUSIVE` on the parent (`CONCURRENTLY` is refused while a DEFAULT partition exists) | until commit; run it under `lock_timeout` and retry |
+
+Rules from that work:
+
+- **Lock in the writers' order.** An audit INSERT locks `audit_events`, then `audit_webhook_deliveries`
+  (its trigger). A migration that locked deliveries first deadlocked with live writers. `LOCK TABLE`
+  the table the writers touch first.
+- **Primary key and every unique index include the partition key.** No foreign key may reference a
+  partitioned table by a column set without it.
+- **Row triggers on the parent are cloned onto partitions, but fire after routing.** They cannot
+  move a row to another partition. Out-of-range rows need a DEFAULT partition, or the INSERT fails.
+- **A rename keeps the OID.** Views hold the OID: redefine them in the same transaction. Prepared
+  statements re-resolve names on their next execution.
+- A test runs the swap on a database with history, and with a connection that stays open across it
+  (`audit-events-partition-cutover.integration.test.ts`).
+
 ---
 
 ## Enforcement scope: new vs. grandfathered migrations
@@ -428,8 +456,18 @@ There is no separate preview database. Consequences:
 
 ## CI gates (`.github/workflows/db-migrations.yml`)
 
-Runs on every PR touching `packages/db/**`. Six jobs, each closing a failure
-mode we've actually hit:
+Runs on every push to `main` (post-merge, non-blocking) and on every pull
+request into `staging` that touches `packages/db/**`. A pull request into
+`main` runs none of it, so run the same checks in your box before the merge:
+
+```bash
+pnpm --filter @kortix/db lint                                   # lint + squawk
+git diff --diff-filter=M --name-only origin/main... -- 'packages/db/migrations/*.sql'   # immutability: must print nothing
+( cd packages/db && bun scripts/generate.ts __local_schema_sync ) && git status --porcelain -- packages/db/migrations packages/db/drizzle   # schema-sync: must print nothing
+pnpm test -- --db-only                                          # fresh-DB apply + migration suites
+```
+
+Six jobs, each closing a failure mode we've actually hit:
 
 | Job | Enforces | Failure mode it prevents |
 |---|---|---|
@@ -590,7 +628,7 @@ it previously silently produced nothing.
 
 - **`kortix.ts` adoption:** the objects `kortix.ts` does not declare are listed, with a reason, in `scripts/schema-contract-sql-only.ts` (1 legacy table, 3 compatibility views, 21 legacy columns, 62 non-unique indexes). The schema contract keeps the list from growing.
 - **Wallet functions:** the credit arithmetic lives in the private schema `kortix_wallet` (`grant_credits`, `debit_credits`, `reset_expiring_credits`; `20260925013304428_wallet_private_schema.sql`). `public.atomic_add_credits` / `atomic_use_credits` / `atomic_settle_credits` / `atomic_reset_expiring_credits` remain one release as wrappers for pre-rollout API images. Their drop is parked in `migrations-pending/drop_public_wallet_wrappers.sql.pending` with its preconditions.
-- ~~**Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload~~ — DONE in `20260730012238065_credit_use_credits_single_overload.sql`. `atomic_use_credits` is now a single 4-parameter function with defaults on `p_description`/`p_ledger_type`, so arities 2–4 all resolve to it; the dead 7-argument `atomic_grant_renewal_credits` overload is gone. `tests/migration/credit-rpc-overloads.test.ts` fails if any `public.atomic_*` or `kortix_wallet` function ever regains two overloads with overlapping callable arity. It spins up its own Postgres (Docker) and runs in the `db-suites` lane of `pnpm test` (the `core` CI lane, which a PR gets only with the `test` or `preview` label); run it alone with `pnpm test -- --db-only credit-rpc-overloads` when touching a wallet function. **Note `packages/db/drizzle/0000_bootstrap.sql` still defines only the OLD 5-argument `atomic_use_credits`** — that is fine (bootstrap runs before the baseline and this migration corrects it), but do not treat the bootstrap file as the current shape.
+- ~~**Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload~~ — DONE in `20260730012238065_credit_use_credits_single_overload.sql`. `atomic_use_credits` is now a single 4-parameter function with defaults on `p_description`/`p_ledger_type`, so arities 2–4 all resolve to it; the dead 7-argument `atomic_grant_renewal_credits` overload is gone. `tests/migration/credit-rpc-overloads.test.ts` fails if any `public.atomic_*` or `kortix_wallet` function ever regains two overloads with overlapping callable arity. It spins up its own Postgres (Docker) and runs in the `db-suites` lane of `pnpm test` (the `core` CI lane on a push to `main` and on a pull request into `staging`); run it alone with `pnpm test -- --db-only credit-rpc-overloads` when touching a wallet function. **Note `packages/db/drizzle/0000_bootstrap.sql` still defines only the OLD 5-argument `atomic_use_credits`** — that is fine (bootstrap runs before the baseline and this migration corrects it), but do not treat the bootstrap file as the current shape.
 - **Legacy trackers:** `supabase_migrations.schema_migrations`, `drizzle.__drizzle_migrations`, `kortix.api_schema_migrations` are dead. Drop after prod is also cut over.
 - **No repo-wide git pre-push hook** wires `pnpm --filter @kortix/db lint` automatically yet — it's a documented, not enforced, local step (CI is the real gate).
 

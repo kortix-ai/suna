@@ -22,14 +22,11 @@ const source = readFileSync(join(import.meta.dir, 'connector-accounts.tsx'), 'ut
  * Slug/Provider/Spec/Auth/Headers form.
  */
 describe('connector accounts tab branch', () => {
-  test('a computer profile renders ComputerConnectorAccount, before any other branch', () => {
-    const computerBlock = source.slice(
-      source.indexOf('if (isComputer)'),
-      source.indexOf('if (isChannel)'),
-    );
-    expect(computerBlock).toContain('<ComputerConnectorAccount');
-    expect(computerBlock).not.toContain('<ConnectionsList');
-    expect(computerBlock).not.toContain('<ChannelConnectionSection');
+  test('a computer connector has no branch of its own — its accounts are the generic list', () => {
+    // A paired computer is an ACCOUNT of the `computer` connector, like a
+    // personal Gmail. `ConnectionsList` owns its add step and online dot.
+    expect(source).not.toContain('isComputer');
+    expect(source).not.toContain('ComputerConnectorAccount');
   });
 
   test('a channel connector renders ChannelConnectionSection, not the accounts list', () => {
@@ -46,7 +43,7 @@ describe('connector accounts tab branch', () => {
   // `ConnectionsList` mount. There is no longer an `isManagedProvider` gate
   // between "renders the account list" and "renders the transport form": a
   // direct provider has no separate branch at all any more.
-  test('every non-channel, non-computer provider renders ConnectionsList — no isManagedProvider gate on it', () => {
+  test('every non-channel provider renders ConnectionsList — no isManagedProvider gate on it', () => {
     const tail = source.slice(source.indexOf('if (isChannel)'));
     expect(tail).toContain('<ConnectionsList');
     // The old defect: `if (isManagedProvider) { return <ConnectionsList ... />; }`
@@ -77,12 +74,10 @@ describe('connector accounts tab branch', () => {
     );
   });
 
-  test('branch order: computer, then channel, then the accounts list', () => {
-    const computerIdx = source.indexOf('if (isComputer)');
+  test('branch order: channel, then the accounts list', () => {
     const channelIdx = source.indexOf('if (isChannel)');
     const listIdx = source.indexOf('<ConnectionsList');
-    expect(computerIdx).toBeGreaterThan(-1);
-    expect(channelIdx).toBeGreaterThan(computerIdx);
+    expect(channelIdx).toBeGreaterThan(-1);
     expect(listIdx).toBeGreaterThan(channelIdx);
   });
 });

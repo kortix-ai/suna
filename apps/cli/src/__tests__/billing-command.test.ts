@@ -10,6 +10,7 @@ const ACCOUNT = 'account_1';
 
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
+let creditBalance: number | undefined = 42.5;
 let calls: Array<{ method: string; path: string; search: string; body: unknown }> = [];
 
 function writeConfig(apiBase: string): string {
@@ -61,11 +62,15 @@ function startServer(): string {
     fetch: async (req) => {
       const url = new URL(req.url);
       const path = url.pathname;
-      const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
+      const body =
+        req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path, search: url.search, body });
 
       if (path === '/v1/billing/account-state' && req.method === 'GET') {
-        return Response.json(ACCOUNT_STATE);
+        return Response.json({
+          ...ACCOUNT_STATE,
+          credits: { ...ACCOUNT_STATE.credits, total: creditBalance },
+        });
       }
       if (path === '/v1/billing/transactions' && req.method === 'GET') {
         return Response.json({
@@ -88,6 +93,12 @@ function startServer(): string {
       if (path === '/v1/billing/credit-breakdown' && req.method === 'GET') {
         return Response.json({ total: 42.5, expiring: 2.5, non_expiring: 40, daily: 0 });
       }
+      if (
+        path === '/v1/billing/transactions/summary' ||
+        (path === '/v1/billing/usage-history' && url.searchParams.get('days') !== '99')
+      ) {
+        return Response.json({ totalCredits: 2, totalDebits: 1.25, count: 2 });
+      }
       if (path === '/v1/usage/cost-summary' && req.method === 'GET') {
         return Response.json({
           totals: {
@@ -104,6 +115,26 @@ function startServer(): string {
           previous: { total_cost: 4 },
           series: [],
           models: [{ provider: 'anthropic', model: 'opus', cost: 3.5, request_count: 12 }],
+        });
+      }
+      if (path === '/v1/usage/session-costs' && req.method === 'GET') {
+        return Response.json({
+          sessions: [
+            {
+              session_id: 'sess_ab12cd34-0000-0000-0000-000000000000',
+              project_name: 'Atlas',
+              owner_name: 'user@example.test',
+              status: 'ready',
+              request_count: 7,
+              llm_cost: 3,
+              compute_cost: 1,
+              total_cost: 4,
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+          next_offset: null,
         });
       }
       if (path === '/v1/usage/cost-by-project' && req.method === 'GET') {
@@ -135,7 +166,10 @@ function startServer(): string {
       // Stands in for a self-hosted box that never enabled Stripe: the route
       // exists but 404s with `billing_disabled`.
       if (path === '/v1/billing/usage-history' && req.method === 'GET') {
-        return Response.json({ error: 'Billing is not enabled', billing_disabled: true }, { status: 404 });
+        return Response.json(
+          { error: 'Billing is not enabled', billing_disabled: true },
+          { status: 404 },
+        );
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -187,6 +221,7 @@ describe('kortix billing', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-billing-'));
     process.env = { ...ORIGINAL_ENV };
     calls = [];
+    creditBalance = 42.5;
   });
 
   afterEach(() => {
@@ -211,7 +246,14 @@ describe('kortix billing', () => {
       expect(h.stdout).toContain(fragment);
     }
     // The write verbs are gone from the surface entirely.
-    for (const gone of ['auto-topup', 'checkout', 'portal', 'topup', 'downgrade', 'cancel-scheduled']) {
+    for (const gone of [
+      'auto-topup',
+      'checkout',
+      'portal',
+      'topup',
+      'downgrade',
+      'cancel-scheduled',
+    ]) {
       expect(h.stdout).not.toContain(gone);
     }
     const none = await runCli(['billing']);
@@ -225,9 +267,55 @@ describe('kortix billing', () => {
     const c = call('GET', '/v1/billing/account-state');
     expect(c?.search).toBe(`?account_id=${ACCOUNT}`);
     expect(r.stdout).toContain('Team');
-    expect(r.stdout).toContain('$42.50');
+    expect(r.stdout).toContain('4,250 credits');
     expect(r.stdout).toContain('3 × $20.00/mo');
     expect(r.stdout).toContain('on — buy $25.00 under $10.00');
+  });
+
+  test('human credit output matches web units while JSON and spend remain USD', async () => {
+    const config = writeConfig(startServer());
+    const status = await runCli(['billing', 'status'], config);
+    expect(status.code).toBe(0);
+    expect(status.stdout).toContain('4,250 credits');
+    const ledger = await runCli(['billing', 'transactions'], config);
+    expect(ledger.code).toBe(0);
+    expect(ledger.stdout).toContain('-125.00');
+    expect(ledger.stdout).toContain('4,125.00');
+    const breakdown = await runCli(['billing', 'transactions', '--breakdown'], config);
+    expect(breakdown.code).toBe(0);
+    expect(breakdown.stdout).toContain('4,250 credits');
+    for (const flag of ['--summary', '--usage']) {
+      const result = await runCli(['billing', 'transactions', flag], config);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('200 credits');
+      expect(result.stdout).toContain('125 credits');
+      expect(result.stdout).toMatch(/count\s+2\n/);
+      const json = await runCli(['billing', 'transactions', flag, '--json'], config);
+      expect(json.code).toBe(0);
+      expect(JSON.parse(json.stdout)).toEqual({ totalCredits: 2, totalDebits: 1.25, count: 2 });
+    }
+    const raw = await runCli(['billing', 'status', '--json'], config);
+    expect(JSON.parse(raw.stdout).credits.total).toBe(42.5);
+    const rawLedger = await runCli(['billing', 'transactions', '--json'], config);
+    expect(JSON.parse(rawLedger.stdout).transactions[0].amount).toBe(-1.25);
+  });
+
+  test.each([
+    [2, '200 credits'],
+    [0, '0 credits'],
+    [-2, '-200 credits'],
+    [0.005, '1 credits'],
+    [-0.004, '0 credits'],
+    [undefined, '—'],
+  ])('status converts USD balance %s once to %s', async (balance, expected) => {
+    creditBalance = balance;
+    const config = writeConfig(startServer());
+    const result = await runCli(['billing', 'status'], config);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(new RegExp(`credits\\s+${expected}\\n`));
+    const raw = await runCli(['billing', 'status', '--json'], config);
+    expect(raw.code).toBe(0);
+    expect(JSON.parse(raw.stdout).credits.total).toBe(balance);
   });
 
   test('status --json emits the raw account-state payload', async () => {
@@ -259,7 +347,14 @@ describe('kortix billing', () => {
   test('costs defaults to /usage/cost-summary and --by project rolls up', async () => {
     const config = writeConfig(startServer());
     const s = await runCli(
-      ['billing', 'costs', '--since', '2026-08-01T00:00:00.000Z', '--until', '2026-08-08T00:00:00.000Z'],
+      [
+        'billing',
+        'costs',
+        '--since',
+        '2026-08-01T00:00:00.000Z',
+        '--until',
+        '2026-08-08T00:00:00.000Z',
+      ],
       config,
     );
     expect(s.code).toBe(0);
@@ -273,6 +368,60 @@ describe('kortix billing', () => {
     expect(p.code).toBe(0);
     expect(call('GET', '/v1/usage/cost-by-project')?.search).toContain('sort=name_asc');
     expect(p.stdout).toContain('Atlas');
+    const scoped = await runCli(
+      ['billing', 'costs', '--by', 'project', '--project', 'project-self'],
+      config,
+    );
+    expect(scoped.code).toBe(0);
+    expect(
+      calls.find(
+        (c) =>
+          c.path === '/v1/usage/cost-by-project' && c.search.includes('project_id=project-self'),
+      ),
+    ).toBeTruthy();
+  });
+
+  test('costs --by session rolls up per session and forwards owner/project scope', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      [
+        'billing',
+        'costs',
+        '--by',
+        'session',
+        '--owner',
+        'user_9',
+        '--project',
+        'project-self',
+        '--sort',
+        'recent',
+      ],
+      config,
+    );
+    expect(r.code).toBe(0);
+    const c = call('GET', '/v1/usage/session-costs');
+    expect(c?.search).toContain('owner_id=user_9');
+    expect(c?.search).toContain('project_id=project-self');
+    expect(c?.search).toContain('sort=recent');
+    expect(r.stdout).toContain('Atlas');
+    expect(r.stdout).toContain('$4.00');
+    expect(r.stdout).toContain('1 of 1');
+  });
+
+  test('costs refuses a bogus --sort, name_asc off the project roll, and a bogus --by', async () => {
+    const config = writeConfig(startServer());
+    for (const [args, message] of [
+      [['--sort', 'bogus'], '--sort must be one of'],
+      [
+        ['--by', 'session', '--sort', 'name_asc'],
+        '--sort name_asc is only valid with --by project',
+      ],
+      [['--by', 'bogus'], '--by must be project or session'],
+    ] as const) {
+      const r = await runCli(['billing', 'costs', ...args], config);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain(message);
+    }
   });
 
   test('costs --csv writes the CSV export and reports the row cap', async () => {
@@ -282,7 +431,9 @@ describe('kortix billing', () => {
     expect(r.code).toBe(0);
     expect(readFileSync(out, 'utf8')).toContain('project_id,total_cost_usd');
     expect(r.stdout).toContain('capped at 10000 rows');
-    const csvCall = calls.find((c) => c.path === '/v1/usage/cost-by-project' && c.search.includes('format=csv'));
+    const csvCall = calls.find(
+      (c) => c.path === '/v1/usage/cost-by-project' && c.search.includes('format=csv'),
+    );
     expect(csvCall).toBeTruthy();
   });
 
@@ -295,7 +446,7 @@ describe('kortix billing', () => {
 
   test('a 404 from a billing-disabled host surfaces as exit 1', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['billing', 'transactions', '--usage'], config);
+    const r = await runCli(['billing', 'transactions', '--usage', '--days', '99'], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Billing is not enabled');
   });

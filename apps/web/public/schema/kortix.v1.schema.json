@@ -51,7 +51,8 @@
           "minLength": 1,
           "not": {
             "pattern": "^/|(^|/)\\.\\.($|/)"
-          }
+          },
+          "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
         }
       },
       "additionalProperties": true
@@ -118,6 +119,9 @@
               "disk": {
                 "type": "integer",
                 "minimum": 1
+              },
+              "container_runtime": {
+                "type": "boolean"
               }
             },
             "oneOf": [
@@ -751,7 +755,7 @@
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
           "connectors": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -764,6 +768,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -793,6 +798,7 @@
                     "project.trigger.fire",
                     "project.gateway.logs.read",
                     "project.gateway.spend.read",
+                    "project.usage.read",
                     "project.gateway.budget.set",
                     "project.gateway.keys.manage",
                     "project.agent.read",
@@ -803,8 +809,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -824,6 +832,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "project.session.exec",
                     "project.gateway.routing.edit",
                     "project.schedule.read",
@@ -842,6 +852,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -871,6 +882,7 @@
                     "project.trigger.fire",
                     "project.gateway.logs.read",
                     "project.gateway.spend.read",
+                    "project.usage.read",
                     "project.gateway.budget.set",
                     "project.gateway.keys.manage",
                     "project.agent.read",
@@ -881,8 +893,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -902,6 +916,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "project.session.exec",
                     "project.gateway.routing.edit",
                     "project.schedule.read",
@@ -920,6 +936,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -927,7 +944,7 @@
             "deprecated": true
           },
           "env": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -940,13 +957,14 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
             ]
           },
           "apps": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -959,6 +977,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }

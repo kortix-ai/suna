@@ -82,7 +82,7 @@ export function compactionExpiryAtMs(inputs: CompactionInputs): number | null {
  * (`session.compacted`, handled in `use-opencode-events/handle-event.ts`) can
  * be lost the exact same way any SSE frame can — a backgrounded tab, a
  * stream reconnect — and the targeted refetch that handler fires is its own
- * network call that can itself fail. `useOpenCodeSession`
+ * network call that can itself fail. `useRuntimeSession`
  * (`use-opencode-sessions/sessions.ts`) reads the row with
  * `staleTime: Infinity` and nothing else ever refetches it, so without a
  * ceiling here "authoritative" becomes "wedged for the tab's lifetime" the

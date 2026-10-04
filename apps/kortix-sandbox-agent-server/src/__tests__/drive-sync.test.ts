@@ -9,9 +9,9 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync,
 import { chmodSync, mkdirSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DriveSyncService } from '../drive-sync'
-import { MountSync, conflictCopyName } from '../drive-sync/engine'
-import { createHttpDriveSyncApi } from '../drive-sync/remote'
+import { DriveSyncService } from '@/services/drive-sync/drive-sync'
+import { MountSync, conflictCopyName } from '@/services/drive-sync/engine'
+import { createHttpDriveSyncApi } from '@/services/drive-sync/remote'
 import { type FakeDriveSyncApi, startFakeDriveSyncApi } from './helpers/fake-drive-sync-api'
 
 const DRIVE = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -233,8 +233,9 @@ describe('drive sync service', () => {
 describe('drive sync in the daemon', () => {
   test('boots from the API’s env, materializes the drives, and pushes on the stop route', async () => {
     const { createHmac } = await import('node:crypto')
-    const { createDriveSyncRouter, flushDriveSyncOnShutdown, startDriveSyncFromEnv } = await import('../drive-sync')
-    const { KORTIX_USER_CONTEXT_HEADER } = await import('../kortix-user-context')
+    const { flushDriveSyncOnShutdown, startDriveSyncFromEnv } = await import('@/services/drive-sync/drive-sync')
+    const { createDriveSyncRouter } = await import('@/routes/kortix/drive-sync')
+    const { KORTIX_USER_CONTEXT_HEADER } = await import('@/lib/kortix-api/kortix-user-context')
     fake.mounts = [{ driveId: DRIVE, name: 'Agent', mountPath: '/drives/agent', readOnly: false }]
     fake.write(DRIVE, '/brief.md', 'from the web app')
     const cfg = { apiUrl: fake.url, projectId: fake.projectId, sandboxToken: fake.token } as Parameters<typeof startDriveSyncFromEnv>[0]
@@ -366,7 +367,7 @@ describe('drive sync data safety', () => {
   })
 
   test('without a writable /drives (no passwordless sudo) the drives sync into the fallback folder', async () => {
-    const { resolveDriveSyncRoot } = await import('../drive-sync')
+    const { resolveDriveSyncRoot } = await import('@/services/drive-sync/drive-sync')
     const locked = join(dir, 'locked')
     mkdirSync(locked)
     chmodSync(locked, 0o555)

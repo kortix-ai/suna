@@ -4,12 +4,6 @@ import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
 import type { ActiveTab } from './types';
 
-export function providerCredentialSummary(provider: LlmProviderEntry): string {
-  if (provider.id === 'codex') return 'ChatGPT subscription';
-  if (provider.id === 'openai') return 'OpenAI API key';
-  return provider.envVars.join(' · ');
-}
-
 export function providerDisconnectPlan(provider: Pick<LlmProviderEntry, 'id' | 'envVars'>): {
   oauthProvider: string | null;
   secretNames: string[];
@@ -98,26 +92,6 @@ export function pickInitialTab(defaultTab: ActiveTab | undefined): ActiveTab {
   return 'providers';
 }
 
-export function helpHostnameFromUrl(helpUrl: string | null): string | null {
-  if (!helpUrl) return null;
-  try {
-    return new URL(helpUrl).hostname.replace(/^www\./, '');
-  } catch {
-    return null;
-  }
-}
-
-/** Compact relative date — "3w", "5mo", "2y". Empty when unparseable. */
-export function releasedAgo(iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
-  const days = Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
-  if (days < 7) return days === 0 ? 'today' : `${days}d`;
-  if (days < 30) return `${Math.floor(days / 7)}w`;
-  if (days < 365) return `${Math.floor(days / 30)}mo`;
-  return `${Math.floor(days / 365)}y`;
-}
-
 export function buildCustomProviderSnippet(input: {
   providerId: string;
   name: string;
@@ -155,7 +129,8 @@ export function prettyFieldLabel(envVar: string): string {
     .replace(/_/g, ' ')
     .toLowerCase();
   const upper = trimmed.toUpperCase();
-  if (upper === 'API KEY') return 'API key';
+  // OPENCODE_GO_API_KEY, ZAI_CODING_PLAN_API_KEY: the row already names the provider.
+  if (upper.endsWith('API KEY')) return 'API key';
   if (upper === 'API URL') return 'API URL';
   if (upper === 'BASE URL') return 'Base URL';
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);

@@ -18,6 +18,7 @@
 import {
   getRolePermissions,
   listAgentIdentities,
+  listProjectAgentIdentities,
   listAssignments,
   listRoles,
   type AgentIdentity,
@@ -30,12 +31,9 @@ import { useMemo } from 'react';
 import { KORTIX_PERMISSIONS_CATALOG } from '@/features/workspace/customize/sections/view/agent-editor-catalog';
 
 /** Never an agent's, whatever its role or its `kortix_permissions` say. Mirrors
- *  `HUMAN_ONLY` in the spec §2.1 (enforced in apps/api). */
-export const HUMAN_ONLY_PERMISSIONS: readonly string[] = [
-  'project.members.manage',
-  'project.delete',
-  'project.credentials.issue',
-];
+ *  `HUMAN_ONLY_ACTIONS` in apps/api `iam/agent-principal.ts`: a token an agent
+ *  minted would carry none of its permissions. */
+export const HUMAN_ONLY_PERMISSIONS: readonly string[] = ['project.credentials.issue'];
 
 /** Every project permission `kortix_permissions` may name. */
 export const GRANTABLE_PROJECT_PERMISSIONS: readonly string[] = KORTIX_PERMISSIONS_CATALOG.flatMap(
@@ -45,7 +43,7 @@ export const GRANTABLE_PROJECT_PERMISSIONS: readonly string[] = KORTIX_PERMISSIO
 /** Always granted to an agent inside its own project (spec §2.1). */
 const ALWAYS_GRANTED = 'project.read';
 
-export type PermissionGrant = string[] | 'all' | 'none' | undefined;
+export type PermissionGrant = string[] | 'all' | '*' | 'none' | undefined;
 
 export interface AgentAuthority {
   /** The manifest grant, expanded: `all` → every grantable permission. */
@@ -59,7 +57,10 @@ export interface AgentAuthority {
 }
 
 export function expandPermissionGrant(grant: PermissionGrant): string[] {
-  if (grant === 'all') return [...GRANTABLE_PROJECT_PERMISSIONS];
+  // `"*"`, alone or inside a list, is a synonym of `all` (as on the server).
+  if (grant === 'all' || grant === '*' || (Array.isArray(grant) && grant.includes('*'))) {
+    return [...GRANTABLE_PROJECT_PERMISSIONS];
+  }
   if (!grant || grant === 'none') return [];
   return [...new Set(grant)];
 }
@@ -147,10 +148,24 @@ export function rolePermissionsId(
 export const agentIdentitiesQueryKey = (accountId: string | undefined) =>
   ['iam-agent-identities', accountId] as const;
 
+export const projectAgentIdentitiesQueryKey = (projectId: string | undefined) =>
+  ['project-agent-identities', projectId] as const;
+
 /**
  * The account's agent identities. Admin-only: the route asserts `policy.read`,
  * and a 403 is an answer ("you cannot see the ceiling"), not an error to toast.
  */
+/** One project's agent identities — readable by any project member. */
+export function useProjectAgentIdentities(projectId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: projectAgentIdentitiesQueryKey(projectId),
+    queryFn: () => listProjectAgentIdentities(projectId as string),
+    enabled: enabled && !!projectId,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function useAgentIdentities(accountId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: agentIdentitiesQueryKey(accountId),
@@ -225,10 +240,8 @@ export interface AgentAuthorityState {
 
 /** The whole agent-authority read for one agent: ceiling and intersection.
  *
- *  It does NOT read the `agent_principal` project flag. That flag is no longer
- *  a choice the product presents — it is the default behavior, and its one
- *  remaining off-switch is a support lever, not a UI state. Enforcement stays
- *  server-side (`apps/api/src/iam/agent-principal.ts`). */
+ *  There is no project switch for this model. Enforcement stays server-side
+ *  (`apps/api/src/iam/agent-principal.ts`). */
 export function useAgentAuthority({
   projectId,
   accountId,

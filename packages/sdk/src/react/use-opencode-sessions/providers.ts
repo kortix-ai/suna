@@ -6,7 +6,7 @@ import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
@@ -19,14 +19,13 @@ import {
   filterToGatewayProviders,
   filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
-  LLM_PROVIDER_CREDENTIALS,
   mergeNativeProviderLists,
-  mergeProjectSecretConnectedProviders,
   nativeProviderListFromCatalog,
+  nativeRuntimeProviderList,
   normalizeProviderList,
   projectLlmCatalogToProviderList,
   providerListHasModels,
-} from '../provider-selection';
+} from '../../core/models/provider-selection';
 import { shouldLoadProjectModelPicker } from './provider-load-plan';
 
 // ============================================================================
@@ -35,9 +34,20 @@ import { shouldLoadProjectModelPicker } from './provider-load-plan';
 
 export { GATEWAY_PROVIDER_IDS };
 
-export function useOpenCodeProviders() {
+/**
+ * A 4xx answer (401 dead token, 403 denied, 404 missing route) is permanent
+ * for this request: retrying it replays the failure and warns on the API every
+ * attempt (prod: 11 `GET /projects/:id/model-picker` warn lines in 65 s from
+ * `retry: 10`). Only transport failures and 5xx deserve the boot-race backoff.
+ */
+function isClientError(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  return typeof status === 'number' && status >= 400 && status < 500;
+}
+
+export function useRuntimeProviders() {
   const queryClient = useQueryClient();
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   const projectId = useKortixRouteProjectId();
   const projectDetailQuery = useQuery({
     // Same fetcher and same response shape every other `getProjectDetail`
@@ -84,8 +94,8 @@ export function useOpenCodeProviders() {
     }),
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
-    retry: (failureCount) =>
-      (!projectModeKnown || projectGatewayEnabled) && failureCount < 10,
+    retry: (failureCount, error) =>
+      (!projectModeKnown || projectGatewayEnabled) && !isClientError(error) && failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
 
@@ -93,22 +103,18 @@ export function useOpenCodeProviders() {
   // in one project must not leak into another or remain after removal.
   const nativeCacheScope = projectId ? `proj:${projectId}:native` : CACHE_SCOPE_GLOBAL;
   const nativeProvidersQuery = useQuery<ProviderListResponse>({
-    queryKey: projectId ? ['project-providers', projectId, 'native'] : opencodeKeys.providers(),
+    queryKey: projectId ? ['project-providers', projectId, 'native'] : runtimeKeys.providers(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.provider.list();
-      let rawProviders = normalizeProviderList(unwrap(result));
+      let providers = normalizeProviderList(unwrap(result));
       if (projectId) {
         const secrets = await listProjectSecrets(projectId);
         const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
         const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
-        rawProviders = mergeProjectSecretConnectedProviders(
-          rawProviders,
-          secretNames,
-          LLM_PROVIDER_CREDENTIALS,
-        );
+        // The same transform `pickerProviderList` applies (framework-free core).
+        providers = nativeRuntimeProviderList(providers, secretNames);
       }
-      const providers = projectId ? filterToNativeProviders(rawProviders) : rawProviders;
 
       // During sandbox boot the OpenCode server frequently answers
       // /provider/list BEFORE its provider config is wired up, returning zero
@@ -150,7 +156,7 @@ export function useOpenCodeProviders() {
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep
     // retrying with capped exponential backoff until real models appear.
-    retry: (failureCount) => failureCount < 10,
+    retry: (failureCount, error) => !isClientError(error) && failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
   // Native mode, BEFORE the session runtime exists (project home, cold
@@ -202,3 +208,7 @@ export function useOpenCodeProviders() {
   }
   return nativeProvidersQuery;
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeProviders`. Removed in the next major. */
+export const useOpenCodeProviders = useRuntimeProviders;

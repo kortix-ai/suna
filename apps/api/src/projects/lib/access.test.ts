@@ -22,14 +22,14 @@ import {
 describe('userIdentityIsCacheable', () => {
   test('a resolved user is cacheable', () => {
     expect(
-      userIdentityIsCacheable({ email: 'a@b.c', displayName: 'A', exists: true }),
+      userIdentityIsCacheable({ email: 'a@b.c', displayName: 'A', avatarUrl: null, exists: true }),
     ).toBe(true);
   });
 
   test('a resolved user with no email on file is still cacheable', () => {
     // "No email" is a real answer about a real user, not a failure.
     expect(
-      userIdentityIsCacheable({ email: null, displayName: null, exists: true }),
+      userIdentityIsCacheable({ email: null, displayName: null, avatarUrl: null, exists: true }),
     ).toBe(true);
   });
 
@@ -37,7 +37,7 @@ describe('userIdentityIsCacheable', () => {
     // A user created a moment ago (invite accepted, SSO JIT) must resolve on
     // the next request, not one TTL window later.
     expect(
-      userIdentityIsCacheable({ email: null, displayName: null, exists: false }),
+      userIdentityIsCacheable({ email: null, displayName: null, avatarUrl: null, exists: false }),
     ).toBe(false);
   });
 
@@ -49,6 +49,7 @@ describe('userIdentityIsCacheable', () => {
       userIdentityIsCacheable({
         email: null,
         displayName: null,
+        avatarUrl: null,
         exists: true,
         transient: true,
       }),
@@ -215,7 +216,7 @@ describe('deriveEffectiveRole', () => {
 });
 
 /**
- * Spec §2 (agents as principals): under the `agent_principal` flag an agent
+ * Spec §2 (agents as principals): an agent
  * session acts as ITSELF. Ownership and visibility used to key on the launcher's
  * user id, so an agent session could see and stop its launcher's OTHER private
  * sessions. It owns only its own session and the sessions it spawned.
@@ -259,17 +260,23 @@ describe('resolveUserIdentities', () => {
       readAuthUsers: async (ids) => {
         reads.push(ids);
         return [
-          { id: A, email: 'a@example.test', name: 'Ada', full_name: 'Ada Full' },
-          { id: B, email: 'b@example.test', name: null, full_name: 'Bo Full' },
+          { id: A, email: 'a@example.test', name: 'Ada', full_name: 'Ada Full', avatar_url: 'https://img.example.test/a.png' },
+          { id: B, email: 'b@example.test', name: null, full_name: 'Bo Full', avatar_url: '' },
         ];
       },
     });
 
     expect(reads).toEqual([[A, B, GONE]]);
-    expect(identities.get(A)).toEqual({ email: 'a@example.test', displayName: 'Ada', exists: true });
-    expect(identities.get(B)).toEqual({ email: 'b@example.test', displayName: 'Bo Full', exists: true });
-    expect(identities.get(GONE)).toEqual({ email: null, displayName: null, exists: false });
-    expect(identities.get('trigger:nightly')).toEqual({ email: null, displayName: null, exists: false });
+    expect(identities.get(A)).toEqual({
+      email: 'a@example.test',
+      displayName: 'Ada',
+      avatarUrl: 'https://img.example.test/a.png',
+      exists: true,
+    });
+    // A cleared avatar is stored as '' (profile settings): it reads as no avatar.
+    expect(identities.get(B)).toEqual({ email: 'b@example.test', displayName: 'Bo Full', avatarUrl: null, exists: true });
+    expect(identities.get(GONE)).toEqual({ email: null, displayName: null, avatarUrl: null, exists: false });
+    expect(identities.get('trigger:nightly')).toEqual({ email: null, displayName: null, avatarUrl: null, exists: false });
   });
 
   test('never queries for an empty list or for ids that cannot be auth users', async () => {
@@ -292,11 +299,11 @@ describe('resolveUserIdentities', () => {
       },
       lookupUser: async (uid) => {
         looked.push(uid);
-        return { email: null, displayName: null, exists: true, transient: true };
+        return { email: null, displayName: null, avatarUrl: null, exists: true, transient: true };
       },
     });
 
     expect(looked.sort()).toEqual([A, B]);
-    expect(identities.get(A)).toEqual({ email: null, displayName: null, exists: true });
+    expect(identities.get(A)).toEqual({ email: null, displayName: null, avatarUrl: null, exists: true });
   });
 });

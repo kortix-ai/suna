@@ -38,6 +38,11 @@ export interface UpstreamDescriptor {
    */
   poolSecretId?: string;
   /**
+   * The login behind `apiKey` can be refreshed (a ChatGPT OAuth login). A 401
+   * asks the host for a fresh descriptor once and retries with it.
+   */
+  refreshableCredential?: boolean;
+  /**
    * Provider failover. When the first candidate sets this, a failed dispatch
    * (thrown error or non-2xx before any output) moves the same request to the
    * next candidate that also sets it, in order. Kortix-managed models set it on
@@ -75,6 +80,9 @@ export interface UpstreamDescriptor {
   // any same-named client fields (e.g. OpenRouter's `provider` routing
   // preferences pinning managed models to reliable hosts). openai-compat only.
   bodyExtras?: Record<string, unknown>;
+  // The upstream rejects any field outside the OpenAI chat schema (OpenCode Zen).
+  // Drops OpenRouter extensions before dispatch. openai-compat only.
+  strictChatSchema?: boolean;
   // The models.dev `npm` field for the provider (e.g. '@ai-sdk/openai',
   // '@ai-sdk/anthropic', '@ai-sdk/amazon-bedrock'). Selects the AI SDK provider
   // package under the 'ai-sdk' transport engine. Optional: when absent the engine

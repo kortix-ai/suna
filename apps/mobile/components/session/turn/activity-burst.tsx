@@ -19,7 +19,11 @@
  */
 
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { useColorScheme } from 'nativewind';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
+import { DisclosureCaret, DisclosureContent } from '@/components/session/chain-of-thought';
+import { disclosureKey, useDisclosureChoice, useDisclosureStore } from '@/lib/session/disclosure-store';
 import type { Part } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
@@ -29,11 +33,11 @@ import { ownsBurst } from '@/lib/session/activity-sheet';
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
-import type { ActivityContextValue } from './activity-step';
+import type { ActivityContextValue } from '@/lib/session/activity-sheet-store';
 
 // ─── Burst ───────────────────────────────────────────────────────────────────
 
-export interface ActivityBurstProps {
+interface ActivityBurstProps {
   segment: { kind: 'burst'; parts: Part[] };
   /** The owning turn is still working (web `working`). */
   turnLive: boolean;
@@ -55,8 +59,12 @@ function ActivityBurstImpl({
   onPermissionReply,
 }: ActivityBurstProps) {
   const palette = useTurnPalette();
+  const { colorScheme } = useColorScheme();
   const { parts } = segment;
   const view = useMemo(() => burstView(parts, turnLive, isTrailing), [parts, turnLive, isTrailing]);
+  const thought = view.steps.length === 1 && view.steps[0]?.kind === 'thought' ? view.steps[0] : undefined;
+  const thoughtKey = disclosureKey('thought', thought?.key ?? '');
+  const choice = useDisclosureChoice(thoughtKey);
   const ownsSheet = useActivitySheetStore((state) => state.sheet !== null && ownsBurst(state.sheet.partIds, parts));
 
   const context = useMemo<ActivityContextValue>(
@@ -71,6 +79,29 @@ function ActivityBurstImpl({
   const openSheet = useCallback(() => useActivitySheetStore.getState().show(parts, view, context), [parts, view, context]);
 
   if (view.hidden) return null;
+
+  if (thought) {
+    const open = choice ?? (turnLive && thought.running);
+    return (
+      <View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Thinking"
+          accessibilityState={{ expanded: open }}
+          onPress={() => useDisclosureStore.getState().setChoice(thoughtKey, !open)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}
+        >
+          <Text variant="muted" style={[TURN_TYPE.sm, { color: palette.muted70 }]}>Thinking</Text>
+          <DisclosureCaret open={open} color={palette.muted40} />
+        </Pressable>
+        <DisclosureContent open={open}>
+          <SelectableMarkdownText isDark={colorScheme === 'dark'} isStreaming={turnLive && thought.running}>
+            {thought.texts.join('\n\n')}
+          </SelectableMarkdownText>
+        </DisclosureContent>
+      </View>
+    );
+  }
 
   return (
     <Pressable

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
-import { refreshMirror, repoCachePath } from './mirror';
+import { invalidateProjectMirror, provenMirrorTip, refreshMirror, repoCachePath } from './mirror';
 import type { GitBackedProject } from './types';
 
 const exec = promisify(execFile);
@@ -119,6 +119,62 @@ describe('manifest refresh', () => {
     // …and the manifest itself still reads, from the branch that did not move.
     const agents = await loadProjectAgents(project, { forceRefresh: true });
     expect(requiredConnectorsForAgent('support', agents)).toEqual([]);
+  });
+
+  describe('tip-proof reads (the per-prompt grant read)', () => {
+    const tipProof = { forceRefresh: 'tip-proof' } as const;
+    const required = async (opts?: Parameters<typeof loadProjectAgents>[1]) =>
+      requiredConnectorsForAgent('support', await loadProjectAgents(project, opts));
+
+    test('a second read inside the interval reuses the proof and does not ask the remote', async () => {
+      expect(await required(tipProof)).toEqual([]);
+      // A push the API never saw: straight to the upstream, no invalidation.
+      await pushRequiredManifest();
+
+      expect(await required(tipProof)).toEqual([]);
+      // A strict forced read is not served from the proof.
+      expect(await required({ forceRefresh: true })).toEqual(['required-check']);
+    });
+
+    test('a base move the API saw drops the proof, so the next read is current', async () => {
+      expect(await required(tipProof)).toEqual([]);
+      await pushRequiredManifest();
+      invalidateProjectMirror(project.projectId);
+
+      expect(await required(tipProof)).toEqual(['required-check']);
+    });
+
+    test('a move announced while the proof is in flight is not overwritten by it', async () => {
+      await loadProjectAgents(project);
+      invalidateProjectMirror(project.projectId);
+      // Called directly: the refresh starts in this tick, before the move.
+      const inFlight = refreshMirror(project, 'tip-proof', { freshRef: 'main' });
+      invalidateProjectMirror(project.projectId);
+      await inFlight;
+      await pushRequiredManifest();
+
+      expect(await required(tipProof)).toEqual(['required-check']);
+    });
+
+    test('a proven branch answers its tip from the mirror; an unproven one answers nothing', async () => {
+      expect(await provenMirrorTip(project, 'main')).toBeNull();
+      await required(tipProof);
+      const { stdout } = await exec('git', ['rev-parse', 'refs/heads/main'], { cwd: remotePath });
+
+      expect(await provenMirrorTip(project, 'main')).toBe(stdout.trim());
+      // A branch nobody proved is not answered from the mirror.
+      expect(await provenMirrorTip(project, 'other')).toBeNull();
+      invalidateProjectMirror(project.projectId);
+      expect(await provenMirrorTip(project, 'main')).toBeNull();
+    });
+
+    test('an expired proof is re-proved against the remote', async () => {
+      expect(await required(tipProof)).toEqual([]);
+      await pushRequiredManifest();
+      process.env.KORTIX_GIT_REFRESH_INTERVAL_MS = '0';
+
+      expect(await required(tipProof)).toEqual(['required-check']);
+    });
   });
 
   test('a forced refresh remains forced when a cached refresh already holds the lock', async () => {

@@ -32,7 +32,6 @@ import {
   CodeSimpleIcon as Code2,
   CopyIcon as Copy,
   DatabaseIcon as Database,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   FileMagnifyingGlassIcon as FileQuestion,
   HashIcon as Hash,
@@ -65,6 +64,7 @@ import {
 import { AgGridReact } from 'ag-grid-react';
 import { useTheme } from 'next-themes';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 // Register AG Grid modules once
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -176,6 +176,51 @@ function quoteIdent(value: string): string {
   return `"${String(value).replace(/"/g, '""')}"`;
 }
 
+function readTableMetadata(db: InstanceType<typeof import('sql.js').Database>): TableInfo[] {
+  const masterQuery = db.exec(
+    "SELECT name, type, sql FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+  );
+
+  const tableInfos: TableInfo[] = [];
+  if (masterQuery.length > 0) {
+    for (const row of masterQuery[0].values) {
+      const name = String(row[0]);
+      const type = String(row[1]) as 'table' | 'view';
+      const sql = String(row[2] || '');
+
+      let rowCount = 0;
+      try {
+        const countResult = db.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)}`);
+        if (countResult.length > 0) rowCount = Number(countResult[0].values[0][0]);
+      } catch {
+        /* ignore */
+      }
+
+      const columns: ColumnInfo[] = [];
+      try {
+        const pragmaResult = db.exec(`PRAGMA table_info(${quoteIdent(name)})`);
+        if (pragmaResult.length > 0) {
+          for (const col of pragmaResult[0].values) {
+            columns.push({
+              cid: Number(col[0]),
+              name: String(col[1]),
+              type: String(col[2] || 'TEXT'),
+              notnull: Boolean(col[3]),
+              dflt_value: col[4] != null ? String(col[4]) : null,
+              pk: Boolean(col[5]),
+            });
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      tableInfos.push({ name, type, sql, rowCount, columns });
+    }
+  }
+  return tableInfos;
+}
+
 // ── Component ────────────────────────────────────────────────────────────
 
 export function SqliteRenderer({
@@ -227,48 +272,7 @@ export function SqliteRenderer({
     if (!db) return;
 
     try {
-      const masterQuery = db.exec(
-        "SELECT name, type, sql FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
-      );
-
-      const tableInfos: TableInfo[] = [];
-      if (masterQuery.length > 0) {
-        for (const row of masterQuery[0].values) {
-          const name = String(row[0]);
-          const type = String(row[1]) as 'table' | 'view';
-          const sql = String(row[2] || '');
-
-          let rowCount = 0;
-          try {
-            const countResult = db.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)}`);
-            if (countResult.length > 0) rowCount = Number(countResult[0].values[0][0]);
-          } catch {
-            /* ignore */
-          }
-
-          const columns: ColumnInfo[] = [];
-          try {
-            const pragmaResult = db.exec(`PRAGMA table_info(${quoteIdent(name)})`);
-            if (pragmaResult.length > 0) {
-              for (const col of pragmaResult[0].values) {
-                columns.push({
-                  cid: Number(col[0]),
-                  name: String(col[1]),
-                  type: String(col[2] || 'TEXT'),
-                  notnull: Boolean(col[3]),
-                  dflt_value: col[4] != null ? String(col[4]) : null,
-                  pk: Boolean(col[5]),
-                });
-              }
-            }
-          } catch {
-            /* ignore */
-          }
-
-          tableInfos.push({ name, type, sql, rowCount, columns });
-        }
-      }
-      setTables(tableInfos);
+      setTables(readTableMetadata(db));
     } catch {
       /* ignore */
     }
@@ -313,49 +317,7 @@ export function SqliteRenderer({
         dbRef.current = db;
 
         // Extract tables and views
-        const masterQuery = db.exec(
-          "SELECT name, type, sql FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
-        );
-
-        if (cancelled) return;
-
-        const tableInfos: TableInfo[] = [];
-        if (masterQuery.length > 0) {
-          for (const row of masterQuery[0].values) {
-            const name = String(row[0]);
-            const type = String(row[1]) as 'table' | 'view';
-            const sql = String(row[2] || '');
-
-            let rowCount = 0;
-            try {
-              const countResult = db.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)}`);
-              if (countResult.length > 0) rowCount = Number(countResult[0].values[0][0]);
-            } catch {
-              /* ignore */
-            }
-
-            const columns: ColumnInfo[] = [];
-            try {
-              const pragmaResult = db.exec(`PRAGMA table_info(${quoteIdent(name)})`);
-              if (pragmaResult.length > 0) {
-                for (const col of pragmaResult[0].values) {
-                  columns.push({
-                    cid: Number(col[0]),
-                    name: String(col[1]),
-                    type: String(col[2] || 'TEXT'),
-                    notnull: Boolean(col[3]),
-                    dflt_value: col[4] != null ? String(col[4]) : null,
-                    pk: Boolean(col[5]),
-                  });
-                }
-              }
-            } catch {
-              /* ignore */
-            }
-
-            tableInfos.push({ name, type, sql, rowCount, columns });
-          }
-        }
+        const tableInfos = readTableMetadata(db);
 
         if (cancelled) return;
 

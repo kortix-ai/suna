@@ -327,6 +327,27 @@ withDb('compute metering on PostgreSQL', () => {
       ]);
     });
 
+    test('pause settles one compute_debit that names the session that ran the box', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = await sandbox(accountId);
+      const id = await startComputeSession({ sandboxId, accountId, sessionId: 'sess-ledger-ref', spec: SPEC });
+      const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
+      await backdate(sandboxId, iso(start));
+
+      await pauseComputeSession(sandboxId, new Date(start + 300_000));
+
+      const end = iso(start + 300_000);
+      expect(await ledgerOf(accountId)).toEqual([
+        {
+          type: 'usage',
+          amount: -0.016776,
+          description: 'Sandbox compute · sess-ledger-ref · 2vCPU/4GB/20GB · 300s',
+          idempotencyKey: `compute:${id}:${end}`,
+          metadata: expect.objectContaining({ ledger_type: 'compute_debit' }),
+        },
+      ]);
+    });
+
     test('end finalizes the window and settles it', async () => {
       const accountId = await account({ billingModel: 'per_seat' });
       const sandboxId = await sandbox(accountId);
@@ -686,6 +707,40 @@ withDb('compute metering on PostgreSQL', () => {
         expect(await windowsOf(open.sandboxId)).toEqual([expect.objectContaining({ endedAt: null })]);
       }
       expect(await windowsOf(orphan.sandboxId)).toEqual([expect.objectContaining({ state: 'stopped' })]);
+    });
+
+    test('provider outages leave live session, App, and monitor windows open and mark them unresolved', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const now = Date.now();
+      const sessionBox = await sandbox(accountId, { externalId: 'session-unavailable' });
+      const session = await openWindow({ accountId, sandboxId: sessionBox, startedAt: iso(now - MINUTE) });
+      const runningApp = await app(accountId);
+      const appWindow = await openWindow({
+        accountId, sandboxId: runningApp.runtimeId, startedAt: iso(now - MINUTE),
+        workloadType: 'app', appRuntimeId: runningApp.runtimeId,
+      });
+      const project = await fixtures.seedProject('compute-monitor-unavailable', { accountId });
+      const [box] = await db.insert(projectMonitorBoxes).values({
+        projectId: project.project_id, accountId, provider: 'daytona',
+        externalId: 'monitor-unavailable', status: 'running', boxEpoch: 'epoch-1',
+      }).returning({ boxId: projectMonitorBoxes.boxId });
+      const monitor = await openWindow({
+        accountId, sandboxId: box!.boxId, startedAt: iso(now - MINUTE), workloadType: 'monitor',
+      });
+      for (const id of ['session-unavailable', runningApp.externalId, 'monitor-unavailable']) {
+        providerStatus[id] = new Error('provider unavailable');
+      }
+
+      expect(await reconcileOrphanComputeSessions(new Date(now))).toMatchObject({
+        checked: 3, closed: 0, errors: 0,
+      });
+      expect(probed.sort()).toEqual(['monitor-unavailable', runningApp.externalId, 'session-unavailable'].sort());
+      for (const window of [session, appWindow, monitor]) {
+        expect(await windowsOf(window.sandboxId)).toEqual([
+          expect.objectContaining({ state: 'active', endedAt: null,
+            metadata: expect.objectContaining({ unresolvedSince: iso(now) }) }),
+        ]);
+      }
     });
 
     test('the monitors count open windows of dead boxes and live boxes not observed inside the grace', async () => {

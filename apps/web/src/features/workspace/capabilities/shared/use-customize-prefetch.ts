@@ -50,8 +50,12 @@ export const CUSTOMIZE_PREFETCH_GC_MS = 30 * 60_000;
 const IDLE_TIMEOUT_MS = 1_000;
 
 export interface CustomizePrefetchGates {
-  customizeRead: boolean;
-  customizeWrite: boolean;
+  /** project.agent.read — the landing tab; nothing is prefetched without it. */
+  agentRead: boolean;
+  /** project.sandbox.write — Settings → Git and Sandbox. */
+  sandboxWrite: boolean;
+  /** project.model.read — the Models tab's reads. */
+  modelRead: boolean;
   connectorRead: boolean;
   triggerRead: boolean;
   secretRead: boolean;
@@ -112,7 +116,7 @@ export async function prefetchCustomize(
   gates: CustomizePrefetchGates,
   api: CustomizePrefetchApi = sdkApi,
 ): Promise<void> {
-  if (!gates.customizeRead) return;
+  if (!gates.agentRead) return;
   const gc = { gcTime: CUSTOMIZE_PREFETCH_GC_MS };
   const config = { ...contract('config'), ...gc };
   const work: Promise<unknown>[] = [
@@ -143,7 +147,7 @@ export async function prefetchCustomize(
         ...contract(FRESHNESS.connectors),
         ...gc,
       }),
-      prefetchCatalogLanding(queryClient, projectId, gates.discoverEnabled, api),
+      prefetchCatalogLanding(queryClient, projectId, api),
     );
   }
   if (gates.secretRead) {
@@ -177,7 +181,7 @@ export async function prefetchCustomize(
       }),
     );
   }
-  if (gates.llmGateway) {
+  if (gates.llmGateway && gates.modelRead) {
     // Models: the entries `useProjectModels` and `useModelDefaults` read.
     work.push(
       queryClient.prefetchQuery({
@@ -193,7 +197,7 @@ export async function prefetchCustomize(
       }),
     );
   }
-  if (gates.customizeWrite) {
+  if (gates.sandboxWrite) {
     // Settings → Git and Sandbox, and the agent editor's sandbox picker
     // (same entry as `agentEditorOptionQueries(...).sandboxes`).
     work.push(
@@ -221,17 +225,13 @@ export async function prefetchCustomize(
 async function prefetchCatalogLanding(
   queryClient: QueryClient,
   projectId: string,
-  discoverEnabled: boolean,
   api: CustomizePrefetchApi,
 ): Promise<void> {
   const catalog = await api.loadCatalogQueries().catch(() => null);
   if (!catalog) return;
   const { catalogSectionsQuery, connectStatusQuery } = catalog;
   const gc = { gcTime: CUSTOMIZE_PREFETCH_GC_MS };
-  if (discoverEnabled) {
-    await queryClient.prefetchQuery({ ...catalogSectionsQuery(projectId, 'discover'), ...gc });
-    return;
-  }
+  // The landing source stays managed, including projects opted into direct discovery.
   // Same key and freshness as `useConnectProviderStatus`.
   const status = await queryClient
     .fetchQuery({
@@ -283,8 +283,9 @@ export function useCustomizePrefetch(projectId: string): void {
   const settled = Object.values(caps).every((probe) => !probe.isLoading);
   const ready = !!projectId && detail.isSuccess && settled;
   const gates: CustomizePrefetchGates = {
-    customizeRead: allowed(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ),
-    customizeWrite: allowed(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE),
+    agentRead: allowed(PROJECT_ACTIONS.PROJECT_AGENT_READ),
+    sandboxWrite: allowed(PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE),
+    modelRead: allowed(PROJECT_ACTIONS.PROJECT_MODEL_READ),
     connectorRead: allowed(PROJECT_ACTIONS.PROJECT_CONNECTOR_READ),
     triggerRead: allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_READ),
     secretRead: allowed(PROJECT_ACTIONS.PROJECT_SECRET_READ),

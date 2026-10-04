@@ -60,17 +60,6 @@ export function slideVariants(reduced: boolean): Variants {
 }
 
 /**
- * Layout shifts — a sibling appearing and pushing content sideways.
- *
- * A spring, not a tween, because this one is interruptible by design: the row
- * that opens the panel is a toggle, so a user can close it mid-open. Springs
- * preserve velocity across an interruption; a tween restarts from zero and
- * visibly jumps. `bounce: 0` keeps it matter-of-fact — bounce belongs to drag
- * and play, not to chrome rearranging itself.
- */
-export const LAYOUT_TRANSITION: Transition = { type: 'spring', duration: 0.4, bounce: 0 };
-
-/**
  * The finish-step seal. A spring with a trace of bounce, because this is the
  * one genuinely celebratory moment in the flow and it happens exactly once.
  * Floor is 0.6, never 0 — nothing in the world appears from nothing.

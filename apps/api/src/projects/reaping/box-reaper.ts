@@ -33,16 +33,28 @@
  * billed while stopped" an invariant rather than a best-effort.
  */
 
-import { observeSandboxTurn, type SandboxTurnReading } from '../sandbox-turn-observation';
-import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
-import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
+import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
+import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
+import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
+import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
-import { turnAbsoluteMaxMs, turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
+import {
+  turnAbsoluteMaxMs,
+  turnDeliveryGraceMs,
+  turnGrantMs,
+  turnNoBeginRelayMaxMs,
+} from '../sandbox-deadline-policy';
+import {
+  clearSandboxTurn,
+  reconcileSandboxTurnDelivery,
+  renewActiveSandboxTurn,
+} from '../sandbox-turn-lifecycle';
+import { type SandboxTurnReading, observeSandboxTurn } from '../sandbox-turn-observation';
 import {
   PROMPT_NEVER_RAN_END_REASONS,
   requeueAbandonedPrompt,
@@ -50,16 +62,13 @@ import {
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
+  REAPER_TURN_CAUSES,
   type SandboxTurnDeliveryReconciliation,
   type SessionTurnEndReason,
   type StoredSandboxTurn,
-  REAPER_TURN_CAUSES,
-  clearSandboxTurn,
-  reconcileSandboxTurnDelivery,
-  renewActiveSandboxTurn,
   settleOrphanedSandboxTurns,
   storedSandboxTurns,
-} from '../sandbox-turn-lifecycle';
+} from '../session-turn-ledger';
 import {
   countReapCandidates,
   markReaperVisited,
@@ -88,6 +97,7 @@ export interface ReapResult {
   husksFinalized: number; // an orphaned open assistant turn we closed server-side
   turnsSettled: number; // ledger rows still open on a box that is no longer running
   errors: number;
+  transient: number; // an expected, transient provider failure (Daytona 429 / gateway blip); the next pass retries it
 }
 
 export const EMPTY_REAP_RESULT: ReapResult = {
@@ -102,6 +112,7 @@ export const EMPTY_REAP_RESULT: ReapResult = {
   husksFinalized: 0,
   turnsSettled: 0,
   errors: 0,
+  transient: 0,
 };
 
 export interface SandboxReaperDependencies {
@@ -114,7 +125,10 @@ export interface SandboxReaperDependencies {
   extendUnconfirmedTurnDeadline: typeof extendUnconfirmedTurnDeadline;
   requeueAbandonedPrompt: typeof requeueAbandonedPrompt;
   promoteNextInboxRow: typeof promoteNextInboxRow;
-  drainSessionLifecycleQueue: (input: { idempotencyKey: string; coalesce?: boolean }) => Promise<unknown>;
+  drainSessionLifecycleQueue: (input: {
+    idempotencyKey: string;
+    coalesce?: boolean;
+  }) => Promise<unknown>;
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
@@ -132,7 +146,6 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
     return drainSessionLifecycleQueue(input);
   },
 };
-
 
 /**
  * Per-sandbox probe back-off after an `unknown` turn observation, in this
@@ -336,6 +349,8 @@ export async function reapAndReconcileSandboxes(
           // that has waited behind a wedged turn for days must not be re-run by
           // a maintenance sweep; the session's own next prompt is the trigger.
           const expiredTurnCeilingMs = turnAbsoluteMaxMs();
+          // See `turnNoBeginRelayMaxMs`'s doc — the identity-less backstop.
+          const turnNoBeginRelayCeilingMs = turnNoBeginRelayMaxMs();
           // Records this pass PROBED and the daemon answered with nothing
           // readable. Counted, not inferred: the drip below needs `every record
           // answered unknown`, which is a statement about answers, not about
@@ -346,7 +361,7 @@ export async function reapAndReconcileSandboxes(
           // the observation, and the drip below needs it: an answer proves the
           // runtime is up and only its description of the turn is missing (an
           // agent build that omits the turn fields returns 200 without them —
-          // apps/kortix-sandbox-agent-server/src/routes/health.ts). Nothing
+          // apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts). Nothing
           // coming back at all proves the opposite, and a box like that must
           // die on the bound its record already carries.
           let answeredProbes = 0;
@@ -354,6 +369,60 @@ export async function reapAndReconcileSandboxes(
             for (const turn of turns) {
               const recordAgeMs =
                 turn.startedAtMs === null ? null : now.getTime() - turn.startedAtMs;
+              // A turn record with no `messageId` never received a turn_begin
+              // relay (boot.ts's `relayTurnBeginToApi`, seconds after OpenCode
+              // accepts a prompt). Past `turnNoBeginRelayMaxMs` that is not a
+              // race, it is a runtime that lost the turn before it ever
+              // relayed anything — most commonly a daemon-level restart
+              // severing it right after acceptance (2026-09-29 incident).
+              //
+              // APPLIED BEFORE OBSERVATION, deliberately: `observeSandboxTurn`
+              // asks the daemon a ROOT-scoped question when there is no
+              // `messageId` to scope it by, and the daemon's own oracle
+              // (`inspectOpencodeRoot`) reads an incomplete assistant message
+              // as "still in flight" even while `/session/status` is idle —
+              // correct for a genuine husk, but it means THIS shape reads
+              // `observation: 'active'` forever and never reaches the
+              // `terminal` branches below. This ceiling does not depend on
+              // that signal at all.
+              if (
+                turn.state === 'active' &&
+                turn.messageId === null &&
+                recordAgeMs !== null &&
+                recordAgeMs >= turnNoBeginRelayCeilingMs
+              ) {
+                console.error('[reaper] settling a turn record that never received a messageId', {
+                  sandboxId: row.sandboxId,
+                  externalId: row.externalId,
+                  provider: row.provider,
+                  sessionId: row.sessionId,
+                  turnToken: turn.token,
+                  startedAt: new Date(turn.startedAtMs as number).toISOString(),
+                  ageMinutes: Math.round(recordAgeMs / 60_000),
+                  ceilingMinutes: turnNoBeginRelayCeilingMs / 60_000,
+                });
+                // `runtime_gone`, not `unknown`: this ceiling exists BECAUSE we
+                // are confident the runtime lost this turn (see the doc on
+                // `turnNoBeginRelayMaxMs`), unlike the generic wedged-turn
+                // ceiling below, which cannot tell a wedge from a live turn.
+                const cleared = await dependencies.clearSandboxTurn(
+                  row.sandboxId,
+                  turn.token,
+                  undefined,
+                  'runtime_gone',
+                );
+                result.turnsSettled += 1;
+                if (cleared) {
+                  // A no-op when `turn.messageId` is null (it always is here) —
+                  // called anyway for the same reason the other terminal
+                  // branches call it: consistency of what "settled" does. The
+                  // queued NEXT prompt (e.g. a trigger's queued
+                  // continue_session) is what actually needed to drain.
+                  await redeliverAbandonedPrompt(dependencies, row, turn, 'runtime_gone');
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
+                }
+                continue;
+              }
               if (recordAgeMs !== null && recordAgeMs >= expiredTurnCeilingMs) {
                 console.error('[reaper] settling a turn record past the absolute ceiling', {
                   sandboxId: row.sandboxId,
@@ -370,7 +439,12 @@ export async function reapAndReconcileSandboxes(
                 // never reported ended, and nothing here observed how it
                 // finished. `runtime_gone` would claim the runtime went away
                 // and `completed` would claim it worked.
-                await dependencies.clearSandboxTurn(row.sandboxId, turn.token, undefined, 'unknown');
+                await dependencies.clearSandboxTurn(
+                  row.sandboxId,
+                  turn.token,
+                  undefined,
+                  'unknown',
+                );
                 result.turnsSettled += 1;
                 continue;
               }
@@ -417,7 +491,12 @@ export async function reapAndReconcileSandboxes(
               const backoff = probeBackoff.get(row.sandboxId);
               const backedOff = backoff !== undefined && backoff.until > now.getTime();
               const { observation, endReason, daemonAnswered, orphanedPrompt } = backedOff
-                ? ({ observation: 'unknown', endReason: null, daemonAnswered: false, orphanedPrompt: false } as const)
+                ? ({
+                    observation: 'unknown',
+                    endReason: null,
+                    daemonAnswered: false,
+                    orphanedPrompt: false,
+                  } as const)
                 : await dependencies.observeSandboxTurn(
                     provider,
                     row.externalId,
@@ -449,11 +528,11 @@ export async function reapAndReconcileSandboxes(
               // `messageId` is what keeps that abort honest: every prompt of a
               // session shares one root, so the finalizer must prove the open
               // assistant message answers THIS record before it aborts.
-              if (observation === 'terminal' && turn.opencodeSessionId) {
+              if (observation === 'terminal' && turn.runtimeSessionId) {
                 const huskOutcome = await dependencies.finalizeHuskTurn({
                   sandboxId: row.sandboxId,
                   externalId: row.externalId,
-                  opencodeSessionId: turn.opencodeSessionId,
+                  opencodeSessionId: turn.runtimeSessionId,
                   messageId: turn.messageId,
                 });
                 if (huskOutcome === 'finalized') {
@@ -526,7 +605,7 @@ export async function reapAndReconcileSandboxes(
                 // orphan redelivery below — so a terminal observation landing
                 // inside ORPHANED_PROMPT_MIN_AGE_MS was a one-shot race that
                 // silently swallowed the prompt: observed live 2026-08-20
-                // (SampleCo session d1b74954, prompt cleared `unknown` at age
+                // (a SampleCo session, prompt cleared `unknown` at age
                 // 27s, 3s under the floor, never answered). The next pass runs
                 // ~20s later; by then the age check passes and the redelivery
                 // fires, or the prompt got answered and the observation says
@@ -634,7 +713,7 @@ export async function reapAndReconcileSandboxes(
           }
           // A RENEWAL THAT STARVES MUST NOT BE SILENT.
           //
-          // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d):
+          // Incident 2026-08-17T20:40:03Z (a prod session on Daytona):
           // every probe of this box's turn came back `unknown` — the daemon on
           // that warm snapshot answers the turn question with neither `true`
           // nor `false` — so `renewActiveSandboxTurn` never ran and
@@ -680,22 +759,35 @@ export async function reapAndReconcileSandboxes(
             if (backedOffProbes === 0) {
               const nextBackoffMs = Math.min(
                 PROBE_BACKOFF_MAX_MS,
-                Math.max(PROBE_BACKOFF_MIN_MS, (probeBackoff.get(row.sandboxId)?.backoffMs ?? 0) * 2),
+                Math.max(
+                  PROBE_BACKOFF_MIN_MS,
+                  (probeBackoff.get(row.sandboxId)?.backoffMs ?? 0) * 2,
+                ),
               );
-              probeBackoff.set(row.sandboxId, { backoffMs: nextBackoffMs, until: now.getTime() + nextBackoffMs });
+              probeBackoff.set(row.sandboxId, {
+                backoffMs: nextBackoffMs,
+                until: now.getTime() + nextBackoffMs,
+              });
             }
-            console.warn('[reaper] turn observation unknown; drip-extending', {
-              sandboxId: row.sandboxId,
-              externalId: row.externalId,
-              provider: row.provider,
-              turns: turns.length,
-              // Was the daemon ASKED this pass, or is this a backed-off drip?
-              // Without this the log cannot tell 20 s drips from 20 s probes.
-              probed: backedOffProbes === 0,
-              backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
-              deadlineAt: row.deadlineAt.toISOString(),
-              extended,
-            });
+            // An unchanged unreadable turn is one incident, not one warning
+            // every 20 s. A readable answer clears the back-off above; the next
+            // unknown episode warns again. Log a failed extension on every pass.
+            if (
+              (backedOffProbes === 0 &&
+                probeBackoff.get(row.sandboxId)?.backoffMs === PROBE_BACKOFF_MIN_MS) ||
+              !extended
+            ) {
+              console.warn('[reaper] turn observation unknown; drip-extending', {
+                sandboxId: row.sandboxId,
+                externalId: row.externalId,
+                provider: row.provider,
+                turns: turns.length,
+                probed: backedOffProbes === 0,
+                backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
+                deadlineAt: row.deadlineAt.toISOString(),
+                extended,
+              });
+            }
           }
           // THE ONE RULE. `deadline_at` is pushed out only by a
           // control-plane-OBSERVED turn start and pulled in by a
@@ -744,16 +836,23 @@ export async function reapAndReconcileSandboxes(
               providerStatus === 'stopped' &&
               decideStoppedObservation(row.metadata, now) === 'await_confirmation'
             ) {
-              console.warn('[reaper] provider reported stopped mid-turn; awaiting confirmation', {
-                sandboxId: row.sandboxId,
-                externalId: row.externalId,
-                provider: row.provider,
-                turns: storedSandboxTurns(row.metadata).map((turn) => turn.token),
-              });
               // No clock is passed on purpose: `now` is this PASS's start, and
               // a batch of provider round-trips can be minutes older than the
               // observation it would be stamped on. See markPendingStopObservation.
-              await markPendingStopObservation(row.sandboxId);
+              const armed = await markPendingStopObservation(row.sandboxId);
+              // One line per stop episode — the pass that ARMS the marker. The
+              // confirmation window is 60 s at a 20 s cadence, so a warn every
+              // pass triples an episode's line count; the drip-extend warn
+              // follows the same rule one branch above (one incident, not one
+              // warning every 20 s).
+              if (armed) {
+                console.warn('[reaper] provider reported stopped mid-turn; awaiting confirmation', {
+                  sandboxId: row.sandboxId,
+                  externalId: row.externalId,
+                  provider: row.provider,
+                  turns: storedSandboxTurns(row.metadata).map((turn) => turn.token),
+                });
+              }
               result.skipped += 1;
               break;
             }
@@ -783,10 +882,33 @@ export async function reapAndReconcileSandboxes(
             break;
         }
       } catch (err) {
-        result.errors += 1;
-        console.error(
-          `[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
-        );
+        // An expected, transient provider failure — a Daytona org-wide 429
+        // (`ThrottlerException`) or a gateway blip — is the provider working as
+        // designed. Every other call site classifies it (`shared/daytona-rate-limit.ts`,
+        // `shared/daytona-transient.ts`) so it never pages; the reaper must too,
+        // or one org throttle across a live fleet emits an error line per box.
+        // Counting it separately and logging NOTHING here keeps this page quiet
+        // while the next pass still retries the renewal.
+        if (
+          isDaytonaRateLimitError(err) ||
+          isDaytonaTransientProviderError(err) ||
+          (row.provider === 'platinum' &&
+            err instanceof Error &&
+            /^platinum POST \/v1\/sandboxes\/[^/]+\/exec -> 429\b/.test(err.message) &&
+            err.message.includes('too many write requests for this org')) ||
+          (row.provider === 'platinum' &&
+            err instanceof Error &&
+            err.message.includes('Platinum lifecycle renewal failed') &&
+            err.message.includes('guest vsock') &&
+            err.message.includes('unreachable after 5s: EOF'))
+        ) {
+          result.transient += 1;
+        } else {
+          result.errors += 1;
+          console.error(
+            `[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
+          );
+        }
       }
     }
   };
@@ -803,6 +925,13 @@ export async function reapAndReconcileSandboxes(
       matching: result.matching,
       examined: result.candidates,
       deferred: result.deferred,
+    });
+  }
+  // One aggregate line per pass instead of one error line per row: a transient
+  // provider throttle is expected, and the next pass retries it.
+  if (result.transient > 0) {
+    console.info('[reaper] provider transient errors — retrying next pass', {
+      transient: result.transient,
     });
   }
   return result;

@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. The canonical product noun is CONNECTOR.
+ * Voice rules: the `kortix-brand` skill. The canonical product noun is CONNECTOR.
  *
  * ACCURACY GATE — every claim below traces to shipped code. Do not soften or
  * inflate these without re-reading the source:

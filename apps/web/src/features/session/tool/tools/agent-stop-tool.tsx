@@ -22,5 +22,4 @@ export function AgentStopTool({ part, forceOpen }: ToolProps) {
     />
   );
 }
-ToolRegistry.register('agent_stop', AgentStopTool);
 ToolRegistry.register('agent-stop', AgentStopTool);

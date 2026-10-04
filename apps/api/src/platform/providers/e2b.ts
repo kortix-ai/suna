@@ -1,8 +1,9 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
+import { type Sandbox as E2BSandbox, Sandbox } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
 import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -20,8 +21,8 @@ import type {
   SandboxIngressRequest,
   SandboxProvider,
   SandboxStatus,
-} from './index';
-import { assertWorkloadCredential, sandboxWorkloadType } from './index';
+} from './contract';
+import { assertWorkloadCredential, sandboxWorkloadType } from './contract';
 
 // One hour is the maximum accepted by every E2B plan (Pro permits 24 hours).
 // Kortix's own idle reaper normally pauses much sooner; this is the provider
@@ -114,18 +115,6 @@ function apiOpts() {
   } as const;
 }
 
-function isMissingSandboxError(error: unknown): boolean {
-  if (error instanceof SandboxNotFoundError) return true;
-  const err = error as {
-    status?: unknown;
-    statusCode?: unknown;
-    code?: unknown;
-    message?: unknown;
-  } | null;
-  if (err?.status === 404 || err?.statusCode === 404 || err?.code === 404) return true;
-  return /not found|does not exist|no such sandbox/i.test(String(err?.message ?? error ?? ''));
-}
-
 /**
  * Traffic tokens are returned on create/connect, not by getInfo. Keep the live
  * handle so normal proxy traffic avoids a control-plane round trip; reconnect
@@ -185,7 +174,7 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
  * GUEST's own disk. Daytona and Platinum hand it back from their control plane
  * on resume, so on those two the session credential and the project's runtime
  * secrets exist only in a live process — the same reason the daemon keeps the
- * agent's env on tmpfs (kortix-sandbox-agent-server/src/agent-env-file.ts).
+ * agent's env on tmpfs (kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts).
  * Here the file has to survive the pause, and `chmod 600 root` is thin cover:
  * the sandbox user has NOPASSWD sudo (packages/shared/src/sandbox/dockerfile-layer.ts).
  * What differs from a live process env is DURABILITY — the plaintext outlived
@@ -651,7 +640,7 @@ export class E2BProvider implements SandboxProvider {
         `E2B kill(${externalId})`,
       );
     } catch (error) {
-      if (!isMissingSandboxError(error)) throw error;
+      if (!isProviderNotFound(error)) throw error;
     } finally {
       invalidateRunningStatus(externalId);
       statusCacheGeneration.delete(externalId);
@@ -676,7 +665,7 @@ export class E2BProvider implements SandboxProvider {
       return 'unknown';
     } catch (error) {
       invalidateRunningStatus(externalId);
-      if (isMissingSandboxError(error)) {
+      if (isProviderNotFound(error)) {
         statusCacheGeneration.delete(externalId);
         return 'removed';
       }

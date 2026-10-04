@@ -210,7 +210,12 @@ func renderCaddyfile(spec appSpec) (string, error) {
 	encode zstd gzip
 	log {
 		output stdout
-		format json
+		# Request headers carry credentials the App does not own: the viewer
+		# token, the signed viewer identity, the provider ingress token.
+		format filter {
+			wrap json
+			request>headers delete
+		}
 	}
 %s}
 `, ingressPort, body), nil

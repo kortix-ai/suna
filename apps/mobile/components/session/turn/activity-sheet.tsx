@@ -34,11 +34,12 @@ import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { CodeBlockFullHeightContext } from '@/components/markdown/code-block';
 import { MarkdownActionsProvider, type MarkdownActions } from '@/components/markdown/inline-code';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { usePendingPermissions } from '@/lib/session/session-store';
 import { activitySheetEntries, burstHasPendingPermission, type ActivitySheetEntry } from '@/lib/session/activity-sheet';
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
 import { useTabStore } from '@/stores/tab-store';
 import { ToolPartRenderer } from '@/components/session/tool/tool-part-renderer';
+import '@/components/session/tool/tools/register';
 import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import { ToolDetailContext } from '@/components/session/tool/shared/surface';
 import {
@@ -47,7 +48,7 @@ import {
   type ConnectorHandoffRequest,
 } from '@/components/session/tool/shared/connector-handoff-context';
 import { ACTIVITY_ICONS } from '@/components/session/tool/shared/tool-icons';
-import type { ActivityContextValue } from './activity-step';
+import type { ActivityContextValue } from '@/lib/session/activity-sheet-store';
 
 /**
  * Lengths in pt, measured on the reference sheet (1080px @3x) unless noted.
@@ -346,7 +347,6 @@ const ActivitySheet = memo(ActivitySheetImpl);
 
 // ─── Host ────────────────────────────────────────────────────────────────────
 
-const NO_PERMISSIONS: ReadonlyArray<{ tool?: { callID: string } }> = [];
 
 /**
  * Mount once per transcript screen, next to `ToolFilePreviewHost`. It shows the
@@ -367,7 +367,7 @@ export function ActivitySheetHost({
   const sheet = store?.context.sessionId === hostSessionId ? store : null;
   const closeSheet = useActivitySheetStore((state) => state.close);
   const sessionId = sheet?.context.sessionId;
-  const permissions = useSyncStore((state) => (sessionId ? state.permissions[sessionId] : undefined)) ?? NO_PERMISSIONS;
+  const permissions = usePendingPermissions(sessionId);
   const view = sheet?.view;
   const entries = useMemo(() => (view ? activitySheetEntries(view) : []), [view]);
 

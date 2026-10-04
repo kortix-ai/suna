@@ -8,30 +8,6 @@
 
 @source "../node_modules/streamdown/dist/*.js";
 
-/* Legacy --sidebar-* values used by the app's own sidebar components. The
-   canonical app token blocks further down redeclare these; kept here verbatim
-   from the original override block. */
-:root {
-  --sidebar: hsl(0 0% 98%);
-  --sidebar-foreground: hsl(240 5.3% 26.1%);
-  --sidebar-primary: hsl(240 5.9% 10%);
-  --sidebar-primary-foreground: hsl(0 0% 98%);
-  --sidebar-accent: hsl(240 4.8% 95.9%);
-  --sidebar-accent-foreground: hsl(240 5.9% 10%);
-  --sidebar-border: hsl(220 13% 91%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
-}
-.dark {
-  --sidebar: hsl(240 5.9% 10%);
-  --sidebar-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-primary: hsl(224.3 76.3% 48%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(240 3.7% 15.9%);
-  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-border: hsl(240 3.7% 15.9%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
-}
-
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
@@ -51,6 +27,8 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-row: var(--sidebar-row);
+  --color-sidebar-row-control: var(--sidebar-row-control);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -98,75 +76,8 @@
   --color-terminal-surface: var(--terminal-surface);
   --color-terminal-fg: var(--terminal-fg);
   --color-terminal-border: var(--terminal-border);
-  /* Emoji-picker active-cell tints (src/components/ui/emoji-picker.tsx).
-     Six hues the picker rotates through so the hovered/keyboard-active cell is
-     never the same colour as the cell above it. They live here rather than as
-     raw hsl() in the component because raw palette values in app code are
-     against the design system, and because the light/dark pair belongs in one
-     place. light-dark() works because :root sets color-scheme: light and .dark
-     sets color-scheme: dark (see the base layer below) — so these need no
-     `dark:` variant at the call site.
-
-     Two families, paired by hue. The fill stays pale so the grid reads calm;
-     the 1px inset ring carries the contrast. That split exists because the
-     active cell is the only visible cue for which emoji is selected —
-     frimousse gives the buttons tabIndex={-1} and no focus ring — so the state
-     indicator has to clear WCAG 1.4.11's 3:1 against --popover. A pale fill
-     cannot reach 3:1 on white at any saturation (it needs relative luminance
-     <= 0.30, i.e. roughly L <= 63%), so the ring is what meets the bar and the
-     fill is free to stay quiet. Measured ring ratios are 3.03–3.19:1. */
-  --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
-  --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
-  --color-emoji-fill-green: light-dark(hsl(96 34% 87%), hsl(96 22% 24%));
-  --color-emoji-fill-teal: light-dark(hsl(178 36% 86%), hsl(178 26% 24%));
-  --color-emoji-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
-  --color-emoji-fill-violet: light-dark(hsl(280 32% 88%), hsl(280 22% 27%));
-  --color-emoji-ring-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
-  --color-emoji-ring-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
-  --color-emoji-ring-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
-  --color-emoji-ring-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
-  --color-emoji-ring-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
-  --color-emoji-ring-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
-  /* Glyph icon palette — a SEPARATE family from the emoji hues above.
-     The emoji hues are DERIVED from the glyph (see emoji-tint.ts) and must stay
-     stable, or every existing project changes colour. These eight are CHOSEN by
-     the user. Merging the two would have meant remapping the emoji six onto a
-     new eight; two palettes serving two masters is the honest model.
-
-     `light-dark()` works because :root sets color-scheme: light and .dark sets
-     color-scheme: dark — so these need no `dark:` variant anywhere.
-
-     The ring token paints BOTH the 1px inset ring and the glyph itself, so its
-     lightness has to clear 3:1 against the pale fill AND against --popover/
-     --card. Task 10 measured all 48 ring-vs-surface pairs (8 hues x 2 themes x
-     3 surfaces) against WCAG's 3:1 non-text threshold and tuned the L channel
-     only — hue and saturation are untouched, so all eight stay recognisable.
-     Light mode needed a small darkening on red/yellow/blue only (their L
-     started too close to the fill). Dark mode needed a much bigger lightening
-     across ALL EIGHT hues: the dark fills sit at L 24-27%, close enough to the
-     near-black --card/--popover (relative luminance ~0.007) that sRGB's gamma
-     curve compresses the ring-vs-fill gap far below 3:1 at the original
-     L 38-48%; every dark ring now sits at L 46-61% to clear it. See
-     .superpowers/sdd/2026-08-01-project-glyph-icons/task-10-report.md for the
-     full before/after table. */
-  --color-glyph-fill-grey: light-dark(hsl(220 8% 88%), hsl(220 6% 26%));
-  --color-glyph-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
-  --color-glyph-fill-orange: light-dark(hsl(24 60% 88%), hsl(24 32% 26%));
-  --color-glyph-fill-yellow: light-dark(hsl(46 62% 87%), hsl(46 34% 25%));
-  --color-glyph-fill-lime: light-dark(hsl(84 42% 87%), hsl(84 26% 24%));
-  --color-glyph-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
-  --color-glyph-fill-purple: light-dark(hsl(275 34% 88%), hsl(275 24% 27%));
-  --color-glyph-fill-magenta: light-dark(hsl(318 40% 88%), hsl(318 26% 27%));
-  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 58%));
-  --color-glyph-ring-red: light-dark(hsl(4 46% 53%), hsl(4 46% 60%));
-  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 55%));
-  --color-glyph-ring-yellow: light-dark(hsl(46 62% 37%), hsl(46 55% 47%));
-  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 46%));
-  --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
-  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
-  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
-  /* App typography scale. Keep html at 100% so browser and OS zoom
-     preferences remain intact; adjust readable UI sizes through tokens. */
+  /* @generated kortix-brand:start theme — edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts */
+  /* Type scale. Roles and surfaces are in references/visual/typography.md. */
   --text-xs: 0.8125rem;
   --text-xs--line-height: calc(1 / 0.8125);
   --text-sm: 0.875rem;
@@ -193,6 +104,48 @@
   --text-7xl--line-height: 1;
   --text-8xl: 6rem;
   --text-8xl--line-height: 1;
+  /* Emoji-picker active cell. Hues are DERIVED from the glyph (emoji-tint.ts) and must stay stable. Fill stays pale; the 1px inset ring carries WCAG 1.4.11 3:1 against --popover (measured 3.03-3.19:1). Emitted as light-dark() in @theme. */
+  --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
+  --color-emoji-fill-green: light-dark(hsl(96 34% 87%), hsl(96 22% 24%));
+  --color-emoji-fill-teal: light-dark(hsl(178 36% 86%), hsl(178 26% 24%));
+  --color-emoji-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-emoji-fill-violet: light-dark(hsl(280 32% 88%), hsl(280 22% 27%));
+  --color-emoji-ring-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
+  --color-emoji-ring-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
+  --color-emoji-ring-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
+  --color-emoji-ring-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
+  --color-emoji-ring-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
+  --color-emoji-ring-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
+  /* Project glyph icon palette, CHOSEN by the user. Separate from emoji on purpose. The ring token paints both the inset ring and the glyph, tuned (L only) to clear 3:1 against the fill and --popover/--card in both themes. */
+  --color-glyph-fill-grey: light-dark(hsl(220 8% 88%), hsl(220 6% 26%));
+  --color-glyph-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-glyph-fill-orange: light-dark(hsl(24 60% 88%), hsl(24 32% 26%));
+  --color-glyph-fill-yellow: light-dark(hsl(46 62% 87%), hsl(46 34% 25%));
+  --color-glyph-fill-lime: light-dark(hsl(84 42% 87%), hsl(84 26% 24%));
+  --color-glyph-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-glyph-fill-purple: light-dark(hsl(275 34% 88%), hsl(275 24% 27%));
+  --color-glyph-fill-magenta: light-dark(hsl(318 40% 88%), hsl(318 26% 27%));
+  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 58%));
+  --color-glyph-ring-red: light-dark(hsl(4 46% 53%), hsl(4 46% 60%));
+  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 55%));
+  --color-glyph-ring-yellow: light-dark(hsl(46 62% 37%), hsl(46 55% 47%));
+  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 46%));
+  --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
+  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
+  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
+  /* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */
+  --transition-duration-fast: 100ms;
+  --transition-duration-normal: 150ms;
+  --transition-duration-moderate: 200ms;
+  --transition-duration-slow: 300ms;
+  --transition-duration-slower: 500ms;
+  --ease-default: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* @generated kortix-brand:end */
+  /* App typography scale. Keep html at 100% so browser and OS zoom
   /* Standard border radius values */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -202,17 +155,6 @@
   --radius-2xl: 1rem;
   --border-width: 1.5px;
   --spacing-sidebar: 1.5rem;
-  /* Motion — duration scale (see /design-system → Motion) */
-  --duration-fast: 100ms;
-  --duration-normal: 150ms;
-  --duration-moderate: 200ms;
-  --duration-slow: 300ms;
-  --duration-slower: 500ms;
-  /* Motion — easing curves */
-  --ease-default: cubic-bezier(0.2, 0, 0, 1);
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);
-  --ease-out: cubic-bezier(0, 0, 0.2, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
   --animate-collapsible-down: collapsible-down 0.2s ease-out;
@@ -232,10 +174,23 @@
   --exitToLeft: exitToLeft 250ms ease;
   --exitToRight: exitToRight 250ms ease;
   --animate-elliptical-orbit: elliptical-orbit 20s linear infinite;
-  --animate-shiny-text: shiny-text 8s infinite;
+  --animate-shiny-text: shiny-text 5s infinite;
   --animate-kortix-bullet-flow: kortix-bullet-flow 4s ease-in-out infinite;
   /* Error feedback — damped horizontal shake (decaying amplitude, transform-only) */
   --animate-shake: shake 400ms var(--ease-in-out) both;
+
+  /* Marketing chips: ±6px vertical float */
+  --animate-chip-drift: chip-drift 6s ease-in-out infinite;
+
+  @keyframes chip-drift {
+    0%,
+    100% {
+      transform: translateY(-6px);
+    }
+    50% {
+      transform: translateY(6px);
+    }
+  }
 
   @keyframes shake {
     0%,
@@ -510,166 +465,129 @@
  * inverse-canvas (#ffffff) and inverse-ink (#000000).
  *
  *   role           dark        light
- *   canvas         #090909     #ffffff
+ *   canvas         #0b0b0b     #ffffff
  *   base           #0c0c0c     #ffffff
  *   surface        #141414     #fcfcfc
  *   surface-1      #141414     #f4f4f4
- *   surface-2      #1c1c1c     #ececec
- *   ink            #ffffff     #000000
+ *   surface-2      #1c1c1c     #ededed
+ *   ink            #ffffff     #1f1f1f
  *   ink-muted      #999999     #666666
  *   hairline       #262626     #e2e2e2
  *   hairline-soft  #1a1a1a     #eeeeee
  *   accent-blue    #0099ff     #0099ff
  */
+/* @generated kortix-brand:start — edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts */
 :root {
-  --background: oklch(1 0 0); /* canvas */
-  --pane: oklch(1 0 0); /* #ffffff */
-  --surface: oklch(0.9911 0 0); /* surface #fcfcfc — full-bleed shell pane */
-  --foreground: oklch(0 0 0); /* ink */
-  --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
-  --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
-  --card: oklch(0.9672 0 0); /* surface-1 */
-  --card-foreground: oklch(0 0 0);
-  --popover: oklch(1 0 0); /* canvas — top surface, separated by hairline + shadow */
-  --popover-foreground: oklch(0 0 0);
-  --primary: oklch(0 0 0); /* ink — black pill CTA */
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.9431 0 0); /* surface-2 */
-  --secondary-foreground: oklch(0 0 0);
-  --muted: oklch(0.9431 0 0); /* surface-2 */
-  --muted-foreground: oklch(0.5103 0 0); /* ink-muted */
-  --accent: oklch(0.9672 0 0); /* surface-1 */
-  --accent-foreground: oklch(0 0 0);
-  --destructive: oklch(0.583 0.2387 28.4765);
-  --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.9128 0 0); /* hairline */
-  --input: oklch(0.9431 0 0); /* surface-2 */
-  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue — focus only */
-  --hover: oklch(0 0 0 / 0.045); /* ink @ 4.5% — transient hover tint */
-  --active: oklch(0 0 0 / 0.075); /* ink @ 7.5% — persistent selected fill */
+  --background: oklch(1 0 0); /* canvas #ffffff */
+  --pane: oklch(1 0 0); /* base #ffffff */
+  --surface: oklch(0.9911 0 0); /* surface #fcfcfc */
+  --foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --foreground-strong: var(--foreground);
+  --foreground-weak: var(--muted-foreground);
+  --card: oklch(0.9672 0 0); /* surface-1 #f4f4f4 */
+  --card-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --popover: oklch(1 0 0); /* canvas / surface-1 #ffffff */
+  --popover-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --primary: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --primary-foreground: oklch(1 0 0); /* #ffffff */
+  --secondary: oklch(0.9461 0 0); /* surface-2 #ededed */
+  --secondary-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --muted: oklch(0.9461 0 0); /* surface-2 #ededed */
+  --muted-foreground: oklch(0.5103 0 0); /* ink-muted #666666 */
+  --accent: oklch(0.9672 0 0); /* surface-1 #f4f4f4 */
+  --accent-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --destructive: oklch(0.583 0.2387 28.4765); /* #e7000b */
+  --destructive-foreground: oklch(0.9851 0 0); /* #fafafa */
+  --border: oklch(0.9128 0 0); /* hairline #e2e2e2 */
+  --input: oklch(0.9461 0 0); /* surface-2 #ededed */
+  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff */
+  --hover: oklch(0 0 0 / 0.045);
+  --active: oklch(0 0 0 / 0.075);
   --focus-ring: var(--ring);
-  --chart-1: oklch(0.8781 0.1688 91.8567);
-  --chart-2: oklch(0.7724 0.1728 65.367);
-  --chart-3: oklch(0.6671 0.1685 53.3814);
-  --chart-4: oklch(0.557 0.1583 45.3594);
-  --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.9672 0 0); /* surface-1 */
-  --sidebar-foreground: oklch(0 0 0);
-  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.9431 0 0); /* surface-2 */
-  --sidebar-accent-foreground: oklch(0 0 0);
-  --sidebar-border: oklch(0.9128 0 0); /* hairline */
-  --sidebar-ring: oklch(0.669 0.1837 248.8066);
-
-  --radius: 0.625rem;
-
-  --tracking-normal: 0em;
-  --spacing: 0.23rem;
-
-  --kortix-base: var(--color-ring);
-  --kortix-blue: oklch(0.652 0.177 252.624);
-  --kortix-yellow: oklch(0.732 0.15 90.688);
-  --kortix-orange: oklch(0.691 0.142 71.784);
-  --kortix-green: oklch(0.581 0.165 146.619);
-  --kortix-purple: oklch(0.675 0.131 306.212);
-  --kortix-red: oklch(0.648 0.202 24.745);
-
-  /* Terminal surface — declared once, never re-declared under .dark: the PTY
-     pane keeps the same shell-black in both themes. See the @theme mapping. */
+  --sidebar: oklch(0.9672 0 0); /* surface-1 #f4f4f4 */
+  --sidebar-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff */
+  --sidebar-primary-foreground: oklch(1 0 0); /* #ffffff */
+  --sidebar-accent: oklch(0.9461 0 0); /* surface-2 #ededed */
+  --sidebar-accent-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --sidebar-row: var(--card);
+  --sidebar-row-control: var(--sidebar-accent);
+  --sidebar-border: oklch(0.9128 0 0); /* hairline / hairline-soft #e2e2e2 */
+  --sidebar-ring: oklch(0.669 0.1837 248.8066); /* #0099ff */
+  --kortix-base: var(--color-ring); /* #0099ff */
+  --kortix-green: oklch(0.581 0.165 146.619); /* #199338 */
+  --kortix-red: oklch(0.648 0.202 24.745); /* #f14b4c */
+  --kortix-orange: oklch(0.691 0.142 71.784); /* #d18b19 */
+  --kortix-yellow: oklch(0.732 0.15 90.688); /* #cca300 */
+  --kortix-blue: oklch(0.652 0.177 252.624); /* #2b91f7 */
+  --kortix-purple: oklch(0.675 0.131 306.212); /* #ab80d6 */
+  --chart-1: oklch(0.8781 0.1688 91.8567); /* #ffd230 */
+  --chart-2: oklch(0.7724 0.1728 65.367); /* #fe9a00 */
+  --chart-3: oklch(0.6671 0.1685 53.3814); /* #e17100 */
+  --chart-4: oklch(0.557 0.1583 45.3594); /* #bb4d00 */
+  --chart-5: oklch(0.4747 0.1358 44.9806); /* #973c00 */
   --terminal-surface: #0f0f0f;
   --terminal-fg: #e5e5e5;
   --terminal-border: rgb(255 255 255 / 0.1);
-
-  /* Motion tokens (canonical values; mirrored in @theme for utilities) */
+  --radius: 0.625rem;
+  --tracking-normal: 0em;
+  --spacing: 0.23rem;
   --duration-fast: 100ms;
   --duration-normal: 150ms;
   --duration-moderate: 200ms;
   --duration-slow: 300ms;
   --duration-slower: 500ms;
   --ease-default: cubic-bezier(0.2, 0, 0, 1);
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* Liquid glass — frosted secondary surface. Pair with `@utility liquid-glass`.
-     Mix with transparent (not --background) so backdrop-filter can show through.
-     Light: drop shadow + bright specular. Dark: no drop shadow, 1px inset rim.
-     Call sites should not need `dark:`. */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --liquid-glass-bg: color-mix(in oklch, var(--secondary) 45%, transparent);
   --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 62%, transparent);
   --liquid-glass-blur: 20px;
   --liquid-glass-saturate: 1.8;
-  --liquid-glass-shadow:
-    0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35),
-    inset 0 -1px 0 oklch(1 0 0 / 0.08);
-  --liquid-glass-highlight: radial-gradient(
-    circle at 30% 20%,
-    oklch(1 0 0 / 0.28),
-    transparent 55%
-  );
+  --liquid-glass-shadow: 0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35), inset 0 -1px 0 oklch(1 0 0 / 0.08);
+  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.28), transparent 55%);
 }
 
 .dark {
-  --background: oklch(15% 0 0); /* canvas #090909 */
-  --pane: oklch(0.1543 0 0); /* #0c0c0c */
-  --surface: oklch(0.1913 0 0); /* surface #141414 — full-bleed shell pane */
+  --background: oklch(15% 0 0); /* canvas #0b0b0b */
+  --pane: oklch(0.1543 0 0); /* base #0c0c0c */
+  --surface: oklch(0.1913 0 0); /* surface #141414 */
   --foreground: oklch(1 0 0); /* ink #ffffff */
-  --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
-  --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
+  --foreground-strong: var(--foreground);
+  --foreground-weak: var(--muted-foreground);
   --card: oklch(0.1913 0 0); /* surface-1 #141414 */
-  --card-foreground: oklch(1 0 0);
-  --popover: oklch(0.1913 0 0); /* surface-1 */
-  --popover-foreground: oklch(1 0 0);
-  --primary: oklch(1 0 0); /* white pill CTA */
-  --primary-foreground: oklch(0.1398 0 0);
+  --card-foreground: oklch(1 0 0); /* ink #ffffff */
+  --popover: oklch(0.1913 0 0); /* canvas / surface-1 #141414 */
+  --popover-foreground: oklch(1 0 0); /* ink #ffffff */
+  --primary: oklch(1 0 0); /* ink #ffffff */
+  --primary-foreground: oklch(0.1398 0 0); /* #090909 */
   --secondary: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
-  --secondary-foreground: oklch(1 0 0);
-  --muted: oklch(0.2264 0 0); /* surface-2 */
+  --secondary-foreground: oklch(1 0 0); /* ink #ffffff */
+  --muted: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
   --muted-foreground: oklch(0.683 0 0); /* ink-muted #999999 */
-  --accent: oklch(0.1913 0 0); /* surface-1 */
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.7022 0.1892 22.2279);
-  --destructive-foreground: oklch(0.9851 0 0);
+  --accent: oklch(0.1913 0 0); /* surface-1 #141414 */
+  --accent-foreground: oklch(1 0 0); /* ink #ffffff */
+  --destructive: oklch(0.7022 0.1892 22.2279); /* #ff6467 */
   --border: oklch(0.2686 0 0); /* hairline #262626 */
-  --input: oklch(0.2264 0 0); /* surface-2 */
-  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff — focus only */
-  --hover: oklch(1 0 0 / 0.06); /* ink @ 6% — transient hover tint */
-  --active: oklch(1 0 0 / 0.1); /* ink @ 10% — persistent selected fill */
+  --input: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
+  --hover: oklch(1 0 0 / 0.06);
+  --active: oklch(1 0 0 / 0.1);
   --focus-ring: var(--ring);
-  --chart-1: oklch(0.8781 0.1688 91.8567);
-  --chart-2: oklch(0.7724 0.1728 65.367);
-  --chart-3: oklch(0.6671 0.1685 53.3814);
-  --chart-4: oklch(0.557 0.1583 45.3594);
-  --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.1913 0 0); /* surface-1 */
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.2264 0 0); /* surface-2 */
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.2178 0 0); /* hairline-soft #1a1a1a */
-  --sidebar-ring: oklch(0.669 0.1837 248.8066);
-
-  --radius: 0.625rem;
-
-  --kortix-base: var(--color-ring);
-  --kortix-blue: oklch(0.652 0.177 252.624);
-  --kortix-yellow: oklch(0.732 0.15 90.688);
-  --kortix-orange: oklch(0.691 0.142 71.784);
-  --kortix-green: oklch(0.581 0.165 146.619);
-  --kortix-purple: oklch(0.675 0.131 306.212);
-  --kortix-red: oklch(0.648 0.202 24.745);
-
+  --sidebar: oklch(0.1913 0 0); /* surface-1 #141414 */
+  --sidebar-foreground: oklch(1 0 0); /* ink #ffffff */
+  --sidebar-accent: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
+  --sidebar-accent-foreground: oklch(1 0 0); /* ink #ffffff */
+  --sidebar-row: var(--sidebar-accent);
+  --sidebar-row-control: oklch(0.2686 0 0); /* #262626 */
+  --sidebar-border: oklch(0.2178 0 0); /* hairline / hairline-soft #1a1a1a */
+  --kortix-base: var(--color-ring); /* #0099ff */
   --liquid-glass-bg: color-mix(in oklch, var(--secondary) 38%, transparent);
   --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 52%, transparent);
   --liquid-glass-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
-  --liquid-glass-highlight: radial-gradient(
-    circle at 30% 20%,
-    oklch(1 0 0 / 0.12),
-    transparent 55%
-  );
+  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.12), transparent 55%);
 }
+/* @generated kortix-brand:end */
 
 @layer base {
   ::selection {
@@ -688,15 +606,32 @@
   }
 
   /* Tailwind v4 makes <button> default to `cursor: default`; restore the
-     pointer on genuinely interactive elements (buttons, tabs, ARIA buttons,
-     menu items, options, summaries). Disabled elements keep the default. */
-  button:not(:disabled),
-  summary,
-  [role='button']:not([aria-disabled='true']),
-  [role='tab']:not([aria-disabled='true']),
-  [role='menuitem']:not([aria-disabled='true']),
-  [role='menuitemradio']:not([aria-disabled='true']),
-  [role='option']:not([aria-disabled='true']) {
+     pointer on every genuinely interactive element: buttons, links, native
+     checkboxes/radios/file inputs, labels bound to a control, selects,
+     summaries, and the ARIA roles a non-button control renders with.
+     Disabled elements keep the default cursor: :disabled, aria-disabled,
+     data-disabled. */
+  :is(
+      a[href],
+      button,
+      input[type='checkbox'],
+      input[type='file'],
+      input[type='radio'],
+      label[for],
+      select,
+      summary,
+      [role='button'],
+      [role='checkbox'],
+      [role='link'],
+      [role='menuitem'],
+      [role='menuitemcheckbox'],
+      [role='menuitemradio'],
+      [role='option'],
+      [role='radio'],
+      [role='switch'],
+      [role='tab'],
+      [role='treeitem']
+    ):not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
     cursor: pointer;
   }
 
@@ -771,23 +706,6 @@
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
-}
-
-/* stylelint-disable-next-line at-rule-no-unknown */
-@theme inline {
-  --animate-shiny-text: shiny-text 5s infinite;
-
-  @keyframes shiny-text {
-    0%,
-    90%,
-    100% {
-      background-position: calc(-100% - var(--shiny-width)) 0;
-    }
-    30%,
-    60% {
-      background-position: calc(100% + var(--shiny-width)) 0;
-    }
-  }
 }
 
 .scrollbar-minimal {
@@ -868,6 +786,18 @@
     opacity: 0;
   }
   to {
+    opacity: 1;
+  }
+}
+
+/* AI OS lattice: each dot brightens once per cycle, delayed by its diagonal,
+   so a soft wave crosses the grid. Opacity only. */
+@keyframes kx-os-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
     opacity: 1;
   }
 }
@@ -1305,7 +1235,10 @@ html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx
   height: max(6px, var(--kx-titlebar-inset));
 }
 html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
-html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome > * {
+html[data-desktop-platform='macos']
+  body:not(:has([data-kx-titlebar-owner]))
+  .kx-desktop-chrome
+  > * {
   pointer-events: none;
 }
 /* Drag region: the chrome strip covers the title-bar zone. On macOS the
@@ -1490,23 +1423,59 @@ html[data-desktop='true'] .kx-titlebar-spacer {
 html[data-desktop-platform='macos']
   :where(body:has([data-kx-titlebar-owner]))
   :is(
-    button, a, input, textarea, select, option, label, summary, video, audio, iframe,
-    [role='button'], [role='tab'], [role='link'], [role='menuitem'], [role='textbox'],
-    [contenteditable], [data-no-drag]
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
   ) {
   -webkit-app-region: initial;
   app-region: initial;
 }
 html[data-desktop-platform='macos']
   :is(
-    .kx-titlebar-row, .kx-titlebar-tabs, .kx-project-sidebar-header,
-    [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'],
-    [data-radix-popper-content-wrapper], [data-sonner-toaster]
+    .kx-titlebar-row,
+    .kx-titlebar-tabs,
+    .kx-project-sidebar-header,
+    [role='dialog'],
+    [role='alertdialog'],
+    [role='menu'],
+    [role='listbox'],
+    [data-radix-popper-content-wrapper],
+    [data-sonner-toaster]
   )
   :is(
-    button, a, input, textarea, select, option, label, summary, video, audio, iframe,
-    [role='button'], [role='tab'], [role='link'], [role='menuitem'], [role='textbox'],
-    [contenteditable], [data-no-drag]
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
   ),
 html[data-desktop-platform='macos'] [class*='app-region:no-drag'] {
   -webkit-app-region: no-drag;
@@ -1597,7 +1566,8 @@ html[data-desktop-platform='macos'] .kx-account-hub-header[data-sidebar-collapse
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar {
   padding-left: 0.5rem;
 }
-html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-account-hub-header[data-sidebar-collapsed] {
+html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
+  .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
 /* The narrow Settings rail is a horizontal tab strip. Its default 36px list,
@@ -1611,8 +1581,15 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-tabs {
   height: var(--kx-titlebar-control-size);
 }
+/* The wrapper is the segmented track (with its own padding); the inner list and
+   the triggers fill it, so only the outer box takes the control size. */
+html[data-desktop-platform='macos']
+  .kx-settings-mobile-titlebar
+  [data-slot='tabs-list'].kx-settings-mobile-tabs {
+  height: 100%;
+}
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar [data-slot='tabs-trigger'] {
-  height: var(--kx-titlebar-control-size);
+  height: 100%;
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -1647,6 +1624,18 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
    margin (e.g. the Files file-preview top bar): drop it past the inset too. */
 .kx-titlebar-safe-mt {
   margin-top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
+}
+
+/* ─── Smooth shadow ring — five soft layers plus a 1px ring in the border token.
+   Use on a floating card instead of border + shadow-*: className="smooth-shadow-ring" */
+@utility smooth-shadow-ring {
+  box-shadow:
+    0 17.54px 23.39px oklch(0 0 0 / 0.04),
+    0 9.4px 12.5px oklch(0 0 0 / 0.03),
+    0 5.25px 7px oklch(0 0 0 / 0.02),
+    0 2.79px 3.72px -2px oklch(0 0 0 / 0.01),
+    0 1.16px 1.5px oklch(0 0 0 / 0.01),
+    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
 }
 
 /* ─── Liquid glass — frosted tinted surface (tokens: --liquid-glass-*) ─────
@@ -2188,6 +2177,15 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
   .ProseMirror
   p.is-editor-empty:first-child::before {
   color: var(--color-amber-400);
+}
+
+/* ── Disabled controls ──────────────────────────────────────────────────────
+   A disabled element never shows the pointer, whatever `cursor-*` utility a
+   component adds. `:where()` keeps specificity at zero so a more specific
+   `!important` rule (the sidebar drag state below) still wins; `!important`
+   is what beats a component's own utility class. */
+:where(:disabled, [aria-disabled='true'], [data-disabled]) {
+  cursor: default !important;
 }
 
 /* ── Sidebar rail drag ──────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
  * door) plus the managed `kortix-*` family — into a target directory as
  * `<skill>/…` folders. The sandbox image bakes this to `/opt/kortix/managed-skills`
  * and the agent server overlays it into every session at boot (see
- * `apps/kortix-sandbox-agent-server/src/injected-skills.ts`), so no project ever
+ * `apps/kortix-sandbox-agent-server/src/services/skills/managed-skills.ts`), so no project ever
  * goes stale on Kortix internals.
  *
  *   bun run scripts/write-managed-skills.ts <outDir>
@@ -11,11 +11,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { SKILLS_DIR } from '@kortix/manifest-schema/layout';
 import { getManagedSkillFiles, getStarterFiles, isKortixManagedSkillName } from '../src/index';
 
 const outDir = process.argv[2] ?? join(import.meta.dir, '..', 'dist', 'managed-skills');
 
-const SKILLS_PREFIX = '.kortix/opencode/skills/';
+const SKILLS_PREFIX = `${SKILLS_DIR}/`;
 
 function skillNameOf(path: string): string | null {
   if (!path.startsWith(SKILLS_PREFIX)) return null;

@@ -94,7 +94,4 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('connector_list', ConnectorListTool);
 ToolRegistry.register('connector-list', ConnectorListTool);
-ToolRegistry.register('oc-connector_list', ConnectorListTool);
-ToolRegistry.register('oc-connector-list', ConnectorListTool);

@@ -1,9 +1,10 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
+import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { chatThreads, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
 import { runWorkerTick } from '../../shared/audit-scope';
 import { config } from '../../config';
-import { classifyTurnError, type TurnErrorInfo } from '../slack/errors';
+import { classifyTurnError, TEAMS_TURN_ERROR_COMMANDS, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import type { StreamTaskChunk } from '../slack-api';
 import { sendCard, sendText, updateCard } from '../teams-api';
@@ -216,7 +217,7 @@ async function liveRuntimeTurnTokens(sessionId: string): Promise<string[]> {
   try {
     const [{ sessionSandboxes }, { RUNNING_SANDBOX_STATUSES, storedSandboxTurns }] = await Promise.all([
       import('@kortix/db'),
-      import('../../projects/sandbox-turn-lifecycle'),
+      import('../../projects/session-turn-ledger'),
     ]);
     const [box] = await db
       .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
@@ -467,13 +468,15 @@ export async function relayTurnEnd(
   }
   if (!(await claimFinalize(sessionId))) return false;
   if (status === 'error') {
-    const classified = classifyTurnError(errorInfo);
+    const classified = classifyTurnError(errorInfo, TEAMS_TURN_ERROR_COMMANDS);
     // The classifier is Slack's, so its copy is Slack's dialect. Translate at
     // the boundary rather than forking the copy — see mrkdwnToTeamsMarkdown.
+    // A stop read "Task complete" with its last step ticked: `{}` fell back to
+    // the success title. Slack says "Run stopped"; so does the card now.
     await finalizeTurn(
       handle,
       classified.aborted
-        ? {}
+        ? { title: classified.title, unfinished: true }
         : { error: mrkdwnToTeamsMarkdown(classified.text), title: classified.title },
     );
   } else {
@@ -517,7 +520,11 @@ export async function finalizeTurn(
   let delivered = false;
   try {
     if (opts.card) {
-      const answer = buildAnswerCard(body, sessionUrl, opts.card);
+      // The custom card replaces the live one: keep the run's steps above it.
+      const last = handle.steps[handle.steps.length - 1];
+      if (last && last.status === 'in_progress') last.status = opts.unfinished ? 'pending' : 'complete';
+      const plan = handle.messageActivityId && handle.steps.length ? { title, steps: handle.steps } : undefined;
+      const answer = buildAnswerCard(body, sessionUrl, opts.card, plan);
       delivered = handle.messageActivityId
         ? await updateCard(ref, handle.messageActivityId, answer)
         : Boolean(await sendCard(ref, answer));
@@ -582,6 +589,26 @@ function fitTextMessage(body: string, sessionUrl?: string): string {
   }
   return `${out}${link}`;
 }
+
+/**
+ * A session this conversation was waiting on died during async provisioning
+ * (provider capacity, git-auth, generic). The agent never ran, so no step or
+ * answer arrives: without this the card spun until the 30-minute sweep. The
+ * platform already classified a friendly message, so it is posted as-is.
+ * Registered below as one of the session-failure notifiers; a no-op for a
+ * session with no Teams turn row.
+ */
+export async function relayTeamsProvisioningFailure(sessionId: string, message: string): Promise<boolean> {
+  const handle = await loadTurn(sessionId);
+  if (!handle || handle.finalized) return false;
+  if (!(await claimFinalize(sessionId))) return false;
+  const detail = (message ?? '').trim().slice(0, 400) || 'Provisioning failed before the run could start.';
+  await finalizeTurn(handle, { error: `**I couldn't start this run.** ${detail}`, title: "Couldn't start" });
+  await deleteTurn(sessionId);
+  return true;
+}
+
+registerSessionFailureNotifier(relayTeamsProvisioningFailure);
 
 export function buildTeamsTurnEnv(tenantId: string, activity: TeamsActivity): Record<string, string> {
   const env: Record<string, string> = {};
@@ -654,9 +681,20 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
   }
 }
 
-setInterval(() => {
-  runWorkerTick('teams-turn-gc', sweepStaleTeamsTurns).catch((err) => console.warn('[teams-webhook] gc tick failed', err));
-}, 5 * 60 * 1000).unref();
+let gcTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Leader-only (bootstrap.ts): one replica sweeps, not all of them. */
+export function startTeamsTurnGc(): void {
+  if (gcTimer) return;
+  gcTimer = setInterval(() => {
+    runWorkerTick('teams-turn-gc', sweepStaleTeamsTurns).catch((err) => console.warn('[teams-webhook] gc tick failed', err));
+  }, 5 * 60 * 1000);
+}
+
+export function stopTeamsTurnGc(): void {
+  if (gcTimer) clearInterval(gcTimer);
+  gcTimer = null;
+}
 
 /**
  * Does the runtime's turn ledger still hold a live turn for this session?

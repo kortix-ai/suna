@@ -19,20 +19,22 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
-const index = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+// The mount wiring moved verbatim into app.ts (KRTX-347 split); the source
+// contract follows its owner.
+const appSource = readFileSync(new URL('../app.ts', import.meta.url), 'utf8');
 const openapi = readFileSync(new URL('../openapi/index.ts', import.meta.url), 'utf8');
-const authMiddleware = readFileSync(new URL('../middleware/auth.ts', import.meta.url), 'utf8');
+const authMiddleware = readFileSync(new URL('../middleware/auth-scope.ts', import.meta.url), 'utf8');
 
 describe('boot-timeline is actually reachable', () => {
   test('auth middleware is mounted on the route', () => {
-    expect(index).toContain("app.use('/v1/platform/boot-timeline', supabaseAuth)");
+    expect(appSource).toContain("app.use('/v1/platform/boot-timeline', supabaseAuth)");
   });
 
   test('the mount comes BEFORE the platform router', () => {
     // Hono runs middleware registered before the matching route. Registering
     // this after `app.route('/v1/platform', …)` would leave it dead.
-    const use = index.indexOf("app.use('/v1/platform/boot-timeline', supabaseAuth)");
-    const route = index.indexOf("app.route('/v1/platform', platformApp)");
+    const use = appSource.indexOf("app.use('/v1/platform/boot-timeline', supabaseAuth)");
+    const route = appSource.indexOf("app.route('/v1/platform', platformApp)");
     expect(use).toBeGreaterThan(-1);
     expect(route).toBeGreaterThan(-1);
     expect(use).toBeLessThan(route);
@@ -42,8 +44,8 @@ describe('boot-timeline is actually reachable', () => {
     // Second route on the same pattern: the daemon fire-and-forgets this push
     // too, so an unmounted middleware would be silent 403s and an empty
     // projection store rather than a visible failure.
-    const use = index.indexOf("app.use('/v1/platform/runtime-projection', supabaseAuth)");
-    const route = index.indexOf("app.route('/v1/platform', platformApp)");
+    const use = appSource.indexOf("app.use('/v1/platform/runtime-projection', supabaseAuth)");
+    const route = appSource.indexOf("app.route('/v1/platform', platformApp)");
     expect(use).toBeGreaterThan(-1);
     expect(use).toBeLessThan(route);
   });
@@ -51,7 +53,7 @@ describe('boot-timeline is actually reachable', () => {
   test('the whole platform sub-app is NOT blanket-authenticated', () => {
     // `/sandbox/version` and the github-app setup callbacks are deliberately
     // public; a wildcard mount would break them.
-    expect(index).not.toContain("app.use('/v1/platform/*', supabaseAuth)");
+    expect(appSource).not.toContain("app.use('/v1/platform/*', supabaseAuth)");
   });
 
   // Mounting the middleware is only HALF of reachable. The credential the

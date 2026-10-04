@@ -168,7 +168,7 @@ export function AgentsTabView({
         }}
         maxRows={Math.max(height - 1, 1)}
         width={width}
-        emptyText="No agents yet. Add one under .opencode/agent/ or kortix.yaml."
+        emptyText="No agents yet. Add agents/<name>.md and declare it under agents: in kortix.yaml."
       />
       {rows.length > 0 ? <text fg={theme.faint}>Enter details · ★ project default</text> : null}
     </box>

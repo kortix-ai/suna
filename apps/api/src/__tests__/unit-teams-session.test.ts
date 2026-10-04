@@ -6,13 +6,19 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
  * few seconds after the message, because the live card was posted only after
  * the project row, a secret upsert, the identity link, the account membership
  * and the authorization verdict had all been resolved. The card carries no
- * information from any of those, so it goes out first; the identity outcome
- * then REPLACES it in place instead of stacking a second card underneath.
+ * information from any of those, so in a one-to-one chat it goes out first;
+ * the identity outcome then REPLACES it in place instead of stacking a second
+ * card underneath.
+ *
+ * A channel or group chat is different: everyone there sees the live card.
+ * Until 2026-10-01 an unlinked sender's card turned into "Connect your Kortix
+ * account" in front of the whole conversation. There the card goes out only
+ * once the sender may run, and a refusal goes to the sender alone.
  */
 
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
-const TENANT_ID = '36009a52-46d2-44bc-ba56-57a87e485e0a';
-const CONVERSATION_ID = 'a:1FQyR2jW1pEUK';
+const TENANT_ID = '00000000-0000-4000-8000-00000000a11c';
+const CONVERSATION_ID = 'a:1SyntheticChat';
 
 const calls: string[] = [];
 let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
@@ -190,6 +196,7 @@ const owners: Array<Record<string, unknown>> = [];
 const gateCalls: Array<Record<string, unknown>> = [];
 mock.module('../channels/teams/participants', () => ({
   ensureTeamsThreadParticipant: async (input: Record<string, unknown>) => {
+    calls.push('ensureTeamsThreadParticipant');
     gateCalls.push(input);
     return participantVerdict;
   },
@@ -197,6 +204,29 @@ mock.module('../channels/teams/participants', () => ({
     owners.push(input);
   },
   normalizeConversationPolicy: (v: unknown) => (typeof v === 'string' ? v : 'project_open'),
+}));
+
+// What the sender alone is told in a channel or group chat (a targeted message).
+const privateReplies: Array<{ recipient: string | undefined; card: unknown }> = [];
+mock.module('../channels/teams/private-reply', () => ({
+  replyPrivately: async (_ref: unknown, sender: { from?: { id?: string } }, card: unknown) => {
+    calls.push('replyPrivately');
+    privateReplies.push({ recipient: sender.from?.id, card });
+    return 'act-private';
+  },
+  sendCardPrivately: async () => 'act-private',
+}));
+
+// Per-resource agent scoping at session start (scoped-agents.ts).
+let agentAllowed = true;
+const agentChecks: Array<{ userId: string; agentName: string | null | undefined }> = [];
+const realScopedAgents = await import('../channels/scoped-agents');
+mock.module('../channels/scoped-agents', () => ({
+  ...realScopedAgents,
+  userMayLaunchAgent: async (_project: unknown, userId: string, agentName: string | null | undefined) => {
+    agentChecks.push({ userId, agentName });
+    return agentAllowed;
+  },
 }));
 
 const session = await import('../channels/teams/session');
@@ -208,11 +238,13 @@ const activity = {
   text: 'List the files in this repo',
   serviceUrl: 'https://smba.trafficmanager.net/emea/',
   conversation: { id: CONVERSATION_ID, tenantId: TENANT_ID },
-  from: { id: '29:abc', name: 'Ivan Bagaric', aadObjectId: 'aad-user-1' },
+  from: { id: '29:abc', name: 'Jordan Lee', aadObjectId: 'aad-user-1' },
   recipient: { id: '28:bot' },
 };
 
 beforeEach(() => {
+  agentAllowed = true;
+  agentChecks.length = 0;
   calls.length = 0;
   created.length = 0;
   continued.length = 0;
@@ -238,6 +270,7 @@ beforeEach(() => {
   participantVerdict = { allowed: true };
   owners.length = 0;
   gateCalls.length = 0;
+  privateReplies.length = 0;
   setTeamsSessionLifecycleForTest({
     createSession: async (input: Record<string, unknown>) => {
       calls.push('createSession');
@@ -258,9 +291,11 @@ afterAll(() => {
   mock.restore();
 });
 
-describe('createOrJoinTeamsConversationSession — the live card goes out first', () => {
+describe('createOrJoinTeamsConversationSession — in a 1:1 chat the live card goes out first', () => {
+  const personal = { ...activity, conversation: { ...activity.conversation, conversationType: 'personal' } };
+
   test('new conversation: the card is posted before identity is resolved, then the session is created once', async () => {
-    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: personal });
 
     expect(calls.indexOf('startTurn')).toBeGreaterThanOrEqual(0);
     expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
@@ -274,7 +309,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
   test('follow-up in a bound conversation: the same live card is reused and the session is continued', async () => {
     existingThread = [{ sessionId: 'sess-existing' }];
 
-    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: personal });
 
     expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
     expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
@@ -287,7 +322,7 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
   test('unlinked sender: the identity prompt REPLACES the live card instead of stacking under it', async () => {
     actor = { reason: 'unlinked' };
 
-    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: personal });
 
     expect(calls.indexOf('startTurn')).toBeLessThan(calls.indexOf('resolveChatActor'));
     expect(prompts).toHaveLength(1);
@@ -300,16 +335,98 @@ describe('createOrJoinTeamsConversationSession — the live card goes out first'
   test('member without project access: same, with the request-access reason', async () => {
     actor = { reason: 'not_member' };
 
-    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: personal });
 
     expect(prompts[0]).toMatchObject({ reason: 'not_member', replaceActivityId: 'live-card-1' });
     expect(created).toHaveLength(0);
   });
 
   test('the service-url bookkeeping never sits in front of the card', async () => {
-    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: personal });
     const persist = calls.indexOf('persistServiceUrl');
     expect(persist === -1 || persist > calls.indexOf('startTurn')).toBe(true);
+  });
+});
+
+describe('createOrJoinTeamsConversationSession — in a channel or group chat the live card waits until the sender may run', () => {
+  const inChat = (conversationType: string) => ({
+    ...activity,
+    conversation: { ...activity.conversation, conversationType },
+  });
+  const start = (conversationType = 'channel') =>
+    createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat(conversationType) });
+  const privateText = () => JSON.stringify(privateReplies.map((r) => r.card));
+
+  test('new conversation: identity first, then the one live card, then the session', async () => {
+    await start();
+    expect(calls.indexOf('resolveChatActor')).toBeLessThan(calls.indexOf('startTurn'));
+    expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
+    expect(created).toHaveLength(1);
+    expect(saved).toEqual([{ sessionId: 'sess-new', messageActivityId: 'live-card-1' }]);
+    expect(privateReplies).toEqual([]);
+  });
+
+  test('follow-up: the live card goes out after the join policy let the sender in', async () => {
+    existingThread = [{ sessionId: 'sess-existing' }];
+    await start('groupChat');
+    expect(calls.indexOf('ensureTeamsThreadParticipant')).toBeLessThan(calls.indexOf('startTurn'));
+    expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
+    expect(continued).toHaveLength(1);
+    expect(saved).toEqual([{ sessionId: 'sess-existing', messageActivityId: 'live-card-1' }]);
+  });
+
+  test('unlinked sender: no card for everyone; the prompt goes to them and replaces nothing', async () => {
+    for (const type of ['channel', 'groupChat']) {
+      calls.length = 0;
+      prompts.length = 0;
+      selectCount = 0;
+      actor = { reason: 'unlinked' };
+      await start(type);
+      expect(calls).not.toContain('startTurn');
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toMatchObject({ reason: 'unlinked' });
+      expect(prompts[0]).not.toHaveProperty('replaceActivityId');
+    }
+    expect(created).toHaveLength(0);
+  });
+
+  test('member without project access: the same, with the request-access reason', async () => {
+    actor = { reason: 'not_member' };
+    await start();
+    expect(calls).not.toContain('startTurn');
+    expect(prompts[0]).toMatchObject({ reason: 'not_member' });
+    expect(prompts[0]).not.toHaveProperty('replaceActivityId');
+  });
+
+  test('the join policy refuses the sender: no card for everyone, and only they read why', async () => {
+    existingThread = [{ sessionId: 'sess-existing', createdBy: 'owner-1', metadata: { teams: { conversation_policy: 'owner_only' } } }];
+    participantVerdict = { allowed: false, notice: 'This Kortix session is owner-only.' };
+    await start();
+    expect(calls).not.toContain('startTurn');
+    expect(notices).toEqual([]);
+    expect(privateReplies.map((r) => r.recipient)).toEqual(['29:abc']);
+    expect(privateText()).toContain('This Kortix session is owner-only.');
+    expect(continued).toHaveLength(0);
+  });
+
+  test('the sender is scoped out of the agent: no card for everyone, and only they read why', async () => {
+    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', opencodeModel: null };
+    agentAllowed = false;
+    await start('groupChat');
+    expect(calls).not.toContain('startTurn');
+    expect(finalized).toEqual([]);
+    expect(privateReplies.map((r) => r.recipient)).toEqual(['29:abc']);
+    expect(privateText()).toContain("don't have access to the `reviewer` agent");
+    expect(created).toEqual([]);
+  });
+
+  test('a deleted session (revive): the one card posted after the gate carries the new session', async () => {
+    existingThread = [{ sessionId: 'sess-existing' }];
+    followUpOutcome = 'no-session';
+    await start();
+    expect(calls.filter((c) => c === 'startTurn')).toHaveLength(1);
+    expect(created).toHaveLength(1);
+    expect(saved.at(-1)).toEqual({ sessionId: 'sess-new', messageActivityId: 'live-card-1' });
   });
 });
 
@@ -409,7 +526,7 @@ describe('binding names', () => {
       conversationId: CONVERSATION_ID,
       activity: { ...activity, conversation: { ...activity.conversation, conversationType: 'personal' } },
     });
-    expect(bindings[0]).toMatchObject({ channelName: 'Ivan Bagaric', channelType: 'personal' });
+    expect(bindings[0]).toMatchObject({ channelName: 'Jordan Lee', channelType: 'personal' });
   });
 });
 
@@ -431,13 +548,39 @@ describe('join policy on a follow-up', () => {
     expect(calls.indexOf('resolveChatActor')).toBeLessThan(calls.indexOf('continueSession'));
   });
 
-  test('not allowed: the requester\'s live card becomes the notice, nothing is delivered, the session is untouched', async () => {
+  test('not allowed: only the requester is told, nothing is delivered, the session is untouched', async () => {
     participantVerdict = { allowed: false, notice: 'This Kortix session is owner-only.' };
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
-    expect(notices).toEqual(['This Kortix session is owner-only.']);
+    expect(JSON.stringify(privateReplies)).toContain('This Kortix session is owner-only.');
+    expect(calls).not.toContain('startTurn');
     expect(continued).toHaveLength(0);
     expect(saved).toHaveLength(0);
     expect(created).toHaveLength(0);
+  });
+
+  test('in a 1:1 chat a refusal replaces the requester\'s own live card', async () => {
+    participantVerdict = { allowed: false, notice: 'This Kortix session is owner-only.' };
+    const personal = { ...activity, conversation: { ...activity.conversation, conversationType: 'personal' } };
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: personal });
+    expect(notices).toEqual(['This Kortix session is owner-only.']);
+    expect(privateReplies).toEqual([]);
+  });
+
+  test('an authorized decision (approval, review) resumes the agent without the join gate', async () => {
+    // A manager who is not a participant approved from the card: the
+    // decision was authorized, so the owner-only policy must not strand the
+    // agent waiting for it.
+    participantVerdict = { allowed: false, notice: 'This Kortix session is owner-only.' };
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity,
+      authorizedResume: true,
+    });
+    expect(gateCalls).toEqual([]);
+    expect(notices).toEqual([]);
+    expect(continued).toHaveLength(1);
   });
 
   test('a new session remembers its owner as the first approved participant and freezes the policy', async () => {
@@ -688,6 +831,39 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
       await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat(type) });
       expect(created[0].visibility).toBe('project');
       expect(startPlans[0].scope).toMatchObject({ oneToOne: false, personalUserId: null });
+    }
+  });
+
+  test('someone scoped out of the conversation`s agent starts no session on it', async () => {
+    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', opencodeModel: null };
+    agentAllowed = false;
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('groupChat') });
+    expect(agentChecks).toEqual([{ userId: 'user-1', agentName: 'reviewer' }]);
+    expect(created).toEqual([]);
+    expect(JSON.stringify(privateReplies)).toContain("don't have access to the `reviewer` agent");
+
+    // A 1:1 chat says it on the person's own live card.
+    privateReplies.length = 0;
+    selectCount = 0;
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('personal') });
+    expect(JSON.stringify(finalized)).toContain("don't have access to the `reviewer` agent");
+    expect(privateReplies).toEqual([]);
+  });
+
+  test('an owner-only or approval conversation starts a restricted session, as Slack does', async () => {
+    // `project` visibility showed the session to every project member on the
+    // web, whatever the conversation's join policy said.
+    for (const [policy, visibility] of [
+      ['owner_only', 'restricted'],
+      ['owner_approval', 'restricted'],
+      ['project_open', 'project'],
+    ] as const) {
+      created.length = 0;
+      selectCount = 0;
+      channelSelection = { projectId: PROJECT_ID, agentName: null, opencodeModel: null, conversationPolicy: policy };
+      await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('groupChat') });
+      expect(created[0].visibility).toBe(visibility);
+      expect((created[0].metadata as { teams: { conversation_policy: string } }).teams.conversation_policy).toBe(policy);
     }
   });
 

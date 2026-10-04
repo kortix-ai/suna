@@ -2,18 +2,36 @@ import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
-import { resolveConversationProjectDetailed } from './binding';
+import { listTenantProjects, resolveConversationProjectDetailed } from './binding';
 import { buildProjectPickerCard, buildWelcomeCard } from './cards';
 import { createPendingTeamsPickerMessage } from './auth-resume';
 import { sendCard as sendTeamsCard } from '../teams-api';
 import { handleTeamsCommand, parseTeamsCommand } from './commands';
+import { buildTeamsHomeCard } from './home';
 import { createOrJoinTeamsConversationSession, hasConversationSession } from './session';
 import { MANAGED_TEAMS_INBOUND, conversationProjectFor, type TeamsInbound } from './inbound';
 import type { TeamsActivity } from './types';
-import { conversationScope, isBotMentioned } from './util';
+import { conversationScope, isBotMentioned, isPersonalChat } from './util';
+
+/** Commands that act on no project, so they run before a project is picked. */
+const PROJECTLESS_COMMANDS: ReadonlySet<string> = new Set([
+  'login',
+  'connect',
+  'logout',
+  'disconnect',
+  'whoami',
+  'who',
+  'help',
+  'home',
+  'sessions',
+  'stop',
+  'cancel',
+  'unbind',
+  'use',
+  'switch',
+]);
 
 export function tenantOf(activity: TeamsActivity): string | null {
   return activity.conversation?.tenantId ?? activity.channelData?.tenant?.id ?? null;
@@ -59,9 +77,15 @@ export async function handleTeamsConversationUpdate(
   if (!tenantId || !conversationId || !activity.serviceUrl) return;
   if (await alreadyHandled(`welcome:${conversationId}`)) return;
 
-  const projectId = await conversationProjectFor(inbound, tenantId, conversationId);
+  // A 1:1 chat in an organization with several projects has no project until
+  // the first message picks one; the home card lists them all, so any
+  // installed project's bot and service URL can send it.
+  const projectId =
+    (await conversationProjectFor(inbound, tenantId, conversationId)) ??
+    (isPersonalChat(activity) && inbound.kind === 'managed'
+      ? ((await listTenantProjects(tenantId).catch(() => []))[0]?.projectId ?? null)
+      : null);
   if (!projectId) return;
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
 
   const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
   await sendCard(
@@ -73,7 +97,11 @@ export async function handleTeamsConversationUpdate(
       tenantId,
       projectId,
     },
-    buildWelcomeCard({ projectUrl }),
+    // Someone who added the app for themselves gets Slack's App Home as a card:
+    // the organization's projects and what to try. A team or chat gets the intro.
+    isPersonalChat(activity)
+      ? await buildTeamsHomeCard(tenantId, inbound.kind === 'project' ? inbound.projectId : undefined)
+      : buildWelcomeCard({ projectUrl }),
   );
 }
 
@@ -115,16 +143,21 @@ export async function handleTeamsActivity(
   }
   if (resolution.kind === 'ambiguous') {
     // Several projects, nothing bound: ask rather than silently pick the first
-    // install (the Slack behaviour). A command still runs against the first
-    // install so `/projects` / `/use` work here; a task is parked and replayed
-    // when the user picks.
+    // install (the Slack behaviour). With RSC Teams delivers every channel
+    // line, and only a mention is for us: without this check each line got a
+    // picker. A command that needs no project runs now. Any other command
+    // would act on a project nobody picked (and `/models` bound the first
+    // one), so it gets the picker; a task is parked and replayed on the pick.
+    if (conversationScope(activity) !== 'personal' && !isBotMentioned(activity)) return;
     const command = parseTeamsCommand(activity.text);
-    if (command) {
+    if (command && PROJECTLESS_COMMANDS.has(command.verb)) {
       await handleTeamsCommand({ command, activity, tenantId, projectId: resolution.projects[0].projectId });
       return;
     }
     if (activity.serviceUrl) {
-      const pendingId = await createPendingTeamsPickerMessage({ tenantId, teamsUserId: activity.from?.id ?? '', activity });
+      const pendingId = command
+        ? null
+        : await createPendingTeamsPickerMessage({ tenantId, teamsUserId: activity.from?.id ?? '', activity });
       await sendTeamsCard(
         {
           serviceUrl: activity.serviceUrl,
@@ -139,13 +172,6 @@ export async function handleTeamsActivity(
     return;
   }
   const projectId = resolution.projectId;
-  // Per-project gate — the `teams` feature flag. This is the only
-  // enforcement point for the shared multi-tenant webhook, which cannot know
-  // the project before this line.
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) {
-    console.warn('[teams-webhook] teams feature is off for project — ignoring', { projectId });
-    return;
-  }
 
   // With `ChannelMessage.Read.Group` (RSC) Teams delivers every channel
   // message, not only @-mentions. An un-mentioned message is a follow-up in a

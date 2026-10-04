@@ -1,6 +1,6 @@
 'use client';
 
-import type { PermissionRequest, QuestionRequest } from '@opencode-ai/sdk/v2/client';
+import type { PermissionRequest, QuestionRequest } from '../../core/runtime/runtime-types';
 import { create } from 'zustand';
 
 // Cap on how many resolved request ids we remember. Request ids are unique per
@@ -43,7 +43,7 @@ interface OpenCodePendingState {
   getTotalPendingCount: () => number;
 }
 
-export const useOpenCodePendingStore = create<OpenCodePendingState>()((set, get) => ({
+export const useRuntimePendingStore = create<OpenCodePendingState>()((set, get) => ({
   permissions: {},
   questions: {},
   resolvedQuestionIds: [],
@@ -120,3 +120,7 @@ export const useOpenCodePendingStore = create<OpenCodePendingState>()((set, get)
     return permCount + qCount;
   },
 }));
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimePendingStore`. Removed in the next major. */
+export const useOpenCodePendingStore = useRuntimePendingStore;

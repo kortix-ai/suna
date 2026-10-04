@@ -1,6 +1,6 @@
 /**
- * The `config_releases` flag resolution: default ON, an explicit project override wins, and the
- * operator kill switch beats both.
+ * The `config_releases` flag resolution: default OFF, an explicit project override wins, and the
+ * flag is available on every deployment.
  */
 import { describe, expect, test } from 'bun:test';
 import { config } from '../config';
@@ -24,25 +24,14 @@ describe('config_releases flag', () => {
     expect(configReleasesEnabled({ experimental: { config_releases: true } })).toBe(true);
   });
 
-  test('the operator kill switch forces off even when the project enabled it', () => {
-    const def = featureFlagDef(CONFIG_RELEASES_FLAG);
-    const original = config.CONFIG_RELEASES_ENABLED;
-    try {
-      (config as { CONFIG_RELEASES_ENABLED: boolean }).CONFIG_RELEASES_ENABLED = false;
-      expect(def.available()).toBe(false);
-      expect(configReleasesEnabled({ experimental: { config_releases: true } })).toBe(false);
-      expect(configReleasesEnabled({})).toBe(false);
-      // The Settings row disappears with it.
-      const view = buildFeatureFlagCatalog({ experimental: { config_releases: true } }).find(
-        (f) => f.key === CONFIG_RELEASES_FLAG,
-      );
-      expect(view).toMatchObject({ available: false, enabled: false });
-    } finally {
-      (config as { CONFIG_RELEASES_ENABLED: boolean }).CONFIG_RELEASES_ENABLED = original;
-    }
+  test('is available on every deployment, so the Settings row always renders', () => {
+    // No operator env switch: the per-project flag is the only gate.
+    expect(featureFlagDef(CONFIG_RELEASES_FLAG).available()).toBe(true);
+    const view = buildFeatureFlagCatalog({}).find((f) => f.key === CONFIG_RELEASES_FLAG);
+    expect(view).toMatchObject({ available: true, enabled: false });
   });
 
-  test('the registry entry declares the flag OFF by default and names its kill switch', () => {
+  test('the registry entry declares the flag OFF by default', () => {
     const def = featureFlagDef(CONFIG_RELEASES_FLAG);
     expect(def.platformDefault()).toBe(false);
     expect(def.stability).toBe('experimental');

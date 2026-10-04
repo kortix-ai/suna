@@ -58,15 +58,15 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | `page-content.tsx` | Content area under `PageHeader` — no card framing, consistent top spacing. |
 | `composer.tsx` | The chat input of the project home and of a thread (`SessionChatInput` wraps it): one card with the text field on top and a 36pt row of add · agent chip · send `Button`s below (`icon-md` icon buttons, `sm` agent chip — `ghost`, `secondary` for "Connect model" — that opens the agent and model sheet). Page colour (`bg-background`) in both themes, hairline `border-border` in both themes, no shadow. No animated placeholder. Thread-only slots: `header` (queue, staged command), `accessory` (AutoContinue), `busy` (Stop). See design.md → Project home. |
 | `dictation-waveform.tsx` | `DictationWaveform` — the composer's listening indicator: one bar per recogniser volume sample, newest on the right. Runs on the UI thread from a shared value. See `design.md` → Dictation. |
-| `pinned-bar.tsx` | `PinnedBar` + `usePinnedBarInset`. Inside a bottom sheet, wrap the body in `SheetFill` (`sheet.tsx`) first: gorhom's content box is taller than the visible sheet, so `bottom: 0` alone lands off-screen.  — controls pinned to the bottom of a scrolling region, floating over a fade of the surface (clear → 85% at 45% → solid), 16pt above the safe area; the content scrolls under it and pads its end by the inset. The project drawer's bottom bar as a component (Jay, 2026-09-22); used by the session file preview sheet (Download · Add to chat). Never a solid footer under a separate fade strip. **A new control added to any header or chrome row prefers this gradient-fade backdrop over a flat one** (Jay, 2026-09-22) — see design.md's "New header controls" row. |
+| `pinned-bar.tsx` | `PinnedBar` + `usePinnedBarInset`. Inside a bottom sheet, wrap the body in `SheetFill` (`sheet.tsx`) first: gorhom's content box is taller than the visible sheet, so `bottom: 0` alone lands off-screen. Inside `SheetFill` the bar follows the visible edge by `translateY` (`PinnedBarShiftContext`) while the sheet moves. The bar holds controls pinned to the bottom of a scrolling region, floating over a fade of the surface (clear → 85% at 45% → solid), 16pt above the safe area; the content scrolls under it and pads its end by the inset. The project drawer's bottom bar as a component (Jay, 2026-09-22); used by the session file preview sheet (Download · Add to chat). Never a solid footer under a separate fade strip. **A new control added to any header or chrome row prefers this gradient-fade backdrop over a flat one** (Jay, 2026-09-22) — see design.md's "New header controls" row. |
 | `animated-toggle-icon.tsx` | Cross-fade + rotate between an icon and its "X" close state, used by `PageHeader`. |
 | `kortix-loader.tsx` | Lottie brand loading spinner. |
-| `text-shimmer.tsx` | `TextShimmer` — gradient-sweep shimmer text for "AI is working" status lines. |
+| `text-shimmer.tsx` | `TextShimmer` — the "AI is working" status line. A gradient band sweeps across the glyphs on iOS and Android (`MaskedView`, a port of web's `text-shimmer.tsx`). Reduce Motion: base colour, no motion. `ToolMotionContext` (default `true`) turns motion off: a tool row provides `false` when its call still reads running or pending after its turn ended (Stop, an interrupt, a crash; `RowAmbient` in `tool-part-renderer.tsx`), and `TextShimmer` then draws still text in the base colour. `RunningLoader` is the Lottie twin for tool rows: `KortixLoader` while motion is on, an empty box of the same size while it is off. |
 | `StopIcon.tsx` | Stop-square SVG icon used on the composer's stop button. |
 | `PixelDeadFlower.tsx` | 16×16 pixel-art wilted flower, one `color` prop at 6 opacities (one `Path` per tone, no seams). One petal falls in a loop: whole-cell steps on the UI thread (Reanimated), off under Reduce Motion and while `animate={false}`. The empty session list in the project drawer (`DrawerEmptyFlower` runs the loop only while the drawer is open) and on the Sessions page (loop only while focused; errors and empty filter results keep their text) (Jay, 2026-09-24). The wrapper carries the "No sessions yet" `accessibilityLabel`. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
 | `SessionEndedDialog.tsx` | The one "Your session has ended" dialog (COR-144), mounted once in `app/_layout.tsx`; opens when `lib/auth/session-expiry.ts` confirms the login is gone. A new code path that signs out calls `sessionExpiry.disarm()` before `supabase.auth.signOut`, or the user sees this dialog. |
-| `selectable-markdown.tsx` | Selectable markdown text via `@expensify/react-native-live-markdown`. |
+| `selectable-markdown.tsx` | Chat markdown with native text selection: selectable `Text` on Android, `UITextView` (`react-native-uitextview`) on iOS; a binary without that native view falls back to the double-tap sheet. Every text rule renders `MarkdownText`, never raw `RNText`. |
 | `confirm-dialog.tsx` | `useConfirmDialog()` → `{ confirm, dialog }`: the app's one confirm (COR-151), an `AlertDialog` with a secondary Cancel pill and a `default`/`destructive` action pill, portalled above open sheets. Replaces `Alert.alert(title, msg, [cancel, action])` 1:1. External web links go through `openLink` (`lib/utils/open-link.ts`): kortix.com in the in-app browser, other hosts in the system browser. |
 | `toast.tsx` / `toast-provider.tsx` | The toast seam. `sonner-native` renders toasts (Jay, 2026-09-22); `toast-provider.tsx` owns `useToast()` and mounts `<Toaster>`, `toast.tsx` owns the Kortix look, `lib/ui/toast-model.ts` owns durations/haptics. `const toast = useToast(); toast.error(...)`. Never import `sonner-native` in a screen. See design.md §11 |
 
@@ -179,6 +179,11 @@ pan-down-to-dismiss, snap points, and keyboard-aware sizing, so they stay on
 gorhom. Its content parts (`BottomSheetView`, `BottomSheetScrollView`,
 `BottomSheetTextInput`, `BottomSheetFooter`) are still imported from gorhom.
 
+Opening a sheet closes the keyboard: `KortixBottomSheetModal`'s `present()`
+calls `Keyboard.dismiss()` first. Do not call `Keyboard.dismiss()` before
+`open()` / `present()` at a call site. A field that auto-focuses inside the
+sheet raises the keyboard again after the sheet mounts.
+
 **Every sheet renders through `KortixBottomSheetModal`** (`components/kortix/sheet.tsx`;
 Jay, 2026-09-22). It is a drop-in for gorhom's `BottomSheetModal`: the same props
 and the same ref, so `useRef<BottomSheetModal>` (the gorhom type) still types the
@@ -197,9 +202,15 @@ call site asked for and a drag up expands it. `topInset` defaults to the
 safe-area top, so 100% stops under the status bar; pass `topInset` only to
 differ. Never add `'100%'` at a call site. gorhom sizes the content box to the
 highest detent, so a fixed-detent sheet (`enableDynamicSizing={false}`) is
-wrapped in `SheetFill` by the component: its body is exactly the visible
-sheet, `flex: 1` and `absolute bottom-0` inside it mean the visible edge, and
-the body grows with the drag.
+wrapped in `SheetFill` by the component: at rest its body is exactly the
+visible sheet, so `flex: 1` and `absolute bottom-0` inside it mean the visible
+edge. While the sheet moves, the body keeps one laid-out height
+(`sheetFillHeight`), because a height change re-lays out every list in it. The
+height updates once at the start of an animation that ends taller (the open, a
+snap up, the keyboard lift), on settle, and during a drag only while the
+visible sheet is taller than it. A `PinnedBar` inside follows the visible edge
+by `translateY` (`sheetFillShift` through `PinnedBarShiftContext`), so the bar
+does not lag the drag.
 
 `title="…"` adds the title row in the handle area, above any content: a close
 button at the far left, the title centred (`Text variant="large"`), a spacer
@@ -245,6 +256,15 @@ Loading state is always `@/components/ui/skeleton`'s `<Skeleton>` (a
 `bg-accent animate-pulse` box) or the Kortix Lottie spinner
 (`@/components/kortix/kortix-loader`). Never an icon spun with `animate-spin`,
 never React Native's `ActivityIndicator`.
+
+Size (KRTX-559): `<KortixLoader />` defaults to `small` (20 pt), and that is
+the loader for every list, page, sheet, file preview, web view, and button.
+Only two surfaces pass a bigger preset, because there the loader is the whole
+screen's content: the boot screens (`app/index.tsx`, `app/welcome.tsx`,
+`app/+not-found.tsx`) use `large` (80 pt, the width of the native splash
+mark), and `SessionConnecting` uses `medium` (40 pt). There is no `xlarge`.
+`components/kortix/kortix-loader-size.test.ts` fails on any other preset.
+`customSize` stays for inline status glyphs in rows and tool cards.
 
 One loader per surface, one visible at a time (KRTX-244):
 

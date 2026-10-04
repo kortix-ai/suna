@@ -66,6 +66,19 @@ mock.module('../repositories/account-tokens', () => ({
         tokenId: 'tok-session-a',
       };
     }
+    if (t === 'kortix_pat_revoked_session') {
+      // A session credential whose token row is gone/revoked: the dead
+      // credential the auth gate must mark with the typed 401.
+      return {
+        isValid: false,
+        error: 'PAT not found or revoked',
+        credentialDead: true,
+      };
+    }
+    if (t === 'kortix_pat_transient_db_error') {
+      // A DB failure is NOT a dead credential — it keeps the plain 401.
+      return { isValid: false, error: 'Validation error' };
+    }
     return { isValid: false, error: 'Invalid PAT' };
   },
 }));
@@ -163,7 +176,7 @@ mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }))
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
-const { combinedAuth, supabaseAuth } = await import('./auth');
+const { combinedAuth, supabaseAuth, deadCredential401 } = await import('./auth');
 
 function appWithProbe() {
   const app = new Hono();
@@ -181,6 +194,9 @@ function appWithProbe() {
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
+  app.get('/v1/usage/cost-summary', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
+  app.get('/v1/usage/cost-by-project', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
+  app.post('/v1/usage/cost-summary', (c) => c.json({ ok: true }));
   // The preview-ownership describe block's one non-sandbox-shaped route: it
   // must NOT be parsed as `/v1/p/:sandboxId/:port` (no ownership check applies).
   app.post('/v1/p/share', (c) => c.json({ ok: true }));
@@ -417,6 +433,17 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
   });
 });
 
+test('project PAT reaches only the two GET cost routes; route handlers still enforce project scope', async () => {
+  const app = appWithProbe();
+  for (const path of ['/v1/usage/cost-summary', '/v1/usage/cost-by-project']) {
+    const response = await app.request(path, { headers: { Authorization: 'Bearer kortix_pat_project_a' } });
+    expect(response.status).toBe(200);
+    expect((await response.json()).projectId).toBe(PROJECT_A);
+  }
+  expect((await app.request('/v1/usage', { headers: { Authorization: 'Bearer kortix_pat_project_a' } })).status).toBe(403);
+  expect((await app.request('/v1/usage/cost-summary', { method: 'POST', headers: { Authorization: 'Bearer kortix_pat_project_a' } })).status).toBe(403);
+});
+
 describe('legacy sandbox credential route allowlist', () => {
   test('accepts only the exact runtime prompt attachment descriptor path', async () => {
     const exact = await appWithSandboxDescriptorProbe().request(
@@ -436,6 +463,65 @@ describe('legacy sandbox credential route allowlist', () => {
       });
       expect(response.status).toBe(401);
     }
+  });
+});
+
+describe('typed 401 for a credential the API can never take back', () => {
+  // The revocation spike (KRTX-446): a box whose session PAT was revoked kept
+  // relaying runtime-projection / turn-stream / audit-events callbacks. The
+  // gate already refused every one of them before the handler; what it did
+  // not give the caller was a machine-readable "this is permanent" signal, so
+  // the caller's retry loop never stopped. The typed body (code
+  // 'session_token_revoked') is that signal — the sandbox daemon's
+  // dead-credential breaker classifies it.
+  function deadCredentialApp() {
+    const app = new Hono();
+    app.use('/*', supabaseAuth);
+    // A probe handler: any hit here proves the gate let the request through,
+    // which must never happen for a dead credential.
+    app.post('/v1/platform/runtime-projection', (c) => c.json({ handler: 'ran' }));
+    return app;
+  }
+
+  test('a revoked PAT is refused with code session_token_revoked and the handler never runs', async () => {
+    const res = await deadCredentialApp().request('/v1/platform/runtime-projection', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_revoked_session' },
+      body: JSON.stringify({ session_id: 's' }),
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.code).toBe('session_token_revoked');
+    expect(body.message).toBe('PAT not found or revoked');
+    expect(body.error).toBe(true);
+    expect(body.status).toBe(401);
+    expect((body as { handler?: string }).handler).toBeUndefined();
+  });
+
+  test('a transient validation failure keeps the plain untyped 401', async () => {
+    const res = await deadCredentialApp().request('/v1/platform/runtime-projection', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_transient_db_error' },
+      body: JSON.stringify({ session_id: 's' }),
+    });
+    expect(res.status).toBe(401);
+    // A bare app has no onError JSON formatter — assert on the text (the real
+    // app's global handler wraps this same message in `{error,message,status}`).
+    const text = await res.text();
+    expect(text).toContain('Validation error');
+    expect(text).not.toContain('session_token_revoked');
+  });
+
+  test('a dead-credential exception carries the log-throttle mark (KRTX-1039)', () => {
+    // The typed body tells a reading client to stop; a client that ignores it
+    // would otherwise put one warn line per refusal into the API log. The
+    // mark is what routes the exception through the global error handler's
+    // dead-credential log throttle (shared/dead-credential-log.ts).
+    const err = deadCredential401('PAT not found or revoked');
+    const { isDeadCredential } = require('../shared/dead-credential-log') as {
+      isDeadCredential: (e: unknown) => boolean;
+    };
+    expect(isDeadCredential(err)).toBe(true);
   });
 });
 

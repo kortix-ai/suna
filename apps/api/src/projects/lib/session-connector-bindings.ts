@@ -34,6 +34,7 @@ import {
   connectionRowIsReachable,
 } from './connection-access';
 import { audiencePersonId, loadConnectionAudience } from './connection-audience';
+import { sessionAgentId } from './secret-audience';
 import { projectSecretIsConfiguredForConsumer } from '../secrets';
 import { invalidateRequestMemo, requestMemo } from '../../lib/request-context';
 
@@ -477,7 +478,19 @@ export async function sessionHasPersonalConnectorBinding(input: {
         eq(projectSessionConnectorBindings.projectId, input.projectId),
         or(
           eq(connectorConnections.ownerType, 'member'),
-          and(eq(connectorConnections.ownerType, 'project'), narrowedSharedConnection),
+          and(
+            eq(connectorConnections.ownerType, 'project'),
+            narrowedSharedConnection,
+            // Shared with this session's own agent: reachable whoever views the
+            // session, so sharing the session hands no one a person's account.
+            sql`not exists (
+              select 1 from kortix.role_assignments ra
+               where ${liveConnectionGrant} and ra.principal_type = 'service_account'
+                 and ra.principal_id in (
+                   select t.service_account_id from kortix.account_tokens t
+                    where t.session_id = ${input.sessionId} and t.status = 'active'
+                      and t.revoked_at is null and t.service_account_id is not null))`,
+          ),
         ),
       ),
     )
@@ -504,6 +517,9 @@ const narrowedSharedConnection = sql`(
 export interface AgentPrincipalPersonalScope {
   /** The human the session acts on behalf of; null = unattended or cleared. */
   onBehalfOfUserId: string | null;
+  /** The agent's service account: a shared account whose audience names it is
+   *  reachable in every session of that agent. */
+  agentId?: string | null;
 }
 
 interface SessionConnectorLookup {
@@ -701,6 +717,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
             actingPrincipalIsServiceAccount,
             agentPrincipal: input.agentPrincipal,
           }),
+          agentId: input.agentPrincipal?.agentId ?? null,
         })
       )(connection.connectionId);
       if (
@@ -715,7 +732,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
             userId: actingUserId,
             isServiceAccount: actingPrincipalIsServiceAccount,
             agentPrincipal: input.agentPrincipal
-              ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+              ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, agentId: input.agentPrincipal.agentId ?? null, visibility }
               : null,
           },
           audience,
@@ -895,6 +912,7 @@ export async function listEntitledConnectorConnections(input: {
       actingPrincipalIsServiceAccount,
       agentPrincipal: input.agentPrincipal,
     }),
+    agentId: input.agentPrincipal?.agentId ?? null,
   });
   const entitled: EntitledConnectorConnection[] = [];
   for (const row of rows) {
@@ -915,7 +933,7 @@ export async function listEntitledConnectorConnections(input: {
           userId: actingUserId,
           isServiceAccount: actingPrincipalIsServiceAccount,
           agentPrincipal: input.agentPrincipal
-            ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+            ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, agentId: input.agentPrincipal.agentId ?? null, visibility }
             : null,
         },
         audience,
@@ -1045,6 +1063,7 @@ export async function listEntitledConnectorConnectionsBatch(input: {
       actingPrincipalIsServiceAccount,
       agentPrincipal: input.agentPrincipal,
     }),
+    agentId: input.agentPrincipal?.agentId ?? null,
   });
 
   for (const connector of eligible) {
@@ -1074,7 +1093,7 @@ export async function listEntitledConnectorConnectionsBatch(input: {
               userId: actingUserId,
               isServiceAccount: actingPrincipalIsServiceAccount,
               agentPrincipal: input.agentPrincipal
-                ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+                ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, agentId: input.agentPrincipal.agentId ?? null, visibility }
                 : null,
             },
             audience,
@@ -1335,6 +1354,7 @@ export async function resolveEffectiveSessionConnectorBindings(input: {
       projectId: input.projectId,
       accountId: input.accountId,
       userId: audiencePersonId({ actingUserId, actingPrincipalIsServiceAccount }),
+      agentId: await sessionAgentId(input.sessionId),
     });
     const RESOLVE_CONCURRENCY = 8;
     await mapLimit(boundRows, RESOLVE_CONCURRENCY, async (bound) => {

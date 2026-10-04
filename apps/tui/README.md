@@ -154,7 +154,7 @@ confirms it: `Forwarded localhost:3000 → sandbox:3000`. Set
 Detection ignores ports 1-1023 except 80 and 443 (a sandboxed dev server
 essentially never binds a privileged port; treating a `host:port`-shaped match
 there as a false positive is safer than flooding the panel with noise) and the
-sandbox's own SSH (22) and OpenCode control (8000) ports.
+sandbox's own SSH (22) and kortixd service (8000) ports.
 
 `Alt+P` opens the panel — one row per port, its state (forwarding / stopped /
 error), and its local URL when forwarding:
@@ -233,7 +233,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Alt+a` | Open the apps screen. |
 | `Alt+c` | Open the customize screen. |
 | `Alt+u` | Open the account screen: members, invites, billing. |
-| `Alt+o` | Hand this session to the stock opencode TUI. Returning repaints the app. |
+| `Alt+o` | Hand this OpenCode session to the stock opencode TUI. Returning repaints the app. |
 | `Alt+h / Ctrl+h` | Switch host. Ctrl+H needs the kitty keyboard protocol: the byte it sends is Backspace. |
 | `Esc` | Close the overlay, leave the screen, or move focus back to the composer. |
 
@@ -249,7 +249,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `/` | Filter the session list. Esc clears it. |
 | `r` | Rename the selected session. |
 | `d` | Delete the selected session (asks first). |
-| `a` | Attach the selected session in the stock opencode TUI. |
+| `a` | Attach the selected OpenCode session in the stock opencode TUI. |
 | `n` | Create a session in this project. |
 | `y / Enter` | Confirm the delete. |
 | `n` | Decline the delete. |
@@ -581,6 +581,14 @@ boot and drops to the login screen with this line; the fix is
   sandbox runs into `~/.kortix/opencode/<version>/` once, then reuses it. While
   opencode has the terminal the TUI is suspended and paints nothing; on exit it
   repaints on the same session.
+- **A pi session has no `/attach` and no project commands.** The TUI reads the
+  session runtime's `/kortix/health` capabilities once the runtime is up. A
+  runtime without `session.attach` drops `/attach` from the `/` palette and
+  both attach keys from the help overlay (`?`), and `Alt+O` or sidebar `a`
+  shows a toast instead of attaching (`Alt+T` still opens a shell). Sidebar
+  `a` on a session that is not open learns the harness only after its sandbox
+  is up: it wakes the sandbox, then refuses. A runtime without `session.commands` lists no project
+  commands in the palette.
 - **Leaving opencode is `Ctrl+C` twice WITHIN one second.** The interval is the
   whole trick: measured, two presses 0.3 s apart exit it and the Kortix TUI
   repaints, while the same two spaced three seconds apart are two separate

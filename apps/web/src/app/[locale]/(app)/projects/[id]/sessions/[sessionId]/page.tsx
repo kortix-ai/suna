@@ -28,9 +28,14 @@ import {
 } from '@/features/session/provisioning-failure';
 import { isFirstPromptRow } from '@/features/session/queue-projection';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+import {
+  deleteRuntimeSessionParam,
+  readRuntimeSessionParam,
+} from '@/features/session/tool/tools/session-spawn-urls';
 import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
 import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
+import '@/features/session/tool/tools/register';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
@@ -221,7 +226,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: !!user && !!projectId,
   });
   const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
-  const initialOpenCodeSessionId = findInitialSessionPin(currentProjectSession);
+  const initialRuntimeSessionId = findInitialSessionPin(currentProjectSession);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
@@ -233,9 +238,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
   const session = useSession(projectId, sessionId, {
+    browserPresence: !!user,
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
-    initialOpenCodeSessionId,
+    initialRuntimeSessionId,
     // This view renders lifecycle UI around the transcript. `SessionChat`
     // reads the live rows itself (`useSessionMessages`), so a streamed delta
     // re-renders the transcript only, not this whole page.
@@ -393,7 +399,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       typeof sandboxMetadata.runtimeWakeStartedAt === 'string'
         ? sandboxMetadata.runtimeWakeStartedAt
         : null,
-      session.opencodeSessionId,
+      session.runtimeSessionId,
       runtimeConnectionStatus,
       runtimeHealthy,
       runtimeVersion,
@@ -410,7 +416,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   });
   // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
   // never time-since-wake-started — the fixed clock this replaces expired
-  // mid-wake on a box that was seconds from ready (SampleCo 29861dfa, box
+  // mid-wake on a box that was seconds from ready (a SampleCo session, box
   // daemon logged `opencode ready` right after the budget ran out).
   const wakeSilentMs = wake.msSinceProgress;
   // A BOOLEAN, not the raw millisecond count, because this is an effect
@@ -574,7 +580,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // A session whose clone predates a repository replacement still has its
   // transcript. Do not replace a readable conversation with a failure card.
   const previousRepositoryHistoryAvailable = hasTranscript && usesPreviousRepository;
-  const surface = { newSessionHint: handoff.newSessionHint, hasTranscript, hasPendingFirstPrompt };
+  const surface = {
+    newSessionHint: handoff.newSessionHint,
+    hasTranscript,
+    hasPendingFirstPrompt,
+    conversationEmpty: session.conversationEmpty,
+  };
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
   // WHICH overlay is settled above; this decides whether it may COVER the chat.
   //
@@ -708,7 +719,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     isDormantSessionWithoutRuntime(terminalState);
   const sessionContentAvailable = canMountSessionChat({
     switched: session.switched,
-    opencodeSessionId: session.opencodeSessionId,
+    runtimeSessionId: session.runtimeSessionId,
   });
   const sessionSwitchLoading = shouldShowSessionSwitchLoading(
     switchingToSessionId,
@@ -1015,8 +1026,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // 409 forever), and this session cannot be reconstructed.
     //
     // It must NOT fall through to the generic stopped card below, which offers
-    // a Restart button whose only possible outcome is that 409 — the loop prod
-    // session ad4b63ac hit on 2026-08-13. It must also NEVER silently continue
+    // a Restart button whose only possible outcome is that 409 — the loop a prod
+    // session hit on 2026-08-13. It must also NEVER silently continue
     // into a fresh session: the server deliberately preserved this identity
     // instead of attaching a replacement box, and the UI must not undo that.
     // Say what happened, name the id, and stop.
@@ -1351,7 +1362,7 @@ function InlineSessionError({
 /**
  * Renders SessionLayout + SessionChat against this project session's sandbox.
  * `useSession` owns the canonical runtime session and the optional REST session
- * list used by legacy `?oc` deep links.
+ * list used by child-session deep links (`?rs`; pre-W4 links say `?oc`).
  */
 function ActiveSessionChat({
   projectId,
@@ -1386,7 +1397,7 @@ function ActiveSessionChat({
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
 
-  const rootSessionId = sessionState.opencodeSessionId;
+  const rootSessionId = sessionState.runtimeSessionId;
   const runtimeSessions = sessionState.runtimeSessions;
   const sessionsLoading = sessionState.runtimeSessionsLoading;
   const sessionsListed = sessionState.runtimeSessionsListed;
@@ -1414,9 +1425,9 @@ function ActiveSessionChat({
 
   const restart = useRestartProjectSession(projectId, sessionId);
 
-  const selectedOpenCodeSessionId = searchParams.get('oc');
-  const selectedSession = selectedOpenCodeSessionId
-    ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
+  const selectedRuntimeSessionId = readRuntimeSessionParam(searchParams);
+  const selectedSession = selectedRuntimeSessionId
+    ? runtimeSessions.find((session) => session.id === selectedRuntimeSessionId)
     : null;
   // Pin the resolved root id so the chat keeps its identity if the live
   // value blips back to null mid-session — but FOLLOW a non-null change: the
@@ -1498,13 +1509,13 @@ function ActiveSessionChat({
   }, [errorSurfaceReady, onChatReady]);
 
   useEffect(() => {
-    if (!selectedOpenCodeSessionId) return;
+    if (!selectedRuntimeSessionId) return;
     if (selectedSession) return;
     if (sessionsLoading) return;
     const params = new URLSearchParams(searchParams.toString());
-    params.delete('oc');
+    deleteRuntimeSessionParam(params);
     const query = params.toString();
-    // `history.replaceState`, not `router.replace`: this only drops an `oc` key
+    // `history.replaceState`, not `router.replace`: this only drops an `rs` key
     // the page has already resolved to nothing, so there is no server data to
     // fetch. Dropping a param changes the router cache key, so `router.replace`
     // would run a cold RSC fetch mid-boot — the worst moment on the hottest
@@ -1520,7 +1531,7 @@ function ActiveSessionChat({
         : `/projects/${projectId}/sessions/${sessionId}`,
     );
   }, [
-    selectedOpenCodeSessionId,
+    selectedRuntimeSessionId,
     selectedSession,
     sessionsLoading,
     searchParams,
@@ -1586,7 +1597,7 @@ function ActiveSessionChat({
           boundAgentName={boundAgentName}
           onContentReady={onChatReady}
           deferComposerFocus={!chatReady}
-          sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
+          sessionState={chatSessionId === sessionState.runtimeSessionId ? sessionState : undefined}
           readOnly={readOnly}
           inputReplacement={inputReplacement}
         />

@@ -141,11 +141,5 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
     </>
   );
 }
-ToolRegistry.register('session_spawn', SessionSpawnTool);
 ToolRegistry.register('session-spawn', SessionSpawnTool);
-ToolRegistry.register('oc-session_spawn', SessionSpawnTool);
-ToolRegistry.register('oc-session-spawn', SessionSpawnTool);
-ToolRegistry.register('session_start_background', SessionSpawnTool);
 ToolRegistry.register('session-start-background', SessionSpawnTool);
-ToolRegistry.register('oc-session_start_background', SessionSpawnTool);
-ToolRegistry.register('oc-session-start-background', SessionSpawnTool);

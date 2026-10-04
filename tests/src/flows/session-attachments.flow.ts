@@ -86,7 +86,7 @@ flow('SESS-30', {
     (await owner.post(complete, {}, { params: params() })).status(200).body().has('$.filename', 'eager.txt');
     (await owner.post(complete, {}, { params: params() })).status(200).body().has('$.attachment_id', attachmentId);
   });
-  const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId!, metadata: { warm: true } });
+  const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId!, metadata: { warm: true }, platinumRegion: 'eu-west' });
   ctx.track('session', sessionId, { projectId: project.id });
   const warmBody = { session_id: sessionId, pending_prompt: { text: 'SESS-30 eager attachment', attachment_names: ['eager.txt'], parts: [{ type: 'text', text: 'SESS-30 eager attachment' }, { type: 'file', attachment_id: attachmentId, filename: 'untrusted.txt', mime: 'image/png' }] } };
   await ctx.step('claim a warm session with the ready handle, refuse a second claim with 409, and read canonical filename from the durable inbox', async () => {
@@ -230,12 +230,14 @@ flow(
       accountId: ctx.P.OWNER.accountId!,
       userId: ctx.P.OWNER.userId!,
       metadata: { warm: true },
+      platinumRegion: 'eu-west',
     });
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
       accountId: ctx.P.OWNER.accountId!,
       userId: ctx.P.OWNER.userId!,
       metadata: { warm: true },
+      platinumRegion: 'eu-west',
     });
     ctx.track('session', sessionId, { projectId: project.id });
     ctx.track('session', retrySessionId, { projectId: project.id });

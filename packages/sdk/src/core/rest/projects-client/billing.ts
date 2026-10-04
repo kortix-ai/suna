@@ -153,6 +153,10 @@ export interface AccountState {
       can_create: boolean;
       tier_name: string;
     };
+    /**
+     * @deprecated Sessions are uncapped; the API no longer sends this field.
+     * Removed in the next major.
+     */
     concurrent_sessions?: {
       active: number;
       limit: number;
@@ -382,21 +386,8 @@ export interface GetAccountStateOptions {
   accountId?: string;
 }
 
-/**
- * Get unified account state — the single source of truth for all billing
- * data (credits, subscription, models, limits). Gracefully degrades to a
- * default "no plan" shape when billing is disabled or the caller is
- * unauthenticated, so callers never have to special-case those responses.
- */
-export async function getAccountState(options?: GetAccountStateOptions): Promise<AccountState> {
-  const search = new URLSearchParams();
-  if (options?.skipCache) search.set('skip_cache', 'true');
-  if (options?.accountId) search.set('account_id', options.accountId);
-  const query = search.toString();
-  const params = query ? `?${query}` : '';
-  const response = await backendApi.get<AccountState>(`/billing/account-state${params}`, {
-    showErrors: false,
-  });
+async function fetchAccountState(path: string): Promise<AccountState> {
+  const response = await backendApi.get<AccountState>(path, { showErrors: false });
   const isGracefulDisabledResponse =
     response.error?.status === 404 && /billing is not enabled/i.test(response.error.message || '');
   if (response.error && response.error.status !== 401 && !isGracefulDisabledResponse) {
@@ -408,6 +399,24 @@ export async function getAccountState(options?: GetAccountStateOptions): Promise
   return response.data!;
 }
 
+function accountStateQuery(options?: GetAccountStateOptions): string {
+  const search = new URLSearchParams();
+  if (options?.skipCache) search.set('skip_cache', 'true');
+  if (options?.accountId) search.set('account_id', options.accountId);
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
+/**
+ * Get unified account state — the single source of truth for all billing
+ * data (credits, subscription, models, limits). Gracefully degrades to a
+ * default "no plan" shape when billing is disabled or the caller is
+ * unauthenticated, so callers never have to special-case those responses.
+ */
+export async function getAccountState(options?: GetAccountStateOptions): Promise<AccountState> {
+  return fetchAccountState(`/billing/account-state${accountStateQuery(options)}`);
+}
+
 /**
  * Minimal variant of {@link getAccountState} (`/billing/account-state/minimal`)
  * — same response shape (`AccountState`), a cheaper server-side build for
@@ -415,23 +424,7 @@ export async function getAccountState(options?: GetAccountStateOptions): Promise
  * graceful-degradation behavior as the full read.
  */
 export async function getAccountStateMinimal(options?: GetAccountStateOptions): Promise<AccountState> {
-  const search = new URLSearchParams();
-  if (options?.skipCache) search.set('skip_cache', 'true');
-  if (options?.accountId) search.set('account_id', options.accountId);
-  const query = search.toString();
-  const params = query ? `?${query}` : '';
-  const response = await backendApi.get<AccountState>(`/billing/account-state/minimal${params}`, {
-    showErrors: false,
-  });
-  const isGracefulDisabledResponse =
-    response.error?.status === 404 && /billing is not enabled/i.test(response.error.message || '');
-  if (response.error && response.error.status !== 401 && !isGracefulDisabledResponse) {
-    throw response.error;
-  }
-  if (response.error) {
-    return getDefaultAccountState();
-  }
-  return response.data!;
+  return fetchAccountState(`/billing/account-state/minimal${accountStateQuery(options)}`);
 }
 
 // ── Transactions / credit ledger ─────────────────────────────────────────────

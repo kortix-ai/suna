@@ -15,12 +15,12 @@ import {
   MagnifyingGlassIcon as Search,
   ShareNetworkIcon,
   UsersIcon as Users,
-  UsersThreeIcon as UsersThree,
   XIcon as X,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
+import { Slack } from '@/features/icon/icons/slack';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
@@ -63,8 +63,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useAuth } from '@/features/providers/auth-provider';
+import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
+import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
+import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
   type EmailInstallation,
   type EmailSenderPolicy,
@@ -81,6 +85,7 @@ import {
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
 import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
+import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -103,7 +108,6 @@ import {
   getProjectDetail,
   listAllConnections,
   listConnections,
-  renameConnection,
   listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
@@ -112,6 +116,7 @@ import {
   reconcileConnection,
   reconcileMemberConnection,
   registerConnectionOAuth2Client,
+  renameConnection,
   revokeConnection,
   setConnectorCredential,
   setDefaultConnection,
@@ -120,9 +125,7 @@ import {
   updateConnectionCredential,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { useAuth } from '@/features/providers/auth-provider';
-import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
-import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
+import { AddAccountFields } from './add-account-fields';
 import {
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
@@ -133,10 +136,7 @@ import {
   proposeConnectorConnectionSlug,
 } from './connector-connection-form';
 import { ConnectorConnectionModal } from './connector-connection-modal';
-import {
-  credentialWriteTarget,
-  oauth2DiscoveryConnectionKey,
-} from './connector-credential-target';
+import { credentialWriteTarget, oauth2DiscoveryConnectionKey } from './connector-credential-target';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -157,18 +157,17 @@ import {
 } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
-import { AddAccountFields } from './add-account-fields';
 import {
   accountVisibility,
   connectorConnectionRows,
+  type NewAccountDraft,
   newAccountGrantees,
   newAccountLabelTaken,
   newAccountReady,
-  type NewAccountDraft,
 } from './view/connector-connections';
+import { AudienceBadge } from './view/audience-badge';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
-const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
 
 function SaveBar({
   dirty,
@@ -272,6 +271,7 @@ function ConnectionRow({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   const isProjectAuthorization = connection.owner_type === 'project';
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
@@ -305,40 +305,19 @@ function ConnectionRow({
             </Badge>
           )}
           {/* Who may use this account, on every card: the list has one group. */}
-          <Hint
-            label={
-              visibility.kind === 'named'
-                ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
-                : visibility.kind === 'everyone'
-                  ? tSharing('everyoneMeta')
-                  : tSharing('onlyYouDescription')
-            }
-          >
-            <Badge variant="outline" size="xs" data-testid="account-visibility">
-              {visibility.kind === 'you' ? (
-                <Lock />
-              ) : visibility.kind === 'everyone' ? (
-                <UsersThree />
-              ) : (
-                <Users />
-              )}
-              {visibility.kind === 'you'
-                ? tSharing('onlyYou')
-                : visibility.kind === 'everyone'
-                  ? tSharing('visibilityEveryone')
-                  : visibility.more > 0
-                    ? tSharing('visibilityNamedMore', {
-                        names: visibility.names.join(', '),
-                        count: visibility.more,
-                      })
-                    : visibility.names.join(', ')}
-            </Badge>
-          </Hint>
+          <AudienceBadge visibility={visibility} labels={everyoneWithAccess} />
         </div>
         <InlineMeta>
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
+          {/* A computer account: whether its machine is connected right now. */}
+          {active && connection.machine ? (
+            <span className="inline-flex items-center gap-1.5">
+              <ComputerStateDot state={connection.machine.online ? 'online' : 'offline'} />
+              {tComputers(connection.machine.online ? 'online' : 'offline')}
+            </span>
+          ) : null}
           {/* WHO the account was authorized as. Hidden when the label already
               says it (finalize names a default-labelled account after it). */}
           {connection.connected_as && connection.connected_as !== connection.label
@@ -482,11 +461,16 @@ export function ConnectionsList({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   // A direct provider (openapi/http/mcp/graphql/...) has no hosted OAuth: "Add"
   // creates the account and this then opens `SetCredentialModal` for it. A
   // managed provider (Composio/Pipedream) runs hosted OAuth through
   // `useAddManagedAccount`.
-  const isDirectProvider = !isManagedConnectorProvider(connector.provider);
+  // A computer account is a paired machine: "Add" pairs one (desktop one-click,
+  // or download + npx) instead of asking for a credential.
+  const isComputer = connector.provider === 'computer';
+  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
+  const [computerOpen, setComputerOpen] = useState(false);
   const { user } = useAuth();
   const viewerId = user?.id ?? null;
   const [addOpen, setAddOpen] = useState(false);
@@ -516,6 +500,8 @@ export function ConnectionsList({
     queryKey: ['connections', projectId],
     queryFn: () => listConnections(projectId),
     staleTime: 30_000,
+    // A computer goes online and offline on its own: keep its status current.
+    refetchInterval: isComputer ? 15_000 : false,
   });
   const refresh = () => {
     void connectionsQuery.refetch();
@@ -525,6 +511,10 @@ export function ConnectionsList({
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
 
   const openAdd = () => {
+    if (isComputer) {
+      setComputerOpen(true);
+      return;
+    }
     setDraft(EMPTY_NEW_ACCOUNT);
     setAddOpen(true);
   };
@@ -588,6 +578,9 @@ export function ConnectionsList({
     },
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
   });
+  // Your own computer row follows you into every project, so its Disconnect
+  // removes the machine from Kortix (every project), not one account.
+  const unpairComputer = useDeleteTunnelConnection();
   const disconnect = useMutation({
     mutationFn: (connectionId: string) => revokeConnection(projectId, connectionId),
     onSuccess: () => {
@@ -653,6 +646,34 @@ export function ConnectionsList({
         })
     : undefined;
 
+  // A member's computer account follows them into every project, so it is
+  // never removed from one project: Disconnect unpairs the machine.
+  const ownComputer = (connection: Connection) => isComputer && connection.owner_type === 'member';
+  const renderRow = (connection: Connection) => (
+    <ConnectionRow
+      key={connection.connection_id}
+      connection={connection}
+      viewerId={viewerId}
+      isMine={connection.owner_type === 'member'}
+      canManage={canManageConnections}
+      pending={pendingConnectionId === connection.connection_id}
+      disabled={disabled}
+      onSetDefault={() => setDefault.mutate(connection.connection_id)}
+      onDisconnect={() => setConfirmDisconnect(connection)}
+      onRename={() => openRename(connection)}
+      onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
+      onSetCredential={setCredential ? () => setCredential(connection) : undefined}
+      onShare={
+        accountId
+          ? () => {
+              setShareTarget(connection);
+              setShareOpen(true);
+            }
+          : undefined
+      }
+    />
+  );
+
   return (
     <div className="space-y-6">
       <section className="space-y-4">
@@ -676,32 +697,7 @@ export function ConnectionsList({
             description={tSharing('noAccountsDescription', { connector: displayName })}
           />
         ) : (
-          <ul className="space-y-2">
-            {rows.map((connection) => (
-              <ConnectionRow
-                key={connection.connection_id}
-                connection={connection}
-                viewerId={viewerId}
-                isMine={connection.owner_type === 'member'}
-                canManage={canManageConnections}
-                pending={pendingConnectionId === connection.connection_id}
-                disabled={disabled}
-                onSetDefault={() => setDefault.mutate(connection.connection_id)}
-                onDisconnect={() => setConfirmDisconnect(connection)}
-                onRename={() => openRename(connection)}
-                onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
-                onSetCredential={setCredential ? () => setCredential(connection) : undefined}
-                onShare={
-                  accountId
-                    ? () => {
-                        setShareTarget(connection);
-                        setShareOpen(true);
-                      }
-                    : undefined
-                }
-              />
-            ))}
-          </ul>
+          <ul className="space-y-2">{rows.map(renderRow)}</ul>
         )}
       </section>
 
@@ -838,15 +834,40 @@ export function ConnectionsList({
         onOpenChange={(open) => !open && setConfirmDisconnect(null)}
         title={tI18nComplete('text13716a578591', { value0: confirmDisconnect?.label ?? '' })}
         description={
-          confirmDisconnect?.owner_type === 'project'
-            ? tI18nComplete.raw('texte2cbafcec553')
-            : tI18nComplete.raw('text64db32d83da9')
+          confirmDisconnect && ownComputer(confirmDisconnect)
+            ? tComputers('unpairDescription')
+            : confirmDisconnect?.owner_type === 'project'
+              ? tI18nComplete.raw('texte2cbafcec553')
+              : tI18nComplete.raw('text64db32d83da9')
         }
         confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
-        isPending={disconnect.isPending}
-        onConfirm={() => confirmDisconnect && disconnect.mutate(confirmDisconnect.connection_id)}
+        isPending={disconnect.isPending || unpairComputer.isPending}
+        onConfirm={() => {
+          if (!confirmDisconnect) return;
+          if (ownComputer(confirmDisconnect) && confirmDisconnect.tunnel_id) {
+            unpairComputer.mutate(confirmDisconnect.tunnel_id, {
+              onSuccess: () => {
+                successToast(tComputers('disconnected'));
+                setConfirmDisconnect(null);
+                refresh();
+              },
+              onError: (e: Error) => errorToast(e.message || tComputers('disconnectFailed')),
+            });
+            return;
+          }
+          disconnect.mutate(confirmDisconnect.connection_id);
+        }}
       />
+
+      {isComputer ? (
+        <ComputerConnectModal
+          projectId={projectId}
+          open={computerOpen}
+          onOpenChange={setComputerOpen}
+          onConnected={refresh}
+        />
+      ) : null}
 
       {isDirectProvider ? (
         <SetCredentialModal
@@ -2201,22 +2222,12 @@ function ChannelCatalogue({
  * The real Slack logo — the single Slack mark used everywhere across the
  * connectors + channels surface (catalogue cards, channel cards, connect flow),
  * so Slack always reads as Slack and never as a generic glyph. Sized by
- * `className`; defaults to `size-4`.
+ * `className`; defaults to `size-4`. It is the built-in four-color `Slack`
+ * icon: this used to fetch Slack's favicon from Google on every view, a blank
+ * tile on an install without internet.
  */
 export function SlackLogo({ className }: { className?: string }) {
-  return (
-    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
-      <Image
-        src={SLACK_ICON_SRC}
-        alt=""
-        referrerPolicy="no-referrer"
-        fill
-        sizes="32px"
-        className="object-contain"
-        unoptimized
-      />
-    </span>
-  );
+  return <Slack className={cn('size-4 shrink-0', className)} />;
 }
 
 function SlackIconTile() {

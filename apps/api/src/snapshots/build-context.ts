@@ -65,11 +65,11 @@ const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-// Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
-// skills). Staged into the context so the layer can warm a real opencode project
+// Canonical starter OpenCode config dir (pty plugin + standard tools).
+// Staged into the context so the layer can warm a real opencode project
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
-  || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
+  || resolve(REPO_ROOT, 'packages/starter/templates/base/harnesses/opencode');
 const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
@@ -469,6 +469,7 @@ export async function stageRuntimeBuildContext(input: {
   runtimeProfile?: RuntimeBuildProfile;
   appContext?: { sourceDir?: string; runtimeSpec: Record<string, unknown> };
   isShared?: boolean;
+  containerRuntime?: boolean;
 }): Promise<StagedContext> {
   switch (input.runtimeProfile) {
     case 'app':
@@ -483,6 +484,7 @@ export async function stageRuntimeBuildContext(input: {
         input.snapshotName,
         input.userDockerfile,
         input.isShared,
+        input.containerRuntime,
       );
   }
 }
@@ -501,6 +503,7 @@ export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
   isSharedDefault?: boolean,
+  containerRuntime?: boolean,
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
   const CLI_BIN_PATH = cliBinPath();
@@ -606,6 +609,7 @@ export async function stageBuildContext(
       catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
       isSharedDefault,
+      containerRuntime,
     });
 
     await guardBuildahPortable(composed);

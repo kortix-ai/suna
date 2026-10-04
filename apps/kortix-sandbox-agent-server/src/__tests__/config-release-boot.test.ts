@@ -24,16 +24,16 @@ import {
   readQuarantine,
   releaseDir,
   type ReleaseManifest,
-} from '../boot-config'
-import type { Config } from '../config'
-import type { ConfigReleaseApi } from '../config-release/api-client'
-import type { HarnessConfigReleaseReport } from '../harness/control'
-import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { bootOpenCodeConfig, type BootConfigPathResult } from '../harness/open-code/boot-config-path'
-import { configReleaseReport, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '../config-release/notice'
-import type { OpenCodeConfig } from '../harness/open-code/config'
+} from '@/services/config-release/boot-config'
+import type { Config } from '@/lib/config/config'
+import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import type { HarnessConfigReleaseReport } from '@/harness/contract/control'
+import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { bootOpenCodeConfig, type BootConfigPathResult } from '@/harness/open-code/boot-config-path'
+import { configReleaseReport, resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '@/services/config-release/notice'
+import type { OpenCodeConfig } from '@/harness/open-code/config'
 import {
   buildRelease,
   commitAll,
@@ -148,7 +148,7 @@ async function boot(
     },
     prove: async (baseUrl, deadline, input) => {
       run.gateOpenAtProof.push(run.gateOpened)
-      const { provenCheck } = await import('../harness/open-code/proven-check')
+      const { provenCheck } = await import('@/harness/open-code/proven-check')
       return provenCheck(baseUrl, deadline, input)
     },
     ...(typeof overrides === 'function' ? overrides(run) : overrides),
@@ -202,7 +202,13 @@ async function health(): Promise<{ runtimeReady: boolean; status: string; config
     },
     {},
   )
-  return report as unknown as { runtimeReady: boolean; status: string; config: HarnessConfigReleaseReport }
+  // The adapter's half of the verdict; with no repo to wait for it IS `runtimeReady`.
+  const { harness } = report
+  return {
+    runtimeReady: harness.ready,
+    status: harness.ready ? 'ok' : harness.error ? 'error' : harness.state,
+    config: report.config!,
+  }
 }
 
 function tamper(dir: string) {
@@ -296,7 +302,7 @@ describe('valve A: present, but it does not load', () => {
         tracked.gateOpenAtProof.push(tracked.gateOpened)
         // The release fails; the image default answers.
         if (proofs === 1) return { ok: false, fatal: true, reason: 'ConfigJsonError in opencode.jsonc: PropertyNameExpected at line 1, column 2' }
-        const { provenCheck } = await import('../harness/open-code/proven-check')
+        const { provenCheck } = await import('@/harness/open-code/proven-check')
         return provenCheck(baseUrl, deadline, input)
       },
     }))
@@ -324,7 +330,7 @@ describe('valve A: present, but it does not load', () => {
       prove: async (baseUrl, deadline, input) => {
         proofs += 1
         if (proofs === 1) return { ok: false, fatal: true, reason: 'the newer release does not load' }
-        const { provenCheck } = await import('../harness/open-code/proven-check')
+        const { provenCheck } = await import('@/harness/open-code/proven-check')
         return provenCheck(baseUrl, deadline, input)
       },
     })
@@ -395,7 +401,7 @@ describe('valve B: the store or the API could not be reached', () => {
 
   test('a quarantined desired release is skipped with its reason, not retried', async () => {
     const dir = await installProvenRelease()
-    const { quarantineRelease } = await import('../boot-config')
+    const { quarantineRelease } = await import('@/services/config-release/boot-config')
     write(work, `${DIR}/agents/kortix.md`, 'NEWER PROMPT\n')
     const newer = buildRelease(work, commitAll(work, 'newer'), DIR, { governance: GOV })
     serveRelease(api, newer)
@@ -443,6 +449,23 @@ describe('C8: config releases off is one early return to the pre-release behavio
     api.respond(FEATURE_DISABLED)
     const run = await boot()
     expect(run.result).toMatchObject({ dir: defaultDir, source: 'image-default', releasesEnabled: false })
+  })
+
+  test('manifestless image default inventories only top-level plugins and tools', async () => {
+    mkdirSync(join(defaultDir, 'plugins'))
+    mkdirSync(join(defaultDir, 'plugins', 'nested.ts'))
+    for (const name of ['z.js', 'a.ts', 'ignored.txt']) writeFileSync(join(defaultDir, 'plugins', name), '')
+    for (const name of ['z.ts', 'a.ts', 'ignored.js']) writeFileSync(join(defaultDir, 'tools', name), '')
+    api.respond({ status: 503, json: { error: 'unavailable' } })
+    const inventories: Array<{ tools: readonly string[]; plugins: readonly string[] | undefined }> = []
+    const run = await boot({
+      prove: async (_url, _deadline, input) => {
+        inventories.push({ tools: input.toolNames, plugins: input.pluginFiles })
+        return { ok: true }
+      },
+    })
+    expect(run.result.source).toBe('image-default')
+    expect(inventories).toEqual([{ tools: ['a', 'z'], plugins: ['plugins/a.ts', 'plugins/z.js'] }])
   })
 
   test('a box with no API at all takes the same branch', async () => {

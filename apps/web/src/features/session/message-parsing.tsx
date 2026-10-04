@@ -215,12 +215,14 @@ export {
 
 // One copy for web and mobile: `@kortix/shared/trigger-event`.
 export { parseTriggerEvent, type TriggerEventInfo } from '@kortix/shared';
+// The reminder fire header, also shared with the API that writes it.
+export { parseReminderPrompt, type ReminderPromptInfo } from '@kortix/shared';
 
 // ── Generic XML notification parsing ──────────────────────────────────
 //
 // Matches any XML block: <tag_name>...content...</tag_name> (`xmlBlocks`).
 // No hardcoded tag names. Runs LAST in the parsing pipeline so all
-// other XML subsystems (file refs, session refs, reply context, DCP,
+// other XML subsystems (file refs, session refs, reply context,
 // kortix_system) have already consumed their tags. Whatever remains
 // is a system notification.
 

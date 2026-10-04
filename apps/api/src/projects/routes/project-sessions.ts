@@ -14,14 +14,15 @@ import {
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
-import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
+import { SessionUpdateInputSchema } from '@kortix/api-contract';
+import { and, eq, or, sql } from 'drizzle-orm';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
+import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   hasOwn,
   normalizeString,
@@ -34,6 +35,7 @@ import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -44,7 +46,7 @@ import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
-import { loadProjectSessionInventory } from '../lib/session-list';
+import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
@@ -69,7 +71,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions',
+    summary: 'Create a session (start an agent task)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -189,9 +191,6 @@ projectsApp.openapi(
     mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
-  for (const [key, value] of Object.entries(result.headers ?? {})) {
-    c.header(key, value);
-  }
   if (!result.row) {
     return c.json(
       {
@@ -243,7 +242,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions',
+    summary: 'List sessions of a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -254,6 +253,16 @@ projectsApp.openapi(
           // how a caller walks it.
           limit: z.coerce.number().int().min(1).max(SESSION_PAGE_MAX_LIMIT).optional(),
           cursor: z.string().optional(),
+          // `root` = top-level sessions only (each row carries `child_count`);
+          // a session id = that session's children. Absent = the flat list.
+          parent: z.string().min(1).max(128).optional(),
+          started_by: z.enum(['me', 'others', 'automated']).optional(),
+          // Server-side search over every session the viewer may see.
+          q: z.string().trim().min(1).max(200).optional(),
+          // Repeatable; a session must carry every given label. Exact match.
+          label: z
+            .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
+            .optional(),
         }),
       },
     responses: {
@@ -282,6 +291,12 @@ projectsApp.openapi(
     orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
+    filter: {
+      parent: query.parent ?? null,
+      startedBy: query.started_by ?? null,
+      q: query.q ?? null,
+      labels: query.label === undefined ? null : [query.label].flat(),
+    },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
@@ -300,7 +315,8 @@ projectsApp.openapi(
   const body = inventory.items.map((item) => {
     const row = item.row;
     const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
-    return serializeSession(row, {
+    const serialized = serializeSession(row, {
+      initiatorName: row.initiatorId ? (inventory.initiatorNames.get(row.initiatorId) ?? null) : null,
       grants: inventory.grantsBySession.get(row.sessionId) ?? [],
       viewerId: loaded.userId,
       canManageProject: inventory.canManageProject,
@@ -309,6 +325,7 @@ projectsApp.openapi(
       ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
       ownerEmail: owner?.email ?? null,
       ownerName: owner?.name ?? null,
+      ownerAvatarUrl: owner?.avatarUrl ?? null,
       ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
       canAccess: item.canAccess,
       runtimeStatus: item.runtimeStatus,
@@ -318,6 +335,12 @@ projectsApp.openapi(
       // single-session read below still returns metadata whole.
       trimListMetadata: true,
     });
+    if (query.parent !== 'root') return serialized;
+    return {
+      ...serialized,
+      child_count: inventory.childCounts.get(row.sessionId) ?? 0,
+      ...(query.q ? { search_match: sessionRowMatchesSearch(row, query.q, [owner?.email, owner?.name].filter((v): v is string => Boolean(v))) ? 'self' : 'child' } : {}),
+    };
   });
 
   // The sidebar re-fetches this list several times per session open (six in the
@@ -349,7 +372,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId',
+    summary: 'Get a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -379,15 +402,20 @@ projectsApp.openapi(
   // hides the row). `scope=project` on the LIST deliberately keeps tombstones
   // for managers; that path is untouched.
   if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-  const ownerEmail = visible.row.createdBy && !visible.isOwner
-    ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
-    : null;
+  // The same owner resolution the list uses: without it a read-by-id reported
+  // owner_type 'unknown' and no owner name for the very session the list named.
+  const owner = visible.row.createdBy
+    ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
+    : undefined;
   return c.json(serializeSession(visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
-    ownerEmail,
+    ownerEmail: owner?.email ?? null,
+    ownerName: owner?.name ?? null,
+    ownerAvatarUrl: owner?.avatarUrl ?? null,
+    ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
   }));
 },
 );
@@ -397,11 +425,16 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/sessions/{sessionId}/sharing',
     tags: ['sessions'],
-    summary: 'PUT /:projectId/sessions/:sessionId/sharing',
+    summary: 'Set who can see a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            mode: z.enum(['project', 'private', 'members']).openapi({ description: 'project: everyone in the project. private: owner only. members: the listed members and groups.' }),
+            ownerId: z.string().optional().openapi({ description: 'For mode private: the owner user id. Defaults to the caller.' }),
+            memberIds: z.array(z.string()).optional().openapi({ description: 'For mode members: user ids.' }),
+            groupIds: z.array(z.string()).optional().openapi({ description: 'For mode members: group ids.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -460,6 +493,27 @@ projectsApp.openapi(
       },
       409,
     );
+  }
+
+  // A value shared only with this session's person sits in the sandbox as
+  // plaintext; sharing the session would hand it to every new viewer, and an
+  // env var cannot be taken back out of a running box (secret-audience.ts).
+  if (intent.mode !== 'private') {
+    const held = await sessionPersonOnlyPlaintextSecrets({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+    });
+    if (held.length > 0) {
+      return c.json(
+        {
+          error: `This session holds ${held.join(', ')}, shared only with you. Sharing it would let others read ${held.length === 1 ? 'it' : 'them'}. Start a new session to share, or share ${held.length === 1 ? 'that secret' : 'those secrets'} with everyone first.`,
+          code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
+          secrets: held,
+        },
+        409,
+      );
+    }
   }
 
   // Sharing takes the owner's personal keys away from the session (spec
@@ -545,11 +599,15 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'PATCH /:projectId/sessions/:sessionId',
+    summary: 'Rename a session or merge metadata into it',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'New display name. Empty string or null clears the rename.' }),
+            labels: z.array(z.string()).optional().openapi({ description: 'Replaces the session labels. Each is trimmed, 1..64 characters; at most 20; duplicates drop. [] clears them.' }),
+            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata; a null value removes that key. Server-managed keys are rejected. At most 16,384 characters of JSON.' }),
+          }) } } },
       },
     responses: {
         200: json(SessionSchema, 'The updated session'),
@@ -581,10 +639,15 @@ projectsApp.openapi(
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
-  const allowedFields = ['name', 'metadata'];
+  const allowedFields = ['name', 'labels', 'metadata'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
+  }
+  const parsed = SessionUpdateInputSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    return c.json({ error: `${issue.path.join('.') || 'body'}: ${issue.message}` }, 400);
   }
 
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
@@ -633,18 +696,24 @@ projectsApp.openapi(
   const hasNameField = hasOwn(body, 'name');
   const name = normalizeString(body.name);
 
+  if (parsed.data.labels) updates.labels = parsed.data.labels;
+
   if (hasNameField || metadata) {
     // Merge in SQL, never write back the whole object read above: the read and
     // this UPDATE are not atomic, and the first-prompt title generator commits
     // `metadata.name` between them. A read-modify-write here would drop that
     // committed title (or another writer's keys) for a session with no later
     // prompt to re-trigger titling. `||` evaluates after the row lock.
-    const patch: Record<string, unknown> = { ...(metadata ?? {}) };
-    // null (not a deleted key) is the clear signal every reader already treats
-    // as absent: `serializeSession` reads it as no override, `needsTitle` and
-    // the CAS read `metadata->>'custom_name'` as NULL.
+    // A null client value removes that key (JSON merge patch). custom_name
+    // keeps its explicit null: every reader already treats it as no override.
+    const patch: Record<string, unknown> = {};
+    const removed: string[] = [];
+    for (const [key, value] of Object.entries(metadata ?? {})) {
+      if (value === null) removed.push(key);
+      else patch[key] = value;
+    }
     if (hasNameField) patch.custom_name = name || null;
-    updates.metadata = projectSessionMetadataMerge(patch) as unknown as typeof updates.metadata;
+    updates.metadata = sql`(${projectSessionMetadataMerge(patch)}) - array(select jsonb_array_elements_text(${JSON.stringify(removed)}::jsonb))` as unknown as typeof updates.metadata;
   }
 
   const [row] = await db
@@ -680,7 +749,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId',
+    summary: 'Delete a session (soft delete; its branch is kept)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),

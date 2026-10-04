@@ -3,47 +3,68 @@
  * endpoint, and the per-session reconstruction timeline.
  */
 
-import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
-import { auditDb, auditErrorSqlstate, isAuditContentionError } from '../../shared/audit-db';
-import { isAuditSessionLockTimeout, withAuditSessionLock } from '../../shared/audit-session-serial';
-import { logger as appLogger } from '../../lib/logger';
+import { auditCredentialNames } from '../../shared/audit-credential-names';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountTokens, auditEvents, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
-import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
-import { readSessionAuditActions } from '../lib/session-audit-read';
-import { AnyObject, projectsApp } from '../lib/app';
-import { isUuid } from '../../shared/validate';
+import {
+  accountTokens,
+  auditEvents,
+  auditEventsAll,
+  projectSessions,
+  serviceAccounts,
+  sessionSandboxes,
+} from '@kortix/db';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { buildFilters } from '../../accounts/audit-filters';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
-import { buildFilters } from '../../accounts/audit-filters';
+import { PROJECT_ACTIONS } from '../../iam';
+import { logger as appLogger } from '../../lib/logger';
+import { requestDeadlineMs } from '../../middleware/request-deadline';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
+import { auth, errors, json } from '../../openapi';
+import { agentAuditInitiator } from '../../shared/agent-audit-attribution';
+import { AUDIT_READ_FLUSH_BARRIER_MS, flushAuditEvents } from '../../shared/audit';
+import {
+  AUDIT_STATEMENT_TIMEOUT_MS,
+  auditDb,
+  auditErrorSqlstate,
+  isAuditContentionError,
+} from '../../shared/audit-db';
 import {
   buildAuditCursorCondition,
   parseAuditCursor,
   parseAuditInstant,
   parseAuditLimit,
+  type AuditEventRow,
   parseAuditSessionCursor,
+  readSessionAuditEvents,
   serializeAuditEvent,
 } from '../../shared/audit-query';
-import { flushAuditEvents } from '../../shared/audit';
 import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
-import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
+import { currentInboundAuditScope } from '../../shared/audit-scope';
+import { db } from '../../shared/db';
+import { MAX_BATCH_SIZE, parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
-import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
+import { isUuid } from '../../shared/validate';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
-import { agentAuditInitiator } from '../../shared/agent-audit-attribution';
+import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
+import { readSessionAuditActions } from '../lib/session-audit-read';
 
 /**
  * The human a session acts on behalf of, for OpenCode audit ingestion. A
  * session PAT carries it (auth middleware); a legacy sandbox key does not, so
  * the session's live agent token is read. Any failure → null.
  */
-async function ingestionOnBehalfOf(c: any, sessionId: string, accountId: string): Promise<string | null> {
-  if (c.get('authType') === 'pat') return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
+async function ingestionOnBehalfOf(
+  c: any,
+  sessionId: string,
+  accountId: string,
+): Promise<string | null> {
+  if (c.get('authType') === 'pat')
+    return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
   try {
     const [token] = await db
       .select({ onBehalfOfUserId: accountTokens.onBehalfOfUserId })
@@ -64,32 +85,91 @@ async function ingestionOnBehalfOf(c: any, sessionId: string, accountId: string)
 }
 
 /**
- * Rows per audit-ingest INSERT statement. Each statement holds this session's
- * `audit_session_sequences` row lock until it commits, so this is the knob that
- * bounds how long one ingest can block another. Overridable for an operator who
- * needs to trade lock hold time against round trips.
+ * Rows per audit-ingest INSERT statement. The default is the route's own batch
+ * ceiling (`MAX_BATCH_SIZE`): one accepted relay batch is ONE statement. A statement
+ * takes no per-session lock (the BEFORE INSERT trigger only sets the source
+ * columns), so the size only trades round trips against the work one statement
+ * can lose to a statement timeout.
+ *
+ * Read per request, not at module load, so an operator can lower it
+ * (`KORTIX_AUDIT_INGEST_CHUNK`).
  */
-const AUDIT_INGEST_CHUNK = (() => {
+export function auditIngestChunkSize(): number {
   const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_CHUNK ?? '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : 25;
-})();
+  return Number.isFinite(raw) && raw > 0 ? raw : MAX_BATCH_SIZE;
+}
 
-/** Advertised backoff when the session's sequence lock is contended. */
+/** Advertised backoff when the audit pool is contended (statement timeout, lock timeout). */
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
 
 /**
- * How long one chunk waits for the in-process per-session audit lock before it
- * reports contention (`shared/audit-session-serial.ts`). The holder is another
- * audit INSERT for the same session in this process — the request's own inbound
- * audit row the queue flushes, or a concurrent batch for the session. Waiting
- * in memory cannot be cut short by the pool's `lock_timeout`, so this budget
- * covers the holder's own statement budget (10 s) plus margin, while staying
- * under the 25 s request deadline.
+ * A statement's worst case is the audit pool's statement timeout plus a 1 s
+ * response margin. A chunk starts only when that fits the request's remaining
+ * budget.
  */
-const AUDIT_INGEST_LOCK_WAIT_MS = (() => {
-  const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_LOCK_WAIT_MS ?? '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : 12_000;
-})();
+const AUDIT_INGEST_ATTEMPT_MARGIN_MS = 1_000;
+
+/**
+ * Rows in the smallest statement a contended ingest falls back to (half of the
+ * chunk, repeatedly, until here). 25 rows was the pre-KRTX-665 statement size
+ * and is what `KORTIX_AUDIT_INGEST_CHUNK` still documents as the operator
+ * setting, so a fallback statement never writes more than the smallest chunk
+ * the route already promised to bound.
+ */
+const AUDIT_INGEST_MIN_CHUNK = 25;
+
+/**
+ * Resolve with `{ timedOut: true }` if `work` is still pending after
+ * `boundMs`, else with its value.
+ *
+ * The ingest chunk's own bound (the audit pool's statement timeout) bounds its wait, but the wait for one of the audit
+ * pool's backends has NO bound: postgres.js has no acquire-queue timeout, so
+ * a statement whose two backends are busy queues for a connection for as
+ * long as the convoy in front of it takes (prod 2026-09-29, hours after the
+ * KRTX-644 budget check shipped: request-rate bursts kept both backends busy
+ * and ingest requests still died with the uncontrolled
+ * `request exceeded the 25s server processing deadline` abort mid-acquire).
+ * Racing the chunk against the request's remaining budget is the one bound
+ * that covers the acquire wait too.
+ *
+ * The loser of the race keeps running. Its eventual rejection has a handler
+ * through the race itself, and the caller answers the controlled contended
+ * 503 either way — the abandoned statement's rows still land
+ * (`onConflictDoNothing`) and the relay's retry is absorbed as duplicates.
+ */
+export async function boundChunkWrite<T>(
+  work: Promise<T>,
+  boundMs: number,
+): Promise<{ timedOut: true; value?: undefined } | { timedOut: false; value: T }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work.then((value) => ({ timedOut: false as const, value })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), boundMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Milliseconds left before this request's server-processing deadline, or null
+ * when the guard is off: the deadline is disabled/exempt, or no inbound audit
+ * scope exists (unit tests drive the bare app). The edge
+ * (`shared/audit-edge.ts`) stamps `startedAt` before any middleware runs, so
+ * the budget covers auth and body parsing too — the time the handler did not
+ * spend itself.
+ */
+function remainingIngestBudgetMs(c: unknown): number | null {
+  const deadline = requestDeadlineMs(c as Parameters<typeof requestDeadlineMs>[0]);
+  if (deadline === null) return null;
+  const startedAt = currentInboundAuditScope()?.startedAt;
+  if (!startedAt) return null;
+  return startedAt + deadline - Date.now();
+}
 
 /** The PostgreSQL SQLSTATE behind a contention error, following `cause`. */
 function auditErrorSqlState(error: unknown): string | null {
@@ -124,6 +204,7 @@ projectsApp.openapi(
         actor_type: AuditActorTypeSchema.optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
         outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
         request_id: z.string().optional(),
@@ -175,6 +256,7 @@ projectsApp.openapi(
       projectId,
       sessionId: c.req.query('session_id')?.trim() || null,
       source: c.req.query('source')?.trim() || null,
+      credentialKind: c.req.query('credential_kind')?.trim() || null,
       phase: c.req.query('phase')?.trim() || null,
       outcome: c.req.query('outcome')?.trim() || null,
       requestId: c.req.query('request_id')?.trim() || null,
@@ -186,25 +268,24 @@ projectsApp.openapi(
       q: c.req.query('q')?.trim() || null,
     });
     if (cursor) {
-      conditions.push(
-        buildAuditCursorCondition(cursor, loaded.row.accountId, 'descending'),
-      );
+      conditions.push(buildAuditCursorCondition(cursor, loaded.row.accountId, 'descending'));
     }
     // Audit writes are buffered off the request path (shared/audit-queue.ts).
     // A reader must observe every event already emitted, so drain the queue
     // before querying.
-    await flushAuditEvents();
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
     const fetched = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
       .limit(limit + 1);
     const hasMore = fetched.length > limit;
     const rows = hasMore ? fetched.slice(0, limit) : fetched;
     const last = rows.at(-1);
+    const names = await auditCredentialNames(rows);
     return c.json({
-      events: rows.map(serializeAuditEvent),
+      events: rows.map((row) => serializeAuditEvent(row, names)),
       next_cursor: hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null,
     });
   },
@@ -226,7 +307,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(AnyObject, 'Batch ingestion result'),
-      // Lock contention on kortix.audit_session_sequences. Retryable: the relay
+      // Audit pool contention (statement or lock timeout). Retryable: the relay
       // still holds the batch in its own durable spool.
       503: json(AnyObject, 'Audit ingestion is contended'),
       ...errors(400, 403, 404),
@@ -246,7 +327,7 @@ projectsApp.openapi(
     const [scope] = await db
       .select({
         sessionId: sessionSandboxes.sessionId,
-        opencodeSessionId: projectSessions.opencodeSessionId,
+        opencodeSessionId: projectSessions.runtimeSessionId,
         agentName: projectSessions.agentName,
         createdBy: projectSessions.createdBy,
         origin: projectSessions.origin,
@@ -282,10 +363,7 @@ projectsApp.openapi(
     }
 
     const identityConditions = [
-      and(
-        eq(serviceAccounts.projectId, projectId),
-        eq(serviceAccounts.agentName, scope.agentName),
-      ),
+      and(eq(serviceAccounts.projectId, projectId), eq(serviceAccounts.agentName, scope.agentName)),
     ];
     if (scope.createdBy) {
       identityConditions.push(eq(serviceAccounts.serviceAccountId, scope.createdBy));
@@ -376,41 +454,88 @@ projectsApp.openapi(
       return c.json({ accepted: parsed.accepted, inserted: 0, duplicates: 0, suppressed });
     }
 
-    // Write in bounded chunks, never one 200-row statement.
-    //
-    // Every row's BEFORE INSERT trigger locks this session's
-    // `audit_session_sequences` row, and PostgreSQL holds that lock until the
-    // statement's transaction COMMITs. One 200-row statement therefore pinned
-    // the session for its entire duration (measured 137 ms on a warm 5.09M-row
-    // audit_events; the SampleCo box runs an order of magnitude slower), and a
-    // rollback discarded all 200 rows' work, which the relay then re-sent in
-    // full. Chunking bounds both: the lock is held per chunk, and chunks that
-    // already committed stay committed.
+    // Write the batch in bounded statements. The first attempt carries
+    // `auditIngestChunkSize()` rows — one statement per accepted batch by
+    // default. A rejected statement rolls back only its own rows, and the relay
+    // re-sends what did not land after its backoff.
     let attempted = 0;
     let insertedCount = 0;
     let contended = false;
-    for (let offset = 0; offset < toInsert.length; offset += AUDIT_INGEST_CHUNK) {
-      const chunk = toInsert.slice(offset, offset + AUDIT_INGEST_CHUNK);
-      try {
-        // Hold the process-local session lock for the chunk's INSERT. The
-        // request's OWN inbound audit row is enqueued for this same session and
-        // would otherwise race this insert for the same
-        // `audit_session_sequences` row lock — the second writer lost at the
-        // pool's 2.5 s `lock_timeout` (55P03) and the queue dropped the row.
-        const inserted = await withAuditSessionLock(
+    let chunkSize = auditIngestChunkSize();
+    let fallbacks = 0;
+    for (let offset = 0; offset < toInsert.length; ) {
+      // Stay inside the request's own 25s deadline. A chunk must not start
+      // unless its worst case (the audit pool's
+      // statement timeout + margin) fits the remaining budget; the deadline
+      // middleware otherwise aborts mid-batch with an error-level
+      // `request exceeded the 25s server processing deadline` line, no
+      // `Retry-After: 5` pacing, and chunks that keep writing for a response
+      // nobody reads (prod 2026-09-28: the aborts were this route's dominant
+      // error class). Stop at that boundary and answer with the same
+      // controlled contended 503 the contention path returns — the relay holds the
+      // batch in its spool and retries with `Retry-After`, and committed
+      // chunks stay committed.
+      const remainingMs = remainingIngestBudgetMs(c);
+      // A chunk never starts unless its worst case (the audit pool's statement
+      // timeout plus the response margin) fits the remaining budget.
+      if (remainingMs !== null && remainingMs < AUDIT_STATEMENT_TIMEOUT_MS + AUDIT_INGEST_ATTEMPT_MARGIN_MS) {
+        appLogger.warn('[audit] ingest budget exhausted', {
+          projectId,
           sessionId,
-          () =>
-            auditDb()
-              .insert(auditEvents)
-              .values(chunk)
-              .onConflictDoNothing()
-              .returning({ eventId: auditEvents.eventId }),
-          { timeoutMs: AUDIT_INGEST_LOCK_WAIT_MS },
-        );
+          remaining_ms: remainingMs,
+          accepted: parsed.accepted,
+          attempted,
+          inserted: insertedCount,
+          remaining: toInsert.length - offset,
+          chunk: chunkSize,
+        });
+        contended = true;
+        break;
+      }
+      const chunk = toInsert.slice(offset, offset + chunkSize);
+      try {
+        const chunkWork = auditDb()
+          .insert(auditEvents)
+          .values(chunk)
+          .onConflictDoNothing()
+          .returning({ eventId: auditEvents.eventId });
+        // The chunk's own bound (the statement timeout) does not bound
+        // the wait for an audit-pool backend. Race the chunk against what is
+        // left of the request deadline so a saturated pool degrades into the
+        // controlled contended 503 instead of the deadline abort. When the
+        // guard is off (`remainingMs === null`) there is nothing to race.
+        const chunkResult =
+          remainingMs === null
+            ? { timedOut: false as const, value: await chunkWork }
+            // 1s held back so the contended 503 response itself still fits
+            // inside the deadline.
+            : await boundChunkWrite(chunkWork, remainingMs - 1_000);
+        if (chunkResult.timedOut) {
+          // The statement keeps running off the request path. Swallow its
+          // eventual rejection (a statement timeout, or the lock wait it is
+          // still queued inside) so it can never surface unhandled.
+          void chunkWork.catch(() => {});
+          appLogger.warn('[audit] ingest budget exhausted', {
+            projectId,
+            sessionId,
+            remaining_ms: remainingIngestBudgetMs(c),
+            chunk_budget_ms: remainingMs === null ? null : remainingMs - 1_000,
+            accepted: parsed.accepted,
+            attempted,
+            inserted: insertedCount,
+            remaining: toInsert.length - offset - chunk.length,
+            chunk: chunk.length,
+            raced_out: true,
+          });
+          contended = true;
+          break;
+        }
+        const inserted = chunkResult.value;
         attempted += chunk.length;
         insertedCount += inserted.length;
+        offset += chunk.length;
       } catch (error) {
-        if (!isAuditContentionError(error) && !isAuditSessionLockTimeout(error)) {
+        if (!isAuditContentionError(error)) {
           // A write that is NOT backpressure is a defect, and until now the
           // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
           // query: insert into "kortix"."audit_events" …` with the whole
@@ -432,9 +557,33 @@ projectsApp.openapi(
           });
           throw error;
         }
-        // The session lock is queued. Pushing the remaining chunks into it
-        // would only lengthen the queue that just rejected this one. Stop and
-        // tell the relay to come back — the batch is still in its spool.
+        // A contended statement committed nothing, and handing the WHOLE
+        // remaining batch back to the relay makes the relay re-post every row
+        // (prod 2026-09-29, KRTX-470: 6,115 57014 statement timeouts in 3 h —
+        // each one a full 200-row statement that ran out of the audit pool's
+        // statement_timeout, rolled back all its work, and came back as another
+        // full-batch POST; the route's p95 and every other DB-bound route's
+        // rose with it). Retry the SAME rows in a smaller statement first: a
+        // statement that fits its budget lands rows instead of burning the
+        // audit pool's two backends on work that rolls back. The budget check
+        // at the top of the loop caps every further attempt the same way, so
+        // the request still answers inside its deadline; past the floor, give
+        // up as before.
+        // Halve the rows this statement actually carried, not the chunk
+        // ceiling. A 3-row batch under a 200-row ceiling used to re-send the
+        // same 3 rows at "100" and "50" — byte-identical statements that each
+        // held an audit-pool backend for the full statement timeout (prod
+        // 2026-10-01: ~20 s per 503, two of the pool's backends' worth of
+        // time, for rows no smaller statement could change).
+        if (chunk.length > AUDIT_INGEST_MIN_CHUNK) {
+          chunkSize = Math.max(AUDIT_INGEST_MIN_CHUNK, Math.floor(chunk.length / 2));
+          fallbacks += 1;
+          continue;
+        }
+        // The chunk is at the floor. Pushing the remaining rows into the same
+        // lock queue would only lengthen it. Stop and tell the relay to come
+        // back — the batch is still in its spool, and every row that landed
+        // stays committed.
         //
         // Say WHICH SQLSTATE and how far the batch got. A 503 that logs only
         // `-> 503 [HTTPException]` hid a 7-day convoy (prod, from 2026-08-31
@@ -443,15 +592,14 @@ projectsApp.openapi(
         appLogger.warn('[audit] ingest contended', {
           projectId,
           sessionId,
-          // `57xxx`/`55P03` came back from Postgres; a null SQLSTATE on a
-          // bounded in-process wait means the writer never reached the DB.
+          // `57xxx`/`55P03` came back from Postgres.
           sqlstate: auditErrorSqlstate(error),
-          contention_source: isAuditSessionLockTimeout(error) ? 'in_process' : 'postgres',
           accepted: parsed.accepted,
           attempted,
           inserted: insertedCount,
           remaining: toInsert.length - offset,
           chunk: chunk.length,
+          fallback_statements: fallbacks,
         });
         contended = true;
         break;
@@ -495,7 +643,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/audit',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/audit',
+    summary: 'List audit events of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -545,7 +693,12 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      callerKortixSessionId(c),
+      callerKortixSessionId(c),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
     // also the approval CONTROL PLANE: write/destructive connector actions
@@ -558,24 +711,12 @@ projectsApp.openapi(
     const audited = await accountHasEntitlement(loaded.row.accountId, 'auditAccess');
     const includeEvents = c.req.query('include_events') !== 'false';
 
-    // `session_id` is the integrity-chain scope and is globally unique. The
-    // visibility gate above already proves that the caller may read this
-    // project session. Some request-level events are written before account
-    // resolution (`auth.login.success`) or from a project-neutral endpoint
-    // (`GET /v1/skills`). Those rows still belong to this session's chain. An
-    // account/project predicate would remove the middle row while returning its
-    // successor, which makes a valid persisted chain impossible to verify.
-    const eventConditions = [eq(auditEvents.sessionId, sessionId)];
-    if (cursor) {
-      const cursorCondition = or(
-        gt(auditEvents.sessionSequence, cursor.sequence),
-        and(
-          eq(auditEvents.sessionSequence, cursor.sequence),
-          gt(auditEvents.eventId, cursor.eventId),
-        ),
-      );
-      if (cursorCondition) eventConditions.push(cursorCondition);
-    }
+    // `session_id` is globally unique and the visibility gate above already proves
+    // the caller may read this project session. Some request-level events are
+    // written before account resolution (`auth.login.success`) or from a
+    // project-neutral endpoint (`GET /v1/skills`); they still belong to this
+    // session's log, so the read filters on `session_id` alone, never on an
+    // account or project predicate.
     // Audit writes are buffered off the request path (shared/audit-queue.ts).
     // A reader of EVENTS must observe every event already emitted, so drain
     // the queue before querying them.
@@ -588,23 +729,17 @@ projectsApp.openapi(
     // request hit the 25 s server deadline, and the badge answered 503 twice
     // per session open, forever (sampleco, 2026-08-24). A count of pending
     // connector calls does not depend on the audit queue at all.
-    if (audited && includeEvents) await flushAuditEvents();
-    const fetchedEvents = audited && includeEvents
-      ? await db
-          .select()
-          .from(auditEvents)
-          .where(and(...eventConditions))
-          .orderBy(asc(auditEvents.sessionSequence), asc(auditEvents.eventId))
-          .limit(limit + 1)
-      : [];
-    const hasMoreEvents = fetchedEvents.length > limit;
-    const eventRows = hasMoreEvents ? fetchedEvents.slice(0, limit) : fetchedEvents;
-    const lastEvent = eventRows.at(-1);
+    if (audited && includeEvents) await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
+    const { rows: eventRows, nextCursor } =
+      audited && includeEvents
+        ? await readSessionAuditEvents(db, sessionId, cursor, limit)
+        : { rows: [] as AuditEventRow[], nextCursor: null };
 
     // Same query, same batched email + connector-slug lookups, same
     // `approval_url` rule as before — now shared with the session-open
     // bundle's `audit` leg (`../lib/session-audit-read.ts`) so the two can
     // never disagree about what is pending.
+    const names = await auditCredentialNames(eventRows);
     const auditActions = await readSessionAuditActions({
       projectId,
       sessionId,
@@ -624,11 +759,8 @@ projectsApp.openapi(
       // entitled caller (0 whenever `include_events=false`, which is every
       // poll), the PENDING-ACTIONS count otherwise.
       count: audited ? eventRows.length : auditActions.count,
-      events: eventRows.map(serializeAuditEvent),
-      next_cursor:
-        hasMoreEvents && lastEvent?.sessionSequence != null
-          ? `${lastEvent.sessionSequence}|${lastEvent.eventId}`
-          : null,
+      events: eventRows.map((row) => serializeAuditEvent(row, names)),
+      next_cursor: nextCursor,
       // Most-recent-first trail of every connector-gated action this session took.
       actions: auditActions.actions,
     });

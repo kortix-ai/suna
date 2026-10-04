@@ -1,10 +1,10 @@
+import { stripChatMentionMarkup } from '@kortix/shared';
 import type { UiTranslator } from '@/i18n/translator';
 
 import {
   isLegacyMigratedSession,
   SESSION_LIST_STATUS,
   sessionListStatus,
-  type ProjectRuntimeSession,
   type ProjectSession,
   type SessionListStatus,
 } from '@kortix/sdk';
@@ -13,39 +13,13 @@ import {
  * Canonical, framework-free helpers for reading a project session the way the
  * UI reads it. Single source of truth for four things:
  *
- * - the display LABEL and the opencode session tree (`sessionDisplayLabel`,
- *   `rootOpenCodeSession`, `directSubsessions`) — the sidebar, the session
- *   list, and the tab bar must all render the SAME name for a session;
+ * - the display LABEL (`sessionDisplayLabel`) — the sidebar, the session
+ *   list, and the tab bar must all render the SAME name for a session (the
+ *   conversation tree is the SDK's `rootRuntimeSession`/`directSubsessions`);
  * - the SOURCE a session came from, and the source filter over it;
  * - the DISPLAY STATUS — the five user-facing states the seven-value sandbox
  *   lifecycle collapses to — and the status filter over it;
  */
-
-/** The root opencode session a project session is pinned to (if synced). */
-export function rootOpenCodeSession(session: ProjectSession): ProjectRuntimeSession | null {
-  const opencodeSessions = session.opencode_sessions ?? [];
-  const rootId = session.opencode_session_id;
-  if (rootId) return opencodeSessions.find((item) => item.id === rootId) ?? null;
-  return opencodeSessions.find((item) => !item.parent_id) ?? null;
-}
-
-/**
- * Direct, non-archived children of the root opencode session, newest first.
- *
- * Ties break on id. A child with no `updated_at` collapses to `0`, so whole
- * groups of them tie — and a stable sort then preserves ARRIVAL order, which is
- * whatever order the sandbox listing came back in. That order is re-derived on
- * every refetch, and the snapshot writer persists a pure reorder as a change,
- * so the churn reached every client as sub-sessions visibly swapping places in
- * the sidebar. Ids are stable and unique; the rendered order now is too.
- */
-export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
-  const root = rootOpenCodeSession(session);
-  if (!root) return [];
-  return (session.opencode_sessions ?? [])
-    .filter((item) => item.parent_id === root.id && !item.archived_at)
-    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0) || a.id.localeCompare(b.id));
-}
 
 /**
  * Where a session came from, derived from the creation metadata stamped by
@@ -75,13 +49,6 @@ export interface SessionSource {
 /** The platform meta coordinator — drives other sessions from its own sandbox. */
 export function isMetaCoordinatorSession(session: ProjectSession): boolean {
   return session.agent_name === 'meta';
-}
-
-/** The coordinator session that spawned this one (stamped at create from the
- *  caller's session-bound token), or null for sessions users started. */
-export function spawnedBySessionId(session: ProjectSession): string | null {
-  const meta = (session.metadata ?? {}) as Record<string, unknown>;
-  return typeof meta.spawned_by_session === 'string' ? meta.spawned_by_session : null;
 }
 
 /**
@@ -140,18 +107,7 @@ export function sessionDisplayLabel(session: ProjectSession): string {
   );
 }
 
-/**
- * Teams wraps a channel @-mention of the bot in `<at>…</at>`. Sessions titled
- * from such a message before the API stripped it (#7388) still carry the tag
- * in `name`; nothing a person reads should show it.
- */
-export function stripChatMentionMarkup(value: string): string {
-  return value
-    .replace(/<at[^>]*>.*?<\/at>/gi, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { stripChatMentionMarkup } from '@kortix/shared';
 
 /**
  * What the user sees, as opposed to what the sandbox is doing. The words and
@@ -207,7 +163,6 @@ export function sessionDisplayStatus(
  * alongside arrays would allow `['all', 'running']`, which has no meaning.
  */
 export type SessionSourceFilter =
-  | 'mine'
   | 'shared'
   | 'slack'
   | 'telegram'
@@ -218,7 +173,6 @@ export type SessionSourceFilter =
 export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
-  { value: 'mine', label: 'My chats' },
   { value: 'shared', label: 'Shared' },
   { value: 'slack', label: 'Slack' },
   { value: 'telegram', label: 'Telegram' },
@@ -258,9 +212,6 @@ export function matchesSourceFilters(
   if (filters.length === 0) return true;
   const kind = sessionSource(session, tI18nComplete).kind;
   return filters.some((filter) => {
-    // `is_owner` is viewer-relative and older payloads omit it — unknown
-    // ownership reads as "mine" so the default view never hides a session.
-    if (filter === 'mine') return kind === 'chat' && !sessionIsShared(session);
     // Ownership is independent of source. A scheduled or channel session can
     // be shared with the viewer and must remain discoverable through Shared.
     if (filter === 'shared') return sessionIsShared(session);

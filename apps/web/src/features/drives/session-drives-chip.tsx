@@ -137,7 +137,7 @@ function SessionDriveList({
     change.mutate(input, {
       onSuccess: (result) =>
         successToast(
-          result && 'live' in result && result.live === false ? t('appliesNextStart') : done,
+          (result as { live?: boolean } | null | undefined)?.live === false ? t('appliesNextStart') : done,
         ),
       onError: (error) => errorToast((error as Error)?.message || t('sessionDriveFailed')),
     });

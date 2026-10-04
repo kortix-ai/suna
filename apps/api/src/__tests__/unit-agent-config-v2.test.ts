@@ -173,10 +173,9 @@ describe('applyAgentBlockV2', () => {
   });
 
   test('rejects a behavioral field on the block — it belongs in the .md frontmatter now', () => {
-    const applied = applyAgentBlockV2(v2Manifest(), 'support', {
-      // @ts-expect-error — `mode` is no longer part of AgentBlockV2 (governance-only)
-      mode: 'primary',
-    });
+    // `mode` is a behavioral field: the block must refuse it at runtime even
+    // when a caller's type allows it, so pass it through an untyped object.
+    const applied = applyAgentBlockV2(v2Manifest(), 'support', { mode: 'primary' } as never);
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('.md');

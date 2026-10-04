@@ -112,7 +112,30 @@ function parseArray(raw: string): string[] {
   return splitValues(array[1]).map(unquote).filter(Boolean);
 }
 
-const CATALOG = seededCatalog();
+/**
+ * Leaves a later migration retired and split (20261003235127508). Their rows
+ * stay in `kortix.permissions` until a contract migration, but the API's
+ * catalog loader drops actions the code no longer knows, the same migration
+ * rewrites every `implies` array that named them, and every role that held
+ * one was granted its replacements. The fixture applies the same three rules.
+ */
+const RETIRED: Record<string, readonly string[]> = {
+  'project.customize.write': [
+    'project.settings.write',
+    'project.sandbox.write',
+    'project.model.read',
+    'project.model.write',
+    'project.agent.write',
+  ],
+  'project.customize.read': ['project.model.read'],
+};
+const expandRetired = (actions: readonly string[]): string[] => [
+  ...new Set(actions.flatMap((a) => RETIRED[a] ?? [a])),
+];
+
+const CATALOG = seededCatalog()
+  .filter((p) => !(p.action in RETIRED))
+  .map((p) => ({ ...p, implies: expandRetired(p.implies).filter((a) => a !== p.action) }));
 const PROJECT_LEAVES = CATALOG.filter((p) => p.scope_type === 'project').map((p) => p.action);
 const ACCOUNT_LEAVES = CATALOG.filter((p) => p.scope_type === 'account').map((p) => p.action);
 
@@ -148,7 +171,9 @@ function seededRolePermissions(): Map<string, string[]> {
   return out;
 }
 
-const SEEDED_ROLES = seededRolePermissions();
+const SEEDED_ROLES = new Map(
+  [...seededRolePermissions()].map(([key, actions]) => [key, expandRetired(actions)]),
+);
 const roleActions = (key: string, scope: CapabilityScope) => {
   const actions = SEEDED_ROLES.get(`${key}:${scope}`);
   if (!actions || actions.length === 0) throw new Error(`no seeded actions for ${key}:${scope}`);
@@ -174,7 +199,7 @@ function sorted(set: Iterable<string>): string[] {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(45);
+    expect(PROJECT_LEAVES.length).toBe(48);
     expect(ACCOUNT_LEAVES.length).toBe(29);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
@@ -241,14 +266,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(45);
+    expect(fold.totalCount).toBe(48);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(45);
+    expect(fold.selectedCount).toBe(48);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );
@@ -328,9 +353,9 @@ describe('applyCell — Edit implies View', () => {
     expect(sorted(next)).toEqual(['project.file.read', 'project.file.write']);
   });
 
-  test('checking Edit on Customize pulls in all six reads', () => {
+  test('checking Edit on Customize pulls in its reads', () => {
     const next = applyCell('project', new Set(), 'customize', 'edit', true, CATALOG);
-    expect(next.has('project.customize.read')).toBe(true);
+    expect(next.has('project.model.read')).toBe(true);
     expect(next.has('project.agent.read')).toBe(true);
     expect(next.has('project.secret.read')).toBe(true);
     expect(next.size).toBe(13);
@@ -385,7 +410,9 @@ describe('applyCell — a push rewrites Files, Customize and Triggers', () => {
     const next = applyCell('project', new Set(), 'git', 'edit', true, CATALOG);
     for (const leaf of [
       'project.file.write',
-      'project.customize.write',
+      'project.settings.write',
+      'project.sandbox.write',
+      'project.model.write',
       'project.agent.write',
       'project.skill.write',
       'project.connector.write',
@@ -423,7 +450,7 @@ describe('applyCell — a push rewrites Files, Customize and Triggers', () => {
     const off = applyCell('project', on, 'customize', 'edit', false, CATALOG);
     expect(off.has('project.gitops.push')).toBe(false);
     expect(off.has('project.gitops.merge')).toBe(false);
-    expect(off.has('project.customize.read')).toBe(true);
+    expect(off.has('project.model.read')).toBe(true);
   });
 
   test('the Git row carries the note that explains it', () => {
@@ -440,7 +467,7 @@ describe('applyBulk', () => {
   test('View everything grants exactly the view leaves', () => {
     const next = applyBulk('project', new Set(), 'view-all', CATALOG);
     expect(next.has('project.read')).toBe(true);
-    expect(next.has('project.customize.read')).toBe(true);
+    expect(next.has('project.model.read')).toBe(true);
     expect(next.has('project.write')).toBe(false);
     const fold = foldSelection('project', CATALOG, next);
     expect(fold.areas.every((a) => a.view.state === 'on' && a.edit.state === 'off')).toBe(true);

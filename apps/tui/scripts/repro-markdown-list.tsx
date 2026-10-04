@@ -12,8 +12,8 @@
  * without their text".
  *
  * ── What it actually was ──
- * The literal content of the reply. The turn above it, in the live warm session
- * `1124e1b1-9e3d-481f-a028-7713a42bdfb7`, is the user prompt
+ * The literal content of the reply. The turn above it, in a live warm session,
+ * is the user prompt
  * "Count slowly from 1 to 40, one number per line." — and the assistant's reply
  * is the 41 characters `1\n2\n…\n17`, cut off at 17 because the turn was
  * aborted. Bare numbers on their own lines, rendered as bare numbers on their

@@ -1,6 +1,8 @@
+import { BOOT_PHASE_HEADER, RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay';
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
-import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
+import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../runtime-request';
+import { markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -16,6 +18,7 @@ import {
   agentLaunchableInProject,
   remintGrantForAgentSwitch,
 } from '../../projects/lib/session-token-grant';
+import { bindSessionTurnIdentity } from '../../projects/lib/on-behalf-of';
 import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
@@ -31,19 +34,10 @@ import {
   previewGrantMs,
 } from '../../projects/sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
-import {
-  KORTIX_SERVICE_CALL_HEADER,
-  KORTIX_USER_CONTEXT_HEADER,
-} from '../../shared/kortix-user-context';
-import { config } from '../../config';
+import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { previewCorsHeaders } from '../preview-hosts';
 import { appCookieHeader } from '../preview-session';
 import { isProviderIngressAuthFailure } from '../provider-auth';
-import {
-  PREVIEW_STATE_HEADER,
-  previewStatePage,
-  type PreviewState,
-} from '../preview-state-page';
 import { canAccessPreviewSandbox, canAccessSandboxSession, takeSessionAccessRefusal } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -53,8 +47,10 @@ import {
   markSandboxUsed,
   resolveSandboxIngress,
   routeSandboxIngress,
+  type SandboxRecord,
   wakeSandbox,
 } from '../backend';
+import { takePrefetchedSandbox } from '../prefetch';
 import {
   recordSseStreamEnd,
   shouldBypassIngressCache,
@@ -85,6 +81,7 @@ import {
 import {
   PROXY_RETRY_BUDGET_MS,
   PROXY_RETRY_DELAYS_MS,
+  isEnvRpcRequest,
   isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -97,19 +94,14 @@ import {
   promptDeliveryKey,
   releasePromptDelivery,
 } from '../prompt-dedupe';
-import {
-  PROXY_HOP_HEADER,
-  PROXY_UPSTREAM_STATUS_HEADER,
-  portFailureHop,
-  type ProxyHop,
-} from '../proxy-hop';
+import { portFailureHop, type ProxyHop } from '../proxy-hop';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   beginSandboxTurn,
-  extractTurnIdentity,
 } from '../../projects/sandbox-turn-lifecycle';
+import { extractTurnIdentity } from '../../projects/session-turn-ledger';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -124,30 +116,6 @@ const preview = new Hono<{
   };
 }>();
 
-// Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
-// replaced with the sandbox service key, trace headers are regenerated, and
-// Accept-Encoding is forced to identity (raw byte passthrough) EXCEPT on the
-// paths named by `forwardsClientEncoding` below.
-// Cookies may contain the caller's raw __preview_session credential and must
-// never reach arbitrary user-controlled apps running inside the sandbox.
-// `x-kortix-service-call` marks a DIRECT platform→daemon call. The daemon gates
-// its destructive branch reset on it precisely because it cannot appear here:
-// we authenticate every forwarded request with the sandbox's own service key, so
-// the daemon cannot tell a user's request from ours by the bearer alone. Strip
-// it for the same reason we strip `authorization` — a caller must not be able to
-// hand themselves platform authority by naming a header.
-export const STRIP_FORWARD_HEADERS = new Set([
-  'x-kortix-wire-id-placed',
-  'host',
-  'authorization',
-  'cookie',
-  'traceparent',
-  'x-request-id',
-  'accept-encoding',
-  'content-length',
-  KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
-]);
-
 /**
  * Which upstream paths get the CLIENT's `Accept-Encoding` instead of `identity`.
  *
@@ -157,11 +125,11 @@ export const STRIP_FORWARD_HEADERS = new Set([
  * produces garbage. Forcing identity is what makes that safe without every
  * future rewrite having to remember to decompress.
  *
- * The daemon's `/kortix/opencode/*` namespace is the exception, and it earns it:
+ * The daemon's Runtime API (`/kortix/runtime/*`, `/kortix/opencode/*` before W3) is the exception, and it earns it:
  *   • nothing on this proxy rewrites those bodies — the projection is already
  *     the trimmed shape, so there is nothing left to strip;
  *   • the whole point of the namespace is byte reduction across THIS hop.
- *     `/kortix/opencode/state` is 8.7 KB raw and 0.9 KB gzipped (WS-Z1 §5);
+ *     `/kortix/runtime/state` is 8.7 KB raw and 0.9 KB gzipped (WS-Z1 §5);
  *     forcing identity here would throw away 90% of the saving before the
  *     response ever reaches the API's own compressor.
  *
@@ -170,8 +138,9 @@ export const STRIP_FORWARD_HEADERS = new Set([
  */
 export function forwardsClientEncoding(port: number, remainingPath: string): boolean {
   if (port !== 8000) return false;
-  if (!/^\/kortix\/opencode(?:$|\/)/.test(remainingPath)) return false;
-  return !/^\/kortix\/opencode\/events(?:$|[/?#])/.test(remainingPath);
+  // `/kortix/runtime` since W3; `/kortix/opencode` on a daemon built before it.
+  if (!/^\/kortix\/(?:runtime|opencode)(?:$|\/)/.test(remainingPath)) return false;
+  return !/^\/kortix\/(?:runtime|opencode)\/events(?:$|[/?#])/.test(remainingPath);
 }
 
 // The pre-prompt turn-start gate lives in ../pre-prompt-env-sync.ts so a unit
@@ -187,12 +156,16 @@ export {
   runPrePromptEnvSync,
   secretGrantErrorResponse,
 } from '../pre-prompt-env-sync';
+import { STRIP_FORWARD_HEADERS, clientResponseHeaders, isBrowserNavigation, isConnectionRefusedError, longTurnTimeoutResponse, portUnreachableResponse, sanitizeRedirectLocation } from '../preview-response';
 import {
   convergeBeforeTurnStart,
   convergeModelCatalogForTurnStart,
   scheduleAssetConvergence,
 } from '../../projects/lib/turn-start-convergence';
 export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
+
+// The response/header helpers moved to ../preview-response.ts (KRTX-326 phase 2).
+export * from '../preview-response';
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
 // SANDBOX_TOUCH_INTERVAL_MS in ../backend.ts, for the same reason: a single page
@@ -216,265 +189,6 @@ export function bindSandboxRequestContext(
   setContextField('sandboxId', sandboxId);
 }
 
-// Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
-// Returns null if nothing meaningful remains (so the header can be dropped).
-function stripFrameAncestors(csp: string): string | null {
-  const kept = csp
-    .split(';')
-    .map((d) => d.trim())
-    .filter((d) => d && !/^frame-ancestors(\s|$)/i.test(d));
-  return kept.length ? kept.join('; ') : null;
-}
-
-// Build the response headers we send back to the browser: clone the upstream
-// headers, neutralize framing restrictions, and apply CORS. Previews are
-// embedded in the Kortix session UI via an <iframe>, so any app that ships
-// `X-Frame-Options` or a CSP `frame-ancestors` (Next.js, and most frameworks,
-// default to these) would otherwise refuse to load in the panel. Stripping them
-// at the proxy makes embedding work for ANY project without per-app config —
-// the same project-agnostic approach as the origin/host re-origination above.
-// Framing is intentionally OPEN, and that is not the same as unprotected. The
-// credential is now an ambient `SameSite=None` cookie, so any site can frame a
-// signed-in user's live preview — what stops that being useful is the
-// cross-site gate in preview-origin.ts (reads are governed by the CORS
-// allowlist, writes and WebSocket upgrades require a same-site Sec-Fetch-Site),
-// not a framing restriction.
-function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
-  const headers = new Headers(upstreamHeaders);
-  headers.delete('x-frame-options');
-  for (const key of ['content-security-policy', 'content-security-policy-report-only']) {
-    const csp = headers.get(key);
-    if (csp && /frame-ancestors/i.test(csp)) {
-      const next = stripFrameAncestors(csp);
-      if (next) headers.set(key, next);
-      else headers.delete(key);
-    }
-  }
-  // One allowlist for both edges — see previewCorsHeaders. An arbitrary origin
-  // gets nothing, because the preview cookie is ambient on cross-site requests.
-  for (const [key, value] of Object.entries(previewCorsHeaders(origin))) {
-    headers.set(key, value);
-  }
-
-  // The app inside the sandbox writes its own cookies, and they are forwarded —
-  // that is what makes a cookie-session app work. What it may NOT do is widen
-  // their scope: `p.kortix.com` is not on the Public Suffix List, so a
-  // `Domain=kortix.com` cookie from a preview would be accepted for the web app
-  // and the API too. Strip `Domain` (leaving a host-only cookie, which is what
-  // the app actually needs) and drop any attempt to overwrite ours.
-  const setCookies = headers.getSetCookie?.() ?? [];
-  if (setCookies.length) {
-    headers.delete('set-cookie');
-    for (const cookie of setCookies) {
-      const name = cookie.split('=', 1)[0]?.trim();
-      if (name === '__kortix_preview' || name === '__kortix_preview_chips') continue;
-      headers.append(
-        'set-cookie',
-        cookie
-          .split(';')
-          .filter((attr) => !/^\s*domain\s*=/i.test(attr))
-          .join(';'),
-      );
-    }
-  }
-  return headers;
-}
-
-// Is this request a top-level browser navigation (so it expects an HTML page,
-// not JSON)? Used to decide whether an "unreachable" state renders a friendly
-// page or a machine-readable error. `Accept: text/html` is the standard signal;
-// `sec-fetch-dest` covers document/iframe loads that send a terse Accept.
-function isBrowserNavigation(incomingHeaders: Headers): boolean {
-  const accept = incomingHeaders.get('accept') || '';
-  if (accept.includes('text/html')) return true;
-  const dest = incomingHeaders.get('sec-fetch-dest') || '';
-  return dest === 'document' || dest === 'iframe' || dest === 'frame';
-}
-
-/**
- * The address the browser is on, reconstructed from the request it sent. Shown
- * on the state page and carried into the sign-in hand-off. Falls back to '' when
- * the headers do not say, which simply omits it from the page.
- */
-function previewReturnTo(incomingHeaders: Headers): string {
-  const forwarded = incomingHeaders.get('x-kortix-preview-host') || incomingHeaders.get('x-forwarded-host');
-  const host = forwarded || incomingHeaders.get('host') || '';
-  if (!host) return '';
-  const proto = incomingHeaders.get('x-forwarded-proto') || 'https';
-  return `${proto}://${host}`;
-}
-
-// Response for an unreachable / not-yet-ready sandbox port: a friendly HTML page
-// for browser navigations, machine-readable JSON otherwise. Marked no-store so a
-// retry always re-hits the upstream instead of a cached error.
-//
-// `hop` is mandatory: the status alone cannot distinguish a parked row from a
-// dead runtime from a dev server the agent never started, and a caller that has
-// to guess guesses wrong (see `proxy-hop.ts`). `upstreamStatus` is the status
-// the failing hop actually returned, when there was one — a thrown/refused
-// connection has none.
-export function portUnreachableResponse(opts: {
-  port: number;
-  status: number;
-  origin: string;
-  incomingHeaders: Headers;
-  reason: string;
-  hop: ProxyHop;
-  upstreamStatus?: number | null;
-  // Stable machine code for the failure class (e.g. 'sandbox_not_ready'), so
-  // clients branch on a code instead of matching the human-readable `reason`.
-  code?: string;
-  // True when the failure is transient by design (a parked/booting box) and a
-  // retry of the same request is expected to succeed once the box is up.
-  retry?: boolean;
-}): Response {
-  const { port, status, origin, incomingHeaders, reason, hop, code, retry } = opts;
-  const upstreamStatus = opts.upstreamStatus ?? null;
-  const headers = new Headers({ 'Cache-Control': 'no-store' });
-  // Set on EVERY variant, HTML included: a `fetch` probe that lands on the
-  // browser-navigation branch (it sends `Accept: text/html`) must still be able
-  // to attribute the failure.
-  headers.set(PROXY_HOP_HEADER, hop);
-  if (upstreamStatus !== null) {
-    headers.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstreamStatus));
-  }
-  // The SAME allowlist as every other preview response — this was a third copy
-  // of the policy and it still echoed any origin back with credentials.
-  const cors = previewCorsHeaders(origin);
-  for (const [key, value] of Object.entries(cors)) headers.set(key, value);
-  if (Object.keys(cors).length) {
-    // Without this the browser hides both headers from JS and the probe is back
-    // to guessing — the web app and the API are always different origins.
-    headers.set(
-      'Access-Control-Expose-Headers',
-      `${PROXY_HOP_HEADER}, ${PROXY_UPSTREAM_STATUS_HEADER}`,
-    );
-  }
-  if (isBrowserNavigation(incomingHeaders)) {
-    headers.set('Content-Type', 'text/html; charset=utf-8');
-    // A browser gets 200 and a page it can read, NOT the 5xx.
-    //
-    // "The dev server has not bound the port yet" and "the box is still waking"
-    // are the ordinary first seconds of a preview, not gateway failures — and
-    // reporting them as 5xx meant this page never arrived: Cloudflare replaces
-    // an origin 5xx with its own branded error interstitial (proved by the
-    // absence of x-kortix-proxy-hop on what reached the client). The real state
-    // stays fully legible — the status is still on every non-navigation
-    // response, and both hop headers are set here too, so a fetch probe reads
-    // exactly what it always did.
-    const state: PreviewState =
-      code === 'sandbox_not_ready' || retry === true ? 'starting'
-      : upstreamStatus === null ? 'not-listening'
-      : 'unreachable';
-    headers.set(PREVIEW_STATE_HEADER, state);
-    return new Response(
-      previewStatePage({
-        state,
-        port,
-        returnTo: previewReturnTo(incomingHeaders),
-        frontendUrl: config.FRONTEND_URL || '',
-      }),
-      { status: 200, headers },
-    );
-  }
-  headers.set('Content-Type', 'application/json');
-  return new Response(
-    JSON.stringify({
-      error: reason,
-      port,
-      status,
-      hop,
-      upstream_status: upstreamStatus,
-      ...(code ? { code } : {}),
-      ...(retry !== undefined ? { retry } : {}),
-    }),
-    {
-      status,
-      headers,
-    },
-  );
-}
-
-// Response for a blocking session-turn (`POST /session/:id/message`) that
-// outran the proxy's retry budget while the upstream was still actively
-// computing — i.e. NOT the "sandbox is unreachable/dead" case portUnreachableResponse
-// describes. Conflating the two is actively misleading: it makes a healthy,
-// still-working sandbox look down, and it invites a naive caller to retry the
-// exact same (non-idempotent — it would resubmit the user's message) request
-// against a connection shape that can never fit it. 504 + a distinct machine
-// code let a caller branch on "this call structurally cannot block for that
-// long over this connection" and switch to `prompt_async` + the `/global/event`
-// SSE stream instead (what the web UI already does). No-store: a retry should
-// always re-evaluate the upstream, never replay a cached verdict.
-export function longTurnTimeoutResponse(origin: string): Response {
-  const headers = new Headers({
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store',
-  });
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-  }
-  return new Response(
-    JSON.stringify({
-      error:
-        'Turn is still running and outran this connection’s budget. Blocking POST /session/:id/message ' +
-        'cannot wait out a long reasoning/tool turn (the ALB idle-times a stalled connection); use ' +
-        'prompt_async and consume /global/event (SSE) instead of blocking on this endpoint.',
-      code: 'LONG_TURN_PROXY_TIMEOUT',
-    }),
-    { status: 504, headers },
-  );
-}
-
-// Rewrite an upstream redirect Location so the user stays on the preview.
-// `redirectPrefix` is the URL prefix that maps to this sandbox port:
-//   - subdomain previews (p{port}-{sandbox}.host):  '' (root-relative)
-//   - path-based previews (/v1/p/{sandbox}/{port}):  '/v1/p/{sandbox}/{port}'
-// App self-redirects (relative, or absolute to the upstream's own origin) are
-// kept on the preview. Genuinely external redirects (OAuth, CDNs, …) pass
-// through unchanged so the browser can follow them — we never hard-block, since
-// blocking turned ordinary app redirects into 502s.
-function sanitizeRedirectLocation(
-  previewUrl: string,
-  location: string | null,
-  redirectPrefix: string,
-): string | null {
-  if (!location) return null;
-  if (location.startsWith('/') && !location.startsWith('//')) {
-    return `${redirectPrefix}${location}`;
-  }
-  try {
-    const target = new URL(location, previewUrl);
-    const preview = new URL(previewUrl);
-    const selfHost = ['localhost', '127.0.0.1', '0.0.0.0'].includes(target.hostname);
-    if (target.origin === preview.origin || selfHost) {
-      return `${redirectPrefix}${target.pathname}${target.search}${target.hash}`;
-    }
-    return location;
-  } catch {
-    return null;
-  }
-}
-
-// True only when a fetch failure PROVES nothing reached the box: the upstream
-// actively refused the connection (nothing was ever accepted). Any other thrown
-// error — timeout, abort, connection reset mid-flight — is ambiguous: the
-// sandbox may already have received and accepted the prompt, so a re-send would
-// duplicate it. Used to gate the one safe prompt-delivery retry in the catch.
-function isConnectionRefusedError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as {
-    code?: unknown;
-    cause?: { code?: unknown };
-    message?: unknown;
-  };
-  const codes = [e.code, e.cause?.code].filter((c): c is string => typeof c === 'string');
-  if (codes.some((c) => c === 'ECONNREFUSED')) return true;
-  const message = typeof e.message === 'string' ? e.message : '';
-  return /econnrefused|connection refused|failed to connect|unable to connect/i.test(message);
-}
-
 /**
  * May this caller run the agent this prompt names? Response to refuse, or null.
  *
@@ -495,10 +209,6 @@ async function agentSwitchRefusal(
   origin?: string,
 ): Promise<Response | null> {
   const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-  // In-session agent switching is allowed, unconditionally. What remains is an
-  // AUTHORIZATION question, not an immutability one: may THIS caller run THAT
-  // agent? The grant the switched-to agent runs under is re-scoped separately
-  // (env sync + token re-mint) before the prompt is forwarded.
   if (!isConcreteAgentSwitch(requestedAgent, sessionAgent)) return null;
   const switchedToAgent = requestedAgent as string;
   if (!userId) {
@@ -544,24 +254,10 @@ async function agentSwitchRefusal(
   );
 }
 
-// A prompt's explicit `agent` only constitutes a prohibited switch when it would
-// run a DIFFERENT *concrete* agent than the one this session's connector token was
-// minted for. That — and only that — is the escalation the policy prevents. The sentinel 'default'
-// is non-binding on EITHER side: a session stored as 'default' has no privileged
-// agent-specific grant to inherit, and a prompt asking for 'default' just means
-// "this session's own default agent".
-//
-// This predicate does NOT refuse the switch. It used to gate a 409; it now gates
-// only the 403 authz check in `agentSwitchRefusal`.
-//
-// The sentinel 'default' is non-binding on EITHER side: a session stored as
-// 'default' has no privileged agent-specific grant to inherit, and a prompt
-// asking for 'default' just means "this session's own default agent".
-//
-// Without that carve-out, the client's perfectly ordinary behaviour read as a
-// switch: it resolves "the default" to a concrete name (e.g. `kortix`) for
-// display and echoes it back on follow-up turns — and a first-turn race can send
-// that name before the session's bound agent has even loaded.
+// A concrete agent different from the session's own is a SWITCH: authorize it
+// exactly like the legacy `default` path below. The legacy `default` sentinel
+// is non-binding: clients can echo a resolved default before the session's
+// agent has loaded, so that path still requires agent authorization.
 function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
   if (!requestedAgent) return false;
   // Asking for the sentinel is asking for "this session's own agent" — never a
@@ -587,13 +283,14 @@ function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: stri
 
 // The REAL collaborators for the pre-prompt turn-start block. Built HERE, not in
 // ../pre-prompt-env-sync.ts: this file is re-evaluated by every proxy suite
-// under its own `mock.module` stubs, so binding the four modules here is what
+// under its own `mock.module` stubs, so binding the five modules here is what
 // keeps those stubs effective. Binding them in the extracted module instead
 // would cache the real ones for the whole process the first time any test
 // touched it.
 const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
   syncEnv: syncSandboxEnvForPrompt,
   remintGrant: remintGrantForAgentSwitch,
+  bindTurnIdentity: bindSessionTurnIdentity,
   scheduleSnapshot: scheduleOpencodeSnapshotSync,
   generateTitle: generateSessionTitleFromFirstPrompt,
 };
@@ -625,6 +322,11 @@ export type PreviewProxyAccess =
        *  design exists to delete. REQUIRED, same reasoning as callerSessionId:
        *  a new entry point must not be able to omit it and fail open. */
       sandboxAuthored: boolean;
+      /** `userId` is a person starting turns directly through this proxy: a
+       *  turn start binds the session token to them (`bindSessionTurnIdentity`).
+       *  Set only by the direct client routes. Absent = keep the token's
+       *  identity (server-side delivery binds in `continueSession`). */
+      bindTurnIdentity?: boolean;
     }
   | { kind: 'public_share' };
 
@@ -740,9 +442,27 @@ export function isProxiedBaseReset(
   if (!carriesSessionData(upstreamPort)) return false;
   // Strip the in-box `/proxy/{port}` prefix, as the connector gate does — a
   // request that reaches the daemon that way is the same request.
-  const path = remainingPath.replace(/^\/proxy\/\d+(?=\/)/, '');
+  const path = stripInBoxProxyPrefix(remainingPath);
   if (!/^\/kortix\/refresh(?:$|[/?#])/.test(path)) return false;
   return new URLSearchParams(queryString).get('base') === '1';
+}
+
+/**
+ * The daemon's 503 while the session runtime cannot take a request: it names
+ * its boot phase in `X-Kortix-Boot-Phase` and answers `code: runtime_not_ready`
+ * (both harnesses).
+ */
+function isDaemonRuntimeNotReady(headers: Headers, bodyText: string): boolean {
+  if (headers.has(BOOT_PHASE_HEADER)) return true;
+  try {
+    if ((JSON.parse(bodyText) as { code?: unknown }).code === RUNTIME_NOT_READY_CODE) return true;
+  } catch {
+    // not JSON
+  }
+  // legacy: a daemon built before the code and the header sends only this
+  // text (pi and OpenCode's boot steps, then OpenCode's process gate). Delete
+  // once no box runs such a daemon.
+  return /sandbox runtime not ready|opencode not ready/.test(bodyText);
 }
 
 export async function forwardToSandbox(
@@ -769,7 +489,13 @@ export async function forwardToSandbox(
   // alone on that origin. Two things become both safe and necessary there —
   // forwarding the app's cookies (see appCookieHeader) and leaving same-origin
   // responses free of injected CORS headers.
-  opts: { originMode?: boolean } = {},
+  //
+  // `record`: the sandbox row, when the caller read it moments ago: the
+  // server-side prompt delivery (the active box it just picked as its target)
+  // and the HTTP route (the row read while this request authenticated). The
+  // turn-begin write below re-checks the box's status in the database, so a
+  // row that went stale in between cannot deliver a turn.
+  opts: { originMode?: boolean; record?: SandboxRecord } = {},
 ): Promise<Response> {
   let requestBody = body;
 
@@ -777,7 +503,7 @@ export async function forwardToSandbox(
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
   const ptl = new ProvisionTimeline(sandboxId, 'proxy');
-  let record = await loadSandbox(sandboxId);
+  let record = opts.record?.externalId === sandboxId ? opts.record : await loadSandbox(sandboxId);
   ptl.mark('load-sandbox');
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
@@ -789,7 +515,11 @@ export async function forwardToSandbox(
     access.kind === 'principal' ? access.boundCredentialSessionId : null;
   if (
     access.kind === 'principal' &&
-    !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
+    !(await canAccessPreviewSandbox({
+      previewSandboxId: sandboxId,
+      userId,
+      sandbox: { sandboxId: record.sandboxId, accountId: record.accountId, projectId: record.projectId },
+    }))
   ) {
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
@@ -1090,8 +820,9 @@ export async function forwardToSandbox(
     // map is missing the ONE model this turn asks for. AWAITED — unlike the
     // asset lane just above — because the alternative is `Model not found:
     // kortix/<id>` while the control plane serves that model the whole time
-    // (2026-09-26). Skips instantly (no memo read, no network call) for
-    // every non-managed-model request — see `requestedPromptManagedModelId`.
+    // (2026-09-26). Any provider: a `codex/…` or BYOK id the box's image
+    // catalog predates fails the same way (2026-10-01, codex/gpt-6.1-sol).
+    // A model the box already confirmed costs one in-process map read.
     const modelCatalog = await modelCatalogPromise;
     ptl.mark('model-catalog-converge');
     if (modelCatalog.decision !== 'skipped' && modelCatalog.decision !== 'current') {
@@ -1255,7 +986,8 @@ export async function forwardToSandbox(
   // on the daemon port — `/file/import` elsewhere is the user's own route.
   const uploadDelivery =
     isUploadRequest({ method, path: remainingPath }) ||
-    isFileImportRequest({ method, path: remainingPath, port: upstreamPort });
+    isFileImportRequest({ method, path: remainingPath, port: upstreamPort }) ||
+    isEnvRpcRequest({ method, path: remainingPath, port: upstreamPort });
   // Requests whose body must never be sent twice.
   const nonReplayableWrite = promptDelivery || uploadDelivery;
   // False until this request reaches the non-idempotent upstream fetch.
@@ -1293,8 +1025,6 @@ export async function forwardToSandbox(
   // error status and therefore never invalidated anything — still costs the
   // next connect its cache entry, so it re-resolves instead of re-dialling the
   // same dead address for the rest of the 5-minute TTL. See `sse-stall.ts`.
-  /** Set per attempt: did we hand the daemon the CLIENT's Accept-Encoding? */
-  let upstreamEncodingForwarded = false;
   const sseStallKey = `${sandboxId}:${port}`;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -1323,13 +1053,11 @@ export async function forwardToSandbox(
 
       if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
-        // The agent-lock 409 and the project.agent.read 403 used to live here.
-        // They now run in `agentSwitchRefusal`, above the dedupe claim and above
-        // the connector gate — see that function for why both moves matter.
-        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
-        // `default_agent` (the real default the session booted with). A *concrete*
-        // requested agent is forwarded untouched so the user can switch agents
-        // within a session.
+        // Authorization runs before the dedupe claim. Drop only the legacy
+        // 'default' sentinel so OpenCode resolves its own `default_agent` (the
+        // real default the session booted with). A *concrete* requested agent
+        // stays on the authorized switch path: the caller's grant decides, and
+        // the pre-prompt env sync re-scopes box and token to that agent.
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }
@@ -1344,6 +1072,7 @@ export async function forwardToSandbox(
             providerHeaders: ingress.headers,
             serviceKey,
             requestedAgent,
+            bindTurnIdentity: access.kind === 'principal' && access.bindTurnIdentity === true,
             body: requestBody,
             incomingHeaders,
           },
@@ -1449,8 +1178,7 @@ export async function forwardToSandbox(
         if (STRIP_FORWARD_HEADERS.has(name)) continue;
         headers.set(key, value);
       }
-      upstreamEncodingForwarded = forwardsClientEncoding(port, remainingPath);
-      if (upstreamEncodingForwarded) {
+      if (forwardsClientEncoding(port, remainingPath)) {
         // Pass the caller's own negotiation through, so the daemon can gzip and
         // the compressed bytes reach the client untouched (the API's compress
         // middleware passes a body that already carries `content-encoding`).
@@ -1633,11 +1361,11 @@ export async function forwardToSandbox(
           .clone()
           .text()
           .catch(() => '');
-        if (bodyText.includes('opencode not ready')) {
+        if (isDaemonRuntimeNotReady(upstream.headers, bodyText)) {
           void markSandboxUsed(sandboxId);
-          // opencode explicitly rejected the request as not-ready, so it did NOT
+          // The daemon rejected the request as not-ready, so the runtime did NOT
           // enqueue the prompt. Release the dedupe claim so the client's retry
-          // (once opencode is up) actually delivers instead of short-circuiting
+          // (once the runtime is up) actually delivers instead of short-circuiting
           // to a bogus 200 "duplicate" that would drop the message.
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
           await abandonTurnLifecycle();
@@ -1670,6 +1398,7 @@ export async function forwardToSandbox(
         // programmatic clients still get the real status + JSON via passthrough.
         if (!nonReplayableWrite && isBrowserNavigation(incomingHeaders)) {
           void markSandboxUsed(sandboxId);
+          ptl.log({ path: remainingPath, port, upstream_status: upstream.status });
           return portUnreachableResponse({
             port,
             status: upstream.status,
@@ -1687,6 +1416,8 @@ export async function forwardToSandbox(
 
       if (upstream.status === 400) {
         const bodyText = await upstream.text();
+        // legacy allowlist: Daytona's edge marks a stopped or archived box only
+        // with this 400 text, no code. Delete when Daytona types the answer.
         const isSandboxDown =
           bodyText.includes('no IP address found') ||
           bodyText.includes('failed to get runner info');
@@ -1835,7 +1566,7 @@ export async function forwardToSandbox(
 
       // The transcript list leaves the API WITHOUT its attachment bytes.
       //
-      // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
+      // The daemon strips these too (kortix-sandbox-agent-server/src/app/server.ts)
       // and that is the right home. This second pass exists for every sandbox
       // still running an older daemon image — a self-host does not rebuild
       // its templates on our schedule, and the read that motivated this
@@ -1843,15 +1574,12 @@ export async function forwardToSandbox(
       // forever) was on exactly such a box. Idempotent by construction: a
       // reference is not a `data:` url, so a list the daemon already stripped
       // passes through with zero work.
-      const listMatch =
-        method === 'GET' && upstream.ok
-          ? /^\/session\/([^/]+)\/message\/?$/.exec(remainingPath)
-          : null;
+      const listRequest = upstream.ok ? classifyRuntimeRequest(method, remainingPath) : null;
       if (
-        listMatch &&
+        listRequest?.kind === 'message-list' &&
         (upstream.headers.get('content-type') ?? '').includes('application/json')
       ) {
-        const sessionID = decodeURIComponent(listMatch[1] ?? '');
+        const sessionID = listRequest.runtimeSessionId;
         const text = await upstream.text();
         let body = text;
         try {
@@ -1895,30 +1623,13 @@ export async function forwardToSandbox(
         );
       }
 
-      // When we forwarded the client's `Accept-Encoding` (the
-      // `/kortix/opencode/*` namespace), the daemon answered gzipped and the
-      // ~1.4 s provider hop carried 0.9 KB instead of 8.7 KB — which is the
-      // entire point. But `fetch` DECODES a `Content-Encoding` body per the
-      // WHATWG spec while leaving the header and the compressed
-      // `Content-Length` on the response object. Measured on Bun 1.3:
-      // 55 compressed bytes on the wire, `content-encoding: gzip`,
-      // `content-length: 55`, and 4,012 DECOMPRESSED bytes out of
-      // `arrayBuffer()`. Forwarding those two headers with a decoded body is a
-      // response no client can read, so both go. The API's own compress
-      // middleware then re-compresses for the API->client hop; the two hops
-      // negotiate independently, and the expensive one is the one that shrank.
-      if (upstreamEncodingForwarded && respHeaders.has('content-encoding')) {
-        respHeaders.set('x-kortix-upstream-encoding', respHeaders.get('content-encoding')!);
-        respHeaders.delete('content-encoding');
-        respHeaders.delete('content-length');
-        const exposedEncoding = respHeaders.get('Access-Control-Expose-Headers');
-        respHeaders.set(
-          'Access-Control-Expose-Headers',
-          exposedEncoding
-            ? `${exposedEncoding}, x-kortix-upstream-encoding`
-            : 'x-kortix-upstream-encoding',
-        );
-      }
+      // When we forwarded the client's `Accept-Encoding` (the `/kortix/runtime/*`
+      // namespace), the daemon answered gzipped and the provider hop carried
+      // 0.9 KB instead of 8.7 KB. The upstream fetch runs with
+      // `decompress: false`, so `upstream.body` is those raw compressed bytes:
+      // the daemon's `content-encoding` and `content-length` describe them and
+      // go to the client untouched. The API's compress middleware skips a body
+      // that is already encoded (preview-encoding-passthrough.test.ts).
 
       return new Response(upstream.body, {
         status: upstream.status,
@@ -2003,6 +1714,10 @@ export async function forwardToSandbox(
   }
   if (promptDeliveryMaybeAccepted) await acceptTurnLifecycle();
   else await abandonTurnLifecycle();
+  // A give-up says the box was unreachable, not where the wall time went. The
+  // stage deltas are the attribution; a prompt delivery already logs this
+  // summary (KRTX-471).
+  ptl.log({ path: remainingPath, port, hop: lastAttemptHop });
   return portUnreachableResponse({
     port,
     status: 502,
@@ -2231,6 +1946,9 @@ preview.all('/:sandboxId/:port/*', async (c) => {
       // sandbox-authored: no turn-start extend, no preview-use extend, and no
       // auto-resume of a parked box from the UI.
       sandboxAuthored: isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c)),
+      // A person (JWT or personal token) starting a turn here: neither the
+      // sandbox key nor a credential bound to an agent session.
+      bindTurnIdentity: !isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c)),
     },
     method,
     remainingPath,
@@ -2240,6 +1958,8 @@ preview.all('/:sandboxId/:port/*', async (c) => {
     origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
+    // The row the proxy app started reading while auth ran (index.ts).
+    { record: await takePrefetchedSandbox(c, sandboxId) },
   );
 });
 

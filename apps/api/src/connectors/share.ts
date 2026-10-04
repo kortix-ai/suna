@@ -273,6 +273,16 @@ export function isTriggerCreatedSessionMetadata(metadata: unknown): boolean {
 }
 
 /**
+ * A trigger's run: the session the trigger created, or a worker that session
+ * spawned (`initiator_type = 'trigger'` is server-derived and copied from the
+ * parent at create, see projects/lib/session-initiator.ts). Managers who may
+ * read the coordinator may read its workers.
+ */
+export function isTriggerRunSession(session: { metadata: unknown; initiatorType?: string | null }): boolean {
+  return session.initiatorType === 'trigger' || isTriggerCreatedSessionMetadata(session.metadata);
+}
+
+/**
  * Project-session content visibility. Project managers can open sessions that
  * triggers created. Ordinary private human sessions remain owner-only. The
  * backend sibling-session gate runs first and cannot be bypassed.
@@ -285,6 +295,8 @@ export function isProjectSessionVisibleTo(
   ownership: SessionOwnershipContext,
   context: {
     metadata: unknown;
+    /** `project_sessions.initiator_type`; see isTriggerRunSession. */
+    initiatorType?: string | null;
     canManageProject: boolean;
     /**
      * The account's "admins can open every session" policy, already resolved
@@ -312,7 +324,7 @@ export function isProjectSessionVisibleTo(
   if (
     ownership.boundCredentialSessionId === null &&
     context.canManageProject &&
-    isTriggerCreatedSessionMetadata(context.metadata)
+    isTriggerRunSession(context)
   ) {
     return true;
   }

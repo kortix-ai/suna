@@ -33,7 +33,11 @@ export interface SavedCopyStoreOptions {
   maxSessions?: number;
   /** Upper bound of all copies together, in UTF-16 code units. Default: 1,500,000. */
   maxBytes?: number;
-  /** A copy larger than this is not kept. Default: 300,000. */
+  /**
+   * Upper bound of one session's copy, in UTF-16 code units. A larger copy
+   * keeps its newest messages that fit and pages the rest from the server;
+   * one whose newest message alone does not fit is not kept. Default: 300,000.
+   */
   maxEnvelopeBytes?: number;
   /** A copy older than this is not painted. Default: 14 days. */
   maxAgeMs?: number;
@@ -71,8 +75,8 @@ export function isPaintableSavedCopy(
     envelope.source === 'mirror' &&
     Array.isArray(envelope.messages) &&
     envelope.messages.length > 0 &&
-    typeof envelope.opencode_session_id === 'string' &&
-    envelope.opencode_session_id.length > 0
+    // A copy saved by an SDK before W4 names the root only `opencode_session_id`.
+    !!(envelope.runtime_session_id ?? envelope.opencode_session_id)
   );
 }
 
@@ -110,6 +114,51 @@ function isPromise<T>(value: unknown): value is Promise<T> {
 /** Apply `fn` now when `value` is ready, else when it resolves. */
 function then<T, R>(value: MaybePromise<T>, fn: (resolved: T) => R): MaybePromise<R> {
   return isPromise<T>(value) ? value.then(fn) : fn(value);
+}
+
+/**
+ * The serialized copy to keep within `maxChars`: the whole copy when it fits,
+ * else its NEWEST messages that fit, with the cursor moved to the oldest one
+ * kept (the server serves the window strictly older than the cursor). Null
+ * when not even the newest message fits.
+ *
+ * Copies carry every tool call 1:1, so a 40-message window of a tool-heavy
+ * thread outgrows the bound. The newest messages are what the first frame
+ * shows; refusing the whole copy gave exactly those sessions a cold open.
+ */
+function fitSavedCopy(stored: StoredCopy, maxChars: number): string | null {
+  const whole = JSON.stringify(stored);
+  if (whole.length <= maxChars) return whole;
+  const { messages } = stored.e;
+  if (messages.length === 0) return null;
+  const trimmed = (keep: number): string => {
+    const kept = messages.slice(messages.length - keep);
+    return JSON.stringify({
+      ...stored,
+      e: {
+        ...stored.e,
+        messages: kept,
+        message_count: kept.length,
+        complete: false,
+        next_cursor: String(kept[0].info.id),
+      },
+    });
+  };
+  // Count what fits from the newest message back, then confirm on the real
+  // text: the cursor and count fields change length with the cut.
+  let size = trimmed(1).length - JSON.stringify(messages[messages.length - 1]).length;
+  let keep = 0;
+  while (keep < messages.length) {
+    const next = JSON.stringify(messages[messages.length - 1 - keep]).length + (keep > 0 ? 1 : 0);
+    if (size + next > maxChars) break;
+    size += next;
+    keep += 1;
+  }
+  for (; keep > 0; keep -= 1) {
+    const text = trimmed(keep);
+    if (text.length <= maxChars) return text;
+  }
+  return null;
 }
 
 function capturedAtMs(envelope: SessionTranscriptSyncEnvelope): number {
@@ -252,8 +301,8 @@ export function createSavedCopyStore(options: SavedCopyStoreOptions): SavedCopyS
       const scope = `${projectId}/${sessionId}`;
       if (!isPaintableSavedCopy(envelope)) return forgetScope(scope);
       const stored: StoredCopy = { v: VERSION, user: userId, at: now(), e: envelope };
-      const text = JSON.stringify(stored);
-      if (text.length > maxEnvelopeBytes) return forgetScope(scope);
+      const text = fitSavedCopy(stored, maxEnvelopeBytes);
+      if (text === null) return forgetScope(scope);
       const captured = capturedAtMs(envelope);
       return enqueue(async () => {
         const entries = await loadIndex();

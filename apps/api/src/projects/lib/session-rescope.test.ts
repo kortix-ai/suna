@@ -2,8 +2,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
-import { rescopeSessionBindings, rescopeSessionSecrets,
-  type RescopeSecretsResult } from './session-rescope';
+import {
+  rescopeSessionBindings,
+  rescopeSessionSecrets,
+  type RescopeSecretsResult,
+} from './session-rescope';
 
 describe('rescopeSessionSecrets — SET semantics', () => {
   test('the requested list REPLACES the previous one', () => {
@@ -22,7 +25,11 @@ describe('rescopeSessionSecrets — SET semantics', () => {
   });
 
   test('it is a REPLACE, not an append — omitting a name drops it', () => {
-    const result = rescopeSessionSecrets({ current: ['a', 'b'], requested: ['c'], agentGrantEnv: 'all' });
+    const result = rescopeSessionSecrets({
+      current: ['a', 'b'],
+      requested: ['c'],
+      agentGrantEnv: 'all',
+    });
     expect(result.ok && result.allowlist).toEqual(['c']);
     expect(result.ok && result.dropped).toEqual(['a', 'b']);
   });
@@ -85,9 +92,9 @@ describe('rescopeSessionSecrets — SET semantics', () => {
   });
 
   test('an unrestricted grant imposes no ceiling', () => {
-    expect(rescopeSessionSecrets({ current: null, requested: ['x'], agentGrantEnv: undefined }).ok).toBe(
-      true,
-    );
+    expect(
+      rescopeSessionSecrets({ current: null, requested: ['x'], agentGrantEnv: undefined }).ok,
+    ).toBe(true);
   });
 });
 
@@ -183,7 +190,10 @@ describe('the docs match the contract', () => {
         const alsoNamesFrozenOnes = /runtime_context/.test(line);
         expect({ path, line: line.trim().slice(0, 100) }).toMatchObject({
           path,
-          line: aboutMovableFields && !alsoNamesFrozenOnes ? '<<must not claim frozen>>' : line.trim().slice(0, 100),
+          line:
+            aboutMovableFields && !alsoNamesFrozenOnes
+              ? '<<must not claim frozen>>'
+              : line.trim().slice(0, 100),
         });
       }
     }
@@ -236,9 +246,7 @@ describe('rescopeSessionSecrets — narrowing away from an unrestricted session'
   });
 
   test("null → subset of an 'all' grant is narrowed even though the names are unknowable", () => {
-    const r = ok(
-      rescopeSessionSecrets({ current: null, requested: ['A'], agentGrantEnv: 'all' }),
-    );
+    const r = ok(rescopeSessionSecrets({ current: null, requested: ['A'], agentGrantEnv: 'all' }));
     expect(r.narrowed).toBe(true);
     expect(r.dropped).toEqual([]);
   });
@@ -295,11 +303,14 @@ describe('rescopeSessionSecrets — narrowing away from an unrestricted session'
  * warning is emitted by the route, and it was keyed on `droppedSecrets.length`.
  * That is the same shape of bug as a component wired to a value nobody
  * populates: right logic, wrong plumbing, confident wrong output.
+ *
+ * The route's decision code now lives beside it in session-scope-decide.ts
+ * (moved verbatim, no behavior change), so the pin reads both files: whichever
+ * of the two carries a pinned line satisfies it.
  */
-const ROUTE = readFileSync(
-  join(import.meta.dir, '..', 'routes', 'session-scope.ts'),
-  'utf8',
-);
+const ROUTE =
+  readFileSync(join(import.meta.dir, '..', 'routes', 'session-scope.ts'), 'utf8') +
+  readFileSync(join(import.meta.dir, '..', 'routes', 'session-scope-decide.ts'), 'utf8');
 
 describe('the scope route surfaces the narrowing', () => {
   test('retroactive and the warning key off `narrowed`, not the dropped names', () => {
@@ -337,7 +348,10 @@ describe('the scope route validates for the session OWNER, not the caller', () =
     // still the SESSION, never the caller.
     expect(ROUTE).toContain('const secretsPrincipal = await resolveSessionPersonalOwner(');
     expect(ROUTE).toContain('legacyUserId: visible.row.createdBy ?? loaded.userId');
-    expect(ROUTE).toContain('listResolvedProjectSecrets(projectId, secretsPrincipal)');
+    // The third argument is the session's audience subject (secret-audience.ts)
+    // — also the SESSION's, never the caller's.
+    expect(ROUTE).toContain('listResolvedProjectSecrets(projectId, secretsPrincipal, sessionAudience)');
+    expect(ROUTE).toContain('sessionId: visible.row.sessionId');
   });
 
   test('it no longer resolves availability against the caller', () => {

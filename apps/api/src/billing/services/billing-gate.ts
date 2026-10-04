@@ -12,6 +12,7 @@ import {
 import { ensureFreeTierAccountReady } from './free-tier';
 import { type BillingModel, MINIMUM_CREDIT_FOR_RUN, isPerSeatAccount } from './tiers';
 import { wallet } from '../wallet';
+import { debitAndCheckAutoTopup } from './wallet-debits';
 
 type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
 
@@ -96,8 +97,7 @@ export class BillingGateError extends HTTPException {
 }
 
 async function resolveAdmissionState(accountId: string) {
-  await ensureFreeTierAccountReady(accountId);
-  const account = await getCreditAccount(accountId);
+  const account = (await ensureFreeTierAccountReady(accountId)) ?? (await getCreditAccount(accountId));
   const snapshot = billingSnapshotFromAccount(account);
   const state = resolveBillingState(snapshot);
   const billingModel: BillingModel = isPerSeatAccount(snapshot.billingModel)
@@ -185,7 +185,7 @@ export async function checkBillingActive(
   // an overdrawn account). See RELIABILITY-BACKLOG item 2 / PR description
   // for the full reservation system this is a pragmatic slice of.
   try {
-    await wallet.debit({
+    await debitAndCheckAutoTopup({
       accountId,
       amount: MINIMUM_CREDIT_FOR_RUN,
       description: 'LLM gateway admission hold',

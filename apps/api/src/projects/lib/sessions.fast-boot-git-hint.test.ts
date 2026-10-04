@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 async function sessionsSource(): Promise<string> {
-  return Bun.file(new URL('./sessions.ts', import.meta.url)).text();
+  return Bun.file(new URL('./session-create.ts', import.meta.url)).text();
 }
 
 async function monitorBoxProvisionSource(): Promise<string> {
@@ -38,7 +38,7 @@ describe('session fast boot Git hint cache', () => {
       sessionsSource(),
       Bun.file(new URL('./session-runtime-allocator.ts', import.meta.url)).text(),
       Bun.file(new URL('../session-lifecycle/actions.ts', import.meta.url)).text(),
-      Bun.file(new URL('../routes/shared.ts', import.meta.url)).text(),
+      Bun.file(new URL('../routes/session-open-provision.ts', import.meta.url)).text(),
       Bun.file(new URL('../../platform/services/session-sandbox.ts', import.meta.url)).text(),
     ]);
 
