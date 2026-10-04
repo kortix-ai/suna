@@ -27,17 +27,50 @@ interface ProjectContextOpts {
 }
 
 /**
+ * The auth (and the host name whose credentials serve it) for project-scoped
+ * commands: `--host` → the cwd link's host (its stored credentials are what
+ * reach a non-session project from inside a sandbox) → the injected env
+ * token → the active host. resolveProjectContext and the host notice both
+ * read this so the header never names credentials the command will not use.
+ */
+export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
+  hostName?: string;
+  auth: Auth | null;
+} {
+  const link = opts.hostArg ? null : loadLink();
+  let hostName = opts.hostArg ?? link?.host ?? undefined;
+  let auth = hostName ? loadAuthForHost(hostName) : loadAuth();
+  // A link naming a host with no stored credentials must not dead-end the CLI
+  // inside a sandbox: the injected env token stays the fallback there.
+  if (!auth?.token && !opts.hostArg && hasEnvTokenHost()) {
+    auth = loadAuth();
+    hostName = undefined;
+  }
+  return { hostName, auth };
+}
+
+/**
  * Common setup for any project-scoped command: validate auth, resolve a
  * project id, build an API client. Prints a friendly error and returns
  * null if either piece is missing.
  *
  * Host resolution order:
  *   1. --host flag (per-invocation override)
- *   2. KORTIX_TOKEN (platform-injected sandbox
- *      auth — resolved through `loadAuth()`; a committed link host has no
- *      credentials inside a sandbox, so the env token must win)
- *   3. .kortix/link.json's `host` field (per-repo binding)
+ *   2. .kortix/link.json's `host` field (per-directory binding — its stored
+ *      credentials are what make a NON-session project reachable from inside
+ *      a sandbox, where the injected token is scoped to the session's project)
+ *   3. KORTIX_TOKEN (platform-injected sandbox auth — the fallback when the
+ *      link names a host with no stored credentials, so the CLI never
+ *      dead-ends on "not logged in")
  *   4. globally active host (~/.config/kortix/config.json)
+ *
+ * Project id resolution order:
+ *   1. --project flag
+ *   2. .kortix/link.json in cwd (the most specific binding — it outranks the
+ *      session env so a linked clone reaches its own project; the host notice
+ *      already displays it as "linked", so behavior must match)
+ *   3. KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
+ *   4. the active host's global default project (`kortix projects use`)
  *
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
@@ -50,14 +83,7 @@ export async function resolveProjectContext(
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  // Resolve the host: explicit flag → sandbox env token → link.json's host → active.
-  let hostFromLink: string | undefined;
-  if (!opts.hostArg && !hasEnvTokenHost()) {
-    hostFromLink = loadLink()?.host ?? undefined;
-  }
-  const hostName = opts.hostArg ?? hostFromLink;
-
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
+  const { hostName, auth } = resolveProjectAuth({ hostArg: opts.hostArg });
   if (!auth?.token) {
     if (hostName) {
       const source = opts.hostArg ? '(--host)' : '(from .kortix/link.json)';
@@ -92,7 +118,12 @@ export async function resolveProjectContext(
       return null;
     }
   } else {
-    projectId = resolveProjectId(opts.projectArg);
+    // The directory link is the most specific project binding: it outranks
+    // the sandbox env's session project (KORTIX_PROJECT_ID) so a linked
+    // clone reaches ITS project. `resolveProjectId` (no arg) supplies the
+    // remaining env → host-default chain; its own link lookup returns null
+    // only when the one above did.
+    projectId = opts.projectArg ?? loadLink()?.project_id ?? resolveProjectId();
     if (!projectId) {
       // The always-bound invariant: recover by binding a default project right
       // here instead of dead-ending. (Inside a sandbox the env-token host
