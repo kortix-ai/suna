@@ -47,6 +47,7 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
@@ -176,6 +177,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+# The non-root sandbox user has passwordless sudo by design (sudoers above);
+# playwright --with-deps installs apt packages as root.
+# hadolint ignore=DL3004
 RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').agentBrowser)")" \
     && PLAYWRIGHT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').playwright)")" \
     && pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}" \
@@ -194,6 +198,8 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && chromium --version \
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
+# The opencode-kortix link lives in root-owned /usr/local/bin.
+# hadolint ignore=DL3004
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \

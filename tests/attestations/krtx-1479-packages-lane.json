@@ -1,0 +1,32 @@
+{
+  "source_hash": "ede7ba8744743434ef26e8e4a6b16103b831c55ff07418ffe256f1900236b1fa",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/web/src/components/markdown/markdown-frontmatter.test.ts",
+    "apps/web/src/features/session/message-parsing.test.ts",
+    "apps/web/src/features/session/reply-context.test.ts",
+    "apps/web/src/features/session/turn/channel-message.test.ts",
+    "apps/web/src/lib/utils/kortix-system-tags.test.ts",
+    "packages/agent-tunnel/package.json",
+    "packages/api-contract/package.json",
+    "packages/llm-catalog/package.json",
+    "packages/llm-gateway/package.json",
+    "packages/manifest-schema/package.json",
+    "packages/registry/package.json",
+    "packages/shared/package.json",
+    "packages/shared/src/tool-output/testing.test.ts",
+    "packages/shared/src/tool-output/testing.ts",
+    "packages/starter/package.json",
+    "tests/bin/package-quality.ts"
+  ],
+  "diff_hash": "bf7d1ae14b2e0f8ce0e78d2cc647647a8363af7c186a40352e25aef9a3201900",
+  "head": "e958369c31eaec9ade250e0411ab922948ec5b16",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T07:38:31.107Z"
+}

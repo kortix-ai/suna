@@ -48,6 +48,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
+import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
@@ -575,6 +576,14 @@ export function SecurityTab() {
     onError: (error: Error) => errorToast(error.message || t('signOutOtherDevicesFailed')),
   });
 
+  // Remove factor and sign-out-other-devices end a factor or sessions, so an
+  // aal1 session with a verified TOTP factor asks for the code first
+  // (KRTX-1386): requestMfaStepUp opens the global challenge dialog and runs
+  // the action once the code verifies. A verified session runs the action
+  // directly.
+  const runWithStepUp = (action: () => void) =>
+    requestMfaStepUp(mfa.challengeRequired, action);
+
   return (
     <SecurityTabView
       factors={mfa.factors}
@@ -585,7 +594,9 @@ export function SecurityTab() {
       removeFactorTarget={mfa.removeFactorTarget}
       onRequestRemoveFactor={mfa.setRemoveFactorTarget}
       onCancelRemoveFactor={() => mfa.setRemoveFactorTarget(null)}
-      onConfirmRemoveFactor={mfa.confirmRemoveFactor}
+      onConfirmRemoveFactor={() => {
+        if (mfa.removeFactorTarget) runWithStepUp(mfa.confirmRemoveFactor);
+      }}
       isRemovingFactor={mfa.isRemovingFactor}
       enrolling={mfa.enrolling}
       enrollCode={mfa.enrollCode}
@@ -599,7 +610,7 @@ export function SecurityTab() {
       devicesLoading={deviceQuery.isLoading}
       devicesError={deviceQuery.isError}
       onRetryDevices={() => deviceQuery.refetch()}
-      onSignOutOtherDevices={() => signOutOthers.mutate()}
+      onSignOutOtherDevices={() => runWithStepUp(() => signOutOthers.mutate())}
       isSigningOutOtherDevices={signOutOthers.isPending}
       copy={copy}
     />

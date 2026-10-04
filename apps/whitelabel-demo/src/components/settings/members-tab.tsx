@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
+import { qk } from '@/lib/query-keys';
 import { relativeTime } from '@/lib/utils';
 import type {
   PendingProjectInvite,
@@ -31,16 +32,41 @@ import { toast } from 'sonner';
 type Role = 'manager' | 'member';
 const ROLES: Role[] = ['manager', 'member'];
 
-export function MembersTab({ projectId }: { projectId: string }) {
+/**
+ * One access mutation: run it, invalidate the query keys that show its result,
+ * then say what happened. The seven actions below differ only in their call,
+ * their keys, and their copy.
+ */
+function useAccessAction<TVars>(
+  projectId: string,
+  options: {
+    run: (vars: TVars) => Promise<unknown>;
+    keys: readonly unknown[];
+    done: string;
+    failed: string;
+    onDone?: () => void;
+  },
+) {
   const qc = useQueryClient();
-  const base = ['project-access', projectId] as const;
-  const membersKey = base;
-  const requestsKey = [...base, 'requests'] as const;
-  const pendingKey = [...base, 'pending'] as const;
-  const grantsKey = [...base, 'grants'] as const;
+  return useMutation({
+    mutationFn: options.run,
+    onSuccess: () => {
+      options.onDone?.();
+      qc.invalidateQueries({ queryKey: options.keys });
+      toast.success(options.done);
+    },
+    onError: () => toast.error(options.failed),
+  });
+}
+
+export function MembersTab({ projectId }: { projectId: string }) {
+  const accessKey = qk.access(projectId);
+  const requestsKey = [...accessKey, 'requests'] as const;
+  const pendingKey = [...accessKey, 'pending'] as const;
+  const grantsKey = [...accessKey, 'grants'] as const;
 
   const access = useQuery({
-    queryKey: membersKey,
+    queryKey: accessKey,
     queryFn: () => kortix.project(projectId).access.list(),
   });
   const requests = useQuery({
@@ -59,72 +85,54 @@ export function MembersTab({ projectId }: { projectId: string }) {
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('member');
 
-  const invite = useMutation({
-    mutationFn: () => kortix.project(projectId).access.invite(email.trim(), inviteRole),
-    onSuccess: () => {
-      setEmail('');
-      qc.invalidateQueries({ queryKey: membersKey });
-      qc.invalidateQueries({ queryKey: pendingKey });
-      toast.success('Invitation sent');
-    },
-    onError: () => toast.error('Could not invite'),
+  const invite = useAccessAction<void>(projectId, {
+    run: () => kortix.project(projectId).access.invite(email.trim(), inviteRole),
+    keys: [accessKey, pendingKey],
+    done: 'Invitation sent',
+    failed: 'Could not invite',
+    onDone: () => setEmail(''),
   });
 
-  const updateRole = useMutation({
-    mutationFn: (v: { userId: string; role: Role }) =>
-      kortix.project(projectId).access.update(v.userId, v.role),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: membersKey });
-      toast.success('Role updated');
-    },
-    onError: () => toast.error('Could not update role'),
+  const updateRole = useAccessAction<{ userId: string; role: Role }>(projectId, {
+    run: (v) => kortix.project(projectId).access.update(v.userId, v.role),
+    keys: accessKey,
+    done: 'Role updated',
+    failed: 'Could not update role',
   });
 
-  const revoke = useMutation({
-    mutationFn: (userId: string) => kortix.project(projectId).access.revoke(userId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: membersKey });
-      toast.success('Access revoked');
-    },
-    onError: () => toast.error('Could not revoke'),
+  const revoke = useAccessAction<string>(projectId, {
+    run: (userId) => kortix.project(projectId).access.revoke(userId),
+    keys: accessKey,
+    done: 'Access revoked',
+    failed: 'Could not revoke',
   });
 
-  const approve = useMutation({
-    mutationFn: (requestId: string) =>
-      kortix.project(projectId).access.approveRequest(requestId, 'member'),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: requestsKey });
-      qc.invalidateQueries({ queryKey: membersKey });
-      toast.success('Request approved');
-    },
-    onError: () => toast.error('Could not approve'),
+  const approve = useAccessAction<string>(projectId, {
+    run: (requestId) => kortix.project(projectId).access.approveRequest(requestId, 'member'),
+    keys: [requestsKey, accessKey],
+    done: 'Request approved',
+    failed: 'Could not approve',
   });
 
-  const reject = useMutation({
-    mutationFn: (requestId: string) => kortix.project(projectId).access.rejectRequest(requestId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: requestsKey });
-      toast.success('Request rejected');
-    },
-    onError: () => toast.error('Could not reject'),
+  const reject = useAccessAction<string>(projectId, {
+    run: (requestId) => kortix.project(projectId).access.rejectRequest(requestId),
+    keys: requestsKey,
+    done: 'Request rejected',
+    failed: 'Could not reject',
   });
 
-  const resendInvite = useMutation({
-    mutationFn: (inviteId: string) => kortix.project(projectId).access.resendInvite(inviteId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: pendingKey });
-      toast.success('Invite resent');
-    },
-    onError: () => toast.error('Could not resend'),
+  const resendInvite = useAccessAction<string>(projectId, {
+    run: (inviteId) => kortix.project(projectId).access.resendInvite(inviteId),
+    keys: pendingKey,
+    done: 'Invite resent',
+    failed: 'Could not resend',
   });
 
-  const revokeInvite = useMutation({
-    mutationFn: (inviteId: string) => kortix.project(projectId).access.revokeInvite(inviteId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: pendingKey });
-      toast.success('Invite revoked');
-    },
-    onError: () => toast.error('Could not revoke invite'),
+  const revokeInvite = useAccessAction<string>(projectId, {
+    run: (inviteId) => kortix.project(projectId).access.revokeInvite(inviteId),
+    keys: pendingKey,
+    done: 'Invite revoked',
+    failed: 'Could not revoke invite',
   });
 
   const members: ProjectAccessMember[] = access.data?.members ?? [];

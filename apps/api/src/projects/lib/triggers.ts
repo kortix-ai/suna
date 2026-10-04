@@ -1,6 +1,6 @@
 export * from './trigger-webhook-auth';
 export {
-  globalForProjectTriggers, getTriggerSchedulerHealth, initialCatalogBackfillIncomplete,
+  globalForProjectTriggers, initialCatalogBackfillIncomplete,
   triggerFireTimeoutMs, connectorProjectConcurrency, connectorProjectTimeoutMs,
   manifestDiscoveryBatchSize, manifestCatalogBatchSize, withTimeout, mapWithConcurrency,
   isSweepStale, schedulerSweepIsStale, connectorSweepIntervalMs, triggerSchedulerIntervalMs,
