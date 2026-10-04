@@ -577,7 +577,7 @@
       "keepMyAccount": "Mantieni il mio account",
       "deleteDialogTitle": "Eliminare il tuo account?",
       "immediateWarning": "Questo elimina immediatamente il tuo account. Non esiste un periodo di grazia e non c'è modo di annullarlo.",
-      "gracePeriodWarning": "È prevista l'eliminazione del tuo account dopo un periodo di grazia di 30 giorni, durante il quale puoi annullare.",
+      "gracePeriodWarning": "L'eliminazione del tuo account verrà programmata dopo un periodo di grazia di 30 giorni, durante il quale puoi annullare.",
       "whenDeleted": "Quando il tuo account viene eliminato:",
       "agentsDeleted": "Ogni agente di tua proprietà viene eliminato",
       "threadsDeleted": "Ogni sessione e ogni messaggio vengono eliminati",

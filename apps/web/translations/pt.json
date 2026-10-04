@@ -577,7 +577,7 @@
       "keepMyAccount": "Manter minha conta",
       "deleteDialogTitle": "Excluir sua conta?",
       "immediateWarning": "Isso exclui sua conta imediatamente. Não há período de carência e não há como desfazê-lo.",
-      "gracePeriodWarning": "Sua conta está programada para exclusão após um período de carência de 30 dias, durante o qual você pode cancelar.",
+      "gracePeriodWarning": "Sua conta será programada para exclusão após um período de carência de 30 dias, durante o qual você pode cancelar.",
       "whenDeleted": "Quando sua conta for excluída:",
       "agentsDeleted": "Cada agente que você possui é excluído",
       "threadsDeleted": "Todas as sessões e mensagens são excluídas",
