@@ -834,6 +834,13 @@
       "when": 1791081225637,
       "tag": "20261004023345_chat_pending_auth_messages_project_index",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1791095727050,
+      "tag": "20261004063527_drop_oauth_clients_account_index",
+      "breakpoints": true
     }
   ]
 }
