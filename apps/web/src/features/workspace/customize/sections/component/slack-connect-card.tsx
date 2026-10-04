@@ -70,7 +70,7 @@ export function SlackConnectCard({
             from the panel; `BlogCover` brings its own gradient and grain, so a
             band behind it would just be a second background fighting the first.
             The panel's own `overflow-hidden rounded-md` clips the top corners —
-            the same full-bleed treatment `post-card.tsx` gives it. */}
+            the same full-bleed treatment the blog's post cards gave it. */}
         <div className="overflow-hidden border-b">
           <SlackConnectCover />
         </div>

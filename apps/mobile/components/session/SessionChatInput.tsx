@@ -198,7 +198,6 @@ function SessionChatInputImpl({
   const textRef = useRef(text);
   textRef.current = text;
   const inputRef = useRef<TextInput>(null);
-  const cursorRef = useRef(0);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -255,11 +254,11 @@ function SessionChatInputImpl({
 
   const handleTextChange = useCallback(
     (newText: string) => {
+      textRef.current = newText;
       setText(newText);
       onTextChange?.(newText);
-      cursorRef.current = newText.length;
-      mention.handleTextChange(newText, newText.length);
-      skill.handleTextChange(newText, newText.length);
+      mention.prune(newText);
+      skill.prune(newText);
 
       // Slash command detection (disabled while a command is staged)
       if (!stagedCommand) {
@@ -277,16 +276,16 @@ function SessionChatInputImpl({
 
   const handleSelectionChange = useCallback(
     (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
-      cursorRef.current = e.nativeEvent.selection.end;
+      mention.detect(textRef.current, e.nativeEvent.selection.end);
+      skill.detect(textRef.current, e.nativeEvent.selection.end);
     },
-    [],
+    [mention, skill],
   );
 
   const handleMentionSelect = useCallback(
     (item: MentionItem) => {
       const newText = mention.selectMention(item, text);
       setText(newText);
-      cursorRef.current = newText.length;
       setTimeout(() => inputRef.current?.focus(), 50);
     },
     [mention, text],
@@ -296,7 +295,6 @@ function SessionChatInputImpl({
     (item: MentionItem) => {
       const newText = skill.selectSkill(item, text);
       setText(newText);
-      cursorRef.current = newText.length;
       setTimeout(() => inputRef.current?.focus(), 50);
     },
     [skill, text],
@@ -537,7 +535,6 @@ function SessionChatInputImpl({
   const handleSelectSessionFile = useCallback(
     (file: SessionFile) => {
       const newText = addFileMention(sessionFileMentionLabel(file.path), textRef.current);
-      cursorRef.current = newText.length;
       setText(newText);
     },
     [addFileMention],
