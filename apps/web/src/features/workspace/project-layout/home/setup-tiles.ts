@@ -44,11 +44,9 @@ export type SetupTile = {
    * person can press and only then be told "forbidden" is worse than no
    * control at all.
    *
-   * Five of the six land inside the Customize surface, so they carry
-   * `project.customize.read` (the leaf the whole surface is gated on — see
-   * `project-sidebar/project-settings-nav.tsx`) PLUS the page's own read leaf,
-   * because a custom role can hold the surface and still have one capability
-   * deactivated. "Your team" is the exception: it leaves the project entirely
+   * Five of the six land inside the Customize surface, so each carries the
+   * read leaf of the page it opens — the same leaf that page's tab costs in
+   * `project-sidebar/project-settings-nav.tsx`. "Your team" is the exception: it leaves the project entirely
    * for the account hub's Access tab, which renders read-only for anyone who
    * can read the project's member list, so it gates on
    * `project.members.read` alone (see `components/iam/access-projects-tab.tsx`,
@@ -66,17 +64,17 @@ export const PROJECT_SETUP_TILES: SetupTile[] = [
   {
     key: 'connectors',
     section: 'connectors',
-    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
+    actions: [PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
   },
   {
     key: 'triggers',
     section: 'triggers',
-    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_TRIGGER_READ],
+    actions: [PROJECT_ACTIONS.PROJECT_TRIGGER_READ],
   },
   {
     key: 'skills',
     section: 'skills',
-    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_SKILL_READ],
+    actions: [PROJECT_ACTIONS.PROJECT_SKILL_READ],
   },
   {
     key: 'slack',
@@ -84,7 +82,7 @@ export const PROJECT_SETUP_TILES: SetupTile[] = [
     href: channelsHref,
     // Channels is a SCOPE of the Connectors page, so it asserts exactly what
     // the Connectors tile above asserts — same page, same leaves.
-    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
+    actions: [PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
   },
   {
     key: 'team',
@@ -106,7 +104,7 @@ export const PROJECT_SETUP_TILES: SetupTile[] = [
     // silently fall through to the Settings tab and land on its default
     // section instead of Agents.
     section: 'agent',
-    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_AGENT_READ],
+    actions: [PROJECT_ACTIONS.PROJECT_AGENT_READ],
   },
 ];
 

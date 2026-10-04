@@ -14,7 +14,7 @@ import { type ReactNode } from 'react';
 const RIVAL_ICONS = { Claude, OpenAI } as const;
 
 /** Anchors the product against the two things a reader already knows, with
- *  their marks, so "AI Management System" lands without a paragraph first. */
+ *  their marks, so "AI Operating System" lands without a paragraph first. */
 export function RivalEyebrow({
   content,
 }: {
