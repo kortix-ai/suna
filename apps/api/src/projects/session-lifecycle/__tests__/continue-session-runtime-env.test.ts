@@ -90,7 +90,7 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     events.push('prompt');
     return new Response(null, { status: 204 });

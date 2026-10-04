@@ -6,6 +6,14 @@ const API_SRC = resolve(import.meta.dir, '../..');
 const GENERIC_DATA_PATHS = [
   'sandbox-proxy/backend.ts',
   'sandbox-proxy/routes/preview.ts',
+  // The forwarder `routes/preview.ts` re-exports (R4.2).
+  'sandbox-proxy/forward/access.ts',
+  'sandbox-proxy/forward/forward-to-sandbox.ts',
+  'sandbox-proxy/forward/retry.ts',
+  'sandbox-proxy/forward/turn-start.ts',
+  'sandbox-proxy/forward/upstream.ts',
+  'sandbox-proxy/forward/wake.ts',
+  'sandbox-proxy/forward/ws-upstream.ts',
   'sandbox-proxy/routes/public-share.ts',
   'projects/lib/sandbox-daemon-ready.ts',
   // The env-sync implementation is split across sibling modules (KRTX-300);
