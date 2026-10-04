@@ -11,13 +11,12 @@
 -- credit_purchases, checkout_clicks, account_deletion_requests, credit_accounts
 -- and public_credit_usage clean, and this table still flagged.
 --
--- `public.audit_log` is a pre-baseline legacy table: the legacy drizzle snapshot
--- `packages/db/src/schema/legacy/0000_lame_wolfpack.sql` created it, the
--- monorepo baseline `20260621094136410_baseline.sql` does not, and no Kortix
--- code references it — the managed audit surface is `kortix.audit_events`.
--- The table is empty on the live database. A baseline-built database (local,
--- CI, self-host) never has it, so everything below is guarded: a database
--- without the table, or without one of these exact policies, is a no-op — the
+-- `public.audit_log` is a pre-baseline legacy table: the monorepo baseline
+-- `20260621094136410_baseline.sql` does not create it, no Kortix code
+-- references it, and it is empty on the live database — the managed audit
+-- surface is `kortix.audit_events`. A baseline-built database (local, CI,
+-- self-host) never has it, so everything below is guarded: a database without
+-- the table, or without one of these exact policies, is a no-op — the
 -- migration never creates a policy that was not already there.
 --
 -- The rewrite preserves each policy's identity and semantics — same name, role
