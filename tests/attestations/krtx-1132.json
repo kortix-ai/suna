@@ -1,0 +1,25 @@
+{
+  "source_hash": "2129dbb9310b150db622eefc3dff7cc09cf7151c5da50a676be53d04a161b625",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-iam-sso-sync.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/open-code-harness.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/migrations/20261003223000000_agent_templates_auth_initplan.sql",
+    "packages/db/scripts/agent-templates-rls-auth-initplan.integration.test.ts",
+    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts",
+    "tests/bin/local.ts",
+    "tests/bin/package-quality.ts",
+    "tests/src/core/runner-controls.ts",
+    "tests/unit/test-runner-contract.test.ts",
+    "tests/unit/vitest.config.ts"
+  ],
+  "diff_hash": "649107298dcfa9b033a8942942db33bc1733cda4fda5b5c779085aaae9a47411",
+  "head": "8436ad26dd703762ddd780276c636aac416df86e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T00:50:11.629Z"
+}
