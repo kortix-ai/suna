@@ -1,9 +1,16 @@
 {
-  "source_hash": "9fa256d3d7bf6ac01ffdba176cc637bbed815d27c7a5812073603ac892465b01",
+  "source_hash": "6780bc99432a1822c1367426812501b23021a952cc0e10e39915654f1388ebda",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
+    "apps/web/src/components/markdown/markdown-frontmatter.test.ts",
+    "apps/web/src/features/file-renderers/mermaid/mermaid-utils.test.ts",
+    "apps/web/src/features/session/message-parsing.test.ts",
+    "apps/web/src/features/session/reply-context.test.ts",
+    "apps/web/src/features/session/turn/channel-message.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "apps/web/src/lib/utils/kortix-system-tags.test.ts",
     "packages/agent-tunnel/package.json",
     "packages/api-contract/package.json",
     "packages/llm-catalog/package.json",
@@ -11,19 +18,18 @@
     "packages/manifest-schema/package.json",
     "packages/registry/package.json",
     "packages/shared/package.json",
-    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts",
     "packages/shared/src/tool-output/testing.test.ts",
     "packages/shared/src/tool-output/testing.ts",
     "packages/starter/package.json",
     "tests/bin/package-quality.ts"
   ],
-  "diff_hash": "06d574f541e770c22247741d1ac4fad33901dad744465f77e9dee62bf59b6f32",
-  "head": "1b66d99f3f3fd35decdd91bd5b6e753ce1149d37",
+  "diff_hash": "34d19cf2782af75e5b52df7a75eadd5a5edb88a19af9a3ebff227e5d40277ab2",
+  "head": "89ed304b656b8fb028db1cd16ce68cb4ec6748d1",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T23:05:44.380Z"
+  "at": "2026-10-04T00:58:32.174Z"
 }
