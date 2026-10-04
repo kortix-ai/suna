@@ -17,7 +17,7 @@ import {
 import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
-import { loadProjectConfig } from '../git';
+import { loadProjectConfig, refreshMirror } from '../git';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   encryptProjectSecret,
@@ -171,7 +171,15 @@ projectsApp.openapi(
   try {
     const gitRow = await withProjectGitAuth(loaded.row);
     stages.git_auth = Math.round(performance.now() - started);
-    const projectConfig = await loadProjectConfig(gitRow, []);
+    // This route reads manifest METADATA (env key names, agent grants) and must
+    // always answer inside the 25 s request deadline. A cold clone can take
+    // minutes (measured on prod: 3 clone attempts at the 90 s bare-clone
+    // timeout per mirror touch, 2 touches, ~542 s per request after the
+    // over-budget mirror reaper evicted the pod's mirror — KRTX-819), so the
+    // read serves the mirror the pod already has and the refresh runs behind
+    // the response instead: the next read sees it.
+    void refreshMirror(gitRow).catch(() => {});
+    const projectConfig = await loadProjectConfig(gitRow, [], { warmOnly: true });
     required = projectConfig?.env?.required ?? [];
     optional = projectConfig?.env?.optional ?? [];
     manifestStatus = projectConfig?.manifest_raw ? 'loaded' : 'missing';

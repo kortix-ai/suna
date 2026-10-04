@@ -18,11 +18,16 @@ import {
 import { type LoadedAgents, extractAgents } from '../agents';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
+import { existingProjectMirrorPath } from './mirror';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
-async function optionalFile(project: GitBackedProject, filePath: string) {
+async function optionalFile(
+  project: GitBackedProject,
+  filePath: string,
+  opts?: { warmOnly?: boolean },
+) {
   try {
-    return await readRepoFile(project, filePath, project.defaultBranch);
+    return await readRepoFile(project, filePath, project.defaultBranch, opts);
   } catch {
     return null;
   }
@@ -230,12 +235,17 @@ async function resolveProjectManifest(
   project: GitBackedProject,
   candidatePaths: string[],
   files?: ProjectFileEntry[],
+  opts?: { warmOnly?: boolean },
 ): Promise<ResolvedProjectManifest> {
-  const repoFiles = files ?? (await listRepoFiles(project, project.defaultBranch));
+  // A warm-only read never lists the repo (listRepoFiles refreshes the mirror
+  // inline): the caller passes the file list it already holds, else empty.
+  const repoFiles = files ?? (opts?.warmOnly ? [] : await listRepoFiles(project, project.defaultBranch));
   // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
   // the matched format. Without this, a yaml-only project reads no manifest here
   // → its [[agents]] scoping silently vanishes from the config introspection.
-  const resolved = await readManifestFromRepo(project, candidatePaths, project.defaultBranch)
+  const resolved = await readManifestFromRepo(project, candidatePaths, project.defaultBranch, {
+    warmOnly: opts?.warmOnly,
+  })
     // A broken `imports:` must not make the summary report "no manifest" (the
     // UI would offer to create one). Degrade to the root file alone; the
     // Triggers page surfaces the import error itself.
@@ -243,6 +253,7 @@ async function resolveProjectManifest(
       err instanceof ManifestImportError
         ? readManifestFromRepo(project, candidatePaths, project.defaultBranch, {
             resolveImports: false,
+            warmOnly: opts?.warmOnly,
           })
         : null,
     )
@@ -284,7 +295,9 @@ async function resolveProjectManifest(
     opencodeCandidates.find(
       (dir) => repoPaths.has(`${dir}/opencode.jsonc`) || repoPaths.has(`${dir}/opencode.json`),
     ) ?? opencodeCandidates[0]!;
-  const openCodeRaw = await optionalFile(project, `${opencodeDir}/opencode.jsonc`);
+  const openCodeRaw = opts?.warmOnly && !existingProjectMirrorPath(project)
+    ? null // no warm mirror — the optional read must not cold-clone inline
+    : await optionalFile(project, `${opencodeDir}/opencode.jsonc`, { warmOnly: opts?.warmOnly });
   return {
     repoFiles,
     resolved,
@@ -415,6 +428,15 @@ async function scanCommands(
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
+  opts?: {
+    /** Serve the summary from the mirror the pod ALREADY has and never clone
+     *  or fetch inline. When no mirror exists the summary degrades to the
+     *  no-manifest shape (manifest_raw null, empty env/agents/skills/commands)
+     *  — the same answer a failed read produces today, reached in milliseconds
+     *  instead of minutes (KRTX-819: the secrets metadata read cold-cloned
+     *  inline and blocked past the 25 s request deadline). */
+    warmOnly?: boolean;
+  },
 ): Promise<ProjectConfigSummary> {
   const candidatePaths = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
   const {
@@ -427,7 +449,7 @@ export async function loadProjectConfig(
     repoPaths,
     opencodeDir,
     openCodeRaw,
-  } = await resolveProjectManifest(project, candidatePaths, files);
+  } = await resolveProjectManifest(project, candidatePaths, files, opts);
 
   // Agents live in `agents/` and, in the legacy layout, `<config dir>/agents/`.
   // The trailing `s?` there is opencode's own historical quirk (it accepts

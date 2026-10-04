@@ -12,7 +12,7 @@ import {
 } from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
-import { type MirrorRefresh, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
+import { type MirrorRefresh, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn, existingProjectMirrorPath } from './mirror';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileAtRefResult,
@@ -136,12 +136,21 @@ export async function readRepoFile(
   project: GitBackedProject,
   filePath: string,
   ref?: string,
-  opts?: FreshOnMiss,
+  opts?: FreshOnMiss & {
+    /** Serve the file from the mirror the pod ALREADY has; never clone or
+     *  fetch inline. Throws when no mirror exists — KRTX-819: a metadata read
+     *  that cold-clones inline blocks past the 25 s request deadline (3 clone
+     *  attempts at the 90 s bare-clone timeout, per mirror touch). */
+    warmOnly?: boolean;
+  },
 ): Promise<string> {
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = opts?.warmOnly
+    ? existingProjectMirrorPath(project)
+    : await refreshMirror(project);
+  if (!repoPath) throw new Error('project git mirror is not warm; refusing to clone inline');
   try {
     return await readFileAt(repoPath, treeRef, normalized);
   } catch (err) {
@@ -242,6 +251,10 @@ export async function readManifestFromRepo(
     /** Default true. False returns the root file alone, unresolved — for a
      *  caller degrading after a `ManifestImportError`, never as a first read. */
     resolveImports?: boolean;
+    /** Serve from the mirror the pod ALREADY has; never clone or fetch inline.
+     *  Returns null when no mirror exists — KRTX-819: the metadata read that
+     *  cold-clones inline blocks past the 25 s request deadline. */
+    warmOnly?: boolean;
   },
 ): Promise<{
   path: string;
@@ -268,7 +281,13 @@ export async function readManifestFromRepo(
   // per-prompt grant read is the hot caller), so the mirror only has to prove
   // that one branch is at the remote's tip. When it is, the fetch is skipped;
   // when it moved, or the ref is a sha, the full fetch runs as before.
-  const repoPath = await refreshMirror(project, opts?.forceRefresh, { freshRef: treeRef });
+  // A warm-only read skips the refresh entirely and answers null when the pod
+  // has no mirror: the caller degrades to the no-manifest summary instead of
+  // blocking on a cold clone (3 attempts at the 90 s bare-clone timeout).
+  const repoPath = opts?.warmOnly
+    ? existingProjectMirrorPath(project)
+    : await refreshMirror(project, opts?.forceRefresh, { freshRef: treeRef });
+  if (!repoPath) return null;
   // A pathspec-scoped ls-tree prints only the candidates present at this ref
   // (order-agnostic), so we pick the highest-priority one ourselves.
   const treeSha = await resolveRefSha(repoPath, treeRef);

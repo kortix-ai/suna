@@ -39,6 +39,7 @@ export type {
 
 export {
   invalidateProjectMirror,
+  refreshMirror,
   resolveTreeOid,
   materializeRepoContext,
   type MirrorRefresh,
