@@ -1,5 +1,5 @@
 {
-  "source_hash": "4d9210b4dd75c59c532d012875b7fa6f5f1e2b45004c98bec3d382de5d2127aa",
+  "source_hash": "07ee7c78c435e6e5cf9f9a23e2501da3b9fab1547b121b85ddb58321857d9d81",
   "diff_files": [
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/drizzle/meta/20261004031536_snapshot.json",
@@ -12,16 +12,15 @@
     "tests/migration/credit-rpc-overloads.test.ts",
     "tests/migration/legacy-credit-ledger-created-by-index.test.ts",
     "tests/migration/usage-breakdown-ledger-type.test.ts",
-    "tests/migration/wallet-ledger.test.ts",
-    "tests/src/fixtures/cli.ts"
+    "tests/migration/wallet-ledger.test.ts"
   ],
-  "diff_hash": "b6d14c80c507088a21ac3b4bbbb8c7c59d81adf0aa4f20a83a5aeb96d3ddb620",
-  "head": "c39069b0fa9a2242f6e6115f615d19222a62b6df",
+  "diff_hash": "8d420c2d8c33db916ce7206acbe38e82490a4e6d9e34795d255e81561c80c4aa",
+  "head": "838f6bd6cc47fb8b47d16b4e026cf31149cb370f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:18:37.612Z"
+  "at": "2026-10-04T04:44:31.153Z"
 }
