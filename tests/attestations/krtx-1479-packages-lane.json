@@ -1,9 +1,8 @@
 {
-  "source_hash": "ab03700dc6f764bdddd5302f4df175df257837ab0d491655bb61fcd280e269e6",
+  "source_hash": "1a1b9bcd7970f9ba91603eec1802d5179afe525e7218af8f5bea8abaf61dff00",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
     "apps/web/src/components/markdown/markdown-frontmatter.test.ts",
     "apps/web/src/features/file-renderers/mermaid/mermaid-utils.test.ts",
     "apps/web/src/features/session/message-parsing.test.ts",
@@ -23,13 +22,13 @@
     "packages/starter/package.json",
     "tests/bin/package-quality.ts"
   ],
-  "diff_hash": "8287c769e15c08350a347d06647b8ee5d421f2fd7b2820e47daffd5c461e58cc",
-  "head": "356ad7833ffad4b477bd97491f7df96f28dd9c1d",
-  "passed": true,
+  "diff_hash": "b5542a67cd001ce5aa1ee00eed964fc5d37c9b546dec4762a646e0c04f3a437e",
+  "head": "ee4955af513890f5431b665c700e81cfd931ad1d",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T03:28:49.971Z"
+  "at": "2026-10-04T03:50:32.398Z"
 }
