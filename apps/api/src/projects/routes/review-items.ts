@@ -200,7 +200,7 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: lenientBody({
-          kind: z.enum(['output,decision,batch']).openapi({ description: 'Review item kind.' }),
+          kind: z.enum(['output', 'decision', 'batch']).openapi({ description: 'Review item kind.' }),
           title: z.string().openapi({ description: 'Title.' }),
           summary: z.string().optional().openapi({ description: 'Short summary.' }),
           risk: z.string().optional().openapi({ description: 'Risk level. Default none.' }),
@@ -302,7 +302,7 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string(), reviewItemId: z.string() }),
       body: { content: { 'application/json': { schema: lenientBody({
-          verdict: z.enum(['approve,reject,changes,answer,dismiss']).openapi({ description: 'Decision on the item.' }),
+          verdict: z.enum(['approve', 'reject', 'changes', 'answer', 'dismiss']).openapi({ description: 'Decision on the item.' }),
           feedback: z.string().optional().openapi({ description: 'Comment or answer text.' }),
         }) } } },
     },
@@ -362,7 +362,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: lenientBody({
           ids: z.array(z.string()).openapi({ description: 'Review item ids. review_item_ids is accepted as an alias.' }),
-          verdict: z.enum(['approve,reject,changes,answer,dismiss']).openapi({ description: 'Decision applied to every item.' }),
+          verdict: z.enum(['approve', 'reject', 'changes', 'answer', 'dismiss']).openapi({ description: 'Decision applied to every item.' }),
         }) } } },
     },
     responses: {

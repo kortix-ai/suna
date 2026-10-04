@@ -1,12 +1,11 @@
 'use client';
 
-import { BrandMark } from '@/components/brand-mark';
 import { CallSnippet } from '@/components/dev/call-snippet';
+import { ModeNotice } from '@/components/mode-notice';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getSessionToken } from '@/lib/session';
+import { authHeaders, getSessionToken } from '@/lib/session';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Receipt } from 'lucide-react';
 import Link from 'next/link';
@@ -16,7 +15,7 @@ import type { SessionCostsResponse } from './contract';
 async function fetchSessionCosts(): Promise<SessionCostsResponse> {
   const token = getSessionToken();
   const response = await fetch('/api/session-costs', {
-    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    headers: authHeaders(token),
   });
   if (!response.ok) {
     throw new Error(`session cost request failed (${response.status})`);
@@ -30,30 +29,13 @@ function usd(value: number | undefined): string {
 
 export default function SessionCostsPage() {
   const wrapperMode = useWrapperMode();
-  if (!wrapperMode) return <NotInDirectMode />;
+  if (!wrapperMode)
+    return (
+      <ModeNotice title="Wrapper mode only">
+        This view uses the wrapper's project ownership records to select sessions.
+      </ModeNotice>
+    );
   return <SessionCostsDashboard />;
-}
-
-function NotInDirectMode() {
-  return (
-    <div className="grid min-h-dvh place-items-center bg-background px-4">
-      <Card className="w-full max-w-sm p-6 text-center">
-        <BrandMark className="mx-auto mb-4" />
-        <h1 className="text-lg font-semibold tracking-tight">
-          Wrapper mode only
-        </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          This view uses the wrapper&apos;s project ownership records to select
-          sessions.
-        </p>
-        <Button asChild className="mt-5 gap-2">
-          <Link href="/">
-            <ArrowLeft className="size-4" /> Back to projects
-          </Link>
-        </Button>
-      </Card>
-    </div>
-  );
 }
 
 function SessionCostsDashboard() {
@@ -79,13 +61,11 @@ function SessionCostsDashboard() {
       <main className="mx-auto max-w-4xl px-5 py-8">
         <div className="flex items-center gap-2">
           <Receipt className="size-5 text-muted-foreground" />
-          <h1 className="text-xl font-semibold tracking-tight">
-            Session costs
-          </h1>
+          <h1 className="text-xl font-semibold tracking-tight">Session costs</h1>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Each row represents one Kortix session. The wrapper applies its
-          configured markup to that session&apos;s recorded cost.
+          Each row represents one Kortix session. The wrapper applies its configured markup to that
+          session&apos;s recorded cost.
         </p>
 
         {costs.isLoading && (
@@ -105,17 +85,13 @@ function SessionCostsDashboard() {
           <>
             <div className="mt-6 grid grid-cols-2 gap-3">
               <Card className="p-4">
-                <div className="text-xs text-muted-foreground">
-                  Raw Kortix cost
-                </div>
+                <div className="text-xs text-muted-foreground">Raw Kortix cost</div>
                 <div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
                   {usd(data.totals.raw)}
                 </div>
               </Card>
               <Card className="border-brand/30 p-4">
-                <div className="text-xs text-muted-foreground">
-                  Wrapper price ({data.markup}×)
-                </div>
+                <div className="text-xs text-muted-foreground">Wrapper price ({data.markup}×)</div>
                 <div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
                   {usd(data.totals.billed)}
                 </div>
@@ -131,16 +107,12 @@ function SessionCostsDashboard() {
 
             {data.projects.length === 0 && (
               <Card className="mt-3 p-8 text-center text-sm text-muted-foreground">
-                No projects are available. Session costs appear after a session
-                records usage.
+                No projects are available. Session costs appear after a session records usage.
               </Card>
             )}
 
             {data.projects.map((project) => (
-              <Card
-                key={project.projectId}
-                className="mt-4 overflow-hidden p-0"
-              >
+              <Card key={project.projectId} className="mt-4 overflow-hidden p-0">
                 <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
                   <span className="truncate font-mono text-xs text-muted-foreground">
                     {project.projectId}
@@ -151,13 +123,9 @@ function SessionCostsDashboard() {
                   </Badge>
                 </div>
                 {project.error ? (
-                  <p className="px-4 py-4 text-xs text-destructive">
-                    {project.error}
-                  </p>
+                  <p className="px-4 py-4 text-xs text-destructive">{project.error}</p>
                 ) : project.sessions.length === 0 ? (
-                  <p className="px-4 py-4 text-xs text-muted-foreground">
-                    No sessions yet.
-                  </p>
+                  <p className="px-4 py-4 text-xs text-muted-foreground">No sessions yet.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -165,13 +133,9 @@ function SessionCostsDashboard() {
                         <tr className="text-xs text-muted-foreground">
                           <th className="px-4 py-2 font-medium">Session</th>
                           <th className="px-4 py-2 font-medium">LLM cost</th>
-                          <th className="px-4 py-2 font-medium">
-                            Compute cost
-                          </th>
+                          <th className="px-4 py-2 font-medium">Compute cost</th>
                           <th className="px-4 py-2 font-medium">Raw total</th>
-                          <th className="px-4 py-2 font-medium">
-                            Wrapper price
-                          </th>
+                          <th className="px-4 py-2 font-medium">Wrapper price</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">

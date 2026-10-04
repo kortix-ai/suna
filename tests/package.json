@@ -21,6 +21,9 @@
     "catalog": "bun bin/ke2e.ts catalog",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@kortix/api-contract": "workspace:*"
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.61.0",

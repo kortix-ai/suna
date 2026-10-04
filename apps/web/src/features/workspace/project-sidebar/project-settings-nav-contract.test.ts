@@ -114,23 +114,15 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(SOURCE).toContain('probe.allowed || probe.isLoading');
   });
 
-  test('is gated on project.customize.read, on top of the per-tab read leaves', () => {
-    // Was project.customize.write — an audited live bug: .write conflated
-    // "may see the surface" with "may change things on it", so a role that
-    // could browse a tab was denied the only discovery path to it. .write
-    // still gates every individual mutation on every page beneath this row.
-    //
-    // PROJECT_CUSTOMIZE_READ lives in MANAGER_EXTRAS, not
-    // PROJECT_MEMBER_BASELINE (moved by #6522), so a plain project `member`
-    // gets no row here at all — every page under it 403s for them. The same
-    // leaf gates the project-home setup tiles and the capability tab bar.
-    // Optimistic like every other probe here: hide only on an explicit
-    // `false`, never while loading.
+  test('is gated only on the per-tab read leaves, with no surface leaf', () => {
+    // Permissions decide: the row shows when the caller may open at least one
+    // tab (`useCapabilityTab`). The retired `project.customize.read` was a
+    // second, surface-wide gate on top of that.
     const navItem = fnSource('ProjectCustomizeNavItem');
 
-    expect(navItem).toContain('useProjectPageCans(projectId)');
-    expect(navItem).toContain('caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]');
-    expect(navItem).toContain('if (canCustomize.allowed === false) return null;');
+    expect(navItem).toContain('const tab = useCapabilityTab(projectId);');
+    expect(navItem).toContain('if (!tab) return null;');
+    expect(navItem).not.toContain('PROJECT_CUSTOMIZE_READ');
   });
 
   test('closes the mobile drawer on navigate', () => {

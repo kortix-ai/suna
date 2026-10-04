@@ -135,10 +135,10 @@ projectsApp.openapi(
       },
     responses: {
         201: json(ProjectSchema, 'The created project'),
-        ...errors(400, 409),
+        ...errors(400, 403, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   // IAM-gated. Engine consults super-admin bypass, direct + group
@@ -227,7 +227,7 @@ projectsApp.openapi(
       ),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
     const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
     return c.json({ configured, provider });
@@ -275,7 +275,7 @@ projectsApp.openapi(
         ...errors(400, 403, 409, 502, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const ctx = await buildProvisionContext(c);
   if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
@@ -335,7 +335,7 @@ projectsApp.openapi(
         ...errors(403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const ctx = await buildProvisionContext(c);
   // Same gate as POST /provision, and it MUST run before the stream opens. An
   // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that

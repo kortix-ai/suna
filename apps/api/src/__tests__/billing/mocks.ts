@@ -150,21 +150,30 @@ export function registerGlobalMocks() {
   // A module mock REPLACES the whole module, so every export the code under
   // test imports has to appear here — a missing one is not a silent undefined,
   // it is a hard `SyntaxError: Export named 'x' not found` that kills the file.
-  mock.module('../../shared/db', () => ({
-    db: {
+  mock.module('../../shared/db', () => {
+    const db = {
       select: () => ({
         from: () => ({
           where: async () => [],
         }),
       }),
-    },
+      // The account-deletion sweep issues DELETEs inside one transaction. The
+      // billing suites drive the no-DB path, so both are no-ops here.
+      delete: () => ({
+        where: async () => ({ rowCount: 0 }),
+      }),
+      transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
+    };
+    return {
+      db,
     // Real shape is a boolean const, not a function. FALSE on purpose: these
     // billing tests drive the no-DB path, and the stub `db` above answers only
     // `select().from().where()`. Flipping this to true sends the code down real
     // persistence branches this mock cannot serve (8 createCheckoutSession
     // tests fail with "Stripe API error" — verified).
-    hasDatabase: false,
-  }));
+      hasDatabase: false,
+    };
+  });
 
   // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
   // lists exports by hand deletes every export it omits — the failure surfaces in

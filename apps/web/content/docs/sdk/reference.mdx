@@ -581,7 +581,7 @@ project. Pass `enabled: null` to clear the override and fall back to the
 platform default. It calls the canonical `PATCH /v1/projects/:id/features`.
 
 `feature` is one of `FEATURE_FLAG_KEYS` (exported from `@kortix/sdk`, typed as
-`FeatureFlagKey`). The caller needs the project's `project.customize.write`
+`FeatureFlagKey`). The caller needs the project's `project.settings.write`
 permission; the route answers `403` otherwise.
 
 Every flag-gated route rejects the same way while the flag is off: HTTP `403`

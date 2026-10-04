@@ -195,7 +195,7 @@ function legacyParseConnectorGetOutput(output: string): LegacyConnectorGetData |
   const descriptionMatch = output.match(/^description:\s*(.+)$/m);
   const sourceMatch = output.match(/^source:\s*(.+)$/m);
   const envMatch = output.match(/^env:\s*(.+)$/m);
-  const notesMatch = output.match(/^notes:\s*\n([\s\S]*?)$/);
+  const notesMatch = output.match(/^notes:\s*\n([\s\S]*)$/m);
 
   if (!nameMatch) return null;
 
@@ -498,6 +498,38 @@ describe('the get parsers read each label as its regex did', () => {
         );
       },
     ));
+});
+
+describe('the connector notes block parses', () => {
+  const NOTES = 'The bot is invited to #eng-alerts and #acme-dashboard. Invite it before posting to any other channel.';
+  const output = [
+    'name: slack',
+    'description: Post messages and read channels in the Acme workspace',
+    'source: pipedream',
+    'env: SLACK_BOT_TOKEN',
+    'notes:',
+    NOTES,
+  ].join('\n');
+
+  test('notes after the env line, the shape the connector_get fixture records', () => {
+    expect(parseConnectorGetOutput(output)).toEqual({
+      name: 'slack',
+      description: 'Post messages and read channels in the Acme workspace',
+      source: 'pipedream',
+      env: 'SLACK_BOT_TOKEN',
+      notes: NOTES,
+    });
+  });
+
+  test('notes run to the end of the output, over several lines', () => {
+    const multiline = `${output}\nline two\nline three`;
+    expect(parseConnectorGetOutput(multiline)?.notes).toBe(`${NOTES}\nline two\nline three`);
+  });
+
+  test('no notes block leaves notes undefined, and a mid-line "notes:" is not one', () => {
+    expect(parseConnectorGetOutput('name: slack\ndescription: d\nsource: s')?.notes).toBeUndefined();
+    expect(parseConnectorGetOutput('name: slack\nsee notes:\nnot a block')?.notes).toBeUndefined();
+  });
 });
 
 describe('no project or connector output can freeze the renderer', () => {

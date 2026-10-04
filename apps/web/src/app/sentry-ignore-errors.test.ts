@@ -97,3 +97,16 @@ test('sentry.client.config drops the Firefox cross-compartment onerror-chain fai
   expect(source).toContain('/^(?:Error: )?Permission denied to access property "apply"$/');
   expect(source).not.toContain("'Permission denied to access property'");
 });
+
+test('sentry.client.config drops the timed-out extension window-message call', async () => {
+  // Reproduces Better Stack error 6f121228...165c5870 (Kortix Frontend prod):
+  // `Window message "chrome: call method" timed out.` from a third-party
+  // extension content script (`app:///assets/js/content.js`) whose
+  // page-world → extension-world `window.postMessage` RPC got no answer.
+  // Our code never emits a `chrome:` message channel, so the bare string is
+  // unambiguous (same class as the MetaMask/CookieYes entries above); the
+  // frame-aware `beforeSend` hook (browser-error-noise.ts) drops the same
+  // class at event build time.
+  const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
+  expect(source).toContain("'Window message \"chrome: call method\" timed out.'");
+});

@@ -1891,6 +1891,11 @@ export const chatPendingAuthMessages = kortixSchema.table(
       table.expiresAt,
     ),
     index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+    // Covers the project_id FK (chat_pending_auth_messages_project_id_fkey, built
+    // by the chat_pending_auth_messages_project_index migration): a project
+    // delete cascades here by project_id, and that lookup otherwise seq-scans
+    // the table (Supabase advisor: unindexed_foreign_keys, KRTX-1097).
+    index('idx_chat_pending_auth_messages_project').on(table.projectId),
   ],
 );
 
@@ -2129,6 +2134,22 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // The parked-runtime verification sweep (apps/api/src/projects/reaping/
+    // parked-runtime-verification.ts `verifyParkedRuntimes`) reads the batch
+    // as `WHERE status = <param> AND external_id IS NOT NULL ORDER BY
+    // metadata->>'parkedVerifiedAt' ASC NULLS FIRST LIMIT 60`. On prod this
+    // scanned ~45k stopped rows and sorted them for every pass (mean 3027 ms,
+    // 1704 calls — pg_stat_statements via the Supabase collector). `status` is
+    // the leading key, NOT a partial-index predicate: the app binds it as a
+    // query parameter, and a generic plan cannot prove `status = $1` implies
+    // `status = 'stopped'`, so a partial index would drop out of the plan
+    // after the first few executions. `external_id IS NOT NULL` is static in
+    // the statement, so it can stay a partial predicate. The expression is
+    // declared ASC NULLS FIRST to match the query's `asc nulls first` exactly
+    // (Postgres's ASC default is NULLS LAST, which would leave a sort).
+    index('idx_session_sandboxes_parked_verified')
+      .on(table.status, sql`(${table.metadata} ->> 'parkedVerifiedAt') ASC NULLS FIRST`)
+      .where(sql`${table.externalId} is not null`),
   ],
 );
 

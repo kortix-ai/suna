@@ -12,6 +12,9 @@ import Loading from '@/components/ui/loading';
  *   kortix.project(id).files.read(path, ref?) → the monospace viewer (right pane)
  *   kortix.project(id).files.history(path, …) → the per-file "History" popover
  *   kortix.project(id).files.archive(ref, …)  → the "Download" button
+ *
+ * The right pane (`FileViewer`) and the archive download (`useProjectArchive`)
+ * live under `files/`.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -22,10 +25,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FileViewer } from '@/components/workbench/files/file-viewer';
+import { useProjectArchive } from '@/components/workbench/files/use-project-archive';
 import { kortix } from '@/lib/kortix';
+import { fmtDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { ProjectCommit, ProjectFileEntry, ProjectFileSearchMatch } from '@kortix/sdk';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   Download,
   File as FileIcon,
@@ -35,26 +41,9 @@ import {
   Search,
 } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
-import { toast } from 'sonner';
-
-/** Ref archived/read by default — the repo tip. */
-const DEFAULT_REF = 'HEAD';
 
 function basename(p: string): string {
   return p.split('/').filter(Boolean).pop() ?? p;
-}
-
-function fmtSize(size: unknown): string | null {
-  if (typeof size !== 'number' || !Number.isFinite(size)) return null;
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fmtDate(value: unknown): string {
-  if (!value) return '';
-  const d = new Date(value as string);
-  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
 }
 
 export function FilesPanel({ projectId }: { projectId: string }) {
@@ -76,29 +65,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
     enabled: searching,
   });
 
-  // .files.read — content for the selected file (right pane).
-  const content = useQuery({
-    queryKey: ['project-files', projectId, 'content', selected],
-    queryFn: () => kortix.project(projectId).files.read(selected as string),
-    enabled: !!selected,
-  });
-
-  // .files.archive — download a zip of the whole repo at HEAD.
-  const download = useMutation({
-    mutationFn: () => kortix.project(projectId).files.archive(DEFAULT_REF),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `project-${projectId}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Archive downloaded');
-    },
-    onError: () => toast.error('Could not download archive'),
-  });
+  const download = useProjectArchive(projectId);
 
   const listItems: ProjectFileEntry[] = list.data ?? [];
   const searchItems: ProjectFileSearchMatch[] = search.data?.results ?? [];
@@ -138,118 +105,22 @@ export function FilesPanel({ projectId }: { projectId: string }) {
       {/* Body — two panes */}
       <div className="flex min-h-0 flex-1">
         {/* Left — search + list */}
-        <div className="flex w-72 min-h-0 shrink-0 flex-col border-r border-border">
-          <div className="relative shrink-0 p-2">
-            <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search files..."
-              className="h-8 pl-7 text-xs"
-            />
-          </div>
-
-          <div className="flex shrink-0 items-center justify-between px-3 pb-1.5 text-[0.7rem] text-muted-foreground">
-            <span>{searching ? 'Search results' : 'Workspace'}</span>
-            {rowsReady && (
-              <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
-                {rows.length}
-              </Badge>
-            )}
-          </div>
-
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="space-y-0.5 px-2 pb-2">
-              {rowsLoading &&
-                Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className="h-7 w-full" />
-                ))}
-
-              {rowsReady && rows.length === 0 && (
-                <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-                  {searching ? 'No matches.' : 'No files yet.'}
-                </div>
-              )}
-
-              {rows.map((item, i) => {
-                const path = item.path;
-                const active = path === selected;
-                const lineText = item.lineText;
-                return (
-                  <div
-                    key={`${path}-${i}`}
-                    className={cn(
-                      'group flex items-center gap-1 rounded-md',
-                      active && 'bg-accent',
-                    )}
-                  >
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setSelected(path)}
-                      title={path}
-                      className={cn(
-                        'h-auto min-w-0 flex-1 justify-start gap-2 whitespace-normal px-2 py-1.5 text-left text-xs',
-                        active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      <FileIcon className="size-3.5 shrink-0 opacity-70" />
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate font-mono">{basename(path)}</span>
-                        {searching && lineText && (
-                          <span className="truncate font-mono text-[0.65rem] opacity-60">
-                            {lineText.trim()}
-                          </span>
-                        )}
-                      </span>
-                    </Button>
-                    <FileHistory projectId={projectId} path={path} />
-                  </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
-        </div>
+        <FileListPane
+          projectId={projectId}
+          query={query}
+          onQueryChange={setQuery}
+          searching={searching}
+          rows={rows}
+          rowsLoading={rowsLoading}
+          rowsReady={rowsReady}
+          selected={selected}
+          onSelect={setSelected}
+        />
 
         {/* Right — content viewer */}
         <div className="flex min-h-0 flex-1 flex-col">
           {selected ? (
-            <>
-              <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-xs">
-                <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate font-mono text-foreground">{selected}</span>
-                {(() => {
-                  const match = listItems.find((f) => f?.path === selected);
-                  const size = fmtSize(match?.size);
-                  return size ? (
-                    <Badge
-                      variant="outline"
-                      className="ml-auto px-1.5 py-0 text-[0.65rem] text-muted-foreground"
-                    >
-                      {size}
-                    </Badge>
-                  ) : null;
-                })()}
-              </div>
-              <Separator />
-              <ScrollArea className="min-h-0 flex-1">
-                {content.isLoading && (
-                  <div className="space-y-2 p-4">
-                    {Array.from({ length: 10 }).map((_, i) => (
-                      <Skeleton key={i} className="h-4 w-full" />
-                    ))}
-                  </div>
-                )}
-                {content.isError && (
-                  <div className="p-4 text-xs text-destructive">Could not read file.</div>
-                )}
-                {content.isSuccess && (
-                  <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[0.7rem] leading-relaxed text-foreground/80">
-                    {content.data?.content ?? ''}
-                  </pre>
-                )}
-              </ScrollArea>
-            </>
+            <FileViewer projectId={projectId} path={selected} files={listItems} />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
               <FileText className="size-6 text-muted-foreground" />
@@ -259,6 +130,125 @@ export function FilesPanel({ projectId }: { projectId: string }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+function FileListPane({
+  projectId,
+  query,
+  onQueryChange,
+  searching,
+  rows,
+  rowsLoading,
+  rowsReady,
+  selected,
+  onSelect,
+}: {
+  projectId: string;
+  query: string;
+  onQueryChange: (value: string) => void;
+  searching: boolean;
+  rows: Array<{ path: string; lineText?: string }>;
+  rowsLoading: boolean;
+  rowsReady: boolean;
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  return (
+    <div className="flex w-72 min-h-0 shrink-0 flex-col border-r border-border">
+      <div className="relative shrink-0 p-2">
+        <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search files..."
+          className="h-8 pl-7 text-xs"
+        />
+      </div>
+
+      <div className="flex shrink-0 items-center justify-between px-3 pb-1.5 text-[0.7rem] text-muted-foreground">
+        <span>{searching ? 'Search results' : 'Workspace'}</span>
+        {rowsReady && (
+          <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
+            {rows.length}
+          </Badge>
+        )}
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-0.5 px-2 pb-2">
+          {rowsLoading &&
+            Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}
+
+          {rowsReady && rows.length === 0 && (
+            <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+              {searching ? 'No matches.' : 'No files yet.'}
+            </div>
+          )}
+
+          <FileRows
+            projectId={projectId}
+            rows={rows}
+            searching={searching}
+            selected={selected}
+            onSelect={onSelect}
+          />
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+/** The normalized file rows (workspace tree entries or search matches). */
+function FileRows({
+  projectId,
+  rows,
+  searching,
+  selected,
+  onSelect,
+}: {
+  projectId: string;
+  rows: Array<{ path: string; lineText?: string }>;
+  searching: boolean;
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  return (
+    <>
+      {rows.map((item, i) => {
+        const path = item.path;
+        const active = path === selected;
+        const lineText = item.lineText;
+        return (
+          <div
+            key={`${path}-${i}`}
+            className={cn('group flex items-center gap-1 rounded-md', active && 'bg-accent')}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onSelect(path)}
+              title={path}
+              className={cn(
+                'h-auto min-w-0 flex-1 justify-start gap-2 whitespace-normal px-2 py-1.5 text-left text-xs',
+                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <FileIcon className="size-3.5 shrink-0 opacity-70" />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-mono">{basename(path)}</span>
+                {searching && lineText && (
+                  <span className="truncate font-mono text-[0.65rem] opacity-60">
+                    {lineText.trim()}
+                  </span>
+                )}
+              </span>
+            </Button>
+            <FileHistory projectId={projectId} path={path} />
+          </div>
+        );
+      })}
+    </>
   );
 }
 

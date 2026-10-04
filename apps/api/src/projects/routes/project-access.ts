@@ -56,7 +56,7 @@ projectsApp.openapi(
       request: {
         params: z.object({ projectId: z.string(), userId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
-            role: z.enum(['manager,member']).openapi({ description: 'Project role.' }),
+            role: z.enum(['manager', 'member']).openapi({ description: 'Project role.' }),
             expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. null removes it.' }),
           }) } } },
       },

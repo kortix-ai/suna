@@ -122,7 +122,6 @@ export {
   resolveGitTriggerActor,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
-  getTriggerSchedulerHealth,
   schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,
