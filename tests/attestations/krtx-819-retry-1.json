@@ -1,18 +1,18 @@
 {
-  "source_hash": "87b5934fcba188d160ea5e78f210ce8b3bc4eb25df572fa140e7b1c7fd4f4ea9",
+  "source_hash": "7f795cbe3727936105ed3de5c441322b377cbc0bcb82f76cde35df5e7f9b04f7",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-04T032812Z-bound-the-git-backed-project-config-load-under-the-request-d.md",
     "apps/api/src/projects/git/config-load-timeout.test.ts",
     "apps/api/src/projects/git/config.ts"
   ],
-  "diff_hash": "2ac93fa9225d848be4d74c165bc73f2238b10514c01f50779db71a0471eac4ea",
-  "head": "f8813e40c0da6343ae610bc854a15e5950e7495e",
+  "diff_hash": "e7bd795a1c96f73dd5b6a54c1eab13274328453a926d0108606927152c46d4cf",
+  "head": "a0c1b8c0fd62d48812b8b5d5a9cc4f76e2e83d2d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:35:45.941Z"
+  "at": "2026-10-04T06:14:52.752Z"
 }
