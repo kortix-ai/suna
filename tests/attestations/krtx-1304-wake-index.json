@@ -1,24 +1,22 @@
 {
-  "source_hash": "cba48474ae7938c29db46be4a0fe04b2573eabe91ee7b099291ea165833397f3",
+  "source_hash": "faf1359140ceb638fc03a2745e93c2d3355ad2c5eef6c7c78d2439b8591fd6e6",
   "diff_files": [
-    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
     "apps/api/src/projects/session-lifecycle/runtime-wake-maintenance.ts",
     "packages/db/drizzle/meta/20261003212059_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261004020000000_session_sandboxes_wake_fence_index.concurrent.ts",
-    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts",
     "packages/db/scripts/session-sandboxes-wake-fence-index.integration.test.ts",
     "packages/db/src/schema/kortix.ts",
     "tests/src/fixtures/cli.ts",
     "tests/unit/vitest.config.ts"
   ],
-  "diff_hash": "1f6525c86913114e0c2eaeac0df6f82c01195b5bd7b24ecda681c49e429b4570",
-  "head": "e64a417631c51734df813678d08a185cd712ccd0",
+  "diff_hash": "b88b03e0fff793dc5caf62c5453ab37cb92915c47c4ac14dec62a0673443f570",
+  "head": "8c3a074722f58fd60e86f273f99f75d716e7b6b3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T02:34:43.280Z"
+  "at": "2026-10-04T03:31:52.986Z"
 }
