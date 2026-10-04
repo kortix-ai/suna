@@ -58,11 +58,39 @@ DELETE FROM kortix.role_permissions rp
 ALTER TABLE kortix.role_permissions
   VALIDATE CONSTRAINT role_permissions_action_permissions_fk;`;
 
+const RBAC_BACKFILL_MIGRATION = '20260819015725000_rbac_backfill_role_assignments.concurrent.ts';
+const RBAC_BACKFILL_SHA256 = '71f4a6fd5dd300ad1dc29356d28b800cdd917ed216252dbd4416eacb50b780d4';
+// The drain loop's per-batch query line, unique in the file. This migration
+// chain creates kortix.role_assignments and fills it in the same run, so the
+// planner has no trustworthy statistics for it while the passes execute.
+// Measured on PostgreSQL 15 (prod's engine): the account-membership anti-join
+// then plans as a nested loop over a materialized scan of the ENTIRE
+// account-scope population — O(copied x members) Join Filter evaluations per
+// batch. Prod ran 44 such batches at mean 16,421 ms and max 45,979 ms
+// (pg_stat_statements), 12 minutes for one pass, against a 120 s
+// statement_timeout — one larger dataset from a deploy-failing migration.
+// Hash/merge anti-joins need no cardinality estimate and stay linear in the
+// target size, so each batch runs with the nested-loop strategy disabled.
+// `set local` scopes the setting to the batch's own implicit transaction; the
+// batches are auto-committed single statements (pgm.noTransaction()).
+const RBAC_BACKFILL_DRAIN_ANCHOR = `    const res = await pgm.db.query(sql);
+    const n = res.rowCount ?? 0;`;
+const RBAC_BACKFILL_DRAIN_REWRITE = `    // Planner guard: this migration chain created kortix.role_assignments and
+    // is filling it now, so the planner has no trustworthy statistics for it
+    // and must not plan the anti-join as a nested loop over the copied
+    // population (measured O(copied x members) per batch on PostgreSQL 15).
+    // The batch is a two-statement simple query, so node-postgres returns an
+    // array of results and the INSERT's rowCount is the last one.
+    const results = await pgm.db.query('set local enable_nestloop = off;\\n' + sql);
+    const res = Array.isArray(results) ? results[results.length - 1] : results;
+    const n = res.rowCount ?? 0;`;
+
 interface RuntimeOverrideOptions {
   /** Test seam. Production always uses the committed migration checksum above. */
   expectedSha256?: string;
   removeLocalDockerExpectedSha256?: string;
   rbacCutoverViewsExpectedSha256?: string;
+  rbacBackfillExpectedSha256?: string;
 }
 
 export interface MigrationRuntimeDirectory {
@@ -88,10 +116,17 @@ export function materializeMigrationRuntimeDirectory(
   const auditPath = join(sourceDirectory, AUDIT_V2_MIGRATION);
   const removeLocalDockerPath = join(sourceDirectory, REMOVE_LOCAL_DOCKER_MIGRATION);
   const rbacCutoverViewsPath = join(sourceDirectory, RBAC_CUTOVER_VIEWS_MIGRATION);
+  const rbacBackfillPath = join(sourceDirectory, RBAC_BACKFILL_MIGRATION);
   const hasAuditOverride = existsSync(auditPath);
   const hasRemoveLocalDockerOverride = existsSync(removeLocalDockerPath);
   const hasRbacCutoverViewsOverride = existsSync(rbacCutoverViewsPath);
-  if (!hasAuditOverride && !hasRemoveLocalDockerOverride && !hasRbacCutoverViewsOverride) {
+  const hasRbacBackfillOverride = existsSync(rbacBackfillPath);
+  if (
+    !hasAuditOverride &&
+    !hasRemoveLocalDockerOverride &&
+    !hasRbacCutoverViewsOverride &&
+    !hasRbacBackfillOverride
+  ) {
     return { path: sourceDirectory, appliedOverrides: [], cleanup: () => {} };
   }
 
@@ -101,6 +136,9 @@ export function materializeMigrationRuntimeDirectory(
     : null;
   const rbacCutoverViewsSource = hasRbacCutoverViewsOverride
     ? readFileSync(rbacCutoverViewsPath, 'utf8')
+    : null;
+  const rbacBackfillSource = hasRbacBackfillOverride
+    ? readFileSync(rbacBackfillPath, 'utf8')
     : null;
   if (auditSource) {
     const expectedSha256 = options.expectedSha256 ?? AUDIT_V2_SHA256;
@@ -149,6 +187,21 @@ export function materializeMigrationRuntimeDirectory(
       );
     }
   }
+  if (rbacBackfillSource) {
+    const expectedSha256 = options.rbacBackfillExpectedSha256 ?? RBAC_BACKFILL_SHA256;
+    const actualSha256 = sha256(rbacBackfillSource);
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(
+        `${RBAC_BACKFILL_MIGRATION} checksum mismatch: expected ${expectedSha256}, received ${actualSha256}`,
+      );
+    }
+    const occurrenceCount = rbacBackfillSource.split(RBAC_BACKFILL_DRAIN_ANCHOR).length - 1;
+    if (occurrenceCount !== 1) {
+      throw new Error(
+        `${RBAC_BACKFILL_MIGRATION} expected exactly one drain query block; found ${occurrenceCount}`,
+      );
+    }
+  }
   const runtimeRoot = mkdtempSync(join(tmpdir(), 'kortix-migrations-'));
   const runtimeDirectory = join(runtimeRoot, 'migrations');
   const appliedOverrides: string[] = [];
@@ -185,6 +238,15 @@ export function materializeMigrationRuntimeDirectory(
       );
       appliedOverrides.push(
         `${RBAC_CUTOVER_VIEWS_MIGRATION}: retire project.cr.*/trigger.* role_permissions rows before the catalog-FK VALIDATE (${RBAC_CUTOVER_VIEWS_SHA256})`,
+      );
+    }
+    if (rbacBackfillSource) {
+      writeFileSync(
+        join(runtimeDirectory, RBAC_BACKFILL_MIGRATION),
+        rbacBackfillSource.replace(RBAC_BACKFILL_DRAIN_ANCHOR, RBAC_BACKFILL_DRAIN_REWRITE),
+      );
+      appliedOverrides.push(
+        `${RBAC_BACKFILL_MIGRATION}: run each drain batch with enable_nestloop off — the stats-less target made the anti-join a quadratic nested loop (${RBAC_BACKFILL_SHA256})`,
       );
     }
   } catch (error) {

@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
+import { migrationsDir } from './upgrade-test-helpers';
 
 const roots: string[] = [];
 
@@ -153,5 +154,102 @@ describe('materializeMigrationRuntimeDirectory', () => {
     expect(runtime.appliedOverrides).toEqual([
       '20260807165721291_remove_local_docker_provider.sql: drop historical workspace_sessions view (e0cfc4b8df7598ee3dfb485606d264fa5b915fd03871873019bd0d005b9b120b)',
     ]);
+  });
+});
+describe('rbac backfill drain guard', () => {
+  const anchorLine = 'const res = await pgm.db.query(sql);';
+  const rowCountLine = 'const n = res.rowCount ?? 0;';
+  const anchor = `    ${anchorLine}\n    ${rowCountLine}`;
+
+  function backfillFixture(sql: string): string {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-migration-runtime-'));
+    const migrations = join(root, 'migrations');
+    mkdirSync(migrations, { recursive: true });
+    writeFileSync(
+      join(migrations, '20260819015725000_rbac_backfill_role_assignments.concurrent.ts'),
+      sql,
+    );
+    roots.push(root);
+    return migrations;
+  }
+
+  function fixtureSql(anchorCount: number): string {
+    const body = Array.from({ length: anchorCount }, () => anchor).join('\n');
+    return `async function drain(pgm, sql) {\n${body}\n}\nexport const up = () => {};\n`;
+  }
+
+  test('guards every drain batch only in the runtime copy', () => {
+    const source = backfillFixture(fixtureSql(1));
+    const runtime = materializeMigrationRuntimeDirectory(source, {
+      rbacBackfillExpectedSha256: createHash('sha256').update(fixtureSql(1)).digest('hex'),
+    });
+    roots.push(runtime.path);
+    const rewritten = readFileSync(
+      join(runtime.path, '20260819015725000_rbac_backfill_role_assignments.concurrent.ts'),
+      'utf8',
+    );
+    expect(rewritten).toContain('set local enable_nestloop = off;');
+    expect(rewritten).toContain('Array.isArray(results) ? results[results.length - 1] : results');
+    // The unguarded drain line is gone from the runtime copy.
+    expect(rewritten.split(anchorLine).length - 1).toBe(0);
+    // The immutable source is untouched.
+    expect(
+      readFileSync(
+        join(source, '20260819015725000_rbac_backfill_role_assignments.concurrent.ts'),
+        'utf8',
+      ),
+    ).toBe(fixtureSql(1));
+    expect(runtime.appliedOverrides.some((o) => o.includes('rbac_backfill_role_assignments'))).toBe(
+      true,
+    );
+  });
+
+  test('fails closed on a checksum mismatch for the backfill migration', () => {
+    const source = backfillFixture(fixtureSql(1));
+    expect(() =>
+      materializeMigrationRuntimeDirectory(source, { rbacBackfillExpectedSha256: '0'.repeat(64) }),
+    ).toThrow(/checksum mismatch/);
+  });
+
+  test('fails closed when the drain block is missing or duplicated', () => {
+    const expectedSha = createHash('sha256').update(fixtureSql(0)).digest('hex');
+    expect(() =>
+      materializeMigrationRuntimeDirectory(backfillFixture(fixtureSql(0)), {
+        rbacBackfillExpectedSha256: expectedSha,
+      }),
+    ).toThrow('expected exactly one');
+
+    const duplicatedSha = createHash('sha256').update(fixtureSql(2)).digest('hex');
+    expect(() =>
+      materializeMigrationRuntimeDirectory(backfillFixture(fixtureSql(2)), {
+        rbacBackfillExpectedSha256: duplicatedSha,
+      }),
+    ).toThrow('expected exactly one');
+  });
+
+  test('the committed migration carries the drain block once and materializes the guard', () => {
+    const source = readFileSync(
+      join(migrationsDir, '20260819015725000_rbac_backfill_role_assignments.concurrent.ts'),
+      'utf8',
+    );
+    expect(source.split(anchor).length - 1).toBe(1);
+    expect(source).not.toContain('enable_nestloop');
+
+    // Real checksums, no test seams: the drift guard runs exactly as in prod.
+    const runtime = materializeMigrationRuntimeDirectory(migrationsDir);
+    roots.push(runtime.path);
+    const rewritten = readFileSync(
+      join(runtime.path, '20260819015725000_rbac_backfill_role_assignments.concurrent.ts'),
+      'utf8',
+    );
+    expect(rewritten).toContain('set local enable_nestloop = off;');
+    expect(rewritten).toContain('Array.isArray(results) ? results[results.length - 1] : results');
+    expect(rewritten.split(anchorLine).length - 1).toBe(0);
+    // The guarded batch is a two-statement simple query: the newline-escaped
+    // SET LOCAL prefix precedes the INSERT text.
+    expect(rewritten).toContain("pgm.db.query('set local enable_nestloop = off;");
+    expect(runtime.appliedOverrides.some((o) => o.includes('rbac_backfill_role_assignments'))).toBe(
+      true,
+    );
   });
 });
