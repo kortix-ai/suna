@@ -1,16 +1,17 @@
 {
-  "source_hash": "2bfc832375c1d4d41aec8c62b0799720d616cc9d951537104cda57ed561ae047",
+  "source_hash": "53ecc1a4a687b9ec9eaacd424a0bc184f731c13a1e180eb8c8576735ed6d277b",
   "diff_files": [
     "apps/api/src/__tests__/unit-connector-discover-catalog.test.ts",
-    "apps/api/src/connectors/connector-catalog.ts"
+    "apps/api/src/connectors/connector-catalog.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "dc0026ed4784d1d2f76f9396b3de74f691072341f56b868abb5fa8032d36125c",
-  "head": "f982301b9d7342a46287c73f987381d1ee3e7cf6",
+  "diff_hash": "15d596479426a6119995615839ee82c3c0f881c4227811c88dd591762c275d75",
+  "head": "8194eb52e7d8dd157c7578056f53cc32906eec55",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "db-suites": "pass"
   },
-  "at": "2026-10-03T20:16:43.175Z"
+  "at": "2026-10-04T04:31:25.971Z"
 }
