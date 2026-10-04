@@ -4,36 +4,71 @@
  * import), so the PATCH-response and poll-endpoint shapes are unit-testable in
  * isolation without booting the server / validating env.
  */
-import { preparationLabel, type ProviderTransitionStatus } from './provider-transition-core';
+import {
+  LIVE_TRANSITION_STATUSES,
+  TERMINAL_TRANSITION_STATUSES,
+  preparationLabel,
+} from './provider-transition-core';
+import { z } from 'zod';
 import type { ProviderTransitionRow } from './provider-transition-store';
 
 /**
- * The prepare-branch body of PATCH /:projectId/sandbox-provider (the durable
- * transition the UI polls). Carries an explicit `kind` discriminant so the PATCH
- * response union ({ kind:'project' } | { kind:'preparation' }) is unambiguous — a
- * structural union alone would force clients to shape-sniff.
+ * The one zod shape for the prepare-branch PATCH body — the wire shape this
+ * module owns and `lib/app.ts` brands for OpenAPI. `status` is the real
+ * transition-status union (plus the two synthetic PATCH outcomes), not a bare
+ * string: the hand-written OpenAPI copy used to loosen it and drift from the
+ * `PreparationView` type below, which is now derived from this schema.
  */
-export interface PreparationView {
-  kind: 'preparation';
-  transition_id: string | null;
-  project_id: string;
-  status: ProviderTransitionStatus | 'noop' | 'cleared';
-  source_provider: string | null;
-  target_provider: string | null;
-  active_provider: string | null;
-  label: string;
-  generation: number | null;
-  snapshot_name: string | null;
-  external_template_id: string | null;
-  commit_sha: string | null;
-  attempts: number;
-  last_error: string | null;
-  error_class: string | null;
-  requested_at: string | null;
-  ready_at: string | null;
-  activated_at: string | null;
-  immediate: boolean;
-}
+export const PreparationViewSchema = z.object({
+  kind: z.literal('preparation'),
+  transition_id: z.string().nullable(),
+  project_id: z.string(),
+  status: z
+    .enum([...LIVE_TRANSITION_STATUSES, ...TERMINAL_TRANSITION_STATUSES] as const)
+    .or(z.literal('noop'))
+    .or(z.literal('cleared')),
+  source_provider: z.string().nullable(),
+  target_provider: z.string().nullable(),
+  active_provider: z.string().nullable(),
+  label: z.string(),
+  generation: z.number().nullable(),
+  snapshot_name: z.string().nullable(),
+  external_template_id: z.string().nullable(),
+  commit_sha: z.string().nullable(),
+  attempts: z.number(),
+  last_error: z.string().nullable(),
+  error_class: z.string().nullable(),
+  requested_at: z.string().nullable(),
+  ready_at: z.string().nullable(),
+  activated_at: z.string().nullable(),
+  immediate: z.boolean(),
+});
+
+export type PreparationView = z.infer<typeof PreparationViewSchema>;
+
+/**
+ * The one zod shape for the PUBLIC projection below; the `PublicTransitionView`
+ * type is derived from it, so the projection and its OpenAPI copy cannot drift.
+ */
+export const PublicTransitionViewSchema = z.object({
+  transition_id: z.string().nullable(),
+  project_id: z.string(),
+  status: z
+    .enum([...LIVE_TRANSITION_STATUSES, ...TERMINAL_TRANSITION_STATUSES] as const)
+    .or(z.literal('noop'))
+    .or(z.literal('cleared')),
+  source_provider: z.string().nullable(),
+  target_provider: z.string().nullable(),
+  generation: z.number().nullable(),
+  label: z.string(),
+  error_class: z.string().nullable(),
+  requested_at: z.string().nullable(),
+  ready_at: z.string().nullable(),
+  activated_at: z.string().nullable(),
+  immediate: z.boolean(),
+});
+
+export type PublicTransitionView = z.infer<typeof PublicTransitionViewSchema>;
 
 export function serializeTransition(
   row: ProviderTransitionRow,
@@ -73,21 +108,6 @@ export function serializeTransition(
  * first place, so they cannot leak through this projection either.) No `kind`
  * discriminant — the poll response is a single shape, not the PATCH result union.
  */
-export interface PublicTransitionView {
-  transition_id: string | null;
-  project_id: string;
-  status: ProviderTransitionStatus | 'noop' | 'cleared';
-  source_provider: string | null;
-  target_provider: string | null;
-  generation: number | null;
-  label: string;
-  error_class: string | null;
-  requested_at: string | null;
-  ready_at: string | null;
-  activated_at: string | null;
-  immediate: boolean;
-}
-
 export function toPublicTransitionView(v: PreparationView): PublicTransitionView {
   return {
     transition_id: v.transition_id,

@@ -14,6 +14,10 @@ import {
 } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
 import { Hono } from 'hono';
+import {
+  PreparationViewSchema as TransitionPreparationViewSchema,
+  PublicTransitionViewSchema as TransitionPublicViewSchema,
+} from '../provider-transition/provider-transition-view';
 
 export const projectsApp = makeOpenApiApp<AppEnv>();
 
@@ -66,34 +70,11 @@ export const AnyObject = z.record(z.string(), z.any());
 // An explicit `kind` discriminant makes the union unambiguous; the OpenAPI schema
 // is a `oneOf` keyed on it (was a permissive AnyObject that hid the prepare shape).
 
-/** The prepare-branch body: the durable transition the UI polls. Mirrors
- *  `PreparationView` (provider-transition-service.ts) — carries `kind`. */
-export const PreparationViewSchema = z
-  .object({
-    kind: z.literal('preparation'),
-    transition_id: z.string().nullable(),
-    project_id: z.string(),
-    status: z.string(),
-    source_provider: z.string().nullable(),
-    target_provider: z.string().nullable(),
-    active_provider: z.string().nullable(),
-    label: z.string(),
-    generation: z.number().nullable(),
-    snapshot_name: z.string().nullable(),
-    external_template_id: z.string().nullable(),
-    commit_sha: z.string().nullable(),
-    attempts: z.number(),
-    last_error: z.string().nullable(),
-    error_class: z.string().nullable(),
-    requested_at: z.string().nullable(),
-    ready_at: z.string().nullable(),
-    activated_at: z.string().nullable(),
-    immediate: z.boolean(),
-  })
-  .openapi('PreparationView');
+/** The prepare-branch body — the wire shape provider-transition-view owns; branded here for the docs. */
+const PreparationViewSchema = TransitionPreparationViewSchema.openapi('PreparationView');
 
 /** The immediate-branch body: the updated project, tagged with `kind:'project'`. */
-export const SandboxProviderProjectResultSchema = ContractProjectSchema.extend({
+const SandboxProviderProjectResultSchema = ContractProjectSchema.extend({
   kind: z.literal('project'),
 }).openapi('SandboxProviderProjectResult');
 
@@ -106,22 +87,8 @@ export const SandboxProviderPatchResultSchema = z
 // PUBLIC projection — status / providers / generation / timestamps / user-safe
 // error class only. Never leaks lease_epoch, lease holder, internal error strings,
 // image names, or template ids (see toPublicTransitionView).
-export const SandboxProviderTransitionViewSchema = z
-  .object({
-    transition_id: z.string().nullable(),
-    project_id: z.string(),
-    status: z.string(),
-    source_provider: z.string().nullable(),
-    target_provider: z.string().nullable(),
-    generation: z.number().nullable(),
-    label: z.string(),
-    error_class: z.string().nullable(),
-    requested_at: z.string().nullable(),
-    ready_at: z.string().nullable(),
-    activated_at: z.string().nullable(),
-    immediate: z.boolean(),
-  })
-  .openapi('SandboxProviderTransitionView');
+const SandboxProviderTransitionViewSchema =
+  TransitionPublicViewSchema.openapi('SandboxProviderTransitionView');
 
 export const SandboxProviderTransitionStateSchema = z
   .object({
