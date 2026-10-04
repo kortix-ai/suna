@@ -1,0 +1,18 @@
+{
+  "source_hash": "d681806d966b94ca4bbaacc80f73e8befd372164d75e3f1e245161d486854d58",
+  "diff_files": [
+    "apps/mobile/components/session/SessionActionsSheet.tsx",
+    "apps/mobile/components/session/SessionCompactConfirm.tsx",
+    "apps/mobile/components/session/SessionDeleteDialog.tsx",
+    "apps/mobile/components/session/actions-sheet-characterization.test.tsx"
+  ],
+  "diff_hash": "cdf022dc0ed75f3177f31d7ff0cc0622fc2563dc0e935a33015e3e0aaee57fa2",
+  "head": "33c4df87199011fea22ccce2eab38e6f3bd95eac",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T01:20:59.580Z"
+}
