@@ -35,7 +35,7 @@
     "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
   },
   "dependencies": {
-    "hono": "^4.4.0",
+    "hono": "^4.13.7",
     "ws": "^8.18.0"
   },
   "devDependencies": {
