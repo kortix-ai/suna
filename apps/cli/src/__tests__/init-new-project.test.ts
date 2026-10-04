@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
+  realpathSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,7 +24,7 @@ const cli = resolve(import.meta.dir, '..', 'index.ts');
 
 describe('init — the plain new-project path', () => {
   test('--primary/--agents/-y scaffold a fresh directory headlessly', () => {
-    const parent = mkdtempSync(resolve(tmpdir(), 'kortix-init-new-'));
+    const parent = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-new-')));
     const result = spawnSync(
       process.execPath,
       [cli, 'init', 'my-app', '--primary', 'codex', '--agents', 'claude,cursor', '-y', '--no-git'],
@@ -52,7 +53,7 @@ describe('init — the plain new-project path', () => {
   });
 
   test('-y without a name is refused before anything is created', () => {
-    const parent = mkdtempSync(resolve(tmpdir(), 'kortix-init-noname-'));
+    const parent = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-noname-')));
     const result = spawnSync(process.execPath, [cli, 'init', '-y'], {
       cwd: parent,
       encoding: 'utf8',
@@ -66,7 +67,7 @@ describe('init — the plain new-project path', () => {
   });
 
   test('--force with an explicit name is still the NEW-project path', () => {
-    const parent = mkdtempSync(resolve(tmpdir(), 'kortix-init-force-name-'));
+    const parent = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-force-name-')));
     const result = spawnSync(
       process.execPath,
       [cli, 'init', '--force', 'fresh', '--primary', 'codex', '-y'],
@@ -83,7 +84,7 @@ describe('init — the plain new-project path', () => {
   });
 
   test('a non-empty target directory is refused', () => {
-    const parent = mkdtempSync(resolve(tmpdir(), 'kortix-init-occupied-'));
+    const parent = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-init-occupied-')));
     mkdirSync(resolve(parent, 'occupied'));
     writeFileSync(resolve(parent, 'occupied', 'keep.txt'), 'keep me\n');
     const result = spawnSync(
