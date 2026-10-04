@@ -1891,6 +1891,11 @@ export const chatPendingAuthMessages = kortixSchema.table(
       table.expiresAt,
     ),
     index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+    // Covers the project_id FK (chat_pending_auth_messages_project_id_fkey, built
+    // by the chat_pending_auth_messages_project_index migration): a project
+    // delete cascades here by project_id, and that lookup otherwise seq-scans
+    // the table (Supabase advisor: unindexed_foreign_keys, KRTX-1097).
+    index('idx_chat_pending_auth_messages_project').on(table.projectId),
   ],
 );
 
@@ -3060,7 +3065,7 @@ export const oauthClients = kortixSchema.table(
   (table) => [
     // No index on account_id (KRTX-1190): the advisor's unused_index lint
     // flagged idx_oauth_clients_account (idx_scan = 0 since creation), so
-    // 20261004012854528 drops it. The account_id FK cascade then seq-scans a
+    // 20261004063518109 drops it. The account_id FK cascade then seq-scans a
     // table that stays tiny (self-registered rows are swept after 7 days).
     uniqueIndex('idx_oauth_clients_app').on(table.appId),
   ],

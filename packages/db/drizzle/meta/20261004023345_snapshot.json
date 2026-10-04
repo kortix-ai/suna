@@ -1,5 +1,5 @@
 {
-  "id": "f2fe7268-b848-4929-b42c-b79eeb90dbc6",
+  "id": "49d6de72-b0d2-4a37-8f98-641f1b8c84f5",
   "prevId": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
   "version": "7",
   "dialect": "postgresql",
@@ -5532,6 +5532,21 @@
           "columns": [
             {
               "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_pending_auth_messages_project": {
+          "name": "idx_chat_pending_auth_messages_project",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -11197,6 +11212,21 @@
         }
       },
       "indexes": {
+        "idx_oauth_clients_account": {
+          "name": "idx_oauth_clients_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_oauth_clients_app": {
           "name": "idx_oauth_clients_app",
           "columns": [
