@@ -12,7 +12,7 @@
  *   POST   /device-auth/:code/deny    — deny request
  */
 
-import { createRoute, z } from '@hono/zod-openapi';
+import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { requestClientKey } from '../../shared/client-ip';
 import { createHash } from 'node:crypto';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
@@ -287,6 +287,14 @@ export function createDeviceAuthPublicRouter() {
 export function createDeviceAuthRouter() {
   const router = makeOpenApiApp<AppEnv>();
 
+  registerDeviceAuthInfoRoute(router);
+  registerDeviceAuthApproveRoute(router);
+  registerDeviceAuthDenyRoute(router);
+
+  return router;
+}
+
+function registerDeviceAuthInfoRoute(router: OpenAPIHono<AppEnv>): void {
   // GET /:code/info — fetch request details for approval page
   router.openapi(
     createRoute({
@@ -363,7 +371,9 @@ export function createDeviceAuthRouter() {
       return c.json({ ...request, registered });
     },
   );
+}
 
+function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
   // POST /:code/approve — pair the machine + add it to a project as an account
   router.openapi(
     createRoute({
@@ -610,7 +620,9 @@ export function createDeviceAuthRouter() {
       return c.json({ success: true, ...result });
     },
   );
+}
 
+function registerDeviceAuthDenyRoute(router: OpenAPIHono<AppEnv>): void {
   // POST /:code/deny — deny request
   router.openapi(
     createRoute({
@@ -651,6 +663,4 @@ export function createDeviceAuthRouter() {
       return c.json({ success: true });
     },
   );
-
-  return router;
 }
