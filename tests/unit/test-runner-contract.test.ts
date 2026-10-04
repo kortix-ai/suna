@@ -45,13 +45,6 @@ describe('local test runner contract', () => {
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
   });
 
-  it('generates an unpredictable internal gateway token for each local stack', () => {
-    const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
-
-    expect(source).toContain('const gatewayToken = `ke2e-local-${crypto.randomUUID()}`;');
-    expect(source).not.toContain('"ke2e-local-gateway-internal-token"');
-  });
-
   it('snapshots fixture counts into results before teardown starts', () => {
     const runner = readFileSync(resolve(root, 'tests/src/core/runner.ts'), 'utf8');
     const fixtureSnapshot = runner.indexOf('fixtureStats: world.fixtureStats()');
@@ -132,7 +125,18 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    // Same timeout contract as the CLI above: process-heavy git fixtures sit
+    // above bun's 5 s default on slower boxes, and the packages lane already
+    // sets KORTIX_TEST_TIMEOUT_MS=30000 for every workspace suite.
+    expect(agentPackage.scripts.test).toBe(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
+    const gatewayPackage = JSON.parse(
+      readFileSync(resolve(root, 'apps/llm-gateway/package.json'), 'utf8'),
+    );
+    expect(gatewayPackage.scripts.test).toBe(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

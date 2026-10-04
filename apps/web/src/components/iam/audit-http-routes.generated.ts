@@ -166,7 +166,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|admin|api|accounts|:id|members|:userId|role",
   "PUT|v1|admin|api|accounts|:id|overrides",
   "GET|v1|admin|api|accounts|:id|projects",
-  "POST|v1|admin|api|accounts|:id|session-limit",
   "PUT|v1|admin|api|accounts|:id|sso-domain-verification",
   "GET|v1|admin|api|accounts|:id|subscription",
   "POST|v1|admin|api|accounts|:id|tier",

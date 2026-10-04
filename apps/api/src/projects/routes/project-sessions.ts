@@ -191,9 +191,6 @@ projectsApp.openapi(
     mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
-  for (const [key, value] of Object.entries(result.headers ?? {})) {
-    c.header(key, value);
-  }
   if (!result.row) {
     return c.json(
       {

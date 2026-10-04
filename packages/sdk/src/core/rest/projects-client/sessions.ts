@@ -632,8 +632,7 @@ export interface EnsureWarmProjectSessionOptions {
  * Speculative by contract: the caller ignores every failure and falls through to
  * `createProjectSession`, which re-evaluates every gate and surfaces the real
  * error. `showErrors: false` keeps the recoverable `409 WARM_SESSION_UNAVAILABLE`
- * — an account with no concurrent-session headroom, a project whose repo cannot
- * be read — out of the global error sink, where it became a toast on an ordinary
+ * — a project whose repo cannot be read, say — out of the global error sink, where it became a toast on an ordinary
  * project page view.
  */
 export async function ensureWarmProjectSession(

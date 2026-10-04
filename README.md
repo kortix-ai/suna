@@ -7,7 +7,7 @@
 
 # Kortix
 
-**The open-source AI Management System**
+**The open-source AI Operating System**
 
 **The leading open-source alternative to Claude Cowork and ChatGPT Work.**
 
@@ -30,7 +30,7 @@ Agents that deliver finished work — reports, decks, code, replies, deployed ch
 product category. Every version of it runs inside a model lab, on that lab's model, with your
 company's brain on their side of the wall.
 
-**Kortix is the one you own.** It's an open-source **AI Management System**: your agents, the
+**Kortix is the one you own.** It's an open-source **AI Operating System**: your agents, the
 skills they share, your company memory, and every connector live in one git repo — versioned,
 diffable, and shared by the whole company. The agents work on real **cloud computers** — an
 isolated sandbox per session, on its own branch — and land what they produce through a **change

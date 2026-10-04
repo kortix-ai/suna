@@ -35,6 +35,8 @@ let runtimePromptPosts = 0;
 let createBody: Record<string, unknown> | null = null;
 /** The runtime's transcript: a reply appears once a prompt reaches the inbox. */
 let transcript: unknown[] = [];
+/** When true, the assistant reply stops with a structured runtime error. */
+let replyError = false;
 
 function sessionRow() {
   return {
@@ -93,6 +95,10 @@ function assistantReply(parentID = 'msg_user') {
       },
       time: { created: 2, completed: 3 },
       finish: 'stop',
+      // OpenCode's error envelope: the message lives under `data.message`.
+      ...(replyError
+        ? { error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } } }
+        : {}),
     },
     parts: [
       {
@@ -120,6 +126,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     runtimePromptPosts = 0;
     createBody = null;
     transcript = [];
+    replyError = false;
 
     server = Bun.serve({
       port: 0,
@@ -283,5 +290,35 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     expect(runtimePromptPosts).toBe(1);
     expect(JSON.parse(stdout).text).toBe('OpenCode REST reply');
     expect(stderr).toBe('');
+
+    // A turn that stops with a structured runtime error surfaces its name and
+    // message in chat and log output, and keeps the raw envelope in --json.
+    replyError = true;
+    stdout = '';
+    const failedCode = await runSessions([
+      'chat',
+      SESSION_ID,
+      '--project',
+      PROJECT_ID,
+      '--prompt',
+      'synthetic failure',
+    ]);
+    expect(failedCode).toBe(1);
+    expect(stdout).toContain('error: APIError: Synthetic model requires a paid plan.');
+    expect(stdout).not.toContain('error: unknown');
+
+    stdout = '';
+    expect(
+      await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--limit', '5']),
+    ).toBe(0);
+    expect(stdout).toContain('error: APIError: Synthetic model requires a paid plan.');
+
+    stdout = '';
+    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--json'])).toBe(0);
+    const logged = JSON.parse(stdout) as Array<{ role: string; error?: unknown }>;
+    expect(logged.at(-1)).toMatchObject({
+      role: 'assistant',
+      error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } },
+    });
   });
 });

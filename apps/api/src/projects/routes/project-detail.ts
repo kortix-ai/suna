@@ -155,7 +155,7 @@ projectsApp.openapi(
     // custom role that unchecks e.g. project.skill.read gets an empty skills
     // section — all WITHOUT 403-ing the whole workspace load (which loadProjectForUser
     // deliberately gates only on project.read so the shell renders for every member).
-    const [canFiles, canAgents, canSkills, canCommands, canCustomize] = await Promise.all([
+    const [canFiles, canAgents, canSkills, canCommands] = await Promise.all([
       projectCapabilityAllowed(
         c,
         loaded.userId,
@@ -184,20 +184,12 @@ projectsApp.openapi(
         projectId,
         PROJECT_ACTIONS.PROJECT_COMMAND_READ,
       ),
-      projectCapabilityAllowed(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
-      ),
     ]);
     const gated = applyDetailCapabilityFilter(config, visibleFiles, {
       canFiles,
       canAgents,
       canSkills,
       canCommands,
-      canCustomize,
     });
     return c.json({
       project: serializeProject(loaded.row, {
@@ -250,7 +242,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
     );
 
     const updates: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };

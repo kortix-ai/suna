@@ -2,6 +2,8 @@
  * Central styling primitives for the Kortix CLI.
  */
 
+import { formatDollarsAsCredits } from '@kortix/shared';
+
 const ENABLED = process.stdout.isTTY === true && !process.env.NO_COLOR;
 
 function code(seq: string): string {
@@ -34,6 +36,24 @@ export function visibleWidth(s: string): number {
 export function pad(s: string, width: number): string {
   const extra = Math.max(0, width - visibleWidth(s));
   return s + ' '.repeat(extra);
+}
+
+/** Truncate to `max` visible characters with an ellipsis when longer. */
+export function trim(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+}
+
+/** Render a USD amount for a table cell; a non-finite value renders as an em dash. */
+export function money(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : '—';
+}
+
+/** Render a USD amount in human credits (the 100-credits-per-USD convention). */
+export function credits(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${formatDollarsAsCredits(value)} credits`
+    : '—';
 }
 
 /** Status helpers. */

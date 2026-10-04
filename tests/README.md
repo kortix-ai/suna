@@ -35,6 +35,7 @@ pnpm test -- --db-only prompt-inbox tests/migration # Suites whose path contains
 pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/4 # One deterministic browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
+pnpm test -- --agentic-only tests/example.e2e.ts # Opt-in e2e browser pilot
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
 pnpm test -- --target-full     # Every deployed staging API flow and browser journey
@@ -62,6 +63,12 @@ tests/test-results/local/benchmark-<timestamp>.json
 
 The file contains the Git SHA, total duration, lane duration, command, and exit
 code.
+
+The opt-in agentic pilot uses a ChatGPT subscription and exact browser/network
+assertions. The live prompt journey requires an isolated `--db` worktree.
+It is excluded from default, full, and release runs during evaluation.
+Read the [evaluation and runbook](../.agents/skills/testing/references/e2e-evaluation.md)
+before running it. Use `pnpm test -- --agentic-only`; do not add another root test script.
 
 ## CI lanes
 

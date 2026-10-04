@@ -380,17 +380,20 @@ function makeDeps(): ConnectorRouterDeps {
   };
 }
 
+/** Minimal child env: the spawned CLI must not adopt this sandbox's injected env file. */
+const spawnEnv = () => ({
+  PATH: process.env.PATH,
+  HOME: process.env.HOME,
+  KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+  KORTIX_API_URL: apiUrl,
+  KORTIX_TOKEN: TOKEN,
+});
+
 async function runCli(args: string[], extraEnv: Record<string, string | undefined> = {}) {
   const proc = Bun.spawn({
     cmd: ['bun', CLI_ENTRY, 'connectors', ...args],
     cwd: REPO_ROOT,
-    env: {
-      PATH: process.env.PATH,
-      HOME: process.env.HOME,
-      KORTIX_API_URL: apiUrl,
-      KORTIX_TOKEN: TOKEN,
-      ...extraEnv,
-    },
+    env: { ...spawnEnv(), ...extraEnv },
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -672,12 +675,7 @@ describe('MCP face', () => {
     const proc = Bun.spawn({
       cmd: ['bun', CLI_ENTRY, 'connectors', 'mcp'],
       cwd: REPO_ROOT,
-      env: {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        KORTIX_API_URL: apiUrl,
-        KORTIX_TOKEN: TOKEN,
-      },
+      env: spawnEnv(),
       stdin: 'pipe',
       stdout: 'pipe',
       stderr: 'pipe',
@@ -766,13 +764,7 @@ describe('MCP face', () => {
     const proc = Bun.spawn({
       cmd: ['bun', CLI_ENTRY, 'connectors', 'mcp'],
       cwd: REPO_ROOT,
-      env: {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        KORTIX_API_URL: apiUrl,
-        KORTIX_TOKEN: TOKEN,
-        KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
-      },
+      env: { ...spawnEnv(), KORTIX_INTERNAL_WORKSPACE_ROOT: workspace },
       stdin: 'pipe',
       stdout: 'pipe',
       stderr: 'pipe',
@@ -838,13 +830,7 @@ describe('MCP face', () => {
     const proc = Bun.spawn({
       cmd: ['bun', CLI_ENTRY, 'connectors', 'mcp'],
       cwd: REPO_ROOT,
-      env: {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        KORTIX_API_URL: apiUrl,
-        KORTIX_TOKEN: TOKEN,
-        KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
-      },
+      env: { ...spawnEnv(), KORTIX_INTERNAL_WORKSPACE_ROOT: workspace },
       stdin: 'pipe',
       stdout: 'pipe',
       stderr: 'pipe',

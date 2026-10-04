@@ -24,13 +24,22 @@ export function out(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
-export interface ExecArgs {
+interface ExecArgs {
   command: string;
   args: string[];
-  /** Last value wins for a repeated flag. */
-  flags: Record<string, string>;
+  /** Last value wins for a repeated flag. A valueless `--flag` is stored as `true`. */
+  flags: Record<string, string | true>;
   /** Every value of every flag, in order — for repeatable flags such as `--attach`. */
-  repeated: Record<string, string[]>;
+  repeated: Record<string, (string | true)[]>;
+}
+
+/**
+ * A flag's string value — `undefined` for a valueless (`--flag`) or absent flag.
+ * The one accessor that knows the `true` sentinel; everything downstream sees
+ * plain strings or nothing.
+ */
+export function stringValue(value: string | true | null | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 /**
@@ -41,13 +50,13 @@ export interface ExecArgs {
 export function parseExecArgs(argv: string[]): ExecArgs {
   const command = argv[0] ?? 'help';
   const args: string[] = [];
-  const flags: Record<string, string> = {};
-  const repeated: Record<string, string[]> = {};
+  const flags: Record<string, string | true> = {};
+  const repeated: Record<string, (string | true)[]> = {};
   for (let i = 1; i < argv.length; i += 1) {
     const a = argv[i]!;
     if (a.startsWith('--')) {
       const key = a.slice(2);
-      const val = argv[i + 1] && !argv[i + 1]!.startsWith('--') ? argv[(i += 1)]! : 'true';
+      const val = argv[i + 1] && !argv[i + 1]!.startsWith('--') ? argv[(i += 1)]! : true;
       flags[key] = val;
       (repeated[key] ??= []).push(val);
     } else {
