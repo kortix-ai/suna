@@ -271,8 +271,16 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   const library = env.KORTIX_CAPTURE_DIR;
   const engineDir = env.KORTIX_CAPTURE_ENGINE_DIR;
   if (!library || !engineDir) throw new Error('KORTIX_CAPTURE_DIR and KORTIX_CAPTURE_ENGINE_DIR are required');
-  // KORTIX_CAPTURE_SERVICE_TICK_MS: tests only (the reconcile interval).
-  if (verb === 'run') return runService({ library, engineDir, env, tickMs: Number(env.KORTIX_CAPTURE_SERVICE_TICK_MS) || TICK_MS });
+  // KORTIX_CAPTURE_SERVICE_TICK_MS / _PROBE_MS: tests only (reconcile and probe intervals).
+  if (verb === 'run') {
+    return runService({
+      library,
+      engineDir,
+      env,
+      tickMs: Number(env.KORTIX_CAPTURE_SERVICE_TICK_MS) || TICK_MS,
+      probeEveryMs: Number(env.KORTIX_CAPTURE_SERVICE_PROBE_MS) || PROBE_EVERY_MS,
+    });
+  }
   if (!['install', 'uninstall', 'pause', 'resume', 'stop', 'status', 'render'].includes(verb)) {
     throw new Error(`usage: capture-service.js run|install|uninstall|pause|resume|stop|status|render`);
   }
