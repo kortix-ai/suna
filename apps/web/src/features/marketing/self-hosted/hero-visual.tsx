@@ -62,7 +62,7 @@ export function SelfHostedHeroVisual(): ReactNode {
       role="img"
       aria-label={tI18nComplete.raw('textab66ce448ad0')}
     >
-      <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
+      <div className="relative h-[24rem] w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-background sm:h-[26rem]">
         {/* ── one project, holding the planes together ────────────────── */}
         <m.span
           className="border-border absolute w-2.5 origin-top rounded-l-md border-y border-l"
