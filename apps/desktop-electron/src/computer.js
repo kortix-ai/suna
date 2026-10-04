@@ -155,6 +155,35 @@ function checkPageApiUrl(given, backendUrl) {
   return `apiUrl is not the backend of this Kortix instance (${backendUrl})`;
 }
 
+/**
+ * This computer's id as the computer agent reports it (`machineInfo.machineId`
+ * of a tunnel connection): sha256("kortix-machine:" + the OS machine id,
+ * lowercased). Same formula as packages/agent-tunnel/src/agent/device-auth.ts
+ * `machineId()`; computer.test.js asserts they agree. Capture sends it on
+ * approval, so a capture device joins this computer. Null when the OS id is
+ * unreadable.
+ */
+function machineId({
+  os: osName = process.platform,
+  run = (command, args) => execFileSync(command, args, { encoding: 'utf8', timeout: 2_000, stdio: ['ignore', 'pipe', 'ignore'] }),
+  read = (file) => fs.readFileSync(file, 'utf8'),
+} = {}) {
+  const attempt = (source) => {
+    try {
+      return source()?.trim() || null;
+    } catch {
+      return null;
+    }
+  };
+  const raw =
+    osName === 'darwin'
+      ? attempt(() => /"IOPlatformUUID" = "([^"]+)"/.exec(run('ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice']))?.[1])
+      : osName === 'win32'
+        ? attempt(() => /MachineGuid\s+REG_SZ\s+(\S+)/.exec(run('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid']))?.[1])
+        : (attempt(() => read('/etc/machine-id')) ?? attempt(() => read('/var/lib/dbus/machine-id')));
+  return raw ? crypto.createHash('sha256').update(`kortix-machine:${raw.toLowerCase()}`).digest('hex') : null;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isProjectId(value) {
@@ -619,6 +648,7 @@ module.exports = {
   isProjectId,
   keepAwakeSupported,
   keepRunningInTray,
+  machineId,
   ndjsonParser,
   nextAccess,
   readAccess,

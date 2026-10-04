@@ -534,3 +534,21 @@ describe('computer setup (the macOS grants the approved access needs)', () => {
     expect(computer.computerSetupMissing(home, null)).toEqual([]); // not macOS
   });
 });
+
+describe('machineId (the computer agent formula)', () => {
+  const tunnel = require('../../../packages/agent-tunnel/src/agent/device-auth');
+  const run = () => '| "IOPlatformUUID" = "ABCDEF01-2345-6789-ABCD-EF0123456789"\n';
+  const reg = () => '    MachineGuid    REG_SZ    1F2E3D4C-5B6A-7980-A1B2-C3D4E5F60718\n';
+  const read = () => '0123456789abcdef0123456789abcdef\n';
+  test('matches packages/agent-tunnel machineId() on macOS, Windows, Linux, and this machine', () => {
+    for (const [os, stub] of [['darwin', { run }], ['win32', { run: reg }], ['linux', { read }]]) {
+      const ours = computer.machineId({ os, ...stub });
+      expect(ours).toMatch(/^[0-9a-f]{64}$/);
+      expect(ours).toBe(tunnel.machineId({ os, ...stub }));
+    }
+    expect(computer.machineId()).toBe(tunnel.machineId());
+  });
+  test('an unreadable OS id gives null', () => {
+    expect(computer.machineId({ os: 'linux', read: () => { throw new Error('ENOENT'); } })).toBeNull();
+  });
+});

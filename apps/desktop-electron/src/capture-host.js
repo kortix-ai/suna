@@ -6,11 +6,12 @@
 // installs, pauses and removes that service, and reads the engine's and the
 // service's status. Rules live in capture.js; the tray is computer-tray.js.
 
-const { app, shell } = require('electron');
+const { app, desktopCapturer, shell, systemPreferences } = require('electron');
 const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const capture = require('./capture');
+const { machineId } = require('./computer');
 
 const REFRESH_EVERY_MS = 30_000;
 /** The page polls capture_status; within this age the cached answer is reused. */
@@ -97,6 +98,8 @@ function setupCapture(deps) {
   let viewAt = 0;
   let refreshing = null;
   let lastRepairAt = 0;
+  /** @type {string | null | undefined} */
+  let thisMachine;
 
   /** Brings the service in line with the person's switch and the sign-in. */
   async function reconcile(desktop, sync, current, { force = false } = {}) {
@@ -140,6 +143,8 @@ function setupCapture(deps) {
         children: { recorder: heartbeat?.recorder ?? { running: false }, actions: heartbeat?.actions ?? { running: false } },
       }),
       version: engineState.version,
+      // The computer agent's id for this machine: the page sends it on approval.
+      machineId: (thisMachine ??= machineId()),
       service: {
         installed: after.installed === true,
         enabled: after.enabled !== false,
@@ -239,6 +244,29 @@ function setupCapture(deps) {
     return refresh();
   }
 
+  /**
+   * "Allow all" in the Your-computer setup: asks macOS for each missing grant
+   * Capture needs, for Kortix (the service runs this app's binary, so the
+   * grants hold for it): Screen Recording, Accessibility, and the Microphone
+   * only when Audio is on. Answers the fresh status.
+   */
+  async function requestGrants({ audio = false } = {}) {
+    if (process.platform !== 'darwin') return refresh();
+    if (!systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
+    if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+      // The first capture attempt shows the prompt; after a "Don't Allow" only System Settings can grant it.
+      if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
+        await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      } else {
+        void shell.openExternal(capture.PERMISSION_PANES.screen);
+      }
+    }
+    if (audio && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+      await systemPreferences.askForMediaAccess('microphone').catch(() => false);
+    }
+    return refresh();
+  }
+
   async function openTimeline() {
     const { env } = await context();
     // Its own window, outside this app; it closes on its own.
@@ -267,6 +295,8 @@ function setupCapture(deps) {
         return signOut();
       case 'capture_open_timeline':
         return openTimeline();
+      case 'capture_grants_request':
+        return requestGrants(args);
       case 'capture_open_permission': {
         const pane = capture.PERMISSION_PANES[args.permission];
         if (process.platform !== 'darwin' || !pane) throw new Error(`No settings pane for ${args.permission}`);

@@ -441,7 +441,7 @@ function captureTrayItems(view, actions) {
           { id: 'capture-timeline', label: 'Open Capture Timeline', click: actions.timeline },
         ]
       : []),
-    { id: 'capture-settings', label: view.signInRequired ? 'Sign in to Capture again…' : 'Capture Settings…', click: actions.settings },
+    { id: 'capture-settings', label: view.signInRequired ? 'Sign in to Capture again…' : 'Your Computer…', click: actions.settings },
   ];
 }
 
