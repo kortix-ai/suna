@@ -14,6 +14,7 @@
  */
 
 import { and, desc, eq, sql } from 'drizzle-orm';
+import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
 
@@ -26,7 +27,7 @@ export const CHANGE_REQUEST_LIST_MAX_LIMIT = 500;
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 
-export function serializeChangeRequest(row: ChangeRequestRow) {
+export function serializeChangeRequest(row: ChangeRequestRow): ChangeRequest {
   return {
     cr_id: row.crId,
     account_id: row.accountId,

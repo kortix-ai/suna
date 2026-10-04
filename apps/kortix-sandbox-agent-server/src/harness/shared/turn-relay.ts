@@ -23,10 +23,10 @@ import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-cont
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
 
-type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
+export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
 /** One POST, or null when this box has no control plane. */
-async function postTurnStream(frame: TurnStreamFrame, timeoutMs = 15_000): Promise<Response | null> {
+export async function postTurnStream(frame: TurnStreamFrame, timeoutMs = 15_000): Promise<Response | null> {
   const ctx = sandboxRelayContext()
   if (!ctx) return null
   const body: TurnStreamRelayBody = { session_id: ctx.sessionId, ...frame }

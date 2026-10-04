@@ -12,16 +12,10 @@
  * bind.
  */
 
-import {
-  type ConnectorBindingNotice,
-  connectorBindingNotice,
-} from '@/lib/connector-binding';
-import {
-  collidingIdentifiers,
-  normalizeSecretKey,
-} from '@/lib/secret-collisions';
-import { isAllowlistable } from '@/lib/secret-scope';
-import { type ScopeRowKey, isFixedAtStart } from '@/lib/session-scope';
+import { type ConnectorBindingNotice, connectorBindingNotice } from '@/lib/connector-binding';
+import { collidingIdentifiers, normalizeSecretKey } from '@/lib/secret-collisions';
+import { selectAllowlistableSecrets } from '@/lib/secret-scope';
+import { type ScopeRowKey, isFixedAtStart, scopeBadge } from '@/lib/session-scope';
 import type {
   BindableConnection,
   ConnectorBindingChoice,
@@ -32,9 +26,9 @@ import type { ProjectSecret } from '@kortix/sdk';
 // ── Which controls may touch THIS session ───────────────────────────────────
 
 /** Same four rows the scope panel names, so the two cannot disagree. */
-export type ScopeControlKey = ScopeRowKey;
+type ScopeControlKey = ScopeRowKey;
 
-export interface ScopeControl {
+interface ScopeControl {
   key: ScopeControlKey;
   /** Does a control here change the RUNNING session, or only the next one? */
   live: boolean;
@@ -44,19 +38,19 @@ export interface ScopeControl {
 
 const COPY: Record<ScopeControlKey, { badge: string; note: string }> = {
   model: {
-    badge: 'Changeable now',
+    badge: scopeBadge('model'),
     note: 'Switching re-points the running runtime, which restarts it and ends the in-flight turn. If it cannot be applied to the running box the choice is saved and takes effect the next time this session starts — the picker says which happened.',
   },
   agent: {
-    badge: 'Per message',
+    badge: scopeBadge('agent'),
     note: 'Each message names the agent that runs it, and the composer above picks it. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.',
   },
   secrets: {
-    badge: 'Changeable',
+    badge: scopeBadge('secrets'),
     note: 'What you set REPLACES the current list, from the next prompt. Dropping one stops it being delivered — it cannot un-read a value the agent already has in its context or in a shell it already started, so rotate it if that matters.',
   },
   connections: {
-    badge: 'Changeable',
+    badge: scopeBadge('connections'),
     note: 'What you set REPLACES the current bindings. Unlike secrets this is fully retroactive — a binding is resolved server-side on each tool call, so the next call already uses the new one. An alias you unbind falls back to the project default.',
   },
 };
@@ -76,7 +70,7 @@ export const START_NEW_SESSION_ACTION = 'Start a new session with this scope';
  * app cannot enumerate and may be smaller than the rows shown. Saying "allowed"
  * there would be a claim about secret access that nothing verified.
  */
-export type SecretMembership = 'allowed' | 'excluded' | 'agent_grant';
+type SecretMembership = 'allowed' | 'excluded' | 'agent_grant';
 
 export const SECRET_MEMBERSHIP_LABEL: Record<SecretMembership, string> = {
   allowed: 'Allowed',
@@ -84,7 +78,7 @@ export const SECRET_MEMBERSHIP_LABEL: Record<SecretMembership, string> = {
   agent_grant: 'Agent grant',
 };
 
-export interface ScopeBarSecretRow {
+interface ScopeBarSecretRow {
   /** What the allowlist addresses. Unique per project. */
   identifier: string;
   /** The env KEY the value lands on. Deliberately NOT unique. */
@@ -118,17 +112,15 @@ export function scopeBarSecrets(input: {
   // Only runtime-scoped rows can be named at all — create resolves the
   // allowlist against those alone, so listing a channel-install row as
   // "excluded" would invent a decision nobody could have made.
-  const rows: ScopeBarSecretRow[] = (input.secrets ?? [])
-    .filter(isAllowlistable)
-    .map((secret) => ({
-      identifier: secret.identifier,
-      name: secret.name,
-      membership: narrowed
-        ? allowed.has(secret.identifier)
-          ? 'allowed'
-          : 'excluded'
-        : 'agent_grant',
-    }));
+  const rows: ScopeBarSecretRow[] = selectAllowlistableSecrets(input.secrets).map((secret) => ({
+    identifier: secret.identifier,
+    name: secret.name,
+    membership: narrowed
+      ? allowed.has(secret.identifier)
+        ? 'allowed'
+        : 'excluded'
+      : 'agent_grant',
+  }));
 
   // Allowlistable rows only. Keying this on EVERY row made an allowlisted-but-
   // unallowlistable identifier count as "known", so it disappeared from the
@@ -136,13 +128,9 @@ export function scopeBarSecrets(input: {
   // disappearance `missing` exists to prevent. It cannot be in a live allowlist
   // legitimately anyway: create would have refused it.
   const known = new Set(
-    (input.secrets ?? [])
-      .filter(isAllowlistable)
-      .map((secret) => secret.identifier),
+    selectAllowlistableSecrets(input.secrets).map((secret) => secret.identifier),
   );
-  const missing = (allowlist ?? []).filter(
-    (identifier) => !known.has(identifier),
-  );
+  const missing = (allowlist ?? []).filter((identifier) => !known.has(identifier));
 
   if (!narrowed) {
     return {
@@ -176,7 +164,7 @@ export function scopeBarSecrets(input: {
 
 // ── The draft carried into the next session ─────────────────────────────────
 
-export type ScopeDraftIssueKind = 'not_created' | 'key_collision';
+type ScopeDraftIssueKind = 'not_created' | 'key_collision';
 
 /** A drafted allowlist entry that would make the create fail, named before it does. */
 export interface ScopeDraftIssue {
@@ -207,7 +195,7 @@ export function scopeDraftIssues(
   // left the start button enabled, and produced a guaranteed
   // 404 SECRET_IDENTIFIER_NOT_FOUND. This module exists to pre-empt exactly that
   // refusal, so it is the one place the filter must not be skipped.
-  const items = (secrets ?? []).filter(isAllowlistable);
+  const items = selectAllowlistableSecrets(secrets);
   const drafted = new Set(draft);
   const issues: ScopeDraftIssue[] = [];
 
@@ -222,9 +210,7 @@ export function scopeDraftIssues(
       });
       continue;
     }
-    const conflicts = collidingIdentifiers(items, identifier).filter((other) =>
-      drafted.has(other),
-    );
+    const conflicts = collidingIdentifiers(items, identifier).filter((other) => drafted.has(other));
     if (conflicts.length > 0) {
       issues.push({
         identifier,
@@ -250,21 +236,18 @@ export function classifyTypedIdentifier(
 ): TypedIdentifier {
   const identifier = text.trim();
   if (identifier.length === 0) return { kind: 'empty' };
-  if (input.draft.includes(identifier))
-    return { kind: 'already_listed', identifier };
+  if (input.draft.includes(identifier)) return { kind: 'already_listed', identifier };
   // Same filter as scopeDraftIssues: "exists" here must mean "can be allowed",
   // otherwise the field tells the user an identifier is fine and create 404s.
-  const exists = (input.secrets ?? [])
-    .filter(isAllowlistable)
-    .some((secret) => secret.identifier === identifier);
-  return exists
-    ? { kind: 'existing', identifier }
-    : { kind: 'unknown', identifier };
+  const exists = selectAllowlistableSecrets(input.secrets).some(
+    (secret) => secret.identifier === identifier,
+  );
+  return exists ? { kind: 'existing', identifier } : { kind: 'unknown', identifier };
 }
 
 // ── Connections ─────────────────────────────────────────────────────────────
 
-export interface ScopeBarConnector {
+interface ScopeBarConnector {
   alias: string;
   /** What THIS session is bound to. null = the project default. */
   bound: string | null;
@@ -296,15 +279,11 @@ export function scopeBarConnectors(input: {
 }): ScopeBarConnectors {
   const choices = input.choices ?? [];
   const aliases = [
-    ...new Set([
-      ...choices.map((choice) => choice.alias),
-      ...Object.keys(input.boundConnections),
-    ]),
+    ...new Set([...choices.map((choice) => choice.alias), ...Object.keys(input.boundConnections)]),
   ].sort((a, b) => a.localeCompare(b));
 
   const rows: ScopeBarConnector[] = aliases.map((alias) => {
-    const choice =
-      choices.find((candidate) => candidate.alias === alias) ?? null;
+    const choice = choices.find((candidate) => candidate.alias === alias) ?? null;
     const connectionId = input.boundConnections[alias] ?? null;
     const connection = choice?.connections.find(
       (candidate) => candidate.connectionId === connectionId,
@@ -319,20 +298,12 @@ export function scopeBarConnectors(input: {
       // A synthesized row (bound, but no longer in the choices) has no reason,
       // and `connectorBindingNotice` would fall through to "private only" —
       // naming a cause nobody established.
-      notice:
-        choice && choice.unavailable !== null
-          ? connectorBindingNotice(choice)
-          : null,
+      notice: choice && choice.unavailable !== null ? connectorBindingNotice(choice) : null,
     };
   });
 
   const bound = rows.filter((row) => row.bound !== null).length;
-  const summary =
-    rows.length === 0
-      ? 'None'
-      : bound === 0
-        ? 'Project defaults'
-        : `${bound} bound`;
+  const summary = rows.length === 0 ? 'None' : bound === 0 ? 'Project defaults' : `${bound} bound`;
   return { rows, summary };
 }
 

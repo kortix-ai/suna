@@ -147,6 +147,24 @@ export const SESSION_STATUS_TRANSLATION_KEY = {
 export { isLegacyMigratedSession };
 
 /**
+ * Whether the row's lifecycle menu and the session header may offer Stop.
+ *
+ * `running` is the classic case. A warm shell (`metadata.warm`, pre-created
+ * and never prompted) is reported `provisioning` for as long as its idle box
+ * lives (KRTX-1466), but it still bills compute the owner can stop — the stop
+ * route reads the sandbox row, not this word — so it keeps its Stop control.
+ * A genuinely booting session (no warm marker) does not: its box is not up
+ * yet, and stopping one answers 409 "Session is not running".
+ */
+export function sessionCanBeStopped(session: ProjectSession): boolean {
+  if (session.status === 'running') return true;
+  return (
+    session.status === 'provisioning' &&
+    ((session.metadata ?? {}) as Record<string, unknown>).warm === true
+  );
+}
+
+/**
  * Resolve a session to its display status. A pending review wins outright; a
  * status this build has never seen reads `stopped`. See `sessionListStatus`.
  */

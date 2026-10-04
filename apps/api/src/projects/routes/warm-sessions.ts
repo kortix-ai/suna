@@ -1,3 +1,4 @@
+import type { Context } from 'hono';
 /**
  * Pre-create warm sessions and adopt them with a durable first prompt.
  * See ../lib/warm-sessions.ts.
@@ -229,7 +230,7 @@ export async function dropWarmSessionMarkerOnAdopt(
   }
 }
 
-function warmSessionUnavailable(c: any) {
+function warmSessionUnavailable(c: Context) {
   return c.json(
     {
       error: 'This project cannot prepare a warm session right now.',
@@ -278,7 +279,7 @@ projectsApp.openapi(
       ...errors(400, 402, 403, 404, 409, 429, 500, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -387,7 +388,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const sessionId = normalizeString(body.session_id);

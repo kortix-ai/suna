@@ -7,6 +7,7 @@
  * all against real handlers. A bogus `head_ref` fails branch-tip resolution
  * (resolveBranchTip throws → 400). Unknown :crId → 404.
  */
+import { ChangeRequestListSchema } from "@kortix/api-contract";
 import { flow } from "../core/flow";
 
 const RANDOM_UUID = "00000000-0000-4000-a000-0000000000c1";
@@ -16,11 +17,11 @@ flow(
   { domain: "change-requests", tags: ["smoke"], routes: ["GET /v1/projects/:projectId/change-requests"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER lists change requests → 200 with envelope", async () => {
+    await ctx.step("OWNER lists change requests → 200 with the contract ChangeRequestList envelope", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.change_requests");
+      r.status(200).body().exists("$.change_requests").schema(ChangeRequestListSchema);
     });
     await ctx.step("invalid status filter → 400", async () => {
       const r = await ctx.client

@@ -17,7 +17,6 @@ export interface TriggerSchedulerHealth {
   lastSweepDurationMs: number | null;
   lastResult: {
     projects: number;
-    projectFailures: number;
     scanned: number;
     fired: number;
     queued: number;
@@ -70,10 +69,6 @@ export const schedulerHealth: TriggerSchedulerHealth = {
   lastExecutionResult: null,
   lastExecutionError: null,
 };
-export function getTriggerSchedulerHealth(): TriggerSchedulerHealth {
-  return schedulerHealth;
-}
-
 export function initialCatalogBackfillIncomplete(
   health: Pick<
     TriggerSchedulerHealth,

@@ -10,7 +10,7 @@ import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { loadSessionSecretContext } from './session-secret-context';
-import { decideEnvSyncAction } from './env-sync-skip-decision';
+import { decideEnvSyncAction, type EnvSyncMemoryState } from './env-sync-skip-decision';
 import { loadEnvSyncDurableState, persistEnvSyncDurableState } from './env-sync-durable-state';
 import {
   PROMPT_BOUNDARY_ARM_WAIT_MS,
@@ -58,14 +58,12 @@ const ENV_PUSH_TIMEOUT_MS = 15_000;
  * `env-sync-skip-decision.ts` for the full three-way decision this memo feeds
  * into (push / skip / skip-and-background-refresh) and why memory always
  * wins over the durable record when both are present.
+ *
+ * replica-local: by design — the durable half above is the cross-replica
+ * correctness boundary, so each replica's copy of this memo may miss what
+ * another replica confirmed.
  */
-const lastPromptModelSignature = new Map<string, string>();
-/** When THIS process last confirmed (by pushing, or by reading a matching
- *  durable record) that a sandbox is running the memoed signature. Paired
- *  with `ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`, NOT a hard expiry: an
- *  unchanged signature skips the round trip indefinitely — see
- *  `decideEnvSyncAction`. */
-const lastPromptEnvPushAt = new Map<string, number>();
+const lastPromptModelSignature = new Map<string, EnvSyncMemoryState>();
 /**
  * How stale a CONFIRMED-current record (memory or durable) may get before a
  * skip also fires a detached background re-push. This is not a correctness
@@ -81,13 +79,13 @@ export const ENV_SYNC_BACKGROUND_REFRESH_STALE_MS = 10 * 60_000;
  *  never reused, so this must be bounded the same way `armedNetworkBoundaries`
  *  is. No TTL: unlike the boundary arm this is not self-healing drift, it is a
  *  pure memo of "what did we last tell this box", so eviction on capacity
- *  (oldest-write-first, same as the boundary cache) is enough. */
-const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
+ *  (oldest-write-first, same as the boundary cache) is enough. Exported so
+ *  tests don't hardcode the number. */
+export const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
 
 /** Test seam: drop every remembered per-prompt signature. */
 export function __resetPromptModelSignatureCacheForTests(): void {
   lastPromptModelSignature.clear();
-  lastPromptEnvPushAt.clear();
 }
 
 /**
@@ -151,18 +149,22 @@ function promptModelSignature(input: {
   ]);
 }
 
-function rememberPromptModelSignature(externalId: string, signature: string): void {
-  lastPromptEnvPushAt.set(externalId, Date.now());
-  if (lastPromptEnvPushAt.size > PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
-    const oldest = lastPromptEnvPushAt.keys().next();
-    if (!oldest.done) lastPromptEnvPushAt.delete(oldest.value);
-  }
+/** The ONLY writer of the memo, and the only place the capacity bound is
+ *  enforced — every write path (push, background refresh, the skip path's
+ *  durable-record confirmation) records the signature and its confirmation
+ *  time as ONE entry here, so the two halves can never drift apart and the
+ *  map never outgrows `PROMPT_MODEL_SIGNATURE_CACHE_MAX`. */
+function rememberPromptModelSignature(
+  externalId: string,
+  signature: string,
+  appliedAtMs: number,
+): void {
   lastPromptModelSignature.delete(externalId);
   if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
     const oldest = lastPromptModelSignature.keys().next();
     if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
   }
-  lastPromptModelSignature.set(externalId, signature);
+  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs });
 }
 
 function isSecureOrPrivateTarget(rawUrl: string): boolean {
@@ -323,7 +325,8 @@ export async function postEnvToDaemon(args: {
  * Fire a DETACHED re-push of an already-confirmed-current env, for the "skip,
  * but it's stale" branch of `decideEnvSyncAction`. Never awaited by
  * `syncSandboxEnvForPrompt` and never lets a background failure surface to a
- * turn — see the header on `lastPromptEnvPushAt`/`ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`.
+ * turn — see the header on `lastPromptModelSignature`/
+ * `ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`.
  *
  * Sends the SAME snapshot the caller already resolved for THIS prompt, not a
  * freshly re-resolved one: the signature already matched what memory/the
@@ -364,7 +367,7 @@ function scheduleBackgroundEnvRefresh(args: {
         llmGatewayBaseUrl: args.llmGatewayBaseUrl,
       });
       const appliedAtMs = Date.now();
-      rememberPromptModelSignature(args.externalId, args.signature);
+      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs);
       await persistEnvSyncDurableState(args.sessionId, args.signature, appliedAtMs);
       console.log(
         `[env-sync] background refresh confirmed current sandbox=${args.externalId} session=${args.sessionId}`,
@@ -533,11 +536,7 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayBaseUrl,
     opencodeEnv: args.opencodeEnv,
   });
-  const memoSignature = lastPromptModelSignature.get(args.externalId);
-  const memory =
-    memoSignature !== undefined
-      ? { signature: memoSignature, pushedAtMs: lastPromptEnvPushAt.get(args.externalId) ?? 0 }
-      : null;
+  const memory = lastPromptModelSignature.get(args.externalId) ?? null;
   // Pay for the durable read only when THIS process's own memo cannot already
   // answer — memory is always at least as fresh (see the note on
   // `decideEnvSyncAction`), so a matching memo makes the read pure overhead.
@@ -555,8 +554,9 @@ export async function syncSandboxEnvForPrompt(args: {
     // Confirmed current — by this process or by another replica. Nothing to
     // say, and the daemon would no-op it. Skip the round-trip entirely: the
     // turn pays only the proxy hop, never the daemon RTT or a respawn wait.
-    lastPromptModelSignature.set(args.externalId, signature);
-    lastPromptEnvPushAt.set(args.externalId, decision.appliedAtMs);
+    // Same single writer as a push, so the capacity bound holds here too and
+    // the confirmed-at time stays exactly what the durable record said.
+    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs);
     if (decision.scheduleBackgroundRefresh) {
       // Self-heal for drift THIS process did not cause. Detached: never
       // awaited here, and a failure inside it never touches this turn.
@@ -600,7 +600,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // this replica or any other, retries with a real push again instead of
   // assuming the failed attempt landed.
   const appliedAtMs = Date.now();
-  rememberPromptModelSignature(args.externalId, signature);
+  rememberPromptModelSignature(args.externalId, signature, appliedAtMs);
   await persistEnvSyncDurableState(args.sessionId, signature, appliedAtMs);
   lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt

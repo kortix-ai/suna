@@ -27,6 +27,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
+import { type AccountMember, ApiError } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, UserMinus } from 'lucide-react';
 import { useState } from 'react';
@@ -40,6 +41,135 @@ type Role = (typeof ROLES)[number];
  * `accounts.updateMemberRole` to change a role, and `accounts.removeMember`
  * to remove. All mutations invalidate `['account-members', accountId]`.
  */
+function MemberRow({
+  member,
+  index,
+  busy,
+  onChangeRole,
+  onRemove,
+}: {
+  member: AccountMember;
+  index: number;
+  busy: boolean;
+  onChangeRole: (vars: { userId: string; role: Role }) => void;
+  onRemove: (userId: string) => void;
+}) {
+  const label = member.email ?? member.user_id ?? 'Member';
+  const initial = label.charAt(0).toUpperCase();
+  const memberRole = member.account_role;
+  const userId = member.user_id;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <Avatar size="sm">
+        <AvatarFallback>{initial}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{label}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {member.joined_at ? `Joined ${relativeTime(member.joined_at)}` : (userId ?? '')}
+        </div>
+      </div>
+      <Badge variant="outline" className="capitalize">
+        {memberRole}
+      </Badge>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            disabled={!userId || busy}
+            aria-label={`Manage ${label}`}
+          >
+            {busy ? <Loading className="size-4" /> : <MoreHorizontal className="size-4" />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuLabel>Change role</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={memberRole}
+            onValueChange={(v) => {
+              if (userId && v !== memberRole) onChangeRole({ userId, role: v as Role });
+            }}
+          >
+            {ROLES.map((r) => (
+              <DropdownMenuRadioItem key={r} value={r} className="capitalize">
+                {r}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={() => userId && onRemove(userId)}>
+            <UserMinus className="size-4" /> Remove from account
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function MemberInviteForm({
+  accountId,
+  onInvited,
+}: {
+  accountId: string;
+  onInvited: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<Role>('member');
+
+  const invite = useMutation({
+    mutationFn: () => kortix.accounts.invite(accountId, { email: email.trim(), role }),
+    onSuccess: (result) => {
+      setEmail('');
+      onInvited();
+      if (result.status === 'pending') toast.success(`Invitation sent to ${result.email}`);
+      else toast.success(`${result.email} added`);
+    },
+    onError: (err: unknown) => {
+      const conflict = err instanceof ApiError && err.status === 409;
+      toast.error(conflict ? 'Already a member or invited' : 'Could not invite');
+    },
+  });
+
+  return (
+    <Card className="p-4">
+      <form
+        className="flex flex-col gap-2 sm:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (email.trim()) invite.mutate();
+        }}
+      >
+        <Input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="teammate@company.com"
+          type="email"
+          className="flex-1"
+        />
+        <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+          <SelectTrigger className="w-full sm:w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROLES.map((r) => (
+              <SelectItem key={r} value={r} className="capitalize">
+                {r}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="submit" disabled={!email.trim() || invite.isPending}>
+          {invite.isPending && <Loading className="size-4" />}
+          Invite
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
 export function MembersSection({ accountId }: { accountId: string }) {
   const qc = useQueryClient();
   const membersKey = ['account-members', accountId] as const;
@@ -48,28 +178,11 @@ export function MembersSection({ accountId }: { accountId: string }) {
     queryFn: () => kortix.accounts.members(accountId),
   });
 
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('member');
-
   const refresh = () => {
     qc.invalidateQueries({ queryKey: membersKey });
     qc.invalidateQueries({ queryKey: ['account-invites', accountId] });
     qc.invalidateQueries({ queryKey: ['account', accountId] });
   };
-
-  const invite = useMutation({
-    mutationFn: () => kortix.accounts.invite(accountId, { email: email.trim(), role }),
-    onSuccess: (result) => {
-      setEmail('');
-      refresh();
-      if (result.status === 'pending') toast.success(`Invitation sent to ${result.email}`);
-      else toast.success(`${result.email} added`);
-    },
-    onError: (err: any) => {
-      const msg = String(err?.message ?? '');
-      toast.error(msg.includes('409') ? 'Already a member or invited' : 'Could not invite');
-    },
-  });
 
   const changeRole = useMutation({
     mutationFn: (vars: { userId: string; role: Role }) =>
@@ -97,39 +210,7 @@ export function MembersSection({ accountId }: { accountId: string }) {
       <h3 className="text-sm font-semibold text-foreground">Members</h3>
 
       {/* Invite — accounts.invite */}
-      <Card className="p-4">
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (email.trim()) invite.mutate();
-          }}
-        >
-          <Input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="teammate@company.com"
-            type="email"
-            className="flex-1"
-          />
-          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-            <SelectTrigger className="w-full sm:w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLES.map((r) => (
-                <SelectItem key={r} value={r} className="capitalize">
-                  {r}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="submit" disabled={!email.trim() || invite.isPending}>
-            {invite.isPending && <Loading className="size-4" />}
-            Invite
-          </Button>
-        </form>
-      </Card>
+      <MemberInviteForm accountId={accountId} onInvited={refresh} />
 
       {/* List — accounts.members */}
       <Card className="divide-y divide-border p-0">
@@ -148,64 +229,19 @@ export function MembersSection({ accountId }: { accountId: string }) {
           <div className="p-6 text-center text-sm text-muted-foreground">Just you so far.</div>
         )}
         {items.map((m, i) => {
-          const label = m.email ?? m.user_id ?? 'Member';
-          const initial = label.charAt(0).toUpperCase();
-          const memberRole = m.account_role;
           const userId = m.user_id;
           const busy =
             (changeRole.isPending && changeRole.variables?.userId === userId) ||
             (remove.isPending && remove.variables === userId);
           return (
-            <div key={userId ?? m.email ?? i} className="flex items-center gap-3 px-4 py-3">
-              <Avatar size="sm">
-                <AvatarFallback>{initial}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{label}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {m.joined_at ? `Joined ${relativeTime(m.joined_at)}` : (userId ?? '')}
-                </div>
-              </div>
-              <Badge variant="outline" className="capitalize">
-                {memberRole}
-              </Badge>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    disabled={!userId || busy}
-                    aria-label={`Manage ${label}`}
-                  >
-                    {busy ? <Loading className="size-4" /> : <MoreHorizontal className="size-4" />}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuLabel>Change role</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={memberRole}
-                    onValueChange={(v) => {
-                      if (userId && v !== memberRole)
-                        changeRole.mutate({ userId, role: v as Role });
-                    }}
-                  >
-                    {ROLES.map((r) => (
-                      <DropdownMenuRadioItem key={r} value={r} className="capitalize">
-                        {r}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => userId && remove.mutate(userId)}
-                  >
-                    <UserMinus className="size-4" /> Remove from account
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <MemberRow
+              key={userId ?? m.email ?? i}
+              member={m}
+              index={i}
+              busy={busy}
+              onChangeRole={(v: { userId: string; role: Role }) => changeRole.mutate(v)}
+              onRemove={(id: string) => remove.mutate(id)}
+            />
           );
         })}
       </Card>

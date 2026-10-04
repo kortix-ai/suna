@@ -170,7 +170,7 @@ export function parseConnectorGetOutput(output: string): ConnectorGetData | null
   const descriptionMatch = output.match(/^description:\s*(.+)$/m);
   const sourceMatch = output.match(/^source:\s*(.+)$/m);
   const envMatch = output.match(/^env:\s*(.+)$/m);
-  const notesMatch = output.match(/^notes:\s*\n([\s\S]*?)$/);
+  const notesMatch = output.match(/^notes:\s*\n([\s\S]*)$/m);
 
   if (!nameMatch) return null;
 
