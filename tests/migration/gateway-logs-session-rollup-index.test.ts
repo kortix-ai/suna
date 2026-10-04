@@ -32,13 +32,7 @@
 //
 //   bun test tests/migration/gateway-logs-session-rollup-index.test.ts   (needs docker)
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import {
-  type Ports,
-  computePorts,
-  repoRoot,
-  runMigrate,
-  sh,
-} from '../../scripts/worktree/lib';
+import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-gateway-logs-rollup-index-test';
@@ -129,7 +123,7 @@ const SEED_SQL = `
 // Separate call: VACUUM cannot run inside the implicit transaction a
 // multi-statement psql -c string opens (the same rule that forces the
 // .concurrent.ts escape hatch for CREATE INDEX CONCURRENTLY).
-const ANALYZE_SQL = `vacuum (analyze) kortix.gateway_request_logs;`;
+const ANALYZE_SQL = 'vacuum (analyze) kortix.gateway_request_logs;';
 
 function psqlOn(url: string, query: string): string {
   const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tA', '-c', query]);
@@ -166,10 +160,28 @@ suite('gateway_request_logs per-session rollup covering index (throwaway Postgre
   beforeAll(async () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
     const up = sh([
-      'docker', 'run', '-d', '--name', CONTAINER,
-      '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_USER=postgres', '-e', 'POSTGRES_DB=postgres',
-      '--tmpfs', '/var/lib/postgresql/data', '-p', `127.0.0.1:${PORT}:5432`,
-      'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
+      'docker',
+      'run',
+      '-d',
+      '--name',
+      CONTAINER,
+      '-e',
+      'POSTGRES_PASSWORD=postgres',
+      '-e',
+      'POSTGRES_USER=postgres',
+      '-e',
+      'POSTGRES_DB=postgres',
+      '--tmpfs',
+      '/var/lib/postgresql/data',
+      '-p',
+      `127.0.0.1:${PORT}:5432`,
+      'postgres:16-alpine',
+      '-c',
+      'fsync=off',
+      '-c',
+      'synchronous_commit=off',
+      '-c',
+      'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
     for (let i = 0; i < 60; i++) {
@@ -190,12 +202,20 @@ suite('gateway_request_logs per-session rollup covering index (throwaway Postgre
     expect(indexValid()).toBe('t');
     expect(includeColumns()).toEqual(
       expect.arrayContaining([
-        'account_id', 'ok', 'final_cost_precise', 'upstream_cost_precise',
-        'billing_mode', 'input_tokens', 'output_tokens', 'requested_model',
+        'account_id',
+        'ok',
+        'final_cost_precise',
+        'upstream_cost_precise',
+        'billing_mode',
+        'input_tokens',
+        'output_tokens',
+        'requested_model',
       ]),
     );
     expect(
-      psql(`select indpred is not null from pg_index i join pg_class c on c.oid = i.indexrelid where c.relname = '${INDEX}'`),
+      psql(
+        `select indpred is not null from pg_index i join pg_class c on c.oid = i.indexrelid where c.relname = '${INDEX}'`,
+      ),
     ).toBe('t');
   });
 
@@ -218,7 +238,9 @@ suite('gateway_request_logs per-session rollup covering index (throwaway Postgre
     // CREATE go in separate psql calls: one string is an implicit transaction
     // block, and CONCURRENTLY cannot run inside one.
     psql(`set lock_timeout = '60s'`);
-    psql(`\n      create index concurrently if not exists ${INDEX}\n        on kortix.gateway_request_logs (project_id, session_id, created_at)\n        include (account_id, ok, final_cost_precise, upstream_cost_precise,\n                 billing_mode, input_tokens, output_tokens, requested_model)\n        where session_id is not null\n    `);
+    psql(
+      `\n      create index concurrently if not exists ${INDEX}\n        on kortix.gateway_request_logs (project_id, session_id, created_at)\n        include (account_id, ok, final_cost_precise, upstream_cost_precise,\n                 billing_mode, input_tokens, output_tokens, requested_model)\n        where session_id is not null\n    `,
+    );
     expect(indexValid()).toBe('t');
   }, 300_000);
 });
