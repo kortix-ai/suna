@@ -19203,6 +19203,8 @@
       "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
       "text39207bf34111": "Habilidades relacionadas",
       "text73112526c03a": "El turno del agente falló. No se informó ningún motivo.",
+      "text0e5f7f6732e0": "Bifurcar conversación",
+      "text32ad3abe4479": "Error al bifurcar la conversación",
       "text85b7a59cdbd5": "Agente de la plataforma",
       "textd9c0c74b514b": "Meta es un agente de la plataforma que coordina tu trabajo. Su configuración es fija: puedes iniciar una sesión con él, pero no se puede configurar aquí.",
       "text4ee2ff5e821c": "La principal alternativa de código abierto a Claude Cowork y ChatGPT Work",

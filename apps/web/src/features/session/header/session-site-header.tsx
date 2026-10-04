@@ -30,6 +30,7 @@ import {
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
+import { childSessionHref } from '@/features/session/tool/tools/session-spawn-urls';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
@@ -50,6 +51,7 @@ import {
 import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
   qk,
+  useForkSession,
   useProjectSession,
   useRuntimeSupports,
   useSessionParticipants,
@@ -58,6 +60,7 @@ import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
   CopyIcon,
+  GitForkIcon,
   LinkSimpleIcon,
   CaretDownIcon,
   CodeSimpleIcon as Code2,
@@ -236,6 +239,12 @@ export function SessionSiteHeader({
   });
   const canStop = !!projectSession && sessionCanBeStopped(projectSession) && canManageLifecycle;
 
+  // Fork this conversation into a new one in the same sandbox: the runtime's
+  // own `session.fork` (a capability, so a pi session shows no item). The fork
+  // carries the copied history; open it on the same project-session route.
+  const canFork = useRuntimeSupports('session.fork') && isProjectSession;
+  const forkSession = useForkSession();
+
   // Hoisted so the chip and the ⋯ item share one pending state and one confirm
   // dialog. `canManageLifecycle` is the client mirror of the reload route's own
   // gate (session owner or project manager) — the IAM leaf both member and
@@ -325,6 +334,39 @@ export function SessionSiteHeader({
             <LinkSimpleIcon />
             {tPalette('copyAction', { label: tPalette('copySessionLink') })}
           </DropdownMenuItem>
+          {canFork && (
+            <DropdownMenuItem
+              className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+              disabled={forkSession.isPending}
+              onClick={() =>
+                forkSession.mutate(
+                  { sessionId },
+                  {
+                    onSuccess: (fork) => {
+                      if (projectId && projectSessionId) {
+                        router.push(
+                          childSessionHref(
+                            `/projects/${projectId}/sessions/${projectSessionId}`,
+                            fork.id,
+                          ),
+                        );
+                      }
+                    },
+                    onError: (err) => {
+                      errorToast(
+                        err instanceof Error
+                          ? err.message
+                          : tI18nHardcoded.raw('i18nComplete.text32ad3abe4479'),
+                      );
+                    },
+                  },
+                )
+              }
+            >
+              {forkSession.isPending ? <Loading /> : <GitForkIcon />}
+              {tI18nHardcoded.raw('i18nComplete.text0e5f7f6732e0')}
+            </DropdownMenuItem>
+          )}
         </>
       )}
 

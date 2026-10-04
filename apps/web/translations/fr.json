@@ -19203,6 +19203,8 @@
       "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions.",
       "text39207bf34111": "Compétences associées",
       "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée.",
+      "text0e5f7f6732e0": "Bifurquer la conversation",
+      "text32ad3abe4479": "Échec de la bifurcation de la conversation",
       "text85b7a59cdbd5": "Agent de la plateforme",
       "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici.",
       "text4ee2ff5e821c": "La principale alternative open source à Claude Cowork et ChatGPT Work",
