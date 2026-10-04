@@ -1,0 +1,18 @@
+{
+  "source_hash": "ac7a543c48a2a946e25ac8ee7e235d60dfc7697617c3b9e267de5427cb21cf5f",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-connector-computer-listed-when-paired.test.ts",
+    "apps/api/src/__tests__/integration-connector-list-query-count.test.ts",
+    "apps/api/src/connectors/db-deps.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "703582f14a6fb0b9f0ee35275e8c1f72bd77053c824a1535ee0642be44097b89",
+  "head": "cb207c718ceaf0d499451e9670e1370b84c2e5a9",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T03:15:37.945Z"
+}

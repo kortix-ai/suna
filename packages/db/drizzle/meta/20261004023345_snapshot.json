@@ -1,5 +1,5 @@
 {
-  "id": "ef7e3787-7dee-4e0e-9e97-574c8ab9c8fa",
+  "id": "49d6de72-b0d2-4a37-8f98-641f1b8c84f5",
   "prevId": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
   "version": "7",
   "dialect": "postgresql",
@@ -5532,6 +5532,21 @@
           "columns": [
             {
               "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_pending_auth_messages_project": {
+          "name": "idx_chat_pending_auth_messages_project",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -19099,22 +19114,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_session_sandboxes_wake_fences": {
-          "name": "idx_session_sandboxes_wake_fences",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"session_sandboxes\".\"external_id\" is not null and \"kortix\".\"session_sandboxes\".\"metadata\" ?| array['runtimeWakeId', 'runtimeWakeCleanupUntilAt']",
           "concurrently": false,
           "method": "btree",
           "with": {}
