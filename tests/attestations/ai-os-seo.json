@@ -1,5 +1,5 @@
 {
-  "source_hash": "0e2d4bed3a1d7e77845fcd60e0a978f01f2a7636a6f6fdf63abbae51e07a19b8",
+  "source_hash": "5ec6dc8d9259eb974d1e3c55b9178f1086ff4963421b41103ed572942f7b7702",
   "diff_files": [
     ".agents/skills/kortix-brand/references/decisions.md",
     ".agents/skills/kortix-brand/references/verbal/concepts.md",
@@ -20,6 +20,7 @@
     "apps/cli/package.json",
     "apps/cli/src/banner.ts",
     "apps/web/blume.config.ts",
+    "apps/web/content/docs/ai-operating-system.mdx",
     "apps/web/content/docs/compare.mdx",
     "apps/web/content/docs/index.mdx",
     "apps/web/content/docs/meta.ts",
@@ -53,6 +54,7 @@
     "apps/web/src/app/[locale]/presentations/film/films/launch/act-3.tsx",
     "apps/web/src/app/[locale]/presentations/film/films/launch/index.tsx",
     "apps/web/src/app/sitemap.ts",
+    "apps/web/src/components/home/footer.tsx",
     "apps/web/src/features/branding/branding-provider.tsx",
     "apps/web/src/features/marketing/__snapshots__/hero-solutions.test.tsx.snap",
     "apps/web/src/features/marketing/about/content.ts",
@@ -73,6 +75,7 @@
     "apps/web/src/features/marketing/solutions/roles/sales.ts",
     "apps/web/src/features/marketing/support/support-doc.tsx",
     "apps/web/src/i18n/agents-landing-translation-keys.generated.ts",
+    "apps/web/src/i18n/footer-translation-keys.generated.ts",
     "apps/web/src/i18n/marketing-secondary-translation-keys.generated.ts",
     "apps/web/src/i18n/public-metadata-translation-keys.generated.ts",
     "apps/web/src/i18n/remaining-ui-translation-keys.generated.ts",
@@ -105,13 +108,13 @@
     "packages/starter/templates/managed/skills/kortix-system/references/capabilities.md",
     "scripts/install.sh"
   ],
-  "diff_hash": "30222338ac0809cedffb3309417dac545a224e4067fbf9d23cb067773a4c1d76",
-  "head": "43ee57cead21c6ee9857d82af934fd6b9d80f9a7",
+  "diff_hash": "70bd3478302735f47c94ddd9c1d5708daea7873e3f6daca871b5ba1d7e006d7c",
+  "head": "090cc5c3aebfa88fcc106d4349d5ee5188453b91",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T20:38:30.720Z"
+  "at": "2026-10-04T21:47:38.932Z"
 }
