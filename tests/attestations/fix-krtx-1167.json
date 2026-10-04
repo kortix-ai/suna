@@ -1,0 +1,16 @@
+{
+  "source_hash": "5bc3465e6e790fb8cf060c299509b6ef90d09d04bcd7e9a5101cb6df5d7854ab",
+  "diff_files": [
+    "packages/db/migrations/20261004035710009_basejump_config_primary_key.sql",
+    "tests/migration/basejump-config-primary-key.test.ts"
+  ],
+  "diff_hash": "e52890b80b5fb3909ec42454fdde70c9b5973f2acb675ec27707ceee09f4a789",
+  "head": "ca7c76893d15e251b70320caa7934cc76a902a97",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T05:16:16.000Z"
+}
