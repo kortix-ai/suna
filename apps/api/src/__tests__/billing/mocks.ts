@@ -157,6 +157,16 @@ export function registerGlobalMocks() {
           where: async () => [],
         }),
       }),
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [],
+          }),
+        }),
+      }),
+      delete: () => ({
+        where: async () => undefined,
+      }),
     },
     // Real shape is a boolean const, not a function. FALSE on purpose: these
     // billing tests drive the no-DB path, and the stub `db` above answers only

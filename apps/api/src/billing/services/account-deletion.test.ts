@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountMembers, accounts, projectSessions, sessionSandboxes } from '@kortix/db';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realProviders from '../../platform/providers';
@@ -14,8 +14,10 @@ let ownedAccountsQueryError: Error | null = null;
 let ownedAccountsWhereArg: unknown = null;
 let sandboxWhereArg: unknown = null;
 let sessionUpdateWhereArg: unknown = null;
+let deletedAccountsWhereArg: unknown = null;
 let sessionsSettled: Array<{ sessionId: string }> = [];
 let sessionUpdateError: Error | null = null;
+let dbCallOrder: string[] = [];
 
 let stops: string[] = [];
 let removes: string[] = [];
@@ -58,9 +60,11 @@ mock.module('../../shared/db', () => ({
         where: async (cond: unknown) => {
           if (table === accountMembers) {
             ownedAccountsWhereArg = cond;
+            dbCallOrder.push('owned-accounts');
             if (ownedAccountsQueryError) throw ownedAccountsQueryError;
             return ownedAccountRows;
           }
+          dbCallOrder.push('sandbox-lookup');
           sandboxWhereArg = cond;
           if (sandboxQueryError) throw sandboxQueryError;
           return sandboxRows;
@@ -72,12 +76,22 @@ mock.module('../../shared/db', () => ({
         where: (cond: unknown) => ({
           returning: async () => {
             if (table !== projectSessions) return [];
+            dbCallOrder.push('session-settle');
             sessionUpdateWhereArg = cond;
             if (sessionUpdateError) throw sessionUpdateError;
             return sessionsSettled;
           },
         }),
       }),
+    }),
+    delete: (table: unknown) => ({
+      where: (cond: unknown) => {
+        if (table === accounts) {
+          dbCallOrder.push('account-row-delete');
+          deletedAccountsWhereArg = cond;
+        }
+        return Promise.resolve();
+      },
     }),
   },
 }));
@@ -174,6 +188,8 @@ beforeEach(() => {
   ownedAccountsWhereArg = null;
   sandboxWhereArg = null;
   sessionUpdateWhereArg = null;
+  deletedAccountsWhereArg = null;
+  dbCallOrder = [];
   sessionsSettled = [];
   sessionUpdateError = null;
   stops = [];
@@ -372,6 +388,36 @@ describe('deleteAccountImmediately — session settle', () => {
     const result = await deleteAccountImmediately('acct-1');
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe('deleteAccountImmediately — the account row itself', () => {
+  test('the account row is deleted after the sweep, cascading projects and memberships', async () => {
+    // `kortix.accounts` is what every list reads and what projects/membership
+    // rows hang off (all ON DELETE CASCADE). Without this delete the account
+    // survived fully usable — billing dead, sandboxes gone, workspace intact.
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+
+    await deleteAccountImmediately('acct-1', 'user-1');
+
+    expect(whereParams(deletedAccountsWhereArg)).toEqual(['acct-1']);
+    // The sweep must run while the account's rows still exist, so the boxes
+    // can still be found by account id: teardown first, row delete last.
+    expect(dbCallOrder.indexOf('account-row-delete')).toBeGreaterThan(
+      dbCallOrder.indexOf('sandbox-lookup'),
+    );
+    expect(dbCallOrder.indexOf('account-row-delete')).toBeGreaterThan(
+      dbCallOrder.indexOf('session-settle'),
+    );
+  });
+
+  test('a scoped team-account deletion removes only that account row', async () => {
+    primaryAccountId = 'acct-1';
+    ownedAccountRows = [{ accountId: 'acct-2' }];
+
+    await deleteAccountImmediately('acct-9', 'user-1');
+
+    expect(whereParams(deletedAccountsWhereArg)).toEqual(['acct-9']);
   });
 });
 

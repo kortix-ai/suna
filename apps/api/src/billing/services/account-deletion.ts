@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountMembers, accounts, projectSessions, sessionSandboxes } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
@@ -436,6 +436,16 @@ async function performDeletion(accountId: string, userId?: string) {
     stripeSubscriptionStatus: 'canceled',
     paymentStatus: 'deleted',
   } as any);
+
+  // Remove the account itself. Every reference to `kortix.accounts` carries
+  // `ON DELETE CASCADE` (projects and everything under them, memberships,
+  // invites, branding, SCIM users, … — packages/db/src/schema/kortix.ts), so
+  // this one statement is what makes "Permanently deletes this account and
+  // all its projects" true: without it the account survived fully usable in
+  // every list with dead billing. Runs LAST so the sandbox sweep above still
+  // finds the boxes by account id while the rows exist. The deletion request
+  // row has no FK and survives, so `markDeletionCompleted` still applies.
+  await db.delete(accounts).where(eq(accounts.accountId, accountId));
 
   console.log(`[AccountDeletion] Account deleted: ${accountId}`);
 }
