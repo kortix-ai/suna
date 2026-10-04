@@ -5,32 +5,13 @@ import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
 import { exponentialBackoffMs } from '../shared/backoff';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
 export interface ClaimedScheduleSlot {
   execution: TriggerExecutionRow;
   inserted: boolean;
-}
-
-async function mapConcurrently<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await fn(items[index]);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => worker()),
-  );
-  return results;
 }
 
 function triggerPayload(input: {
@@ -94,7 +75,7 @@ export async function claimDueScheduleSlots(input: {
     .orderBy(asc(projectTriggerRuntime.nextFireAt), asc(projectTriggerRuntime.projectId))
     .limit(input.limit);
 
-  const results = await mapConcurrently(candidates, 8, async (candidate) => {
+  const results = await mapWithConcurrency(candidates, 8, async (candidate) => {
     if (!candidate.nextFireAt || !candidate.scheduleRevision || !candidate.scheduleSpec) {
       return null;
     }
@@ -248,7 +229,7 @@ export async function claimTriggerExecutions(input: {
     .orderBy(asc(projectTriggerExecutions.availableAt), asc(projectTriggerExecutions.createdAt))
     .limit(input.limit);
 
-  const claimed = await mapConcurrently(candidates, 8, async (candidate) => {
+  const claimed = await mapWithConcurrency(candidates, 8, async (candidate) => {
     const [row] = await db
       .update(projectTriggerExecutions)
       .set({
