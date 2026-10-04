@@ -18,6 +18,7 @@
  */
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import * as realOpencodeMapping from '../projects/opencode-mapping';
 import * as realDrain from '../projects/session-lifecycle/drain';
 import { WIRE_ID_TIME_SCALE } from '../projects/wire-message-id';
@@ -236,4 +237,123 @@ test('a prompt already redelivered three times is not re-queued again', async ()
   expect(row.status).toBe('succeeded');
   expect(row.result).toMatchObject({ forwarded_message_id: STRANDED });
   expect(drainKicks).toEqual([]);
+});
+
+/** The `[forwarded-turns] stranded forwarded prompt re-queued` lines emitted
+ *  while `fn` runs — the reconciler's public account of what it did. */
+async function strandLogLines<T>(fn: () => Promise<T>): Promise<{ result: T; lines: Array<{ context: Record<string, unknown> }> }> {
+  const seen: Array<{ context: Record<string, unknown> }> = [];
+  const warn = logger.warn;
+  logger.warn = (message: string, context?: Record<string, unknown>) => {
+    if (message.includes('stranded forwarded prompt re-queued')) seen.push({ context: context ?? {} });
+  };
+  try {
+    return { result: await fn(), lines: seen };
+  } finally {
+    logger.warn = warn;
+  }
+}
+
+/** A drizzle builder's await shape: `then` drives the query. */
+type BuilderThen = (
+  onFulfilled?: (rows: unknown) => unknown,
+  onRejected?: (err: unknown) => unknown,
+) => Promise<unknown>;
+
+/**
+ * Run `flip` in the exact window the bug lives in: between requeueStranded's
+ * command-row read and its guarded UPDATE. Nothing in the flow runs between
+ * those two statements, so no scheduling can win that race — the wrapper sits
+ * on the read's OWN promise instead, and the flip lands strictly between the
+ * read resolving and its continuation resuming. That is the moment a
+ * concurrent cancel (a DELETE guarded on `succeeded`) or consume wins it in
+ * prod. The awaited object of a drizzle select is what `.from()` returns (the
+ * rest of the chain returns `this`), so the wrapper hangs off `from`; the read
+ * is recognized by its rows — the only `{ commandId, status, payload }` shape
+ * this flow produces. If drizzle ever changes that shape or chain, `fired`
+ * stays false and the tests below fail loudly instead of passing vacuously.
+ */
+function onCommandRowRead(flip: (commandId: string) => Promise<void>): { fired: () => boolean; restore: () => void } {
+  const realSelect = db.select.bind(db);
+  let fired = false;
+  (db as { select?: unknown }).select = (...args: Parameters<typeof realSelect>) => {
+    const builder = realSelect(...args);
+    const realFrom = builder.from.bind(builder);
+    (builder as { from?: unknown }).from = (...fromArgs: Parameters<typeof builder.from>) => {
+      const selected = realFrom(...fromArgs);
+      const awaited = selected as unknown as { then: BuilderThen };
+      const realThen = awaited.then.bind(awaited);
+      awaited.then = (onFulfilled, onRejected) =>
+        realThen(async (rows) => {
+          const first = Array.isArray(rows) ? (rows[0] as Record<string, unknown> | undefined) : undefined;
+          if (!fired && first && typeof first.commandId === 'string' && 'status' in first && 'payload' in first) {
+            fired = true;
+            delete (db as { select?: unknown }).select; // the flip's own statements must not re-enter
+            await flip(first.commandId);
+          }
+          return onFulfilled?.(rows);
+        }, onRejected);
+      return selected;
+    };
+    return builder;
+  };
+  return {
+    fired: () => fired,
+    restore: () => {
+      delete (db as { select?: unknown }).select;
+    },
+  };
+}
+
+// The race the guarded UPDATE exists for: between requeueStranded's read of
+// the row and its guarded write, a concurrent actor takes the row away (a
+// cancel deletes it, another writer flips the status). The guard then matches
+// zero rows — and before the `.returning()` check the function still returned
+// 'requeued', so the reconciler counted and logged a redelivery that never
+// happened while the prompt sat stranded with nothing re-queued.
+test('a row whose status leaves succeeded between the read and the guarded write is reported not_open, not requeued', async () => {
+  const commandId = await forwardedPrompt();
+  const before = await readCommand(commandId);
+  const race = onCommandRowRead(async (id) => {
+    // What `redelivery.ts`'s deadLetter issues: a concurrent sweep takes the
+    // row (status off `succeeded`) while the reconciler holds its stale read.
+    await db.execute(
+      sql`UPDATE kortix.session_lifecycle_commands SET status = 'dead_lettered' WHERE command_id = ${id}::uuid`,
+    );
+  });
+
+  try {
+    const { result: out, lines } = await strandLogLines(reconcile);
+
+    expect(race.fired()).toBe(true);
+    expect(out).toEqual({ closedOlder: 0, candidates: 1, stranded: 1, orphaned: 0, requeued: 0 });
+    const row = await readCommand(commandId);
+    expect(row.status).toBe('dead_lettered'); // the concurrent write stands; the guarded write never landed
+    expect(row.result).toEqual(before.result); // no redelivery markers appeared
+    expect(row.payload).toEqual(before.payload);
+    expect(drainKicks).toEqual([]); // nothing was queued, so the drain is not kicked
+    expect(lines.map((line) => line.context.outcome)).toEqual(['not_open']);
+  } finally {
+    race.restore();
+  }
+});
+
+test('a row a concurrent cancel deletes between the read and the guarded write is reported not_open, not requeued', async () => {
+  const commandId = await forwardedPrompt();
+  const race = onCommandRowRead(async (id) => {
+    // What `cancel-forwarded` issues: a DELETE guarded on status = 'succeeded'.
+    await db.execute(sql`DELETE FROM kortix.session_lifecycle_commands WHERE command_id = ${id}::uuid`);
+  });
+
+  try {
+    const { result: out, lines } = await strandLogLines(reconcile);
+
+    expect(race.fired()).toBe(true);
+    expect(out).toEqual({ closedOlder: 0, candidates: 1, stranded: 1, orphaned: 0, requeued: 0 });
+    expect(await readCommand(commandId)).toBeUndefined(); // stays deleted, never resurrected
+    expect(drainKicks).toEqual([]);
+    expect(lines.map((line) => line.context.outcome)).toEqual(['not_open']);
+  } finally {
+    race.restore();
+  }
 });
