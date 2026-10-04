@@ -10,6 +10,15 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-04
+
+### D10 The category line is "AI Operating System"
+- **Decision:** The category is "AI Operating System", short form "AI OS". The tagline is "The open-source AI Operating System". The brand name stays "Kortix". "AI Management System" is retired. The comparative line, the manifesto line and the mission do not change. "Autonomous Company Operating System" stays retired for its word "Autonomous".
+- **Why:** The founder chose it on 2026-10-04 with the instruction to use it everywhere: git, marketing, product, CLI, email and the brand kit. An operating system is the layer that agents, skills, memory, connectors, computers, channels and triggers run on. The marketing site is rebuilt on this line in the same branch.
+- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `apps/web/src/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
+- **Supersedes:** D1 (the category and tagline only; D1's retired-line list stays).
+- **Source:** founder decision, branch `webpage` (2026-10-04).
+
 ## 2026-10-02
 
 ### D9 (OPEN) Harness naming when pi is the default

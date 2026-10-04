@@ -1,6 +1,6 @@
-import { RepoTreeRows } from '../repo-tree-rows';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
+import { RepoTreeRows } from '../repo-tree-rows';
 import { getLocalizedCompanyAsCodeContent } from './content';
 
 /**
@@ -12,7 +12,7 @@ export function RepoTree(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { repo } = getLocalizedCompanyAsCodeContent(tI18nComplete);
   return (
-    <div className="border-border bg-card h-full overflow-x-auto rounded-sm border p-5 sm:p-7">
+    <div className="border-border bg-card h-full overflow-x-auto rounded-xl border p-5 sm:p-7">
       <RepoTreeRows entries={repo.tree} compact />
     </div>
   );
