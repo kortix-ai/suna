@@ -1,30 +1,28 @@
 {
-  "source_hash": "b946c32a41d6d419e33909f9218ebf59f5b7485b4012a1dcae392ce2ce5dd0f8",
+  "source_hash": "59ed486b68f9219a467bb7f29e6ad4cbfc742ea59e6115468db4859ed759ec08",
   "diff_files": [
     "apps/api/scripts/test.sh",
-    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
-    "apps/api/src/shared/platinum.test.ts",
     "apps/cli/package.json",
     "apps/cli/scripts/test.sh",
     "apps/kortix-sandbox-agent-server/package.json",
     "apps/kortix-sandbox-agent-server/scripts/test.sh",
     "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
-    "apps/whitelabel-demo/tests/e2e/harness.ts",
-    "packages/agent-tunnel/src/client/cli.test.ts",
-    "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
     "scripts/hermetic-test-env.sh",
-    "tests/src/fixtures/cli.ts",
+    "tests/migration/credit-lifetime-rollup.test.ts",
+    "tests/migration/credit-rpc-overloads.test.ts",
+    "tests/migration/legacy-credit-ledger-created-by-index.test.ts",
+    "tests/migration/usage-breakdown-ledger-type.test.ts",
+    "tests/migration/wallet-ledger.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "f0bd3d8ca42dae8b2bdd8845a6d68a96ad969b84b5ac5bce86ec5ddeda2c634b",
-  "head": "792e3174384ffa9ce22ade912590cc7ed7908dfc",
+  "diff_hash": "211bffa59dcab1882bc42b650f01c921fc9b1d0c86ab62d537b8a98c1c6e390b",
+  "head": "fe941b5a25edcc51c10406778177c30df2a88196",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:18:57.302Z"
+  "at": "2026-10-04T05:25:00.082Z"
 }
