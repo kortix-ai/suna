@@ -48,6 +48,7 @@ import {
   validateManifest,
   type AgentBlockV2,
   type GrantSetV2,
+  type ManifestFormat,
   type ManifestIssue,
   type ManifestV2,
   type PermissionActionV2,
@@ -618,15 +619,52 @@ export function manifestPiPackageLists(raw: unknown): unknown[][] {
   return [...lists.values()];
 }
 
+/**
+ * The one manifest read every resolver shares: candidate paths → git read at
+ * `ref` → parse by the found file's format. Null when the repo has no
+ * manifest there. `forceRefresh` proves the ref against the remote instead of
+ * trusting the 60s mirror TTL (see CompileReadOptions).
+ */
+async function readParsedManifest(
+  project: GitBackedProject,
+  ref: string,
+  forceRefresh?: MirrorRefresh,
+): Promise<{ raw: Record<string, unknown>; format: ManifestFormat } | null> {
+  const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+  const found = await readManifestFromRepo(
+    project,
+    candidates,
+    ref,
+    forceRefresh === undefined ? undefined : { forceRefresh },
+  );
+  if (!found) return null;
+  const format = manifestFormatForPath(found.path);
+  return { raw: parseManifestText(found.content, format), format };
+}
+
+/**
+ * A v3 manifest must validate before anything compiles from it (v2 predates
+ * the validator). Error-class issues only — warnings still compile.
+ */
+function validateV3OrThrow(raw: Record<string, unknown>, format: ManifestFormat): void {
+  if (manifestSchemaVersion(raw) !== 3) return;
+  const validation = validateManifest(raw, format);
+  if (!validation.valid) {
+    throw new CompileAgentConfigError(
+      validation.issues
+        .filter((issue) => issue.severity === 'error')
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join('; '),
+    );
+  }
+}
+
 /** The parsed v2 manifest at `baseRef` (default branch when absent); null for v1, none, or a read failure. */
 async function readManifestV2(project: GitBackedProject, baseRef?: string | null): Promise<Record<string, unknown> | null> {
-  const ref = baseRef?.trim() || project.defaultBranch;
   try {
-    const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
-    if (!found) return null;
-    const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    return [2, 3].includes(manifestSchemaVersion(raw)) ? raw : null;
+    const parsed = await readParsedManifest(project, baseRef?.trim() || project.defaultBranch);
+    if (!parsed) return null;
+    return [2, 3].includes(manifestSchemaVersion(parsed.raw)) ? parsed.raw : null;
   } catch {
     return null;
   }
@@ -681,21 +719,13 @@ export async function resolveCompiledAgentConfigForSession(
   const ref = baseRef?.trim() || project.defaultBranch;
   let manifestVersion: number | undefined;
   try {
-    const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref, {
-      forceRefresh: options.forceRefresh,
-    });
-    if (!found) return null;
-
-    const format = manifestFormatForPath(found.path);
-    const raw = parseManifestText(found.content, format);
-    options.onManifest?.(raw as Record<string, unknown>);
+    const parsed = await readParsedManifest(project, ref, options.forceRefresh);
+    if (!parsed) return null;
+    const raw = parsed.raw;
+    options.onManifest?.(raw);
     manifestVersion = manifestSchemaVersion(raw);
     if (![2, 3].includes(manifestVersion)) return null;
-    if (manifestSchemaVersion(raw) === 3) {
-      const validation = validateManifest(raw, format);
-      if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
-    }
+    validateV3OrThrow(raw, parsed.format);
 
     const v2 = raw as unknown as ManifestV2;
     const agents =
@@ -750,26 +780,16 @@ export async function resolveSelectedAgentConfigForSession(
   options: CompileReadOptions = {},
 ): Promise<string> {
   const ref = baseRef?.trim() || project.defaultBranch;
-  const candidates = manifestCandidatePaths(project.manifestPath).map(
-    (candidate) => candidate.path,
-  );
-  const found = await readManifestFromRepo(project, candidates, ref, {
-    forceRefresh: options.forceRefresh,
-  });
-  if (!found) {
+  const parsed = await readParsedManifest(project, ref, options.forceRefresh);
+  if (!parsed) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} has no manifest for selected-agent compilation.`,
       agentName,
     );
   }
-
-  const format = manifestFormatForPath(found.path);
-  const raw = parseManifestText(found.content, format);
-  options.onManifest?.(raw as Record<string, unknown>);
-  if (manifestSchemaVersion(raw) === 3) {
-    const validation = validateManifest(raw, format);
-    if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
-  }
+  const raw = parsed.raw;
+  options.onManifest?.(raw);
+  validateV3OrThrow(raw, parsed.format);
   if (![2, 3].includes(manifestSchemaVersion(raw))) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} must use kortix_version 2 or 3 for selected-agent compilation.`,
