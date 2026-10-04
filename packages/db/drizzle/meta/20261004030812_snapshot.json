@@ -1,6 +1,6 @@
 {
   "id": "eed531a3-9192-4518-81ab-47113ecbccb5",
-  "prevId": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
+  "prevId": "49d6de72-b0d2-4a37-8f98-641f1b8c84f5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5532,6 +5532,21 @@
           "columns": [
             {
               "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_pending_auth_messages_project": {
+          "name": "idx_chat_pending_auth_messages_project",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

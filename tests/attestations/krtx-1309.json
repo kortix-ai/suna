@@ -1,21 +1,21 @@
 {
-  "source_hash": "ecdc7fe6a5236ba3a6c7c3fb737b095d448598efeacb52e1ffff72ffc39d9401",
+  "source_hash": "2cab5afafa3706d8e1aafc8aea748a57e79d778fd9aadf77312548346bea772c",
   "diff_files": [
     "apps/api/src/projects/reaping/archived-box-removal-plan.integration.test.ts",
     "apps/api/src/projects/reaping/archived-box-removal.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/drizzle/meta/20261004030812_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261004030607968_session_sandboxes_provider_removal_pending_index.concurrent.ts",
+    "packages/db/migrations/20261004175323668_session_sandboxes_provider_removal_pending_index.concurrent.ts",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "b32e0b5bc0dcf24a82f1e90a2bd4684174df12119a7fc7f36e68cfb6deab7e0c",
-  "head": "6f99e2f9ba4c43e956b1898919c0566441820e1b",
+  "diff_hash": "481a8590314a17d6504284da774e1f61c32923d1aea0b261cca23580b0aca374",
+  "head": "d25ce80798e6657824f689d2ff1345da3fa12b1d",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T03:59:01.765Z"
+  "at": "2026-10-04T18:12:53.920Z"
 }
