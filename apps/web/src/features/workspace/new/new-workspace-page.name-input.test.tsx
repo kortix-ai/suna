@@ -107,15 +107,9 @@ const motionValue = (initial: number) => ({
 });
 mock.module('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
-  LazyMotion: ({ children }: { children: ReactNode }) => <>{children}</>,
-  MotionConfig: ({ children }: { children: ReactNode }) => <>{children}</>,
   m: motionComponents,
-  motion: motionComponents,
   animate: () => Promise.resolve(),
-  useAnimation: () => ({ start: () => Promise.resolve(), stop: () => {}, set: () => {} }),
-  useInView: () => false,
   useMotionValue: (initial: number) => motionValue(initial),
-  useTransform: (initial: number) => motionValue(initial),
   useReducedMotion: () => true,
 }));
 
