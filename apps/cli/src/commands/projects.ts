@@ -1639,7 +1639,9 @@ async function projectsRm(args: string[]): Promise<number> {
   // Drop the local binding if we just removed the linked project.
   if (loadLink()?.project_id === id) clearLink();
 
-  process.stdout.write(`${status.ok(`Archived ${C.bold}${project.name}${C.reset}`)}\n`);
+  process.stdout.write(
+    `${status.ok(`${purge ? 'Purged' : 'Archived'} ${C.bold}${project.name}${C.reset}`)}\n`,
+  );
   if (purge) {
     process.stdout.write(
       result.repo_deleted
