@@ -50,7 +50,7 @@ export interface TeamsManifest {
  * on an older version; a team owner still accepts a new permission or message
  * action in each team. `unit-teams-manifest.test.ts` fails until you bump.
  */
-export const TEAMS_MANIFEST_VERSION = '1.6.1';
+export const TEAMS_MANIFEST_VERSION = '1.6.2';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in
