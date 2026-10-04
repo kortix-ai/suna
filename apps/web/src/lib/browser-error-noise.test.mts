@@ -12335,3 +12335,68 @@ test('the runtime gate does not drop the play() NotAllowedError rejection (sentr
     false,
   );
 });
+
+// Reproduces Better Stack error 6f121228...165c5870 (Kortix Frontend prod,
+// application_id 2346967): `Window message "chrome: call method" timed out.`,
+// 1 occurrence / 0 identified users, 2026-10-03 17:40 UTC, route `/`
+// (marketing homepage), Chrome 154 / Windows 10, mechanism
+// `auto.browser.global_handlers.onunhandledrejection`. Frames:
+//   - `app:///_next/static/immutable/chunks/1tbu2q8v5lwc7.js` function `r`
+//     (older frame — our chunk, crossed by the rejection's async stack)
+//   - `app:///assets/js/content.js` function `?` line 13 col 102787
+//     (THROW SITE — a bundled third-party extension content script; this app
+//     serves no `/assets/js/` file and no first-party frame is `content.js`)
+// A third-party injected script sends a `chrome: call method` window message
+// (a page-world to extension-world RPC over `window.postMessage`) and its own
+// helper rejects with this exact wording when no receiver answers in time.
+// Our code never emits a `chrome:` message channel (grep: no hit in apps or
+// packages), and independent third-party Sentry ignore lists classify the
+// same wording as a timed-out extension call.
+test('suppresses the timed-out extension window-message call noise', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      environment: 'prod',
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: 'Window message "chrome: call method" timed out.',
+            mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/immutable/chunks/1tbu2q8v5lwc7.js', function: 'r' },
+                { filename: 'app:///assets/js/content.js', function: '?' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+  // The runtime gate sees the same rejection as the raw `reason` — no frames,
+  // just the message through the Error.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      reason: new Error('Window message "chrome: call method" timed out.'),
+    }),
+    true,
+  );
+});
+
+test('the timed-out window-message anchor stays specific to the extension channel', () => {
+  // The anchor is the `chrome: call method` channel name, not a bare
+  // "timed out" substring: unrelated first-party and network timeouts keep
+  // reporting, and a different extension channel is not silently swept in.
+  for (const message of [
+    'Request timed out after 30000ms',
+    'Window message "chrome: get value" timed out.',
+    'git push timed out after 30000ms (signal SIGTERM)',
+  ]) {
+    assert.equal(
+      isKnownBrowserNoiseMessage(message),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+  }
+});
