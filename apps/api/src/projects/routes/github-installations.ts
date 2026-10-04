@@ -55,38 +55,6 @@ const getAccountInstallationsHandler = async (c: any) => {
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
 };
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'Get the GitHub App installation of the account',
-    ...auth,
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  getAccountInstallationsHandler,
-);
-
-// GET /v1/projects/github/installations?account_id=...
-// Vercel-style account Git connections surface. A Kortix account can connect
-// multiple GitHub users/orgs and pick the exact installation during import.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/github/installations',
-    tags: ['github'],
-    summary: 'List GitHub App installations',
-    ...auth,
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  getAccountInstallationsHandler,
-);
-
 /**
  * One row per `(account_id, owner_login)`.
  *
@@ -159,102 +127,217 @@ export async function upsertAccountGitHubInstallation(
   if (!row) throw new Error('Failed to save the GitHub installation');
   return row;
 }
+export function registerGithubInstallationsRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/github/installation',
+      tags: ['github'],
+      summary: 'Get the GitHub App installation of the account',
+      ...auth,
+      responses: {
+          200: json(z.any(), 'OK'),
+      },
+    }),
+    getAccountInstallationsHandler,
+  );
 
-// POST /v1/projects/github/installations/linkable
-// The GitHub OAuth token cannot call GET /user/installations. GitHub restricts
-// that route to GitHub App user tokens. Kortix lists this App's installations
-// with the App JWT, then filters them with the authorized user's identity and
-// active organization-admin memberships.
+  // GET /v1/projects/github/installations?account_id=...
+  // Vercel-style account Git connections surface. A Kortix account can connect
+  // multiple GitHub users/orgs and pick the exact installation during import.
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/github/installations/linkable',
-    tags: ['github'],
-    summary: 'List GitHub installations that can be linked',
-    ...auth,
-    request: {
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'Linkable GitHub App installations'),
-      ...errors(400, 403, 502),
-    },
-  }),
-  async (c: any) => {
-    const body = await readJsonObject(c);
-    const scope = await resolveProjectAccount(c, body);
-    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/github/installations',
+      tags: ['github'],
+      summary: 'List GitHub App installations',
+      ...auth,
+      responses: {
+          200: json(z.any(), 'OK'),
+      },
+    }),
+    getAccountInstallationsHandler,
+  );
 
-    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
-    if (!githubUserToken) {
-      return c.json({ error: 'GitHub authorization is required to list installations' }, 400);
-    }
+  // POST /v1/projects/github/installations/linkable
+  // The GitHub OAuth token cannot call GET /user/installations. GitHub restricts
+  // that route to GitHub App user tokens. Kortix lists this App's installations
+  // with the App JWT, then filters them with the authorized user's identity and
+  // active organization-admin memberships.
 
-    let linkable;
-    try {
-      linkable = await listLinkableGitHubAppInstallations(githubUserToken);
-    } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'Failed to list GitHub App installations',
-        },
-        502,
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/github/installations/linkable',
+      tags: ['github'],
+      summary: 'List GitHub installations that can be linked',
+      ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(z.any(), 'Linkable GitHub App installations'),
+        ...errors(400, 403, 502),
+      },
+    }),
+    async (c: any) => {
+      const body = await readJsonObject(c);
+      const scope = await resolveProjectAccount(c, body);
+      await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+      const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+      if (!githubUserToken) {
+        return c.json({ error: 'GitHub authorization is required to list installations' }, 400);
+      }
+
+      let linkable;
+      try {
+        linkable = await listLinkableGitHubAppInstallations(githubUserToken);
+      } catch (error) {
+        return c.json(
+          {
+            error: (error as Error).message || 'Failed to list GitHub App installations',
+          },
+          502,
+        );
+      }
+
+      const linkedRows = await listAccountGitHubInstallations(scope.accountId);
+      const linkedIds = new Set(linkedRows.map((row) => row.installationId));
+      const installUrl = await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
+      const otherAccountCounts = await countInstallationsLinkedToOtherAccounts(
+        scope.accountId,
+        linkable.installations.map((installation) => String(installation.id)),
       );
+
+      return c.json({
+        account_id: scope.accountId,
+        github_login: linkable.githubLogin,
+        configured: Boolean(installUrl),
+        install_url: installUrl,
+        installations: linkable.installations.map((installation) => ({
+          installation_id: String(installation.id),
+          owner_login: installation.account?.login ?? null,
+          owner_type: installation.account?.type ?? installation.target_type ?? null,
+          repository_selection: installation.repository_selection ?? null,
+          permissions: installation.permissions ?? {},
+          installation_url: installation.html_url ?? null,
+          linked: linkedIds.has(String(installation.id)),
+          // A COUNT, never a name. Which other tenants hold this installation is
+          // their business; that it is shared is this caller's.
+          linked_to_other_accounts: otherAccountCounts.get(String(installation.id)) ?? 0,
+        })),
+      });
+    },
+  );
+
+  // POST /v1/projects/github/installations/link
+  // This same-origin path links an existing App installation without a GitHub
+  // install callback. The API verifies the installation against the App JWT and
+  // verifies the authorized GitHub user again before it writes the account row.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/github/installations/link',
+      tags: ['github'],
+      summary: 'Link a GitHub installation to the account',
+      ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(z.any(), 'Linked GitHub App installation'),
+        ...errors(400, 403, 502),
+      },
+    }),
+    async (c: any) => {
+      const body = await readJsonObject(c);
+      const scope = await resolveProjectAccount(c, body);
+      await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+      const installationId = normalizeString(body.installation_id ?? body.installationId);
+      if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
+      if (!/^[0-9]+$/.test(installationId)) {
+        return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
+      }
+      const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+      if (!githubUserToken) {
+        return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
+      }
+
+      let installation: GitHubAppInstallation;
+      try {
+        installation = await getGitHubAppInstallation(installationId);
+      } catch (error) {
+        return c.json(
+          {
+            error: (error as Error).message || 'Failed to verify GitHub App installation',
+          },
+          502,
+        );
+      }
+
+      try {
+        await verifyGitHubInstallationAdmin(githubUserToken, installation);
+      } catch (error) {
+        return c.json(
+          {
+            error: (error as Error).message || 'GitHub administrator verification failed',
+          },
+          githubVerificationStatus(error),
+        );
+      }
+
+      try {
+        const row = await upsertAccountGitHubInstallation(
+          scope.accountId,
+          installationId,
+          installation,
+        );
+        return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
+      } catch (error) {
+        return c.json(
+          {
+            error: (error as Error).message || 'Failed to save the GitHub installation',
+          },
+          502,
+        );
+      }
+    },
+  );
+
+  // POST /v1/projects/github/installation
+  // Called after GitHub redirects back with installation_id + signed state.
+  // We fetch installation metadata with the app JWT instead of trusting client
+  // supplied owner information.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/github/installation',
+      tags: ['github'],
+      summary: 'Save a GitHub App installation',
+      ...auth,
+        request: {
+          body: { content: { 'application/json': { schema: AnyObject } } },
+        },
+      responses: {
+          200: json(z.any(), 'OK'),
+          ...errors(400, 403, 502),
+      },
+    }),
+    async (c: any) => {
+    const body = await readJsonObject(c);
+    const state = normalizeString(body.state);
+    if (!state) return c.json({ error: 'state is required' }, 400);
+    const statePayload = verifyGitHubAppInstallStatePayload(state);
+    if (!statePayload?.accountId || !statePayload.nonce) {
+      return c.json({ error: 'invalid GitHub installation state' }, 400);
     }
 
-    const linkedRows = await listAccountGitHubInstallations(scope.accountId);
-    const linkedIds = new Set(linkedRows.map((row) => row.installationId));
-    const installUrl = await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
-    const otherAccountCounts = await countInstallationsLinkedToOtherAccounts(
-      scope.accountId,
-      linkable.installations.map((installation) => String(installation.id)),
-    );
-
-    return c.json({
-      account_id: scope.accountId,
-      github_login: linkable.githubLogin,
-      configured: Boolean(installUrl),
-      install_url: installUrl,
-      installations: linkable.installations.map((installation) => ({
-        installation_id: String(installation.id),
-        owner_login: installation.account?.login ?? null,
-        owner_type: installation.account?.type ?? installation.target_type ?? null,
-        repository_selection: installation.repository_selection ?? null,
-        permissions: installation.permissions ?? {},
-        installation_url: installation.html_url ?? null,
-        linked: linkedIds.has(String(installation.id)),
-        // A COUNT, never a name. Which other tenants hold this installation is
-        // their business; that it is shared is this caller's.
-        linked_to_other_accounts: otherAccountCounts.get(String(installation.id)) ?? 0,
-      })),
-    });
-  },
-);
-
-// POST /v1/projects/github/installations/link
-// This same-origin path links an existing App installation without a GitHub
-// install callback. The API verifies the installation against the App JWT and
-// verifies the authorized GitHub user again before it writes the account row.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/github/installations/link',
-    tags: ['github'],
-    summary: 'Link a GitHub installation to the account',
-    ...auth,
-    request: {
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'Linked GitHub App installation'),
-      ...errors(400, 403, 502),
-    },
-  }),
-  async (c: any) => {
-    const body = await readJsonObject(c);
-    const scope = await resolveProjectAccount(c, body);
+    const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
     await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     const installationId = normalizeString(body.installation_id ?? body.installationId);
@@ -267,27 +350,33 @@ projectsApp.openapi(
       return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
     }
 
-    let installation: GitHubAppInstallation;
+    let installation;
     try {
       installation = await getGitHubAppInstallation(installationId);
     } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'Failed to verify GitHub App installation',
-        },
-        502,
-      );
+      const message = (error as Error).message || 'Failed to verify GitHub App installation';
+      return c.json({ error: message }, 502);
     }
 
     try {
       await verifyGitHubInstallationAdmin(githubUserToken, installation);
     } catch (error) {
-      return c.json(
-        {
-          error: (error as Error).message || 'GitHub administrator verification failed',
-        },
-        githubVerificationStatus(error),
-      );
+      const message = (error as Error).message || 'GitHub administrator verification failed';
+      return c.json({ error: message }, githubVerificationStatus(error));
+    }
+
+    const stateStatus = await consumeGitHubInstallationState({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      nonce: statePayload.nonce,
+      installationId,
+    });
+    if (stateStatus === 'invalid') {
+      const existing = await getAccountGitHubInstallation(scope.accountId, installationId);
+      if (existing?.installationId === installationId) {
+        return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
+      }
+      return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
     }
 
     try {
@@ -306,237 +395,149 @@ projectsApp.openapi(
       );
     }
   },
-);
+  );
 
-// POST /v1/projects/github/installation
-// Called after GitHub redirects back with installation_id + signed state.
-// We fetch installation metadata with the app JWT instead of trusting client
-// supplied owner information.
+  // DELETE /v1/projects/github/installation?account_id=...
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'Save a GitHub App installation',
-    ...auth,
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/github/installation',
+      tags: ['github'],
+      summary: 'Remove the GitHub App installation',
+      ...auth,
+        request: {
+          query: z.object({}).passthrough(),
+        },
+      responses: {
+          200: json(z.any(), 'OK'),
+      },
+    }),
+    async (c: any) => {
+    const scope = await resolveProjectAccount(c);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
+
+    await db
+      .delete(accountGithubInstallations)
+      .where(installationId
+        ? and(
+            eq(accountGithubInstallations.accountId, scope.accountId),
+            eq(accountGithubInstallations.installationId, installationId),
+          )
+        : eq(accountGithubInstallations.accountId, scope.accountId));
+
+    // Disconnecting takes the user authorization with it: a stored token whose
+    // connection is gone can still create repositories, which is not what
+    // "disconnect" means to the person who clicked it.
+    const remaining = await listAccountGitHubInstallations(scope.accountId);
+    if (remaining.length === 0) await deleteGitHubUserTokens(scope.accountId);
+
+    return c.json({ ok: true });
+  },
+  );
+
+  // DELETE /v1/projects/github/installations/:installationId?account_id=...
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/github/installations/{installationId}',
+      tags: ['github'],
+      summary: 'Remove a GitHub installation',
+      ...auth,
+        request: {
+          params: z.object({ installationId: z.string() }),
+        },
+      responses: {
+          200: json(z.any(), 'OK'),
+      },
+    }),
+    async (c: any) => {
+    const scope = await resolveProjectAccount(c);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const installationId = c.req.param('installationId');
+
+    await db
+      .delete(accountGithubInstallations)
+      .where(and(
+        eq(accountGithubInstallations.accountId, scope.accountId),
+        eq(accountGithubInstallations.installationId, installationId),
+      ));
+
+    return c.json({ ok: true });
+  },
+  );
+
+  // POST /v1/projects/github/user-token
+  //
+  // Store the caller's GitHub App USER access token for this account. It is used
+  // for exactly one thing: `POST /user/repos`, which GitHub refuses for an App
+  // installation token, so a repository under a PERSONAL owner needs it.
+  //
+  // The browser already holds this token — the "Verify with GitHub" popup
+  // exchanges the code and posts the result back (`requestGitHubUserProof`), the
+  // same value the linkable/link routes take today. The token is verified against
+  // GitHub, encrypted with the account-salted envelope, and never read back out
+  // to any caller.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/github/user-token',
+      tags: ['github'],
+      summary: 'Store a GitHub user token',
+      ...auth,
       request: {
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
-    responses: {
-        200: json(z.any(), 'OK'),
+      responses: {
+        200: json(z.any(), 'Stored GitHub user authorization'),
         ...errors(400, 403, 502),
-    },
-  }),
-  async (c: any) => {
-  const body = await readJsonObject(c);
-  const state = normalizeString(body.state);
-  if (!state) return c.json({ error: 'state is required' }, 400);
-  const statePayload = verifyGitHubAppInstallStatePayload(state);
-  if (!statePayload?.accountId || !statePayload.nonce) {
-    return c.json({ error: 'invalid GitHub installation state' }, 400);
-  }
-
-  const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-
-  const installationId = normalizeString(body.installation_id ?? body.installationId);
-  if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
-  if (!/^[0-9]+$/.test(installationId)) {
-    return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
-  }
-  const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
-  if (!githubUserToken) {
-    return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
-  }
-
-  let installation;
-  try {
-    installation = await getGitHubAppInstallation(installationId);
-  } catch (error) {
-    const message = (error as Error).message || 'Failed to verify GitHub App installation';
-    return c.json({ error: message }, 502);
-  }
-
-  try {
-    await verifyGitHubInstallationAdmin(githubUserToken, installation);
-  } catch (error) {
-    const message = (error as Error).message || 'GitHub administrator verification failed';
-    return c.json({ error: message }, githubVerificationStatus(error));
-  }
-
-  const stateStatus = await consumeGitHubInstallationState({
-    accountId: scope.accountId,
-    userId: scope.userId,
-    nonce: statePayload.nonce,
-    installationId,
-  });
-  if (stateStatus === 'invalid') {
-    const existing = await getAccountGitHubInstallation(scope.accountId, installationId);
-    if (existing?.installationId === installationId) {
-      return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
-    }
-    return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
-  }
-
-  try {
-    const row = await upsertAccountGitHubInstallation(
-      scope.accountId,
-      installationId,
-      installation,
-    );
-    return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
-  } catch (error) {
-    return c.json(
-      {
-        error: (error as Error).message || 'Failed to save the GitHub installation',
       },
-      502,
-    );
-  }
-},
-);
+    }),
+    async (c: any) => {
+      const body = await readJsonObject(c);
+      const scope = await resolveProjectAccount(c, body);
+      await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
-// DELETE /v1/projects/github/installation?account_id=...
+      const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+      if (!githubUserToken) {
+        return c.json({ error: 'github_user_token is required' }, 400);
+      }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'Remove the GitHub App installation',
-    ...auth,
-      request: {
-        query: z.object({}).passthrough(),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
+      let githubLogin: string;
+      try {
+        githubLogin = await resolveGitHubUserLogin(githubUserToken);
+      } catch (error) {
+        const message = (error as Error).message || 'GitHub authorization failed';
+        // A token GitHub rejects is the caller's problem, and a 502 would reach
+        // the browser as a 503 (`EDGE_REWRITTEN_STATUSES`, apps/api/src/index.ts)
+        // — "try again later" for something retrying can never fix. A genuine
+        // GitHub outage keeps the 502.
+        const rejected = /invalid or expired|did not return the authorized user/i.test(message);
+        return c.json({ error: message, code: rejected ? 'github_user_token_invalid' : undefined }, rejected ? 400 : 502);
+      }
+
+      // `expires_in` is seconds and is present only when the App expires user
+      // tokens; the popup forwards what GitHub returned.
+      const expiresInSeconds = Number(body.expires_in ?? body.expiresIn);
+      const expiresAt =
+        Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+          ? new Date(Date.now() + expiresInSeconds * 1000)
+          : null;
+
+      await saveGitHubUserToken({
+        accountId: scope.accountId,
+        userId: scope.userId,
+        githubLogin,
+        token: githubUserToken,
+        refreshToken: normalizeString(body.refresh_token ?? body.refreshToken),
+        expiresAt,
+      });
+
+      // The login only — never the token, not even the one the caller just sent.
+      return c.json({ ok: true, github_login: githubLogin });
     },
-  }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
-
-  await db
-    .delete(accountGithubInstallations)
-    .where(installationId
-      ? and(
-          eq(accountGithubInstallations.accountId, scope.accountId),
-          eq(accountGithubInstallations.installationId, installationId),
-        )
-      : eq(accountGithubInstallations.accountId, scope.accountId));
-
-  // Disconnecting takes the user authorization with it: a stored token whose
-  // connection is gone can still create repositories, which is not what
-  // "disconnect" means to the person who clicked it.
-  const remaining = await listAccountGitHubInstallations(scope.accountId);
-  if (remaining.length === 0) await deleteGitHubUserTokens(scope.accountId);
-
-  return c.json({ ok: true });
-},
-);
-
-// DELETE /v1/projects/github/installations/:installationId?account_id=...
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/github/installations/{installationId}',
-    tags: ['github'],
-    summary: 'Remove a GitHub installation',
-    ...auth,
-      request: {
-        params: z.object({ installationId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const installationId = c.req.param('installationId');
-
-  await db
-    .delete(accountGithubInstallations)
-    .where(and(
-      eq(accountGithubInstallations.accountId, scope.accountId),
-      eq(accountGithubInstallations.installationId, installationId),
-    ));
-
-  return c.json({ ok: true });
-},
-);
-
-// POST /v1/projects/github/user-token
-//
-// Store the caller's GitHub App USER access token for this account. It is used
-// for exactly one thing: `POST /user/repos`, which GitHub refuses for an App
-// installation token, so a repository under a PERSONAL owner needs it.
-//
-// The browser already holds this token — the "Verify with GitHub" popup
-// exchanges the code and posts the result back (`requestGitHubUserProof`), the
-// same value the linkable/link routes take today. The token is verified against
-// GitHub, encrypted with the account-salted envelope, and never read back out
-// to any caller.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/github/user-token',
-    tags: ['github'],
-    summary: 'Store a GitHub user token',
-    ...auth,
-    request: {
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'Stored GitHub user authorization'),
-      ...errors(400, 403, 502),
-    },
-  }),
-  async (c: any) => {
-    const body = await readJsonObject(c);
-    const scope = await resolveProjectAccount(c, body);
-    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-
-    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
-    if (!githubUserToken) {
-      return c.json({ error: 'github_user_token is required' }, 400);
-    }
-
-    let githubLogin: string;
-    try {
-      githubLogin = await resolveGitHubUserLogin(githubUserToken);
-    } catch (error) {
-      const message = (error as Error).message || 'GitHub authorization failed';
-      // A token GitHub rejects is the caller's problem, and a 502 would reach
-      // the browser as a 503 (`EDGE_REWRITTEN_STATUSES`, apps/api/src/index.ts)
-      // — "try again later" for something retrying can never fix. A genuine
-      // GitHub outage keeps the 502.
-      const rejected = /invalid or expired|did not return the authorized user/i.test(message);
-      return c.json({ error: message, code: rejected ? 'github_user_token_invalid' : undefined }, rejected ? 400 : 502);
-    }
-
-    // `expires_in` is seconds and is present only when the App expires user
-    // tokens; the popup forwards what GitHub returned.
-    const expiresInSeconds = Number(body.expires_in ?? body.expiresIn);
-    const expiresAt =
-      Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
-        ? new Date(Date.now() + expiresInSeconds * 1000)
-        : null;
-
-    await saveGitHubUserToken({
-      accountId: scope.accountId,
-      userId: scope.userId,
-      githubLogin,
-      token: githubUserToken,
-      refreshToken: normalizeString(body.refresh_token ?? body.refreshToken),
-      expiresAt,
-    });
-
-    // The login only — never the token, not even the one the caller just sent.
-    return c.json({ ok: true, github_login: githubLogin });
-  },
-);
+  );
+}

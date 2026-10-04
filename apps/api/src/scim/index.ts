@@ -17,18 +17,22 @@
 //   - Full filter grammar — only `userName eq` / `id eq` / `displayName eq` are
 //     supported, which covers the request patterns Okta and Azure AD actually use.
 //
-// This file is the orchestrator: it wires the route modules in their original
-// registration order. The router instance, the `scimAuth` middleware (applied
+// This file is the orchestrator: it calls the route modules' register
+// functions in their original registration order. The router instance, the `scimAuth` middleware (applied
 // in its original position before any routes), and the shared helpers all live
 // in `./app`, which every route module imports first.
 
 import { accounts } from '@kortix/db';
 import { scimRouter } from './app';
 
-// Register routes in their original order (side-effect imports).
-import './service-provider';
-import './users';
-import './groups';
+import { registerScimServiceProviderRoutes } from './service-provider';
+import { registerScimUsersRoutes } from './users';
+import { registerScimGroupsRoutes } from './groups';
+
+// Register routes in their original order.
+registerScimServiceProviderRoutes();
+registerScimUsersRoutes();
+registerScimGroupsRoutes();
 
 // `accounts` import kept only so future endpoints (e.g. /Me) can resolve
 // the account by URL without re-importing. Silences unused-import lints.

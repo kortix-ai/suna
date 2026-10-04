@@ -7,42 +7,6 @@ import { errors, json } from '../openapi';
 import { ScimResource, listResponse, scimRouter } from './app';
 import { ENTERPRISE_USER_SCHEMA } from './user-profile';
 
-// ─── Discovery ────────────────────────────────────────────────────────────
-
-scimRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/accounts/{accountId}/ServiceProviderConfig',
-    tags: ['scim'],
-    summary: 'SCIM ServiceProviderConfig (capabilities discovery)',
-    request: { params: z.object({ accountId: z.string() }) },
-    responses: {
-      200: json(ScimResource, 'ServiceProviderConfig'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-  return c.json({
-    schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
-    documentationUri: 'https://docs.kortix.com/scim',
-    patch: { supported: true },
-    bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
-    filter: { supported: true, maxResults: 200 },
-    changePassword: { supported: false },
-    sort: { supported: false },
-    etag: { supported: false },
-    authenticationSchemes: [
-      {
-        type: 'oauthbearertoken',
-        name: 'OAuth Bearer Token',
-        description: 'Per-account SCIM token configured in Account Settings.',
-      },
-    ],
-    meta: { resourceType: 'ServiceProviderConfig' },
-  });
-  },
-);
-
 // ─── ResourceTypes + Schemas ────────────────────────────────────────────────
 // Azure AD (and other strict SCIM clients) probe /ResourceTypes and /Schemas
 // during connector setup to discover the User/Group endpoints and their
@@ -167,69 +131,106 @@ function schemaWithLocation(accountId: string, schema: (typeof SCHEMA_DEFS)[numb
     },
   };
 }
+export function registerScimServiceProviderRoutes(): void {
+  // ─── Discovery ────────────────────────────────────────────────────────────
 
-scimRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/accounts/{accountId}/ResourceTypes',
-    tags: ['scim'],
-    summary: 'SCIM ResourceTypes (User + Group discovery)',
-    request: { params: z.object({ accountId: z.string() }) },
-    responses: { 200: json(ScimResource, 'ResourceTypes ListResponse'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    return c.json(listResponse(RESOURCE_TYPE_DEFS.map((d) => resourceTypeFor(accountId, d))));
-  },
-);
+  scimRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/accounts/{accountId}/ServiceProviderConfig',
+      tags: ['scim'],
+      summary: 'SCIM ServiceProviderConfig (capabilities discovery)',
+      request: { params: z.object({ accountId: z.string() }) },
+      responses: {
+        200: json(ScimResource, 'ServiceProviderConfig'),
+        ...errors(401, 403),
+      },
+    }),
+    async (c: any) => {
+    return c.json({
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
+      documentationUri: 'https://docs.kortix.com/scim',
+      patch: { supported: true },
+      bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
+      filter: { supported: true, maxResults: 200 },
+      changePassword: { supported: false },
+      sort: { supported: false },
+      etag: { supported: false },
+      authenticationSchemes: [
+        {
+          type: 'oauthbearertoken',
+          name: 'OAuth Bearer Token',
+          description: 'Per-account SCIM token configured in Account Settings.',
+        },
+      ],
+      meta: { resourceType: 'ServiceProviderConfig' },
+    });
+    },
+  );
 
-scimRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/accounts/{accountId}/ResourceTypes/{id}',
-    tags: ['scim'],
-    summary: 'SCIM ResourceType by id',
-    request: { params: z.object({ accountId: z.string(), id: z.string() }) },
-    responses: { 200: json(ScimResource, 'ResourceType'), ...errors(401, 403, 404) },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    const id = c.req.param('id');
-    const def = RESOURCE_TYPE_DEFS.find((d) => d.name === id);
-    if (!def) return scimError(c, 404, `Unknown ResourceType "${id}"`);
-    return c.json(resourceTypeFor(accountId, def));
-  },
-);
+  scimRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/accounts/{accountId}/ResourceTypes',
+      tags: ['scim'],
+      summary: 'SCIM ResourceTypes (User + Group discovery)',
+      request: { params: z.object({ accountId: z.string() }) },
+      responses: { 200: json(ScimResource, 'ResourceTypes ListResponse'), ...errors(401, 403) },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      return c.json(listResponse(RESOURCE_TYPE_DEFS.map((d) => resourceTypeFor(accountId, d))));
+    },
+  );
 
-scimRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/accounts/{accountId}/Schemas',
-    tags: ['scim'],
-    summary: 'SCIM Schemas (User + Group attribute definitions)',
-    request: { params: z.object({ accountId: z.string() }) },
-    responses: { 200: json(ScimResource, 'Schemas ListResponse'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    return c.json(listResponse(SCHEMA_DEFS.map((s) => schemaWithLocation(accountId, s))));
-  },
-);
+  scimRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/accounts/{accountId}/ResourceTypes/{id}',
+      tags: ['scim'],
+      summary: 'SCIM ResourceType by id',
+      request: { params: z.object({ accountId: z.string(), id: z.string() }) },
+      responses: { 200: json(ScimResource, 'ResourceType'), ...errors(401, 403, 404) },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      const id = c.req.param('id');
+      const def = RESOURCE_TYPE_DEFS.find((d) => d.name === id);
+      if (!def) return scimError(c, 404, `Unknown ResourceType "${id}"`);
+      return c.json(resourceTypeFor(accountId, def));
+    },
+  );
 
-scimRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/accounts/{accountId}/Schemas/{id}',
-    tags: ['scim'],
-    summary: 'SCIM Schema by urn',
-    request: { params: z.object({ accountId: z.string(), id: z.string() }) },
-    responses: { 200: json(ScimResource, 'Schema'), ...errors(401, 403, 404) },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    const id = c.req.param('id');
-    const schema = SCHEMA_DEFS.find((s) => s.id === id);
-    if (!schema) return scimError(c, 404, `Unknown Schema "${id}"`);
-    return c.json(schemaWithLocation(accountId, schema));
-  },
-);
+  scimRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/accounts/{accountId}/Schemas',
+      tags: ['scim'],
+      summary: 'SCIM Schemas (User + Group attribute definitions)',
+      request: { params: z.object({ accountId: z.string() }) },
+      responses: { 200: json(ScimResource, 'Schemas ListResponse'), ...errors(401, 403) },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      return c.json(listResponse(SCHEMA_DEFS.map((s) => schemaWithLocation(accountId, s))));
+    },
+  );
+
+  scimRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/accounts/{accountId}/Schemas/{id}',
+      tags: ['scim'],
+      summary: 'SCIM Schema by urn',
+      request: { params: z.object({ accountId: z.string(), id: z.string() }) },
+      responses: { 200: json(ScimResource, 'Schema'), ...errors(401, 403, 404) },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      const id = c.req.param('id');
+      const schema = SCHEMA_DEFS.find((s) => s.id === id);
+      if (!schema) return scimError(c, 404, `Unknown Schema "${id}"`);
+      return c.json(schemaWithLocation(accountId, schema));
+    },
+  );
+}

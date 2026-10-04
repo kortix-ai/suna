@@ -77,7 +77,7 @@ mock.module('../repositories/oauth-clients', () => {
 });
 
 const { iamRouter } = await import('../accounts/iam/app');
-await import('../accounts/iam/oauth-clients');
+(await import('../accounts/iam/oauth-clients')).registerIamOauthClientsRoutes();
 
 function createApp() {
   const app = new Hono();

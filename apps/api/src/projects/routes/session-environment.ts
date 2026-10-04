@@ -110,106 +110,107 @@ function serialize(info: {
     preview_token: info.previewToken,
   };
 }
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/environment/ensure',
-    tags: ['sessions'],
-    summary: 'Ensure the session sandbox is running',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
-    },
-    responses: {
-      200: json(EnvironmentSchema, 'The session environment, provisioned or resumed'),
-      ...errors(400, 403, 404, 409, 502, 504),
-    },
-  }),
-  async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START, 'lifecycle');
-    if (gate.kind === 'error') return gate.response as never;
-    // Environments exist for worker sessions only: an OpenCode session's own
-    // sandbox IS its environment, and ensuring a second box for it would just
-    // double compute.
-    if (gate.session.metadata.sandbox_slug !== 'pi-worker') {
-      return c.json({ error: 'Session does not run on the pi worker' }, 400);
-    }
-    const project = gate.row as {
-      repoUrl: string;
-      defaultBranch: string;
-      manifestPath: string | null;
-    };
-    try {
-      const info = await ensureSessionEnvironment({
-        sessionId: gate.sessionId,
-        projectId: gate.projectId,
-        accountId: gate.accountId,
-        userId: gate.userId,
-        agentName: gate.session.agentName,
-        baseRef: gate.session.baseRef || project.defaultBranch,
-        gitProject: {
-          projectId: gate.projectId,
-          repoUrl: project.repoUrl,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath ?? 'kortix.yaml',
-          gitAuthToken: null,
-        },
-      });
-      return c.json(serialize(info));
-    } catch (err) {
-      if (err instanceof SessionEnvironmentError) {
-        return c.json({ error: err.message }, err.status as never);
+export function registerSessionEnvironmentRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/environment/ensure',
+      tags: ['sessions'],
+      summary: 'Ensure the session sandbox is running',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+      responses: {
+        200: json(EnvironmentSchema, 'The session environment, provisioned or resumed'),
+        ...errors(400, 403, 404, 409, 502, 504),
+      },
+    }),
+    async (c) => {
+      const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START, 'lifecycle');
+      if (gate.kind === 'error') return gate.response as never;
+      // Environments exist for worker sessions only: an OpenCode session's own
+      // sandbox IS its environment, and ensuring a second box for it would just
+      // double compute.
+      if (gate.session.metadata.sandbox_slug !== 'pi-worker') {
+        return c.json({ error: 'Session does not run on the pi worker' }, 400);
       }
-      throw err;
-    }
-  },
-);
+      const project = gate.row as {
+        repoUrl: string;
+        defaultBranch: string;
+        manifestPath: string | null;
+      };
+      try {
+        const info = await ensureSessionEnvironment({
+          sessionId: gate.sessionId,
+          projectId: gate.projectId,
+          accountId: gate.accountId,
+          userId: gate.userId,
+          agentName: gate.session.agentName,
+          baseRef: gate.session.baseRef || project.defaultBranch,
+          gitProject: {
+            projectId: gate.projectId,
+            repoUrl: project.repoUrl,
+            defaultBranch: project.defaultBranch,
+            manifestPath: project.manifestPath ?? 'kortix.yaml',
+            gitAuthToken: null,
+          },
+        });
+        return c.json(serialize(info));
+      } catch (err) {
+        if (err instanceof SessionEnvironmentError) {
+          return c.json({ error: err.message }, err.status as never);
+        }
+        throw err;
+      }
+    },
+  );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/environment',
-    tags: ['sessions'],
-    summary: 'Get the session sandbox state',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/environment',
+      tags: ['sessions'],
+      summary: 'Get the session sandbox state',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+      responses: {
+        200: json(EnvironmentSchema, 'Environment status (never provisions)'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ, 'read');
+      if (gate.kind === 'error') return gate.response as never;
+      const info = await readSessionEnvironment(gate.sessionId);
+      if (!info) return c.json({ error: 'No environment' }, 404);
+      return c.json(serialize(info));
     },
-    responses: {
-      200: json(EnvironmentSchema, 'Environment status (never provisions)'),
-      ...errors(400, 403, 404),
-    },
-  }),
-  async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ, 'read');
-    if (gate.kind === 'error') return gate.response as never;
-    const info = await readSessionEnvironment(gate.sessionId);
-    if (!info) return c.json({ error: 'No environment' }, 404);
-    return c.json(serialize(info));
-  },
-);
+  );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/environment/stop',
-    tags: ['sessions'],
-    summary: 'Stop the session sandbox',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/environment/stop',
+      tags: ['sessions'],
+      summary: 'Stop the session sandbox',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+      responses: {
+        200: json(EnvironmentSchema, 'The stopped environment'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP, 'lifecycle');
+      if (gate.kind === 'error') return gate.response as never;
+      const info = await stopSessionEnvironment(gate.sessionId);
+      if (!info) return c.json({ error: 'No environment' }, 404);
+      return c.json(serialize(info));
     },
-    responses: {
-      200: json(EnvironmentSchema, 'The stopped environment'),
-      ...errors(400, 403, 404),
-    },
-  }),
-  async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP, 'lifecycle');
-    if (gate.kind === 'error') return gate.response as never;
-    const info = await stopSessionEnvironment(gate.sessionId);
-    if (!info) return c.json({ error: 'No environment' }, 404);
-    return c.json(serialize(info));
-  },
-);
+  );
+}

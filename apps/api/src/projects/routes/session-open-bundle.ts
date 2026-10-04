@@ -332,22 +332,24 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           : failed(audit.reason),
     });
   };
+export function registerSessionOpenBundleRoutes(): void {
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/snapshot',
+      'Get the session snapshot (state, prompts, audit) in one read',
+    ),
+    handleSessionSnapshot,
+  );
 
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/snapshot',
-    'Get the session snapshot (state, prompts, audit) in one read',
-  ),
-  handleSessionSnapshot,
-);
-// The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
-// The #6987 rename to `/snapshot` left shipped clients 404ing here — the
-// bundle degraded silently to 6-8 serial reads on every session open. Same
-// handler, same contract; keep until no supported SDK requests it.
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/open-bundle',
-    'Get the session snapshot (legacy open-bundle path)',
-  ),
-  handleSessionSnapshot,
-);
+  // The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
+  // The #6987 rename to `/snapshot` left shipped clients 404ing here — the
+  // bundle degraded silently to 6-8 serial reads on every session open. Same
+  // handler, same contract; keep until no supported SDK requests it.
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/open-bundle',
+      'Get the session snapshot (legacy open-bundle path)',
+    ),
+    handleSessionSnapshot,
+  );
+}
