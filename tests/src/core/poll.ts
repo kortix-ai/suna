@@ -35,3 +35,26 @@ export async function waitFor<T>(
     await sleep(opts.intervalMs);
   }
 }
+
+/**
+ * Poll `probe` until `until` passes, then return the last probe value; on
+ * timeout fail with `timeoutError(last)`. The flow-level twin of `waitFor`
+ * for probes whose diagnostic names the last value they saw.
+ */
+export async function eventually<T>(
+  probe: () => Promise<T>,
+  opts: {
+    until: (value: T) => boolean;
+    timeoutMs: number;
+    intervalMs: number;
+    timeoutError: (last: T) => Error;
+  },
+): Promise<T> {
+  const deadline = Date.now() + opts.timeoutMs;
+  for (;;) {
+    const last = await probe();
+    if (opts.until(last)) return last;
+    if (Date.now() >= deadline) throw opts.timeoutError(last);
+    await sleep(opts.intervalMs);
+  }
+}

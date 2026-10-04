@@ -1,9 +1,39 @@
 /**
  * Project secrets — manage-gated CRUD + validation. Maps to spec §19 (SEC-1/2/3).
  */
+import type { Client } from '../core/client';
 import { flow } from "../core/flow";
-import { createDatabaseSession } from '../fixtures/database-project';
+import { waitFor } from '../core/poll';
 import { subscribe } from '../fixtures/billing';
+import {
+  bindAgentGrantToToken,
+  createDatabaseSession,
+  insertActiveSessionSandbox,
+  openProjectDatabase,
+} from '../fixtures/database-project';
+
+/** Turn on the LLM gateway and pooled-provider-secret flags for a project. */
+async function enableGatewayFlags(client: Client, projectId: string): Promise<void> {
+  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+    (await client.patch('/v1/projects/:projectId/features', { feature, enabled: true },
+      { params: { projectId } })).status(200);
+  }
+}
+
+/** A runner-local upstream that records the Authorization header of every call. */
+async function openCredentialUpstream(): Promise<{ seen: string[]; port: number; close: () => void }> {
+  const { createServer } = await import('node:http');
+  const seen: string[] = [];
+  const upstream = createServer((req, res) => {
+    seen.push(String(req.headers.authorization ?? ''));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"ok":true}');
+  });
+  const port = await new Promise<number>((resolve) =>
+    upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+  );
+  return { seen, port, close: () => upstream.close() };
+}
 
 flow(
   "SEC-POOL-1",
@@ -135,10 +165,7 @@ flow(
       (await owner.del(`${resourcePath}/:secretId`, { params: { ...resourceParams, secretId: id } })).status(200);
     });
     await ctx.step('enable gateway and pool flags; select two keys', async () => {
-      for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-        (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-          { params: { projectId: project.id } })).status(200);
-      }
+      await enableGatewayFlags(owner, project.id);
       const selected = await owner.put(poolPath, { secret_ids: ids }, { params: poolParams });
       if (selected.statusCode !== 200) throw new Error(`pool selection returned ${selected.statusCode}: ${selected.text()}`);
       selected.body().has('$.configured', true).has('$.secret_ids', ids);
@@ -221,12 +248,12 @@ flow(
         });
         const params = { ...poolParams, sessionId: shared };
         // IAM verdicts are cached per API task for up to 15 s.
-        const deadline = Date.now() + 30_000;
-        let selected = await sa.put(poolPath, { secret_ids: [projectKeyId] }, { params });
-        while (selected.statusCode !== 200 && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 2_000));
-          selected = await sa.put(poolPath, { secret_ids: [projectKeyId] }, { params });
-        }
+        const selected = await waitFor(() => sa.put(poolPath, { secret_ids: [projectKeyId] }, { params }), {
+          until: (r) => r.statusCode === 200,
+          timeoutMs: 30_000,
+          intervalMs: 2_000,
+          description: 'service-account selection of the project key',
+        });
         if (selected.statusCode !== 200) throw new Error(`service-account selection returned ${selected.statusCode}: ${selected.text()}`);
         selected.body().has('$.configured', true).has('$.secret_ids', [projectKeyId]);
         (await sa.put(poolPath, { secret_ids: [ids[0]] }, { params })).status(403)
@@ -372,10 +399,7 @@ flow('SEC-POOL-4', {
   await ctx.step('flag off rejects a project-scoped credential', async () => {
     (await owner.post(path, input, { params })).status(403);
   });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-      { params: { projectId: project.id } })).status(200);
-  }
+  await enableGatewayFlags(owner, project.id);
   let secretId = '';
   await ctx.step('new key defaults to everyone in the project', async () => {
     const created = await owner.post(path, input, { params });
@@ -388,10 +412,7 @@ flow('SEC-POOL-4', {
     const other = await owner.get(`${path}?project_id=${otherProject.id}`, { params });
     other.status(200);
     if ((other.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('key leaked into another project');
-    for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-      (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-        { params: { projectId: otherProject.id } })).status(200);
-    }
+    await enableGatewayFlags(owner, otherProject.id);
     (await owner.post('/v1/projects/:projectId/sessions', {
       agent_name: 'kortix', provider_secret_pools: { anthropic: [secretId] },
     }, { params: { projectId: otherProject.id } })).status(403)
@@ -435,7 +456,6 @@ flow('SEC-POOL-5', {
     'GET /v1/projects/:projectId/model-picker',
   ],
 }, async (ctx) => {
-  const { Client: PgClient } = await import('pg');
   const { randomUUID } = await import('node:crypto');
   const team = await ctx.fixtures.team();
   const project = await team.project({ seed: true, allowAllSecrets: true });
@@ -453,9 +473,7 @@ flow('SEC-POOL-5', {
     (await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing: { mode: 'private', ownerId: member.userId } },
       { params: startParams })).status(403);
   });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  await enableGatewayFlags(owner, project.id);
 
   await ctx.step('a member cannot share a ChatGPT account with the project or another member', async () => {
     (await asMember.post(startPath, { resource_label: 'Team ChatGPT', sharing: { mode: 'project' } }, { params: startParams }))
@@ -477,10 +495,7 @@ flow('SEC-POOL-5', {
   // are written the way a completed poll writes them.
   const mine = randomUUID();
   const ownersPrivate = randomUUID();
-  const databaseUrl = ctx.env.databaseUrl!;
-  const database = new PgClient({ connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-  await database.connect();
+  const database = await openProjectDatabase(ctx.env, 'write the ChatGPT accounts for');
   try {
     for (const [secretId, createdBy, label] of [[mine, member.userId!, 'ChatGPT · Member'], [ownersPrivate, ctx.P.OWNER.userId!, 'ChatGPT · Owner']]) {
       await database.query(`INSERT INTO kortix.account_secret_resources
@@ -542,7 +557,6 @@ flow('SEC-POOL-6', {
     'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
   ],
 }, async (ctx) => {
-  const { Client: PgClient } = await import('pg');
   const { randomUUID } = await import('node:crypto');
   const team = await ctx.fixtures.team();
   const project = await team.project({ seed: true, allowAllSecrets: true });
@@ -550,9 +564,7 @@ flow('SEC-POOL-6', {
   await team.grantProjectRole(project.id, member.userId!, 'user');
   const owner = ctx.client.as(ctx.P.OWNER);
   const asMember = ctx.client.as(member);
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  await enableGatewayFlags(owner, project.id);
   const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: member.userId! });
   const minted = await asMember.post('/v1/accounts/tokens', { name: 'ChatGPT reconnection', account_id: team.id });
   minted.status(201);
@@ -562,16 +574,13 @@ flow('SEC-POOL-6', {
   // them, except that the stored login is unreadable. The older one is a day old.
   const newer = randomUUID();
   const older = randomUUID();
-  const databaseUrl = ctx.env.databaseUrl!;
-  const database = new PgClient({ connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-  await database.connect();
+  const database = await openProjectDatabase(ctx.env, 'write the ChatGPT accounts for');
   try {
-    await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, team.id, project.id]);
-    await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
-      credential.token_id, project.id, sessionId,
-      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
-    ]);
+    await insertActiveSessionSandbox(database, { sessionId, accountId: team.id, projectId: project.id });
+    await bindAgentGrantToToken(database, {
+      tokenId: credential.token_id, accountId: team.id, projectId: project.id, sessionId,
+      grant: { agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' },
+    });
     for (const [secretId, label, age] of [[newer, 'ChatGPT · Newer', '0 seconds'], [older, 'ChatGPT · Older', '1 day']]) {
       await database.query(`INSERT INTO kortix.account_secret_resources
         (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by, created_at, updated_at)
@@ -660,28 +669,22 @@ flow('SEC-POOL-3', {
     'POST /v1/llm/chat/completions',
   ],
 }, async (ctx) => {
-  const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   const first = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
   const sibling = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  await enableGatewayFlags(owner, project.id);
   const minted = await owner.post('/v1/accounts/tokens', { name: 'Pool session isolation', account_id: team.id });
   minted.status(201);
   const credential = minted.json<{ token_id: string; secret_key: string }>();
-  const databaseUrl = ctx.env.databaseUrl!;
-  const database = new PgClient({ connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-  await database.connect();
+  const database = await openProjectDatabase(ctx.env, 'bind the pool session token for');
   try {
-    await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [first, team.id, project.id]);
-    await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
-      credential.token_id, project.id, first,
-      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
-    ]);
+    await insertActiveSessionSandbox(database, { sessionId: first, accountId: team.id, projectId: project.id });
+    await bindAgentGrantToToken(database, {
+      tokenId: credential.token_id, accountId: team.id, projectId: project.id, sessionId: first,
+      grant: { agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' },
+    });
   } finally { await database.end(); }
   const caller = ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');
   const poolsPath = '/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools';
@@ -709,7 +712,6 @@ flow('SEC-9', {
   domain: 'secrets', requires: ['database'],
   routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/secrets', 'GET /v1/projects/:projectId/secrets'],
 }, async (ctx) => {
-  const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
@@ -724,19 +726,16 @@ flow('SEC-9', {
     const minted = await asManager.post('/v1/accounts/tokens', { name: 'Agent sets a secret', account_id: team.id });
     minted.status(201);
     const credential = minted.json<{ token_id: string; secret_key: string }>();
-    const databaseUrl = ctx.env.databaseUrl!;
-    const database = new PgClient({ connectionString: databaseUrl,
-      ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-    await database.connect();
+    const database = await openProjectDatabase(ctx.env, 'mint the agent session token for');
     try {
       if (!sandboxInserted) {
-        await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, team.id, project.id]);
+        await insertActiveSessionSandbox(database, { sessionId, accountId: team.id, projectId: project.id });
         sandboxInserted = true;
       }
-      await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
-        credential.token_id, project.id, sessionId,
-        JSON.stringify({ agent: 'kortix', permissions, connectors: 'all', env: 'all' }), team.id,
-      ]);
+      await bindAgentGrantToToken(database, {
+        tokenId: credential.token_id, accountId: team.id, projectId: project.id, sessionId,
+        grant: { agent: 'kortix', permissions, connectors: 'all', env: 'all' },
+      });
     } finally { await database.end(); }
     return ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');
   };
@@ -1434,8 +1433,6 @@ flow('SEC-AUD-1', {
     'POST /v1/accounts/tokens',
   ],
 }, async (ctx) => {
-  const { createServer } = await import('node:http');
-  const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   // The value's person, and a manager outside its audience: same role, so
@@ -1446,19 +1443,8 @@ flow('SEC-AUD-1', {
   await team.grantProjectRole(project.id, outsider.userId!, 'manager');
   const asHolder = ctx.client.as(holder);
   const params = { projectId: project.id };
-  const databaseUrl = ctx.env.databaseUrl as string;
-  const local = /localhost|127\.0\.0\.1/.test(databaseUrl);
-  const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
-
-  const seen: string[] = [];
-  const upstream = createServer((req, res) => {
-    seen.push(String(req.headers.authorization ?? ''));
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"ok":true}');
-  });
-  const port = await new Promise<number>((resolve) =>
-    upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
-  );
+  const db = await openProjectDatabase(ctx.env, 'write the payroll connector and session tokens for');
+  const { seen, port, close } = await openCredentialUpstream();
   const slug = `ke2e-payroll-${Date.now().toString(36)}`;
   const call = (as: typeof holder) =>
     ctx.client.as(as).post('/v1/connectors/projects/:projectId/call', { connector: slug, action: 'list', args: {} }, { params });
@@ -1478,18 +1464,17 @@ flow('SEC-AUD-1', {
     const minted = await asHolder.post('/v1/accounts/tokens', { name: 'Payroll agent', account_id: team.id });
     minted.status(201);
     const credential = minted.json<{ token_id: string; secret_key: string }>();
-    await db.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, team.id, project.id]);
-    await db.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
-      credential.token_id, project.id, sessionId,
-      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
-    ]);
+    await insertActiveSessionSandbox(db, { sessionId, accountId: team.id, projectId: project.id });
+    await bindAgentGrantToToken(db, {
+      tokenId: credential.token_id, accountId: team.id, projectId: project.id, sessionId,
+      grant: { agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' },
+    });
     return ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');
   };
   const agentCall = (agent: Awaited<ReturnType<typeof sessionToken>>) =>
     agent.post('/v1/connectors/call', { connector: slug, action: 'list', args: {} });
 
   try {
-    await db.connect();
     await ctx.step('a manager stores a connector credential only they can use → 200, listed with their audience', async () => {
       (await asHolder.post('/v1/projects/:projectId/secrets', {
         name: 'PAYROLL_API_TOKEN', value: 'payroll-holder-value', strategy: 'broker', consumer: 'connector',
@@ -1568,7 +1553,7 @@ flow('SEC-AUD-1', {
       (await share([{ principal_type: 'robot', principal_id: 'x' }])).status(400);
     });
   } finally {
-    upstream.close();
+    close();
     await db.end();
   }
 });
@@ -1595,11 +1580,12 @@ async function agentSessionToken(
   const minted = await input.as.post('/v1/accounts/tokens', { name: 'Agent session', account_id: input.team.id });
   minted.status(201);
   const credential = minted.json() as { token_id: string; secret_key: string };
-  await db.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, input.team.id, input.projectId]);
-  await db.query(
-    'UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5, service_account_id = $6 WHERE token_id = $1',
-    [credential.token_id, input.projectId, sessionId, JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), input.team.id, input.serviceAccountId],
-  );
+  await insertActiveSessionSandbox(db, { sessionId, accountId: input.team.id, projectId: input.projectId });
+  await bindAgentGrantToToken(db, {
+    tokenId: credential.token_id, accountId: input.team.id, projectId: input.projectId, sessionId,
+    grant: { agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' },
+    serviceAccountId: input.serviceAccountId,
+  });
   return { sessionId, client: ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION') };
 }
 
@@ -1619,25 +1605,14 @@ flow('SEC-AUD-2', {
     'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
   ],
 }, async (ctx) => {
-  const { createServer } = await import('node:http');
-  const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   const holder = await team.addMember('member');
   await team.grantProjectRole(project.id, holder.userId!, 'manager');
   const asHolder = ctx.client.as(holder);
   const params = { projectId: project.id };
-  const databaseUrl = ctx.env.databaseUrl as string;
-  const db = new PgClient({ connectionString: databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-  const seen: string[] = [];
-  const upstream = createServer((req, res) => {
-    seen.push(String(req.headers.authorization ?? ''));
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"ok":true}');
-  });
-  const port = await new Promise<number>((resolve) =>
-    upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
-  );
+  const db = await openProjectDatabase(ctx.env, 'write the nightly connector and session tokens for');
+  const { seen, port, close } = await openCredentialUpstream();
   const slug = `ke2e-nightly-${Date.now().toString(36)}`;
   const listed = async (identifier: string) => {
     const r = await asHolder.get('/v1/projects/:projectId/secrets', { params });
@@ -1648,7 +1623,6 @@ flow('SEC-AUD-2', {
   const otherSa = crypto.randomUUID();
 
   try {
-    await db.connect();
     await ctx.step('the project agent has a service account', async () => {
       // A project manager (no account admin) reads it through the project route.
       const r = await asHolder.get('/v1/projects/:projectId/agent-identities', { params });
@@ -1727,7 +1701,7 @@ flow('SEC-AUD-2', {
       (await asHolder.put('/v1/projects/:projectId/sessions/:sessionId/sharing', { mode: 'project' }, { params: sessionParams })).status(200);
     });
   } finally {
-    upstream.close();
+    close();
     await db.end();
   }
 });

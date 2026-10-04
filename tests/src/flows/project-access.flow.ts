@@ -20,6 +20,24 @@
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
+import type { FlowContext } from '../core/types';
+
+/**
+ * POST one email invite and assert the shared 201 + status + invite_id shape.
+ * `status` is the route's own pending marker ('pending' on /members, 'invited'
+ * on the project access invite); any assertion beyond that stays at the call site.
+ */
+const createPendingInvite = async (
+  ctx: FlowContext,
+  route: '/v1/accounts/:accountId/members' | '/v1/projects/:projectId/access/invite',
+  params: { accountId: string } | { projectId: string },
+  body: { email: string; role: string },
+  status: 'pending' | 'invited',
+) => {
+  const r = await ctx.client.as(ctx.P.OWNER).post(route, body, { params });
+  r.status(201).body().has('$.status', status).exists('$.invite_id');
+  return r;
+};
 
 // ─── Per-user project access (list / grant / revoke) ─────────────────────
 
@@ -183,18 +201,14 @@ flow(
     const inviteEmail = `${ctx.fixtures.name('pacc-invitee')}@ke2e.kortix.test`.toLowerCase();
     let inviteId = '';
     await ctx.step('invite a brand-new email → 201 pending invitation', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/access/invite',
-          { email: inviteEmail, role: 'manager' },
-          { params: { projectId: p.id } },
-        );
-      r.status(201)
-        .body()
-        .has('$.status', 'invited')
-        .has('$.project_role', 'manager')
-        .exists('$.invite_id');
+      const r = await createPendingInvite(
+        ctx,
+        '/v1/projects/:projectId/access/invite',
+        { projectId: p.id },
+        { email: inviteEmail, role: 'manager' },
+        'invited',
+      );
+      r.body().has('$.project_role', 'manager');
       inviteId = r.json<any>().invite_id;
     });
     await ctx.step('missing email → 400', async () => {
@@ -500,14 +514,13 @@ flow(
     const inviteEmail = `${ctx.fixtures.name('inv3')}@ke2e.kortix.test`.toLowerCase();
     let inviteId = '';
     await ctx.step('create a pending account invite (new email)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/accounts/:accountId/members',
-          { email: inviteEmail, role: 'member' },
-          { params: { accountId: team.id } },
-        );
-      r.status(201).body().has('$.status', 'pending').exists('$.invite_id');
+      const r = await createPendingInvite(
+        ctx,
+        '/v1/accounts/:accountId/members',
+        { accountId: team.id },
+        { email: inviteEmail, role: 'member' },
+        'pending',
+      );
       inviteId = r.json<any>().invite_id;
     });
     await ctx.step(
@@ -546,14 +559,13 @@ flow(
     const inviteEmail = `${ctx.fixtures.name('inv4')}@ke2e.kortix.test`.toLowerCase();
     let inviteId = '';
     await ctx.step('create a pending account invite', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/accounts/:accountId/members',
-          { email: inviteEmail, role: 'member' },
-          { params: { accountId: team.id } },
-        );
-      r.status(201);
+      const r = await createPendingInvite(
+        ctx,
+        '/v1/accounts/:accountId/members',
+        { accountId: team.id },
+        { email: inviteEmail, role: 'member' },
+        'pending',
+      );
       inviteId = r.json<any>().invite_id;
     });
     await ctx.step('accept as the wrong email → 403', async () => {
@@ -593,14 +605,13 @@ flow(
     const inviteEmail = `${ctx.fixtures.name('inv5')}@ke2e.kortix.test`.toLowerCase();
     let inviteId = '';
     await ctx.step('create a pending account invite', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/accounts/:accountId/members',
-          { email: inviteEmail, role: 'member' },
-          { params: { accountId: team.id } },
-        );
-      r.status(201);
+      const r = await createPendingInvite(
+        ctx,
+        '/v1/accounts/:accountId/members',
+        { accountId: team.id },
+        { email: inviteEmail, role: 'member' },
+        'pending',
+      );
       inviteId = r.json<any>().invite_id;
     });
     await ctx.step('decline as the wrong email → 403', async () => {
@@ -652,14 +663,13 @@ flow(
     const inviteEmail = `${ctx.fixtures.name('inv6')}@${ctx.env.testEmailDomain}`.toLowerCase();
     let inviteId = '';
     await ctx.step('create a pending account invite (new email, no user)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/accounts/:accountId/members',
-          { email: inviteEmail, role: 'member' },
-          { params: { accountId: team.id } },
-        );
-      r.status(201).body().has('$.status', 'pending').exists('$.invite_id');
+      const r = await createPendingInvite(
+        ctx,
+        '/v1/accounts/:accountId/members',
+        { accountId: team.id },
+        { email: inviteEmail, role: 'member' },
+        'pending',
+      );
       inviteId = r.json<any>().invite_id;
     });
     // NOW mint the matching identity so the flow can act as the addressee —
@@ -729,14 +739,13 @@ flow(
     const inviteEmail = `${ctx.fixtures.name('inv8')}@${ctx.env.testEmailDomain}`.toLowerCase();
     let inviteId = '';
     await ctx.step('invite an email with no Kortix account to a project → 201', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/access/invite',
-          { email: inviteEmail, role: 'member' },
-          { params: { projectId: p.id } },
-        );
-      r.status(201).body().has('$.status', 'invited').exists('$.invite_id');
+      const r = await createPendingInvite(
+        ctx,
+        '/v1/projects/:projectId/access/invite',
+        { projectId: p.id },
+        { email: inviteEmail, role: 'member' },
+        'invited',
+      );
       inviteId = r.json<any>().invite_id;
     });
     // The invitee signs up without the email link.

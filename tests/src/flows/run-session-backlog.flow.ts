@@ -34,7 +34,6 @@ import {
   bootSession,
   endedAfter,
   readTranscript,
-  readTurn,
   runtimePath,
   sandboxIdOf,
   sendPrompt,

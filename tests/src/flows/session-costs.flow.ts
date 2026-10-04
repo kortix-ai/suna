@@ -1,4 +1,5 @@
 import { flow } from '../core/flow';
+import { eventually } from '../core/poll';
 
 flow(
   'COST-1',
@@ -261,9 +262,7 @@ flow(
       });
 
       await ctx.step('its sandbox opens a compute window once it is active', async () => {
-        const deadline = Date.now() + 240_000;
-        let last: unknown = null;
-        while (Date.now() < deadline) {
+        await eventually(async () => {
           const result = await db.query(
             `SELECT s.status, c.id AS compute_id, c.state, c.cpu_cores, c.memory_gb
              FROM kortix.session_sandboxes s
@@ -271,11 +270,13 @@ flow(
              WHERE s.session_id = $1`,
             [session.id],
           );
-          last = result.rows;
-          if (result.rows.some((r) => r.compute_id)) return;
-          await new Promise((resolve) => setTimeout(resolve, 3_000));
-        }
-        throw new Error(`no sandbox_compute_sessions row opened: ${JSON.stringify(last)}`);
+          return result.rows;
+        }, {
+          until: (rows) => rows.some((r) => r.compute_id),
+          timeoutMs: 240_000,
+          intervalMs: 3_000,
+          timeoutError: (rows) => new Error(`no sandbox_compute_sessions row opened: ${JSON.stringify(rows)}`),
+        });
       });
     } finally {
       await db.end();

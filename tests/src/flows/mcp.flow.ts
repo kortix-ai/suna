@@ -13,19 +13,29 @@ import { subscribe } from "../fixtures/billing";
 import { flow } from "../core/flow";
 import { AgentPrincipalsWorld } from "../fixtures/agent-principals";
 import { waitFor } from "../core/poll";
+import type { FlowContext } from "../core/types";
+import { openDb } from "../fixtures/database-project";
+import { form, pkcePair } from "../fixtures/oauth";
 
-const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
-async function pkcePair() {
-  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  return { verifier, challenge: b64url(new Uint8Array(digest)) };
-}
-const form = (fields: Record<string, string>) => {
-  const fd = new FormData();
-  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
-  return fd;
-};
 const rpc = (id: number, method: string, params: Record<string, unknown> = {}) => ({ jsonrpc: "2.0", id, method, params });
+type McpToolResult = { isError?: boolean; content: Array<{ text: string }> };
+/** The POST /v1/mcp JSON-RPC call every MCP flow makes: ANON bearer `token`, plus optional extra headers. */
+const postMcp = (ctx: FlowContext, body: unknown, token: string, headers: Record<string, string> = {}) =>
+  ctx.client.as(ctx.P.ANON).post("/v1/mcp", body, { headers: { Authorization: `Bearer ${token}`, ...headers } });
+/** The `result` member of an MCP JSON-RPC reply. */
+const toolResultOf = (r: { json<T>(): T }): McpToolResult => r.json<{ result: McpToolResult }>().result;
+/** Mint the owner and outsider PATs the per-person flows hand to their tool calls. */
+const mintOwnerAndOutsiderPats = async (ctx: FlowContext, label: string) => {
+  let pat = "";
+  let outsiderPat = "";
+  for (const [who, name] of [[ctx.P.OWNER, "owner"], [ctx.P.NONMEMBER, "outsider"]] as const) {
+    const created = await ctx.client.as(who).post("/v1/accounts/tokens", { name: `${label} ${name}` });
+    created.status(201);
+    if (name === "owner") pat = created.json<{ secret_key: string }>().secret_key;
+    else outsiderPat = created.json<{ secret_key: string }>().secret_key;
+  }
+  return { pat, outsiderPat };
+};
 
 // ── MCP-1: challenge + discovery ─────────────────────────────────────────────
 flow(
@@ -193,16 +203,17 @@ flow(
     let clientId = "";
     let token = "";
     const mcp = (body: unknown, headers: Record<string, string> = {}) =>
-      ctx.client.as(ctx.P.ANON).post("/v1/mcp", body, {
+      postMcp(ctx, body, token, {
         // Real MCP clients ask for compression; tool calls must still read plain bodies.
-        headers: { Authorization: `Bearer ${token}`, "Accept-Encoding": "gzip, deflate, br", ...headers },
+        "Accept-Encoding": "gzip, deflate, br",
+        ...headers,
       });
     const toolText = async (id: number, name: string, args: Record<string, unknown>) => {
       const r = await mcp(rpc(id, "tools/call", { name, arguments: args }));
       r.status(200);
-      const result = r.json<any>().result;
+      const result = toolResultOf(r);
       if (result.isError) throw new Error(`${name} → isError: ${result.content[0].text.slice(0, 300)}`);
-      return result.content[0].text as string;
+      return result.content[0].text;
     };
 
     await ctx.step("register, authorize for the MCP resource with no scope, and see a self-registered consent for kortix", async () => {
@@ -588,9 +599,9 @@ flow(
     const personalSession = await ctx.fixtures.session(personal);
     let pat = "";
     let outsiderPat = "";
-    const mcp = (body: unknown, token = pat) => ctx.client.as(ctx.P.ANON).post("/v1/mcp", body, { headers: { Authorization: `Bearer ${token}` } });
+    const mcp = (body: unknown, token = pat) => postMcp(ctx, body, token);
     const tool = async (id: number, name: string, args: Record<string, unknown>, token = pat) =>
-      (await mcp(rpc(id, "tools/call", { name, arguments: args }), token)).json<any>().result as { isError?: boolean; content: Array<{ text: string }> };
+      toolResultOf(await mcp(rpc(id, "tools/call", { name, arguments: args }), token));
 
     await ctx.step("a kortix_pat_ (the CLI's token) opens the MCP server with no OAuth", async () => {
       const created = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: "MCP-4 flow" });
@@ -661,10 +672,7 @@ flow(
     const team = await ctx.fixtures.team();
     const p = await team.project();
     const { createServer } = await import("node:http");
-    const { Client: PgClient } = await import("pg");
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
-    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const db = await openDb(ctx);
     const hits: string[] = [];
     const upstream = createServer((req, res) => {
       hits.push(`${req.method} ${req.url}`);
@@ -680,12 +688,10 @@ flow(
     const idle = `${slug}-idle`;
     let pat = "";
     let outsiderPat = "";
-    const mcp = (id: number, name: string, args: Record<string, unknown>, token = pat) =>
-      ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(id, "tools/call", { name, arguments: args }), { headers: { Authorization: `Bearer ${token}` } });
     const tool = async (id: number, name: string, args: Record<string, unknown>, token = pat) => {
-      const r = await mcp(id, name, args, token);
+      const r = await postMcp(ctx, rpc(id, "tools/call", { name, arguments: args }), token);
       r.status(200);
-      const result = r.json<any>().result as { isError?: boolean; content: Array<{ text: string }> };
+      const result = toolResultOf(r);
       return { isError: !!result.isError, text: result.content[0]!.text, json: () => JSON.parse(result.content[0]!.text) };
     };
     const insertAction = (connectorId: string, path: string, description: string, risk: string, schema: unknown, binding: unknown) =>
@@ -694,14 +700,8 @@ flow(
       ]);
 
     try {
-      await db.connect();
       await ctx.step("mint an owner token and an outsider token (the CLI's kortix_pat_)", async () => {
-        for (const [who, name] of [[ctx.P.OWNER, "owner"], [ctx.P.NONMEMBER, "outsider"]] as const) {
-          const created = await ctx.client.as(who).post("/v1/accounts/tokens", { name: `MCP-5 ${name}` });
-          created.status(201);
-          if (name === "owner") pat = created.json<{ secret_key: string }>().secret_key;
-          else outsiderPat = created.json<{ secret_key: string }>().secret_key;
-        }
+        ({ pat, outsiderPat } = await mintOwnerAndOutsiderPats(ctx, "MCP-5"));
       });
       await ctx.step("tools/list carries the nine connector tools with titles and honest annotations", async () => {
         const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(1, "tools/list"), { headers: { Authorization: `Bearer ${pat}` } });
@@ -865,11 +865,11 @@ flow(
     let pat = "";
     let outsiderPat = "";
     const call = async (id: number, name: string, args: Record<string, unknown>, token = pat) => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(id, "tools/call", { name, arguments: args }), { headers: { Authorization: `Bearer ${token}` } });
+      const r = await postMcp(ctx, rpc(id, "tools/call", { name, arguments: args }), token);
       r.status(200);
       const body = r.json<any>();
       if (!body.result) throw new Error(`${name} ${JSON.stringify(args).slice(0, 80)}: JSON-RPC error ${JSON.stringify(body.error)}`);
-      const result = body.result as { isError?: boolean; content: Array<{ text: string }> };
+      const result = body.result as McpToolResult;
       return { isError: !!result.isError, text: result.content[0]!.text };
     };
     /** `kortix <args>`: the tool's JSON reply, or the refusal text. */
@@ -885,12 +885,7 @@ flow(
     };
 
     await ctx.step("mint an owner token and an outsider token", async () => {
-      for (const [who, name] of [[ctx.P.OWNER, "owner"], [ctx.P.NONMEMBER, "outsider"]] as const) {
-        const created = await ctx.client.as(who).post("/v1/accounts/tokens", { name: `MCP-6 ${name}` });
-        created.status(201);
-        if (name === "owner") pat = created.json<{ secret_key: string }>().secret_key;
-        else outsiderPat = created.json<{ secret_key: string }>().secret_key;
-      }
+      ({ pat, outsiderPat } = await mintOwnerAndOutsiderPats(ctx, "MCP-6"));
     });
     await ctx.step("commit one project skill with a reference file to the project repository (the API mirror picks it up within 60 s: later steps wait for it)", async () => {
       const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: p.id });

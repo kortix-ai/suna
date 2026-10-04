@@ -5,11 +5,88 @@
  * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
  * the local profile against a database session with a saved transcript.
  */
-import { isKe2eRetryableError } from '../core/client';
+import { type Client, isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import { createDatabaseSession } from '../fixtures/database-project';
+import type { FlowContext } from '../core/types';
+import {
+  type ProjectDb,
+  createDatabaseSession,
+  fundDatabaseAccount,
+  openDb,
+} from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
+
+/** Request builders for the public-shares routes the SESS-13/14/16/36 flows repeat. */
+const SHARES_PATH = '/v1/projects/:projectId/sessions/:sessionId/public-shares';
+const mintShare = (as: Client, projectId: string, sessionId: string, body: unknown) =>
+  as.post(SHARES_PATH, body, { params: { projectId, sessionId } });
+const listShares = (as: Client, projectId: string, sessionId: string) =>
+  as.get(SHARES_PATH, { params: { projectId, sessionId } });
+const revokeShare = (as: Client, projectId: string, sessionId: string, shareId: string) =>
+  as.del(`${SHARES_PATH}/:shareId`, { params: { projectId, sessionId, shareId } });
+const anonResolve = (as: Client, token: string) =>
+  as.get('/v1/p/public-share/:token', { params: { token } });
+const PUBLIC_SHARE_PATH = '/v1/public/session-shares/:shareId';
+const publicMeta = (as: Client, shareId: string) =>
+  as.get(PUBLIC_SHARE_PATH, { params: { shareId } });
+const publicMessages = (as: Client, shareId: string) =>
+  as.get(`${PUBLIC_SHARE_PATH}/messages`, { params: { shareId } });
+
+/** One `recent_failures` entry of GET .../turn, as SESS-34 and SESS-35 read it. */
+type Failure = {
+  message_id: string;
+  ended_at?: string | null;
+  error: { name: string | null; message: string | null } | null;
+};
+
+/** One ended session_turns row for the /turn flows: any timestamp expression, optional named cause. */
+const insertEndedTurn = (
+  db: ProjectDb,
+  input: {
+    turnToken: string;
+    sessionId: string;
+    sandboxId: string;
+    projectId: string;
+    accountId: string | undefined;
+    messageId: string;
+    endReason: string;
+    endError: Record<string, unknown> | null;
+    started: string;
+    ended: string;
+    extra?: unknown[];
+  },
+) =>
+  db.query(
+    `INSERT INTO kortix.session_turns
+       (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
+        message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
+     VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', $7, $8::jsonb,
+             ${input.started}, ${input.ended}, now(), now())`,
+    [
+      input.turnToken,
+      input.sessionId,
+      input.sandboxId,
+      input.projectId,
+      input.accountId,
+      input.messageId,
+      input.endReason,
+      input.endError === null ? null : JSON.stringify(input.endError),
+      ...(input.extra ?? []),
+    ],
+  );
+
+/** Create a database-only session and hand it to the fixture teardown. */
+const seedSession = async (
+  ctx: FlowContext,
+  projectId: string,
+  accountId: string,
+  input: Omit<Parameters<typeof createDatabaseSession>[1], 'projectId' | 'accountId'>,
+): Promise<string> => {
+  const id = await createDatabaseSession(ctx.env, { projectId, accountId, ...input });
+  ctx.track('session', id, { projectId });
+  return id;
+};
 
 flow(
   'SESS-1',
@@ -181,11 +258,9 @@ flow(
     let shareId = '';
     let token = '';
     await ctx.step('create a preview public share → 201 with token + shape', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-        { preview: { port: 5173, path: '/', label: 'ke2e preview' } },
-        { params: { projectId: project.id, sessionId: session.id } },
-      );
+      const r = await mintShare(owner, project.id, session.id, {
+        preview: { port: 5173, path: '/', label: 'ke2e preview' },
+      });
       r.status(201)
         .body()
         .has('$.share.session_id', session.id)
@@ -203,25 +278,19 @@ flow(
     });
 
     await ctx.step('list shows the share → 200', async () => {
-      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
-        params: { projectId: project.id, sessionId: session.id },
-      });
+      const r = await listShares(owner, project.id, session.id);
       r.status(200).body().has('$.shares[0].share_id', shareId);
     });
 
     await ctx.step('unauthenticated resolution of an unknown token → 404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/p/public-share/:token', { params: { token: 'kps_ke2e_does_not_exist' } });
+      const r = await anonResolve(ctx.client.as(ctx.P.ANON), 'kps_ke2e_does_not_exist');
       r.status(404);
     });
 
     await ctx.step(
       'unauthenticated resolution of the real token → 200 (sandbox ready) or 503 (not yet) — never an auth error',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.ANON)
-          .get('/v1/p/public-share/:token', { params: { token } });
+        const r = await anonResolve(ctx.client.as(ctx.P.ANON), token);
         r.status([200, 503]);
         if (r.statusCode === 200) {
           r.body()
@@ -233,21 +302,14 @@ flow(
     );
 
     await ctx.step('revoke the share → 200 with revoked_at set', async () => {
-      const r = await owner.del(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
-        {
-          params: { projectId: project.id, sessionId: session.id, shareId },
-        },
-      );
+      const r = await revokeShare(owner, project.id, session.id, shareId);
       r.status(200).body().has('$.share.share_id', shareId).exists('$.share.revoked_at');
     });
 
     await ctx.step(
       'list still shows the (now revoked) share — revoke does not delete the row',
       async () => {
-        const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
-          params: { projectId: project.id, sessionId: session.id },
-        });
+        const r = await listShares(owner, project.id, session.id);
         r.status(200).body().has('$.shares[0].share_id', shareId).exists('$.shares[0].revoked_at');
       },
     );
@@ -255,9 +317,7 @@ flow(
     await ctx.step(
       'unauthenticated resolution of the revoked token → 410 Gone (not 404)',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.ANON)
-          .get('/v1/p/public-share/:token', { params: { token } });
+        const r = await anonResolve(ctx.client.as(ctx.P.ANON), token);
         r.status(410);
       },
     );
@@ -265,33 +325,18 @@ flow(
     await ctx.step(
       'revoking again is idempotent → 200 (no guard against double-revoke)',
       async () => {
-        const r = await owner.del(
-          '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
-          {
-            params: { projectId: project.id, sessionId: session.id, shareId },
-          },
-        );
+        const r = await revokeShare(owner, project.id, session.id, shareId);
         r.status(200);
       },
     );
 
     await ctx.step('revoking an unknown share id on this session → 404', async () => {
-      const r = await owner.del(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
-        {
-          params: { projectId: project.id, sessionId: session.id, shareId: crypto.randomUUID() },
-        },
-      );
+      const r = await revokeShare(owner, project.id, session.id, crypto.randomUUID());
       r.status(404);
     });
 
     await ctx.step('malformed (non-uuid) share id → 400', async () => {
-      const r = await owner.del(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
-        {
-          params: { projectId: project.id, sessionId: session.id, shareId: 'not-a-uuid' },
-        },
-      );
+      const r = await revokeShare(owner, project.id, session.id, 'not-a-uuid');
       r.status(400);
     });
 
@@ -305,11 +350,9 @@ flow(
     let fileToken = '';
 
     await ctx.step('create a file public share → 201, portless, view-only', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-        { file: { path: '/workspace/README.md', label: 'ke2e file' } },
-        { params: { projectId: project.id, sessionId: session.id } },
-      );
+      const r = await mintShare(owner, project.id, session.id, {
+        file: { path: '/workspace/README.md', label: 'ke2e file' },
+      });
       r.status(201)
         .body()
         .has('$.share.resource_type', 'file')
@@ -325,31 +368,25 @@ flow(
     });
 
     await ctx.step('a workspace-relative path is normalized, not rejected', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-        { file: { path: 'notes/report.md' } },
-        { params: { projectId: project.id, sessionId: session.id } },
-      );
+      const r = await mintShare(owner, project.id, session.id, {
+        file: { path: 'notes/report.md' },
+      });
       // Not ctx.track'ed: public_share rows are FK'd to the session with ON
       // DELETE CASCADE, so the session fixture's own teardown reclaims them.
       r.status(201).body().has('$.share.file_path', '/workspace/notes/report.md');
     });
 
     await ctx.step('a traversing file path is refused → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-        { file: { path: '/workspace/../../etc/passwd' } },
-        { params: { projectId: project.id, sessionId: session.id } },
-      );
+      const r = await mintShare(owner, project.id, session.id, {
+        file: { path: '/workspace/../../etc/passwd' },
+      });
       r.status(400);
     });
 
     await ctx.step(
       'unauthenticated file resolution matches the deployment’s preview-origin configuration',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.ANON)
-          .get('/v1/p/public-share/:token', { params: { token: fileToken } });
+        const r = await anonResolve(ctx.client.as(ctx.P.ANON), fileToken);
         r.status([200, 503]);
         if (r.statusCode === 200) {
           r.body().has('$.share.resource_type', 'file').has('$.share.file_path', '/workspace/README.md');
@@ -372,15 +409,10 @@ flow(
     );
 
     await ctx.step('revoked file token → 410, same as a preview token', async () => {
-      const del = await owner.del(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
-        { params: { projectId: project.id, sessionId: session.id, shareId: fileShareId } },
-      );
+      const del = await revokeShare(owner, project.id, session.id, fileShareId);
       del.status(200);
 
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/p/public-share/:token', { params: { token: fileToken } });
+      const r = await anonResolve(ctx.client.as(ctx.P.ANON), fileToken);
       r.status(410);
     });
   },
@@ -450,11 +482,7 @@ flow(
 
     let shareId = '';
     await ctx.step('the creator can create a public share', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-        { preview: { port: 3000 } },
-        { params: { projectId: p.id, sessionId } },
-      );
+      const r = await mintShare(owner, p.id, sessionId, { preview: { port: 3000 } });
       r.status(201);
       shareId = r.json<any>()?.share?.share_id;
     });
@@ -462,44 +490,28 @@ flow(
     await ctx.step(
       'a plain project MEMBER who did not create the session cannot list shares → 403',
       async () => {
-        const r = await ctx.client
-          .as(plainMember)
-          .get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
-            params: { projectId: p.id, sessionId },
-          });
+        const r = await listShares(ctx.client.as(plainMember), p.id, sessionId);
         r.status(403);
       },
     );
     await ctx.step(
       "a plain project MEMBER cannot create a share on someone else's session → 403",
       async () => {
-        const r = await ctx.client
-          .as(plainMember)
-          .post(
-            '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-            { preview: { port: 3000 } },
-            { params: { projectId: p.id, sessionId } },
-          );
+        const r = await mintShare(ctx.client.as(plainMember), p.id, sessionId, {
+          preview: { port: 3000 },
+        });
         r.status(403);
       },
     );
     await ctx.step("a plain project MEMBER cannot revoke someone else's share → 403", async () => {
-      const r = await ctx.client
-        .as(plainMember)
-        .del('/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId', {
-          params: { projectId: p.id, sessionId, shareId },
-        });
+      const r = await revokeShare(ctx.client.as(plainMember), p.id, sessionId, shareId);
       r.status(403);
     });
 
     await ctx.step(
       'a project MANAGER (not the creator) CAN list shares → 200 (canManageLifecycle)',
       async () => {
-        const r = await ctx.client
-          .as(manager)
-          .get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
-            params: { projectId: p.id, sessionId },
-          });
+        const r = await listShares(ctx.client.as(manager), p.id, sessionId);
         r.status(200).body().has('$.shares[0].share_id', shareId);
       },
     );
@@ -510,13 +522,9 @@ flow(
         // The escalation: the manager cannot read this private session, so a
         // link they minted and then opened anonymously would be a read the
         // visibility gate refused them.
-        const r = await ctx.client
-          .as(manager)
-          .post(
-            '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-            { preview: { port: 3000 } },
-            { params: { projectId: p.id, sessionId } },
-          );
+        const r = await mintShare(ctx.client.as(manager), p.id, sessionId, {
+          preview: { port: 3000 },
+        });
         r.status(403)
           .body()
           .has('$.error', 'Only the session owner can create a public link to this session');
@@ -526,29 +534,17 @@ flow(
     await ctx.step(
       'a project MANAGER CAN revoke a link they did not mint → 200 (revoking only removes access)',
       async () => {
-        const r = await ctx.client
-          .as(manager)
-          .del('/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId', {
-            params: { projectId: p.id, sessionId, shareId },
-          });
+        const r = await revokeShare(ctx.client.as(manager), p.id, sessionId, shareId);
         r.status(200).body().exists('$.share.revoked_at');
       },
     );
 
     await ctx.step('NONMEMBER → 403 (no account membership at all)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
-          params: { projectId: p.id, sessionId },
-        });
+      const r = await listShares(ctx.client.as(ctx.P.NONMEMBER), p.id, sessionId);
       r.status(403);
     });
     await ctx.step('ANON → 401', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
-          params: { projectId: p.id, sessionId },
-        });
+      const r = await listShares(ctx.client.as(ctx.P.ANON), p.id, sessionId);
       r.status(401);
     });
   },
@@ -822,40 +818,32 @@ flow(
 
     let shareId = '';
     await ctx.step('create a preview public share → 201', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-        { preview: { port: 5173, path: '/', label: 'ke2e session-share' } },
-        { params: { projectId: project.id, sessionId: session.id } },
-      );
+      const r = await mintShare(owner, project.id, session.id, {
+        preview: { port: 5173, path: '/', label: 'ke2e session-share' },
+      });
       r.status(201);
       shareId = r.json<any>()?.share?.share_id;
     });
 
     await ctx.step('anon: unknown share id → 404 on metadata', async () => {
-      const r = await anon.get('/v1/public/session-shares/:shareId', {
-        params: { shareId: crypto.randomUUID() },
-      });
+      const r = await publicMeta(anon, crypto.randomUUID());
       r.status(404);
     });
 
     await ctx.step('anon: unknown share id → 404 on messages', async () => {
-      const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
-        params: { shareId: crypto.randomUUID() },
-      });
+      const r = await publicMessages(anon, crypto.randomUUID());
       r.status(404);
     });
 
     await ctx.step('anon: malformed (non-uuid) share id → 400', async () => {
-      const r = await anon.get('/v1/public/session-shares/:shareId', {
-        params: { shareId: 'not-a-uuid' },
-      });
+      const r = await publicMeta(anon, 'not-a-uuid');
       r.status(400);
     });
 
     await ctx.step(
       'anon: view metadata for the real share → 200 (sandbox ready) or 503 (not yet) — never an auth error',
       async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
+        const r = await publicMeta(anon, shareId);
         r.status([200, 503]);
         if (r.statusCode === 200) {
           r.body()
@@ -871,42 +859,29 @@ flow(
     await ctx.step(
       'anon: a preview share does not read the transcript → 404 (the share names one app port)',
       async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
-          params: { shareId },
-        });
+        const r = await publicMessages(anon, shareId);
         r.status(404).body().has('$.error', 'This share does not include the conversation');
       },
     );
 
     await ctx.step('revoke the share → 200', async () => {
-      const r = await owner.del(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
-        {
-          params: { projectId: project.id, sessionId: session.id, shareId },
-        },
-      );
+      const r = await revokeShare(owner, project.id, session.id, shareId);
       r.status(200);
     });
 
     await ctx.step("anon: revoked share's metadata → 410 Gone (not 404)", async () => {
-      const r = await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } });
+      const r = await publicMeta(anon, shareId);
       r.status(410);
     });
 
     await ctx.step("anon: revoked share's messages → 410 Gone (not 404)", async () => {
-      const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
-        params: { shareId },
-      });
+      const r = await publicMessages(anon, shareId);
       r.status(410);
     });
 
     let transcriptShareId = '';
     await ctx.step('mint a transcript public share → 201', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/public-shares',
-        { transcript: true },
-        { params: { projectId: project.id, sessionId: session.id } },
-      );
+      const r = await mintShare(owner, project.id, session.id, { transcript: true });
       r.status(201).body().has('$.share.resource_type', 'transcript');
       transcriptShareId = r.json<any>()?.share?.share_id;
     });
@@ -920,7 +895,7 @@ flow(
         // `source:"none"` (the spec's retry signal) — a box that turns active
         // in ~5 s (a warm Platinum claim) sits in that window for seconds.
         const r = await waitFor(
-          () => anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: transcriptShareId } }),
+          () => publicMessages(anon, transcriptShareId),
           {
             until: (res) =>
               res.statusCode !== 503 &&
@@ -940,16 +915,8 @@ flow(
     );
 
     await ctx.step('revoke the transcript share → 200, then its messages → 410', async () => {
-      (
-        await owner.del('/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId', {
-          params: { projectId: project.id, sessionId: session.id, shareId: transcriptShareId },
-        })
-      ).status(200);
-      (
-        await anon.get('/v1/public/session-shares/:shareId/messages', {
-          params: { shareId: transcriptShareId },
-        })
-      ).status(410);
+      (await revokeShare(owner, project.id, session.id, transcriptShareId)).status(200);
+      (await publicMessages(anon, transcriptShareId)).status(410);
     });
   },
 );
@@ -997,7 +964,6 @@ flow(
     });
     const owner = ctx.client.as(ctx.P.OWNER);
     const anon = ctx.client.as(ctx.P.ANON);
-    const sharesRoute = '/v1/projects/:projectId/sessions/:sessionId/public-shares';
     const params = { projectId: project.id, sessionId };
     type Share = {
       share_id: string;
@@ -1010,25 +976,34 @@ flow(
     };
 
     await ctx.step('ANON cannot mint a transcript share → 401', async () => {
-      (await anon.post(sharesRoute, { transcript: true }, { params })).status(401);
+      (await mintShare(anon, project.id, sessionId, { transcript: true })).status(401);
     });
 
     await ctx.step('NONMEMBER cannot mint a transcript share → 403, no share is written', async () => {
-      (await ctx.client.as(ctx.P.NONMEMBER).post(sharesRoute, { transcript: true }, { params })).status(403);
-      const list = await owner.get(sharesRoute, { params });
+      (
+        await mintShare(ctx.client.as(ctx.P.NONMEMBER), project.id, sessionId, { transcript: true })
+      ).status(403);
+      const list = await listShares(owner, project.id, sessionId);
       list.status(200);
       if (list.json<{ shares: Share[] }>().shares.length !== 0) throw new Error('a refused mint wrote a share');
     });
 
     await ctx.step('a project MEMBER who did not create the private session cannot mint → 403, no share is written', async () => {
-      (await ctx.client.as(member).post(sharesRoute, { transcript: true }, { params })).status(403);
-      const list = await owner.get(sharesRoute, { params });
+      (
+        await mintShare(ctx.client.as(member), project.id, sessionId, { transcript: true })
+      ).status(403);
+      const list = await listShares(owner, project.id, sessionId);
       list.status(200);
       if (list.json<{ shares: Share[] }>().shares.length !== 0) throw new Error('a refused mint wrote a share');
     });
 
     await ctx.step('a transcript share combined with a file → 400', async () => {
-      (await owner.post(sharesRoute, { transcript: true, file: { path: '/workspace/a.md' } }, { params }))
+      (
+        await mintShare(owner, project.id, sessionId, {
+          transcript: true,
+          file: { path: '/workspace/a.md' },
+        })
+      )
         .status(400)
         .body()
         .has('$.error', 'A public share names one resource');
@@ -1036,7 +1011,7 @@ flow(
 
     let share!: Share;
     await ctx.step('the owner mints a transcript share → 201, a view-only link to the web viewer', async () => {
-      const r = await owner.post(sharesRoute, { transcript: true }, { params });
+      const r = await mintShare(owner, project.id, sessionId, { transcript: true });
       r.status(201)
         .body()
         .has('$.share.resource_type', 'transcript')
@@ -1055,14 +1030,14 @@ flow(
     });
 
     await ctx.step('minting again returns the same live link → 200', async () => {
-      (await owner.post(sharesRoute, { transcript: true }, { params }))
+      (await mintShare(owner, project.id, sessionId, { transcript: true }))
         .status(200)
         .body()
         .has('$.share.share_id', share.share_id);
     });
 
     await ctx.step('the owner lists exactly one transcript share', async () => {
-      const r = await owner.get(sharesRoute, { params });
+      const r = await listShares(owner, project.id, sessionId);
       r.status(200);
       const transcripts = r.json<{ shares: Share[] }>().shares.filter((s) => s.resource_type === 'transcript');
       if (transcripts.length !== 1 || transcripts[0].share_id !== share.share_id) {
@@ -1072,7 +1047,7 @@ flow(
 
     await ctx.step('anon reads the share metadata by share id and by token → 200, no sandbox needed', async () => {
       for (const ref of [share.share_id, share.public_token]) {
-        (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId: ref } }))
+        (await publicMeta(anon, ref))
           .status(200)
           .body()
           .has('$.share.share_id', share.share_id)
@@ -1082,9 +1057,7 @@ flow(
     });
 
     await ctx.step('anon reads the saved conversation through the token → 200 sanitized digest', async () => {
-      const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
-        params: { shareId: share.public_token },
-      });
+      const r = await publicMessages(anon, share.public_token);
       r.status(200)
         .body()
         .has('$.available', true)
@@ -1102,7 +1075,7 @@ flow(
     });
 
     await ctx.step('anon resolves the token on the proxy edge → 200 transcript, opens no port', async () => {
-      (await anon.get('/v1/p/public-share/:token', { params: { token: share.public_token } }))
+      (await anonResolve(anon, share.public_token))
         .status(200)
         .body()
         .has('$.share.resource_type', 'transcript')
@@ -1112,29 +1085,28 @@ flow(
 
     let previewShareId = '';
     await ctx.step('a preview share of the same session still does not read the conversation → 404', async () => {
-      const r = await owner.post(sharesRoute, { preview: { port: 3000 } }, { params });
+      const r = await mintShare(owner, project.id, sessionId, { preview: { port: 3000 } });
       r.status(201);
       previewShareId = r.json<{ share: Share }>().share.share_id;
-      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: previewShareId } }))
+      (await publicMessages(anon, previewShareId))
         .status(404)
         .body()
         .has('$.error', 'This share does not include the conversation');
     });
 
     await ctx.step('the owner revokes the transcript share → 200 with revoked_at', async () => {
-      const r = await owner.del(`${sharesRoute}/:shareId`, { params: { ...params, shareId: share.share_id } });
+      const r = await revokeShare(owner, project.id, sessionId, share.share_id);
       r.status(200);
       if (!r.json<{ share: Share }>().share.revoked_at) throw new Error('revoked_at is not set');
     });
 
     await ctx.step('anon: the revoked link → 410 on metadata and messages', async () => {
-      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId: share.public_token } })).status(410);
-      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: share.public_token } }))
-        .status(410);
+      (await publicMeta(anon, share.public_token)).status(410);
+      (await publicMessages(anon, share.public_token)).status(410);
     });
 
     await ctx.step('minting after a revoke creates a new link → 201 with a new share id', async () => {
-      const r = await owner.post(sharesRoute, { transcript: true }, { params });
+      const r = await mintShare(owner, project.id, sessionId, { transcript: true });
       r.status(201);
       const next = r.json<{ share: Share }>().share;
       if (next.share_id === share.share_id) throw new Error('a revoked link was handed back');
@@ -1143,11 +1115,10 @@ flow(
 
     await ctx.step('the owner deletes the session → its live links answer 410 and read back revoked', async () => {
       (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params })).status(200);
-      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId: share.public_token } })).status(410);
-      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: share.public_token } }))
-        .status(410);
-      (await anon.get('/v1/p/public-share/:token', { params: { token: share.public_token } })).status(410);
-      const list = await owner.get(sharesRoute, { params });
+      (await publicMeta(anon, share.public_token)).status(410);
+      (await publicMessages(anon, share.public_token)).status(410);
+      (await anonResolve(anon, share.public_token)).status(410);
+      const list = await listShares(owner, project.id, sessionId);
       list.status(200);
       const shares = list.json<{ shares: Share[] }>().shares;
       const live = shares.filter((s) => !s.revoked_at);
@@ -1250,13 +1221,22 @@ flow(
     let warmSessionId = '';
     let replacementId = '';
     let replacementInsertedAt = '';
-
-    await ctx.step('warming creates an ordinary session marked unused', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/warm',
-        {},
+    const warm = (body: Record<string, unknown> = {}) =>
+      owner.post('/v1/projects/:projectId/sessions/warm', body, { params: { projectId: p.id } });
+    const claim = (sessionId: string) =>
+      owner.post(
+        '/v1/projects/:projectId/sessions/warm/claim',
+        { session_id: sessionId },
         { params: { projectId: p.id } },
       );
+    const visibleList = () =>
+      owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: p.id },
+        query: { scope: 'visible' },
+      });
+
+    await ctx.step('warming creates an ordinary session marked unused', async () => {
+      const r = await warm();
       r.status(200)
         .body()
         .has('$.reused', false)
@@ -1267,11 +1247,7 @@ flow(
     });
 
     await ctx.step('warming again returns the same unused session', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/warm',
-        {},
-        { params: { projectId: p.id } },
-      );
+      const r = await warm();
       r.status(200).body().has('$.reused', true).has('$.session.session_id', warmSessionId);
     });
 
@@ -1281,10 +1257,7 @@ flow(
     // dogfood report. The marker only hides a warm row that is no longer
     // active (reaped, failed, completed).
     await ctx.step('an unused warm session that is provisioning or running stays in the visible list', async () => {
-      const visible = await owner.get('/v1/projects/:projectId/sessions', {
-        params: { projectId: p.id },
-        query: { scope: 'visible' },
-      });
+      const visible = await visibleList();
       visible.status(200);
       const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
       if (!visibleIds.includes(warmSessionId)) {
@@ -1305,11 +1278,7 @@ flow(
     });
 
     await ctx.step('using the session drops the marker', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/warm/claim',
-        { session_id: warmSessionId },
-        { params: { projectId: p.id } },
-      );
+      const r = await claim(warmSessionId);
       r.status(200).body().has('$.session_id', warmSessionId);
       if ((r.json<any>().metadata ?? {}).warm !== undefined) {
         throw new Error('The warm marker survived first use');
@@ -1317,10 +1286,7 @@ flow(
     });
 
     await ctx.step('a used session appears in the visible list', async () => {
-      const visible = await owner.get('/v1/projects/:projectId/sessions', {
-        params: { projectId: p.id },
-        query: { scope: 'visible' },
-      });
+      const visible = await visibleList();
       visible.status(200);
       const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
       if (!visibleIds.includes(warmSessionId)) {
@@ -1329,20 +1295,12 @@ flow(
     });
 
     await ctx.step('a second use returns the stable conflict code', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/warm/claim',
-        { session_id: warmSessionId },
-        { params: { projectId: p.id } },
-      );
+      const r = await claim(warmSessionId);
       r.status(409).body().has('$.code', 'WARM_SESSION_ALREADY_CLAIMED');
     });
 
     await ctx.step('the next warm creates a replacement', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/warm',
-        {},
-        { params: { projectId: p.id } },
-      );
+      const r = await warm();
       r.status(200).body().has('$.reused', false);
       replacementId = r.json<any>().session.session_id;
       replacementInsertedAt = r.json<any>().session.created_at;
@@ -1364,10 +1322,7 @@ flow(
       );
       start.status(200);
 
-      const visible = await owner.get('/v1/projects/:projectId/sessions', {
-        params: { projectId: p.id },
-        query: { scope: 'visible' },
-      });
+      const visible = await visibleList();
       visible.status(200);
       const row = sessionRows(visible).find((s: any) => s.session_id === replacementId);
       if (!row) {
@@ -1406,11 +1361,7 @@ flow(
     // the SAME (now used) session back, so the next project-home send landed
     // its prompt inside an existing conversation.
     await ctx.step('a later warm ensure never returns the adopted session', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/warm',
-        {},
-        { params: { projectId: p.id } },
-      );
+      const r = await warm();
       r.status(200).body().has('$.reused', false);
       const nextId = r.json<any>().session.session_id;
       if (nextId === replacementId) {
@@ -1423,11 +1374,7 @@ flow(
       // session instead of echoing the excluded one back — even though its
       // warm marker is still set at that moment. `nextId` is exactly such a
       // still-markered, would-be-reused candidate.
-      const excluded = await owner.post(
-        '/v1/projects/:projectId/sessions/warm',
-        { exclude_session_id: nextId },
-        { params: { projectId: p.id } },
-      );
+      const excluded = await warm({ exclude_session_id: nextId });
       excluded.status(200).body().has('$.reused', false);
       const freshId = excluded.json<any>().session.session_id;
       if (freshId === nextId) {
@@ -1453,7 +1400,6 @@ flow(
     ],
   },
   async (ctx) => {
-    const { waitFor } = await import('../core/poll');
     const project = await ctx.fixtures.project({ managedGit: true, seed: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     let restrictedSessionId = '';
@@ -1542,29 +1488,12 @@ flow(
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const { randomUUID } = await import('node:crypto');
-    const { Client } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new Client({
-      connectionString: databaseUrl,
-      ssl: local ? false : { rejectUnauthorized: false },
-    });
+    const db = await openDb(ctx);
     const team = await ctx.fixtures.team();
-    await db.connect();
-    const sessionId = randomUUID();
-    const commandId = randomUUID();
+    const sessionId = crypto.randomUUID();
+    const commandId = crypto.randomUUID();
     try {
-      await db.query(
-        `INSERT INTO kortix.credit_accounts
-         (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-         VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
-         ON CONFLICT (account_id) DO UPDATE SET
-           balance = 1000, balance_precise = 1000,
-           non_expiring_credits = 1000, non_expiring_credits_precise = 1000,
-           tier = 'tier_2_20'`,
-        [team.id],
-      );
+      await fundDatabaseAccount(ctx.env, team.id);
       const project = await team.project({ managedGit: true });
       const params = { projectId: project.id, sessionId };
       const promptPath = '/v1/projects/:projectId/sessions/:sessionId/prompts';
@@ -1614,7 +1543,10 @@ flow(
             if (mine?.state !== 'waiting' || mine?.reason !== 'held')
               throw new Error(`Stop state: ${JSON.stringify(mine)}`);
           }
-          const stored = await db.query(
+          const stored = await db.query<{
+            result: { held?: boolean };
+            payload: { stopPausedOnDelivery?: boolean };
+          }>(
             'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
             [commandId],
           );
@@ -1721,7 +1653,10 @@ flow(
       await ctx.step('Resume clears both hold markers on a claimed delivery', async () => {
         const response = await owner.post(`${promptPath}/hold`, { held: false }, { params });
         response.status(200);
-        const stored = await db.query(
+        const stored = await db.query<{
+          result: { held?: boolean };
+          payload: { stopPausedOnDelivery?: boolean };
+        }>(
           'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
           [commandId],
         );
@@ -1752,22 +1687,13 @@ flow(
     // ledger dropped the reason, so the UI said nothing under four failed
     // sub-agent tasks. This pins what `/turn` reports about how turns died,
     // straight off seeded ledger rows: no runtime is needed to read history.
-    const { randomUUID } = await import('node:crypto');
-    const { Client } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new Client({
-      connectionString: databaseUrl,
-      ssl: local ? false : { rejectUnauthorized: false },
-    });
-    await db.connect();
+    const db = await openDb(ctx);
     const project = await ctx.fixtures.project();
     const session = await ctx.fixtures.session(project);
-    const sandboxId = randomUUID();
+    const sandboxId = crypto.randomUUID();
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: project.id, sessionId: session.id };
     const turnPath = '/v1/projects/:projectId/sessions/:sessionId/turn';
-    type Failure = { message_id: string; ended_at: string | null; error: { name: string | null; message: string | null } | null };
     type TurnBody = {
       turns: unknown[];
       last_ended?: { message_id?: string; end_reason: string | null; error?: unknown };
@@ -1791,24 +1717,19 @@ flow(
           ['memory', 'failed', 'msg_memory', GUARD, 30],
         ];
         for (const [suffix, endReason, messageId, endError, agoSeconds] of rows) {
-          await db.query(
-            `INSERT INTO kortix.session_turns
-               (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
-                message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
-             VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', $7, $8::jsonb,
-                     now() - ($9 || ' seconds')::interval, now() - ($9 || ' seconds')::interval, now(), now())`,
-            [
-              `${sandboxId}-${suffix}`,
-              session.id,
-              sandboxId,
-              project.id,
-              project.accountId,
-              messageId,
-              endReason,
-              endError ? JSON.stringify(endError) : null,
-              String(agoSeconds),
-            ],
-          );
+          await insertEndedTurn(db, {
+            turnToken: `${sandboxId}-${suffix}`,
+            sessionId: session.id,
+            sandboxId,
+            projectId: project.id,
+            accountId: project.accountId,
+            messageId,
+            endReason,
+            endError,
+            started: `now() - ($9 || ' seconds')::interval`,
+            ended: `now() - ($9 || ' seconds')::interval`,
+            extra: [String(agoSeconds)],
+          });
         }
       });
 
@@ -1856,14 +1777,18 @@ flow(
       });
 
       await ctx.step('a requested stop is not an error on last_ended either', async () => {
-        await db.query(
-          `INSERT INTO kortix.session_turns
-             (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
-              message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
-           VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', 'msg_stop_2', 'ended', 'failed',
-                   '{"name":"UserStop","message":null}'::jsonb, now(), now(), now(), now())`,
-          [`${sandboxId}-user-stop-2`, session.id, sandboxId, project.id, project.accountId],
-        );
+        await insertEndedTurn(db, {
+          turnToken: `${sandboxId}-user-stop-2`,
+          sessionId: session.id,
+          sandboxId,
+          projectId: project.id,
+          accountId: project.accountId,
+          messageId: 'msg_stop_2',
+          endReason: 'failed',
+          endError: { name: 'UserStop', message: null },
+          started: 'now()',
+          ended: 'now()',
+        });
         const body = (await owner.get(turnPath, { params })).json<TurnBody>();
         if (body.last_ended?.message_id !== 'msg_stop_2') {
           throw new Error(`expected the stopped turn as last_ended, got ${JSON.stringify(body.last_ended)}`);
@@ -1897,25 +1822,16 @@ flow(
     // said "No reason was reported". The sandbox ran a daemon built before the
     // guard named its turn: its cause frame has no `turn_message_id` and says
     // `error_retryable: true`. The control plane must still attach it.
-    const { randomUUID } = await import('node:crypto');
-    const { Client } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new Client({
-      connectionString: databaseUrl,
-      ssl: local ? false : { rejectUnauthorized: false },
-    });
-    await db.connect();
+    const db = await openDb(ctx);
     const project = await ctx.fixtures.project();
     const ownerUserId = ctx.P.OWNER.userId;
     if (!ownerUserId) throw new Error('OWNER principal has no userId');
     const owner = ctx.client.as(ctx.P.OWNER);
-    const sessionId = randomUUID();
+    const sessionId = crypto.randomUUID();
     let tokenId: string | null = null;
     let sandbox = ctx.client;
     const GUARD_MESSAGE =
       'sandbox memory at 92% (opencode 701 MB RSS of 12288 MB): turn stopped before the kernel would kill opencode';
-    type Failure = { message_id: string; error: { name: string | null; message: string | null } | null };
     const failures = async () =>
       (
         await owner.get('/v1/projects/:projectId/sessions/:sessionId/turn', {
@@ -1924,15 +1840,6 @@ flow(
       )
         .status(200)
         .json<{ recent_failures?: Failure[] }>().recent_failures ?? [];
-    const insertEndedTurn = (suffix: string, messageId: string, endError: Record<string, unknown>) =>
-      db.query(
-        `INSERT INTO kortix.session_turns
-           (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id,
-            message_id, state, end_reason, end_error, started_at, ended_at, created_at, updated_at)
-         VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, 'ses_root', $6, 'ended', 'failed', $7::jsonb,
-                 now() - interval '40 seconds', now() - interval '1 second', now(), now())`,
-        [`${sessionId}-${suffix}`, sessionId, sessionId, project.id, project.accountId, messageId, JSON.stringify(endError)],
-      );
     const oldDaemonGuardFrame = () =>
       sandbox.post(
         '/v1/projects/:projectId/turn-stream',
@@ -1974,7 +1881,18 @@ flow(
       });
 
       await ctx.step('a turn the abort just closed reads as a bare abort, with no cause', async () => {
-        await insertEndedTurn('aborted', 'msg_aborted', { name: 'MessageAbortedError', message: 'Aborted' });
+        await insertEndedTurn(db, {
+          turnToken: `${sessionId}-aborted`,
+          sessionId,
+          sandboxId: sessionId,
+          projectId: project.id,
+          accountId: project.accountId,
+          messageId: 'msg_aborted',
+          endReason: 'failed',
+          endError: { name: 'MessageAbortedError', message: 'Aborted' },
+          started: `now() - interval '40 seconds'`,
+          ended: `now() - interval '1 second'`,
+        });
         const listed = (await failures()).find((f) => f.message_id === 'msg_aborted');
         if (!listed || listed.error !== null) {
           throw new Error(`expected msg_aborted listed with error null, got ${JSON.stringify(listed)}`);
@@ -1993,7 +1911,18 @@ flow(
       });
 
       await ctx.step('a stop the user asked for is never turned into a memory failure', async () => {
-        await insertEndedTurn('user-stop', 'msg_user_stop', { name: 'UserStop', message: null });
+        await insertEndedTurn(db, {
+          turnToken: `${sessionId}-user-stop`,
+          sessionId,
+          sandboxId: sessionId,
+          projectId: project.id,
+          accountId: project.accountId,
+          messageId: 'msg_user_stop',
+          endReason: 'failed',
+          endError: { name: 'UserStop', message: null },
+          started: `now() - interval '40 seconds'`,
+          ended: `now() - interval '1 second'`,
+        });
         (await oldDaemonGuardFrame()).status(200);
         const ids = (await failures()).map((f) => f.message_id);
         if (ids.includes('msg_user_stop')) {
@@ -2027,23 +1956,18 @@ flow(
     const project = await team.project();
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'member');
-    const seed = async (input: Omit<Parameters<typeof createDatabaseSession>[1], 'projectId' | 'accountId'>) => {
-      const id = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, ...input });
-      ctx.track('session', id, { projectId: project.id });
-      return id;
-    };
     const factory = { type: 'trigger' as const, id: 'software-factory' };
-    const coordinator = await seed({
+    const coordinator = await seedSession(ctx, project.id, team.id, {
       userId: ctx.P.OWNER.userId!,
       visibility: 'project',
       initiator: factory,
       metadata: { source: 'trigger:manual', name: 'Factory intake' },
     });
-    await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Fix login bug' } });
-    await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Ledger probe' } });
-    const myChat = await seed({ userId: ctx.P.OWNER.userId!, metadata: { source: 'ui', custom_name: 'Apartment rent research' } });
-    await seed({ userId: ctx.P.OWNER.userId!, parentSessionId: myChat, metadata: { source: 'agent', name: 'Helper' } });
-    const memberChat = await seed({ userId: member.userId!, visibility: 'project', metadata: { source: 'ui', name: 'Teammate plan' } });
+    await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Fix login bug' } });
+    await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Ledger probe' } });
+    const myChat = await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId!, metadata: { source: 'ui', custom_name: 'Apartment rent research' } });
+    await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId!, parentSessionId: myChat, metadata: { source: 'agent', name: 'Helper' } });
+    const memberChat = await seedSession(ctx, project.id, team.id, { userId: member.userId!, visibility: 'project', metadata: { source: 'ui', name: 'Teammate plan' } });
 
     const owner = ctx.client.as(ctx.P.OWNER);
     const route = '/v1/projects/:projectId/sessions';
@@ -2143,15 +2067,10 @@ flow(
     const project = await team.project();
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'member');
-    const seed = async (input: Omit<Parameters<typeof createDatabaseSession>[1], 'projectId' | 'accountId'>) => {
-      const id = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, ...input });
-      ctx.track('session', id, { projectId: project.id });
-      return id;
-    };
-    const coordinator = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Coordinator' } });
-    const worker = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, metadata: { source: 'agent', name: 'Worker' } });
-    const shared = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Shared' } });
-    const secret = await seed({ userId: ctx.P.OWNER.userId! });
+    const coordinator = await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Coordinator' } });
+    const worker = await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, metadata: { source: 'agent', name: 'Worker' } });
+    const shared = await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Shared' } });
+    const secret = await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId! });
 
     const owner = ctx.client.as(ctx.P.OWNER);
     const list = '/v1/projects/:projectId/sessions';
@@ -2263,12 +2182,9 @@ flow(
     routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/presence'],
   },
   async (ctx) => {
-    const { Client } = await import('pg');
     const project = await ctx.fixtures.project();
     if (!project.accountId) throw new Error('presence fixture project is missing accountId');
-    const sessionId = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: project.accountId,
+    const sessionId = await seedSession(ctx, project.id, project.accountId, {
       userId: ctx.P.OWNER.userId!,
       visibility: 'project',
     });
@@ -2278,12 +2194,9 @@ flow(
     const put = (as: typeof owner, body: unknown, id = sessionId) =>
       as.put(url, body, { params: { projectId: project.id, sessionId: id } });
     const tabId = crypto.randomUUID();
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
-    await db.connect();
+    const db = await openDb(ctx);
     const leases = async () =>
-      (await db.query('SELECT expires_at FROM kortix.session_presence_leases WHERE session_id = $1 AND tab_id = $2', [sessionId, tabId])).rows;
+      (await db.query<{ expires_at: string | Date }>('SELECT expires_at FROM kortix.session_presence_leases WHERE session_id = $1 AND tab_id = $2', [sessionId, tabId])).rows;
     try {
       await ctx.step('an anonymous caller is rejected with 401', async () => {
         (await put(ctx.client.as(ctx.P.ANON), { tab_id: tabId, active: true })).status(401);
@@ -2333,19 +2246,12 @@ flow(
     ],
   },
   async (ctx) => {
-    const { Client } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const db = await openDb(ctx);
     const team = await ctx.fixtures.team();
     const project = await team.project();
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'member');
-    const sessionId = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: team.id,
-      userId: ctx.P.OWNER.userId!,
-    });
+    const sessionId = await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId! });
     ctx.track('session', sessionId, { projectId: project.id });
 
     const owner = ctx.client.as(ctx.P.OWNER);
@@ -2362,7 +2268,6 @@ flow(
     const share = (body: unknown) =>
       owner.put('/v1/projects/:projectId/sessions/:sessionId/sharing', body, { params });
 
-    await db.connect();
     try {
       await ctx.step('a private session has one participant, the OWNER, and is not multi-user', async () => {
         const view = await read(owner);

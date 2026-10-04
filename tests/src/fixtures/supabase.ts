@@ -9,6 +9,8 @@
  * (before any flow logs), so a hang must surface as a fast, clear failure instead.
  */
 import type { Env } from "../core/env";
+import type { Res } from "../core/client";
+import type { FlowContext } from "../core/types";
 import { supabaseAdminHeaders } from "../core/supabase-admin";
 import type { SupabaseGrant } from "./supabase-session";
 
@@ -148,4 +150,36 @@ export async function adminDeleteUser(env: Env, userId: string): Promise<void> {
   if (!res.ok && res.status !== 404) {
     throw new Error(`admin delete user ${userId} failed: ${res.status} ${(await res.text()).slice(0, 160)}`);
   }
+}
+/**
+ * Configure the account's SSO provider through the product route as the OWNER.
+ * The caller keeps the response and its assertions; this only owns the body
+ * mapping every SCIM/SSO flow repeated.
+ */
+export async function putSsoProvider(
+  ctx: FlowContext,
+  accountId: string,
+  provider: {
+    providerId: string;
+    name: string;
+    primaryDomain: string;
+    autoCreateMembers?: boolean;
+    autoProvisionGroups?: boolean;
+    groupClaimName?: string;
+    enforceSso?: boolean;
+  },
+): Promise<Res> {
+  return ctx.client.as(ctx.P.OWNER).put(
+    '/v1/accounts/:accountId/iam/sso/provider',
+    {
+      supabase_sso_provider_id: provider.providerId,
+      name: provider.name,
+      primary_domain: provider.primaryDomain,
+      ...(provider.groupClaimName !== undefined ? { group_claim_name: provider.groupClaimName } : {}),
+      ...(provider.autoProvisionGroups !== undefined ? { auto_provision_groups: provider.autoProvisionGroups } : {}),
+      ...(provider.autoCreateMembers !== undefined ? { auto_create_members: provider.autoCreateMembers } : {}),
+      ...(provider.enforceSso !== undefined ? { enforce_sso: provider.enforceSso } : {}),
+    },
+    { params: { accountId } },
+  );
 }

@@ -31,7 +31,6 @@ import {
   abortTurn,
   assertRuntimeHarness,
   bootSession,
-  endedAfter,
   erroredMessageIds,
   isAbortStamp,
   readTranscript,
@@ -370,6 +369,39 @@ harnessFlow(
       prompt: `Reply with exactly this single token and nothing else: ${markerB}`,
     });
 
+    // One /start POST with the readiness assertions all three callers share;
+    // each caller keeps only the sandbox-identity comparison it owns.
+    const restart = async (sessionId: string) => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/start',
+        {},
+        { params: { projectId: project.id, sessionId }, query: { wait_ms: '3000' } },
+      );
+      r.status(200).body().has('$.stage', 'ready');
+      return sandboxIdOf(r.json<any>());
+    };
+    // The live-transcript poll both sessions run; the leak direction stays at
+    // the call site.
+    const waitForOwnTranscript = (sessionId: string, marker: string, description: string) =>
+      waitFor(
+        async () => {
+          const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+            params: { projectId: project.id, sessionId },
+          });
+          r.status(200);
+          return r.json<any>();
+        },
+        {
+          until: (t) =>
+            Boolean(t?.available) &&
+            Array.isArray(t?.messages) &&
+            t.messages.some((m: any) => typeof m?.text === 'string' && m.text.includes(marker)),
+          timeoutMs: 180_000,
+          intervalMs: 4_000,
+          description,
+        },
+      );
+
     let sandboxA = '';
     let sandboxB = '';
     await ctx.step('both sessions reach runtime readiness independently', async () => {
@@ -389,14 +421,7 @@ harnessFlow(
     await ctx.step(
       "a ready session's second /start within 30s is served consistent data (same sandbox identity, still ready)",
       async () => {
-        const r = await owner.post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
-          {},
-          { params: { projectId: project.id, sessionId: sessionA.id }, query: { wait_ms: '3000' } },
-        );
-        r.status(200).body().has('$.stage', 'ready');
-        const body = r.json<any>();
-        const external = String(body?.sandbox?.external_id ?? body?.sandbox?.externalId);
+        const external = await restart(sessionA.id);
         if (external !== sandboxA) {
           throw new Error(
             `second /start within 30s returned a different sandbox identity: first=${sandboxA} second=${external}`,
@@ -408,27 +433,13 @@ harnessFlow(
     await ctx.step(
       'alternating /start reads across the two sessions never cross-bleed sandbox identity',
       async () => {
-        const rB = await owner.post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
-          {},
-          { params: { projectId: project.id, sessionId: sessionB.id }, query: { wait_ms: '3000' } },
-        );
-        rB.status(200).body().has('$.stage', 'ready');
-        const bodyB = rB.json<any>();
-        const externalB = String(bodyB?.sandbox?.external_id ?? bodyB?.sandbox?.externalId);
+        const externalB = await restart(sessionB.id);
         if (externalB !== sandboxB) {
           throw new Error(
             `session B's /start returned session A's sandbox identity: expected=${sandboxB} got=${externalB}`,
           );
         }
-        const rA = await owner.post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
-          {},
-          { params: { projectId: project.id, sessionId: sessionA.id }, query: { wait_ms: '3000' } },
-        );
-        rA.status(200).body().has('$.stage', 'ready');
-        const bodyA = rA.json<any>();
-        const externalA = String(bodyA?.sandbox?.external_id ?? bodyA?.sandbox?.externalId);
+        const externalA = await restart(sessionA.id);
         if (externalA !== sandboxA) {
           throw new Error(
             `session A's /start returned session B's sandbox identity: expected=${sandboxA} got=${externalA}`,
@@ -441,46 +452,20 @@ harnessFlow(
     await ctx.step(
       "each session's live transcript contains only its OWN reply marker, never the other session's",
       async () => {
-        transcriptSnapshotA = await waitFor(
-          async () => {
-            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
-              params: { projectId: project.id, sessionId: sessionA.id },
-            });
-            r.status(200);
-            return r.json<any>();
-          },
-          {
-            until: (t) =>
-              Boolean(t?.available) &&
-              Array.isArray(t?.messages) &&
-              t.messages.some((m: any) => typeof m?.text === 'string' && m.text.includes(markerA)),
-            timeoutMs: 180_000,
-            intervalMs: 4_000,
-            description: `session A transcript containing its own marker`,
-          },
+        transcriptSnapshotA = await waitForOwnTranscript(
+          sessionA.id,
+          markerA,
+          'session A transcript containing its own marker',
         );
         const textA = transcriptSnapshotA.messages.map((m: any) => m.text).join('\n');
         if (textA.includes(markerB)) {
           throw new Error(`session A's transcript leaked session B's marker: ${textA}`);
         }
 
-        const transcriptB = await waitFor(
-          async () => {
-            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
-              params: { projectId: project.id, sessionId: sessionB.id },
-            });
-            r.status(200);
-            return r.json<any>();
-          },
-          {
-            until: (t) =>
-              Boolean(t?.available) &&
-              Array.isArray(t?.messages) &&
-              t.messages.some((m: any) => typeof m?.text === 'string' && m.text.includes(markerB)),
-            timeoutMs: 180_000,
-            intervalMs: 4_000,
-            description: `session B transcript containing its own marker`,
-          },
+        const transcriptB = await waitForOwnTranscript(
+          sessionB.id,
+          markerB,
+          'session B transcript containing its own marker',
         );
         const textB = transcriptB.messages.map((m: any) => m.text).join('\n');
         if (textB.includes(markerA)) {

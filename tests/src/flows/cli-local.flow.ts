@@ -24,13 +24,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { flow } from '../core/flow';
-import { assert } from '../core/expect';
-import { CliSandbox, browserLogin } from '../fixtures/cli';
-
-/** Tiny structured assert that records into the active step. */
-function check(description: string, pass: boolean, expected: unknown, actual: unknown): void {
-  assert({ kind: 'cli', description, expected, actual, pass });
-}
+import { CliSandbox, browserLogin, check } from '../fixtures/cli';
 
 // ───────────────────────────── INIT ─────────────────────────────────────────
 

@@ -18,6 +18,7 @@
  */
 import { flow } from "../core/flow";
 import { serveFixtureRepoLocally } from "../fixtures/local-git";
+import { openDb } from "../fixtures/database-project";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
 
@@ -499,16 +500,12 @@ flow(
     const { join } = await import('node:path');
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
-    const { Client: PgClient } = await import('pg');
     const exec = promisify(execFile);
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
     const project = await team.project({ managedGit: true });
     await team.grantProjectRole(project.id, member.userId!, 'member');
-    const databaseUrl = ctx.env.databaseUrl!;
-    const db = new PgClient({ connectionString: databaseUrl,
-      ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-    await db.connect();
+    const db = await openDb(ctx);
     const root = await mkdtemp(join(tmpdir(), 'ke2e-ref-role-'));
     const sessions: string[] = [];
     let localGitServer: import('node:http').Server | null = null;
@@ -803,17 +800,13 @@ flow(
     const { join } = await import('node:path');
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
-    const { Client: PgClient } = await import('pg');
     const exec = promisify(execFile);
     const team = await ctx.fixtures.team();
     const outsider = await team.addMember('member');
     const projectMember = await team.addMember('member');
     const project = await team.project({ managedGit: true });
     await team.grantProjectRole(project.id, projectMember.userId!, 'member');
-    const databaseUrl = ctx.env.databaseUrl!;
-    const db = new PgClient({ connectionString: databaseUrl,
-      ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-    await db.connect();
+    const db = await openDb(ctx);
     const root = await mkdtemp(join(tmpdir(), 'ke2e-account-member-git-'));
     const tokenIds: string[] = [];
     let localGitServer: import('node:http').Server | null = null;

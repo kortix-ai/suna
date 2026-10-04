@@ -9,6 +9,7 @@
  */
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
+import { form, pkcePair } from "../fixtures/oauth";
 
 // ── OAU-1: GET /authorize ────────────────────────────────────────────────────
 flow("OAU-1", { domain: "oauth", routes: ["GET /v1/oauth/authorize"] }, async (ctx) => {
@@ -100,12 +101,6 @@ flow(
 
 // ── OAU-3: POST /token (public, form-encoded) ────────────────────────────────
 flow("OAU-3", { domain: "oauth", routes: ["POST /v1/oauth/token"] }, async (ctx) => {
-  const form = (fields: Record<string, string>) => {
-    const fd = new FormData();
-    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
-    return fd;
-  };
-
   await ctx.step("token: missing client credentials → 400 invalid_request", async () => {
     const r = await ctx.client
       .as(ctx.P.ANON)
@@ -178,21 +173,6 @@ flow(
 // existed. Registration is now self-serve, so the full authorization-code +
 // PKCE exchange, refresh, revoke and the first-class `kortix_oat_` credential
 // are driven end to end over HTTP here.
-
-const form = (fields: Record<string, string>) => {
-  const fd = new FormData();
-  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
-  return fd;
-};
-
-function b64url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64url");
-}
-async function pkcePair(): Promise<{ verifier: string; challenge: string }> {
-  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  return { verifier, challenge: b64url(new Uint8Array(digest)) };
-}
 
 // ── OAU-5: discovery ─────────────────────────────────────────────────────────
 flow(
@@ -340,6 +320,26 @@ flow(
     let accessToken = "";
     let refreshToken = "";
     const { verifier, challenge } = await pkcePair();
+    // authorize → consent → token, with the shared status asserts; `redeem`
+    // replays the token request for the code-reuse assertions.
+    const mintPair = async () => {
+      const auth = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      auth.status(302);
+      const rid = new URL(auth.header("location")!).searchParams.get("request_id")!;
+      const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
+      ok.status(200);
+      const pairCode = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
+      const redeem = () =>
+        ctx.client.as(ctx.P.ANON).post(
+          "/v1/oauth/token",
+          form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code: pairCode, redirect_uri: redirectUri, code_verifier: verifier }),
+        );
+      const r = await redeem();
+      r.status(200).body().has("$.token_type", "Bearer").has("$.scope", "profile kortix");
+      return { access: r.json<any>().access_token as string, refresh: r.json<any>().refresh_token as string, redeem };
+    };
 
     await ctx.step("register the client", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
@@ -400,19 +400,9 @@ flow(
         form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: verifier }),
       );
       spent.status(400).body().has("$.error", "invalid_grant");
-      const again = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
-        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
-      });
-      const rid = new URL(again.header("location")!).searchParams.get("request_id")!;
-      const approved = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
-      code = new URL(approved.json<any>().redirect_uri).searchParams.get("code")!;
-      const r = await ctx.client.as(ctx.P.ANON).post(
-        "/v1/oauth/token",
-        form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: verifier }),
-      );
-      r.status(200).body().has("$.token_type", "Bearer").has("$.scope", "profile kortix");
-      accessToken = r.json<any>().access_token;
-      refreshToken = r.json<any>().refresh_token;
+      const minted = await mintPair();
+      accessToken = minted.access;
+      refreshToken = minted.refresh;
       if (!accessToken.startsWith("kortix_oat_") || !refreshToken.startsWith("kortix_ort_")) throw new Error("token prefixes");
     });
 
@@ -427,22 +417,6 @@ flow(
     const refresh = (token: string) =>
       ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: token }));
     const me = (token: string) => ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${token}` } });
-    const mintPair = async () => {
-      const auth = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
-        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
-      });
-      const rid = new URL(auth.header("location")!).searchParams.get("request_id")!;
-      const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
-      const pairCode = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
-      const redeem = () =>
-        ctx.client.as(ctx.P.ANON).post(
-          "/v1/oauth/token",
-          form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code: pairCode, redirect_uri: redirectUri, code_verifier: verifier }),
-        );
-      const r = await redeem();
-      r.status(200);
-      return { access: r.json<any>().access_token as string, refresh: r.json<any>().refresh_token as string, redeem };
-    };
 
     await ctx.step("refresh rotates: two refreshes inside the grace window both succeed (shared credential store) and every issued access token works", async () => {
       rotatedRefresh = refreshToken; // rotated by the first call below; replayed after the window
@@ -510,20 +484,7 @@ flow(
     });
 
     await ctx.step("revoke a live access token → it answers 401 and its refresh token → 400 invalid_grant", async () => {
-      const auth = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
-        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
-      });
-      auth.status(302);
-      const rid = new URL(auth.header("location")!).searchParams.get("request_id")!;
-      const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
-      ok.status(200);
-      const pairCode = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
-      const pair = await ctx.client.as(ctx.P.ANON).post(
-        "/v1/oauth/token",
-        form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code: pairCode, redirect_uri: redirectUri, code_verifier: verifier }),
-      );
-      pair.status(200);
-      const { access_token: access, refresh_token: refresh } = pair.json<any>();
+      const { access, refresh } = await mintPair();
       const live = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } });
       live.status(200);
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/revoke", form({ client_id: clientId, client_secret: secret, token: access }));

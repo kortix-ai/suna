@@ -6,6 +6,7 @@
  * commit list to exercise commits/:sha and commits/:sha/diff.
  */
 import { flow } from "../core/flow";
+import { withDb } from "../fixtures/database-project";
 
 flow(
   "FILE-1",
@@ -303,14 +304,12 @@ flow(
     const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const { Client: PgClient } = await import("pg");
     const p = await ctx.fixtures.sharedProject();
     const owner = ctx.client.as(ctx.P.OWNER);
-    const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
-    await db.connect();
     const work = mkdtempSync(join(tmpdir(), "ke2e-file11-"));
     try {
-      const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [p.id]);
+      const { rows } = await withDb(ctx.env, (db) =>
+        db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [p.id]));
       const repoUrl = String(rows[0]?.repo_url ?? "");
       const base = String(rows[0]?.default_branch || "main");
       const branch = `ke2e-fresh-${Date.now().toString(36)}`;
@@ -343,7 +342,6 @@ flow(
       });
     } finally {
       rmSync(work, { recursive: true, force: true });
-      await db.end();
     }
   },
 );

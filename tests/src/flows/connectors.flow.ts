@@ -7,19 +7,8 @@
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
-
-function parseCliJson<T>(result: CliResult, action: string): T {
-  throwIfCliInfraFailure(result, action);
-  if (result.exitCode !== 0) {
-    throw new Error(`${action} exited ${result.exitCode}: ${result.all}`);
-  }
-  try {
-    return JSON.parse(result.stdout) as T;
-  } catch {
-    throw new Error(`${action} returned invalid JSON: ${result.stdout}\n${result.stderr}`);
-  }
-}
+import { CliSandbox, parseCliJson, throwIfCliInfraFailure } from '../fixtures/cli';
+import { openDb } from '../fixtures/database-project';
 
 flow(
   'CONN-1',
@@ -2328,13 +2317,7 @@ flow(
     declare.status(200);
 
     const { randomUUID } = await import('node:crypto');
-    const { Client: PgClient } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new PgClient({
-      connectionString: databaseUrl,
-      ssl: local ? false : { rejectUnauthorized: false },
-    });
+    const db = await openDb(ctx);
 
     const sessionId = randomUUID();
     const openapiSlug = `ke2e-openapi-${Date.now().toString(36)}`;
@@ -2356,7 +2339,6 @@ flow(
     const HEX40 = /^[0-9a-f]{40}$/;
 
     try {
-      await db.connect();
       await ctx.step('seed a Slack-born session, its sandbox row, and a session-bound token', async () => {
         const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
           name: `CONN-27 session ${sessionId.slice(0, 8)}`,
@@ -2643,13 +2625,7 @@ flow(
     if (!ownerUserId) throw new Error('OWNER principal has no userId');
 
     const { randomUUID } = await import('node:crypto');
-    const { Client: PgClient } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new PgClient({
-      connectionString: databaseUrl,
-      ssl: local ? false : { rejectUnauthorized: false },
-    });
+    const db = await openDb(ctx);
 
     const sessionId = randomUUID();
     const slug = `ke2e-accounts-${Date.now().toString(36)}`;
@@ -2674,7 +2650,6 @@ flow(
       );
 
     try {
-      await db.connect();
 
       await ctx.step(
         'seed one connector holding two shared accounts and the caller’s own private one',
@@ -2955,10 +2930,7 @@ flow(
     const p = await team.project();
     const { createHash } = await import('node:crypto');
     const { createServer } = await import('node:http');
-    const { Client: PgClient } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const db = await openDb(ctx);
 
     // Synthetic ~300 KB PDF with every byte value.
     const pdf = new Uint8Array(300_000);
@@ -3068,7 +3040,6 @@ flow(
     });
 
     try {
-      await db.connect();
       await ctx.step('seed an OpenAPI connector shaped like Graph sendMail, with its default connection', async () => {
         const connector = await db.query<{ connector_id: string }>(
           `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
@@ -3216,10 +3187,7 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const seeded = await ctx.fixtures.project();
     const { createServer } = await import('node:http');
-    const { Client: PgClient } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const db = await openDb(ctx);
     const stamp = Date.now().toString(36);
     const yamlSlug = `ke2e-egress-yaml-${stamp}`;
     const seededSlug = `ke2e-egress-db-${stamp}`;
@@ -3285,7 +3253,6 @@ flow(
     };
 
     try {
-      await db.connect();
       await ctx.step('adding an http connector whose base_url is a private address reports the endpoint as refused', async () => {
         const r = await ctx.client.as(ctx.P.OWNER).post(
           '/v1/connectors/projects/:projectId/connectors',
@@ -3621,13 +3588,7 @@ flow(
     const inSales = await team.addMember('member');
     const outsideSales = await team.addMember('member');
     const { randomUUID } = await import('node:crypto');
-    const { Client: PgClient } = await import('pg');
-    const databaseUrl = ctx.env.databaseUrl as string;
-    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-    const db = new PgClient({
-      connectionString: databaseUrl,
-      ssl: local ? false : { rejectUnauthorized: false },
-    });
+    const db = await openDb(ctx);
     const slug = `ke2e-gate-${Date.now().toString(36)}`;
     const LABEL = 'Sales CRM';
     const accountParams = { accountId: team.id };
@@ -3681,7 +3642,6 @@ flow(
       );
 
     try {
-      await db.connect();
 
       await ctx.step(
         'seed one shared account, a Sales group, and three session tokens',

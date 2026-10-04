@@ -626,24 +626,33 @@ flow(
       await assertBoxIsCurrent(ctx, before);
     });
 
+    const send = async (
+      url: string,
+      text: string,
+      errorMessage = 'the send did not answer with a message',
+    ) => {
+      const at = Date.now();
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(url, { parts: [{ type: 'text', text }] }, { timeoutMs: 180_000 });
+      r.status(200);
+      const body = r.json<any>();
+      if (body?.deduplicated) throw new Error('the prompt was swallowed as a duplicate');
+      if (!body?.info || !Array.isArray(body?.parts)) {
+        throw new Error(`${errorMessage}: ${JSON.stringify(body).slice(0, 200)}`);
+      }
+      return Date.now() - at;
+    };
+
     await ctx.step('the lane costs the send nothing: a second prompt is no slower', async () => {
-      const send = async (text: string) => {
-        const at = Date.now();
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(booted.box(`/session/${conversationId}/message`), { parts: [{ type: 'text', text }] }, {
-            timeoutMs: 180_000,
-          });
-        r.status(200);
-        const body = r.json<any>();
-        if (body?.deduplicated) throw new Error('the prompt was swallowed as a duplicate');
-        if (!body?.info || !Array.isArray(body?.parts)) {
-          throw new Error(`the send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
-        }
-        return Date.now() - at;
-      };
-      const first = await send('reply with the single word one');
-      const second = await send('reply with the single word two');
+      const first = await send(
+        booted.box(`/session/${conversationId}/message`),
+        'reply with the single word one',
+      );
+      const second = await send(
+        booted.box(`/session/${conversationId}/message`),
+        'reply with the single word two',
+      );
       // Deliberately a band, not a threshold: a turn's duration is the model's,
       // not the gate's. What is being ruled out is the lane ever APPLYING
       // anything on the send path — an install is 30-120 s and a daemon swap 6-9
@@ -672,19 +681,11 @@ flow(
     // (port, path) is proved exactly, with both providers' routing shapes, in
     // apps/api/src/sandbox-proxy/routes/preview-env-sync-ports.test.ts.
     await ctx.step('a prompt addressed straight at the OpenCode port runs a real turn', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          `/v1/p/${booted.sandboxId}/4096/session/${conversationId}/message`,
-          { parts: [{ type: 'text', text: 'reply with the single word three' }] },
-          { timeoutMs: 180_000 },
-        );
-      r.status(200);
-      const body = r.json<any>();
-      if (body?.deduplicated) throw new Error('the prompt was swallowed as a duplicate');
-      if (!body?.info || !Array.isArray(body?.parts)) {
-        throw new Error(`the :4096 send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
-      }
+      await send(
+        `/v1/p/${booted.sandboxId}/4096/session/${conversationId}/message`,
+        'reply with the single word three',
+        'the :4096 send did not answer with a message',
+      );
     });
 
     await ctx.step('and it APPLIED nothing: the box runs the same bytes it started with', async () => {

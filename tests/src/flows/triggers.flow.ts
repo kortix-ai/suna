@@ -2,6 +2,7 @@
  * Project triggers — manage-gated CRUD. Maps to spec §17 (TRG-1..5).
  * Trigger create commits the project manifest (a real git commit).
  */
+import type { Env } from '../core/env';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
@@ -472,41 +473,25 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries();
     const params = { projectId: p.id };
 
-    await ctx.step('missing name → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+    const invalidPayloads: Array<[string, Record<string, string>]> = [
+      [
+        'missing name → 400',
         { type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('missing type → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'missing type → 400',
         { name: 'x', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('bad type (not cron/webhook) → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'bad type (not cron/webhook) → 400',
         { name: 'x', type: 'event', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('missing prompt_template → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'missing prompt_template → 400',
         { name: 'x', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('invalid session_mode → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'invalid session_mode → 400',
         {
           name: 'x',
           type: 'cron',
@@ -515,13 +500,9 @@ flow(
           prompt_template: 'x',
           session_mode: 'bogus',
         },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('pinned session_mode without session_id → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'pinned session_mode without session_id → 400',
         {
           name: 'x',
           type: 'cron',
@@ -530,13 +511,9 @@ flow(
           prompt_template: 'x',
           session_mode: 'pinned',
         },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('pinned with session_id from another project → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'pinned with session_id from another project → 400',
         {
           name: 'x',
           type: 'cron',
@@ -546,53 +523,26 @@ flow(
           session_mode: 'pinned',
           session_id: '00000000-0000-0000-0000-000000000000',
         },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('webhook without secret_env → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
-        { name: 'x', type: 'webhook', prompt_template: 'x' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('webhook with bad secret_env (lowercase) → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      ['webhook without secret_env → 400', { name: 'x', type: 'webhook', prompt_template: 'x' }],
+      [
+        'webhook with bad secret_env (lowercase) → 400',
         { name: 'x', type: 'webhook', prompt_template: 'x', secret_env: 'lowercase_name' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('webhook with bad secret_env (starts with digit) → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'webhook with bad secret_env (starts with digit) → 400',
         { name: 'x', type: 'webhook', prompt_template: 'x', secret_env: '9BAD' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('cron without cron expr AND without run_at → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'cron without cron expr AND without run_at → 400',
         { name: 'x', type: 'cron', timezone: 'UTC', prompt_template: 'x' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('cron with bad run_at (not ISO) → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'cron with bad run_at (not ISO) → 400',
         { name: 'x', type: 'cron', timezone: 'UTC', prompt_template: 'x', run_at: 'not-a-date' },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('explicit invalid slug (uppercase) → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'explicit invalid slug (uppercase) → 400',
         {
           name: 'x',
           slug: 'UPPERCASE',
@@ -601,13 +551,9 @@ flow(
           timezone: 'UTC',
           prompt_template: 'x',
         },
-        { params },
-      );
-      r.status(400);
-    });
-    await ctx.step('explicit invalid slug (starts with dash) → 400', async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+      ],
+      [
+        'explicit invalid slug (starts with dash) → 400',
         {
           name: 'x',
           slug: '-leading-dash',
@@ -616,10 +562,14 @@ flow(
           timezone: 'UTC',
           prompt_template: 'x',
         },
-        { params },
-      );
-      r.status(400);
-    });
+      ],
+    ];
+    for (const [label, payload] of invalidPayloads) {
+      await ctx.step(label, async () => {
+        const r = await owner.post('/v1/projects/:projectId/triggers', payload, { params });
+        r.status(400);
+      });
+    }
   },
 );
 
@@ -737,6 +687,27 @@ flow(
     });
   },
 );
+
+/**
+ * Seeds a trigger-created session row straight into the DB, with a fresh
+ * synthetic user id per session. Returns the session id.
+ */
+function seedTriggerSession(
+  env: Env,
+  projectId: string,
+  accountId: string,
+  visibility: 'private' | 'project',
+  metadata: Record<string, unknown>,
+): Promise<string> {
+  return createDatabaseSession(env, {
+    projectId,
+    accountId,
+    userId: crypto.randomUUID(),
+    visibility,
+    metadata,
+  });
+}
+
 flow(
   'TRG-14',
   {
@@ -770,24 +741,32 @@ flow(
     groupResponse.status(201);
     const groupId = groupResponse.json<{ group_id: string }>().group_id;
     let manifestCommitHashes: string[] = [];
-    const triggerPrivateSessionId = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: team.id,
-      userId: crypto.randomUUID(),
-      visibility: 'private',
-      metadata: {
+    const triggerPrivateSessionId = await seedTriggerSession(
+      ctx.env,
+      project.id,
+      team.id,
+      'private',
+      {
         source: 'trigger:scheduler',
         trigger_kind: 'git',
         trigger_slug: 'access-policy-target',
       },
-    });
-    const humanPrivateSessionId = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: team.id,
-      userId: crypto.randomUUID(),
-      visibility: 'private',
-      metadata: {},
-    });
+    );
+    const humanPrivateSessionId = await seedTriggerSession(
+      ctx.env,
+      project.id,
+      team.id,
+      'private',
+      {},
+    );
+    const readManifestHistory = async (): Promise<ManifestCommit[]> => {
+      const history = await owner.get('/v1/projects/:projectId/files/history', {
+        params: { projectId: project.id },
+        query: { path: 'kortix.yaml' },
+      });
+      history.status(200);
+      return history.json<{ commits: ManifestCommit[] }>().commits;
+    };
 
     await ctx.step('omitted session_access defaults to private', async () => {
       const r = await owner.post(
@@ -812,15 +791,9 @@ flow(
       ) {
         throw new Error(`unexpected default session_access: ${JSON.stringify(access)}`);
       }
-      const readHistory = async (): Promise<ManifestCommit[]> => {
-        const history = await owner.get('/v1/projects/:projectId/files/history', {
-          params: { projectId: project.id },
-          query: { path: 'kortix.yaml' },
-        });
-        history.status(200);
-        return history.json<{ commits: ManifestCommit[] }>().commits;
-      };
-      manifestCommitHashes = (await settledManifestHistory(readHistory)).map((commit) => commit.hash);
+      manifestCommitHashes = (await settledManifestHistory(readManifestHistory)).map(
+        (commit) => commit.hash,
+      );
     });
 
     await ctx.step(
@@ -902,14 +875,7 @@ flow(
         ) {
           throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
         }
-        const current = await settledManifestHistory(async () => {
-          const history = await owner.get('/v1/projects/:projectId/files/history', {
-            params: { projectId: project.id },
-            query: { path: 'kortix.yaml' },
-          });
-          history.status(200);
-          return history.json<{ commits: ManifestCommit[] }>().commits;
-        });
+        const current = await settledManifestHistory(readManifestHistory);
         const added = current.filter((commit) => !manifestCommitHashes.includes(commit.hash));
         if (added.length > 0 || current.length !== manifestCommitHashes.length) {
           throw new Error(
@@ -1006,34 +972,24 @@ flow(
     if (!teammate.userId) throw new Error('cleanup teammate fixture has no user id');
     await team.grantProjectRole(project.id, teammate.userId, 'user');
 
-    const triggerSession = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: team.id,
-      userId: crypto.randomUUID(),
-      visibility: 'private',
-      metadata: {
+    const triggerSession = await seedTriggerSession(ctx.env, project.id, team.id, 'private', {
+      source: 'trigger:scheduler',
+      trigger_kind: 'git',
+      trigger_slug: 'hourly-heartbeat',
+    });
+    const siblingTriggerSession = await seedTriggerSession(
+      ctx.env,
+      project.id,
+      team.id,
+      'private',
+      {
         source: 'trigger:scheduler',
         trigger_kind: 'git',
         trigger_slug: 'hourly-heartbeat',
       },
-    });
-    const siblingTriggerSession = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: team.id,
-      userId: crypto.randomUUID(),
-      visibility: 'private',
-      metadata: {
-        source: 'trigger:scheduler',
-        trigger_kind: 'git',
-        trigger_slug: 'hourly-heartbeat',
-      },
-    });
-    const automationSession = await createDatabaseSession(ctx.env, {
-      projectId: project.id,
-      accountId: team.id,
-      userId: crypto.randomUUID(),
-      visibility: 'project',
-      metadata: { source: 'agent:harness' },
+    );
+    const automationSession = await seedTriggerSession(ctx.env, project.id, team.id, 'project', {
+      source: 'agent:harness',
     });
 
     await ctx.step('manager reads a private trigger session before pruning it', async () => {

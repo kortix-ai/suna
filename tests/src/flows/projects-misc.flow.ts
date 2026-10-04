@@ -7,6 +7,7 @@
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
 import { flow } from '../core/flow';
+import type { FlowContext, Principal } from '../core/types';
 import { withDb } from '../fixtures/chat';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 
@@ -491,50 +492,39 @@ flow(
     const team = await ctx.fixtures.team();
     const project = await team.project({ seed: true });
 
+    const cfgPath = '/v1/projects/:projectId/agents/:agentName/config';
+    const cfgParams = { projectId: project.id, agentName: 'kortix' };
+    const getConfig = (actor: typeof ctx.P.OWNER) =>
+      ctx.client.as(actor).get(cfgPath, { params: cfgParams });
+    const putConfig = (actor: typeof ctx.P.OWNER, body: unknown) =>
+      ctx.client.as(actor).put(cfgPath, body, { params: cfgParams });
+
     await ctx.step(
       'GET reports schema_version 2 / editable true for a seeded manifest',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/projects/:projectId/agents/:agentName/config', {
-            params: { projectId: project.id, agentName: 'kortix' },
-          });
+        const r = await getConfig(ctx.P.OWNER);
         r.status(200).body().has('$.schema_version', 2).has('$.editable', true);
       },
     );
 
     for (const access of [false, true]) {
       await ctx.step(`set repository_access=${access} and read back the saved policy`, async () => {
-        const params = { projectId: project.id, agentName: 'kortix' };
-        const saved = await ctx.client.as(ctx.P.OWNER).put(
-          '/v1/projects/:projectId/agents/:agentName/config',
-          { repository_access: access }, { params },
-        );
+        const saved = await putConfig(ctx.P.OWNER, { repository_access: access });
         saved.status(200).body().has('$.block.repository_access', access);
-        const read = await ctx.client.as(ctx.P.OWNER).get(
-          '/v1/projects/:projectId/agents/:agentName/config', { params },
-        );
+        const read = await getConfig(ctx.P.OWNER);
         read.status(200).body().has('$.block.repository_access', access);
         if ('workspace' in read.json<any>().block) throw new Error('response exposes legacy workspace');
       });
     }
     await ctx.step('legacy runtime saves a disabled repository policy', async () => {
-      const saved = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/projects/:projectId/agents/:agentName/config', { workspace: 'runtime' },
-        { params: { projectId: project.id, agentName: 'kortix' } },
-      );
+      const saved = await putConfig(ctx.P.OWNER, { workspace: 'runtime' });
       saved.status(200).body().has('$.block.repository_access', false);
     });
     for (const body of [{ repository_access: 'false' }, { repository_access: true, workspace: 'runtime' }]) {
       await ctx.step('invalid or conflicting repository policy is rejected without widening access', async () => {
-        const params = { projectId: project.id, agentName: 'kortix' };
-        const rejected = await ctx.client.as(ctx.P.OWNER).put(
-          '/v1/projects/:projectId/agents/:agentName/config', body, { params },
-        );
+        const rejected = await putConfig(ctx.P.OWNER, body);
         rejected.status(400);
-        const read = await ctx.client.as(ctx.P.OWNER).get(
-          '/v1/projects/:projectId/agents/:agentName/config', { params },
-        );
+        const read = await getConfig(ctx.P.OWNER);
         read.status(200).body().has('$.block.repository_access', false);
       });
     }
@@ -542,51 +532,38 @@ flow(
     await ctx.step(
       'the behavior half reads and writes as `behavior`; a round trip that edits only its pre-W4 name `opencode` keeps that edit; two different edits → 400',
       async () => {
-        const params = { projectId: project.id, agentName: 'kortix' };
-        const path = '/v1/projects/:projectId/agents/:agentName/config';
-        const owner = ctx.client.as(ctx.P.OWNER);
-        const current = (await owner.get(path, { params })).status(200).json<any>().block.behavior;
+        const current = (await getConfig(ctx.P.OWNER)).status(200).json<any>().block.behavior;
         const neutral = { ...current, description: 'Written as behavior' };
-        const saved = await owner.put(path, { behavior: neutral }, { params });
+        const saved = await putConfig(ctx.P.OWNER, { behavior: neutral });
         saved.status(200).body()
           .has('$.block.behavior.description', 'Written as behavior')
           .has('$.block.opencode.description', 'Written as behavior');
-        const served = (await owner.get(path, { params })).status(200).json<any>().block;
+        const served = (await getConfig(ctx.P.OWNER)).status(200).json<any>().block;
         if (JSON.stringify(served.behavior) !== JSON.stringify(served.opencode)) {
           throw new Error('GET serves different values under behavior and opencode');
         }
         const olderClient = { ...served.opencode, description: 'Edited as opencode' };
-        (await owner.put(path, { behavior: served.behavior, opencode: olderClient }, { params }))
-          .status(200);
-        (await owner.get(path, { params })).status(200).body()
+        (await putConfig(ctx.P.OWNER, { behavior: served.behavior, opencode: olderClient })).status(200);
+        (await getConfig(ctx.P.OWNER)).status(200).body()
           .has('$.block.behavior.description', 'Edited as opencode');
-        (await owner.put(
-          path,
-          { behavior: { ...current, description: 'A' }, opencode: { ...current, description: 'B' } },
-          { params },
-        )).status(400);
+        (await putConfig(ctx.P.OWNER, {
+          behavior: { ...current, description: 'A' },
+          opencode: { ...current, description: 'B' },
+        })).status(400);
       },
     );
 
     await ctx.step('PUT a body with unrecognized top-level keys → 400', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/projects/:projectId/agents/:agentName/config',
-          { mode: 'primary', description: 'Support', temperature: 0.2 },
-          { params: { projectId: project.id, agentName: 'kortix' } },
-        );
+      const r = await putConfig(ctx.P.OWNER, {
+        mode: 'primary',
+        description: 'Support',
+        temperature: 0.2,
+      });
       r.status(400);
     });
 
     await ctx.step('PUT with a malformed body (bad enum) → 400', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/projects/:projectId/agents/:agentName/config',
-          { mode: 'supervisor' },
-          { params: { projectId: project.id, agentName: 'kortix' } },
-        );
+      const r = await putConfig(ctx.P.OWNER, { mode: 'supervisor' });
       r.status(400);
     });
 
@@ -594,11 +571,7 @@ flow(
       'a member with no project grant cannot read/write the config → 403',
       async () => {
         const bare = await team.addMember('member');
-        const r = await ctx.client
-          .as(bare)
-          .get('/v1/projects/:projectId/agents/:agentName/config', {
-            params: { projectId: project.id, agentName: 'kortix' },
-          });
+        const r = await getConfig(bare);
         r.status(403);
       },
     );
@@ -634,6 +607,21 @@ flow(
   },
 );
 
+// The model-defaults call wrappers PROJ-37 proved out, hoisted so PROJ-27 and
+// PROJ-37 issue identical requests through one definition.
+const modelDefaultsPath = '/v1/projects/:projectId/model-defaults';
+const getModelDefaults = (ctx: FlowContext, actor: Principal, projectId: string) =>
+  ctx.client.as(actor).get(modelDefaultsPath, { params: { projectId } });
+const putModelDefaults = (
+  ctx: FlowContext,
+  actor: Principal,
+  projectId: string,
+  model = 'guard-probe-model',
+  scope = 'project',
+) => ctx.client.as(actor).put(modelDefaultsPath, { scope, model }, { params: { projectId } });
+const delModelDefaults = (ctx: FlowContext, actor: Principal, projectId: string, scope = 'project') =>
+  ctx.client.as(actor).del(modelDefaultsPath, { params: { projectId }, query: { scope } });
+
 // PROJ-27 — model-defaults CRUD. GET reads the platform/account/project/agent
 // defaults; PUT upserts one scope (agent requires agentName); DELETE clears
 // one scope by query. PUT rejects models that the account cannot serve. The
@@ -655,9 +643,7 @@ flow(
     const p = await ctx.fixtures.project();
     let servableModel = '';
     await ctx.step('GET before any override → 200 with no project default', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      const r = await getModelDefaults(ctx, ctx.P.OWNER, p.id);
       r.status(200).body().exists('$.platformDefault').has('$.projectDefault', null);
     });
     await ctx.step('GET model picker → select a served managed model', async () => {
@@ -676,13 +662,7 @@ flow(
       servableModel = candidate;
     });
     await ctx.step('PUT scope=project sets a concrete model → 200', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/projects/:projectId/model-defaults',
-          { scope: 'project', model: servableModel },
-          { params: { projectId: p.id } },
-        );
+      const r = await putModelDefaults(ctx, ctx.P.OWNER, p.id, servableModel);
       r.status(200)
         .body()
         .has('$.ok', true)
@@ -690,58 +670,34 @@ flow(
         .has('$.model', servableModel);
     });
     await ctx.step('GET reflects the set project default', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      const r = await getModelDefaults(ctx, ctx.P.OWNER, p.id);
       r.status(200)
         .body()
         .has('$.projectDefault', servableModel)
         .has('$.resolvedForCaller', servableModel);
     });
     await ctx.step('PUT with the synthetic auto id → 409 (not servable)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/projects/:projectId/model-defaults',
-          { scope: 'project', model: 'auto' },
-          { params: { projectId: p.id } },
-        );
+      const r = await putModelDefaults(ctx, ctx.P.OWNER, p.id, 'auto');
       r.status(409).body().has('$.code', 'model_not_servable');
     });
     await ctx.step('PUT scope=agent without agentName → 400', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/projects/:projectId/model-defaults',
-          { scope: 'agent', model: servableModel },
-          { params: { projectId: p.id } },
-        );
+      const r = await putModelDefaults(ctx, ctx.P.OWNER, p.id, servableModel, 'agent');
       r.status(400);
     });
     await ctx.step('DELETE scope=project clears the override → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/model-defaults', {
-        params: { projectId: p.id },
-        query: { scope: 'project' },
-      });
+      const r = await delModelDefaults(ctx, ctx.P.OWNER, p.id);
       r.status(200).body().has('$.ok', true);
     });
     await ctx.step('GET reflects the clear', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      const r = await getModelDefaults(ctx, ctx.P.OWNER, p.id);
       r.status(200).body().has('$.projectDefault', null);
     });
     await ctx.step('DELETE with an invalid scope → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/model-defaults', {
-        params: { projectId: p.id },
-        query: { scope: 'bogus' },
-      });
+      const r = await delModelDefaults(ctx, ctx.P.OWNER, p.id, 'bogus');
       r.status(400);
     });
     await ctx.step('NONMEMBER cannot read → 403/404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/model-defaults', { params: { projectId: p.id } });
+      const r = await getModelDefaults(ctx, ctx.P.NONMEMBER, p.id);
       r.status([403, 404]);
     });
   },
@@ -774,11 +730,9 @@ flow(
       await team.grantProjectRole(project.id, user.userId!, 'user');
       await team.grantProjectRole(project.id, manager.userId!, 'manager');
     }
-    const path = '/v1/projects/:projectId/model-defaults';
     const put = (actor: typeof user, projectId: string, model = 'guard-probe-model') =>
-      ctx.client.as(actor).put(path, { scope: 'project', model }, { params: { projectId } });
-    const del = (actor: typeof user, projectId: string) =>
-      ctx.client.as(actor).del(path, { params: { projectId }, query: { scope: 'project' } });
+      putModelDefaults(ctx, actor, projectId, model);
+    const del = (actor: typeof user, projectId: string) => delModelDefaults(ctx, actor, projectId);
 
     await ctx.step('OWNER turns the LLM gateway off on one project and on for the other', async () => {
       for (const [project, enabled] of [[gatewayOff, false], [gatewayOn, true]] as const) {
@@ -813,8 +767,7 @@ flow(
     await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
       (await put(manager, gatewayOn.id)).status(409)
         .body().has('$.code', 'model_not_servable');
-      const read = () =>
-        ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
+      const read = () => getModelDefaults(ctx, manager, gatewayOn.id);
       (await read()).status(200).body().has('$.projectDefault', null);
       (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
       (await read()).status(200).body().has('$.projectDefault', null);

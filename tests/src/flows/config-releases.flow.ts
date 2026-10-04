@@ -18,6 +18,7 @@ import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, Harness, TeamFixture } from '../core/types';
 import { assertRuntimeHarness, readTranscript, readTurn } from '../fixtures/session-run';
 import { isKe2eRetryableError } from '../core/client';
+import { openDb, type ProjectDb } from '../fixtures/database-project';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -73,7 +74,7 @@ interface ProjectRepo {
 
 interface Fixture {
   ctx: FlowContext;
-  db: import('pg').Client;
+  db: ProjectDb;
   team: TeamFixture;
   projectId: string;
   /** The project itself, for the one flow that boots a real sandbox in it. */
@@ -278,16 +279,10 @@ async function tipOf(repo: ProjectRepo): Promise<string> {
 
 async function setup(ctx: FlowContext): Promise<Fixture> {
   const { randomUUID } = await import('node:crypto');
-  const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
   const local = ctx.env.target === 'local';
   const project = await team.project({ managedGit: true });
-  const databaseUrl = ctx.env.databaseUrl!;
-  const db = new PgClient({
-    connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false },
-  });
-  await db.connect();
+  const db = await openDb(ctx);
   const sessions: string[] = [];
   const origin = ctx.env.apiUrl.replace(/\/v1$/, '');
 
@@ -1017,7 +1012,13 @@ flow(
           'new repository',
           STARTER_SCAFFOLD_PATHS,
         );
-        const { rows } = await fixture.db.query(
+        const { rows } = await fixture.db.query<{
+          repo_url: string;
+          default_branch: string;
+          metadata: unknown;
+          connection: unknown;
+          other_connections: number;
+        }>(
           `SELECT p.repo_url, p.default_branch, p.metadata,
                   (SELECT row_to_json(c) FROM kortix.project_git_connections c WHERE c.project_id = p.project_id) AS connection,
                   (SELECT count(*)::int FROM kortix.project_git_connections c WHERE c.project_id = $2) AS other_connections

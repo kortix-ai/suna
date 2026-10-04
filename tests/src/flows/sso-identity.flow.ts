@@ -22,24 +22,20 @@ import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
 import { asPlatformAdmin } from '../fixtures/enterprise-demo';
-import { ssoFixtureToken } from '../fixtures/supabase';
+import { putSsoProvider, ssoFixtureToken } from '../fixtures/supabase';
 
 async function saveProvider(
   ctx: FlowContext,
   accountId: string,
   body: { supabaseProviderId: string; domain: string; enforceSso?: boolean; autoCreateMembers?: boolean },
 ) {
-  const r = await ctx.client.as(ctx.P.OWNER).put(
-    '/v1/accounts/:accountId/iam/sso/provider',
-    {
-      supabase_sso_provider_id: body.supabaseProviderId,
-      name: 'Synthetic IdP',
-      primary_domain: body.domain,
-      ...(body.enforceSso !== undefined ? { enforce_sso: body.enforceSso } : {}),
-      ...(body.autoCreateMembers !== undefined ? { auto_create_members: body.autoCreateMembers } : {}),
-    },
-    { params: { accountId } },
-  );
+  const r = await putSsoProvider(ctx, accountId, {
+    providerId: body.supabaseProviderId,
+    name: 'Synthetic IdP',
+    primaryDomain: body.domain,
+    enforceSso: body.enforceSso,
+    autoCreateMembers: body.autoCreateMembers,
+  });
   r.status(200).body().has('$.provider.primary_domain', body.domain);
   return r.json<{ provider: Record<string, any> }>().provider;
 }

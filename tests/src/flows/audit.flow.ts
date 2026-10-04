@@ -7,6 +7,7 @@ import { flow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import { serveFixtureRepoLocally } from '../fixtures/local-git';
+import { openDb } from '../fixtures/database-project';
 
 interface AuditPageBody {
   events: Array<{ event_id: string }>;
@@ -832,7 +833,6 @@ flow(
     const { join } = await import('node:path');
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
-    const { Client: PgClient } = await import('pg');
     const exec = promisify(execFile);
     const team = await ctx.fixtures.team({ enterprise: true });
     const outsider = await team.addMember('member');
@@ -842,10 +842,7 @@ flow(
     const projectMemberId = required(projectMember.userId, 'the project member\u2019s user id');
     await team.grantProjectRole(project.id, projectMemberId, 'member');
     const ownerId = required(ctx.P.OWNER.userId, 'the owner\u2019s user id');
-    const databaseUrl = required(ctx.env.databaseUrl, 'a database URL');
-    const db = new PgClient({ connectionString: databaseUrl,
-      ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
-    await db.connect();
+    const db = await openDb(ctx);
     const root = await mkdtemp(join(tmpdir(), 'ke2e-audit-git-'));
     const branch = `refs/heads/${ctx.fixtures.name('aud7').toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
     const tokenIds: string[] = [];

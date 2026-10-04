@@ -1,7 +1,6 @@
-import { Client } from "pg";
 import { flow } from "../core/flow";
-import { CliSandbox, throwIfCliInfraFailure } from "../fixtures/cli";
-import { createDatabaseSession } from "../fixtures/database-project";
+import { loginCli, throwIfCliInfraFailure } from "../fixtures/cli";
+import { createDatabaseSession, withDb } from "../fixtures/database-project";
 import { seedSessionTranscript } from "../fixtures/session-transcript";
 
 flow(
@@ -63,16 +62,12 @@ flow(
           .body()
           .has("$.error", "Unknown feature flag 'session_transcript_history'");
         // What an older server wrote when a project turned the flag off.
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        await db.connect();
-        try {
+        await withDb(ctx.env, async (db) => {
           await db.query(
             `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
             [project.id],
           );
-        } finally {
-          await db.end();
-        }
+        });
         (await owner.get(route, options))
           .status(200)
           .body()
@@ -94,9 +89,7 @@ flow(
       "a sub-agent's saved transcript is its own window, and the conversation never includes it",
       async () => {
         const child = "ses_subagentwindow";
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        await db.connect();
-        try {
+        await withDb(ctx.env, async (db) => {
           const info = {
             id: "msg_subagent_000000000000001",
             sessionID: child,
@@ -114,9 +107,7 @@ flow(
               JSON.stringify([{ id: "prt_subagent", type: "text", text: "List the files." }]),
             ],
           );
-        } finally {
-          await db.end();
-        }
+        });
         (await owner.get(route, options))
           .status(200)
           .body()
@@ -153,16 +144,12 @@ flow(
     await ctx.step(
       "a replaced root makes the old transcript unavailable without waking a sandbox",
       async () => {
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        await db.connect();
-        try {
+        await withDb(ctx.env, async (db) => {
           await db.query(
             "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
             [sessionId, "ses_replacement"],
           );
-        } finally {
-          await db.end();
-        }
+        });
         (await owner.get(route, options))
           .status(200)
           .body()
@@ -181,27 +168,14 @@ flow(
         // shape refuses a mirror it cannot attribute; the compact shape the CLI
         // reads carries no such check, so leaving `ses_replacement` in place
         // would make this step pass for a reason it is not testing.
-        const restore = new Client({ connectionString: ctx.env.databaseUrl! });
-        await restore.connect();
-        try {
+        await withDb(ctx.env, async (restore) => {
           await restore.query(
             "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
             [sessionId, fixture.root],
           );
-        } finally {
-          await restore.end();
-        }
-        const pat = await ctx.fixtures.pat({
-          name: ctx.fixtures.name("cli-digest"),
         });
-        const cli = new CliSandbox("digest");
+        const cli = await loginCli(ctx, "digest", "cli-digest");
         try {
-          const login = await cli.login(pat, {
-            noProject: true,
-            account: ctx.P.OWNER.accountId,
-          });
-          if (login.exitCode !== 0)
-            throw new Error(`kortix login exited ${login.exitCode}: ${login.all}`);
           const run = await cli.run([
             "sessions",
             "digest",
@@ -255,12 +229,8 @@ flow(
         // `kortix sessions log` used to refuse any session that was not running
         // and tell the user to restart it — a paid, minutes-long wake just to
         // read text the server already held.
-        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-log") });
-        const cli = new CliSandbox("log");
+        const cli = await loginCli(ctx, "log", "cli-log");
         try {
-          const login = await cli.login(pat, { noProject: true, account: ctx.P.OWNER.accountId });
-          if (login.exitCode !== 0)
-            throw new Error(`kortix login exited ${login.exitCode}: ${login.all}`);
           const run = await cli.run([
             "sessions",
             "log",
@@ -302,22 +272,14 @@ flow(
           userId: ctx.P.OWNER.userId!,
         });
         ctx.track("session", unsaved, { projectId: project.id });
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        await db.connect();
-        try {
+        await withDb(ctx.env, async (db) => {
           await db.query(
             "UPDATE kortix.project_sessions SET status = 'stopped' WHERE session_id = $1",
             [unsaved],
           );
-        } finally {
-          await db.end();
-        }
-        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-log-none") });
-        const cli = new CliSandbox("log-none");
+        });
+        const cli = await loginCli(ctx, "log-none", "cli-log-none");
         try {
-          const login = await cli.login(pat, { noProject: true, account: ctx.P.OWNER.accountId });
-          if (login.exitCode !== 0)
-            throw new Error(`kortix login exited ${login.exitCode}: ${login.all}`);
           const run = await cli.run(["sessions", "log", unsaved, "--project", project.id]);
           throwIfCliInfraFailure(run, "kortix sessions log (nothing saved)");
           if (run.exitCode !== 1)
@@ -400,16 +362,12 @@ flow(
       async () => {
         // What an older server wrote when a project turned saved history off.
         // Saved history has no off switch now, so the upload still succeeds.
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        await db.connect();
-        try {
+        await withDb(ctx.env, async (db) => {
           await db.query(
             `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
             [project.id],
           );
-        } finally {
-          await db.end();
-        }
+        });
         for (let attempt = 0; attempt < 2; attempt++) {
           (await owner.request("POST", upload, { params, body: form() }))
             .status(201)
@@ -480,9 +438,7 @@ flow(
         // The saved transcript is the index of what a session stored. Seed one
         // whose user message references the uploaded file, stop the session,
         // and read it back through `kortix sessions attachments`.
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        await db.connect();
-        try {
+        await withDb(ctx.env, async (db) => {
           const root = `ses_${sessionId.replaceAll("-", "")}`;
           await db.query(
             "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2 WHERE session_id = $1",
@@ -512,16 +468,9 @@ flow(
             "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,'user',$4,$5,$6)",
             [sessionId, info.id, root, new Date(info.time.created), JSON.stringify(info), JSON.stringify(parts)],
           );
-        } finally {
-          await db.end();
-        }
-        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-attachments") });
-        const cli = new CliSandbox("attachments");
+        });
+        const cli = await loginCli(ctx, "attachments", "cli-attachments");
         try {
-          const login = await cli.login(pat, { noProject: true, account: ctx.P.OWNER.accountId });
-          if (login.exitCode !== 0)
-            throw new Error(`kortix login exited ${login.exitCode}: ${login.all}`);
-
           const listed = await cli.run([
             "sessions", "attachments", sessionId, "--project", project.id, "--json",
           ]);
@@ -602,18 +551,14 @@ flow(
           )
         ).status(200);
         (await owner.get(download, { params })).status(404);
-        const db = new Client({ connectionString: ctx.env.databaseUrl! });
-        await db.connect();
-        try {
+        await withDb(ctx.env, async (db) => {
           const result = await db.query(
             "SELECT count(*)::int AS count FROM storage.objects WHERE bucket_id='session-attachments' AND name=$1",
             [`${project.id}/${sessionId}/${attachmentId}`],
           );
           if (result.rows[0].count !== 0)
             throw new Error("Deleted session still owns attachment bytes");
-        } finally {
-          await db.end();
-        }
+        });
       },
     );
   },

@@ -29,6 +29,8 @@ import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assert } from '../core/expect';
+import type { FlowContext } from '../core/types';
 import { loadEnv } from '../core/env';
 
 /**
@@ -81,6 +83,49 @@ const CLI_EDGE_MAINTENANCE_RE =
 
 export function isCliEdgeMaintenanceFailure(result: CliResult): boolean {
   return result.exitCode !== 0 && CLI_EDGE_MAINTENANCE_RE.test(result.all);
+}
+
+/** Tiny structured assert that records into the active step. */
+export function check(description: string, pass: boolean, expected: unknown, actual: unknown): void {
+  assert({ kind: 'cli', description, expected, actual, pass });
+}
+
+/**
+ * Assert a CLI exit code, classifying our own killer and edge-laundered 5xx as
+ * retryable infrastructure (not a contract failure) when exit 0 was expected.
+ */
+export function requireExit(result: CliResult, expected: number, action: string): void {
+  // An edge-laundered 5xx or a killed process is infrastructure, not contract.
+  // It must reach the flow-level infra budget as a RETRYABLE error — CLI-SEC
+  // (exit 143) and CLI-SESS (HTTP 503) both failed on their first attempt here.
+  if (expected === 0) throwIfCliInfraFailure(result, action);
+  if (result.exitCode !== expected) {
+    throw new Error(`${action} exited ${result.exitCode}, expected ${expected}: ${result.all}`);
+  }
+}
+
+/** Parse `result.stdout` as JSON after a clean exit. */
+export function parseCliJson<T>(result: CliResult, action: string): T {
+  throwIfCliInfraFailure(result, action);
+  if (result.exitCode !== 0) {
+    throw new Error(`${action} exited ${result.exitCode}: ${result.all}`);
+  }
+  try {
+    return JSON.parse(result.stdout) as T;
+  } catch {
+    throw new Error(`${action} returned invalid JSON: ${result.stdout}\n${result.stderr}`);
+  }
+}
+
+/** `check` an exit code (the assert-shaped sibling of `requireExit`). */
+export function checkExit(description: string, result: CliResult, expected: number): void {
+  // CR-9 failed here in run 32306385663 with `HTTP 503: Kortix is temporarily
+  // unavailable` — an edge blip recorded as a CLI contract failure, unretried.
+  if (expected === 0) throwIfCliInfraFailure(result, description);
+  check(description, result.exitCode === expected, expected, {
+    exitCode: result.exitCode,
+    output: result.all.slice(0, 3_000),
+  });
 }
 
 export function isCliProcessKilled(result: CliResult): boolean {
@@ -182,6 +227,10 @@ export class CliSandbox {
       // Make the CLI deterministic + non-interactive-friendly.
       KORTIX_CONFIG_FILE: this.configFile,
       KORTIX_DEFAULT_API_BASE: targetApiBase(),
+      // The invoking session's agent-env file (/dev/shm/kortix/agent-env.sh)
+      // must not hand this subprocess a live credential: the hermetic config
+      // file above is the only token source here.
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       // A stable git identity so `create`/`ship` commits don't fail on a
       // machine without a configured user.
       GIT_AUTHOR_NAME: 'ke2e',
@@ -434,4 +483,27 @@ export async function browserLogin(
       error: callbackError,
     },
   };
+}
+
+/**
+ * Mint a PAT, open a sandbox, and log the real CLI in against the ke2e target
+ * (`--no-project --account <owner>`). The caller owns `dispose()` — run the
+ * commands inside its try/finally.
+ */
+export async function loginCli(
+  ctx: FlowContext,
+  label: string,
+  patName: string,
+): Promise<CliSandbox> {
+  const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name(patName) });
+  const sandbox = new CliSandbox(label);
+  const login = await sandbox.login(pat, {
+    noProject: true,
+    account: ctx.P.OWNER.accountId,
+  });
+  if (login.exitCode !== 0) {
+    sandbox.dispose();
+    throw new Error(`kortix login exited ${login.exitCode}: ${login.all}`);
+  }
+  return sandbox;
 }

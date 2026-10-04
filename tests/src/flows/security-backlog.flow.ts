@@ -558,7 +558,6 @@ flow(
     await ctx.step(
       'invite-accept under a small serial burst → limiter response or normal reject',
       async () => {
-        let saw429 = false;
         // Bounded burst (8) — small enough not to stress the API, large enough to
         // trip a tight per-principal limiter if one guards this route.
         for (let i = 0; i < 8; i++) {
@@ -568,11 +567,9 @@ flow(
           // Unknown invite → 404; rate-limited → 429. Either proves the boundary:
           // the route never silently succeeds for a forged invite id.
           r.status([403, 404, 429]);
-          if (r.statusCode === 429) saw429 = true;
         }
         // We don't REQUIRE a 429 at this low volume (limits are generous); the
         // contract proven is "forged invite never 2xx + limiter response is valid".
-        void saw429;
       },
     );
   },

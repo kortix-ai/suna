@@ -7,6 +7,7 @@
  * provider state.
  */
 import { flow } from '../core/flow';
+import type { Principal } from '../core/types';
 
 const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
 
@@ -75,19 +76,23 @@ flow(
   },
 );
 
+const GW9_READ_ROUTES = [
+  '/v1/projects/:projectId/gateway/overview',
+  '/v1/projects/:projectId/gateway/series',
+  '/v1/projects/:projectId/gateway/sessions',
+  '/v1/projects/:projectId/gateway/breakdown',
+  '/v1/projects/:projectId/gateway/errors',
+  '/v1/projects/:projectId/gateway/logs',
+  '/v1/projects/:projectId/gateway/budgets',
+];
+
 flow(
   'GW-9',
   {
     domain: 'llm-gateway',
     routes: [
-      'GET /v1/projects/:projectId/gateway/overview',
-      'GET /v1/projects/:projectId/gateway/series',
-      'GET /v1/projects/:projectId/gateway/sessions',
-      'GET /v1/projects/:projectId/gateway/breakdown',
-      'GET /v1/projects/:projectId/gateway/errors',
-      'GET /v1/projects/:projectId/gateway/logs',
+      ...GW9_READ_ROUTES.map((route) => `GET ${route}`),
       'GET /v1/projects/:projectId/gateway/logs/:logId',
-      'GET /v1/projects/:projectId/gateway/budgets',
       'PUT /v1/projects/:projectId/gateway/budgets',
       'DELETE /v1/projects/:projectId/gateway/budgets/:budgetId',
       'GET /v1/projects/:projectId/gateway/keys',
@@ -103,15 +108,7 @@ flow(
     const params = { projectId: p.id };
 
     await ctx.step('gateway analytics reads are reachable for a project member', async () => {
-      for (const route of [
-        '/v1/projects/:projectId/gateway/overview',
-        '/v1/projects/:projectId/gateway/series',
-        '/v1/projects/:projectId/gateway/sessions',
-        '/v1/projects/:projectId/gateway/breakdown',
-        '/v1/projects/:projectId/gateway/errors',
-        '/v1/projects/:projectId/gateway/logs',
-        '/v1/projects/:projectId/gateway/budgets',
-      ]) {
+      for (const route of GW9_READ_ROUTES) {
         const r = await owner.get(route, { params });
         r.status([200, 403]);
       }
@@ -199,14 +196,27 @@ flow(
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
-    await ctx.step('Session transcript returns 404 for an unknown session', async () => {
-      const response = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
-          params: { projectId: project.id, sessionId: ZERO_UUID },
-        });
-      response.status(404);
-    });
+    const expectSessionBoundary = (
+      label: string,
+      actor: Principal,
+      leg: 'transcript' | 'turn' | 'snapshot' | 'events',
+      status: number | number[],
+    ) =>
+      ctx.step(label, async () => {
+        const response = await ctx.client
+          .as(actor)
+          .get(`/v1/projects/:projectId/sessions/:sessionId/${leg}`, {
+            params: { projectId: project.id, sessionId: ZERO_UUID },
+          });
+        response.status(status);
+      });
+
+    await expectSessionBoundary(
+      'Session transcript returns 404 for an unknown session',
+      ctx.P.OWNER,
+      'transcript',
+      404,
+    );
 
     await ctx.step('Session turn read reports a fresh session as idle', async () => {
       // The only committed black-box 200 on this route. A session that has
@@ -229,14 +239,12 @@ flow(
       }
     });
 
-    await ctx.step('Session turn read returns 404 for an unknown session', async () => {
-      const response = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
-          params: { projectId: project.id, sessionId: ZERO_UUID },
-        });
-      response.status(404);
-    });
+    await expectSessionBoundary(
+      'Session turn read returns 404 for an unknown session',
+      ctx.P.OWNER,
+      'turn',
+      404,
+    );
 
     await ctx.step('Session snapshot answers every leg in ONE round trip', async () => {
       // The bundle is what a session view opens with: one call replacing the
@@ -426,84 +434,62 @@ flow(
       }
     });
 
-    await ctx.step('Session events stream refuses an anonymous caller', async () => {
-      const response = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
-          params: { projectId: project.id, sessionId: ZERO_UUID },
-        });
-      response.status([401, 403, 404]);
-    });
-
-    await ctx.step('Session events stream returns 404 for an unknown session', async () => {
-      const response = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
-          params: { projectId: project.id, sessionId: ZERO_UUID },
-        });
-      response.status(404);
-    });
-
-    await ctx.step('Session snapshot returns 404 for an unknown session', async () => {
-      const response = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
-          params: { projectId: project.id, sessionId: ZERO_UUID },
-        });
-      response.status(404);
-    });
-
-    await ctx.step('Session snapshot refuses an anonymous caller', async () => {
-      // It carries the transcript and the prompt queue — session CONTENT.
-      const response = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
-          params: { projectId: project.id, sessionId: ZERO_UUID },
-        });
-      response.status([401, 403, 404]);
-    });
-
-    await ctx.step('Session turn read refuses an anonymous caller', async () => {
-      // The turn ledger carries the OpenCode session id and the client-minted
-      // message id — session CONTENT, never public.
-      const response = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
-          params: { projectId: project.id, sessionId: ZERO_UUID },
-        });
-      response.status([401, 403, 404]);
-    });
+    await expectSessionBoundary(
+      'Session events stream refuses an anonymous caller',
+      ctx.P.ANON,
+      'events',
+      [401, 403, 404],
+    );
+    await expectSessionBoundary(
+      'Session events stream returns 404 for an unknown session',
+      ctx.P.OWNER,
+      'events',
+      404,
+    );
+    await expectSessionBoundary(
+      'Session snapshot returns 404 for an unknown session',
+      ctx.P.OWNER,
+      'snapshot',
+      404,
+    );
+    // It carries the transcript and the prompt queue — session CONTENT.
+    await expectSessionBoundary(
+      'Session snapshot refuses an anonymous caller',
+      ctx.P.ANON,
+      'snapshot',
+      [401, 403, 404],
+    );
+    // The turn ledger carries the OpenCode session id and the client-minted
+    // message id — session CONTENT, never public.
+    await expectSessionBoundary(
+      'Session turn read refuses an anonymous caller',
+      ctx.P.ANON,
+      'turn',
+      [401, 403, 404],
+    );
   },
 );
+
+const GW10_GATEWAY_ROUTES = [
+  '/internal/gateway/authenticate',
+  '/internal/gateway/billing',
+  '/internal/gateway/budget-check',
+  '/internal/gateway/models',
+  '/internal/gateway/pool-rate-limit',
+  '/internal/gateway/refresh-credential',
+  '/internal/gateway/resolve-upstream',
+  '/internal/gateway/trace',
+  '/internal/gateway/usage',
+];
 
 flow(
   'GW-10',
   {
     domain: 'llm-gateway',
-    routes: [
-      'POST /internal/gateway/authenticate',
-      'POST /internal/gateway/billing',
-      'POST /internal/gateway/budget-check',
-      'POST /internal/gateway/models',
-      'POST /internal/gateway/pool-rate-limit',
-      'POST /internal/gateway/refresh-credential',
-      'POST /internal/gateway/resolve-upstream',
-      'POST /internal/gateway/trace',
-      'POST /internal/gateway/usage',
-    ],
+    routes: GW10_GATEWAY_ROUTES.map((route) => `POST ${route}`),
   },
   async (ctx) => {
-    for (const route of [
-      '/internal/gateway/authenticate',
-      '/internal/gateway/billing',
-      '/internal/gateway/budget-check',
-      '/internal/gateway/models',
-      '/internal/gateway/pool-rate-limit',
-      '/internal/gateway/refresh-credential',
-      '/internal/gateway/resolve-upstream',
-      '/internal/gateway/trace',
-      '/internal/gateway/usage',
-    ]) {
+    for (const route of GW10_GATEWAY_ROUTES) {
       await ctx.step(`${route} rejects unauthenticated internal call`, async () => {
         const r = await ctx.client.as(ctx.P.ANON).post(route, {});
         r.status([400, 401, 403]);

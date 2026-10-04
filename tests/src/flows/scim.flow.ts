@@ -19,7 +19,7 @@
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { FlowContext } from '../core/types';
-import { ssoFixtureToken } from '../fixtures/supabase';
+import { putSsoProvider, ssoFixtureToken } from '../fixtures/supabase';
 
 /** Mint a per-account SCIM bearer token for an account the OWNER controls. */
 async function mintScimToken(ctx: FlowContext, accountId: string): Promise<string> {
@@ -640,14 +640,14 @@ flow('SCIM-8', {
   let oldWithGroup: Client;
 
   await ctx.step('configure SSO and map an existing manual group, as in the Azure test tenant', async () => {
-    (await owner.put('/v1/accounts/:accountId/iam/sso/provider', {
-      supabase_sso_provider_id: providerId,
+    (await putSsoProvider(ctx, team.id, {
+      providerId,
       name: 'Entra regression',
-      primary_domain: `${ctx.fixtures.name('sso-scim')}.test`,
-      group_claim_name: 'memberOf',
-      auto_create_members: true,
-      auto_provision_groups: true,
-    }, { params })).status(200);
+      primaryDomain: `${ctx.fixtures.name('sso-scim')}.test`,
+      groupClaimName: 'memberOf',
+      autoCreateMembers: true,
+      autoProvisionGroups: true,
+    })).status(200);
     const created = await owner.post('/v1/accounts/:accountId/iam/groups', { name: claim }, { params });
     created.status(201);
     params.groupId = created.json<{ group_id: string }>().group_id;
@@ -708,11 +708,12 @@ flow('SCIM-9', {
   let sso: Client;
 
   await ctx.step('provision an SSO member with automatic JIT membership enabled', async () => {
-    (await ctx.client.as(ctx.P.OWNER).put('/v1/accounts/:accountId/iam/sso/provider', {
-      supabase_sso_provider_id: providerId, name: 'Entra lifecycle',
-      primary_domain: `${ctx.fixtures.name('scim-lifecycle')}.test`,
-      auto_create_members: true,
-    }, { params })).status(200);
+    (await putSsoProvider(ctx, team.id, {
+      providerId,
+      name: 'Entra lifecycle',
+      primaryDomain: `${ctx.fixtures.name('scim-lifecycle')}.test`,
+      autoCreateMembers: true,
+    })).status(200);
     (await scim.post('/scim/v2/accounts/:accountId/Users', {
       userName: user.email!, externalId: providerId,
     }, { params })).status(201);
@@ -780,10 +781,12 @@ flow('SCIM-10', {
   let sso: Client;
 
   await ctx.step('provision a pending user with an external ID and include its stable ID in group read-back', async () => {
-    (await ctx.client.as(ctx.P.OWNER).put('/v1/accounts/:accountId/iam/sso/provider', {
-      supabase_sso_provider_id: providerId, name: 'Entra before login',
-      primary_domain: `${ctx.fixtures.name('scim-first-login')}.test`, auto_create_members: false,
-    }, { params })).status(200);
+    (await putSsoProvider(ctx, team.id, {
+      providerId,
+      name: 'Entra before login',
+      primaryDomain: `${ctx.fixtures.name('scim-first-login')}.test`,
+      autoCreateMembers: false,
+    })).status(200);
     const user = await scim.post('/scim/v2/accounts/:accountId/Users', {
       userName: email, externalId: providerId, displayName: 'Before login',
     }, { params });
@@ -1131,10 +1134,12 @@ flow('SCIM-14', {
   const scim = ctx.client.withBearer(await mintScimToken(ctx, team.id), 'SCIM');
   const email = `${ctx.fixtures.name('inactive-directory')}@ke2e.kortix.test`;
   const providerId = crypto.randomUUID();
-  (await ctx.client.as(ctx.P.OWNER).put('/v1/accounts/:accountId/iam/sso/provider', {
-    supabase_sso_provider_id: providerId, name: 'Entra inactive groups',
-    primary_domain: `${ctx.fixtures.name('inactive-directory')}.test`, auto_create_members: true,
-  }, { params })).status(200);
+  (await putSsoProvider(ctx, team.id, {
+    providerId,
+    name: 'Entra inactive groups',
+    primaryDomain: `${ctx.fixtures.name('inactive-directory')}.test`,
+    autoCreateMembers: true,
+  })).status(200);
   const created = await scim.post('/scim/v2/accounts/:accountId/Users', { userName: email, active: false }, { params });
   created.status(201);
   const userId = created.json<{ id: string }>().id;

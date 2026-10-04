@@ -57,21 +57,7 @@ import { randomUUID } from 'node:crypto';
 import type { Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
 import { sleep } from '../core/poll';
-
-export interface Db {
-  query<R = any>(sql: string, params?: unknown[]): Promise<{ rows: R[]; rowCount: number | null }>;
-  end(): Promise<void>;
-}
-
-export async function openDb(ctx: FlowContext): Promise<Db> {
-  const databaseUrl = ctx.env.databaseUrl;
-  if (!databaseUrl) throw new Error('AGP fixtures need KE2E_DATABASE_URL (requires: database)');
-  const { Client: PgClient } = await import('pg');
-  const local = /localhost|127\.0\.0\.1/.test(databaseUrl);
-  const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
-  await db.connect();
-  return db as unknown as Db;
-}
+import { openDb, type ProjectDb } from './database-project';
 
 /** Response of a raw HTTP call made with a session credential. */
 export interface RawResponse {
@@ -122,7 +108,7 @@ export class AgentPrincipalsWorld {
 
   constructor(
     readonly ctx: FlowContext,
-    readonly db: Db,
+    readonly db: ProjectDb,
     readonly accountId: string,
     readonly projectId: string,
     readonly ownerUserId: string,

@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Env } from "../core/env";
-import type { CreatedProject } from "../core/types";
+import type { CreatedProject, FlowContext } from "../core/types";
 
-interface ProjectDb {
-  query(text: string, values?: unknown[]): Promise<unknown>;
+export interface ProjectDb {
+  query<R = Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ): Promise<{ rows: R[]; rowCount: number | null }>;
   end(): Promise<void>;
 }
 
@@ -33,6 +36,89 @@ function assertDatabaseFixtureAllowed(env: Env, action: string): string {
     );
   }
   return env.databaseUrl;
+}
+
+/** Open the database-only project fixture connection for `action`, prod-guarded. */
+export async function openProjectDatabase(
+  env: Env,
+  action: string,
+): Promise<ProjectDb> {
+  return openProjectDb(assertDatabaseFixtureAllowed(env, action));
+}
+
+/**
+ * The canonical raw pg connection for flows: the local profile connects without
+ * TLS, anything else with an unverified certificate (self-signed test origins).
+ */
+export async function openDb(ctx: FlowContext): Promise<ProjectDb> {
+  const databaseUrl = ctx.env.databaseUrl;
+  if (!databaseUrl) throw new Error('AGP fixtures need KE2E_DATABASE_URL (requires: database)');
+  return openProjectDb(databaseUrl);
+}
+
+/**
+ * Run `fn` against a bare no-TLS pg connection, open and closed for the call.
+ * Deliberately NOT `openDb`: several flows read stored transcript rows exactly
+ * the way the API's mirror does, without the ssl option.
+ */
+export async function withDb<T>(
+  env: Env,
+  fn: (db: ProjectDb) => Promise<T>,
+): Promise<T> {
+  if (!env.databaseUrl) {
+    throw new Error("KE2E_DATABASE_URL is required for database-only project fixtures");
+  }
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: env.databaseUrl });
+  await client.connect();
+  try {
+    return await fn(client);
+  } finally {
+    await client.end();
+  }
+}
+
+/** One live sandbox row for a database-only session (what a running session has). */
+export async function insertActiveSessionSandbox(
+  db: ProjectDb,
+  input: { sessionId: string; accountId: string; projectId: string },
+): Promise<void> {
+  await db.query(
+    "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')",
+    [input.sessionId, input.accountId, input.projectId],
+  );
+}
+
+/**
+ * Bind a minted account token to one database-only session with the agent grant
+ * its sandbox would run with; `serviceAccountId` names the agent's service
+ * account when the token row carries one.
+ */
+export async function bindAgentGrantToToken(
+  db: ProjectDb,
+  input: {
+    tokenId: string;
+    accountId: string;
+    projectId: string;
+    sessionId: string;
+    grant: Record<string, unknown>;
+    serviceAccountId?: string;
+  },
+): Promise<void> {
+  const serviceAccount = input.serviceAccountId ? ', service_account_id = $6' : '';
+  await db.query(
+    `UPDATE kortix.account_tokens
+        SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5${serviceAccount}
+      WHERE token_id = $1`,
+    [
+      input.tokenId,
+      input.projectId,
+      input.sessionId,
+      JSON.stringify(input.grant),
+      input.accountId,
+      ...(input.serviceAccountId ? [input.serviceAccountId] : []),
+    ],
+  );
 }
 
 export async function createDatabaseProject(
@@ -321,8 +407,7 @@ export async function configurePreviousRepositorySession(
   }
 }
 
-/** Read one prompt attachment's retention state: remaining references, and whether the cleanup sweep may remove it now. */
-export async function readDatabasePromptAttachmentRetention(
+/** Read one prompt attachment's retention state: remaining references, and whether the cleanup sweep may remove it now. */export async function readDatabasePromptAttachmentRetention(
   env: Env,
   attachmentId: string,
   open: OpenProjectDb = openProjectDb,
@@ -411,4 +496,53 @@ export async function deleteDatabaseProject(
   } finally {
     await client.end();
   }
+}
+
+/**
+ * A running session with a live sandbox row and a session-bound credential,
+ * the shape a sandbox's own KORTIX_TOKEN has. The token is minted as a plain
+ * PAT and bound in the database, so it carries no agent grant — the shape of a
+ * session in a project that declares no agents.
+ */
+export async function seedBoundSession(
+  ctx: FlowContext,
+  db: ProjectDb,
+  project: { id: string; accountId?: string },
+  label: string,
+  visibility: 'private' | 'project' | 'restricted' = 'private',
+): Promise<{ sessionId: string; tokenId: string; token: string }> {
+  const ownerUserId = ctx.P.OWNER.userId!;
+  const accountId = project.accountId ?? ctx.P.OWNER.accountId!;
+  const sessionId = randomUUID();
+  const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: `${label} ${sessionId.slice(0, 8)}` });
+  minted.status(201);
+  const credential = minted.json<{ token_id: string; secret_key: string }>();
+  await db.query(
+    `INSERT INTO kortix.project_sessions
+       (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
+     VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, $5::kortix.project_session_visibility)`,
+    [sessionId, accountId, project.id, ownerUserId, visibility],
+  );
+  await db.query(
+    `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+     VALUES ($1::uuid, $1, $2, $3, 'active')`,
+    [sessionId, accountId, project.id],
+  );
+  await db.query(
+    `UPDATE kortix.account_tokens
+        SET account_id = $2, user_id = $3, project_id = $4, session_id = $5
+      WHERE token_id = $1`,
+    [credential.token_id, accountId, ownerUserId, project.id, sessionId],
+  );
+  return { sessionId, tokenId: credential.token_id, token: credential.secret_key };
+}
+
+export async function dropBoundSession(
+  db: ProjectDb,
+  seeded: { sessionId: string; tokenId: string } | null,
+): Promise<void> {
+  if (!seeded) return;
+  await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [seeded.tokenId]).catch(() => {});
+  await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [seeded.sessionId]).catch(() => {});
+  await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [seeded.sessionId]).catch(() => {});
 }

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { TunnelAgent, CapabilityRegistry, createFilesystemCapability, type TunnelConfig } from '../../../packages/agent-tunnel/src/agent';
 import { flow } from '../core/flow';
+import { eventually } from '../core/poll';
 import { pair } from '../fixtures/tunnel';
 
 // The quarantine below applies to DEPLOYED targets only. Locally there is no
@@ -76,14 +77,16 @@ flow('TUN-6', {
       // failed it with computer_access_pending and woke their desktop app).
       agent = new TunnelAgent(config, registry, {}, { home: root });
       agent.connect();
-      const deadline = Date.now() + 15000;
-      while (true) {
+      await eventually(async () => {
         const r = await client.get('/v1/tunnel/connections/:tunnelId', { params: { tunnelId } });
         r.status(200);
-        if (r.json<any>().isLive) break;
-        assert.ok(Date.now() < deadline, 'agent must become live');
-        await Bun.sleep(100);
-      }
+        return r.json<any>().isLive;
+      }, {
+        until: (live) => live,
+        timeoutMs: 15_000,
+        intervalMs: 100,
+        timeoutError: () => new Error('agent must become live'),
+      });
     });
     await ctx.step('empty tool arguments return 400 and write nothing', async () => {
       (await rpc({})).status(400);

@@ -6,37 +6,7 @@
  */
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
-
-function requireExit(result: CliResult, expected: number, action: string): void {
-  // An edge-laundered 5xx or a killed process is infrastructure, not contract.
-  // It must reach the flow-level infra budget as a RETRYABLE error — CLI-SEC
-  // (exit 143) and CLI-SESS (HTTP 503) both failed on their first attempt here.
-  if (expected === 0) throwIfCliInfraFailure(result, action);
-  if (result.exitCode !== expected) {
-    throw new Error(`${action} exited ${result.exitCode}, expected ${expected}: ${result.all}`);
-  }
-}
-
-function parseJson<T>(result: CliResult, action: string): T {
-  requireExit(result, 0, action);
-  try {
-    return JSON.parse(result.stdout) as T;
-  } catch {
-    throw new Error(`${action} returned invalid JSON: ${result.stdout}\n${result.stderr}`);
-  }
-}
-
-async function authenticatedCli(ctx: Parameters<Parameters<typeof flow>[2]>[0], label: string) {
-  const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name(`cli-${label}`) });
-  const sandbox = new CliSandbox(label);
-  const login = await sandbox.login(pat, {
-    noProject: true,
-    account: ctx.P.OWNER.accountId,
-  });
-  requireExit(login, 0, 'kortix login');
-  return sandbox;
-}
+import { loginCli, parseCliJson, requireExit } from '../fixtures/cli';
 
 flow(
   'CLI-PROJ',
@@ -51,10 +21,10 @@ flow(
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
-    const sandbox = await authenticatedCli(ctx, 'projects');
+    const sandbox = await loginCli(ctx, 'projects', 'cli-projects');
     try {
       await ctx.step('kortix projects ls --json lists the run-owned project', async () => {
-        const projects = parseJson<Array<{ project_id: string }>>(
+        const projects = parseCliJson<Array<{ project_id: string }>>(
           await sandbox.run(['projects', 'ls', '--json']),
           'kortix projects ls',
         );
@@ -64,7 +34,7 @@ flow(
       });
 
       await ctx.step('kortix projects info <id> returns the exact project', async () => {
-        const item = parseJson<{ project_id: string }>(
+        const item = parseCliJson<{ project_id: string }>(
           await sandbox.run(['projects', 'info', project.id, '--json']),
           'kortix projects info',
         );
@@ -124,7 +94,7 @@ flow(
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
-    const sandbox = await authenticatedCli(ctx, 'secrets');
+    const sandbox = await loginCli(ctx, 'secrets', 'cli-secrets');
     try {
       await ctx.step('kortix secrets set stores one value and secrets ls returns metadata only', async () => {
         requireExit(
@@ -132,7 +102,7 @@ flow(
           0,
           'kortix secrets set',
         );
-        const result = parseJson<{ secrets: Array<{ identifier: string; available: boolean }> }>(
+        const result = parseCliJson<{ secrets: Array<{ identifier: string; available: boolean }> }>(
           await sandbox.run(['secrets', 'ls', '--project', project.id, '--json']),
           'kortix secrets ls',
         );
@@ -169,7 +139,7 @@ flow(
           0,
           'kortix env push',
         );
-        const result = parseJson<{ secrets: Array<{ identifier: string }> }>(
+        const result = parseCliJson<{ secrets: Array<{ identifier: string }> }>(
           await sandbox.run(['secrets', 'ls', '--project', project.id, '--json']),
           'kortix secrets ls after env push',
         );
@@ -191,7 +161,7 @@ flow(
           0,
           'kortix secrets unset',
         );
-        const result = parseJson<{ secrets: Array<{ identifier: string }> }>(
+        const result = parseCliJson<{ secrets: Array<{ identifier: string }> }>(
           await sandbox.run(['secrets', 'ls', '--project', project.id, '--json']),
           'kortix secrets ls after unset',
         );
@@ -224,11 +194,11 @@ flow(
   },
   async (ctx) => {
     const project = await ctx.fixtures.project({ seed: true });
-    const sandbox = await authenticatedCli(ctx, 'sessions');
+    const sandbox = await loginCli(ctx, 'sessions', 'cli-sessions');
     try {
       let sessionId = '';
       await ctx.step('kortix sessions new creates a session and returns its id', async () => {
-        const created = parseJson<{ session_id: string }>(
+        const created = parseCliJson<{ session_id: string }>(
           await sandbox.run(['sessions', 'new', '--project', project.id, '--json'], {
             timeoutMs: 120_000,
           }),
@@ -240,14 +210,14 @@ flow(
       });
 
       await ctx.step('kortix sessions ls and info read the same session', async () => {
-        const list = parseJson<Array<{ session_id: string }>>(
+        const list = parseCliJson<Array<{ session_id: string }>>(
           await sandbox.run(['sessions', 'ls', '--project', project.id, '--json']),
           'kortix sessions ls',
         );
         if (!list.some((item) => item.session_id === sessionId)) {
           throw new Error(`sessions ls omitted ${sessionId}`);
         }
-        const item = parseJson<{ session_id: string }>(
+        const item = parseCliJson<{ session_id: string }>(
           await sandbox.run(['sessions', 'info', sessionId, '--project', project.id, '--json']),
           'kortix sessions info',
         );
@@ -327,7 +297,7 @@ flow(
     );
     created.status(201);
 
-    const sandbox = await authenticatedCli(ctx, 'triggers');
+    const sandbox = await loginCli(ctx, 'triggers', 'cli-triggers');
     try {
       await ctx.step('kortix triggers ls and info return the server trigger', async () => {
         // Triggers are git-manifest-backed. Each API replica serves `triggers ls`
@@ -340,7 +310,7 @@ flow(
         // asserting once.
         await waitFor(
           async () =>
-            parseJson<{ triggers: Array<{ slug: string }> }>(
+            parseCliJson<{ triggers: Array<{ slug: string }> }>(
               await sandbox.run(['triggers', 'ls', '--project', project.id, '--json']),
               'kortix triggers ls',
             ),
@@ -355,7 +325,7 @@ flow(
         // routed to a replica that has not refreshed yet. Same bounded wait.
         const info = await waitFor(
           async () =>
-            parseJson<{ slug: string }>(
+            parseCliJson<{ slug: string }>(
               await sandbox.run(['triggers', 'info', slug, '--project', project.id, '--json']),
               'kortix triggers info',
             ),

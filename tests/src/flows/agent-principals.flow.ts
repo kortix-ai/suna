@@ -20,6 +20,7 @@
  * Denials follow spec §4: `403 { code, action }`.
  */
 import { flow } from '../core/flow';
+import { eventually as pollEventually } from '../core/poll';
 import type { FlowContext, Principal, TeamFixture } from '../core/types';
 import { CliSandbox } from '../fixtures/cli';
 import {
@@ -104,15 +105,12 @@ async function bindCeiling(
 
 /** Poll until `probe` returns true (IAM caches refresh within 15 s). */
 async function eventually(description: string, probe: () => Promise<{ ok: boolean; detail: string }>): Promise<void> {
-  const deadline = Date.now() + 20_000;
-  let detail = '';
-  while (Date.now() < deadline) {
-    const result = await probe();
-    if (result.ok) return;
-    detail = result.detail;
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-  }
-  throw new Error(`${description} did not hold within 20 s: ${detail}`);
+  await pollEventually(probe, {
+    until: (result) => result.ok,
+    timeoutMs: 20_000,
+    intervalMs: 1_000,
+    timeoutError: (last) => new Error(`${description} did not hold within 20 s: ${last.detail}`),
+  });
 }
 
 // ── AGP-1 — `kortix_permissions` is canonical; `kortix_cli` is a deprecated alias ──

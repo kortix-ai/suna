@@ -8,14 +8,18 @@
  */
 import { randomUUID } from 'node:crypto';
 import { deepStrictEqual } from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import type { FlowContext } from '../core/types';
-import { createDatabaseSession } from '../fixtures/database-project';
+import { git } from '../fixtures/agent-principals';
+import {
+  createDatabaseSession,
+  dropBoundSession,
+  openDb,
+  seedBoundSession,
+} from '../fixtures/database-project';
 
 const UNKNOWN_SESSION_ID = '00000000-0000-4000-a000-000000000000';
 
@@ -47,65 +51,6 @@ flow(
 
   },
 );
-
-type Db = {
-  query<T = Record<string, unknown>>(text: string, values?: unknown[]): Promise<{ rows: T[] }>;
-  end(): Promise<void>;
-};
-
-async function openDb(ctx: FlowContext): Promise<Db> {
-  const { Client } = await import('pg');
-  const databaseUrl = ctx.env.databaseUrl as string;
-  const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-  const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
-  await db.connect();
-  return db as unknown as Db;
-}
-
-/**
- * A running session with a live sandbox row and a session-bound credential,
- * the shape a sandbox's own KORTIX_TOKEN has. The token is minted as a plain
- * PAT and bound in the database, so it carries no agent grant — the shape of a
- * session in a project that declares no agents.
- */
-async function seedBoundSession(
-  ctx: FlowContext,
-  db: Db,
-  project: { id: string; accountId?: string },
-  label: string,
-): Promise<{ sessionId: string; tokenId: string; token: string }> {
-  const ownerUserId = ctx.P.OWNER.userId!;
-  const accountId = project.accountId ?? ctx.P.OWNER.accountId!;
-  const sessionId = randomUUID();
-  const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: `${label} ${sessionId.slice(0, 8)}` });
-  minted.status(201);
-  const credential = minted.json<{ token_id: string; secret_key: string }>();
-  await db.query(
-    `INSERT INTO kortix.project_sessions
-       (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
-     VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'private')`,
-    [sessionId, accountId, project.id, ownerUserId],
-  );
-  await db.query(
-    `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
-     VALUES ($1::uuid, $1, $2, $3, 'active')`,
-    [sessionId, accountId, project.id],
-  );
-  await db.query(
-    `UPDATE kortix.account_tokens
-        SET account_id = $2, user_id = $3, project_id = $4, session_id = $5
-      WHERE token_id = $1`,
-    [credential.token_id, accountId, ownerUserId, project.id, sessionId],
-  );
-  return { sessionId, tokenId: credential.token_id, token: credential.secret_key };
-}
-
-async function dropBoundSession(db: Db, seeded: { sessionId: string; tokenId: string } | null) {
-  if (!seeded) return;
-  await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [seeded.tokenId]).catch(() => {});
-  await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [seeded.sessionId]).catch(() => {});
-  await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [seeded.sessionId]).catch(() => {});
-}
 
 flow(
   'SCOPE-1',
@@ -647,20 +592,6 @@ flow(
   },
 );
 
-async function git(args: string[], cwd?: string, env: Record<string, string> = {}): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (chunk) => (out += chunk));
-    child.stderr.on('data', (chunk) => (err += chunk));
-    child.once('error', reject);
-    child.once('exit', (code) =>
-      code === 0 ? resolve(out) : reject(new Error(`git ${args.join(' ')} failed (${code}): ${err || out}`)),
-    );
-  });
-}
-
 flow(
   'SCOPE-6',
   {
@@ -743,15 +674,15 @@ flow(
             GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}`,
           };
         }
-        await git(['clone', '--quiet', remote, workDir], undefined, gitEnv);
-        await git(['config', 'user.name', 'Kortix Local E2E'], workDir);
-        await git(['config', 'user.email', 'local-e2e@kortix.test'], workDir);
+        await git(['clone', '--quiet', remote, workDir], { env: gitEnv });
+        await git(['config', 'user.name', 'Kortix Local E2E'], { cwd: workDir });
+        await git(['config', 'user.email', 'local-e2e@kortix.test'], { cwd: workDir });
         const manifestPath = join(workDir, 'kortix.yaml');
         const manifest = await readFile(manifestPath, 'utf8');
         if (!manifest.includes(ownerSession.id)) throw new Error('the trigger commit did not pin the owner session');
         await writeFile(manifestPath, manifest.split(ownerSession.id).join(foreignSessionId));
-        await git(['commit', '--quiet', '-am', 'repin trigger'], workDir);
-        await git(['push', '--quiet', 'origin', 'HEAD:main'], workDir, gitEnv);
+        await git(['commit', '--quiet', '-am', 'repin trigger'], { cwd: workDir });
+        await git(['push', '--quiet', 'origin', 'HEAD:main'], { cwd: workDir, env: gitEnv });
       });
 
       await ctx.step('reading the triggers records no pinned session for the foreign id', async () => {

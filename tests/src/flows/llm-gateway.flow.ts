@@ -228,18 +228,16 @@ flow(
   async (ctx) => {
     const gw = new Client(ctx.env.gatewayUrl);
     const body = { model: 'gpt-5.5', messages: [{ role: 'user', content: 'ping' }] };
-    await ctx.step('ANON cannot call /v1/llm/chat/completions', async () => {
-      const r = await gw.as(ctx.P.ANON).post('/v1/llm/chat/completions', body);
-      r.status([401, 403]);
-    });
-    await ctx.step('ANON cannot call /v1/chat/completions alias', async () => {
-      const r = await gw.as(ctx.P.ANON).post('/v1/chat/completions', body);
-      r.status([401, 403]);
-    });
-    await ctx.step('ANON cannot call /v1/openai/chat/completions alias', async () => {
-      const r = await gw.as(ctx.P.ANON).post('/v1/openai/chat/completions', body);
-      r.status([401, 403]);
-    });
+    for (const path of [
+      '/v1/llm/chat/completions',
+      '/v1/chat/completions',
+      '/v1/openai/chat/completions',
+    ] as const) {
+      await ctx.step(`ANON cannot call ${path}`, async () => {
+        const r = await gw.as(ctx.P.ANON).post(path, body);
+        r.status([401, 403]);
+      });
+    }
   },
 );
 
@@ -255,14 +253,12 @@ flow(
       max_tokens: 64,
       messages: [{ role: 'user', content: 'ping' }],
     };
-    await ctx.step('ANON cannot call the Anthropic-Messages ingress /v1/llm/messages', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post('/v1/llm/messages', body);
-      r.status([401, 403]);
-    });
-    await ctx.step('ANON cannot call the /v1/... prefixed variant', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post('/v1/llm/v1/messages', body);
-      r.status([401, 403]);
-    });
+    for (const path of ['/v1/llm/messages', '/v1/llm/v1/messages'] as const) {
+      await ctx.step(`ANON cannot call ${path}`, async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post(path, body);
+        r.status([401, 403]);
+      });
+    }
   },
 );
 
@@ -282,18 +278,16 @@ flow(
       max_tokens: 64,
       messages: [{ role: 'user', content: 'ping' }],
     };
-    await ctx.step('ANON cannot call /v1/messages', async () => {
-      const r = await gw.as(ctx.P.ANON).post('/v1/messages', body);
-      r.status([401, 403]);
-    });
-    await ctx.step('ANON cannot call /v1/llm/messages alias', async () => {
-      const r = await gw.as(ctx.P.ANON).post('/v1/llm/messages', body);
-      r.status([401, 403]);
-    });
-    await ctx.step('ANON cannot call /v1/openai/messages alias', async () => {
-      const r = await gw.as(ctx.P.ANON).post('/v1/openai/messages', body);
-      r.status([401, 403]);
-    });
+    for (const path of [
+      '/v1/messages',
+      '/v1/llm/messages',
+      '/v1/openai/messages',
+    ] as const) {
+      await ctx.step(`ANON cannot call ${path}`, async () => {
+        const r = await gw.as(ctx.P.ANON).post(path, body);
+        r.status([401, 403]);
+      });
+    }
   },
 );
 

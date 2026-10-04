@@ -17,6 +17,7 @@
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
+import { eventually as pollEventually } from '../core/poll';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 import { createDatabaseSession } from '../fixtures/database-project';
 
@@ -1918,12 +1919,12 @@ flow(
     // A flip clears the verdict cache on the replica that wrote it; another
     // replica converges within the 15 s IAM cache window. Poll past it.
     const eventually = async (label: string, check: () => Promise<boolean>) => {
-      const deadline = Date.now() + 25_000;
-      while (Date.now() < deadline) {
-        if (await check()) return;
-        await new Promise((resolve) => setTimeout(resolve, 1_000));
-      }
-      throw new Error(`IAM-40: ${label} did not hold within 25 s`);
+      await pollEventually(check, {
+        until: (held) => held,
+        timeoutMs: 25_000,
+        intervalMs: 1_000,
+        timeoutError: () => new Error(`IAM-40: ${label} did not hold within 25 s`),
+      });
     };
 
     await ctx.step('the policy is off by default; only the owner may change it', async () => {
