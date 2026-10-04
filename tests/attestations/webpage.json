@@ -1,5 +1,5 @@
 {
-  "source_hash": "5f12ead260cf330e762db0d549384fac67f06640ef6a2e319e5c7af1ed553323",
+  "source_hash": "67ac49078fede62262cffca83f87ad178d85eef4e9f59664d046ed76ae13aaff",
   "diff_files": [
     ".agents/skills/kortix-brand/references/decisions.md",
     ".agents/skills/kortix-brand/references/verbal/concepts.md",
@@ -9,6 +9,7 @@
     ".deepsec/data/suna/INFO.md",
     "MANIFESTO.md",
     "README.md",
+    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
     "apps/api/src/__tests__/unit-teams-manifest.test.ts",
     "apps/api/src/channels/slack-app-manifest.json",
     "apps/api/src/channels/slack-app-manifest.prod.json",
@@ -137,6 +138,7 @@
     "apps/web/translations/zh.json",
     "apps/web/true",
     "package.json",
+    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts",
     "packages/sdk/src/core/turns/classify.test.ts",
     "packages/sdk/src/core/turns/view-model.test.ts",
     "packages/starter/src/embedded.generated.json",
@@ -144,13 +146,13 @@
     "packages/starter/templates/managed/skills/kortix-system/references/capabilities.md",
     "scripts/install.sh"
   ],
-  "diff_hash": "a9c84ed6fcccb4411b70d0ced3374174d019e35cce6bf7985229e222264b25c0",
-  "head": "f4f996da2e6df5b158e4e565ebb5dd55b325c525",
+  "diff_hash": "f5499112c0b74d7ecb0cc5cae44c1f068cc7ede245064e6e9834d9f88f49604b",
+  "head": "fb31b5da6c3ba18c4a789a8dcca11963fd357bac",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T02:07:51.021Z"
+  "at": "2026-10-04T02:28:09.500Z"
 }
