@@ -6,12 +6,12 @@
     "apps/api/src/lib/request-log-level.ts"
   ],
   "diff_hash": "18cea43ab626a170eb338ebbaa2326a7a4f38c4753bf1fed991fa34e79d4329f",
-  "head": "05ac5731a955426b2c91da7fa282446a666334a5",
+  "head": "2a1bc52edd64ccee5ef76e26370ba17a5d479c05",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "skipped-sandbox-image",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T01:36:03.102Z"
+  "at": "2026-10-04T02:49:26.611Z"
 }
