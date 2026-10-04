@@ -199,7 +199,7 @@ describe('kortix models', () => {
     expect(r.stdout).toContain('disable <model-id>');
     expect(r.stdout).toContain('reset');
     expect(r.stdout).toContain('default <model-id>');
-    expect(r.stdout).toContain('project.customize.write');
+    expect(r.stdout).toContain('project.model.write');
   });
 
   test('no args exits 2 with help', async () => {

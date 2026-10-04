@@ -61,6 +61,7 @@ export type FeatureFlagKey =
   | 'pooled_provider_secrets'
   | 'pi_harness'
   | 'config_releases'
+  /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
   | 'agent_principal'
   | 'us_region'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
@@ -86,7 +87,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pooled_provider_secrets',
   'pi_harness',
   'config_releases',
-  'agent_principal',
   'us_region',
 ] as const;
 
@@ -185,6 +185,11 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** True for a platform-owned agent (SUNA — the coordinator) that the API
+     *  injects, not one declared in `kortix.yaml`. Its configuration is fixed:
+     *  hosts render it read-only and never open the agent editor for it.
+     *  Absent/false = an ordinary editable project agent. */
+    platform?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).

@@ -20,7 +20,7 @@ function htmlEntry(pathname: string, lastModified?: string): SitemapEntry {
   return {
     url: absoluteUrl(pathname),
     ...(lastModified ? { lastModified } : {}),
-    changeFrequency: pathname.startsWith('/blog/') ? 'monthly' : 'weekly',
+    changeFrequency: 'weekly',
     priority: pathname === '/' ? 1 : pathname === '/docs' ? 0.9 : 0.7,
   };
 }

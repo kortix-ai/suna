@@ -22,6 +22,7 @@
  * while this tab is active, so opening the panel never fires its queries.
  */
 
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   KeyIcon as KeyRound,
   PlusIcon as Plus,
@@ -31,8 +32,7 @@ import {
   TrashIcon as Trash2,
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,8 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
@@ -129,10 +131,24 @@ export interface SecurityTabViewProps {
   isVerifyingEnroll?: boolean;
   onCancelEnroll?: () => void;
 
+  // Devices
+  devices?: DeviceRow[];
+  devicesLoading?: boolean;
+  devicesError?: boolean;
+  onRetryDevices?: () => void;
+
   // Other devices
   onSignOutOtherDevices?: () => void;
   isSigningOutOtherDevices?: boolean;
   copy?: Partial<SecurityTabCopy>;
+}
+
+/** One row in the Devices section. `detail` arrives as the finished,
+ *  translated string — the container composes it, so the pure view holds no
+ *  date formatting and no locale hook. */
+export interface DeviceRow {
+  label: string;
+  detail?: string;
 }
 
 export interface SecurityTabCopy {
@@ -159,6 +175,11 @@ export interface SecurityTabCopy {
   removeFactorDescription: string;
   removeFactor: string;
   devices: string;
+  currentDevice: string;
+  deviceActive: string;
+  noDevices: string;
+  noDevicesDescription: string;
+  devicesLoadFailed: string;
   signOutOtherDevices: string;
   signOutOtherDevicesDescription: string;
   phone: string;
@@ -197,6 +218,11 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
     'If your organization requires MFA and this is your only verified factor, you will be locked out of gated actions until you enroll again.',
   removeFactor: 'Remove factor',
   devices: 'Devices',
+  currentDevice: 'This browser',
+  deviceActive: 'Active',
+  noDevices: 'No signed-in devices',
+  noDevicesDescription: 'You are not signed in on any device right now.',
+  devicesLoadFailed: 'Couldn’t load your signed-in devices',
   signOutOtherDevices: 'Sign out other devices',
   signOutOtherDevicesDescription:
     'Ends every other session signed in as you. This browser stays signed in.',
@@ -229,6 +255,10 @@ export function SecurityTabView({
   onVerifyEnroll = () => {},
   isVerifyingEnroll = false,
   onCancelEnroll = () => {},
+  devices = [],
+  devicesLoading = false,
+  devicesError = false,
+  onRetryDevices = () => {},
   onSignOutOtherDevices = () => {},
   isSigningOutOtherDevices = false,
   copy: copyOverrides = {},
@@ -390,6 +420,33 @@ export function SecurityTabView({
       <section className="space-y-3">
         <SettingsSubsectionHeader title={copy.devices} />
         <SettingsRowGroup>
+          {/* While the list is in flight, one shape-matched skeleton stands in
+              for a device row, so the group does not jump when the answer
+              lands — same answer as the factor list above. */}
+          {devicesLoading ? (
+            <div className="px-4 py-3">
+              <Skeleton className="h-8 w-full rounded-sm" />
+            </div>
+          ) : (
+            devices.map((device) => (
+              <div key={device.label} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
+                    <Smartphone className="text-muted-foreground size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-foreground truncate text-sm">{device.label}</div>
+                    {device.detail ? (
+                      <div className="text-muted-foreground text-xs">{device.detail}</div>
+                    ) : null}
+                  </div>
+                </div>
+                <Badge variant="success" size="xs">
+                  {copy.deviceActive}
+                </Badge>
+              </div>
+            ))
+          )}
           <SettingsRow
             label={copy.signOutOtherDevices}
             description={copy.signOutOtherDevicesDescription}
@@ -405,6 +462,25 @@ export function SecurityTabView({
             </Button>
           </SettingsRow>
         </SettingsRowGroup>
+
+        {/* The three answers the device list can give, below the group so no
+            state nests a second border inside it — the same split the factor
+            list makes. A failed fetch is an error with a Retry, never the
+            empty-state copy; an empty list is said out loud. Loading outranks
+            both. */}
+        {devicesLoading ? null : devicesError ? (
+          <ErrorState
+            size="sm"
+            title={copy.devicesLoadFailed}
+            action={
+              <Button variant="outline" size="sm" onClick={onRetryDevices}>
+                {copy.retry}
+              </Button>
+            }
+          />
+        ) : devices.length === 0 ? (
+          <EmptyState size="sm" title={copy.noDevices} description={copy.noDevicesDescription} />
+        ) : null}
       </section>
     </div>
   );
@@ -414,6 +490,7 @@ export function SecurityTabView({
  *  and handlers. Only ever mounted while this tab is active. */
 export function SecurityTab() {
   const t = useTranslations('settings.security');
+  const locale = useLocale();
   const copy: SecurityTabCopy = {
     twoFactorTitle: t('twoFactorTitle'),
     twoFactorDescription: t('twoFactorDescription'),
@@ -438,6 +515,11 @@ export function SecurityTab() {
     removeFactorDescription: t('removeFactorDescription'),
     removeFactor: t('removeFactor'),
     devices: t('devices'),
+    currentDevice: t('currentDevice'),
+    deviceActive: t('deviceActive'),
+    noDevices: t('noDevices'),
+    noDevicesDescription: t('noDevicesDescription'),
+    devicesLoadFailed: t('devicesLoadFailed'),
     signOutOtherDevices: t('signOutOtherDevices'),
     signOutOtherDevicesDescription: t('signOutOtherDevicesDescription'),
     phone: t('phone'),
@@ -449,6 +531,39 @@ export function SecurityTab() {
   const supabase = createClient();
   const mfa = useMfa();
 
+  // The devices signed in as you. GoTrue gives a client no way to enumerate
+  // the account's other sessions, so this list holds the one device it can
+  // vouch for — the browser this page runs on — backed by a real
+  // `GET /auth/v1/user` call; `last_sign_in_at` is the auth server's own
+  // record of when that session signed in. A session-less answer (the user
+  // is signed out) is the explicit empty state, not an error.
+  const deviceQuery = useQuery({
+    queryKey: ['auth-current-device'],
+    queryFn: async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error?.name === 'AuthSessionMissingError') return null;
+      if (error) throw error;
+      return data.user;
+    },
+    staleTime: 10_000,
+  });
+
+  const signedInAt = deviceQuery.data?.last_sign_in_at ?? null;
+  const devices: DeviceRow[] = signedInAt
+    ? [
+        {
+          label: copy.currentDevice,
+          detail: t('deviceSignedInAt', {
+            date: new Intl.DateTimeFormat(locale, {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            }).format(new Date(signedInAt)),
+          }),
+        },
+      ]
+    : [];
+
   // `scope: 'others'` revokes every refresh token but this browser's, so the
   // person stays signed in where they pressed the button.
   const signOutOthers = useMutation({
@@ -457,8 +572,7 @@ export function SecurityTab() {
       if (error) throw error;
     },
     onSuccess: () => successToast(t('signedOutOtherDevices')),
-    onError: (error: Error) =>
-      errorToast(error.message || t('signOutOtherDevicesFailed')),
+    onError: (error: Error) => errorToast(error.message || t('signOutOtherDevicesFailed')),
   });
 
   return (
@@ -481,6 +595,10 @@ export function SecurityTab() {
       onVerifyEnroll={mfa.verifyEnroll}
       isVerifyingEnroll={mfa.isVerifyingEnroll}
       onCancelEnroll={mfa.cancelEnroll}
+      devices={devices}
+      devicesLoading={deviceQuery.isLoading}
+      devicesError={deviceQuery.isError}
+      onRetryDevices={() => deviceQuery.refetch()}
       onSignOutOtherDevices={() => signOutOthers.mutate()}
       isSigningOutOtherDevices={signOutOthers.isPending}
       copy={copy}
