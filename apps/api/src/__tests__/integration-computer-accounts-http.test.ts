@@ -426,6 +426,24 @@ describe('a private computer stays private', () => {
     expect(rpc.status).toBe(404);
   });
 
+  test('a malformed JSON body without a JSON content-type answers 400, not a parse error', async () => {
+    const rpc = await tunnelAppFor(ALICE).request(`/rpc/${aliceTunnel}`, {
+      method: 'POST',
+      body: '{not json',
+    });
+    expect(rpc.status).toBe(400);
+    expect(await rpc.json()).toEqual({ error: 'method is required' });
+  });
+
+  test('a JSON null body answers 400, not a parse error', async () => {
+    const rpc = await tunnelAppFor(ALICE).request(`/rpc/${aliceTunnel}`, {
+      method: 'POST',
+      body: 'null',
+    });
+    expect(rpc.status).toBe(400);
+    expect(await rpc.json()).toEqual({ error: 'method is required' });
+  });
+
   test('another member cannot name it, even with --account', async () => {
     const res = await call(principal({ userId: BOB, requestedConnectorAccount: 'Alice Mac' }), 'status');
     expect(res.status).toBe('denied');
