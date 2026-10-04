@@ -245,45 +245,45 @@ const CASES: WCase[] = [
     path: () => `/v1/projects/${PROJECT}/channels/bindings`,
     tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_READ],
   },
-  // ── Customize (write) ────────────────────────────────────────────────────
+  // ── Models, default agent, settings (write) ─────────────────────────────
   {
     // Strict body (ModelDefaultBody) is validated at the OpenAPI layer BEFORE the
     // handler, so send a schema-valid body — otherwise a 400 pre-empts the gate.
-    name: 'model-defaults PUT (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
+    name: 'model-defaults PUT (model.write)',
+    leaf: A.PROJECT_MODEL_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/model-defaults`, body: { scope: 'project', model: 'openai/gpt-4o' },
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_MODEL_WRITE],
   },
   {
-    name: 'model-defaults DELETE (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'DELETE',
+    name: 'model-defaults DELETE (model.write)',
+    leaf: A.PROJECT_MODEL_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/model-defaults?scope=project`,
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_MODEL_WRITE],
   },
   {
-    name: 'default-agent PUT (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
+    name: 'default-agent PUT (agent.write)',
+    leaf: A.PROJECT_AGENT_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/default-agent`, body: { agent: 'support' },
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_AGENT_WRITE],
   },
   {
-    name: 'feature-flag toggle (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
+    name: 'feature-flag toggle (settings.write)',
+    leaf: A.PROJECT_SETTINGS_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/features`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SETTINGS_WRITE],
   },
   {
     // The deprecated alias published SDKs still call must gate identically.
-    name: 'feature-flag toggle via the /experimental alias (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
+    name: 'feature-flag toggle via the /experimental alias (settings.write)',
+    leaf: A.PROJECT_SETTINGS_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/experimental`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SETTINGS_WRITE],
   },
   {
-    name: 'sandbox-provider (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
+    name: 'sandbox-provider (settings.write)',
+    leaf: A.PROJECT_SETTINGS_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/sandbox-provider`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SETTINGS_WRITE],
   },
   // ── Agent scope (agent.write) ────────────────────────────────────────────
   {

@@ -252,7 +252,7 @@ Options:
   --host <name>         Use this logged-in host.
   --json                Machine-readable output.
 
-Requires project.customize.write. A flag the platform marks unavailable stays
+Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 `;
 
@@ -406,7 +406,7 @@ Options:
   --json                 Emit the updated project as JSON.
   -h, --help             Show this help.
 
-Requires project.customize.write. The icon fields are three-state: omit to
+Requires project.settings.write. The icon fields are three-state: omit to
 leave as-is, --no-icon / --no-glyph to remove. A project shows ONE icon, so
 writing either clears the other; --icon with --glyph is refused. Passing no
 field at all exits 2 rather than issuing a no-op write.
