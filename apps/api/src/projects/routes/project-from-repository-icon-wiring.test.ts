@@ -15,7 +15,7 @@
  * database and no GitHub network access.
  *
  * `mock.module` is process-global in bun:test — same caveat as
- * `../lib/triggers-fire-durable.test.ts` / `./marketplace-install-prompts.test.ts`'s
+ * `../../services/triggers/trigger-runtime-fire-durable.test.ts` / `./marketplace-install-prompts.test.ts`'s
  * neighbors — so this MUST run in its own file (as `--isolate` already does
  * per test file; see `scripts/test.sh`), never folded into another suite.
  * Runs ungated (no TEST_DATABASE_URL) — mocking the registration layer means
@@ -96,8 +96,8 @@ mock.module('../../iam', () => ({
 
 // ── GitHub import/auth resolution — no network. Only the three functions
 // project-from-repository.ts's target routes call are overridden; everything else stays real.
-const realGit = await import('../lib/git');
-mock.module('../lib/git', () => ({
+const realGit = await import('../../services/git/project-git');
+mock.module('../../services/git/project-git', () => ({
   ...realGit,
   resolveGitHubImportWithPat: async () => ({
     repo: fakeRepo('icon-pat-ok'),
@@ -119,8 +119,8 @@ mock.module('../lib/git', () => ({
 
 // ── Raw GitHub REST calls (create-repo's repo-create + starter-file commits)
 // — no network.
-const realGithub = await import('../github');
-mock.module('../github', () => ({
+const realGithub = await import('../../services/github/github');
+mock.module('../../services/github/github', () => ({
   ...realGithub,
   createRepo: async (input: { name: string }) => fakeRepo(input.name),
   commitFile: async () => {},

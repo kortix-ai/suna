@@ -18,7 +18,7 @@
 // own module graph.
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../../projects/wire-message-id';
+import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../../services/sessions/wire-message-id';
 import * as realKortixUserContext from '../../services/sessions/kortix-user-context';
 import * as realPreviewOwnership from '../../services/sessions/preview-ownership';
 import { PROXY_ATTEMPT_TIMEOUT_MS, PROXY_IMPORT_ATTEMPT_TIMEOUT_MS } from '../preview-retry-budget';
@@ -50,18 +50,18 @@ mock.module('../../services/sessions/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
 // The real grant re-mint fails a prompt CLOSED when it cannot read the session
 // token, so an unmocked db turns every delivery case red for a reason that has
 // nothing to do with delivery.
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../services/sessions/session-token-grant', () => ({
   agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/lib/turn-start-convergence', () => ({
+mock.module('../../services/sessions/turn-start-convergence', () => ({
   // The C9 turn-start convergence gate reads the session's project row before
   // every prompt. There is no database in this file, so each call waits out the
   // driver's connect timeout — 5 s per prompt, which times these cases out.
@@ -76,13 +76,13 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // network, same reasoning as `convergeBeforeTurnStart` above.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../services/sessions/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realTurnLifecycle = await import('../../services/sandboxes/sandbox-turn-lifecycle');
 // The ledger identity the proxy begins the turn under.
 let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];
-mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async (
     _target: unknown,

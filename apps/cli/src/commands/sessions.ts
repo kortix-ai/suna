@@ -609,7 +609,7 @@ async function sessionsNew(
   // Explicit caller override — the server otherwise falls back to the
   // project's declared default agent (kortix.yaml's `default_agent`), or the
   // non-binding 'default' sentinel when none is configured. See
-  // apps/api/src/projects/lib/sessions.ts createProjectSession.
+  // apps/api/src/services/sessions/sessions.ts createProjectSession.
   if (agent) body.agent_name = agent;
   // `model` since W4; `opencode_model` is the same pin for an older self-hosted API.
   if (overrides.model) body.model = body.opencode_model = overrides.model;

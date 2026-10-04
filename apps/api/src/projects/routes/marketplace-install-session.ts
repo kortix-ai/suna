@@ -26,13 +26,13 @@ import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-mode
 import { getCatalogEntry } from '../../marketplace/catalog';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../lib/http-body';
-import { readManifestFromRepo } from '../git/files';
+import { readManifestFromRepo } from '../../services/git/files';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { loadGitProject } from '../lib/git';
+import { loadGitProject } from '../../services/git/project-git';
 import { normalizeString, requestAuditContext } from '../lib/serializers';
-import { sendSessionCreateError } from '../lib/sessions';
-import { createSession } from '../session-lifecycle';
+import { sendSessionCreateError } from '../../services/sessions/sessions';
+import { createSession } from '../../services/sessions/lifecycle';
 import {
   buildRegistryProjectInstallPrompt,
   buildTemplateInstallPrompt,

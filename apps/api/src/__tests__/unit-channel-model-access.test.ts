@@ -65,7 +65,7 @@ mock.module('../channels/vision-model', () => ({
 
 const keyQueries: Array<Record<string, unknown>> = [];
 let usableKeys: Array<{ secretId: string; providerId: string; name: string; label: string; accessMode: string }> = [];
-mock.module('../secrets/account-resource', () => ({
+mock.module('../services/secrets/account-resource', () => ({
   // As the query filters in SQL: provider and key name.
   listUsableGatewaySecrets: async (input: Record<string, unknown>) => {
     keyQueries.push(input);

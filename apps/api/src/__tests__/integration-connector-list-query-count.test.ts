@@ -9,7 +9,7 @@
  * 1.0s median server time, one run 9.4s / 8783ms db time).
  *
  * The fix batches all of that into `listEntitledConnectorConnectionsBatch`
- * (`../projects/lib/session-connector-bindings.ts`) — one query for the
+ * (`../services/sessions/session-connector-bindings.ts`) — one query for the
  * service-account check, one `inArray` query for every connector's
  * connections, computed once and reused for both the accounts list and the
  * Composio authorization check.
@@ -29,7 +29,7 @@ import { dbConnectorRouterDeps } from '../connectors/db-deps';
 import { ensureProjectComputer } from '../connectors/sync';
 import { runWithContext } from '../lib/request-context';
 import { stageSnapshot } from '../lib/server-timing';
-import { encryptProjectSecret } from '../projects/secrets';
+import { encryptProjectSecret } from '../services/secrets/secrets';
 import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();

@@ -335,7 +335,7 @@ async function filesCommits(
 async function filesBranches(client: ApiClient, base: string, json: boolean): Promise<number> {
   // The server excludes auto-created session branches (named after the
   // session's own UUID) and caps the result by default (see
-  // apps/api/src/projects/git/branches.ts). This command is the one
+  // apps/api/src/services/git/branches.ts). This command is the one
   // real "give me everything" listing — a human reading a table, run
   // once per invocation, not polled — so it opts back into the full
   // remote to keep its output unchanged.

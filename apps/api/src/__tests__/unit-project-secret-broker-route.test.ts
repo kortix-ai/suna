@@ -10,8 +10,8 @@ import {
 import { Hono } from 'hono';
 import { config } from '../lib/config';
 import * as realAccess from '../projects/lib/access';
-import * as realProjectSecrets from '../projects/secrets';
-import { mintHandle } from '../secrets/strategy';
+import * as realProjectSecrets from '../services/secrets/secrets';
+import { mintHandle } from '../services/secrets/strategy';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -124,7 +124,7 @@ mock.module('../projects/lib/access', () => ({
     userId: USER_ID,
   }),
 }));
-mock.module('../projects/secrets', () => ({
+mock.module('../services/secrets/secrets', () => ({
   ...realProjectSecrets,
   decryptProjectSecret: (_projectId: string, value: string) => {
     decrypted.push(value);
@@ -149,7 +149,7 @@ class MockSecretBrokerError extends Error {
   }
 }
 
-mock.module('../secrets/http-broker', () => ({
+mock.module('../services/secrets/http-broker', () => ({
   SecretBrokerError: MockSecretBrokerError,
   executeSecretBrokerRequest: async (
     policy: unknown,

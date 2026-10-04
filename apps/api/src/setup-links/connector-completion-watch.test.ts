@@ -37,7 +37,7 @@ mock.module('../lib/db', () => ({
     }),
   },
 }));
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../services/sessions/lifecycle', () => ({
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     notified.push({
       sessionId: input.sessionId,

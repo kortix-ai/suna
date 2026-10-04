@@ -43,7 +43,7 @@ mock.module('./client', () => ({
   listStoppedDaytonaSandboxesOldestFirst: async function* () {},
 }));
 
-mock.module('../../../projects/disk-quota-guard', () => ({
+mock.module('../disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 

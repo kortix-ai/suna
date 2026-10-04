@@ -18,7 +18,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
  *      browser to the App's own install page — with a signed
  *      account-correlation state (reusing the EXISTING
  *      buildGitHubAppInstallUrl/verifyGitHubAppInstallStatePayload mechanism
- *      in projects/github.ts) so step 3 can find its way back to the
+ *      in services/github/github.ts) so step 3 can find its way back to the
  *      initiating account.
  *   3. GET  /install-callback (public; GitHub → browser) — resolve the
  *      installation's owner, store owner+installationId, redirect to the
@@ -32,7 +32,7 @@ import { config } from '../../lib/config';
 import { supabaseAuth } from '../../middleware/auth';
 import { requireAdmin } from '../../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import { githubBackend } from '../../projects/git-backends/github';
+import { githubBackend } from '../../services/git/backends/github';
 import {
   buildGitHubAppInstallUrl,
   getGitHubAppInstallation,
@@ -47,7 +47,7 @@ import {
   signGitHubAppJwt,
   type GitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
-} from '../../projects/github';
+} from '../../services/github/github';
 import type { AppEnv } from '../../types/app-env';
 import {
   clearAppIdentity,
@@ -118,7 +118,7 @@ export function buildGithubAppManifest(opts: {
     setup_on_update: true,
     public: false,
     // One source: the set `resolveGitHubAppPermissions()` audits a hand-made
-    // App against (projects/github.ts), plus the reserved `pull_requests`. `members: read` backs the
+    // App against (services/github/github.ts), plus the reserved `pull_requests`. `members: read` backs the
     // account-linking identity proof (oauth/authorize + oauth/callback below).
     default_permissions: { ...GITHUB_APP_MANIFEST_PERMISSIONS },
     default_events: [],
@@ -620,7 +620,7 @@ githubAppSetupRouter.openapi(
 // ─── GET /install-callback ────────────────────────────────────────────────────
 // PUBLIC by necessity (GitHub → browser redirect after the operator picks
 // repos on the App's install page). Correlated back to the initiating account
-// via the signed install-state mechanism in projects/github.ts. The state
+// via the signed install-state mechanism in services/github/github.ts. The state
 // purpose separates platform setup from account linking. Platform setup
 // updates the managed installation. Account linking returns to the
 // authenticated frontend callback, which consumes the stored nonce and writes
@@ -758,7 +758,7 @@ githubAppSetupRouter.openapi(
 // install `state` proves who initiated the install, but never binds WHICH
 // installation_id it may pair with — this token is what
 // verifyGitHubInstallationAdmin/listLinkableGitHubAppInstallations,
-// projects/github.ts, checks against the actual owner/org).
+// services/github/github.ts, checks against the actual owner/org).
 //
 // Both routes are PUBLIC (unauthenticated) by necessity, same reasoning as
 // manifest-callback/install-callback above: the popup opens `oauth/authorize`

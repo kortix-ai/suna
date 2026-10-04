@@ -45,8 +45,8 @@ mock.module('../services/usage/usage-events', () => ({
 // reaches the wallet, and a partial stub of that module breaks its other
 // importers (mock.module replaces the whole module, exports and all).
 
-const realPolicy = await import('../projects/sandbox-deadline-policy');
-mock.module('../projects/sandbox-deadline', () => ({
+const realPolicy = await import('../services/sandboxes/sandbox-deadline-policy');
+mock.module('../services/sandboxes/sandbox-deadline', () => ({
   ...realPolicy,
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extendCalls.push({ target, grantMs });

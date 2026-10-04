@@ -59,23 +59,23 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { isUuid } from '../../lib/validate';
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,
   type ControlEvent,
-} from '../lib/session-control-events';
+} from '../../services/sessions/session-control-events';
 import {
   acquireControlReconciler,
   publishRuntimeStateFrame,
-} from '../lib/session-control-reconciler';
-import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
-import { readRuntimeLeg } from '../lib/session-runtime-projection';
+} from '../../services/sessions/session-control-reconciler';
+import { refreshRuntimeProjection } from '../../services/sessions/session-runtime-projection-refresh';
+import { readRuntimeLeg } from '../../services/sessions/session-runtime-projection';
 import {
   openRuntimeEventStream,
   parseSseFrames,
-} from '../lib/session-runtime-transport';
+} from '../../services/sessions/session-runtime-transport';
 
 /** Our own keepalive cadence. Matches the daemon's, so a stream with no box
  *  attached still proves liveness on the same clock a healthy one does. */

@@ -12,8 +12,8 @@
 //
 // These tests mirror `agent-config-push.test.ts` for the model/config push.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realSecrets from '../secrets';
-import * as realSecretGrant from './secret-grant';
+import * as realSecrets from '../../services/secrets/secrets';
+import * as realSecretGrant from '../../services/secrets/secret-grant';
 
 process.env.KORTIX_URL = 'https://api.example.com';
 
@@ -82,11 +82,11 @@ mock.module('../../lib/db', () => ({
   },
 }));
 
-mock.module('./secret-grant', () => ({
+mock.module('../../services/secrets/secret-grant', () => ({
   ...realSecretGrant,
   resolveSessionSecretGrant: async () => 'all' as const,
 }));
-mock.module('../secrets', () => ({
+mock.module('../../services/secrets/secrets', () => ({
   ...realSecrets,
   // `{ env, names, revision }` — the real return shape. An array here made
   // `.env` undefined, which produced the "no env snapshot" the test below
@@ -126,7 +126,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
 const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = recordingFetch();
 
-const { pushSessionScopeToSandbox } = await import('./sandbox-env-sync');
+const { pushSessionScopeToSandbox } = await import('../../services/sandboxes/sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',

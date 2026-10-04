@@ -28,7 +28,7 @@ import { currentChannelSelection } from './selection';
 import { postIdentityPrompt } from './identity';
 import { chatUser, resolveChatActor } from '../core/identity';
 import { dropChatThread, findChatThread, findChatThreadSession, followUpRoute, touchChatThread } from '../core/threads';
-import { resolveProjectAutomationActor } from '../../projects/session-lifecycle';
+import { resolveProjectAutomationActor } from '../../services/sessions/lifecycle';
 import {
   deleteTurn,
   finalizeTurn,

@@ -7,7 +7,7 @@ commit: 9694c55489
 
 **When:** touching code that RE-resolves an already-minted credential —
 `remintGrantForAgentSwitch` / `reconcileStoredSessionAgentGrant`
-(`apps/api/src/projects/lib/session-token-grant.ts`), which run on EVERY prompt
+(`apps/api/src/services/sessions/session-token-grant.ts`), which run on EVERY prompt
 and every connector call. The `meta` coordinator is injected by
 `addPlatformMetaAgent` and appears in no `kortix.yaml`, so resolving it through
 the manifest returns "unlisted agent": deny-all on a governed project,

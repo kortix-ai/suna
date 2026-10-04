@@ -47,7 +47,7 @@ const resolveDefaultCodexAccountSecret = mock(async (..._args: unknown[]) => def
 // secrets.test.ts); here the stub answers what that read returned.
 let sharedSecrets: { coolingDown: boolean; retryAfterSeconds?: number; secrets: PooledSecret[] } = { coolingDown: false, secrets: [] };
 const resolveProjectSharedProviderSecrets = mock(async (_input: unknown) => sharedSecrets);
-mock.module('../../secrets/account-resource', () => ({
+mock.module('../../services/secrets/account-resource', () => ({
   resolveSessionProviderSecrets,
   resolveDefaultCodexAccountSecret,
   resolveProjectSharedProviderSecrets,
@@ -64,7 +64,7 @@ const resolveProjectSecretsForConsumer = mock(async (input: { name: string }) =>
   const value = await getProjectSecretValueForConsumer(input);
   return value ? [{ identifier: input.name, value }] : [];
 });
-mock.module('../../projects/secrets', () => ({
+mock.module('../../services/secrets/secrets', () => ({
   getProjectSecretValueForConsumer,
   resolveProjectSecretsForConsumer,
 }));

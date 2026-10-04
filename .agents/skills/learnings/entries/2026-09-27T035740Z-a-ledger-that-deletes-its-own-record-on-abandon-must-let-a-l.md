@@ -26,7 +26,7 @@ nothing else in the ledger corrected a false `abandoned` if some OTHER path
 produced one.
 
 **Enforcement:** `completeSandboxTurn`'s `reviveAbandonedTurnOnCompletion`
-(`apps/api/src/projects/sandbox-turn-lifecycle.ts`) — a genuine idle/error
+(`apps/api/src/services/sandboxes/sandbox-turn-lifecycle.ts`) — a genuine idle/error
 completion for a message the ledger already marked `abandoned` overwrites it
 with the real outcome, gated to exact identity match and never on an
 abort-only signal. Tests in `sandbox-turn-lifecycle.test.ts`.

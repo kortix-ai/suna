@@ -13,7 +13,7 @@ process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.FRONTEND_URL = 'https://app.example.com';
 process.env.KORTIX_URL = 'http://localhost:8008';
 
-const { sandboxCallbackUnreachableReason } = await import('./sessions');
+const { sandboxCallbackUnreachableReason } = await import('../../services/sessions/sessions');
 
 describe('sandboxCallbackUnreachableReason — reachability preflight', () => {
   test('a loopback KORTIX_URL blocks a remote-cloud provider (daytona)', () => {

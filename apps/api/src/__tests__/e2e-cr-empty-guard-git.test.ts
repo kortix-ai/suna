@@ -36,11 +36,11 @@ function bunEval(script: string): string {
 }
 
 function mergeModuleUrl(): string {
-  return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git', 'merge.ts')).href;
+  return pathToFileURL(join(import.meta.dir, '..', 'services', 'git', 'merge.ts')).href;
 }
 
 function commitsModuleUrl(): string {
-  return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git', 'commits.ts')).href;
+  return pathToFileURL(join(import.meta.dir, '..', 'services', 'git', 'commits.ts')).href;
 }
 
 function makeFixture() {

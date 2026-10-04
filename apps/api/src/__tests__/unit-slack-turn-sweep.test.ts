@@ -67,14 +67,14 @@ mock.module('../lib/db', () => ({
 }));
 
 let runtimeLive: boolean | 'unreadable' = false;
-mock.module('../projects/session-lifecycle/inbox-admission', () => ({
+mock.module('../services/sessions/lifecycle/inbox-admission', () => ({
   sessionHoldsLiveTurn: async () => {
     if (runtimeLive === 'unreadable') throw new Error('db down');
     return runtimeLive;
   },
 }));
 const aborted: string[] = [];
-mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
+mock.module('../services/sessions/lifecycle/abort-runtime-turn', () => ({
   abortRuntimeTurn: async (id: string) => {
     aborted.push(id);
     return true;

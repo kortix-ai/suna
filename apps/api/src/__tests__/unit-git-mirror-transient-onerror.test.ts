@@ -5,7 +5,7 @@ import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   classifyGitError,
   isTransientGitMirrorError,
-} from '../projects/git/mirror';
+} from '../services/git/mirror';
 
 // Regression for incident `incident-20260923T100537Z-hbcr`.
 //

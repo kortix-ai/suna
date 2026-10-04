@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test';
  * opaque error; both must now be nameable by the client.
  */
 
-const gitSource = await Bun.file(new URL('../projects/lib/git.ts', import.meta.url)).text();
+const gitSource = await Bun.file(new URL('../services/git/project-git.ts', import.meta.url)).text();
 const routeSource = await Bun.file(
   new URL('../projects/routes/project-git.ts', import.meta.url),
 ).text();

@@ -1,5 +1,5 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
-import * as realTriggers from '../triggers';
+import * as realTriggers from '../../services/triggers';
 
 /**
  * A Customize editor reads the manifest it is about to show or rewrite. Every
@@ -14,7 +14,7 @@ import * as realTriggers from '../triggers';
 
 const readCalls: Array<{ forceRefresh?: boolean } | undefined> = [];
 
-mock.module('../triggers', () => ({
+mock.module('../../services/triggers', () => ({
   ...realTriggers,
   readManifest: async (_project: unknown, opts?: { forceRefresh?: boolean }) => {
     readCalls.push(opts);
@@ -22,7 +22,7 @@ mock.module('../triggers', () => ({
   },
 }));
 
-const { loadManifestForEdit } = await import('./triggers');
+const { loadManifestForEdit } = await import('../../services/triggers/trigger-runtime');
 
 beforeEach(() => {
   readCalls.length = 0;

@@ -31,14 +31,14 @@ const execFileAsync = promisify(execFile);
 // this through `await import('../lib/git')`; mocking the module keeps its heavy
 // transitive imports (db, github, …) out of the unit test entirely.
 const resolverCalls: string[] = [];
-mock.module('../projects/lib/git', () => ({
+mock.module('../services/git/project-git', () => ({
   resolveProjectGitAccessById: async (projectId: string) => {
     resolverCalls.push(projectId);
     return { repoUrl: upstream, token: 'resolved-sentinel-token', headers: {} };
   },
 }));
 
-const { refreshMirror, repoCachePath } = await import('../projects/git/mirror');
+const { refreshMirror, repoCachePath } = await import('../services/git/mirror');
 
 let workdir: string;
 let upstream: string;

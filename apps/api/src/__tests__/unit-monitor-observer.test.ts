@@ -68,11 +68,11 @@ mock.module('../feature-flags/registry', () => ({
     key === 'monitors' ? flagEnabled : false,
 }));
 
-mock.module('../projects/lib/trigger-scheduler-state', () => ({
+mock.module('../services/triggers/trigger-scheduler-state', () => ({
   triggersPausedForProject: () => paused,
 }));
 
-mock.module('../projects/lib/trigger-fire', () => ({
+mock.module('../services/triggers/trigger-fire', () => ({
   fireGitTrigger: async (input: Record<string, unknown>) => {
     fireCalls.push(input);
     if (fireError) throw fireError;

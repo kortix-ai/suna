@@ -1,21 +1,21 @@
-import { isWireIdAheadOf } from '../../projects/wire-message-id';
+import { isWireIdAheadOf } from '../../services/sessions/wire-message-id';
 import type { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
+import { syncSandboxEnvForPrompt } from '../../services/sandboxes/sandbox-env-sync';
+import { remintGrantForAgentSwitch } from '../../services/sessions/session-token-grant';
 import { bindSessionTurnIdentity } from '../../projects/lib/on-behalf-of';
-import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
-import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
+import { scheduleOpencodeSnapshotSync } from '../../services/sessions/opencode-session-snapshot';
+import { generateSessionTitleFromFirstPrompt } from '../../services/sessions/session-title-generate';
 import {
   convergeBeforeTurnStart,
   convergeModelCatalogForTurnStart,
   scheduleAssetConvergence,
-} from '../../projects/lib/turn-start-convergence';
+} from '../../services/sessions/turn-start-convergence';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   beginSandboxTurn,
-} from '../../projects/sandbox-turn-lifecycle';
-import type { SandboxTurnIdentity } from '../../projects/session-turn-ledger';
+} from '../../services/sandboxes/sandbox-turn-lifecycle';
+import type { SandboxTurnIdentity } from '../../services/sessions/session-turn-ledger';
 import { resolveSandboxIngress, type SandboxRecord } from '../backend';
 import {
   DEFAULT_AGENT_SENTINEL,
@@ -41,7 +41,7 @@ import {
   promptDeliveryKey,
   releasePromptDelivery,
 } from '../prompt-dedupe';
-import { recordSessionActivity } from '../../projects/session-activity';
+import { recordSessionActivity } from '../../services/sessions/session-activity';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -175,7 +175,7 @@ export function claimPromptDeliveryOnce(input: {
     // below, so a wake retry cannot either. This is the sidebar's authoritative
     // "last activity" — unlike the opencode_sessions snapshot scheduled further
     // down, it needs no sandbox round-trip, so a session stays correctly dated
-    // even when the box is unreachable. See projects/session-activity.ts.
+    // even when the box is unreachable. See services/sessions/session-activity.ts.
     void recordSessionActivity({
       sessionId: record.sessionId,
       projectId: record.projectId,

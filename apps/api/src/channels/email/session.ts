@@ -9,12 +9,12 @@ import { config } from '../../lib/config';
 import {
   ensureEmailSessionBinding,
   loadEmailInstallConnectionId,
-} from '../../projects/lib/session-connector-bindings';
+} from '../../services/sessions/session-connector-bindings';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
-} from '../../projects/session-lifecycle';
+} from '../../services/sessions/lifecycle';
 import { db } from '../../lib/db';
 import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
 import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';

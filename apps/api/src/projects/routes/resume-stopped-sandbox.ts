@@ -11,13 +11,13 @@ import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { isProviderNotFound } from '../../platform/providers/status';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../lib/db';
-import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
-import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
-import { stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
-import { RUNTIME_READINESS_CLOCK_KEYS } from '../session-lifecycle/readiness-clocks';
-import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
-import { transitionRuntime } from '../session-lifecycle/status-transitions';
-import type { StartCallLog } from '../session-lifecycle/start-envelope';
+import { scheduleSandboxRuntimeRefresh } from '../../services/sandboxes/sandbox-runtime-refresh';
+import { scheduleSessionConfigConvergence } from '../../services/sessions/session-config-convergence';
+import { stripMetadataKeys } from '../../services/sessions/lifecycle/sandbox-metadata-sql';
+import { RUNTIME_READINESS_CLOCK_KEYS } from '../../services/sessions/lifecycle/readiness-clocks';
+import { recoverTurnsAfterRuntimeRestart } from '../../services/sessions/lifecycle/runtime-restart-recovery';
+import { transitionRuntime } from '../../services/sessions/lifecycle/status-transitions';
+import type { StartCallLog } from '../../services/sessions/lifecycle/start-envelope';
 import {
   RUNTIME_START_FAILURE_KEYS,
   RUNTIME_WAKE_HARD_MS,
@@ -29,7 +29,7 @@ import {
   runtimeWakeProgressPatch,
   runtimeWakeRestoreProgressPatch,
   stampedRuntimeFailureState,
-} from '../session-lifecycle/runtime-wake-fence';
+} from '../../services/sessions/lifecycle/runtime-wake-fence';
 import type { OpenSessionRow } from './session-open-context';
 
 /**

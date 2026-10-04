@@ -5,7 +5,7 @@ import {
   parseManifestString,
   serializeManifest,
   triggerSpecToTomlEntry,
-} from '../projects/triggers';
+} from '../services/triggers';
 
 const MIN_PROJECT = `
 [project]

@@ -4,15 +4,15 @@ import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { inferAuditSource, runAuditedTransaction } from '../../services/audit/audit';
 import { db } from '../../lib/db';
-import { isValidIdentifier } from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { isValidIdentifier } from '../../services/secrets/secrets';
+import { propagateProjectSecretsToActiveSandboxes } from '../../services/sandboxes/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { createRoute, z } from '@hono/zod-openapi';
 import { UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
-import { parseEgressPolicy } from '../../secrets/strategy';
+import { parseEgressPolicy } from '../../services/secrets/strategy';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
+import { networkBoundaryPolicyError } from '../../services/secrets/network-boundary';
 import { projectSecrets, projectSessionSecretHandles } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
@@ -29,7 +29,7 @@ import {
   boundaryDestinationConflict,
   connectorSecretBindings,
   summarizeDeliverySync,
-} from '../lib/secret-writes';
+} from '../../services/secrets/secret-writes';
 export function registerSecretDeliveryRoutes(): void {
   projectsApp.openapi(
     createRoute({

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ResolvedProjectSecret } from '../projects/secrets';
+import type { ResolvedProjectSecret } from '../services/secrets/secrets';
 import { resolveAppRuntimeEnvironment } from './environment';
 
 function secret(identifier: string, key: string, value: string): ResolvedProjectSecret {

@@ -12,7 +12,7 @@ into guesswork from response durations. A persistent failure still fails
 honestly (502, row untouched); the reaper's next pass remains the backstop.
 
 **Trigger surface:** writing or reviewing `stopSession`
-(`apps/api/src/projects/session-lifecycle/stop.ts`) or any user-facing caller
+(`apps/api/src/services/sessions/lifecycle/stop.ts`) or any user-facing caller
 of a sandbox provider's `stop()` — including the reaper path, which retries
 on its next pass instead.
 
@@ -24,7 +24,7 @@ returned 17 5xx of 255 requests in the worst hour against a 0/h baseline
 named the cause. The `last state: stopping` half was already fixed as a
 lifecycle transition (see the stop-confirm classification entry, 2026-09-29).
 
-**Enforcement:** `apps/api/src/projects/session-lifecycle/__tests__/stop.test.ts`
+**Enforcement:** `apps/api/src/services/sessions/lifecycle/__tests__/stop.test.ts`
 — a fail-then-succeed stop commits at 200 after exactly two provider calls; a
 fail-then-fail stop returns 502 with the last provider error; a benign first
 answer never retries.

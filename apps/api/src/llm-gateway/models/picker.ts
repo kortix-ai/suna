@@ -1,4 +1,4 @@
-import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
+import { listProjectSecretNamesForConsumer } from '../../services/secrets/secrets';
 import { resolveEffectiveModel } from '../resolution/default-model';
 import type { ModelSource } from '../resolution/effective';
 import {

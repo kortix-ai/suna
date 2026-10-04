@@ -1,9 +1,9 @@
 /** A push to a session branch drops the local mirror marker; it is not a base move. */
 import { describe, expect, mock, test } from 'bun:test';
-import * as realMirror from '../../git/mirror';
+import * as realMirror from '../../../services/git/mirror';
 
 const invalidated: string[] = [];
-mock.module('../../git/mirror', () => ({
+mock.module('../../../services/git/mirror', () => ({
   ...realMirror,
   invalidateProjectMirror: (id: string) => void invalidated.push(id),
 }));

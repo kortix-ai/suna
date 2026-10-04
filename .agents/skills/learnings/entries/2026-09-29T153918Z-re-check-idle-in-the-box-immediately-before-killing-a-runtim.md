@@ -11,7 +11,7 @@ spends no attempt. Separately: a relayed provider 4xx never carries a word OpenC
 retry classifier matches (`server_error`, `internal error`, `overloaded`, ...), because
 OpenCode retries on body text whatever the status.
 
-**Trigger surface:** editing `apps/api/src/projects/lib/legacy-runtime-bootstrap.sh` or
+**Trigger surface:** editing `apps/api/src/services/sandboxes/legacy-runtime-bootstrap.sh` or
 any other path that restarts the daemon or OpenCode on a live box; relaying an upstream
 error body from `packages/llm-gateway`.
 

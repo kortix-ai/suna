@@ -155,7 +155,7 @@ export function buildCreateRepoPayload(
  * The request body for `POST /v1/projects/link-repository`.
  *
  * `default_branch` is sent, and that is deliberate rather than incidental.
- * `resolveImportedDefaultBranch` (`apps/api/src/projects/lib/git.ts`) uses
+ * `resolveImportedDefaultBranch` (`apps/api/src/services/git/project-git.ts`) uses
  * the repository's OWN default when the key is absent, and VALIDATES the
  * value against GitHub when it is present — 400 `Selected branch "x" does not
  * exist` otherwise. `/new` seeds `state.defaultBranch` from the picked

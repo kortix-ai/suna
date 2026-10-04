@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
-import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
-import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
+import { captureSessionTranscriptMirror } from '../services/sessions/session-transcript-capture';
+import { readSessionTranscriptMirror } from '../services/sessions/session-transcript-mirror';
 import {
   localTestDatabaseUrl,
   removeSeeded,

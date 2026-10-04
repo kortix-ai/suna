@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { extractTriggers, parseManifestString } from '../projects/triggers';
+import { extractTriggers, parseManifestString } from '../services/triggers';
 
-// Characterization test for the `projects/triggers.ts` module split
+// Characterization test for the `services/triggers/index.ts` module split
 // (KRTX-320): pins the exact parsed spec for one monitor, one one-off cron,
 // one scheduled cron and one webhook trigger, written BEFORE the split and
 // expected to pass unchanged after it. Behavior, not structure.

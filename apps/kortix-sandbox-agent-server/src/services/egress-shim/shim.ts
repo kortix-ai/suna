@@ -63,7 +63,7 @@ const BROKER_TIMEOUT_MS = 30_000
 
 /**
  * The broker's own request ceiling (`MAX_REQUEST_BYTES`,
- * apps/api/src/secrets/http-broker.ts). Decoding past it only produces bytes
+ * apps/api/src/services/secrets/http-broker.ts). Decoding past it only produces bytes
  * the broker answers 413 to, so it doubles as the decompression-bomb guard: a
  * 1 KiB gzip that expands to a gigabyte stops here instead of in this process.
  */

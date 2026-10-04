@@ -2,7 +2,7 @@
  * Change Requests — Kortix-native PR layer.
  *
  * The CR is metadata that proposes merging `head_ref` into `base_ref` for a
- * project. All underlying git work goes through `./git.ts`, which talks to
+ * project. All underlying git work goes through `../services/git/index.ts`, which talks to
  * whichever backend the project's repo URL points to (GitHub, GitLab,
  * plain git). The CR system is therefore backend-agnostic — the
  * review UI lives in Kortix even when the repo is hosted elsewhere.

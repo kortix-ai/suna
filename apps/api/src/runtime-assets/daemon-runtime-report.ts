@@ -20,7 +20,7 @@
  * reads the manifest that way — a control plane that crashes on a daemon shape
  * it does not recognise is a control plane that cannot be rolled forward.
  *
- * A LEAF: it imports nothing, so `projects/lib/session-reload.ts` can read the
+ * A LEAF: it imports nothing, so `services/sessions/session-reload.ts` can read the
  * block without pulling the runtime-assets graph (and its 200 MB of binary
  * hashing) into the reload path.
  */
@@ -61,7 +61,7 @@ export interface DaemonRuntimeReport {
    * Updates are latched off after a rollback. This box needs a human. The API
    * shouts once per box per `PINNED_ALARM_INTERVAL_MS` — see
    * `shouldReportPinned` (`runtime-assets/running-assets.ts`) and its caller
-   * `noteAssetsFromHealth` (`projects/lib/turn-start-convergence.ts`).
+   * `noteAssetsFromHealth` (`services/sessions/turn-start-convergence.ts`).
    */
   pinned: boolean;
   running: DaemonRunningAssets | null;

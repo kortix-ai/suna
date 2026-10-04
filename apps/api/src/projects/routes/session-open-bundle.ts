@@ -59,18 +59,18 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../lib/validate';
 import type { AppEnv } from '../../types/app-env';
-import { readSessionAuditActions } from '../lib/session-audit-read';
-import { serializePrompt } from '../lib/session-prompt-view';
-import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
-import { readSessionTurnState } from '../lib/session-turn-read';
-import { readRuntimeLeg } from '../lib/session-runtime-projection';
-import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
-import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
+import { readSessionAuditActions } from '../../services/sessions/session-audit-read';
+import { serializePrompt } from '../../services/sessions/session-prompt-view';
+import { buildSessionTranscriptSyncEnvelope } from '../../services/sessions/session-transcript';
+import { readSessionTurnState } from '../../services/sessions/session-turn-read';
+import { readRuntimeLeg } from '../../services/sessions/session-runtime-projection';
+import { scheduleRuntimeProjectionRefresh } from '../../services/sessions/session-runtime-projection-refresh';
+import { listInboxPrompts } from '../../services/sessions/lifecycle/inbox-rows';
 
 /** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
 const AUDIT_ACTIONS_LIMIT = 100;

@@ -38,8 +38,8 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 import * as realAgents from '../../projects/agents';
-import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
-import * as realProviderTransitionStore from '../../projects/provider-transition/provider-transition-store';
+import { PROVISIONING_SESSION_STATUSES } from '../../services/sessions/session-status';
+import * as realProviderTransitionStore from '../../services/sandboxes/provider-transition/provider-transition-store';
 import * as realProviders from '../providers';
 
 const dialect = new PgDialect();
@@ -275,7 +275,7 @@ mock.module('../providers', () => ({
   SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
 }));
 
-mock.module('../../projects/provider-transition/provider-transition-store', () => ({
+mock.module('../../services/sandboxes/provider-transition/provider-transition-store', () => ({
   ...realProviderTransitionStore,
   readActiveRouting: async () => activeRouting,
 }));
@@ -367,11 +367,11 @@ mock.module('../../repositories/service-accounts', () => ({
   },
 }));
 
-mock.module('../../projects/triggers', () => ({
+mock.module('../../services/triggers', () => ({
   readManifest: async () => null,
 }));
 
-mock.module('../../projects/lib/network-secret-boundary', () => ({
+mock.module('../../services/secrets/network-secret-boundary', () => ({
   resolveSessionNetworkBoundary: async () => networkBoundaryBindings,
 }));
 
@@ -628,7 +628,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
   });
 
   test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {
-    // Instance scoping for background work on a shared DB (projects/instance-scope.ts).
+    // Instance scoping for background work on a shared DB (services/sessions/instance-scope.ts).
     // The stamp is what lets another local API instance recognise this box as
     // not its own and hand its queued work back.
     (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID = 'wt-instance-a';

@@ -1,6 +1,6 @@
 /**
  * Self-heal on an UNKNOWN MODEL, at turn start — see the module doc on
- * `../model-catalog-turn-start.ts` for the full design. These tests exercise
+ * `../../../services/sessions/model-catalog-turn-start.ts` for the full design. These tests exercise
  * the pure core (`convergeModelCatalogBeforeTurnStart`, injected deps — no
  * DB, no network) and the daemon-call helper (`convergeSandboxModelCatalog`,
  * injected deps too).
@@ -18,7 +18,7 @@ import {
   modelCatalogRepairIncomplete,
   type ModelCatalogConvergeDeps,
   type ModelCatalogTurnStartDeps,
-} from '../model-catalog-turn-start';
+} from '../../../services/sessions/model-catalog-turn-start';
 
 const CURRENT_MANAGED_IDS = new Set(['deepseek-v4.1-flash', 'glm-5.3-flash', 'kimi-k3']);
 const isManagedModelId = (id: string) => CURRENT_MANAGED_IDS.has(id);

@@ -1,0 +1,311 @@
+export type RuntimeReadinessMetadata = Record<string, unknown>;
+
+/**
+ * The runtime boot-wait clocks, and the name an API before W4 wrote each one
+ * under. Rows stamped by that API still carry the old names: every reader goes
+ * through {@link readinessValue}, and every clearing list strips both names.
+ * ponytail: drop the old names once no row carries them (they clear on the next ready answer or wake).
+ */
+const PRE_W4_READINESS_KEYS = {
+  runtimeReadyWaitStartedAt: 'opencodeReadyWaitStartedAt',
+  runtimeReadyWaitReason: 'opencodeReadyWaitReason',
+  runtimeUnreachableWaitStartedAt: 'opencodeUnreachableWaitStartedAt',
+  runtimeNotReadyWaitStartedAt: 'opencodeNotReadyWaitStartedAt',
+  runtimeBootPhase: 'opencodeBootPhase',
+  runtimeBootWaitFirstSeenAt: 'opencodeBootWaitFirstSeenAt',
+  // WHY the last `unreachable` happened, stamped by the open (routes/shared.ts)
+  // so a box that has been cycling for an hour can be diagnosed from the row
+  // instead of from logs nobody can still reach. Cleared with every other
+  // readiness field: a cause left behind after a good boot is a stale reading,
+  // and a stale reading is worse than none — it is the trap this whole class of
+  // bug keeps setting.
+  runtimeUnreachableCause: 'opencodeUnreachableCause',
+  runtimeUnreachableCauseAt: 'opencodeUnreachableCauseAt',
+  runtimeUnreachableResponder: 'opencodeUnreachableResponder',
+  runtimeUnreachableDetail: 'opencodeUnreachableDetail',
+} as const;
+
+export type RuntimeReadinessKey = keyof typeof PRE_W4_READINESS_KEYS;
+
+/** A readiness field under its neutral name, else under the name a pre-W4 API wrote. */
+export function readinessValue(metadata: RuntimeReadinessMetadata, key: RuntimeReadinessKey): unknown {
+  return metadata[key] ?? metadata[PRE_W4_READINESS_KEYS[key]];
+}
+
+export const RUNTIME_READINESS_CLOCK_KEYS = [
+  'runtimeWakeStartedAt',
+  'runtimeWakeProviderStatus',
+  'runtimeWakeError',
+  'runtimeWakeFailedAt',
+  ...(Object.keys(PRE_W4_READINESS_KEYS) as RuntimeReadinessKey[]),
+  ...Object.values(PRE_W4_READINESS_KEYS),
+] as const;
+
+/**
+ * Absolute ceiling on ONE runtime boot wait, phase changes or not. The
+ * per-reason budgets below restart on progress; this one never does, so a box
+ * that keeps changing phase without ever becoming ready is still bounded.
+ *
+ * "ONE boot wait" is load-bearing and was not enforced. See
+ * {@link runtimeBootEpochMs}.
+ */
+export const STALE_RUNTIME_BOOT_HARD_MS = 10 * 60 * 1000;
+
+/**
+ * How long a repair that reports itself RUNNING holds the readiness clock off.
+ *
+ * Mirrors `LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS` in
+ * `../../sandboxes/legacy-runtime-bootstrap.ts` and is asserted equal to it by
+ * `readiness-repair-grace.test.ts`. Declared here rather than imported: this
+ * module is pure and is imported from the session-open path, and pulling in
+ * the bootstrap module's graph to read one number is how a module-init cycle
+ * gets created.
+ *
+ * WHY THIS EXISTS: the readiness clock parked a session `failed` after 5
+ * minutes while the repair that would have fixed it was still inside its own
+ * 8-minute budget. A repair needing more than 5 minutes could therefore never
+ * win, and its result landed on a session the user had already been told was
+ * broken. An ACTIVE repair is progress, not staleness.
+ *
+ * Bounded on purpose: the grace is measured from the repair's own
+ * `lastAttemptAt`, so a wedged repair that never updates stops holding the
+ * clock once its budget lapses.
+ */
+export const REPAIR_IN_FLIGHT_GRACE_MS = 8 * 60 * 1000;
+
+/** True while a runtime repair for this row is running and still inside its budget. */
+export function repairInFlight(
+  metadata: RuntimeReadinessMetadata,
+  nowMs = Date.now(),
+): boolean {
+  const record = metadata.legacyRuntimeBootstrap;
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+  const bootstrap = record as Record<string, unknown>;
+  if (bootstrap.state !== 'running') return false;
+  const startedMs = parseTimestampMs(bootstrap.lastAttemptAt);
+  if (startedMs === null) return false;
+  return nowMs - startedMs <= REPAIR_IN_FLIGHT_GRACE_MS;
+}
+
+/**
+ * Marks that identify the current boot attempt: when the wake was claimed, when
+ * the provider confirmed the box RUNNING, and when the provisioner finished.
+ * A readiness clock stamped BEFORE the newest of these belongs to an earlier
+ * attempt on the same row.
+ */
+const RUNTIME_BOOT_EPOCH_KEYS = [
+  'runtimeWakeStartedAt',
+  'providerRunningConfirmedAt',
+  'initSucceededAt',
+] as const;
+
+/**
+ * Keys an explicit in-place restart clears on top of the readiness clocks: the
+ * automatic retry accounting and the stop reason that would otherwise be
+ * replayed as a verdict about the new attempt.
+ */
+const RUNTIME_RESTART_CLEARED_KEYS = [
+  'runtimeStartFailureCount',
+  'runtimeStartFailedAt',
+  'runtimeStartRetryAfterAt',
+  'runtimeWakeRetryAfterAt',
+  'runtimeWakeProgressAt',
+  'stopReason',
+] as const;
+
+function parseTimestampMs(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Every key an explicit in-place restart removes: the readiness clocks plus the
+ * restart-cleared keys above. `runtimeWakeStartedAt` and
+ * `runtimeWakeProviderStatus` are in the list and come straight back through
+ * {@link inPlaceRestartWakePatch}.
+ */
+export const IN_PLACE_RESTART_CLEARED_KEYS = [
+  ...RUNTIME_READINESS_CLOCK_KEYS,
+  ...RUNTIME_RESTART_CLEARED_KEYS,
+] as const;
+
+/** The wake clock an explicit in-place restart starts. */
+export function inPlaceRestartWakePatch(now = new Date()): RuntimeReadinessMetadata {
+  return {
+    runtimeWakeStartedAt: now.toISOString(),
+    runtimeWakeProviderStatus: 'starting',
+  };
+}
+
+/**
+ * When the CURRENT boot attempt began, or null when the row carries no mark.
+ *
+ * A readiness clock older than this was written by a previous attempt on the
+ * same row and is not evidence about this one.
+ *
+ * *Incident (2026-08-26, a SampleCo session on an E2B box).* Attempt 1
+ * failed during a post-roll build storm at ~13:27. The automatic cooldown rung
+ * re-attempted at ~13:33: the resume launched the entrypoint, the daemon booted
+ * through 13:34:48.8, authenticated to the gateway at 13:34:48.5–49.1 and
+ * claimed its initial turn at 13:34:49.216 — but `/start` parked the box at
+ * **13:34:49.202**. The boot lost by 14 ms to a budget it had not spent:
+ * `opencodeBootWaitFirstSeenAt` was stamped during ATTEMPT 1 and nothing
+ * cleared it, so the 10-minute hard cap was already ~7 minutes old when
+ * attempt 2's boot started. Every automatic rung after the first was
+ * deterministically doomed.
+ *
+ * Two fixes, and this is the second one — defence in depth. The first is that
+ * a wake claim now clears every readiness clock (routes/shared.ts). This guard
+ * makes an inherited clock harmless even if some future path forgets, and it
+ * does so CAUSALLY: it does not reset the budget on progress (a stub launcher
+ * respawning in a loop changes phase forever and must still be caught at the
+ * cap — see the learning "A boot budget measures lack of progress, not
+ * wall-clock"). It only refuses to charge this attempt for a previous one.
+ */
+export function runtimeBootEpochMs(metadata: RuntimeReadinessMetadata): number | null {
+  let newest: number | null = null;
+  for (const key of RUNTIME_BOOT_EPOCH_KEYS) {
+    const parsed = parseTimestampMs(metadata[key]);
+    if (parsed !== null && (newest === null || parsed > newest)) newest = parsed;
+  }
+  return newest;
+}
+
+/**
+ * Metadata stamp: the daemon answered `/start`'s probe after this boot's epoch.
+ * Written once per boot; every stop strips it (STOPPED_SANDBOX_CLEARED_KEYS)
+ * and every wake moves the epoch past it.
+ */
+export const RUNTIME_PROVEN_AT_KEY = 'runtimeProvenAt';
+
+export function runtimeProvenThisBoot(metadata: RuntimeReadinessMetadata): boolean {
+  const provenMs = parseTimestampMs(metadata[RUNTIME_PROVEN_AT_KEY]);
+  if (provenMs === null) return false;
+  const bootEpochMs = runtimeBootEpochMs(metadata);
+  return bootEpochMs === null || provenMs >= bootEpochMs;
+}
+
+/**
+ * A `/start` probe missed a box whose daemon already answered this boot, and
+ * nothing IN the box said so. The probe crosses the provider ingress; a
+ * timeout, a 502, or the edge's own header-less 503 is that hop, not the
+ * daemon (prod 2026-09-29: ~18 min of edge timeouts to a healthy box turned
+ * into `starting`, a dead-daemon relaunch request, and a frozen session). Such
+ * a miss keeps serving the stored pin: no boot clock, no park, no relaunch.
+ * A dead daemon on a proven box is the reaper's job, confirmed in-box.
+ */
+export function servesThroughProbeMiss(
+  metadata: RuntimeReadinessMetadata,
+  probe: { reason: string; bootPhase?: string; sessions?: unknown },
+  nowMs = Date.now(),
+): boolean {
+  const daemonAnswered =
+    probe.reason !== 'unreachable' &&
+    (probe.reason !== 'not_ready' || probe.bootPhase !== undefined || probe.sessions !== undefined);
+  if (daemonAnswered) return false;
+  return runtimeProvenThisBoot(metadata) && !repairInFlight(metadata, nowMs);
+}
+
+/** A clock stamped before this boot attempt began is not evidence about it. */
+function clockForThisBoot(clockMs: number | null, bootEpochMs: number | null): number | null {
+  if (clockMs === null) return null;
+  if (bootEpochMs !== null && clockMs < bootEpochMs) return null;
+  return clockMs;
+}
+
+export function staleRuntimeReadyReason(
+  metadata: RuntimeReadinessMetadata,
+  reason: string,
+  nowMs = Date.now(),
+  staleAfterMs = 5 * 60 * 1000,
+  hardCapMs = STALE_RUNTIME_BOOT_HARD_MS,
+): string | null {
+  if (reason !== 'not_ready' && reason !== 'unreachable') return null;
+  // An active repair is progress: never park a session the platform is fixing.
+  if (repairInFlight(metadata, nowMs)) return null;
+  const bootEpochMs = runtimeBootEpochMs(metadata);
+  const firstSeenMs = clockForThisBoot(
+    parseTimestampMs(readinessValue(metadata, 'runtimeBootWaitFirstSeenAt')),
+    bootEpochMs,
+  );
+  if (firstSeenMs && nowMs - firstSeenMs > hardCapMs) {
+    return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
+  }
+  const reasonStartedAt = readinessValue(
+    metadata,
+    reason === 'unreachable' ? 'runtimeUnreachableWaitStartedAt' : 'runtimeNotReadyWaitStartedAt',
+  );
+  const legacyReason = readinessValue(metadata, 'runtimeReadyWaitReason');
+  const legacyStartedAt =
+    legacyReason === undefined || legacyReason === reason
+      ? readinessValue(metadata, 'runtimeReadyWaitStartedAt')
+      : null;
+  const readyWaitStartedAtMs = clockForThisBoot(
+    parseTimestampMs(reasonStartedAt) ?? parseTimestampMs(legacyStartedAt),
+    bootEpochMs,
+  );
+  if (!readyWaitStartedAtMs || nowMs - readyWaitStartedAtMs <= staleAfterMs) return null;
+  return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
+}
+
+export function hasRuntimeReadinessClock(metadata: RuntimeReadinessMetadata): boolean {
+  return RUNTIME_READINESS_CLOCK_KEYS.some((key) => key in metadata);
+}
+
+/**
+ * The metadata patch that records one more not-ready observation, or null when
+ * nothing changes.
+ *
+ * The per-reason clock (`runtimeNotReadyWaitStartedAt` /
+ * `runtimeUnreachableWaitStartedAt`; legacy rows carry only
+ * `runtimeReadyWaitStartedAt` + `runtimeReadyWaitReason`) is the one
+ * `staleRuntimeReadyReason` budgets. It starts on the first observation of
+ * that reason and — the point of this function — RESTARTS whenever the daemon
+ * reports a different boot phase than last time: a box that is still making
+ * progress has not stalled. `runtimeBootWaitFirstSeenAt` is written once per
+ * boot wait and never moved; it feeds the hard cap.
+ *
+ * SampleCo 2026-08-25 17:23–17:24: two resumes converged OpenCode 1.18.19 →
+ * 1.18.23 and sat through that version's 53 s first init — legitimate work the
+ * old fixed 90 s budget turned into `runtime_boot_failed` on both boxes.
+ */
+export function runtimeReadyWaitPatch(
+  metadata: RuntimeReadinessMetadata,
+  reason: 'not_ready' | 'unreachable',
+  bootPhase: string | undefined,
+  now = new Date(),
+): RuntimeReadinessMetadata | null {
+  const reasonClockKey =
+    reason === 'unreachable' ? 'runtimeUnreachableWaitStartedAt' : 'runtimeNotReadyWaitStartedAt';
+  const bootEpochMs = runtimeBootEpochMs(metadata);
+  // A clock stamped before this boot attempt began belongs to the previous one.
+  // Treat it as absent so the patch re-baselines it, instead of leaving the row
+  // carrying a budget it has already half spent (the 2026-08-26 SampleCo incident).
+  const storedFirstSeen = readinessValue(metadata, 'runtimeBootWaitFirstSeenAt');
+  const firstSeenMs = parseTimestampMs(storedFirstSeen);
+  // INHERITED, not merely absent: the key exists and predates this attempt.
+  const inheritedFirstSeen =
+    firstSeenMs !== null && bootEpochMs !== null && firstSeenMs < bootEpochMs;
+  const storedPhase = readinessValue(metadata, 'runtimeBootPhase');
+  const previousPhase =
+    !inheritedFirstSeen && typeof storedPhase === 'string' ? storedPhase : undefined;
+  const phaseChanged = bootPhase !== undefined && bootPhase !== previousPhase;
+  const legacyClockRunning =
+    readinessValue(metadata, 'runtimeReadyWaitReason') === reason &&
+    typeof readinessValue(metadata, 'runtimeReadyWaitStartedAt') === 'string';
+  const clockRunning =
+    !inheritedFirstSeen &&
+    (typeof readinessValue(metadata, reasonClockKey) === 'string' || legacyClockRunning);
+  if (clockRunning && !phaseChanged) return null;
+  const startedAt = now.toISOString();
+  return {
+    ...metadata,
+    runtimeReadyWaitStartedAt: startedAt,
+    runtimeReadyWaitReason: reason,
+    [reasonClockKey]: startedAt,
+    runtimeBootWaitFirstSeenAt:
+      !inheritedFirstSeen && typeof storedFirstSeen === 'string' ? storedFirstSeen : startedAt,
+    ...(bootPhase !== undefined ? { runtimeBootPhase: bootPhase } : {}),
+  };
+}

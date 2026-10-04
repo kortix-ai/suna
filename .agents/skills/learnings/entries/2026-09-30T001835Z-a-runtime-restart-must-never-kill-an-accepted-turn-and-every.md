@@ -72,6 +72,6 @@ with a negative control proving the amnesia reproduces without the fix);
 `apps/kortix-sandbox-agent-server/src/__tests__/orphaned-turn-relay-identity.test.ts`
 (an orphaned turn relays its own end even though the previous turn's
 signature is already relayed, at most once across repeated finalize calls);
-`apps/api/src/projects/sandbox-reaper.test.ts` (3 cases for the no-messageId
+`apps/api/src/services/sandboxes/sandbox-reaper.test.ts` (3 cases for the no-messageId
 ceiling: settles past 30 min even while the daemon insists active, leaves a
 young record alone, and a `delivering` record is not settled by this path).

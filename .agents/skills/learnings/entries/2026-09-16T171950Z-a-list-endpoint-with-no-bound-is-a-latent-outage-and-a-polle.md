@@ -26,4 +26,4 @@ or stop this". When you bound a list, grep every consumer for `.find(` and move
 id lookups to the read-by-id route. *Incident:* prod, customer project, reported
 as "ITS GIGA LAGGING"; no alert fired — every request was a 200.
 *Enforcer:* `SESSION_PAGE_MAX_LIMIT` (route rejects `limit > 200` with 400) and
-the cursor/paging tests in `apps/api/src/projects/lib/session-inventory.test.ts`.
+the cursor/paging tests in `apps/api/src/services/sessions/session-inventory.test.ts`.

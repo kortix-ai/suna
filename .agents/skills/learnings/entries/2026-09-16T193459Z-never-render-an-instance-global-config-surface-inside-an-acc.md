@@ -13,8 +13,8 @@ App `kortix-self-host-05804762` (appId `4968692`) and the callback wrote that
 row at `17:52:48Z`.
 
 Every managed-git accessor reads DB-first, env-fallback
-(`apps/api/src/projects/git-backends/github.ts:28-72`,
-`apps/api/src/projects/github.ts:135-192`). One row therefore shadowed the whole
+(`apps/api/src/services/git/backends/github.ts:28-72`,
+`apps/api/src/services/github/github.ts:135-192`). One row therefore shadowed the whole
 production GitHub identity at once: appId `3812697` → `4968692`, slug
 `kortix-private-repo-access` → `kortix-self-host-05804762`, managed owner
 `managed-kortix` → `kortix-ai`, plus clientId, clientSecret and stateSecret.

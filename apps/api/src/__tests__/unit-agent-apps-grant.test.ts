@@ -13,8 +13,8 @@ import {
   grantFromLoadedAgents,
   resolveGovernedAgentGrant,
 } from '../projects/agents';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
-import { agentGrantDiffers } from '../projects/lib/secret-grant';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
+import { agentGrantDiffers } from '../services/secrets/secret-grant';
 import { agentMayOpenApp } from '../iam/agent-scope';
 
 function parseV2(agentsBody: string) {

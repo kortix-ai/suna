@@ -6,7 +6,7 @@
  * lands, so a send that POSTs before an earlier one runs first. On
  * opencode <= 1.18.14 sandboxes the earlier prompt then carries an Enter-minted
  * wire id below the new assistant ids, and its turn never runs
- * (`apps/api/src/projects/wire-message-id.ts`).
+ * (`apps/api/src/services/sessions/wire-message-id.ts`).
  *
  * A link covers one send's whole delivery: the wait for its uploads and its
  * POST. The link is reserved at Send, so a text-only send made while an earlier

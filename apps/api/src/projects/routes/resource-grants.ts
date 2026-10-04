@@ -27,10 +27,10 @@ import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../lib/validate';
 import { readJsonObject } from '../../lib/http-body';
-import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { resolveEffectiveSessionConnectorBindings } from '../../services/sessions/session-connector-bindings';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { resolveSessionAgentGrant } from '../lib/secret-grant';
+import { resolveSessionAgentGrant } from '../../services/secrets/secret-grant';
 
 /**
  * At most one forced mirror refresh per project per window. A miss is the only

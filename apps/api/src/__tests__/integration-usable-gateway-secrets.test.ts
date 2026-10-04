@@ -1,6 +1,6 @@
 /**
  * Integration test (real local DB): the pooled gateway-key reads in
- * secrets/account-resource.ts, the SQL every pool decision uses.
+ * services/secrets/account-resource.ts, the SQL every pool decision uses.
  *
  * - `queryUsableGatewaySecrets` checks keys only: provider, exact key name,
  *   ids, project scope, and the grants of one `grantUserId`.
@@ -18,8 +18,8 @@ import { db } from '../lib/db';
 import {
   encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
   resolveProjectSharedProviderSecrets,
-} from '../secrets/account-resource';
-import { mayUseProviderKeys, providerEnvVarOf } from '../secrets/provider-key-selection';
+} from '../services/secrets/account-resource';
+import { mayUseProviderKeys, providerEnvVarOf } from '../services/secrets/provider-key-selection';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 

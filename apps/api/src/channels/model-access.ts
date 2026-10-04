@@ -32,7 +32,7 @@ import { runtimeModelCatalog } from '../llm-gateway/models/runtime-catalog';
 import { isModelServableForAccount, resolveEffectiveModel } from '../llm-gateway/resolution/default-model';
 import { toWireModel } from '../llm-gateway/resolution/effective';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
-import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
+import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../services/secrets/provider-key-selection';
 import { channelModelContext, projectModelContext } from './slack/model-gate';
 import type { ChannelCtx } from './slack/selection';
 import { channelTurnModel } from './vision-model';

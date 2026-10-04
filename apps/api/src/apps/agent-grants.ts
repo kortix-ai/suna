@@ -1,8 +1,8 @@
 // Which agents does kortix.yaml grant one App? Split from ./routes.ts so the
 // read can be tested against a real repository without the route stack.
 
-import type { GitBackedProject } from '../projects/git/types';
-import { readManifest } from '../projects/triggers';
+import type { GitBackedProject } from '../services/git/types';
+import { readManifest } from '../services/triggers';
 
 export type AppAgentGrant = { agent_name: string; grant: 'all' | 'listed'; path: string };
 

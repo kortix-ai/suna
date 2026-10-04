@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { resetTunnelProbeCache, sandboxCallbackDeadTunnelReason } from './sessions';
+import { resetTunnelProbeCache, sandboxCallbackDeadTunnelReason } from '../../services/sessions/sessions';
 
 /**
  * Incident 2026-08-14: the trycloudflare quick tunnel died server-side while

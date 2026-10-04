@@ -1,8 +1,8 @@
 /**
  * `project_sessions.agent_name` has exactly ONE writer after session create.
  *
- * Two production modules assert that in prose — `projects/lib/secret-grant.ts`
- * ("a column nothing ever updates") and `projects/lib/session-token-grant.ts`
+ * Two production modules assert that in prose — `services/secrets/secret-grant.ts`
+ * ("a column nothing ever updates") and `services/sessions/session-token-grant.ts`
  * ("the create-time agent and nothing ever updates it"). A second writer would
  * silently invalidate both. This is the tripwire that keeps the claim true.
  */

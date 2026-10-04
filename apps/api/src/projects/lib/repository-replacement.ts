@@ -3,16 +3,16 @@ import * as iamAuthorize from '../../iam/authorize';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../../lib/db';
-import { createInstallationToken, getFileSha, getGitHubAppInstallation, parseGitHubRepoUrl, verifyGitHubInstallationAdmin, type GitHubRepo } from '../github';
-import { invalidateProjectMirror } from '../git';
-import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
+import { createInstallationToken, getFileSha, getGitHubAppInstallation, parseGitHubRepoUrl, verifyGitHubInstallationAdmin, type GitHubRepo } from '../../services/github/github';
+import { invalidateProjectMirror } from '../../services/git';
+import { decryptProjectSecret, encryptProjectSecret } from '../../services/secrets/secrets';
 import {
   buildProjectGitConnectionValues,
   buildProjectGitMetadata,
   type ProjectGitWriteAuth,
   upsertProjectGitCredential,
-} from './project-git-write';
-import { resolveGitHubImportWithPat } from './git';
+} from '../../services/git/project-git-write';
+import { resolveGitHubImportWithPat } from '../../services/git/project-git';
 
 export class RepositoryChangedError extends Error {}
 export class RepositoryManifestMissingError extends Error {}
@@ -210,7 +210,7 @@ export async function persistProjectRepositoryReplacement(input: {
       // What this generation still decides, and all it decides: the git-proxy
       // authorization memo and the upstream memo are keyed by it, so a
       // replacement busts both instead of serving the old upstream for another
-      // 30 s (`sameRepository` in projects/lib/git.ts, `resolveProjectUpstreamMemo`
+      // 30 s (`sameRepository` in services/git/project-git.ts, `resolveProjectUpstreamMemo`
       // in git-proxy/index.ts); `/start` reports it as telemetry; and the web
       // shows an older session a notice about its own clone. It does NOT
       // freeze the session: every session of this project receives the

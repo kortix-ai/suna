@@ -40,7 +40,7 @@ import { isSessionSandboxCredential } from '../../middleware/session-sandbox-cre
 import {
   PROJECTION_MAX_BYTES,
   saveRuntimeProjection,
-} from '../../projects/lib/session-runtime-projection';
+} from '../../services/sessions/session-runtime-projection';
 
 // The daemon's body: `captured_at` is the DAEMON's capture clock, not ours —
 // an out-of-order retry must lose to a newer capture, and only the daemon

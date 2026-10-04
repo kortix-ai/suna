@@ -20,7 +20,7 @@ import {
   chatTurnStreams,
   type Database,
 } from '@kortix/db';
-import { reconcileStuckActiveSessions } from '../projects/sandbox-reaper';
+import { reconcileStuckActiveSessions } from '../services/sandboxes/sandbox-reaper';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000009301';
 const PROJECT_ID = '00000000-0000-4000-a000-000000009302';

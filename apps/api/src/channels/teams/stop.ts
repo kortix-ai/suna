@@ -120,7 +120,7 @@ export async function stopTeamsTurn(input: {
   try {
     // Lazily imported so the channel modules keep no static edge into the
     // session-lifecycle engine (the same rule turn.ts follows for the GC).
-    const { abortRuntimeTurn } = await import('../../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../../services/sessions/lifecycle/abort-runtime-turn');
     stoppedRuntime = await abortRuntimeTurn(input.sessionId, { requestedStop: true });
   } catch (err) {
     console.warn('[teams-webhook] runtime abort failed on stop', {

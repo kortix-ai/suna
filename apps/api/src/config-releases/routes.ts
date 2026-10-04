@@ -20,8 +20,8 @@ import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../iam';
 import { isSessionSandboxCredential } from '../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../openapi';
-import { refreshMirror } from '../projects/git/mirror';
-import type { GitBackedProject } from '../projects/git/types';
+import { refreshMirror } from '../services/git/mirror';
+import type { GitBackedProject } from '../services/git/types';
 import {
   assertProjectCapability,
   loadProjectForUser,
@@ -29,9 +29,9 @@ import {
   projectCapabilityAllowed,
 } from '../projects/lib/access';
 import { projectsApp } from '../projects/lib/app';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
-import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-session';
-import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
+import { callerKortixSessionId } from '../services/sessions/caller-session';
+import { sandboxTokenMayActOnSession } from '../services/sandboxes/sandbox-token-session';
+import { repositoryAccessFromSessionMetadata } from '../services/sessions/session-sandbox-metadata';
 import { isUuid } from '../lib/validate';
 import { db } from '../lib/db';
 import { requireFeatureFlag } from '../feature-flags/gate';
@@ -223,7 +223,7 @@ export function registerConfigReleaseRoutes(): void {
       // the project replaced its repository. A release is the project's CURRENT
       // config; the session's own `/workspace` clone is untouched by it and
       // stays on the repository it was cloned from. Nothing else refuses such a
-      // session either — `sameRepository` (projects/lib/git.ts) compares the
+      // session either — `sameRepository` (services/git/project-git.ts) compares the
       // project row against ITSELF across an authorization, to bust the 30 s
       // memo when a replacement lands mid-request. What is left is physical:
       // that clone and the new origin hold unrelated histories, so Git itself

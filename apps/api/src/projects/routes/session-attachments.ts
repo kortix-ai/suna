@@ -11,8 +11,8 @@ import {
   loadVisibleSession,
   sessionIsTombstoned,
 } from "../lib/access";
-import { callerKortixSessionId } from "../lib/caller-session";
-import { sessionAttachmentStore } from "../lib/session-attachments";
+import { callerKortixSessionId } from "../../services/sessions/caller-session";
+import { sessionAttachmentStore } from "../../services/sessions/session-attachments";
 import { isUuid } from '../../lib/validate';
 
 const path = "/{projectId}/sessions/{sessionId}/attachments";

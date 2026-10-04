@@ -3,7 +3,7 @@ import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { sessionProviderSecretPools } from '@kortix/db';
 
-// PUT /sessions/:id/model (projects/lib/session-model-keys.ts). The check used
+// PUT /sessions/:id/model (services/sessions/session-model-keys.ts). The check used
 // the owner's own keys: on dev (2026-09-25) a session shared with the project
 // accepted `codex/gpt-6-astra` through its owner's personal ChatGPT
 // connection, which the gateway never uses for a shared session — every turn
@@ -55,7 +55,7 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
 
 const keyQueries: Array<Record<string, unknown>> = [];
 let projectKeys: string[] = [PROJECT_KEY];
-mock.module('../secrets/provider-key-selection', () => ({
+mock.module('../services/secrets/provider-key-selection', () => ({
   providerKeyOf: (model: string) =>
     wire(model).startsWith('codex/')
       ? { providerId: 'codex', envVar: 'CODEX_AUTH_JSON' }
@@ -118,7 +118,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { admitSessionModelChange, admitSessionSharingChange } = await import('../projects/lib/session-model-keys');
+const { admitSessionModelChange, admitSessionSharingChange } = await import('../services/sessions/session-model-keys');
 
 let callerMaySelect = true;
 const change = (over: Partial<Parameters<typeof admitSessionModelChange>[0]> = {}) =>

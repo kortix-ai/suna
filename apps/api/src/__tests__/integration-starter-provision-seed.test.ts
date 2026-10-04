@@ -18,7 +18,7 @@ import { validateManifest } from '@kortix/manifest-schema';
 import { DEFAULT_STARTER_TEMPLATE_ID } from '@kortix/starter';
 import { buildProjectSeedFiles } from '../projects/seed-files';
 import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
-import { parseManifestString } from '../projects/triggers';
+import { parseManifestString } from '../services/triggers';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
   test('seeds a v2 kortix.yaml, not a v1 kortix.toml', async () => {

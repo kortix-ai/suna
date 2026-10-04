@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
+import { canonicalConnectorAlias } from '../services/sessions/session-connector-bindings';
 import { agentMayUseConnector, canonicalizeGrantConnectors } from './agent-scope';
 import { grantFromLoadedAgents } from '../projects/agents';
 

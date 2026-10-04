@@ -11,8 +11,8 @@ and a manual stop reconciles instead of 502ing. Only a last state of `running` (
 stop did not take) stays a genuine failure.
 
 **Trigger surface:** Writing or reviewing a sandbox provider adapter's `stop()` and
-the callers that classify its errors — `apps/api/src/projects/reaping/stop-box.ts`
-and `apps/api/src/projects/session-lifecycle/stop.ts`.
+the callers that classify its errors — `apps/api/src/services/sandboxes/reaping/stop-box.ts`
+and `apps/api/src/services/sessions/lifecycle/stop.ts`.
 
 **Incident:** 2026-09-29, PR #7807's stop-confirm bound is 10s; Platinum's own
 `stopping` transition outlasts it (the same transition `MIDTURN_STOP_CONFIRMATION_MS`
@@ -21,7 +21,7 @@ documents at 60s). 258 `did not reach stopped` failures over 48h, 242 of them
 a 5.5x error-log spike (KRTX-667). The same classification gap also returned HTTP 502
 to a user's manual Stop while the box was still powering off.
 
-**Enforcement:** `apps/api/src/projects/reaping/stop-box.test.ts` (stopping timeout is
+**Enforcement:** `apps/api/src/services/sandboxes/reaping/stop-box.test.ts` (stopping timeout is
 `skipped`, no error log; running timeout stays `errors`) and
-`apps/api/src/projects/session-lifecycle/__tests__/stop.test.ts` (stopping timeout
+`apps/api/src/services/sessions/lifecycle/__tests__/stop.test.ts` (stopping timeout
 commits the stop at 200).

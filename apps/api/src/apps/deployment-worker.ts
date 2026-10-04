@@ -16,7 +16,7 @@ import { logger } from '../lib/logger';
 import { db } from '../lib/db';
 import { runWorkerTick } from '../services/audit/audit-scope';
 import { auditDeploymentOutcome, type DeploymentAuditRef } from './deployment-audit';
-import { listResolvedProjectSecrets } from '../projects/secrets';
+import { listResolvedProjectSecrets } from '../services/secrets/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
 import { APP_VIEWER_SECRET_ENV, appViewerSecret } from './viewer';

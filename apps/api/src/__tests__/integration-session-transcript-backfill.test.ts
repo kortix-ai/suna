@@ -11,8 +11,8 @@ import { Client } from 'pg';
 import {
   backfillSessionTranscriptMirrorOnWake,
   resetTranscriptBackfillMemoForTests,
-} from '../projects/lib/session-transcript-capture';
-import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
+} from '../services/sessions/session-transcript-capture';
+import { readSessionTranscriptMirror } from '../services/sessions/session-transcript-mirror';
 import {
   localTestDatabaseUrl,
   removeSeeded,

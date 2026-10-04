@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
-const sessions = readFileSync(join(root, 'projects/lib/session-create.ts'), 'utf8');
+const sessions = readFileSync(join(root, 'services/sessions/session-create.ts'), 'utf8');
 const gitProxy = readFileSync(join(root, 'git-proxy/index.ts'), 'utf8');
 
 describe('compiled boot prebuild wiring', () => {

@@ -13,7 +13,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
   applyTriggerSessionAccess,
   setTriggerSessionAccess,
-} from '../projects/trigger-session-access';
+} from '../services/triggers/trigger-session-access';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 

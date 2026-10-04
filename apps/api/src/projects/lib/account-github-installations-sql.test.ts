@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   accountGitHubInstallationsQuery,
   installationsLinkedToOtherAccountsQuery,
-} from './git';
+} from '../../services/git/project-git';
 
 describe('accountGitHubInstallationsQuery', () => {
   const rendered = accountGitHubInstallationsQuery('account-1').toSQL().sql;

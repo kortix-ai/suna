@@ -24,9 +24,9 @@
 --
 -- 1. TWO REASONS ARE DECLARED BUT NEVER EMITTED. `idle_grace` and
 --    `boot_floor_expired` are members of the closed StopReason union
---    (apps/api/src/projects/stop-reason.ts) but no writer sets them today —
+--    (apps/api/src/services/sandboxes/stop-reason.ts) but no writer sets them today —
 --    see STOP_REASONS_NOT_YET_EMITTED in that file. Every deadline park goes
---    through `stopExpiredBox` (apps/api/src/projects/reaping/stop-box.ts),
+--    through `stopExpiredBox` (apps/api/src/services/sandboxes/reaping/stop-box.ts),
 --    which fires on the single comparison `deadline_at <= now` and stamps the
 --    reason its caller passed it — `deadline_expired` from the reaper's
 --    normal pass, `run_cap` from the request-path cap park. Neither the
@@ -41,7 +41,7 @@
 --    because the reason column itself cannot make the distinction yet.
 --
 -- 2. `run_cap` UNDERCOUNTS BY CONSTRUCTION. `parkBoxAtRunCap`
---    (apps/api/src/projects/reaping/stop-box.ts) is fire-and-forget from the
+--    (apps/api/src/services/sandboxes/reaping/stop-box.ts) is fire-and-forget from the
 --    request path that just refused a prompt at the cap. If that best-effort
 --    park fails, the box is NOT stamped `run_cap` — it sits at the cap with
 --    an expired `deadline_at` until the next reaper pass, which parks it
@@ -51,7 +51,7 @@
 -- 3. TWO PARK PATHS WRITE `status='stopped'` WITH NO REASON AT ALL, and will
 --    always read back as `(unrecorded)` here — both pre-existing and
 --    deliberately out of scope for the change that added stopReason:
---      - apps/api/src/projects/session-lifecycle/actions.ts (~435-449): the
+--      - apps/api/src/services/sessions/lifecycle/actions.ts (~435-449): the
 --        restart-in-place failure handler's non-missing-runtime branch —
 --        updates session_sandboxes.status to 'stopped' without touching
 --        metadata at all.
@@ -76,7 +76,7 @@ SELECT
   coalesce(s.metadata->>'stopReason', '(unrecorded)') AS stop_reason,
   CASE
     -- Reasons that already say exactly which path fired — no inference
-    -- needed. Ordered to match apps/api/src/projects/stop-reason.ts.
+    -- needed. Ordered to match apps/api/src/services/sandboxes/stop-reason.ts.
     WHEN s.metadata->>'stopReason' = 'run_cap'                    THEN 'C (run cap)'
     -- Declared in StopReason, never emitted today (Caveat 1). Kept as an
     -- explicit arm so the day a writer starts setting them, this query

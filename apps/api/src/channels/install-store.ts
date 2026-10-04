@@ -4,7 +4,7 @@ import {
   encryptProjectSecret,
   getProjectSecretValueForConsumer,
   getProjectSecretValuesForConsumer,
-} from '../projects/secrets';
+} from '../services/secrets/secrets';
 import { db } from '../lib/db';
 import { TEAMS_MANIFEST_VERSION } from './teams-manifest';
 

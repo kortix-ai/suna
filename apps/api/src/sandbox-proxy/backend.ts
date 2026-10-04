@@ -31,7 +31,7 @@ import {
   type SandboxIngressRequest,
   type SandboxIngressRoute,
 } from '../platform/providers';
-import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
+import { recoverTurnsAfterRuntimeRestart } from '../services/sessions/lifecycle/runtime-restart-recovery';
 import { db } from '../lib/db';
 import { resolvePreviewUserContext } from '../services/sessions/preview-ownership';
 import {

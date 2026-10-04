@@ -8,11 +8,11 @@ import {
 } from '../../services/sessions/session-public-shares';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
+import { guardSession, guardSessionSharing, sessionAccessDenied } from '../../services/sessions/session-access';
 import { isUuid } from '../../lib/validate';
 import { readJsonObject } from '../../lib/http-body';
-import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
-import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
+import { sessionHasPersonalConnectorBinding } from '../../services/sessions/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../../services/secrets/secret-audience';
 export function registerPublicSharesRoutes(): void {
   // GET /v1/projects/:projectId/sessions/:sessionId/previews
   // Human-friendly preview candidates. The frontend should pass the active

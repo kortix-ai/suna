@@ -20,7 +20,7 @@ import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth
 import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
-import { coolDownAccountSecret } from '../secrets/account-resource';
+import { coolDownAccountSecret } from '../services/secrets/account-resource';
 import { refreshRefusedCodexAccountLogin } from './credentials/codex';
 import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
 import { codexDescriptor } from './resolution/descriptors';

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   parseTriggerSessionAccess,
   triggerSessionAccessToVisibility,
-} from '../projects/trigger-session-access-policy';
+} from '../services/triggers/trigger-session-access-policy';
 
 const MEMBER = '11111111-2222-4333-8444-555555555555';
 const GROUP = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';

@@ -75,11 +75,11 @@ mock.module('../lib/db', () => ({
 }));
 
 let runtimeLive = false;
-mock.module('../projects/session-lifecycle/inbox-admission', () => ({
+mock.module('../services/sessions/lifecycle/inbox-admission', () => ({
   sessionHoldsLiveTurn: async () => runtimeLive,
 }));
 const aborted: string[] = [];
-mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
+mock.module('../services/sessions/lifecycle/abort-runtime-turn', () => ({
   abortRuntimeTurn: async (id: string) => {
     aborted.push(id);
     return true;

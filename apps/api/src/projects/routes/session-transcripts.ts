@@ -7,16 +7,16 @@ import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadVisibleSession, assertProjectCapability } from '../lib/access';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { AnyObject, projectsApp, SessionTranscriptReadSchema } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../lib/validate';
 import {
   buildSessionTranscriptDigest,
   buildSessionTranscriptSyncEnvelope,
-} from '../lib/session-transcript';
-import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
-import { sessionMessageAuthors } from '../lib/session-message-authors';
+} from '../../services/sessions/session-transcript';
+import { UnknownTranscriptCursorError } from '../../services/sessions/session-transcript-mirror';
+import { sessionMessageAuthors } from '../../services/sessions/session-message-authors';
 export function registerSessionTranscriptsRoutes(): void {
   // GET /v1/projects/:projectId/sessions/:sessionId/transcript
   // Server-side transcript read for project automation. Unlike the raw /v1/p

@@ -1,9 +1,9 @@
 import { clientAbortTarget } from '../client-abort';
-import { extractTurnIdentity, markTurnStopRequested } from '../../projects/session-turn-ledger';
+import { extractTurnIdentity, markTurnStopRequested } from '../../services/sessions/session-turn-ledger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { agentLaunchableInProject } from '../../projects/lib/session-token-grant';
+import { agentLaunchableInProject } from '../../services/sessions/session-token-grant';
 import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
-import { isTurnStartRequest } from '../../projects/sandbox-deadline';
+import { isTurnStartRequest } from '../../services/sandboxes/sandbox-deadline';
 import { loadSandbox, routeSandboxIngress, type SandboxRecord, type resolveSandboxIngress } from '../backend';
 import {
   DEFAULT_AGENT_SENTINEL,

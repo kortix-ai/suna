@@ -25,7 +25,7 @@ dead token. Measured on dev: 2 of the 3 running boxes in the fleet had a parked
 row, one divergence 31.8 days old. Reproduced end to end on a throwaway
 session and closed by PR #7861.
 
-**Enforcement:** `apps/api/src/projects/reaping/row-vm-divergence.test.ts`,
+**Enforcement:** `apps/api/src/services/sandboxes/reaping/row-vm-divergence.test.ts`,
 `apps/api/src/projects/lib/legacy-runtime-dead-daemon.test.ts`,
 `apps/api/src/projects/lib/legacy-runtime-repair-credential.test.ts`,
 `apps/api/src/__tests__/integration-sandbox-ownership.test.ts` (real PostgreSQL

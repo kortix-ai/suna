@@ -30,7 +30,7 @@ let messagesResult: MessagesFetch = { ok: true, messages: [] };
 let stateTargets: unknown[] = [];
 let messageReads: Array<{ target: unknown; sessionId: string; limit: number }> = [];
 
-mock.module('../../projects/lib/session-runtime-transport', () => ({
+mock.module('./session-runtime-transport', () => ({
   fetchRuntimeState: async (target: unknown) => {
     stateTargets.push(target);
     return stateResult;

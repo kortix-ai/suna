@@ -13,16 +13,16 @@ import { config } from '../../lib/config';
 import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { readJsonObject } from '../../lib/http-body';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
-import { mayChangeSessionModel } from '../lib/session-model-change';
+import { mayChangeSessionModel } from '../../services/sessions/session-model-change';
 import { resolveDesiredRelease } from '../../config-releases/desired';
 import { ownerMayUseAgent } from '../../config-releases/repoint';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
-import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
-import { LATEST_ETAG_BUDGET_MS } from '../lib/session-reload';
-import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
+import { isReleaseStale, toSessionConfigRelease } from '../../services/sessions/session-config-release';
+import { LATEST_ETAG_BUDGET_MS } from '../../services/sessions/session-reload';
+import { repositoryAccessFromSessionMetadata } from '../../services/sessions/session-sandbox-metadata';
 import {
   combineConfigStaleness,
   isConfigStale,
@@ -31,14 +31,14 @@ import {
   readSandboxConfigState,
   reloadDetail,
   reloadSessionConfig,
-} from '../lib/session-reload';
+} from '../../services/sessions/session-reload';
 import { TimeoutError, withTimeout } from '../../lib/with-timeout';
 import { logger } from '../../lib/logger';
 import { timeConfigStage } from '../lib/config-stage-timing';
 import { computeDesiredRuntime } from '../../runtime-convergence/desired';
 import { diffRuntime } from '../../runtime-convergence/diff';
 import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../runtime-convergence/wire';
-import type { SandboxConfigState } from '../lib/session-reload';
+import type { SandboxConfigState } from '../../services/sessions/session-reload';
 
 /**
  * The `runtime` block (spec §3, the runtime-convergence contract (PR #7785)): desired vs

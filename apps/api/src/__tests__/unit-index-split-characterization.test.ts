@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { HTTPException } from 'hono/http-exception';
-import { GitOperationError } from '../projects/git/mirror';
+import { GitOperationError } from '../services/git/mirror';
 
 // The unit-test contract (scripts/test.env, tests/src/core/local-stack.ts):
 // tests use the bundled model catalog and never contact models.dev. Setting

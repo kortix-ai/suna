@@ -229,8 +229,8 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-const actualGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const actualGit = await import('../services/git');
+mock.module('../services/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
@@ -327,8 +327,8 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
-const actualGithub = await import('../projects/github');
-mock.module('../projects/github', () => ({
+const actualGithub = await import('../services/github/github');
+mock.module('../services/github/github', () => ({
   ...actualGithub,
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
@@ -449,8 +449,8 @@ mock.module('../lib/db', () => ({
 // integration-prompt-attachments.test.ts ("project archive releases references").
 const releasedAttachmentProjects: string[] = [];
 let releaseAttachmentsError: Error | null = null;
-const realPromptAttachments = await import('../projects/prompt-attachments');
-mock.module('../projects/prompt-attachments', () => ({
+const realPromptAttachments = await import('../services/attachments/prompt-attachments');
+mock.module('../services/attachments/prompt-attachments', () => ({
   ...realPromptAttachments,
   releasePromptAttachmentsForProject: async (projectId: string) => {
     if (releaseAttachmentsError) throw releaseAttachmentsError;
@@ -749,7 +749,7 @@ describe('projects API contract', () => {
 
     // Absolute / workspace-prefixed paths are rejected (the UI must strip them).
     // archiveRepoSubtree throws via normalizeTreePath; route surfaces a 400.
-    mock.module('../projects/git', () => ({
+    mock.module('../services/git', () => ({
       createRemoteSessionBranch: async () => undefined,
       listRepoFiles: async () => repoFiles,
       loadProjectConfig: async () => ({ manifest: {}, env: { required: [], optional: [] }, opencode: {} }),

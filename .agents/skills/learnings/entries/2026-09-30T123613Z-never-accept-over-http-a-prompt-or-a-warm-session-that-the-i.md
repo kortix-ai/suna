@@ -13,7 +13,7 @@ predicate to what it offers.
 
 **Trigger surface:** Adding or changing a route that enqueues a lifecycle
 command for an existing session, or a lookup that hands a session to a client.
-Changing `apps/api/src/projects/instance-scope.ts` or the claim predicate in
+Changing `apps/api/src/services/sessions/instance-scope.ts` or the claim predicate in
 `session-lifecycle/command-claims.ts`. Running more than one local API stack on
 the shared database.
 

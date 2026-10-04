@@ -16,8 +16,8 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
-import * as realSandboxRuntimeRefresh from '../projects/lib/sandbox-runtime-refresh';
-import * as realSessionAttachments from '../projects/lib/session-attachments';
+import * as realSandboxRuntimeRefresh from '../services/sandboxes/sandbox-runtime-refresh';
+import * as realSessionAttachments from '../services/sessions/session-attachments';
 import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
@@ -49,7 +49,7 @@ mock.module('../platform/providers', () => ({
 }));
 // The delete clears the session's stored attachments in object storage, which
 // this lane does not run. The database half of the delete is the subject.
-mock.module('../projects/lib/session-attachments', () => ({
+mock.module('../services/sessions/session-attachments', () => ({
   ...realSessionAttachments,
   sessionAttachmentStore: () => ({ removeSession: async () => undefined }),
 }));
@@ -63,28 +63,28 @@ mock.module('../billing/services/compute-metering', () => ({
   },
   markComputeSessionAlive: async () => undefined,
 }));
-mock.module('../projects/lib/sandbox-runtime-refresh', () => ({
+mock.module('../services/sandboxes/sandbox-runtime-refresh', () => ({
   ...realSandboxRuntimeRefresh,
   scheduleSandboxRuntimeRefresh: () => undefined,
 }));
 
-const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
+const { applyStoppedState } = await import('../services/sandboxes/reaping/sandbox-state-sync');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
 const {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
   parkEstablishedRuntime,
   preserveEstablishedRuntime,
-} = await import('../projects/runtime-identity');
-const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
-const { deleteSession } = await import('../projects/session-lifecycle/actions');
-const { stopSession } = await import('../projects/session-lifecycle/stop');
-const { beginSandboxTurn } = await import('../projects/sandbox-turn-lifecycle');
+} = await import('../services/sandboxes/runtime-identity');
+const { claimInPlaceRestart } = await import('../services/sessions/lifecycle/runtime-restart-claim');
+const { deleteSession } = await import('../services/sessions/lifecycle/actions');
+const { stopSession } = await import('../services/sessions/lifecycle/stop');
+const { beginSandboxTurn } = await import('../services/sandboxes/sandbox-turn-lifecycle');
 const { transitionRuntime, transitionSandbox, transitionSession } = await import(
-  '../projects/session-lifecycle/status-transitions'
+  '../services/sessions/lifecycle/status-transitions'
 );
 const { RUNTIME_WAKE_LATE_START_GUARD_MS } = await import(
-  '../projects/session-lifecycle/runtime-wake-fence'
+  '../services/sessions/lifecycle/runtime-wake-fence'
 );
 
 type Row = Record<string, unknown>;

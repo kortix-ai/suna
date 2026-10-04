@@ -6,17 +6,17 @@ import {
   getRepo,
   listInstallationRepositories,
   listRepositoryBranches,
-} from '../github';
+} from '../../services/github/github';
 import { resolveProjectAccount } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import {
   createGitHubInstallationInstallUrl,
   getAccountGitHubInstallation,
-} from '../lib/git';
+} from '../../services/git/project-git';
 import {
   githubInstallationUnreachableBody,
   isGitHubInstallationUnreachable,
-} from '../lib/github-installation-errors';
+} from '../../services/github/github-installation-errors';
 import { normalizeString, serializeGitHubRepo } from '../lib/serializers';
 import { createRoute, z } from '@hono/zod-openapi';
 

@@ -15,7 +15,7 @@ import { db } from '../../lib/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { mayResolveApproval } from '../lib/approval-authority';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../lib/http-body';
 import { isAdaptedId } from '../review-adapters';

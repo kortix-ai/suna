@@ -41,12 +41,12 @@ import { db } from '../../lib/db';
 import { BillingError } from '../errors';
 import { isUniqueViolation } from '../../lib/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
-import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
+import { KORTIX_REMOVAL_INTENT_KEY } from '../../services/sandboxes/runtime-identity';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
   reconcileSandboxStoppedByExternalId,
-} from '../../projects/sandbox-reaper';
+} from '../../services/sandboxes/sandbox-reaper';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { wallet } from '../wallet';
 import {

@@ -6,8 +6,8 @@ import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
-} from '../../projects/session-lifecycle';
-import { sessionHoldsLiveTurn } from '../../projects/session-lifecycle/inbox-admission';
+} from '../../services/sessions/lifecycle';
+import { sessionHoldsLiveTurn } from '../../services/sessions/lifecycle/inbox-admission';
 import { currentChannelSelection } from '../slack/selection';
 import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
 import { buildAgentUnavailableCard } from './agent-picker';

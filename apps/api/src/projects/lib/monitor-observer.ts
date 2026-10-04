@@ -16,16 +16,16 @@ import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/d
 import { and, asc, eq, lt } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../lib/db';
-import type { GitTriggerSpec } from '../triggers';
+import type { GitTriggerSpec } from '../../services/triggers';
 import {
   MONITOR_PROMPT_PREAMBLE,
   type MonitorEventKind,
   buildMonitorPayload,
   renderMonitorLifecyclePrompt,
 } from './monitor-events';
-import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
-import { fireGitTrigger } from './trigger-fire';
-import { triggersPausedForProject } from './trigger-scheduler-state';
+import { renderPromptTemplate, triggerFilterMatches } from '../../services/triggers/trigger-payload';
+import { fireGitTrigger } from '../../services/triggers/trigger-fire';
+import { triggersPausedForProject } from '../../services/triggers/trigger-scheduler-state';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
  *  execution queue's ceiling so both queues fail the same way. */

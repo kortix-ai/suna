@@ -24,7 +24,7 @@ import {
   requestProviderTransition,
   readPublicProjectTransitionState,
   ProviderTransitionError,
-} from '../provider-transition/provider-transition-service';
+} from '../../services/sandboxes/provider-transition/provider-transition-service';
 
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
@@ -245,7 +245,7 @@ export function registerProjectSettingsRoutes(): void {
     // Release prompt attachments first. After the irreversible purge below, a
     // failed release would leave an active project without its repository; after
     // the archive, the project answers 404, so a release could never be retried.
-    const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
+    const { releasePromptAttachmentsForProject } = await import('../../services/attachments/prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
 
     // Archiving is recoverable by default. Only an explicit purge permanently

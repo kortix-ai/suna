@@ -45,8 +45,8 @@ mock.module('../lib/db', () => ({
 
 // The session's signed proxy endpoint. The transport itself is the real one:
 // the test stubs `fetch` below so the network throw happens at the wire.
-const realOpencodeMapping = await import('../projects/opencode-mapping');
-mock.module('../projects/opencode-mapping', () => ({
+const realOpencodeMapping = await import('../services/sessions/opencode-mapping');
+mock.module('../services/sessions/opencode-mapping', () => ({
   ...realOpencodeMapping,
   sandboxOpencodeEndpoint: async () => ({
     url: 'https://box.test/p/ext-fail-open/8000',
@@ -70,26 +70,26 @@ describe('one-sided runtime calls fail open on a network throw', () => {
 
   test('removeStrandedOpencodeMessage reports false', async () => {
     const { removeStrandedOpencodeMessage } = await import(
-      '../projects/session-lifecycle/runtime-client'
+      '../services/sessions/lifecycle/runtime-client'
     );
     expect(await removeStrandedOpencodeMessage(row, 'msg_0198f3a1b2c4AbCdEfGhIjKlMn')).toBe(false);
   });
 
   test('queuedContinueHasStagedRevert reports false', async () => {
     const { queuedContinueHasStagedRevert } = await import(
-      '../projects/session-lifecycle/runtime-client'
+      '../services/sessions/lifecycle/runtime-client'
     );
     expect(await queuedContinueHasStagedRevert(row)).toBe(false);
   });
 
   test('abortRuntimeTurn reports false', async () => {
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     expect(await abortRuntimeTurn(SESSION_ID)).toBe(false);
   });
 
   test('releaseRuntimeQuestion reports unreachable', async () => {
     const { releaseRuntimeQuestion } = await import(
-      '../projects/session-lifecycle/release-runtime-question'
+      '../services/sessions/lifecycle/release-runtime-question'
     );
     expect(await releaseRuntimeQuestion(SESSION_ID, 'que_1', [['sentinel']])).toBe('unreachable');
   });

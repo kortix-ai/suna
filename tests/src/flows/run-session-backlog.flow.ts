@@ -807,7 +807,7 @@ harnessFlow(
 /**
  * `POST /start` reports `stage: 'ready'` the moment the sandbox is usable; the
  * session's remote branch publishes separately, fully in the background (see
- * apps/api/src/projects/lib/sessions.ts, "Origin branch creation is publishing
+ * apps/api/src/services/sessions/sessions.ts, "Origin branch creation is publishing
  * work, not readiness work"). `GET /sessions/:id` mirrors that publish through
  * `metadata.remote_branch.status` (`'ready'` | `'failed'`, absent while still
  * in flight). A diff against `refs/heads/<sessionId>` needs the push to have

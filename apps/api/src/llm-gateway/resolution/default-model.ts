@@ -1,6 +1,6 @@
 import { type AuthedPrincipal, GatewayResolutionError } from '@kortix/llm-gateway';
 import { connectedByokPickerModels } from '../models/picker-catalog';
-import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
+import { listProjectSecretNamesForConsumer } from '../../services/secrets/secrets';
 import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
 import {
   type AccountModelDefaults,
@@ -51,7 +51,7 @@ async function cachedAccountDefaults(accountId: string, projectId?: string): Pro
 
 // A session's `agent_name` column defaults to the non-binding `'default'`
 // sentinel whenever session creation didn't resolve a concrete agent (see
-// `createProjectSession` in projects/lib/sessions.ts) — most commonly because
+// `createProjectSession` in services/sessions/sessions.ts) — most commonly because
 // `project.metadata.default_agent` wasn't populated even though the project's
 // kortix.yaml declares one (that mirror is only written by the explicit PUT
 // /default-agent route; provisioning + a CLI's first push don't always stamp

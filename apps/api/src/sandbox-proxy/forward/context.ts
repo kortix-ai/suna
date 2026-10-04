@@ -1,5 +1,5 @@
 import type { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import type { SandboxTurnIdentity } from '../../projects/session-turn-ledger';
+import type { SandboxTurnIdentity } from '../../services/sessions/session-turn-ledger';
 import type { SandboxRecord, resolveSandboxIngress } from '../backend';
 import type { ProxyHop } from '../proxy-hop';
 import type { PreviewProxyAccess } from './access';

@@ -26,12 +26,12 @@ const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 
 /** Worker name → the file whose tick is wrapped in `runWorkerTick('<name>'`. */
 const WORKERS: Record<string, string> = {
-  'active-turn-renewal': 'projects/active-turn-renewal.ts',
-  'project-maintenance': 'projects/maintenance.ts',
-  'trigger-scheduler': 'projects/lib/trigger-scheduler.ts',
+  'active-turn-renewal': 'services/sandboxes/active-turn-renewal.ts',
+  'project-maintenance': 'services/sandboxes/maintenance.ts',
+  'trigger-scheduler': 'services/triggers/trigger-scheduler.ts',
   'startup-prebuild': 'snapshots/builder.ts',
   'suna-migration': 'projects/suna-migration/suna-migration-worker.ts',
-  'provider-transition': 'projects/provider-transition/provider-transition-worker.ts',
+  'provider-transition': 'services/sandboxes/provider-transition/provider-transition-worker.ts',
   'app-deployments': 'apps/deployment-worker.ts',
   'app-idle-reaper': 'apps/idle-reaper.ts',
   'pi-worker-pool': 'services/sandboxes/daytona/pi-worker-pool.ts',
@@ -42,7 +42,7 @@ const WORKERS: Record<string, string> = {
   'project-snapshots': 'git-proxy/project-snapshot-worker.ts',
   'iam-grant-expiry': 'iam/expiry-sweeper.ts',
   'oauth-sweep': 'oauth/sweeper.ts',
-  'session-lifecycle': 'projects/session-lifecycle/drain.ts',
+  'session-lifecycle': 'services/sessions/lifecycle/drain.ts',
   'tunnel-cleanup': 'tunnel/index.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
   'billing-trial-expiry': 'billing/rotation-schedule.ts',
@@ -59,12 +59,12 @@ const NOT_WORKERS: Record<string, string> = {
   'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
   'routes/system.ts': 'measures event-loop lag',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
-  'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
-  'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
+  'services/sessions/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
+  'services/sandboxes/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
   'projects/routes/session-stream.ts': 'heartbeat on one open session stream',
-  'projects/session-lifecycle/command-lease.ts':
+  'services/sessions/lifecycle/command-lease.ts':
     'renews the lock of one claimed command while its drain lane or inline create runs',
-  'projects/session-lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
+  'services/sessions/lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
   'llm-gateway/models/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/preview-state-page.ts': 'browser JavaScript inside an HTML string',
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',

@@ -1,6 +1,6 @@
 /**
  * Unit tests for the code.storage (Pierre) managed git backend
- * (projects/git-backends/code-storage.ts): JWT minting (alg/claims/scopes,
+ * (services/git/backends/code-storage.ts): JWT minting (alg/claims/scopes,
  * repo-scoped vs org-wide), createRepo/deleteRepo request+response mapping,
  * buildUpstream's neutral {url, headers} shape for read vs write, and
  * seedFiles' commit-pack ndjson payload. All HTTP is mocked via
@@ -18,7 +18,7 @@ import {
   codeStorageGitAuthHeader,
   mintCodeStorageJwt,
   type GitConnectionRef,
-} from '../projects/git-backends';
+} from '../services/git/backends';
 
 // Throwaway EC (P-256) and RSA keypairs — signing-only, never a live
 // code.storage credential.

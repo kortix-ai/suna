@@ -10,7 +10,7 @@ import {
 } from '../connectors/materialize';
 import { extractConnectors } from '../projects/connectors';
 import { extractProjectPolicies } from '../projects/policies';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function specFrom(body: string) {
   const m = parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`);

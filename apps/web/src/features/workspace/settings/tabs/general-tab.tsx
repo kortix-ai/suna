@@ -42,8 +42,8 @@
  *     (`apps/api/src/projects/lib/access.ts:575`). So every session, secret,
  *     integration and key under it 404s. This is not "hidden from a list".
  *   - Triggers and scheduled runs only fire for `status = 'active'`
- *     (`apps/api/src/projects/lib/triggers.ts`,
- *     `apps/api/src/projects/trigger-execution-store.ts`), so automation stops
+ *     (`apps/api/src/services/triggers/trigger-runtime.ts`,
+ *     `apps/api/src/services/triggers/trigger-execution-store.ts`), so automation stops
  *     immediately.
  *   - Nothing in `apps/web` or `@kortix/sdk` can un-archive a project — there
  *     is no route, no SDK call, and no UI. Only the platform-admin surface can

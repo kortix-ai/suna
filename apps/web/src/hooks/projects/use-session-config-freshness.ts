@@ -150,7 +150,7 @@ export function fallbackCopyKeys(source: SessionConfigRelease['source'] | undefi
  * warning, so the ordinary outcome — the session already runs the base
  * branch's current release — was announced as "Reload didn't apply. Try again
  * in a moment." The server draws the same line (`reloadNeedsAttention`,
- * apps/api/src/projects/lib/session-reload.ts) and the CLI prints a tick for
+ * apps/api/src/services/sessions/session-reload.ts) and the CLI prints a tick for
  * it; only this surface disagreed.
  */
 export function reloadResultTone(result: SessionReloadResult): 'success' | 'warning' | 'error' {

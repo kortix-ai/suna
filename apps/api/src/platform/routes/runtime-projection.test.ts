@@ -36,7 +36,7 @@ mock.module('../../lib/db', () => ({
   hasDatabase: true,
 }));
 
-mock.module('../../projects/lib/session-runtime-projection', () => ({
+mock.module('../../services/sessions/session-runtime-projection', () => ({
   PROJECTION_MAX_BYTES: 256 * 1024,
   saveRuntimeProjection: async (input: Record<string, unknown>) => {
     saved.push(input);

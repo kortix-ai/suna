@@ -40,7 +40,7 @@ import ts from 'typescript';
 
 const SRC_ROOT = resolve(import.meta.dir, '..');
 const ENTRY = resolve(import.meta.dir, 'index.ts');
-const FORBIDDEN = resolve(SRC_ROOT, 'projects/lib/legacy-runtime-bootstrap-wiring.ts');
+const FORBIDDEN = resolve(SRC_ROOT, 'services/sandboxes/legacy-runtime-bootstrap-wiring.ts');
 
 /** `./foo` → an existing `.ts` file, trying the extensions Bun/Node resolve. */
 function resolveRelativeImport(fromFile: string, specifier: string): string | null {

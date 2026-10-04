@@ -4,8 +4,8 @@ import { clientAbortTarget } from './client-abort';
 import { isNonIdempotentSessionWrite } from './prompt-dedupe';
 import { isLongTurnCompletionRequest } from './preview-retry-budget';
 import { isTurnStartEnvSync } from './pre-prompt-env-sync';
-import { isTurnStartRequest } from '../projects/turn-start-request';
-import { extractTurnIdentity } from '../projects/session-turn-ledger';
+import { isTurnStartRequest } from '../services/sandboxes/turn-start-request';
+import { extractTurnIdentity } from '../services/sessions/session-turn-ledger';
 
 const body = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).buffer as ArrayBuffer;
 

@@ -5,15 +5,15 @@ import {
 import { createRoute, z } from '@hono/zod-openapi';
 import { getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
-import { executeSecretBrokerRequest, SecretBrokerError } from '../../secrets/http-broker';
+import { executeSecretBrokerRequest, SecretBrokerError } from '../../services/secrets/http-broker';
 import {
   classifyPresentedHandles,
   requestSurfaceText,
   summarizeHandleRefusals,
-} from '../../secrets/handle-substitution';
-import { authorizeSecretRelay } from '../../secrets/relay-authorize';
+} from '../../services/secrets/handle-substitution';
+import { authorizeSecretRelay } from '../../services/secrets/relay-authorize';
 import { recordAuditEvent } from '../../services/audit/audit';
-import { intersectSecretGrants } from '../secrets';
+import { intersectSecretGrants } from '../../services/secrets/secrets';
 import { config } from '../../lib/config';
 import { loadProjectForUser } from '../lib/access';
 import {
@@ -109,7 +109,7 @@ export function registerSecretBrokerRoutes(): void {
       };
 
       // ONE authorization decision, shared with the streaming relay and the
-      // websocket transports (`secrets/relay-authorize.ts`). Everything this
+      // websocket transports (`services/secrets/relay-authorize.ts`). Everything this
       // route used to inline — the active-session query, the shared/personal
       // secret resolution, the delivery mode, the broker-or-boundary shape, the
       // live handle rows, the handle policy check, and the spendable set — lives

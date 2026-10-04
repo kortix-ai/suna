@@ -11,7 +11,7 @@ import {
   MAX_RECOVERIES_PER_WINDOW,
   RECOVERY_MIN_GAP_MS,
   claimRecoveryAttempt,
-} from '../projects/session-lifecycle/unattended-runtime-recovery';
+} from '../services/sessions/lifecycle/unattended-runtime-recovery';
 import { db } from '../lib/db';
 
 const SANDBOX_ID = crypto.randomUUID();

@@ -8,7 +8,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../lib/db';
 import { TurnPermissionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { projectsApp } from '../lib/app';
-import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
+import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
 
 // POST /v1/projects/:projectId/turn-permission
 // Sandbox-to-apps/api relay for a harness permission request, from OpenCode

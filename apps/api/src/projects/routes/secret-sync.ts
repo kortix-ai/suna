@@ -11,8 +11,8 @@ import { auth, errors, json } from '../../openapi';
 import {
   propagateProjectSecretsToActiveSandboxes,
   syncSessionSecretsToSandbox,
-} from '../lib/sandbox-env-sync';
-import { reconcileStoredSessionAgentGrant } from '../lib/session-token-grant';
+} from '../../services/sandboxes/sandbox-env-sync';
+import { reconcileStoredSessionAgentGrant } from '../../services/sessions/session-token-grant';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 export function registerSecretSyncRoutes(): void {

@@ -1,4 +1,4 @@
-import { type GitBackedProject } from '../projects/git';
+import { type GitBackedProject } from '../services/git';
 import { getSandboxProvider } from './providers';
 import { config, type SandboxProviderName } from '../lib/config';
 import { computeTemplateIdentity, listTemplatesForProject, resolveTemplateForBuildSlug, refreshTemplateState, type ResolvedTemplate } from './templates';

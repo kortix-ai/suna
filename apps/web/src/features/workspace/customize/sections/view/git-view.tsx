@@ -842,7 +842,7 @@ function RepoAccessSection({
  * The body for a repository Kortix does not own.
  *
  * Collaborator invites go through the managed org's admin credential
- * (`managedAdminAuth`, `apps/api/src/projects/git-backends/github.ts`), which
+ * (`managedAdminAuth`, `apps/api/src/services/git/backends/github.ts`), which
  * only has repo-admin scope on repositories Kortix created — so for a BYO repo
  * there is nothing Kortix could do here even with the user's permission. The
  * honest answer is where to go instead, and for GitHub that is a real link

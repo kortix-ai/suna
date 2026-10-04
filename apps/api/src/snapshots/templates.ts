@@ -19,8 +19,8 @@ import { db } from '../lib/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './build-slug';
 import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
-import { readManifest } from '../projects/triggers';
-import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
+import { readManifest } from '../services/triggers';
+import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../services/git';
 import { config } from '../lib/config';
 import {
   buildDefaultSandboxTemplate,

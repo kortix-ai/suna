@@ -86,7 +86,7 @@ const resolveProjectSecretsForConsumer = mock(async (input: { name: string }) =>
   const value = await getProjectSecretValueForConsumer(input);
   return value ? [{ identifier: input.name, value }] : [];
 });
-mock.module('../projects/secrets', () => ({
+mock.module('../services/secrets/secrets', () => ({
   listProjectSecretNamesForConsumer,
   getProjectSecretValueForConsumer,
   resolveProjectSecretsForConsumer,
@@ -232,7 +232,7 @@ const accountResource = {
   },
 };
 
-mock.module('../secrets/account-resource', () => accountResource);
+mock.module('../services/secrets/account-resource', () => accountResource);
 
 mock.module('../lib/config', () => ({
   config: { LLM_GATEWAY_ENABLED: true, KORTIX_MANAGED_PROVIDER_ENABLED: false },
@@ -283,8 +283,8 @@ mock.module('../repositories/project-routing-policies', () => ({
 
 const { servableProjectCatalog } = await import('./models/servable-catalog');
 const { resolveCandidates } = await import('./resolution/resolve-candidates');
-const { listGrantedGatewaySecretNames } = await import('../secrets/account-resource');
-const { usableProviderKeys } = await import('../secrets/provider-key-selection');
+const { listGrantedGatewaySecretNames } = await import('../services/secrets/account-resource');
+const { usableProviderKeys } = await import('../services/secrets/provider-key-selection');
 
 /** A model the picker lists is one the sandbox registers and the composer offers. */
 async function listedByokAndCodexModels(

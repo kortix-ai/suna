@@ -1,8 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, projects } from '@kortix/db';
 import { db } from '../../lib/db';
-import { withProjectGitAuth } from '../../projects/lib/git';
-import { listRepoFiles, loadProjectConfig } from '../../projects/git';
+import { withProjectGitAuth } from '../../services/git/project-git';
+import { listRepoFiles, loadProjectConfig } from '../../services/git';
 
 // Per-channel agent + model selection. A Slack channel is bound to a project
 // (chat_channel_bindings); these helpers read/write the optional agent + model

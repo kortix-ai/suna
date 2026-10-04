@@ -39,7 +39,7 @@ mock.module('../../middleware/require-admin', () => ({
 }));
 
 const { githubAppSetupRouter } = await import('./github-app');
-const { buildGitHubAppInstallState } = await import('../../projects/github');
+const { buildGitHubAppInstallState } = await import('../../services/github/github');
 
 const ENV_KEYS = [
   'KORTIX_GITHUB_APP_ID',

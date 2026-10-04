@@ -14,7 +14,7 @@ import {
   scheduleAssetConvergence,
   type AssetConvergenceDeps,
   type TurnStartConvergenceDeps,
-} from '../turn-start-convergence';
+} from '../../../services/sessions/turn-start-convergence';
 import {
   __clearRunningAssetsForTests,
   forgetRunningAssets,
@@ -28,7 +28,7 @@ import {
   lastKnownRunningRelease,
   noteRunningRelease,
 } from '../../../config-releases/running-release';
-import type { SessionConfigConvergenceOutcome } from '../session-config-convergence';
+import type { SessionConfigConvergenceOutcome } from '../../../services/sessions/session-config-convergence';
 
 const RELEASE_A = 'a'.repeat(64);
 const RELEASE_B = 'b'.repeat(64);

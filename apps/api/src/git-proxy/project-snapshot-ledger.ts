@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { projectGitConnections, projectSnapshotArchives } from '@kortix/db';
-import { validateSha } from '../projects/git-ref';
-import type { GitBackedProject } from '../projects/git/types';
+import { validateSha } from '../services/git/git-ref';
+import type { GitBackedProject } from '../services/git/types';
 import { db } from '../lib/db';
 import { PROJECT_SNAPSHOT_FORMAT, headObject, projectSnapshotTreeKey, projectSnapshotBlobsKey, presignProjectSnapshotDownload, projectSnapshotStorageConfigured, type ProjectSnapshotRepository } from './project-snapshot-store';
 import { normalizeSnapshotRef, type ReadyProjectSnapshot } from './project-snapshot';
@@ -118,13 +118,13 @@ export async function queueProjectSnapshotForRef(
   const normalized = normalizeSnapshotRef(ref);
   let commitSha: string | null = null;
   try {
-    const { resolveRemoteBranchTip } = await import('../projects/git/branches');
+    const { resolveRemoteBranchTip } = await import('../services/git/branches');
     commitSha = await resolveRemoteBranchTip(project, normalized);
   } catch {
     commitSha = null;
   }
   if (!commitSha) {
-    const { resolveCommitSha } = await import('../projects/git/commits');
+    const { resolveCommitSha } = await import('../services/git/commits');
     commitSha = await resolveCommitSha(project, normalized);
   }
   const outcome = await enqueueProjectSnapshot({

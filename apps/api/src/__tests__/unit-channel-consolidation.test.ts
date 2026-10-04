@@ -12,7 +12,7 @@ import {
   SLACK_RESERVED_SLUG,
   RESERVED_CONNECTOR_SLUGS,
 } from '../projects/connectors';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 import {
   hideSupersededSlack,
   withChannelDeclaration,

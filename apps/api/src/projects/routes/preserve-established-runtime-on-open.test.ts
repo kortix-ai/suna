@@ -11,12 +11,12 @@
  */
 import type { sessionSandboxes } from '@kortix/db';
 import { describe, expect, mock, test } from 'bun:test';
-import * as realRuntimeIdentity from '../runtime-identity';
+import * as realRuntimeIdentity from '../../services/sandboxes/runtime-identity';
 
 let parkCalls: Array<{ reason: string; stopReason: string }> = [];
 let preserveCalls: Array<{ reason: string; stopReason: string }> = [];
 
-mock.module('../runtime-identity', () => ({
+mock.module('../../services/sandboxes/runtime-identity', () => ({
   ...realRuntimeIdentity,
   parkEstablishedRuntime: async (
     row: typeof sessionSandboxes.$inferSelect,

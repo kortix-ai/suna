@@ -26,9 +26,9 @@ import {
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import * as realRequestContext from '../lib/request-context';
-import * as realEnvSync from '../projects/lib/sandbox-env-sync';
-import * as realGrant from '../projects/lib/session-token-grant';
-import * as realSnapshot from '../projects/opencode-session-snapshot';
+import * as realEnvSync from '../services/sandboxes/sandbox-env-sync';
+import * as realGrant from '../services/sessions/session-token-grant';
+import * as realSnapshot from '../services/sessions/opencode-session-snapshot';
 // Spread the real modules and override only what this test must control: these
 // modules have OTHER exports the surrounding graph imports, and a bare stub
 // makes bun fail the whole file on a missing export.
@@ -62,13 +62,13 @@ mock.module('../services/sessions/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-mock.module('../projects/lib/sandbox-env-sync', () => ({
+mock.module('../services/sandboxes/sandbox-env-sync', () => ({
   ...realEnvSync,
   syncSandboxEnvForPrompt: async () => {
     envSyncCalls += 1;
   },
 }));
-mock.module('../projects/lib/session-token-grant', () => ({
+mock.module('../services/sessions/session-token-grant', () => ({
   ...realGrant,
   // The project declares both agents. Since 86065cd21f (INC-2026-09-15) the
   // proxy drops a turn-start agent the project's manifest does not declare
@@ -82,7 +82,7 @@ mock.module('../projects/lib/session-token-grant', () => ({
     return { action: 'skip' };
   },
 }));
-mock.module('../projects/opencode-session-snapshot', () => ({
+mock.module('../services/sessions/opencode-session-snapshot', () => ({
   ...realSnapshot,
   scheduleOpencodeSnapshotSync: () => {},
 }));

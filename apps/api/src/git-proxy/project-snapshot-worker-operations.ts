@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { projectSnapshotArchives, projects } from '@kortix/db';
-import type { GitBackedProject } from '../projects/git/types';
+import type { GitBackedProject } from '../services/git/types';
 import { db } from '../lib/db';
 import { PROJECT_SNAPSHOT_FORMAT, type ProjectSnapshotRepository } from './project-snapshot-store';
 import { buildProjectSnapshotArchive, publishProjectSnapshot, ProjectSnapshotTooLargeError, type BuiltProjectSnapshot } from './project-snapshot-build';

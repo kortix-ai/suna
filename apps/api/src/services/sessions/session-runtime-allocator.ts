@@ -1,0 +1,143 @@
+import { eq } from 'drizzle-orm';
+
+import { projectSessions } from '@kortix/db';
+import type { SandboxProviderName } from '../../lib/config';
+import { logger } from '../../lib/logger';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
+import { db } from '../../lib/db';
+import type { GitBackedProject } from '../git';
+import { RuntimeIdentityConflictError } from '../sandboxes/runtime-identity-error';
+import { transitionSession } from './lifecycle/status-transitions';
+import type { PreparedInitialSandboxTurn } from './session-turn-ledger';
+import type { ProjectRow } from '../../projects/lib/serializers';
+import { projectSessionMetadataMerge } from './session-metadata-merge';
+import { mergeSessionSandboxEnv } from './session-runtime-context';
+
+type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
+
+export interface AllocateSessionRuntimeInput {
+  sessionId: string;
+  accountId: string;
+  projectId: string;
+  userId: string;
+  project: RuntimeProject;
+  providerName: SandboxProviderName;
+  baseRef: string;
+  agentName: string;
+  allowProjectImage: boolean;
+  sandboxSlug?: string;
+  sessionMetadata: Record<string, unknown>;
+  runtimeMetadata?: Record<string, unknown>;
+  initialTurn?: PreparedInitialSandboxTurn | null;
+  extraEnvVars?: Record<string, string>;
+  buildEnvVars: () => Promise<Record<string, string>>;
+  resolveGitProject: () => Promise<GitBackedProject>;
+  beforeActive?: (externalId: string) => Promise<void>;
+}
+
+/**
+ * Allocate compute for an already-created project session.
+ *
+ * `createProjectSession` owns durable identity (`project_sessions.session_id`,
+ * git branch, visible metadata). This allocator only attaches runtime capacity
+ * for that exact id.
+ */
+export function allocateSessionRuntime(input: AllocateSessionRuntimeInput): void {
+  void allocateSessionRuntimeAsync(input);
+}
+
+async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): Promise<void> {
+  const tl = new ProvisionTimeline(input.sessionId, 'session-create');
+  try {
+    const gitProjectPromise = input.resolveGitProject().then((project) => {
+      tl.mark('git-auth');
+      return project;
+    });
+    const envPromise = input.buildEnvVars().then((envVars) => {
+      tl.mark('env-vars');
+      return envVars;
+    });
+
+    // Not awaited here: provisioning reads it only when it builds the provider
+    // input, so the env build overlaps the image check and the token mint.
+    const extraEnvVars = envPromise.then((env) => mergeSessionSandboxEnv(env, input.extraEnvVars));
+
+    await provisionSessionSandbox({
+      sandboxId: input.sessionId,
+      accountId: input.accountId,
+      projectId: input.projectId,
+      userId: input.userId,
+      agentName: input.agentName,
+      allowProjectImage: input.allowProjectImage,
+      provider: input.providerName,
+      metadata: {
+        session_id: input.sessionId,
+        project_id: input.projectId,
+        ...(input.runtimeMetadata ?? {}),
+      },
+      initialTurn: input.initialTurn,
+      extraEnvVars,
+      projectMetadata: input.project.metadata,
+      gitProject: {
+        projectId: input.projectId,
+        repoUrl: input.project.repoUrl,
+        defaultBranch: input.project.defaultBranch,
+        manifestPath: input.project.manifestPath,
+        gitAuthToken: null,
+      },
+      resolveGitProject: async () => gitProjectPromise,
+      baseRef: input.baseRef,
+      sandboxSlug: input.sandboxSlug,
+      beforeActive: input.beforeActive,
+    });
+
+    tl.mark('kicked');
+    const sessionStartTimeline = tl.log();
+    void mergeSessionMetadata(input.sessionId, {
+      session_start_timeline: sessionStartTimeline,
+    }).catch(() => {});
+  } catch (err) {
+    if (err instanceof RuntimeIdentityConflictError) {
+      console.warn(`[runtime-identity] refused duplicate allocation for ${input.sessionId}`);
+      return;
+    }
+    const message = (err as Error)?.message || 'Sandbox provisioning failed';
+    // This runs detached from any request (allocateSessionRuntime is
+    // fire-and-forget — restart/create already 202'd) — a structured error is
+    // the ONLY signal this session is now failed with no session_sandboxes row
+    // behind it, so every later proxy call will 404 'sandbox not found'.
+    logger.error('[projects] runtime allocation failed — session marked failed', {
+      session_id: input.sessionId,
+      project_id: input.projectId,
+      account_id: input.accountId,
+      provider: input.providerName,
+      error: message,
+    });
+    try {
+      // Merge, never re-write `input.sessionMetadata`: that snapshot was
+      // taken before allocation started, so writing it back drops anything
+      // committed since — the generated title, remote_branch,
+      // the start timeline. The session is terminal here, so nothing retries.
+      await transitionSession('fail', input.sessionId, {
+        error: message,
+        metadata: { provisioning_error: message },
+      });
+    } catch (markErr) {
+      console.error(`[projects] Failed to mark session ${input.sessionId} failed:`, markErr);
+    }
+  }
+}
+
+async function mergeSessionMetadata(
+  sessionId: string,
+  extra: Record<string, unknown>,
+): Promise<void> {
+  await db
+    .update(projectSessions)
+    .set({
+      metadata: projectSessionMetadataMerge(extra),
+      updatedAt: new Date(),
+    })
+    .where(eq(projectSessions.sessionId, sessionId));
+}

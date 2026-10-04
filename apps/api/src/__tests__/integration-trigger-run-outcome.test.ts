@@ -16,9 +16,9 @@ import {
   findReusableTriggerSession,
   markGitTriggerAttemptFailed,
   markGitTriggerFired,
-} from '../projects/lib/trigger-fire';
-import { recordTriggerRunEnd, type TriggerRunEnd } from '../projects/lib/trigger-run-outcome';
-import { markTriggerRuntimeDelivered } from '../projects/trigger-execution-store';
+} from '../services/triggers/trigger-fire';
+import { recordTriggerRunEnd, type TriggerRunEnd } from '../services/triggers/trigger-run-outcome';
+import { markTriggerRuntimeDelivered } from '../services/triggers/trigger-execution-store';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

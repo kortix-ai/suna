@@ -10,8 +10,8 @@ import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { refreshMirror } from '../projects/git/mirror';
-import type { GitBackedProject } from '../projects/git/types';
+import { refreshMirror } from '../services/git/mirror';
+import type { GitBackedProject } from '../services/git/types';
 import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
 import {
   __clearConfigReleaseCachesForTests,

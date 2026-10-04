@@ -1,7 +1,7 @@
 import type { AgentGrant } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
-import type { GitBackedProject } from '../git';
+import type { GitBackedProject } from '../../services/git';
 import { platformMetaAgentGrant } from '../lib/platform-meta-agent';
 import type { ManifestFormat } from '@kortix/manifest-schema';
 import { parseManifestString } from '../manifest-io';

@@ -312,7 +312,7 @@ The latest live journey passes on the merged source.
 The latest `caffeinate -i pnpm test` completed on source `66f2317fe6` in 642.8 seconds with exit one.
 All six core lanes passed: 513 REST/CLI flows, 187 database suites containing 1,717 tests with one quarantine,
 743 runner units, SDK tests, route coverage, and worktree tests.
-Package quality failed one API assertion in `apps/api/src/projects/sandbox-reaper.test.ts`.
+Package quality failed one API assertion in `apps/api/src/services/sandboxes/sandbox-reaper.test.ts`.
 The provider-neutral observation returned `unknown` with `daemonAnswered: false`; the test expected `active` with `daemonAnswered: true`.
 The implicated test and observer have no changes relative to merged main `b34c235d39`.
 A focused rerun passed all 162 tests in that file in 3.53 seconds; this does not replace the failed package gate.

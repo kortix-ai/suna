@@ -6,7 +6,7 @@ import { parseManifestText } from '@kortix/manifest-schema';
 // process. Mock it BEFORE the dynamic import below so the pure-function tests
 // (which don't touch git at all) and the I/O tests (which control it per-test)
 // both load safely, mirroring the mock-then-dynamic-import pattern used
-// throughout apps/api/src/projects/maintenance.test.ts and friends.
+// throughout apps/api/src/services/sandboxes/maintenance.test.ts and friends.
 let manifestFile: { path: string; content: string } | null = null;
 let mdFileContent: Record<string, string> = {};
 let readRepoFileCalls: string[] = [];
@@ -18,7 +18,7 @@ let refsRead: string[] = [];
 // transient-failure branch is reachable through the same seam as the fixtures.
 let transientFailurePaths = new Set<string>();
 
-// `mock.module` REPLACES the module — it does not merge. `../git` is a barrel,
+// `mock.module` REPLACES the module — it does not merge. `../../services/git` is a barrel,
 // so anything omitted here stops existing for every module loaded afterwards in
 // the same bun process, including ones this file never touches. That is not
 // hypothetical: `session-reload.ts` importing `resolveCommitSha` from the barrel
@@ -29,7 +29,7 @@ let transientFailurePaths = new Set<string>();
 // So the stubs below are deliberately broader than this file needs: they keep
 // the barrel's shape intact for whoever loads next. Add to them rather than
 // letting a sibling suite break.
-mock.module('../git', () => ({
+mock.module('../../services/git', () => ({
   readManifestFromRepo: async (_project: unknown, _candidates: unknown, ref: string) => {
     refsRead.push(ref);
     return manifestFile;

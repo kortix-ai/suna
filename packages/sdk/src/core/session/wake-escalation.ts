@@ -6,7 +6,7 @@
  *
  * Opening a stopped session starts a wake. The old model gave that wake a FIXED
  * budget: the server's own `RUNTIME_WAKE_LEASE_MS` (240s,
- * `apps/api/src/projects/session-lifecycle/runtime-wake-fence.ts:10`), after
+ * `apps/api/src/services/sessions/lifecycle/runtime-wake-fence.ts:10`), after
  * which maintenance stamps `stopReason: 'runtime_wake_failed'` and every
  * subsequent `/start` short-circuits to a terminal payload
  * (`apps/api/src/projects/routes/shared.ts:672-694`)

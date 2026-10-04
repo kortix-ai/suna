@@ -17,8 +17,8 @@
  * settle the open ledger rows `runtime_gone` and requeue the prompt.
  */
 import { describe, expect, test } from 'bun:test';
-import { reloadSessionConfig, type SessionReloadDeps } from '../session-reload';
-import { recoverTurnsAfterRuntimeRestart } from '../../session-lifecycle/runtime-restart-recovery';
+import { reloadSessionConfig, type SessionReloadDeps } from '../../../services/sessions/session-reload';
+import { recoverTurnsAfterRuntimeRestart } from '../../../services/sessions/lifecycle/runtime-restart-recovery';
 
 const RELEASE_A = 'a'.repeat(64);
 const RELEASE_B = 'b'.repeat(64);

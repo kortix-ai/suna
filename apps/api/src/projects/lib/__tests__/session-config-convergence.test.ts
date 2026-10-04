@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
   convergeSessionConfig,
   type SessionConfigConvergenceDeps,
-} from '../session-config-convergence';
+} from '../../../services/sessions/session-config-convergence';
 import {
   combineConfigStaleness,
   configNeedsPush,
   type SessionReloadResult,
-} from '../session-reload';
+} from '../../../services/sessions/session-reload';
 
 const TARGET = {
   projectId: 'proj-1',

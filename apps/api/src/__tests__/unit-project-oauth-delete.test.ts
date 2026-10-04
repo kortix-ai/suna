@@ -61,7 +61,7 @@ mock.module('../projects/lib/access', () => ({
   },
 }));
 
-mock.module('../projects/lib/sandbox-env-sync', () => ({
+mock.module('../services/sandboxes/sandbox-env-sync', () => ({
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, opts: unknown) => {
     propagateCalls.push({ projectId, opts });
   },

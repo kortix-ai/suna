@@ -4,8 +4,8 @@ import {
   serializeManifest,
   extractTriggers,
   triggerSpecToTomlEntry,
-} from '../projects/triggers';
-import { draftToSpec, parseTriggerDraft } from '../projects/lib/triggers';
+} from '../services/triggers';
+import { draftToSpec, parseTriggerDraft } from '../services/triggers/trigger-runtime';
 import { extractAgents } from '../projects/agents';
 import { extractConnectors } from '../projects/connectors';
 

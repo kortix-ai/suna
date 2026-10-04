@@ -32,12 +32,12 @@ import { db } from '../lib/db';
 import { isUuid } from '../lib/validate';
 
 // The table is imported LAZILY inside each query below, never at module scope.
-// This module is reached from `resolve-account`, `projects/lib/git`,
+// This module is reached from `resolve-account`, `services/git/project-git`,
 // `iam/engine-v2` and `accounts/core/app` — i.e. from most of the app graph —
 // and a dozen unit suites mock `@kortix/db` with a partial shape. A static
 // import of one more table name turns every one of those into a module-load
 // SyntaxError far from anything they are testing. The same reasoning as the
-// leaf-module import note in projects/lib/git.ts.
+// leaf-module import note in services/git/project-git.ts.
 async function grantsTable() {
   const { impersonationGrants } = await import('@kortix/db');
   return impersonationGrants;

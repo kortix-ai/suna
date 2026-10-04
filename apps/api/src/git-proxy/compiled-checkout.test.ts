@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as tar from 'tar';
-import type { GitBackedProject } from '../projects/git/types';
+import type { GitBackedProject } from '../services/git/types';
 import {
   COMPILED_CHECKOUT_FORMAT,
   __clearCompiledCheckoutBuildsForTests,

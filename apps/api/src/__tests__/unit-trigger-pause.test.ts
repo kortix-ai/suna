@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { triggersPausedForProject, withTriggersPaused } from '../projects/lib/triggers';
+import { triggersPausedForProject, withTriggersPaused } from '../services/triggers/trigger-runtime';
 
 describe('server-side per-project trigger kill-switch', () => {
   test('triggersPausedForProject reads metadata.triggers_paused (default off)', () => {

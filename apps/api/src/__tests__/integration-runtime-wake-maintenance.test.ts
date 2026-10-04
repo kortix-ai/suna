@@ -17,7 +17,7 @@ mock.module('../platform/providers', () => ({
     stop: async (externalId: string) => { stopped.push(externalId); },
   }),
 }));
-const { reconcileRuntimeWakeFences } = await import('../projects/session-lifecycle/runtime-wake-maintenance');
+const { reconcileRuntimeWakeFences } = await import('../services/sessions/lifecycle/runtime-wake-maintenance');
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000009401';
 const PROJECT_ID = '00000000-0000-4000-a000-000000009402';

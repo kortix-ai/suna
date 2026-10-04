@@ -6,7 +6,7 @@ commit: 6dd04ee8f8
 # A per-turn hot path must not contain an unbounded third-party round-trip
 
 **When:** adding an `await` to the prompt path — `syncSandboxEnvForPrompt`
-(`apps/api/src/projects/lib/sandbox-env-sync.ts`) and everything it calls. The
+(`apps/api/src/services/sandboxes/sandbox-env-sync.ts`) and everything it calls. The
 network-boundary sync ran a FULL provider re-arm before every turn: manifest
 resolve, GET/PUT sandbox secrets, `ensureSecret` per binding, then
 `waitUntilArmed` at 40 × 250 ms — up to ~10 s, past the proxy budget. One egress

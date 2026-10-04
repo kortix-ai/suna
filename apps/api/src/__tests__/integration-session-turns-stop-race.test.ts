@@ -42,13 +42,13 @@ const t = (name: string) => `${name}-${SANDBOX_ID}`;
 const {
   acceptSandboxTurn,
   beginSandboxTurn,
-} = await import('../projects/sandbox-turn-lifecycle');
+} = await import('../services/sandboxes/sandbox-turn-lifecycle');
 const {
   settleOpenSandboxTurns,
   settleOrphanedSandboxTurns,
   settleOrphanedSandboxTurnsQuery,
-} = await import('../projects/session-turn-ledger');
-const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
+} = await import('../services/sessions/session-turn-ledger');
+const { applyStoppedState } = await import('../services/sandboxes/reaping/sandbox-state-sync');
 
 const rows = (result: unknown) =>
   ((result as { rows?: Array<Record<string, unknown>> }).rows ?? result) as Array<

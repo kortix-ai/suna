@@ -225,7 +225,7 @@ describe('qk.project', () => {
     // `'visible'` or `'project'` would collide byte-for-byte with a scoped
     // list, and the two would silently overwrite each other in the cache.
     // Session ids are `crypto.randomUUID()` client-side, and
-    // `apps/api/src/projects/lib/sessions.ts` rejects any client-supplied id
+    // `apps/api/src/services/sessions/sessions.ts` rejects any client-supplied id
     // failing a UUID v4 regex server-side — so this is unreachable TODAY. But
     // that protection lives in a different package, enforced by a regex with
     // no link back to this file, so it is safety by external invariant, not

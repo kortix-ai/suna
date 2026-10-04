@@ -111,7 +111,7 @@ describe('serializeProject — icon_glyph', () => {
 // ─── delivery_blocked_reason: the agent-grant axis ──────────────────────────
 // An `egress`/`broker` secret reaches a session only when some agent's
 // `secrets:` list is an explicit array naming its IDENTIFIER
-// (apps/api/src/secrets/strategy.ts:475-507). `delivery_status` never looked at
+// (apps/api/src/services/secrets/strategy.ts:475-507). `delivery_status` never looked at
 // that, so a project whose manifest grants nothing still reported 'available'
 // while every boot withheld the value as `agent_grant_unscoped`.
 

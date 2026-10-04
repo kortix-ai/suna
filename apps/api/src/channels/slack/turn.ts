@@ -215,7 +215,7 @@ export function stopSlackTurnGc(): void {
  */
 async function runtimeStillWorking(sessionId: string): Promise<boolean> {
   try {
-    const { sessionHoldsLiveTurn } = await import('../../projects/session-lifecycle/inbox-admission');
+    const { sessionHoldsLiveTurn } = await import('../../services/sessions/lifecycle/inbox-admission');
     return await sessionHoldsLiveTurn(sessionId);
   } catch {
     return false;
@@ -897,7 +897,7 @@ registerSessionFailureNotifier(relayProvisioningFailure);
  */
 async function abortDeadRuntimeTurn(sessionId: string): Promise<void> {
   try {
-    const { abortRuntimeTurn } = await import('../../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../../services/sessions/lifecycle/abort-runtime-turn');
     await abortRuntimeTurn(sessionId);
   } catch {
     /* housekeeping: a runtime that cannot be reached needs no abort */

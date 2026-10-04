@@ -336,7 +336,7 @@ export interface SandboxProvider {
  * Tightening one used to loosen the other, so neither could be tuned.
  *
  * This is a BACKSTOP, not the primary stop mechanism. `deadline_at`
- * (projects/sandbox-deadline.ts) is primary: the reaper stops any active box
+ * (services/sandboxes/sandbox-deadline.ts) is primary: the reaper stops any active box
  * past its deadline, extended only by control-plane observations and the
  * durable active-turn record created by an accepted prompt. The
  * provider's native timer only sees INBOUND traffic — blind to local tool runs,

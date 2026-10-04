@@ -2,7 +2,7 @@
  * The parked-runtime verification sweep needs its ordering index.
  *
  * KRTX-1307: `verifyParkedRuntimes`
- * (apps/api/src/projects/reaping/parked-runtime-verification.ts) reads its
+ * (apps/api/src/services/sandboxes/reaping/parked-runtime-verification.ts) reads its
  * batch as `WHERE status = <param> AND external_id IS NOT NULL ORDER BY
  * metadata->>'parkedVerifiedAt' ASC NULLS FIRST LIMIT 60`. Without
  * `idx_session_sandboxes_parked_verified` every pass read every `stopped`

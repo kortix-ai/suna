@@ -22,12 +22,12 @@ import { describe, expect, mock, test } from 'bun:test';
 
 let manifestFile: { path: string; content: string } | null = null;
 
-// `./git` is a heavily-imported barrel (session-lifecycle, github, etc. pull
+// `../services/git` is a heavily-imported barrel (session-lifecycle, github, etc. pull
 // other exports off it) — spread the REAL module and override only
 // `readManifestFromRepo`, rather than replacing the whole module, so
 // unrelated named exports the rest of the import graph needs stay intact.
-const realGit = await import('./git');
-mock.module('./git', () => ({
+const realGit = await import('../services/git');
+mock.module('../services/git', () => ({
   ...realGit,
   readManifestFromRepo: async () => manifestFile,
 }));

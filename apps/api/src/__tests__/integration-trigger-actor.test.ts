@@ -11,8 +11,8 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { projectTriggerRuntime } from '@kortix/db';
 import { db } from '../lib/db';
-import { resolveTriggerActor } from '../projects/lib/triggers';
-import { resolveProjectAutomationActor } from '../projects/session-lifecycle';
+import { resolveTriggerActor } from '../services/triggers/trigger-runtime';
+import { resolveProjectAutomationActor } from '../services/sessions/lifecycle';
 import type { ProjectRow } from '../projects/lib/serializers';
 
 let ctx: { projectId: string; accountId: string } | null = null;

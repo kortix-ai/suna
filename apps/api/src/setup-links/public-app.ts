@@ -20,14 +20,14 @@ import {
   pipedreamConfigured,
 } from '../connectors/pipedream';
 import type { ConnectorConnectOwner } from '../projects/lib/connection-access';
-import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { propagateProjectSecretsToActiveSandboxes } from '../services/sandboxes/sandbox-env-sync';
 import {
   sessionWithheldSecrets,
   withheldSecretsFix,
   type SessionWithheldSecrets,
-} from '../projects/lib/session-secret-reach';
-import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
-import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
+} from '../services/sessions/session-secret-reach';
+import { isValidSecretName, writeSharedProjectSecret } from '../services/secrets/secrets';
+import { clearSecretAudience, setSecretAudience } from '../services/secrets/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../lib/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../middleware/rate-limit';
@@ -741,7 +741,7 @@ async function notifyRequestingSession(
     const meta = (session.metadata ?? {}) as Record<string, unknown>;
     if (typeof meta.deletedAt === 'string') return;
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
-      '../projects/session-lifecycle'
+      '../services/sessions/lifecycle'
     );
     await enqueueContinueSessionCommand({
       source: 'system:secret-submitted',

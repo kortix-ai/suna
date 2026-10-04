@@ -67,8 +67,8 @@ const stubBackend = {
   seedFiles: async () => { backendCalls.push('seedFiles'); },
 };
 
-const actualGitBackends = await import('../projects/git-backends');
-mock.module('../projects/git-backends', () => ({
+const actualGitBackends = await import('../services/git/backends');
+mock.module('../services/git/backends', () => ({
   ...actualGitBackends,
   hasBackend: (provider: string) => provider === 'github',
   getBackend: () => stubBackend,
@@ -109,8 +109,8 @@ mockIamReadModels();
 // db shim does not model `role_assignments` must bypass it.
 mockIamAssignments();
 
-const actualGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const actualGit = await import('../services/git');
+mock.module('../services/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],

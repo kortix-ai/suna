@@ -13,5 +13,5 @@ and the claim sweep recomputes it, and a random offset makes them disagree.
 *Incident:* 756 projects inherited `0 0 3 * * *`; the 03:00 hour took 779
 provisions and failed 654 (346 `capacity`) while every other hour that day ran
 100% healthy at 6-28 provisions. *Enforcer:*
-`apps/api/src/projects/trigger-schedule.jitter.test.ts` asserts 766 keys spread
+`apps/api/src/services/triggers/trigger-schedule.jitter.test.ts` asserts 766 keys spread
 across the window instead of stacking.

@@ -4,7 +4,7 @@
  *
  * Background: idle sandboxes never auto-stopped and their compute meter never
  * closed, so accounts were billed for wall-clock long after their last real
- * activity (see projects/sandbox-reaper.ts for the fix). This script makes the
+ * activity (see services/sandboxes/sandbox-reaper.ts for the fix). This script makes the
  * affected accounts whole.
  *
  * Policy (decided): FULL refund of every AFFECTED (leaked) compute session —

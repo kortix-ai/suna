@@ -33,9 +33,9 @@ mock.module('../platform/providers', () => ({
 
 const { db } = await import('../lib/db');
 const { extendSandboxDeadline, shortenSandboxDeadline } = await import(
-  '../projects/sandbox-deadline'
+  '../services/sandboxes/sandbox-deadline'
 );
-const { reapAndReconcileSandboxes } = await import('../projects/sandbox-reaper');
+const { reapAndReconcileSandboxes } = await import('../services/sandboxes/sandbox-reaper');
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `deadline-lifecycle-${SANDBOX_ID}`;

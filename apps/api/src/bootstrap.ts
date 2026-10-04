@@ -26,17 +26,17 @@ import {
   stopLeaderElection,
 } from './lib/leader-election';
 import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from './projects';
-import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from './services/sandboxes/active-turn-renewal';
+import { startProjectMaintenance, stopProjectMaintenance } from './services/sandboxes/maintenance';
 import {
   startProviderTransitionWorker,
   stopProviderTransitionWorker,
-} from './projects/provider-transition/provider-transition-worker';
+} from './services/sandboxes/provider-transition/provider-transition-worker';
 import {
   startSunaMigrationWorker,
   stopSunaMigrationWorker,
 } from './projects/suna-migration/suna-migration-worker';
-import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './projects/session-lifecycle/worker';
+import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './services/sessions/lifecycle/worker';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startTunnelService, stopTunnelService } from './tunnel';
@@ -171,11 +171,11 @@ async function startReplicaServices() {
   await import('./lib/pg-broadcast').then(async (m) => {
     const listening = await m.startConfigBaseMoveBroadcast();
     if (!listening) return;
-    const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
+    const { useDesiredInvalidationTransport } = await import('./services/sessions/turn-start-convergence');
     useDesiredInvalidationTransport(m.configBaseMoveTransport());
     // A base move announced by another process also ends this process's
-    // stale-while-revalidate window for page views (projects/git/mirror.ts).
-    const { invalidateProjectMirror } = await import('./projects/git/mirror');
+    // stale-while-revalidate window for page views (services/git/mirror.ts).
+    const { invalidateProjectMirror } = await import('./services/git/mirror');
     m.configBaseMoveTransport().subscribe(invalidateProjectMirror);
   });
 }

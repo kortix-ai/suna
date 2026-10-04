@@ -13,9 +13,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { config } from '../lib/config';
 import { SKILLS_DIR, piConfigDirCandidates } from '@kortix/manifest-schema';
-import { execFileAsync, refreshMirror, runGitCapture, spawn } from '../projects/git/mirror';
-import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
-import type { GitBackedProject } from '../projects/git/types';
+import { execFileAsync, refreshMirror, runGitCapture, spawn } from '../services/git/mirror';
+import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../services/git/opencode-config-dir';
+import type { GitBackedProject } from '../services/git/types';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,

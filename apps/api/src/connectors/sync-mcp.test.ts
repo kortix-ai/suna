@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ConnectorSpec } from '../projects/connectors';
-import type { GitBackedProject } from '../projects/git';
+import type { GitBackedProject } from '../services/git';
 import {
   catalogPersistenceState,
   mcpCatalogCredentialError,

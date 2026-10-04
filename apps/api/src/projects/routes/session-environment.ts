@@ -18,8 +18,8 @@ import {
 } from '../../platform/services/session-environment';
 import { assertProjectCapability, type loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { guardSession, sessionAccessDenied, type SessionNeed } from '../lib/session-access';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { guardSession, sessionAccessDenied, type SessionNeed } from '../../services/sessions/session-access';
 
 const EnvironmentSchema = z.object({
   session_id: z.string(),

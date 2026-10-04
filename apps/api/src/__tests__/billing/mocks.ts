@@ -6,7 +6,7 @@
  */
 import { mock } from 'bun:test';
 import * as realProviders from '../../platform/providers';
-import * as realSandboxReaper from '../../projects/sandbox-reaper';
+import * as realSandboxReaper from '../../services/sandboxes/sandbox-reaper';
 import { createFakeWallet } from '../helpers/fake-wallet';
 
 // ─── Global Mock Registry ─────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ export function registerGlobalMocks() {
   // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
   // lists exports by hand deletes every export it omits — the failure surfaces in
   // whatever unrelated file imports the missing name next, attributed to no test.
-  mock.module('../../projects/sandbox-reaper', () => ({
+  mock.module('../../services/sandboxes/sandbox-reaper', () => ({
     ...realSandboxReaper,
     isAlreadyNotRunning: (_err: unknown) => false,
     reconcileSandboxStoppedByExternalId: async (_externalId: string) => true,

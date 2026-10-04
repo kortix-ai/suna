@@ -14,16 +14,16 @@ import {
   listRepoFiles,
   readRepoFile,
   searchRepoFileNames,
-} from '../git';
-// From the leaf, not the barrel: suites that stub '../git' by listing its
+} from '../../services/git';
+// From the leaf, not the barrel: suites that stub '../../services/git' by listing its
 // exports would otherwise lose these names and fail at import.
-import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../git/branches';
+import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../../services/git/branches';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
 import { CommitSchema, projectsApp } from '../lib/app';
-import { isGitRefNotFoundError } from '../git/mirror';
-import { withProjectGitAuth } from '../lib/git';
+import { isGitRefNotFoundError } from '../../services/git/mirror';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { normalizeString } from '../lib/serializers';
 
 function isMissingGitPathError(error: unknown): boolean {

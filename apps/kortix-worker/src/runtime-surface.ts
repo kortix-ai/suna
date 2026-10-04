@@ -379,7 +379,7 @@ export class RuntimeSurface {
   /**
    * The RAW OpenCode list the control plane still probes:
    * `ensureOpencodeSessionPin` resolves the canonical pin from
-   * `GET /session?directory=…` (apps/api/src/projects/opencode-mapping.ts),
+   * `GET /session?directory=…` (apps/api/src/services/sessions/opencode-mapping.ts),
    * and /start reports `starting` forever — then PARKS the healthy box at
    * the 90s no-progress budget — until that list answers. One root, same
    * auth posture as the namespace routes.

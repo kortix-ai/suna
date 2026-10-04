@@ -15,14 +15,14 @@ const GENERIC_DATA_PATHS = [
   'sandbox-proxy/forward/wake.ts',
   'sandbox-proxy/forward/ws-upstream.ts',
   'sandbox-proxy/routes/public-share.ts',
-  'projects/lib/sandbox-daemon-ready.ts',
+  'services/sandboxes/sandbox-daemon-ready.ts',
   // The env-sync implementation is split across sibling modules (KRTX-300);
   // `sandbox-env-sync.ts` itself is the re-export entry.
-  'projects/lib/sandbox-env-snapshot.ts',
-  'projects/lib/sandbox-env-push.ts',
-  'projects/lib/sandbox-secret-propagation.ts',
-  'projects/lib/sandbox-session-push.ts',
-  'projects/opencode-mapping.ts',
+  'services/sandboxes/sandbox-env-snapshot.ts',
+  'services/sandboxes/sandbox-env-push.ts',
+  'services/sandboxes/sandbox-secret-propagation.ts',
+  'services/sandboxes/sandbox-session-push.ts',
+  'services/sessions/opencode-mapping.ts',
   'projects/routes/session-open.ts',
   'projects/routes/session-open-provision.ts',
   'projects/routes/session-open-readiness.ts',
@@ -35,10 +35,10 @@ const GENERIC_DATA_PATHS = [
   // read: the guest holds a handle and the broker route substitutes the value.
   // A name comparison anywhere in here reintroduces the split that used to make
   // a provider silently lose a feature it already had for free.
-  'projects/secrets.ts',
-  'projects/secret-capabilities.ts',
-  'secrets/network-boundary.ts',
-  'secrets/http-broker.ts',
+  'services/secrets/secrets.ts',
+  'services/secrets/secret-capabilities.ts',
+  'services/secrets/network-boundary.ts',
+  'services/secrets/http-broker.ts',
 ];
 
 describe('sandbox provider architecture boundary', () => {
@@ -46,7 +46,7 @@ describe('sandbox provider architecture boundary', () => {
     const registry = await import('./index');
     const opts = { accountId: 'a', userId: 'u', name: 'box' };
     for (const name of ['daytona', 'e2b', 'platinum'] as const) {
-      const provider = await import(`./${name}.ts`);
+      const provider = await import(`../../services/sandboxes/${name}/runtime.ts`);
       expect(provider).toBeDefined();
       expect(registry.sandboxWorkloadType(opts)).toBe('session');
       expect(registry.sandboxWorkloadType({ ...opts, workloadType: 'app' })).toBe('app');
@@ -71,9 +71,9 @@ describe('sandbox provider architecture boundary', () => {
 
   test('concrete providers have no runtime import of the registry', () => {
     for (const name of ['daytona', 'e2b', 'platinum']) {
-      const source = readFileSync(resolve(import.meta.dir, `${name}.ts`), 'utf8');
+      const source = readFileSync(resolve(import.meta.dir, `../../services/sandboxes/${name}/runtime.ts`), 'utf8');
       expect(source, name).not.toMatch(
-        /(?:import|export)\s*(?:type\s*)?(?:\{[^}]*\}|\*\s+from)\s*['"]\.\/index['"]/s,
+        /(?:import|export)\s*(?:type\s*)?(?:\{[^}]*\}|\*\s+from)\s*['"](?:\.\.\/)+platform\/providers(?:\/index)?['"]/s,
       );
     }
   });

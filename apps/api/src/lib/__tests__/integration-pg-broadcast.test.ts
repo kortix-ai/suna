@@ -23,7 +23,7 @@ import {
 import {
   createDesiredReleaseCache,
   createDesiredReleaseInvalidation,
-} from '../../projects/lib/turn-start-convergence';
+} from '../../services/sessions/turn-start-convergence';
 
 const PROJECT = crypto.randomUUID();
 let publisher: postgres.Sql;

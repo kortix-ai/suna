@@ -499,7 +499,7 @@ async function validateAccountTokenMatching(
           // 186 "Connector Session" tokens kept authenticating afterwards,
           // keeping zombie sandbox agents alive against staging. Every other
           // reader of this table already checks both columns — see
-          // projects/lib/session-token-grant.ts, whose comment states the
+          // services/sessions/session-token-grant.ts, whose comment states the
           // intent outright: "a revoked token must stay dead".
           isNull(accountTokens.revokedAt),
         ),

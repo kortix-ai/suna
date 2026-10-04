@@ -121,7 +121,7 @@ export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromI
  * from a file list POST /projects/provision is about to push. Used to stamp
  * `project.metadata.default_agent` (the read-optimized mirror session creation
  * and the LLM gateway's model-default resolution consult — see
- * projects/lib/sessions.ts and llm-gateway/resolution/default-model.ts) at
+ * services/sessions/sessions.ts and llm-gateway/resolution/default-model.ts) at
  * project-creation time, the same value `PUT /:projectId/default-agent`
  * writes later. Without this, a brand-new project's manifest declares a
  * default agent (the starter template ships `default_agent: kortix`) that the

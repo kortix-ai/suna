@@ -43,8 +43,8 @@ import {
   resolveSessionConnectorConnectionOutcome,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
-} from '../projects/lib/session-connector-bindings';
-import { encryptProjectSecret } from '../projects/secrets';
+} from '../services/sessions/session-connector-bindings';
+import { encryptProjectSecret } from '../services/secrets/secrets';
 import { db } from '../lib/db';
 
 const ACCOUNT_A = crypto.randomUUID();

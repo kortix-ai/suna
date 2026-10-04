@@ -55,7 +55,7 @@ globalThis.fetch = (async (input: any, init?: any) => {
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 // Stub managed git backend. The provision endpoint resolves the backend through
-// `../projects/git-backends`; we register a single `github` backend whose
+// `../services/git/backends`; we register a single `github` backend whose
 // `isConfigured()` we toggle to exercise the configured / not-configured paths.
 let backendConfigured = true;
 let createdSlug = '';
@@ -94,7 +94,7 @@ const stubBackend = {
   },
 };
 
-mock.module('../projects/git-backends', () => ({
+mock.module('../services/git/backends', () => ({
   defaultManagedProviderId: () => 'github',
   hasBackend: (provider: string) => provider === 'github',
   getBackend: (provider: string) => (provider === 'github' ? stubBackend : stubBackend),
@@ -156,7 +156,7 @@ mockIamAssignments({
   },
 });
 
-mock.module('../projects/git', () => ({
+mock.module('../services/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   isRepoFileNotFoundError: () => false,
   grepRepoFiles: async () => [],

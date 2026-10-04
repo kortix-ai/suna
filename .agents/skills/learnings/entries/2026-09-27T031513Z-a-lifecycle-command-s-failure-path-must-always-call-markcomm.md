@@ -42,7 +42,7 @@ timed out after 90000ms (signal SIGTERM)`, climbing from ~5–15/day to
 up to 256, oldest from 2026-09-25.
 
 **Enforcement:**
-`apps/api/src/projects/session-lifecycle/__tests__/create-session-drain-error.test.ts`
+`apps/api/src/services/sessions/lifecycle/__tests__/create-session-drain-error.test.ts`
 — `executeQueuedCreate`/`createProjectSession` throwing must still resolve
 `drainSessionLifecycleQueue()` and call `markCommandFailed` exactly once,
 respecting the 5-attempt budget.

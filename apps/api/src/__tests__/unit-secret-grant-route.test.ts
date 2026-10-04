@@ -3,9 +3,9 @@ import { projectSecrets } from '@kortix/db';
 import { Hono } from 'hono';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import * as realAccess from '../projects/lib/access';
-import * as realTriggers from '../projects/lib/triggers';
-import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
-import type { ParsedManifest } from '../projects/triggers';
+import * as realTriggers from '../services/triggers/trigger-runtime';
+import { parseManifestString, synthesizeBlankManifest } from '../services/triggers';
+import type { ParsedManifest } from '../services/triggers';
 
 // POST /v1/projects/:projectId/secrets/:identifier/grant — the one-click fix
 // for `delivery_blocked_reason: 'no_agent_grant'`. Every assertion here is on
@@ -120,7 +120,7 @@ mock.module('../projects/lib/access', () => ({
     capabilities.push(action);
   },
 }));
-mock.module('../projects/lib/triggers', () => ({
+mock.module('../services/triggers/trigger-runtime', () => ({
   ...realTriggers,
   loadManifestForEdit: async () => {
     if (manifestError) throw manifestError;
@@ -136,7 +136,7 @@ mock.module('../projects/lib/triggers', () => ({
 // A widened grant must reach live sessions now, not on their next prompt: the
 // human who just enabled the secret is looking at a session that still lacks it.
 const propagated: string[] = [];
-mock.module('../projects/lib/sandbox-env-sync', () => ({
+mock.module('../services/sandboxes/sandbox-env-sync', () => ({
   propagateProjectSecretsToActiveSandboxes: async (projectId: string) => {
     propagated.push(projectId);
   },

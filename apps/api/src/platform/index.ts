@@ -38,7 +38,7 @@ platformApp.route('/boot-timeline', bootTimelineRouter);
 // /v1/platform/runtime-projection — the in-sandbox daemon pushes its
 // `/kortix/opencode/state` document here so a session open (and a STOPPED
 // session) can answer agents/commands/config from Postgres with zero sandbox
-// hops; see projects/lib/session-runtime-projection.ts.
+// hops; see services/sessions/session-runtime-projection.ts.
 platformApp.route('/runtime-projection', runtimeProjectionRouter);
 
 export { platformApp };

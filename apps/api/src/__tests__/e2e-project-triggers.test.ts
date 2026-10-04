@@ -116,7 +116,7 @@ mockIamEngineAllowAll();
 // those rows rather than from `role_assignments`. See mockIamReadModels.
 mockIamReadModels();
 
-mock.module('../projects/session-lifecycle/actor', () => ({
+mock.module('../services/sessions/lifecycle/actor', () => ({
   resolveProjectAutomationActor: async () => USER_ID,
   resolveAgentRunAttribution: async () => SERVICE_ACCOUNT_ID,
 }));
@@ -132,8 +132,8 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-const actualGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const actualGit = await import('../services/git');
+mock.module('../services/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
@@ -227,11 +227,11 @@ mock.module("../snapshots/builder", () => ({
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
 // that only lists the exports it overrides deletes every other one — and the
-// next export added to `projects/github.ts` becomes
+// next export added to `services/github/github.ts` becomes
 // `SyntaxError: Export named 'X' not found` in this file, which that change
 // never touched (.claude/skills/learnings/SKILL.md).
-const actualGithub = await import('../projects/github');
-mock.module('../projects/github', () => ({
+const actualGithub = await import('../services/github/github');
+mock.module('../services/github/github', () => ({
   ...actualGithub,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: 'kortix-org',
@@ -292,8 +292,8 @@ mock.module('../projects/github', () => ({
   createBranchRef: async () => undefined,
 }));
 
-const realProjectGit = await import('../projects/lib/git');
-mock.module('../projects/lib/git', () => ({
+const realProjectGit = await import('../services/git/project-git');
+mock.module('../services/git/project-git', () => ({
   ...realProjectGit,
   resolveProjectGitAuth: async () => ({
     auth: { token: 'test-git-token', source: 'project_credential' },
@@ -365,8 +365,8 @@ const secretConsumerConfigurationStates = new Map<
   'configured' | 'missing' | 'inactive' | 'delivery_mismatch'
 >();
 const secretConsumerReads: Array<Record<string, unknown>> = [];
-const realProjectSecrets = await import('../projects/secrets');
-mock.module('../projects/secrets', () => ({
+const realProjectSecrets = await import('../services/secrets/secrets');
+mock.module('../services/secrets/secrets', () => ({
   ...realProjectSecrets,
   encryptProjectSecret: (_p: string, v: string) => `enc:${v}`,
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
@@ -661,8 +661,8 @@ mock.module('../lib/db', () => ({
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#7936 added importers), and bun reports it as an
 // unhandled `Export named ... not found` between tests.
-const realTriggerExecutionStore = await import('../projects/trigger-execution-store');
-mock.module('../projects/trigger-execution-store', () => ({
+const realTriggerExecutionStore = await import('../services/triggers/trigger-execution-store');
+mock.module('../services/triggers/trigger-execution-store', () => ({
   ...realTriggerExecutionStore,
   claimDueScheduleSlots: async ({ now, limit }: { now: Date; limit: number }) => {
     const due = runtimeRows

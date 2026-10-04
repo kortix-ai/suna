@@ -10,7 +10,7 @@
  *
  * Reads the file as text. No database, no GitHub, no `mock.module` (which is
  * process-wide in this app and leaks into sibling suites) — same shape as
- * `../sandbox-deadline-call-sites.test.ts`.
+ * `../../services/sandboxes/sandbox-deadline-call-sites.test.ts`.
  *
  * REPOINTED by Task 16 (workspace-switcher, 2026-08-06): this guard used to
  * read `projects.ts`'s POST /provision handler directly. That handler's body now

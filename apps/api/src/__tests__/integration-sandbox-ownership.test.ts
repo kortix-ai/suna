@@ -5,8 +5,8 @@ import postgres from 'postgres';
 import { config } from '../lib/config';
 import { sandboxDatabaseOwner, sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 import { PlatinumProvider } from '../services/sandboxes/platinum/runtime';
-import { reapOrphanProviderBoxes } from '../projects/reaping/orphan-boxes';
-import { hasProviderBoxReference } from '../projects/reaping/orphan-box-references';
+import { reapOrphanProviderBoxes } from '../services/sandboxes/reaping/orphan-boxes';
+import { hasProviderBoxReference } from '../services/sandboxes/reaping/orphan-box-references';
 import { db } from '../lib/db';
 
 const peerName = `owner_peer_${crypto.randomUUID().replaceAll('-', '')}`;

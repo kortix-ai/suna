@@ -9,8 +9,8 @@ import {
   serializeManifestObject,
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
-import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo } from './git';
-import type { ParsedManifest } from './trigger-types';
+import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo } from '../services/git';
+import type { ParsedManifest } from '../services/triggers/trigger-types';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
  *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —
@@ -84,7 +84,7 @@ export async function readManifest(
     // transient git failure then looks identical to "blank project", which
     // `loadProjectAgents` answers with a synthesized `secrets: 'all'` manifest.
     // Callers that must fail CLOSED on an unreadable manifest opt into the
-    // distinction here. See projects/lib/secret-grant.ts.
+    // distinction here. See services/secrets/secret-grant.ts.
     // A broken import is a malformed manifest, not an absent one: it propagates
     // like a root syntax error does (thrown by `parseManifestString` below),
     // never laundered into the synthesized permissive manifest.

@@ -31,8 +31,8 @@ import {
 import { Hono } from 'hono';
 import { config } from '../lib/config';
 import * as realAccess from '../projects/lib/access';
-import * as realProjectSecrets from '../projects/secrets';
-import { mintHandle } from '../secrets/strategy';
+import * as realProjectSecrets from '../services/secrets/secrets';
+import { mintHandle } from '../services/secrets/strategy';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -119,7 +119,7 @@ mock.module('../projects/lib/access', () => ({
     userId: USER_ID,
   }),
 }));
-mock.module('../projects/secrets', () => ({
+mock.module('../services/secrets/secrets', () => ({
   ...realProjectSecrets,
   decryptProjectSecret: () => SECRET_VALUE,
 }));
@@ -151,7 +151,7 @@ let upstreamDelayMs = 0;
 let upstreamFailAfter: number | null = null;
 let upstreamThrows = false;
 
-mock.module('../secrets/relay-transport', () => ({
+mock.module('../services/secrets/relay-transport', () => ({
   RELAY_CONNECT_TIMEOUT_MS: 10_000,
   openUpstream: async (
     head: { url: URL; method: string; headers: Record<string, string> },

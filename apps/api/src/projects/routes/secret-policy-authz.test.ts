@@ -35,7 +35,7 @@ const SOURCES = await Promise.all(
   ),
 );
 const RESOLVER = await Bun.file(
-  new URL('../lib/secret-write-input.ts', import.meta.url).pathname,
+  new URL('../../services/secrets/secret-write-input.ts', import.meta.url).pathname,
 ).text();
 
 const GUARD_MESSAGE = 'Agent sessions cannot change secret delivery policy';

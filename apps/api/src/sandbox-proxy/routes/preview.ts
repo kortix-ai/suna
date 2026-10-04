@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { callerKortixSessionId } from '../../projects/lib/caller-session';
-import { isSandboxAuthored } from '../../projects/sandbox-deadline';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { isSandboxAuthored } from '../../services/sandboxes/sandbox-deadline';
 import { takePrefetchedSandbox } from '../prefetch';
 import { jsonProxyError } from '../pre-prompt-env-sync';
 import { forwardToSandbox } from '../forward';

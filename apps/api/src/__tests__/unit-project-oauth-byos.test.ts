@@ -103,17 +103,17 @@ mock.module('../llm-gateway/credentials/opencode-console', () => ({
 
 // The flow handle is opaque to clients; a readable envelope lets the test
 // assert what the server sealed into it.
-mock.module('../projects/secrets', () => ({
+mock.module('../services/secrets/secrets', () => ({
   encryptProjectSecret: (_projectId: string, value: string) => `sealed:${value}`,
   decryptProjectSecret: (_projectId: string, value: string) => value.replace(/^sealed:/, ''),
   resolveProjectSecretForConsumer: async () => null,
 }));
-mock.module('../secrets/account-resource', () => ({
+mock.module('../services/secrets/account-resource', () => ({
   encryptAccountSecret: (_accountId: string, value: string) => `account-sealed:${value}`,
   decryptAccountSecret: (_accountId: string, value: string) => value.replace(/^account-sealed:/, ''),
   memberMayReadProject: async () => true,
 }));
-mock.module('../projects/lib/sandbox-env-sync', () => ({ propagateProjectSecretsToActiveSandboxes: async () => {} }));
+mock.module('../services/sandboxes/sandbox-env-sync', () => ({ propagateProjectSecretsToActiveSandboxes: async () => {} }));
 mock.module('../services/audit/audit', () => ({
   inferAuditSource: () => 'api',
   recordAuditEvent: async (event: Record<string, unknown>) => { auditEvents.push(event); },

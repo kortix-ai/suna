@@ -9,7 +9,7 @@
  *
  * This lives in `shared/` with no imports because `iam/agent-scope` needs it and
  * `iam/` must stay free of database and project-layer dependencies. Importing it
- * from `projects/lib/session-connector-bindings` (which pulls in `lib/db`)
+ * from `services/sessions/session-connector-bindings` (which pulls in `lib/db`)
  * dragged a DB dependency into pure IAM code and broke an unrelated suite.
  */
 const PUBLIC_TO_CANONICAL_CONNECTOR_ALIAS: Readonly<Record<string, string>> = {

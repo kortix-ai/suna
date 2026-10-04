@@ -6,7 +6,7 @@ import {
   parseTriggerDraft,
   verifyWebhookSignature,
   webhookPayload,
-} from './triggers';
+} from '../../services/triggers/trigger-runtime';
 
 describe('trigger split characterization', () => {
   test('webhook HMAC accepts the exact body and rejects tampering', () => {

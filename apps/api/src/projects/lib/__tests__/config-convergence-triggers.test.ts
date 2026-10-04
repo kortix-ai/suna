@@ -12,7 +12,7 @@ import {
   pushedBaseCandidates,
   type ConvergenceTriggerDeps,
 } from '../config-convergence-triggers';
-import type { SessionConfigConvergenceOutcome } from '../session-config-convergence';
+import type { SessionConfigConvergenceOutcome } from '../../../services/sessions/session-config-convergence';
 
 let now = 0;
 let timers: Array<{ fn: () => void; at: number; id: number }> = [];

@@ -14,7 +14,7 @@ import {
   listLinkableGitHubAppInstallations,
   resetGitHubAppSlugCache,
   verifyGitHubInstallationAdmin,
-} from '../projects/github';
+} from '../services/github/github';
 import { runWithContext } from '../lib/request-context';
 
 const originalFetch = globalThis.fetch;

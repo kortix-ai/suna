@@ -42,7 +42,7 @@ allowance), `connectorDenialBody`, `connector_not_connected` +
 `turn-stream`, non-zero `slack step`/`slack send` with the reason, a 20 s
 idle-end grace so a replayed `session.idle` cannot delete a fresh Slack turn,
 and turn-end relay skipped on `identity_mismatch`. *Enforcer:*
-`apps/api/src/projects/lib/session-token-grant-provenance.test.ts` (same-blob
+`apps/api/src/services/sessions/session-token-grant-provenance.test.ts` (same-blob
 drift, stale commit, unreadable manifest, cooldown),
 `apps/api/src/connectors/principal-access.test.ts`, and flow `CONN-27`
 (a real session-bound token: hot reload with provenance, glitch repair,

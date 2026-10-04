@@ -40,7 +40,7 @@ mock.module('../../../lib/db', () => ({
   },
 }));
 
-mock.module('../session-runtime-transport', () => ({
+mock.module('../../../services/sessions/session-runtime-transport', () => ({
   fetchRuntimeState: async (_target: unknown, options: { ifNoneMatch?: string | null } = {}) => {
     stateCalls.push({ ifNoneMatch: options.ifNoneMatch ?? null });
     const next = stateResponses.shift();
@@ -49,7 +49,7 @@ mock.module('../session-runtime-transport', () => ({
   },
 }));
 
-mock.module('../session-runtime-projection', () => ({
+mock.module('../../../services/sessions/session-runtime-projection', () => ({
   saveRuntimeProjection: async (input: Record<string, unknown>) => {
     saveCalls.push(input);
     if (saveError) throw saveError;
@@ -58,7 +58,7 @@ mock.module('../session-runtime-projection', () => ({
 }));
 
 const { refreshRuntimeProjection, __resetRuntimeProjectionRefreshForTests } = await import(
-  '../session-runtime-projection-refresh'
+  '../../../services/sessions/session-runtime-projection-refresh'
 );
 
 const TARGET = {

@@ -3,10 +3,10 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
 import { readComposedRelease, resolveReleaseTreeSource } from "../config-releases/builder";
-import { validateRef, validateSha } from "../projects/git-ref";
-import { refreshMirror, runGit, spawn } from "../projects/git/mirror";
-import { resolveOpencodeConfigDirAtSha } from "../projects/git/opencode-config-dir";
-import type { GitBackedProject } from "../projects/git/types";
+import { validateRef, validateSha } from "../services/git/git-ref";
+import { refreshMirror, runGit, spawn } from "../services/git/mirror";
+import { resolveOpencodeConfigDirAtSha } from "../services/git/opencode-config-dir";
+import type { GitBackedProject } from "../services/git/types";
 import {
   getCompiledAgentBundle,
   type CompiledAgentBundle,

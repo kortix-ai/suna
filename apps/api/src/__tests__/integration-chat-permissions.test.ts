@@ -32,7 +32,7 @@ mock.module('../channels/teams/turn', () => ({
   },
   closeAbandonedTurn: async () => {},
 }));
-mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
+mock.module('../services/sessions/lifecycle/abort-runtime-turn', () => ({
   abortRuntimeTurn: async () => true,
 }));
 

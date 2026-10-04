@@ -2,7 +2,7 @@
  * Pure parsing/auth helpers for the git proxy — no DB/network imports so they
  * stay trivially unit-testable.
  */
-import type { GitScope } from '../projects/git-backends';
+import type { GitScope } from '../services/git/backends';
 import { isUuid } from '../lib/validate';
 
 /** Strip an optional trailing `.git` from the project path segment. */

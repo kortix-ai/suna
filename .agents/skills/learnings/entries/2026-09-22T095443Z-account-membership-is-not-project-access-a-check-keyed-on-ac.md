@@ -6,7 +6,7 @@ commit: a682092ea9
 # Account membership is not project access — a check keyed on account ownership skips project roles
 
 **When:** writing any credential check that compares a token's account with a
-resource's account. `authorizeGitProxy` (`apps/api/src/projects/lib/git.ts`)
+resource's account. `authorizeGitProxy` (`apps/api/src/services/git/project-git.ts`)
 evaluated the project role only when a personal token came from a DIFFERENT
 account. A token minted in the project's own account skipped the role for clone
 and push, so account membership stood in for project access. Once members could

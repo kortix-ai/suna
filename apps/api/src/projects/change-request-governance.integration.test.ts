@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { manifestChangeRequiredActions } from './change-request-governance';
-import { refreshMirror } from './git/mirror';
-import type { GitBackedProject } from './git/types';
+import { refreshMirror } from '../services/git/mirror';
+import type { GitBackedProject } from '../services/git/types';
 
 // Release gate GH-17 / AGP-10 (v0.13.31): an agent session pushed its branch,
 // opened a change request, and merged it seconds later. The merge landed on an

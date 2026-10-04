@@ -19,7 +19,7 @@ import { resolveFeatureFlag } from '../feature-flags/registry';
  * connection_credentials row, no migration. See KORTIX-206.
  */
 import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
-import { MANIFEST_FILENAME } from '../projects/triggers';
+import { MANIFEST_FILENAME } from '../services/triggers';
 import { db } from '../lib/db';
 import { channelDefaultSlug, channelLabel } from './channels';
 

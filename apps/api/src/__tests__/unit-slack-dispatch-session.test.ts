@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
-import type { SessionDeliveryOutcome } from '../projects/session-lifecycle';
+import type { SessionDeliveryOutcome } from '../services/sessions/lifecycle';
 
 // Persist the headline invariant of the Slack channel refactor: a known thread
 // maps PERMANENTLY to exactly one session. A follow-up routes into that session
@@ -67,8 +67,8 @@ mock.module('../iam', () => ({
   hasAnyResourceGrants: async () => false,
 }));
 
-const realGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const realGit = await import('../services/git');
+mock.module('../services/git', () => ({
   ...realGit,
   readRepoFile: async () => null,
 }));
@@ -102,7 +102,7 @@ let deliverCalls = 0;
 // ─── lifecycle seam: spy on createSession (the "second session") ─────────────
 let createSessionCalls = 0;
 let createSessionInputs: any[] = [];
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../services/sessions/lifecycle', () => ({
   continueSession: async () => {
     deliverCalls++;
     return deliverOutcome;

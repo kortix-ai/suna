@@ -39,7 +39,7 @@ import {
   parsePrebuildConfig,
   prebuildExitCode,
   runPrebuildMigration,
-} from '../src/projects/provider-transition/provider-transition-prebuild';
+} from '../src/services/sandboxes/provider-transition/provider-transition-prebuild';
 
 async function main(): Promise<void> {
   const cfg = parsePrebuildConfig(process.env, process.argv.slice(2));

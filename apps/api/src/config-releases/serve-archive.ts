@@ -21,8 +21,8 @@
  */
 
 import { config } from '../lib/config';
-import { runGitCapture } from '../projects/git/mirror';
-import type { GitBackedProject } from '../projects/git/types';
+import { runGitCapture } from '../services/git/mirror';
+import type { GitBackedProject } from '../services/git/types';
 import { rewriteStorageOrigin } from '../lib/storage-url';
 import { classifyIpHost, sanitizeUrlForLog } from '../snapshots/providers/upload-url-guard';
 import {
@@ -158,7 +158,7 @@ async function tryServeFromStore(
  * no fetch of that origin ever re-creates the old tree object. The mirror
  * check alone would 404 a legitimate former archive whenever the request
  * lands on a replica whose local mirror clone post-dates the replacement
- * (staging/prod: `apps/api/src/projects/git/mirror.ts` keeps the bare mirror
+ * (staging/prod: `apps/api/src/services/git/mirror.ts` keeps the bare mirror
  * on per-task ephemeral disk, not shared across ECS tasks). The store key is
  * scoped to this project (`configArchiveKey`), so an object found there is
  * proof enough on its own — the caller already passed the project's

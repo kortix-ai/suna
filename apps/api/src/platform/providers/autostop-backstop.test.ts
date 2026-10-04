@@ -116,7 +116,7 @@ describe('the ordering relation the two constants must satisfy', () => {
   });
 
   // The lower bound on the same number: maintenance runs every 5 minutes
-  // (projects/maintenance.ts DEFAULT_MAINTENANCE_INTERVAL_MS), and a grace
+  // (services/sandboxes/maintenance.ts DEFAULT_MAINTENANCE_INTERVAL_MS), and a grace
   // shorter than two passes lets one missed pass zero a HEALTHY box's revenue.
   test('the billing grace still covers at least two maintenance passes', () => {
     const maintenanceIntervalMinutes = 5;

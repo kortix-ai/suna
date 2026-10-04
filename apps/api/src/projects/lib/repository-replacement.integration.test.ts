@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, changeRequests, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../lib/db';
-import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
-import type { GitHubRepo } from '../github';
+import { decryptProjectSecret, encryptProjectSecret } from '../../services/secrets/secrets';
+import type { GitHubRepo } from '../../services/github/github';
 import { persistProjectRepositoryReplacement, RepositoryChangedError } from './repository-replacement';
 
 const confirmed = Boolean(

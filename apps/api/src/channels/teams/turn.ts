@@ -217,7 +217,7 @@ async function liveRuntimeTurnTokens(sessionId: string): Promise<string[]> {
   try {
     const [{ sessionSandboxes }, { RUNNING_SANDBOX_STATUSES, storedSandboxTurns }] = await Promise.all([
       import('@kortix/db'),
-      import('../../projects/session-turn-ledger'),
+      import('../../services/sessions/session-turn-ledger'),
     ]);
     const [box] = await db
       .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
@@ -704,7 +704,7 @@ export function stopTeamsTurnGc(): void {
  */
 async function runtimeStillWorking(sessionId: string): Promise<boolean> {
   try {
-    const { sessionHoldsLiveTurn } = await import('../../projects/session-lifecycle/inbox-admission');
+    const { sessionHoldsLiveTurn } = await import('../../services/sessions/lifecycle/inbox-admission');
     return await sessionHoldsLiveTurn(sessionId);
   } catch {
     return false;
@@ -721,7 +721,7 @@ async function runtimeStillWorking(sessionId: string): Promise<boolean> {
  */
 async function abortDeadRuntimeTurn(sessionId: string): Promise<void> {
   try {
-    const { abortRuntimeTurn } = await import('../../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../../services/sessions/lifecycle/abort-runtime-turn');
     await abortRuntimeTurn(sessionId);
   } catch {
     /* housekeeping: a runtime that cannot be reached needs no abort */

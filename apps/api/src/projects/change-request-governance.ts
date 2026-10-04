@@ -7,10 +7,10 @@
 import type { AgentGrant } from '@kortix/db';
 import { grantsOfManifestText } from './agents/grants';
 import { requiredManifestActions } from './change-request-policy';
-import { readManifestFromRepo } from './git/files';
-import { getMergeBase } from './git/merge';
-import { refreshMirror } from './git/mirror';
-import type { GitBackedProject } from './git/types';
+import { readManifestFromRepo } from '../services/git/files';
+import { getMergeBase } from '../services/git/merge';
+import { refreshMirror } from '../services/git/mirror';
+import type { GitBackedProject } from '../services/git/types';
 
 /**
  * The manifest permissions merging `cr` needs: `[]` when it changes none of

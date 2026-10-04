@@ -63,7 +63,7 @@ import {
   readRepoFile,
   type GitBackedProject,
   type MirrorRefresh,
-} from '../git';
+} from '../../services/git';
 
 /**
  * One compiled agent (`CompiledAgent` in `@kortix/api-contract/runtime-relay`,
@@ -94,7 +94,7 @@ export class CompileAgentConfigError extends Error {
 }
 
 /** Tolerant `kortix_version` read — mirrors apps/api's own manifest readers
- *  (e.g. `parseManifestString` in projects/triggers.ts), which coerce a
+ *  (e.g. `parseManifestString` in services/triggers/index.ts), which coerce a
  *  string version too. Real YAML/TOML decode `kortix_version: 2` to a native
  *  number; the string branch is defensive only. */
 function manifestSchemaVersion(manifest: Record<string, unknown>): number {

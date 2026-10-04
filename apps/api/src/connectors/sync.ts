@@ -33,15 +33,15 @@ import {
   extractConnectors,
   manifestHashForConnector,
 } from '../projects/connectors';
-import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
+import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../services/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
 import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
-} from '../projects/secrets';
-import { extractTriggers, readManifest } from '../projects/triggers';
-import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
+} from '../services/secrets/secrets';
+import { extractTriggers, readManifest } from '../services/triggers';
+import { reconcileProjectTriggerRuntime } from '../services/triggers/trigger-runtime-catalog';
 import { db } from '../lib/db';
 import { isUniqueViolation } from '../lib/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';

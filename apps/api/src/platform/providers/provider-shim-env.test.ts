@@ -100,7 +100,7 @@ mock.module('../../services/sandboxes/daytona/client', () => ({
   listStoppedDaytonaSandboxesOldestFirst: async function* () {},
 }));
 
-mock.module('../../projects/disk-quota-guard', () => ({
+mock.module('../../services/sandboxes/disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 

@@ -12,7 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import { computerCatalog, uniqueComputerLabel, withComputerCatalog } from '../connectors/computers';
 import { extractConnectors } from '../projects/connectors';
-import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../projects/triggers';
+import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../services/triggers';
 import {
   handleCall,
   type CallInput,

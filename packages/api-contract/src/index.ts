@@ -1041,7 +1041,7 @@ export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
 
 /** A project session as serialized by `serializeSession`. */
 /** One conversation of a session's runtime, as the snapshot writer stores it
- *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
+ *  (`apps/api/src/services/sessions/opencode-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
   title: z.string().nullable(),

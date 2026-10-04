@@ -33,7 +33,7 @@ import postgres from 'postgres';
 import { config } from './config';
 import { PG_BROADCAST_POOL_MAX } from './database-capacity';
 import { isUuid } from './validate';
-import type { DesiredInvalidationTransport } from '../projects/lib/turn-start-convergence';
+import type { DesiredInvalidationTransport } from '../services/sessions/turn-start-convergence';
 
 /** One channel, one event: "this project's base branch moved". */
 export const BASE_MOVE_CHANNEL = 'kortix_config_base_moved';

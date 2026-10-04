@@ -66,7 +66,7 @@ mock.module('../channels/slack/turn', () => ({
 let abortResult: boolean | Error = true;
 const aborted: string[] = [];
 const abortOpts: Array<{ requestedStop?: boolean } | undefined> = [];
-mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
+mock.module('../services/sessions/lifecycle/abort-runtime-turn', () => ({
   abortRuntimeTurn: async (id: string, opts?: { requestedStop?: boolean }) => {
     aborted.push(id);
     abortOpts.push(opts);

@@ -24,19 +24,19 @@ import {
   loadVisibleSession,
   projectCapabilityAllowed,
 } from '../lib/access';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
-import { secretAudienceSubject } from '../lib/secret-audience';
-import { resolveSessionAgentGrant } from '../lib/secret-grant';
+import { secretAudienceSubject } from '../../services/secrets/secret-audience';
+import { resolveSessionAgentGrant } from '../../services/secrets/secret-grant';
 import {
   invalidateSessionConnectorLookup,
   resolveEffectiveSessionConnectorBindings,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
-} from '../lib/session-connector-bindings';
-import { mayChangeSessionModel } from '../lib/session-model-change';
-import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
-import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
+} from '../../services/sessions/session-connector-bindings';
+import { mayChangeSessionModel } from '../../services/sessions/session-model-change';
+import { rescopeSessionBindings, rescopeSessionSecrets } from '../../services/sessions/session-rescope';
+import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../../services/secrets/secrets';
 /** A shaped refusal a helper returns; the handler renders it with `c.json`. */
 type ScopeRefusal = {
   ok: false;

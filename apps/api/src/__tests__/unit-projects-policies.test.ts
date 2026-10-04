@@ -10,7 +10,7 @@ import {
   projectPoliciesToTomlEntries,
   projectPolicySettingsToToml,
 } from '../projects/policies';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function parseFrom(body: string) {
   const m = parseManifestString(

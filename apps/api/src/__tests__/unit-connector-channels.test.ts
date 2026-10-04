@@ -27,7 +27,7 @@ import {
 } from '../connectors/gateway';
 import type { NormalizedAction } from '../connectors/types';
 import { connectorSpecToTomlEntry, extractConnectors } from '../projects/connectors';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function expectDefined<T>(value: T | null | undefined): T {
   expect(value).toBeDefined();

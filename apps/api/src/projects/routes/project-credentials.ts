@@ -20,7 +20,7 @@ import {
   hasServerManagedGitAuth,
   upsertProjectGitConnection,
   upsertProjectGitCredential,
-} from '../lib/git';
+} from '../../services/git/project-git';
 import { normalizeString, serializeProjectGitConnection } from '../lib/serializers';
 import { readJsonObject } from '../../lib/http-body';
 export function registerProjectCredentialsRoutes(): void {

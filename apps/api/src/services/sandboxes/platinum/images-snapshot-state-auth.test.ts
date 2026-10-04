@@ -20,7 +20,7 @@ setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 
 const { platinumProvider } = await import('./images');
 const { isPermanentTransitionError } = await import(
-  '../../../projects/provider-transition/provider-transition-core'
+  '../provider-transition/provider-transition-core'
 );
 
 const originalFetch = globalThis.fetch;

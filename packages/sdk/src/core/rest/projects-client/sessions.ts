@@ -34,7 +34,7 @@ export interface ProjectSessionMetadata {
   /**
    * The session that spawned this one — an agent starting a sub-session from
    * inside a turn. Written at create time by
-   * `apps/api/src/projects/lib/sessions.ts:1566` and deliberately retained on
+   * `apps/api/src/services/sessions/sessions.ts:1566` and deliberately retained on
    * the list payload (`LIST_OMITTED_SESSION_METADATA_KEYS`,
    * `apps/api/src/projects/lib/serializers.ts:84`). Absent on a root session.
    *
@@ -306,7 +306,7 @@ export interface ProjectRuntimeSession {
 export type ProjectOpenCodeSession = ProjectRuntimeSession;
 
 /** Default page size the API applies when `limit` is omitted. Mirrors
- *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
+ *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/services/sessions/session-inventory.ts`. */
 export const PROJECT_SESSION_PAGE_DEFAULT_LIMIT = 50;
 /** Largest page the API will serve. A bigger `limit` is rejected with 400. */
 export const PROJECT_SESSION_PAGE_MAX_LIMIT = 200;

@@ -17,7 +17,7 @@
  *
  * The bare install-callback hit (no query at all) used to 500 —
  * `verifyGitHubAppInstallStatePayload` called `.split()` on `undefined` when
- * `state` was absent entirely. Fixed in apps/api/src/projects/github.ts
+ * `state` was absent entirely. Fixed in apps/api/src/services/github/github.ts
  * (defensive null-on-non-string input, mirroring verifyManifestStartState);
  * the GHA-2 assertion now pins the correct 302 redirect, with a unit test
  * (unit-github-app-install-state.test.ts) guarding the regression.
@@ -290,7 +290,7 @@ flow(
         'not a 500): verifyGitHubAppInstallStatePayload now returns null on undefined state ' +
         '(defensive null-on-non-string input, mirroring verifyManifestStartState), so the ' +
         'route falls through to its !installationId guard and redirects. This used to 500 ' +
-        '— a real bug the ke2e suite surfaced (GHA-2); fixed in apps/api/src/projects/github.ts, ' +
+        '— a real bug the ke2e suite surfaced (GHA-2); fixed in apps/api/src/services/github/github.ts, ' +
         'regression-guard unit test in unit-github-app-install-state.test.ts.',
       async () => {
         const r = await ctx.client

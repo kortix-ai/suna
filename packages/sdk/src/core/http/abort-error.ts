@@ -156,7 +156,7 @@ export type AbortReason = (typeof ABORT_REASONS)[number];
  *
  * `'wake'` is reserved for a not-yet-built producer (a session woken from a
  * park mid-turn) and is declared ahead of that work for the same reason
- * `apps/api/src/projects/stop-reason.ts` pre-declares `idle_grace` /
+ * `apps/api/src/services/sandboxes/stop-reason.ts` pre-declares `idle_grace` /
  * `boot_floor_expired`: a renderer branching on this union should see a
  * closed set, not discover a new member via a runtime string it never typed.
  */

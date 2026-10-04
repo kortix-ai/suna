@@ -30,8 +30,8 @@ import { db } from '../../lib/db';
 import { getDaytona } from '../../services/sandboxes/daytona/client';
 import { withTimeout } from '../../lib/with-timeout';
 import { ensureSandboxImage } from '../../snapshots/builder';
-import type { GitBackedProject } from '../../projects/git';
-import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
+import type { GitBackedProject } from '../../services/git';
+import { buildSessionSandboxEnvVars } from '../../services/sessions/sessions';
 import { getProvider } from '../providers';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;

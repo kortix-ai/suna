@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const routes = readFileSync(join(import.meta.dir, 'routes/session-config.ts'), 'utf8');
-const reloadCore = readFileSync(join(import.meta.dir, 'lib/session-reload.ts'), 'utf8');
+const reloadCore = readFileSync(join(import.meta.dir, '../services/sessions/session-reload.ts'), 'utf8');
 
 // The streamed reload is the LAST route in this module, so the slice runs to
 // the next route declaration if one is ever added after it, else to the end.

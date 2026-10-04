@@ -1,5 +1,5 @@
-import { resolveCommitSha } from '../projects/git';
-import type { GitBackedProject } from '../projects/git/types';
+import { resolveCommitSha } from '../services/git';
+import type { GitBackedProject } from '../services/git/types';
 import {
   buildCompiledPiRuntimeArtifact,
   type StoredCompiledPiRuntimeArtifact,

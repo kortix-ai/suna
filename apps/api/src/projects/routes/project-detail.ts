@@ -7,8 +7,8 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../lib/db';
 import { readJsonObject } from '../../lib/http-body';
-import { listRepoFiles, loadProjectConfig } from '../git';
-import { allowStaleMirrorReads } from '../git/mirror';
+import { listRepoFiles, loadProjectConfig } from '../../services/git';
+import { allowStaleMirrorReads } from '../../services/git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
@@ -17,7 +17,7 @@ import {
 } from '../lib/access';
 import { ProjectSchema, projectsApp } from '../lib/app';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
-import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
+import { getProjectGitConnection, withProjectGitAuth } from '../../services/git/project-git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';

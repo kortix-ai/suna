@@ -305,11 +305,11 @@ export function SecretsView({ projectId }: { projectId: string }) {
       title={tI18nComplete.raw('textd8707d411d99')}
       /* "the real value" is exact, not hedged: an enforced secret DOES put an
          env var in the sandbox — an opaque handle under the same key
-         (`apps/api/src/projects/secrets.ts`
+         (`apps/api/src/services/secrets/secrets.ts`
          `env[row.key] = await input.mintHandleFor(row)`), never the
          credential. "Environment variable is the only exposure that puts a
          real value in the sandbox" is the claim the API actually guarantees
-         (`deliversPlaintextToSandbox`, `apps/api/src/secrets/strategy.ts`). */
+         (`deliversPlaintextToSandbox`, `apps/api/src/services/secrets/strategy.ts`). */
       description={tI18nComplete.raw('texteca47e3afa10')}
       search={
         /* Hidden until there is a list to search, the same rule Triggers
@@ -549,7 +549,7 @@ function SecretsAccessExplainer({ showEnforced }: { showEnforced: boolean }) {
           {/* Two things the list above cannot say on its own.
 
               First, the grant. `resolveSecretDelivery`
-              (apps/api/src/secrets/strategy.ts) returns `agent_grant_unscoped`
+              (apps/api/src/services/secrets/strategy.ts) returns `agent_grant_unscoped`
               for EVERY strategy other than `runtime`, so the enforced,
               LLM gateway and Connector values are gated by the identical rule.
               Environment variable is the one exception, and it has to stay

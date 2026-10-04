@@ -26,8 +26,8 @@
 // three casualties were its Idempotency-Key-burn cases. Import the extracted
 // ../sandbox-proxy/pre-prompt-env-sync module, which binds no mocked module.
 import { describe, expect, test } from 'bun:test';
-import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
-import { SessionGrantRemintError } from '../projects/lib/session-token-grant';
+import { SecretGrantResolutionError } from '../services/secrets/secret-grant';
+import { SessionGrantRemintError } from '../services/sessions/session-token-grant';
 import {
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,

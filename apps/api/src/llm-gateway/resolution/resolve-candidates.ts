@@ -3,7 +3,7 @@ import {
   resolveDefaultCodexAccountSecret,
   resolveProjectSharedProviderSecrets,
   resolveSessionProviderSecrets,
-} from '../../secrets/account-resource';
+} from '../../services/secrets/account-resource';
 import { modelAccessAllows, modelAccessProvider } from '../model-access';
 import { toWireModel } from './effective';
 import {
@@ -17,7 +17,7 @@ import { config } from '../../lib/config';
 import {
   getProjectSecretValueForConsumer,
   resolveProjectSecretsForConsumer,
-} from '../../projects/secrets';
+} from '../../services/secrets/secrets';
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { opencodeInferenceBaseUrl, parseOpencodeLogin, resolveOpencodeLogin } from '../credentials/opencode-console';
 import { capabilitiesForModel } from '../models/catalog-models';

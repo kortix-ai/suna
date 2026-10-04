@@ -14,7 +14,7 @@ import { type GatewayDeps, handleCall } from '../connectors/gateway';
 import { findChatThread } from '../channels/core/threads';
 import { SLACK_TEAM_ID, deleteSlackInstall, loadSlackTeamIdForProject, saveSlackInstall } from '../channels/install-store';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
-import { encryptProjectSecret } from '../projects/secrets/envelope';
+import { encryptProjectSecret } from '../services/secrets/envelope';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';

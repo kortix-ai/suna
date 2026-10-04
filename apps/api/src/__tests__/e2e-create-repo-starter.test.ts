@@ -193,7 +193,7 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-mock.module('../projects/git', () => ({
+mock.module('../services/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
@@ -235,7 +235,7 @@ mock.module('../projects/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
 }));
 
-// snapshots/builder imports from projects/git — once mocked, builder.ts
+// snapshots/builder imports from services/git/index — once mocked, builder.ts
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
 mock.module('../snapshots/builder', () => ({
@@ -274,11 +274,11 @@ mock.module('../snapshots/builder', () => ({
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
 // that only lists the exports it overrides deletes every other one — and the
-// next export added to `projects/github.ts` becomes
+// next export added to `services/github/github.ts` becomes
 // `SyntaxError: Export named 'X' not found` in this file, which that change
 // never touched (.claude/skills/learnings/SKILL.md).
-const actualGithub = await import('../projects/github');
-mock.module('../projects/github', () => ({
+const actualGithub = await import('../services/github/github');
+mock.module('../services/github/github', () => ({
   ...actualGithub,
   // provision-core.ts classifies rate-limited repo creates with this class.
   GitHubApiError: class GitHubApiError extends Error {

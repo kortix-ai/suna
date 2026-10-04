@@ -27,7 +27,7 @@ import { auth, errors, json } from '../../openapi';
 import { loadProjectAgents } from '../agents';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { loadEmailInstallConnectionId } from '../lib/session-connector-bindings';
+import { loadEmailInstallConnectionId } from '../../services/sessions/session-connector-bindings';
 
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
 

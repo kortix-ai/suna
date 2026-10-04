@@ -21,7 +21,7 @@ import {
   createDesiredReleaseInvalidation,
   type DesiredInvalidationTransport,
   type TurnStartConvergenceDeps,
-} from '../turn-start-convergence';
+} from '../../../services/sessions/turn-start-convergence';
 
 const RELEASE_BEFORE_THE_PUSH = 'a'.repeat(64);
 const RELEASE_AFTER_THE_PUSH = 'b'.repeat(64);

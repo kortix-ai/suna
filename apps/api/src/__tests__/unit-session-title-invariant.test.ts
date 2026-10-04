@@ -47,8 +47,8 @@ describe('session-title invariant', () => {
     // createProjectSession (which titles) or justify itself here.
     expect(
       offenders(/\.insert\(\s*projectSessions\b/, [
-        'projects/lib/sessions.ts',
-        'projects/lib/session-create.ts',
+        'services/sessions/sessions.ts',
+        'services/sessions/session-create.ts',
         'projects/suna-migration/suna-migration-phases.ts',
       ]),
     ).toEqual([]);
@@ -59,7 +59,7 @@ describe('session-title invariant', () => {
     const writesName = /(?:projectSessionMetadataMerge\(\s*\{|metadata\s*:\s*\{)[^}]*\bname\s*:/s;
     const allow = [
       // THE writer.
-      'projects/session-title-generate.ts',
+      'services/sessions/session-title-generate.ts',
       // carries the legacy Suna thread title onto the migrated row.
       'projects/suna-migration/suna-migration-phases.ts',
     ];
@@ -78,7 +78,7 @@ describe('session-title invariant', () => {
     expect(
       offenders(/\bdeleteGatewayKey\b/, [
         'llm-gateway/gateway-keys.ts',
-        'projects/session-title-generate.ts',
+        'services/sessions/session-title-generate.ts',
       ]),
     ).toEqual([]);
   });

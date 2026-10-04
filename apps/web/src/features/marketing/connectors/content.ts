@@ -19,7 +19,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    tool call goes through.
  *  - Connector credentials are stored with `scope='connector'` and are
  *    structurally excluded from sandbox env injection
- *    (`apps/api/src/projects/secrets.ts` filters `scope='runtime'`).
+ *    (`apps/api/src/services/secrets/secrets.ts` filters `scope='runtime'`).
  *  - Policy actions are `always_run | require_approval | block`, surfaced as
  *    Allow / Ask / Block (`apps/api/src/connectors/policy.ts`).
  *  - Approval HOLDS the call so the agent's turn pauses and resumes on approve.

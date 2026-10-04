@@ -164,7 +164,7 @@ TTY (or with `--no-color`).
 ## Merge mechanics
 
 `POST /v1/projects/:projectId/change-requests/:crId/merge` runs
-through `apps/api/src/projects/git.ts`'s `mergeBranches`. The
+through `apps/api/src/services/git/index.ts`'s `mergeBranches`. The
 implementation:
 
 1. Fast-forward if `head_ref` is strictly ahead of `base_ref`.

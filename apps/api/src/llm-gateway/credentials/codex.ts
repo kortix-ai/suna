@@ -5,9 +5,9 @@ import { db } from '../../lib/db';
 import {
   encryptProjectSecret,
   resolveProjectSecretForConsumer,
-} from '../../projects/secrets';
+} from '../../services/secrets/secrets';
 import { recordAuditEvent } from '../../services/audit/audit';
-import { type CodexAccountLogin, encryptAccountSecret, loadCodexAccountLogin } from '../../secrets/account-resource';
+import { type CodexAccountLogin, encryptAccountSecret, loadCodexAccountLogin } from '../../services/secrets/account-resource';
 import {
   CodexRefreshError,
   OPENAI_AUTH_BASE,

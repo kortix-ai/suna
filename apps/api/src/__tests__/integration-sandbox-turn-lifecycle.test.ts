@@ -8,12 +8,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
-import { claimExpiredSandboxStop, releaseSandboxStopClaim } from '../projects/reaping/box-queries';
+import { claimExpiredSandboxStop, releaseSandboxStopClaim } from '../services/sandboxes/reaping/box-queries';
 import {
   clearPendingStopObservation,
   markPendingStopObservation,
-} from '../projects/reaping/sandbox-state-sync';
-import { sandboxStopClaimLeaseMs } from '../projects/sandbox-deadline-policy';
+} from '../services/sandboxes/reaping/sandbox-state-sync';
+import { sandboxStopClaimLeaseMs } from '../services/sandboxes/sandbox-deadline-policy';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
@@ -22,14 +22,14 @@ import {
   clearSandboxTurn,
   completeSandboxTurn,
   reconcileSandboxTurnDelivery,
-} from '../projects/sandbox-turn-lifecycle';
+} from '../services/sandboxes/sandbox-turn-lifecycle';
 import {
   clearTurnStopRequest,
   isProtectedEndError,
   markTurnStopRequested,
   recordUnidentifiedTurnCause,
   settleOpenSandboxTurnsQuery,
-} from '../projects/session-turn-ledger';
+} from '../services/sessions/session-turn-ledger';
 import { db } from '../lib/db';
 import {
   type SeededProject,

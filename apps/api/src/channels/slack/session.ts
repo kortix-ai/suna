@@ -9,7 +9,7 @@ import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
-} from '../../projects/session-lifecycle';
+} from '../../services/sessions/lifecycle';
 import { normalizeString } from '../../projects/lib/serializers';
 import { chooseEffectiveAgent } from '../../llm-gateway/resolution/effective';
 import { EVENT_DEDUPE_TTL_MS } from './app';

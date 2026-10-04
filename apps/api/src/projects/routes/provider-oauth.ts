@@ -19,13 +19,13 @@ import {
   decryptProjectSecret,
   encryptProjectSecret,
   resolveProjectSecretForConsumer,
-} from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+} from '../../services/secrets/secrets';
+import { propagateProjectSecretsToActiveSandboxes } from '../../services/sandboxes/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountMembers, accountSecretGrants, accountSecretResources } from '@kortix/db';
-import { encryptAccountSecret, memberMayReadProject } from '../../secrets/account-resource';
+import { encryptAccountSecret, memberMayReadProject } from '../../services/secrets/account-resource';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -114,7 +114,7 @@ const OAUTH_POLL_INTERVAL_MS = 3000;
 // ownerUserId-scoped) when `sharing` says so, else the project-wide shared
 // row — then returns the caller's view of it. A legacy OPENCODE_AUTH_JSON row
 // is never overwritten by this. `sharing` only ever chooses private-vs-shared
-// here — member/group secret sharing was retired (see projects/secrets.ts).
+// here — member/group secret sharing was retired (see services/secrets/secrets.ts).
 async function writeOAuthLoginSecret(input: {
   projectId: string;
   accountId: string;

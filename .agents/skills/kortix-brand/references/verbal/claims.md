@@ -29,7 +29,7 @@ Use these words. Do not invent others.
 | Source | Open source. Read it, fork it, audit it. | README.md "How it compares" | 2026-10-01 |
 | Stars | 20,000+ GitHub stars on `kortix-ai/suna`. | `gh api repos/kortix-ai/suna` returned 20,239 | 2026-10-01 |
 | Connectors | 3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP. | `apps/web/src/features/marketing/connectors/content.ts:43,63,70` | 2026-10-01 |
-| Connector credentials | Connector credentials are brokered server-side and never enter the machine. | `connectors/content.ts` gate; `apps/api/src/projects/secrets.ts` | gate cited 2026-07-31 |
+| Connector credentials | Connector credentials are brokered server-side and never enter the machine. | `connectors/content.ts` gate; `apps/api/src/services/secrets/secrets.ts` | gate cited 2026-07-31 |
 | One sandbox per session | One isolated sandbox per session. Each session has its own isolated machine and branch. | `security-page/content.ts` (UNIQUE constraint) | gate cited 2026-07-31 |
 | Agents edit themselves | An agent can edit its own configuration on its session branch and propose the change. A person approves it. | `concepts.md` section 2, beat 5. The code path was not re-read for this row. Re-verify before a launch. | carried over, 2026-10-01 |
 | Parallel work | Thousands of agents in parallel on one config, each on its own cloud computer. | founder-approved proof point, carried over from the pre-kit copy | carried over |

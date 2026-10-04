@@ -24,7 +24,7 @@ import {
   type GitHostBackend,
   type ProvisionedRepo,
   type UpstreamGit,
-} from './git-backends';
+} from '../services/git/backends';
 import {
   type ManagedRepoSeedState,
   ManagedRepoSeedError,
@@ -33,8 +33,8 @@ import {
   pushVerifiedSeed,
 } from './managed-repo-seed';
 import { normalizeStarterTemplateId } from './starter';
-import { GitHubApiError } from './github';
-import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
+import { GitHubApiError } from '../services/github/github';
+import { GitHubPersonalAccountCreateUnsupportedError } from '../services/github/github-create-errors';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,
@@ -42,7 +42,7 @@ import {
   normalizeMarketplaceItems,
 } from './seed-files';
 import { getCatalogItemDetail } from '../marketplace/catalog';
-import { remoteBranchExists } from './git';
+import { remoteBranchExists } from '../services/git';
 import { config } from '../lib/config';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../lib/db';
@@ -61,12 +61,12 @@ import {
   getProjectGitRemote,
   resolveProjectGitAuth,
   upsertProjectGitConnection,
-} from './lib/git';
+} from '../services/git/project-git';
 import { metadataMerge } from './lib/metadata-merge';
 import {
   buildCachedFastBootGitHint,
   resolveFastBootGitHintWithCache,
-} from './lib/fast-boot-git-hint';
+} from '../services/git/fast-boot-git-hint';
 import {
   classifyProvisionReplay,
   findIdempotentProvision,

@@ -13,9 +13,9 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { buildProjectAccessView } from '../lib/project-access-view';
-import { SESSION_PARTICIPANT_LIMIT, buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
+import { SESSION_PARTICIPANT_LIMIT, buildSessionParticipants, sessionAudienceIds } from '../../services/sessions/session-audience';
 
 const ParticipantSchema = z.object({
   user_id: z.string(),

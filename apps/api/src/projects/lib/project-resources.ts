@@ -11,12 +11,12 @@
  * one place that maps a ProjectConfigSummary → those ids, so the grant-validation
  * routes, the picker the UI renders, and the list-filter all agree on the key.
  */
-import type { ProjectConfigSummary } from '../git/types';
+import type { ProjectConfigSummary } from '../../services/git/types';
 import { filterAccessibleObjects, hasAnyResourceGrants } from '../../iam';
 import { actorForToken } from '../../iam/actor';
-import { loadProjectConfig, listRepoFiles } from '../git';
-import { refreshMirror } from '../git/mirror';
-import { withProjectGitAuth } from './git';
+import { loadProjectConfig, listRepoFiles } from '../../services/git';
+import { refreshMirror } from '../../services/git/mirror';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { ttlMemo } from '../../lib/ttl-memo';
 
 /**

@@ -5,18 +5,18 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { promptModelOverride } from '../lib/prompt-model';
+import { promptModelOverride } from '../../services/sessions/prompt-model';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import {
   CreateSessionPromptResultSchema,
   SessionPromptListSchema,
   SessionPromptSchema,
   projectsApp,
 } from '../lib/app';
-import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
-import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
+import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../../services/sessions/instance-scope';
+import { loadSandboxMetadataForSessions } from '../../services/sessions/lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../lib/validate';
 import { readJsonObject } from '../../lib/http-body';
@@ -30,21 +30,21 @@ import {
   inboxSendState,
   listInboxPrompts,
   retryInboxPrompt,
-} from '../session-lifecycle';
-import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
-import { markTurnStopRequested } from '../session-turn-ledger';
-import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
-import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
+} from '../../services/sessions/lifecycle';
+import { settleInboxHoldAfterStopInBackground } from '../../services/sessions/lifecycle/inbox-hold-settle';
+import { markTurnStopRequested } from '../../services/sessions/session-turn-ledger';
+import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../../services/sessions/lifecycle/runtime-client';
+import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../../services/sessions/lifecycle/cancel-forwarded';
 import {
   flattenPromptText,
   sanitizeInboxPromptParts,
-} from '../session-lifecycle/prompt-parts';
+} from '../../services/sessions/lifecycle/prompt-parts';
 import {
   type PromptRow,
   promptState,
   serializePrompt,
-} from '../lib/session-prompt-view';
-import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
+} from '../../services/sessions/session-prompt-view';
+import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../../services/sessions/wire-message-id';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -196,7 +196,7 @@ export function registerSessionPromptsRoutes(): void {
       if (typeof metadata.deletedAt === 'string') {
         return c.json({ error: 'Session is deleted' }, 409);
       }
-      // Shared local DB (projects/instance-scope.ts). The drain never claims a
+      // Shared local DB (services/sessions/instance-scope.ts). The drain never claims a
       // command for a sandbox another API instance provisioned, so a prompt
       // accepted here would stay `queued` for ever when that instance is down.
       // Refuse it while the sender can still read why. The lookup runs only when

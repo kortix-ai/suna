@@ -32,8 +32,8 @@ import {
 } from "../../llm-gateway/resolution/default-model";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { resolveFeatureFlag } from "../../feature-flags/registry";
-import { usableProviderKeys } from "../../secrets/provider-key-selection";
-import { validateNativeOpencodeModelRef } from "../lib/session-model-change";
+import { usableProviderKeys } from "../../services/secrets/provider-key-selection";
+import { validateNativeOpencodeModelRef } from "../../services/sessions/session-model-change";
 import {
   type ModelSource,
   chooseEffectiveAgent,

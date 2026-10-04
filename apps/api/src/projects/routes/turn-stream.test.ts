@@ -114,10 +114,10 @@ mock.module('../../channels/teams/cards', () => ({
   buildFormCard: () => formCardResult,
 }));
 
-const realTurnLedger = await import('../session-turn-ledger');
-const realTurnLifecycle = await import('../sandbox-turn-lifecycle');
+const realTurnLedger = await import('../../services/sessions/session-turn-ledger');
+const realTurnLifecycle = await import('../../services/sandboxes/sandbox-turn-lifecycle');
 
-mock.module('../sandbox-turn-lifecycle', () => ({
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   abandonSandboxTurn: async () => abandonResult,
   acceptSandboxTurn: async () => true,
@@ -128,7 +128,7 @@ mock.module('../sandbox-turn-lifecycle', () => ({
   },
 }));
 
-mock.module('../session-turn-ledger', () => ({
+mock.module('../../services/sessions/session-turn-ledger', () => ({
   ...realTurnLedger,
   recordUnidentifiedTurnCause: async () => causeResult,
   turnCompletionAllowsQueuePromotion: (result: { outcome: string }) =>
@@ -137,38 +137,38 @@ mock.module('../session-turn-ledger', () => ({
     result.outcome === 'no_active_turn',
 }));
 
-mock.module('../session-lifecycle', () => ({
+mock.module('../../services/sessions/lifecycle', () => ({
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
   },
 }));
 
-mock.module('../session-lifecycle/store', () => ({
+mock.module('../../services/sessions/lifecycle/store', () => ({
   promoteNextInboxRow: async () => promotedId,
 }));
 
-mock.module('../session-lifecycle/forwarded-strand-reconcile', () => ({
+mock.module('../../services/sessions/lifecycle/forwarded-strand-reconcile', () => ({
   reconcileForwardedTurnsAtEnd: async () => {
     order.push('reconcile');
   },
 }));
 
-mock.module('../lib/session-transcript-capture', () => ({
+mock.module('../../services/sessions/session-transcript-capture', () => ({
   captureSessionTranscriptMirror: () => {
     order.push('mirror');
   },
 }));
 
-mock.module('../sandbox-deadline', () => ({ childIdleGraceMs: () => 1_000 }));
+mock.module('../../services/sandboxes/sandbox-deadline', () => ({ childIdleGraceMs: () => 1_000 }));
 
-mock.module('../session-title-generate', () => ({
+mock.module('../../services/sessions/session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
   },
 }));
 
 const triggerRunEnds: unknown[] = [];
-mock.module('../lib/trigger-run-outcome', () => ({
+mock.module('../../services/triggers/trigger-run-outcome', () => ({
   TRIGGER_REUSE_RETIRED_AT: 'trigger_reuse_retired_at',
   recordTriggerRunEnd: async (end: unknown) => {
     triggerRunEnds.push(end);

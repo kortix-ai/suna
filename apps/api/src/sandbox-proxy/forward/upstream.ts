@@ -6,7 +6,7 @@ import {
   extendSandboxDeadline,
   isPreviewUseObservation,
   previewGrantMs,
-} from '../../projects/sandbox-deadline';
+} from '../../services/sandboxes/sandbox-deadline';
 import { markSandboxUsed } from '../backend';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { jsonProxyError } from '../pre-prompt-env-sync';
@@ -309,7 +309,7 @@ export async function respondFromUpstream(
           desiredRuntime: async () =>
             (await import('../../runtime-convergence/desired')).computeDesiredRuntime({ releaseId: null }),
           actualRuntime: async () => {
-            const { readSandboxConfigState } = await import('../../projects/lib/session-reload');
+            const { readSandboxConfigState } = await import('../../services/sessions/session-reload');
             const { UNREPORTED_ACTUAL_RUNTIME } = await import('../../runtime-convergence/actual');
             const state = await readSandboxConfigState({ sessionId: record.sessionId }).catch(() => null);
             return state?.runtimeTruth ?? UNREPORTED_ACTUAL_RUNTIME;

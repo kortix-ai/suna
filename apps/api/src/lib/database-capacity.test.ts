@@ -24,7 +24,7 @@ describe('production database connection capacity', () => {
 
   test('keeps high-volume audit writers on the bounded audit pool', () => {
     const auditDb = readFileSync(new URL('../services/audit/audit-db.ts', import.meta.url), 'utf8');
-    expect(auditDb).toContain("import { DEFAULT_AUDIT_POOL_MAX } from './database-capacity'");
+    expect(auditDb).toContain("import { DEFAULT_AUDIT_POOL_MAX } from '../../lib/database-capacity'");
     expect(auditDb).toContain("intFromEnv('DB_AUDIT_POOL_MAX', DEFAULT_AUDIT_POOL_MAX)");
 
     for (const relativePath of [

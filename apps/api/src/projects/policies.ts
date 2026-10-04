@@ -20,7 +20,7 @@ import {
   areValidConditions,
   normalizeConditions,
 } from '../connectors/policy';
-import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
+import { MANIFEST_FILENAME, type ParsedManifest } from '../services/triggers';
 
 type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
 const POLICY_ACTIONS: readonly ProjectPolicyAction[] = ['always_run', 'require_approval', 'block'];

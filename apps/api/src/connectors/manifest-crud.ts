@@ -21,7 +21,7 @@ import {
   extractConnectors,
 } from '../projects/connectors';
 import { loadManifestForEdit } from '../projects/index';
-import { withProjectGitAuth } from '../projects/lib/git';
+import { withProjectGitAuth } from '../services/git/project-git';
 import {
   type DefaultMode,
   type ProjectPolicySpec,

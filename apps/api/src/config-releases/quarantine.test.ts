@@ -5,7 +5,7 @@
  * each test states the release IDs it expects.
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
-import type { GitBackedProject } from '../projects/git/types';
+import type { GitBackedProject } from '../services/git/types';
 import type { ConfigRelease } from './builder';
 import { configReleaseId } from './builder';
 import { ledgerVariant, resolveDesiredRelease, type DesiredReleaseDeps } from './desired';

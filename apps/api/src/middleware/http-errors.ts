@@ -10,7 +10,7 @@ import {
   isRemotePushPolicyRejection,
   pushPolicyWarning,
   transientGitMirrorCause,
-} from '../projects/git/mirror';
+} from '../services/git/mirror';
 import { resolvePrefixEscape } from '../sandbox-proxy/prefix-escape';
 import { previewBaseDomain } from '../sandbox-proxy/preview-hosts';
 import { deadCredentialLogDecision, isDeadCredential } from '../services/audit/dead-credential-log';
@@ -110,7 +110,7 @@ function handleTransientGitMirrorFailure(err: Error, c: Context, method: string,
   // 503 + Retry-After WITHOUT paging Sentry (mirroring Platinum /
   // request-deadline). A PERMANENT failure (bad ref, real auth denial, corrupt
   // local repo) still falls through to Sentry with a meaningful `fatal:`
-  // message. See projects/git/mirror.ts.
+  // message. See services/git/mirror.ts.
   const transientGitError = transientGitMirrorCause(err);
   if (transientGitError) {
     appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${transientGitError.kind}] ${transientGitError.message}`, {
@@ -130,7 +130,7 @@ function handleTransientGitMirrorFailure(err: Error, c: Context, method: string,
         // opaque `ApiError` — the API-side classification alone only de-noises
         // the API's OWN Sentry; the 503 response crosses into the FRONTEND
         // Sentry (a separate app) via `handleApiError`. See
-        // `projects/git/mirror.ts`'s `GIT_MIRROR_UNAVAILABLE_CODE`.
+        // `services/git/mirror.ts`'s `GIT_MIRROR_UNAVAILABLE_CODE`.
         code: GIT_MIRROR_UNAVAILABLE_CODE,
         message: 'git mirror is temporarily unavailable',
         status: 503,

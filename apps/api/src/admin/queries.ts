@@ -193,7 +193,7 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
   const { db } = await import('../lib/db');
   const { accounts, projects, projectSessions } = await import('@kortix/db');
   const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
-  const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
+  const { ACTIVE_SESSION_STATUSES } = await import('../services/sessions/session-status');
 
   const { search, accountId, statusValues, sortBy, sortDir, limit, offset } = query;
 

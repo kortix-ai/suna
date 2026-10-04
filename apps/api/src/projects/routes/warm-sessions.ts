@@ -19,17 +19,17 @@ import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionRe
 import { normalizeString, requestAuditContext, serializeSession } from '../lib/serializers';
 import { isUuid } from '../../lib/validate';
 import { readJsonObject } from '../../lib/http-body';
-import { createProjectSession } from '../lib/sessions';
-import { currentInstanceId } from '../instance-scope';
-import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
-import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
-import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
-import { drainSessionLifecycleQueue } from '../session-lifecycle';
-import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
-import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { createProjectSession } from '../../services/sessions/sessions';
+import { currentInstanceId } from '../../services/sessions/instance-scope';
+import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from '../../services/sessions/warm-sessions';
+import { SESSION_LAST_ACTIVITY_KEY } from '../../services/sessions/session-activity';
+import { projectSessionMetadataMerge } from '../../services/sessions/session-metadata-merge';
+import { drainSessionLifecycleQueue } from '../../services/sessions/lifecycle';
+import { convertPendingPromptToInboxRow } from '../../services/sessions/lifecycle/pending-prompt';
+import { ACTIVE_SESSION_STATUSES } from '../../services/sessions/session-status';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
-import { GitOperationError } from '../git/mirror';
+import { GitOperationError } from '../../services/git/mirror';
 import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
 
 /**
@@ -104,7 +104,7 @@ export async function warmSessionPlacement(
  * find that same row and hand it straight back as `reused: true`.
  *
  * Skips a session whose sandbox ANOTHER API instance provisioned (shared local
- * DB, projects/instance-scope.ts). The first prompt becomes a lifecycle command,
+ * DB, services/sessions/instance-scope.ts). The first prompt becomes a lifecycle command,
  * and `claimDueLifecycleCommands` refuses that sandbox with the same predicate,
  * so the prompt would stay queued for ever. No-op when no instance id is set.
  */
@@ -488,7 +488,7 @@ export function registerWarmSessionsRoutes(): void {
               payload: sessionLifecycleCommands.payload,
             });
             if (promptCommand) {
-              const { bindPromptAttachments } = await import('../prompt-attachments');
+              const { bindPromptAttachments } = await import('../../services/attachments/prompt-attachments');
               await bindPromptAttachments(tx, promptCommand);
             }
           } else {

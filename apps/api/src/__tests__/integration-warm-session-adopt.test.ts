@@ -9,7 +9,7 @@
  * turn" pin — see the helper's doc comment): the warm take only ever fires
  * /start because the user pressed Enter with a prompt, and an unstamped row
  * sorted the just-started session at its CREATE time, burying it in the
- * sidebar. `recordSessionActivity` (projects/session-activity.ts) still owns
+ * sidebar. `recordSessionActivity` (services/sessions/session-activity.ts) still owns
  * the per-turn stamp and re-stamps seconds later.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';

@@ -16,10 +16,10 @@
  */
 import type { sessionSandboxes } from '@kortix/db';
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realOpencodeMapping from '../opencode-mapping';
+import * as realOpencodeMapping from '../../services/sessions/opencode-mapping';
 import * as realProviders from '../../platform/providers';
-import * as realRuntimeIdentity from '../runtime-identity';
-import * as realRuntimeWakeFence from '../session-lifecycle/runtime-wake-fence';
+import * as realRuntimeIdentity from '../../services/sandboxes/runtime-identity';
+import * as realRuntimeWakeFence from '../../services/sessions/lifecycle/runtime-wake-fence';
 import * as realConfigReleases from '../../config-releases/enabled';
 
 /** Scriptable statement results, shifted in program order. */
@@ -84,7 +84,7 @@ mock.module('../../platform/providers', () => ({
 
 let recoveryClaims: Array<Record<string, unknown>> = [];
 let recoveryAcceptedRows: Array<Record<string, unknown>> = [];
-mock.module('../runtime-identity', () => ({
+mock.module('../../services/sandboxes/runtime-identity', () => ({
   ...realRuntimeIdentity,
   claimInPlaceRuntimeRecovery: async (row: Record<string, unknown>) =>
     recoveryClaims.shift() ?? null,
@@ -99,7 +99,7 @@ mock.module('../runtime-identity', () => ({
 
 /** The detached wake fence is stubbed: the resume test pins the CLAIM, not the poll. */
 let wakeStarted = 0;
-mock.module('../session-lifecycle/runtime-wake-fence', () => ({
+mock.module('../../services/sessions/lifecycle/runtime-wake-fence', () => ({
   ...realRuntimeWakeFence,
   executeClaimedRuntimeWake: async () => {
     wakeStarted += 1;
@@ -109,7 +109,7 @@ mock.module('../session-lifecycle/runtime-wake-fence', () => ({
 
 /** The daemon round trip is scripted; every branch below decides off its answer. */
 let pinResults: Array<Record<string, unknown>> = [];
-mock.module('../opencode-mapping', () => ({
+mock.module('../../services/sessions/opencode-mapping', () => ({
   ...realOpencodeMapping,
   ensureOpencodeSessionPin: async () => pinResults.shift() ?? { pin: null, changed: false, reason: 'not_ready' },
 }));
@@ -120,12 +120,12 @@ mock.module('../../config-releases/enabled', () => ({
 }));
 
 /** The guarantee wiring pulls sandbox-proxy/backend into the module graph; never load it here. */
-mock.module('../lib/legacy-runtime-bootstrap-wiring', () => ({
+mock.module('../../services/sandboxes/legacy-runtime-bootstrap-wiring', () => ({
   guaranteeCurrentRuntimeOnOpen: async () => ({ action: 'proceed', classification: null }),
 }));
 
 /** The ready-stage model repair must not touch anything. */
-mock.module('../lib/session-model-repair', () => ({
+mock.module('../../services/sessions/session-model-repair', () => ({
   pinNeedsRepair: () => false,
   repairRetiredSessionModelOnOpen: async () => {},
 }));

@@ -9,8 +9,8 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../lib/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
-import { guardSession } from '../lib/session-access';
-import { withProjectGitAuth } from '../lib/git';
+import { guardSession } from '../../services/sessions/session-access';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../lib/http-body';
@@ -24,20 +24,20 @@ import {
   renderPromptTemplate,
   specToBody,
   upsertTriggerInManifest,
-} from '../lib/triggers';
+} from '../../services/triggers/trigger-runtime';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
-import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import { reconcileProjectTriggerRuntime } from '../../services/triggers/trigger-runtime-catalog';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
   setTriggerSessionAccess,
   validateTriggerSessionAccessPrincipals,
-} from '../trigger-session-access';
+} from '../../services/triggers/trigger-session-access';
 import {
   type ParsedManifest,
   extractTriggers,
   findProjectTriggerBySlug,
-} from '../triggers';
+} from '../../services/triggers';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely

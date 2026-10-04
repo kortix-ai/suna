@@ -75,7 +75,7 @@ export async function findStaleActiveSessions(cutoff: Date, limit = 100) {
  * one hour, and the duplicate ledger rows were byte-identical and landed in the
  * same second — indistinguishable from two legitimate sandboxes.
  *
- * That race is not hypothetical. `projects/maintenance.ts` launches four
+ * That race is not hypothetical. `services/sandboxes/maintenance.ts` launches four
  * settlers inside one `Promise.all` — the reaper, the orphan sweep, the
  * stuck-session sweep, and the metering tick — and an orphaned sandbox is
  * eligible for several of them at once. Serializing the maintenance pass would

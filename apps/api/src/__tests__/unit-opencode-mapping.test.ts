@@ -37,7 +37,7 @@ mock.module('../services/sessions/preview-ownership', () => ({
   resolveSandboxProjectId: async () => null,
 }));
 
-const { ensureOpencodeSessionPin } = await import('../projects/opencode-mapping');
+const { ensureOpencodeSessionPin } = await import('../services/sessions/opencode-mapping');
 
 const originalFetch = globalThis.fetch;
 const fetchCalls: Array<{ method: string; url: string }> = [];

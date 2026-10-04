@@ -21,7 +21,7 @@ import {
   normalizeRequiredConnectorAliases,
   readAgentBlockV2,
 } from '../projects/lib/agent-config-v2';
-import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
+import { parseManifestString, synthesizeBlankManifest } from '../services/triggers';
 import { extractAgents } from '../projects/agents';
 
 const V2 = `

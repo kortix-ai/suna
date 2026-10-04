@@ -15,9 +15,9 @@ import { manifestCandidatePaths, parseManifestText } from "@kortix/manifest-sche
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
-import { validateRef, validateSha } from "../projects/git-ref";
-import { refreshMirror, runGit, runGitCapture } from "../projects/git/mirror";
-import type { GitBackedProject } from "../projects/git/types";
+import { validateRef, validateSha } from "../services/git/git-ref";
+import { refreshMirror, runGit, runGitCapture } from "../services/git/mirror";
+import type { GitBackedProject } from "../services/git/types";
 import { getPiWorkerBundle, type PiWorkerBundle } from "./pi-worker-bundle";
 import {
   COMPILED_PI_RUNTIME_FORMAT,

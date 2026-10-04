@@ -6,7 +6,7 @@ import {
   type LegacyBootstrapDeps,
   REQUIRED_RUNTIME_CAPABILITIES,
   bootstrapLegacyRuntime,
-} from './legacy-runtime-bootstrap';
+} from '../../services/sandboxes/legacy-runtime-bootstrap';
 
 /**
  * The third divergence axis: the provider says RUNNING and the daemon answers

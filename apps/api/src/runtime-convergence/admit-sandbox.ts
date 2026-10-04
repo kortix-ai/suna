@@ -9,7 +9,7 @@
  * log) without re-deriving what went wrong.
  */
 
-import { hasConfigReleaseCapability } from '../projects/lib/session-config-release';
+import { hasConfigReleaseCapability } from '../services/sessions/session-config-release';
 import { evaluateAdmission, type RuntimeAdmissionCheck } from './admission';
 import { parseActualRuntime } from './actual';
 import { computeDesiredRuntime, type DesiredRuntimeDocument } from './desired';

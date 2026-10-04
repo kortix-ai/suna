@@ -68,7 +68,7 @@ mock.module('../lib/db', () => ({
   },
   hasDatabase: () => true,
 }));
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../services/sessions/lifecycle', () => ({
   continueSession: async () => 'delivered',
   createSession: async (input: { body: Record<string, unknown> }) => {
     lastBody = input.body;

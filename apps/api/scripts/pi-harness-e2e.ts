@@ -18,7 +18,7 @@ import { createHmac } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mintWireMessageId } from '../src/projects/wire-message-id';
+import { mintWireMessageId } from '../src/services/sessions/wire-message-id';
 
 function arg(name: string, def?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);

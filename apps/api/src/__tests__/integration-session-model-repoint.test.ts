@@ -8,7 +8,7 @@
  * (`model_retired`, resolve-candidates.test.ts); this suite proves the
  * SESSION itself is moved off the dead id at boot, before that error can ever
  * fire — at the one chokepoint every provisioning path shares
- * (`buildSessionSandboxEnvVars`, projects/lib/sessions.ts).
+ * (`buildSessionSandboxEnvVars`, services/sessions/sessions.ts).
  *
  * The runtime-servable lineup and the project's resolved default are mocked
  * (`SERVED_MANAGED_MODELS` depends on real OpenRouter/Bedrock transport
@@ -46,7 +46,7 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
 }));
 
 const { repointRetiredSessionModel } = await import('../llm-gateway/resolution/session-model-repoint');
-const { buildSessionSandboxEnvVars } = await import('../projects/lib/sessions');
+const { buildSessionSandboxEnvVars } = await import('../services/sessions/sessions');
 
 let project: SeededProject;
 

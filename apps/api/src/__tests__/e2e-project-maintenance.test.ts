@@ -80,7 +80,7 @@ mock.module('../sandbox-proxy', () => ({
   },
 }));
 
-mock.module('../projects/git', () => ({
+mock.module('../services/git', () => ({
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   archiveRepoSubtree: async () => undefined,
@@ -115,7 +115,7 @@ mock.module('../projects/git', () => ({
   invalidateProjectMirror: () => {},
 }));
 
-mock.module('../projects/session-lifecycle/undelivered-prompts', () => ({
+mock.module('../services/sessions/lifecycle/undelivered-prompts', () => ({
   reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
 }));
 
@@ -124,8 +124,8 @@ mock.module('../projects/session-lifecycle/undelivered-prompts', () => ({
 // hand-maintained lists rot into `SyntaxError: Export named 'x' not found` the
 // moment the module grows one. Neither of these modules connects to anything at
 // import time, so pulling the real one in stays hermetic.
-const actualReaper = await import('../projects/sandbox-reaper');
-mock.module('../projects/sandbox-reaper', () => ({
+const actualReaper = await import('../services/sandboxes/sandbox-reaper');
+mock.module('../services/sandboxes/sandbox-reaper', () => ({
   ...actualReaper,
   reapAndReconcileSandboxes: async () => ({
     candidates: 0,
@@ -145,7 +145,7 @@ const {
   hasOpenPullRequestMarker,
   postgresTimestampParam,
   sweepExpiredSessionBranches,
-} = await import('../projects/maintenance');
+} = await import('../services/sandboxes/maintenance');
 
 beforeEach(() => {
   sandboxCandidates = [];

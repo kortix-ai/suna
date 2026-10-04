@@ -120,7 +120,7 @@ describe('object grants — real DB round-trip + the engine object rule', () => 
 
   test('secret grant: scoping a secret restricts it; unscoped secrets stay open', async () => {
     // A secret grant names one shared VALUE by `secret_id` (its audience,
-    // projects/lib/secret-audience.ts) — no longer the secret NAME, and never
+    // services/secrets/secret-audience.ts) — no longer the secret NAME, and never
     // a value that does not exist.
     await expect(
       upsertResourceGrant({

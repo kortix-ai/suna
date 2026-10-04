@@ -12,7 +12,7 @@ import {
   loadSlackInstall,
   loadTeamsInstall,
 } from '../channels/install-store';
-import { resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
+import { resolveSessionConnectorConnection } from '../services/sessions/session-connector-bindings';
 import { db } from '../lib/db';
 import {
   connectionIsEffectiveProjectDefault,

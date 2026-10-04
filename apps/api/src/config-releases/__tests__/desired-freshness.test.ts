@@ -10,7 +10,7 @@
  * Every dep is injected, so these assert the DECISION, not the mirror.
  */
 import { describe, expect, test } from 'bun:test';
-import type { GitBackedProject } from '../../projects/git/types';
+import type { GitBackedProject } from '../../services/git/types';
 import type { ConfigRelease } from '../builder';
 import { type DesiredReleaseDeps, resolveDesiredRelease } from '../desired';
 import { MemoryConfigReleaseLedger } from '../quarantine';

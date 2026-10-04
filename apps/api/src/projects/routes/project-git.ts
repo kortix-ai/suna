@@ -3,7 +3,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { buildDenialError } from '../../iam/denial-message';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { getBackend, parseBasicAuthHeader, type GitScope } from '../git-backends';
+import { getBackend, parseBasicAuthHeader, type GitScope } from '../../services/git/backends';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -14,7 +14,7 @@ import {
   resolveProjectGitAuth,
   resolveProjectGitConnection,
   resolveProjectUpstream,
-} from '../lib/git';
+} from '../../services/git/project-git';
 import { normalizeString, serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../lib/http-body';
 export function registerProjectGitRoutes(): void {

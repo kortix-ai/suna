@@ -92,7 +92,7 @@ mock.module('../iam/authorize', () => ({
   },
 }));
 
-const { authorizeGitProxy, __resetGitProxyAuthzMemoForTests } = await import('../projects/lib/git');
+const { authorizeGitProxy, __resetGitProxyAuthzMemoForTests } = await import('../services/git/project-git');
 
 beforeEach(() => {
   __resetGitProxyAuthzMemoForTests();

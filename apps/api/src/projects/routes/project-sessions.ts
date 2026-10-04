@@ -31,27 +31,27 @@ import {
 } from '../lib/serializers';
 import { isUuid } from '../../lib/validate';
 import { readJsonObject } from '../../lib/http-body';
-import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
+import { projectSessionMetadataMerge } from '../../services/sessions/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../lib/sessions';
-import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
-import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
-import { createSession, deleteSession } from '../session-lifecycle';
+import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../../services/sessions/sessions';
+import { sessionHasPersonalConnectorBinding } from '../../services/sessions/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../../services/secrets/secret-audience';
+import { createSession, deleteSession } from '../../services/sessions/lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { admitSessionSharingChange } from '../lib/session-model-keys';
+import { admitSessionSharingChange } from '../../services/sessions/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { callerKortixSessionId } from '../lib/caller-session';
-import type { ProjectSessionListScope } from '../lib/session-inventory';
-import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
-import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import type { ProjectSessionListScope } from '../../services/sessions/session-inventory';
+import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../../services/sessions/session-list';
+import { SESSION_PAGE_MAX_LIMIT } from '../../services/sessions/session-inventory';
 import {
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
   SERVER_MANAGED_SESSION_METADATA_KEYS,
-} from '../lib/session-metadata-keys';
+} from '../../services/sessions/session-metadata-keys';
 
 function serverManagedSessionMetadataKey(
   value: unknown,
@@ -652,7 +652,7 @@ export function registerProjectSessionsRoutes(): void {
     // durable trigger path. Manager visibility trusts all three fields, so only
     // the server can write them.
     // name / title_source are owned by the title generator (the SINGLE writer of
-    // metadata.name — see projects/session-title-generate.ts). A client that plants
+    // metadata.name — see services/sessions/session-title-generate.ts). A client that plants
     // a non-placeholder name pre-empts titling permanently, since `needsTitle` and
     // the CAS both then refuse; renaming is `body.name` → metadata.custom_name,
     // which is the supported, non-destructive override.

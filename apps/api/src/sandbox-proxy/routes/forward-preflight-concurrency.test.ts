@@ -56,15 +56,15 @@ mock.module('../../services/sessions/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../services/sessions/session-token-grant', () => ({
   agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/lib/turn-start-convergence', () => ({
+mock.module('../../services/sessions/turn-start-convergence', () => ({
   convergeBeforeTurnStart: async () => {
     await hold('config-converge', GATE_DELAY_MS);
     return { decision: 'current', outcome: null, ms: GATE_DELAY_MS };
@@ -75,11 +75,11 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
     return { decision: 'skipped' };
   },
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../services/sessions/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
-mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+const realTurnLifecycle = await import('../../services/sandboxes/sandbox-turn-lifecycle');
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
   acceptSandboxTurn: async () => true,

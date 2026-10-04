@@ -18,8 +18,8 @@ import {
   REAP_CONCURRENCY,
   computeMaxWindowMs,
   computeUnresolvedCeilingMs,
-} from '../../projects/reaper-constants';
-import { runtimeWakeInProgress } from '../../projects/session-lifecycle/runtime-wake-fence';
+} from '../../services/sandboxes/reaper-constants';
+import { runtimeWakeInProgress } from '../../services/sessions/lifecycle/runtime-wake-fence';
 import { db } from '../../lib/db';
 import {
   type ComputeCloseReason,

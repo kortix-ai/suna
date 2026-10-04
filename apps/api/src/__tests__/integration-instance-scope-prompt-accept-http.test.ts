@@ -3,7 +3,7 @@
  *
  * Several local API instances (the primary `pnpm dev` and each worktree) share
  * one database. `claimDueLifecycleCommands` never claims a command whose
- * sandbox another instance provisioned (projects/instance-scope.ts). The HTTP
+ * sandbox another instance provisioned (services/sessions/instance-scope.ts). The HTTP
  * accept paths had no such check: they answered 200/202, stored the prompt as a
  * command, and no worker on the accepting instance could ever take it. When the
  * owning instance was not running, the row stayed `queued` with `attempts = 0`

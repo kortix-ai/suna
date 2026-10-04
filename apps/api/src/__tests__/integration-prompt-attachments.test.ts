@@ -18,12 +18,12 @@ import {
   resolvePromptAttachment,
   resolveRuntimePromptAttachmentDescriptor,
   uploadPromptAttachmentChunk,
-} from '../projects/prompt-attachments';
+} from '../services/attachments/prompt-attachments';
 import {
   claimCreateSessionCommand,
   enqueueContinueSessionCommand,
-} from '../projects/session-lifecycle/store';
-import { deleteInboxPrompt } from '../projects/session-lifecycle/inbox-rows';
+} from '../services/sessions/lifecycle/store';
+import { deleteInboxPrompt } from '../services/sessions/lifecycle/inbox-rows';
 
 // Real PostgreSQL transactions; only the external storage transport is replaced
 // to reproduce an object write whose successful response is lost.
@@ -669,7 +669,7 @@ test('mixed handles and uppercase DATA count exactly 100 MiB plus one byte', asy
 
 // Retention (D16) and the begin budget (D17). Loaded as a namespace so a missing
 // export fails its own test, not the whole file.
-const lifecycle = await import('../projects/prompt-attachments');
+const lifecycle = await import('../services/attachments/prompt-attachments');
 const HOUR_MS = 60 * 60_000;
 async function settleCommand(
   commandId: string,
@@ -766,7 +766,7 @@ test('session delete releases references', async () => {
   // The live session still sends `shared`.
   await enqueue(shared);
 
-  const { deleteSession } = await import('../projects/session-lifecycle/actions');
+  const { deleteSession } = await import('../services/sessions/lifecycle/actions');
   expect(
     await deleteSession({
       projectId: scope.projectId,

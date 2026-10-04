@@ -20,7 +20,7 @@
  * durable mirror once it is stopped (`source` says which). The client Stop is
  * the runtime abort the web sends (`abortTurn`, fixtures/session-run.ts); no
  * Kortix abort route exists yet. The abort `POST /stop` performs first
- * (`abortLiveTurnBeforeStop`, apps/api/src/projects/reaping/stop-box.ts) is a
+ * (`abortLiveTurnBeforeStop`, apps/api/src/services/sandboxes/reaping/stop-box.ts) is a
  * server-to-daemon `POST {sandbox}/kortix/abort`, HMAC-signed and never
  * reachable from an external client, so SESS-23 observes its effect only
  * through the transcript.
@@ -168,7 +168,7 @@ harnessFlow(
 
 // ─── SESS-23: Park → wake → send ──────────────────────────────────────────
 // `POST /stop` aborts the live turn BEFORE powering the sandbox off
-// (`abortLiveTurnBeforeStop`, apps/api/src/projects/reaping/stop-box.ts,
+// (`abortLiveTurnBeforeStop`, apps/api/src/services/sandboxes/reaping/stop-box.ts,
 // T11). Waking the box (`/start`) and sending a new prompt must deliver that
 // new prompt EXACTLY once — no replay of the original prompt, and no
 // additional "Interrupted"/abort stamps beyond the one the stop produced (the

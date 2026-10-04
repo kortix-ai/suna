@@ -70,7 +70,7 @@ export function registerAccountRoutes(): void {
             updated_at: row.updatedAt.toISOString(),
             // Owner, matching the effective role every other gate resolves for
             // an impersonated request (see iam/engine-v2.ts and
-            // projects/lib/git.ts). A lower label here would make the console
+            // services/git/project-git.ts). A lower label here would make the console
             // hide controls the server would in fact allow.
             account_role: 'owner',
             is_primary_owner: true,

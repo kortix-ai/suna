@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { titleSourceForCreate } from '../projects/session-title-generate';
+import { titleSourceForCreate } from '../services/sessions/session-title-generate';
 
 const SRC = join(import.meta.dir, '..');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
@@ -52,7 +52,7 @@ describe('session-title origins — create-time title source', () => {
       'Triage the new Sentry issue and open a change request',
     );
 
-    const source = createBody('projects/lib/trigger-fire.ts', "requestingPrincipalType: 'human'");
+    const source = createBody('services/triggers/trigger-fire.ts', "requestingPrincipalType: 'human'");
     expect(source).toContain('initial_prompt: renderedPrompt');
     expect(source).not.toContain('title_source');
   });

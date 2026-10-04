@@ -17,7 +17,7 @@ import {
   createExtendThrottle,
   extendSandboxDeadline,
   llmActivityGrantMs,
-} from '../projects/sandbox-deadline';
+} from '../services/sandboxes/sandbox-deadline';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { tokenRefusalReason } from '../services/sessions/session-lease-refusal';
 import { isGatewayKey } from '../lib/crypto';

@@ -3,9 +3,9 @@ import { connectorConnections, connectors, projectSessions, projects } from '@ko
 
 mock.module('../lib/config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
-const realSecrets = await import('../projects/secrets');
+const realSecrets = await import('../services/secrets/secrets');
 const writes: Array<Record<string, unknown>> = [];
-mock.module('../projects/secrets', () => ({
+mock.module('../services/secrets/secrets', () => ({
   ...realSecrets,
   writeSharedProjectSecret: async (input: Record<string, unknown>) => {
     writes.push(input);
@@ -48,14 +48,14 @@ mock.module('../middleware/rate-limit', () => ({
 }));
 
 const propagated: string[] = [];
-mock.module('../projects/lib/sandbox-env-sync', () => ({
+mock.module('../services/sandboxes/sandbox-env-sync', () => ({
   propagateProjectSecretsToActiveSandboxes: async (projectId: string) => {
     propagated.push(projectId);
   },
 }));
 
 const enqueued: Array<Record<string, unknown>> = [];
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../services/sessions/lifecycle', () => ({
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     enqueued.push(input);
   },
@@ -110,10 +110,10 @@ mock.module('../connectors/db-deps', () => ({
 
 // The grant verdict is resolved per session from the manifest. Mocked at the
 // I/O seam only: the pure policy and its wording stay real.
-const realReach = await import('../projects/lib/session-secret-reach');
+const realReach = await import('../services/sessions/session-secret-reach');
 let reach: Awaited<ReturnType<typeof realReach.resolveSessionSecretReach>> | Error = null;
 const reachLookups: string[] = [];
-mock.module('../projects/lib/session-secret-reach', () => ({
+mock.module('../services/sessions/session-secret-reach', () => ({
   ...realReach,
   // The real advisory wrapper, re-bound to the mocked lookup: a module mock
   // cannot reach a call made inside the module itself.

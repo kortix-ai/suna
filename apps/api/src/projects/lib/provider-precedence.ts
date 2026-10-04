@@ -1,6 +1,6 @@
 // Pure sandbox-provider precedence for new sessions. No deps — config/db are
 // injected as `allowed` + `isEnabled` — so it unit-tests without env/DB and stays
-// importable in isolation. Used by createProjectSession (projects/lib/sessions.ts).
+// importable in isolation. Used by createProjectSession (services/sessions/sessions.ts).
 
 /**
  * Resolve the sandbox provider for a new session. Precedence:

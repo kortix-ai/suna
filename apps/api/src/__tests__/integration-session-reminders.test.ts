@@ -18,7 +18,7 @@ import {
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
-import { fireGitTrigger } from '../projects/lib/trigger-fire';
+import { fireGitTrigger } from '../services/triggers/trigger-fire';
 import {
   getSessionReminder,
   insertSessionReminder,
@@ -29,10 +29,10 @@ import {
   reminderSpec,
   parseReminderDraft,
   setSessionReminderEnabled,
-} from '../projects/lib/session-reminders';
-import { claimDueScheduleSlots } from '../projects/trigger-execution-store';
-import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
-import type { GitTriggerSpec } from '../projects/triggers';
+} from '../services/sessions/session-reminders';
+import { claimDueScheduleSlots } from '../services/triggers/trigger-execution-store';
+import { reconcileProjectTriggerRuntime } from '../services/triggers/trigger-runtime-catalog';
+import type { GitTriggerSpec } from '../services/triggers';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 

@@ -10,7 +10,7 @@ import { beforeAll, expect, test } from 'bun:test';
 import { sessionSandboxes } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import { config } from '../lib/config';
-import { verifyParkedRuntimes } from '../projects/reaping/parked-runtime-verification';
+import { verifyParkedRuntimes } from '../services/sandboxes/reaping/parked-runtime-verification';
 import { db } from '../lib/db';
 import { seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 

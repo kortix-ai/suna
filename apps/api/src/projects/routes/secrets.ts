@@ -17,14 +17,14 @@ import {
 import { inferAuditSource, runAuditedTransaction } from '../../services/audit/audit';
 import { db } from '../../lib/db';
 import { roleAllows } from '../access';
-import { loadProjectConfig } from '../git';
+import { loadProjectConfig } from '../../services/git';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   encryptProjectSecret,
   identifierKeyConflicts,
   isValidIdentifier,
-} from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+} from '../../services/secrets/secrets';
+import { propagateProjectSecretsToActiveSandboxes } from '../../services/sandboxes/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -38,7 +38,7 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { SecretSchema, projectsApp } from '../lib/app';
-import { withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   isSystemProjectSecretName,
@@ -54,9 +54,9 @@ import {
   boundaryDestinationConflict,
   connectorSecretBindings,
   summarizeDeliverySync,
-} from '../lib/secret-writes';
-import { resolveSecretWriteInput } from '../lib/secret-write-input';
-import { callerKortixSessionId } from '../lib/caller-session';
+} from '../../services/secrets/secret-writes';
+import { resolveSecretWriteInput } from '../../services/secrets/secret-write-input';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { loadConnectionSharing } from '../lib/connection-sharing';
 import {
   clearSecretAudience,
@@ -64,7 +64,7 @@ import {
   secretAudienceSubject,
   setSecretAudience,
   type SecretAudiencePrincipal,
-} from '../lib/secret-audience';
+} from '../../services/secrets/secret-audience';
 
 import { registerSecretRateLimitRoutes } from './secret-rate-limit';
 import { registerSecretPersonalRoutes } from './secret-personal';

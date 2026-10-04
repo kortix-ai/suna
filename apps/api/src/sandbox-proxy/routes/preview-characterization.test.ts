@@ -80,27 +80,27 @@ mock.module('../../iam', () => ({
     return { allowed: true, reason: 'role' };
   },
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../services/sessions/session-token-grant', () => ({
   agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/lib/turn-start-convergence', () => ({
+mock.module('../../services/sessions/turn-start-convergence', () => ({
   convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../services/sessions/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-mock.module('../../projects/session-activity', () => ({
+mock.module('../../services/sessions/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
-const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
-mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+const realTurnLifecycle = await import('../../services/sandboxes/sandbox-turn-lifecycle');
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
   acceptSandboxTurn: async () => true,
@@ -118,8 +118,8 @@ mock.module('../../services/sessions/session-public-shares', () => ({
     shareRow ? { ok: true as const, row: { ...shareRow } } : { ok: false as const, status: 404, error: 'not found' },
   touchPublicShare: async () => {},
 }));
-const realDeadline = await import('../../projects/sandbox-deadline');
-mock.module('../../projects/sandbox-deadline', () => ({
+const realDeadline = await import('../../services/sandboxes/sandbox-deadline');
+mock.module('../../services/sandboxes/sandbox-deadline', () => ({
   ...realDeadline,
   // The preview-use extend is a real DB write; these cases assert status/body
   // shapes, not deadline grants — the writer stays silent here.

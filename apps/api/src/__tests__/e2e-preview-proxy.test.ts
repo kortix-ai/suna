@@ -26,7 +26,7 @@ import { runWithContext } from '../lib/request-context';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import * as realProviders from '../platform/providers';
 import * as realPreviewOwnership from '../services/sessions/preview-ownership';
-import { __resetPromptModelSignatureCacheForTests } from '../projects/lib/sandbox-env-sync';
+import { __resetPromptModelSignatureCacheForTests } from '../services/sandboxes/sandbox-env-sync';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -196,8 +196,8 @@ mock.module('../lib/db', () => {
   };
 });
 
-const realTurnLifecycle = await import('../projects/sandbox-turn-lifecycle');
-mock.module('../projects/sandbox-turn-lifecycle', () => ({
+const realTurnLifecycle = await import('../services/sandboxes/sandbox-turn-lifecycle');
+mock.module('../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
   acceptSandboxTurn: async () => true,
@@ -370,7 +370,7 @@ mock.module('../lib/config', () => ({
   },
 }));
 
-mock.module('../projects/secrets', () => {
+mock.module('../services/secrets/secrets', () => {
   const snapshot = (projectId: string) => ({
     env: {
       OPENROUTER_API_KEY: 'sk-live',
@@ -416,7 +416,7 @@ mock.module('../projects/secrets', () => {
   };
 });
 
-mock.module('../projects/opencode-session-snapshot', () => ({
+mock.module('../services/sessions/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
     mockSnapshotSyncCalls.push(input);
   },
@@ -426,8 +426,8 @@ mock.module('../projects/opencode-session-snapshot', () => ({
 // (that is the part the proxy actually decides) and capture only the generator
 // call, whose own idempotency/CAS is covered by unit + integration tests.
 let mockTitleCalls: Array<Record<string, unknown>> = [];
-const realTitleGenerate = await import('../projects/session-title-generate');
-mock.module('../projects/session-title-generate', () => ({
+const realTitleGenerate = await import('../services/sessions/session-title-generate');
+mock.module('../services/sessions/session-title-generate', () => ({
   ...realTitleGenerate,
   generateSessionTitleFromFirstPrompt: async (input: Record<string, unknown>) => {
     mockTitleCalls.push(input);

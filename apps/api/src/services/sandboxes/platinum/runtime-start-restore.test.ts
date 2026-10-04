@@ -8,12 +8,12 @@
 // /start before even that 202 arrived. Each case below scripts a fake Platinum
 // and asserts the exact conversation start() holds with it.
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from 'bun:test';
-import { RUNTIME_RESTART_LEASE_MS } from '../../../projects/session-lifecycle/runtime-restart-fence';
+import { RUNTIME_RESTART_LEASE_MS } from '../../sessions/lifecycle/runtime-restart-fence';
 import {
   RUNTIME_WAKE_HARD_MS,
   RUNTIME_WAKE_LEASE_MS,
   isAmbiguousRuntimeStartError,
-} from '../../../projects/session-lifecycle/runtime-wake-fence';
+} from '../../sessions/lifecycle/runtime-wake-fence';
 
 mock.module('../../../lib/config', () => ({
   config: {

@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { projectSessions, serviceAccounts } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { ProjectRow } from '../projects/lib/serializers';
-import { attributeFiredTriggerSession } from '../projects/lib/triggers';
+import { attributeFiredTriggerSession } from '../services/triggers/trigger-runtime';
 import { db } from '../lib/db';
 
 let ctx: { projectId: string; accountId: string } | null = null;

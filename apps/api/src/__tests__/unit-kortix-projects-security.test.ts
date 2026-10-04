@@ -39,7 +39,7 @@ describe('kortix-projects SQL safety', () => {
 });
 
 describe('kortix-projects authorization safety', () => {
-  // The inventory read moved out of the route into projects/lib/session-list.ts
+  // The inventory read moved out of the route into services/sessions/session-list.ts
   // (`loadProjectSessionInventory`) so a batch/bundle route can reuse the exact
   // same queries. The invariant is unchanged and still enforced here: the
   // project.session.read gate must run BEFORE anything reads session rows.
@@ -67,7 +67,7 @@ describe('kortix-projects authorization safety', () => {
   // the leaf assert, which is exactly the regression the test above guards.
   test('the extracted inventory read stays caller-authorized and tenant-scoped', () => {
     const source = readFileSync(
-      join(import.meta.dir, '../projects/lib/session-list.ts'),
+      join(import.meta.dir, '../services/sessions/session-list.ts'),
       'utf8',
     );
 

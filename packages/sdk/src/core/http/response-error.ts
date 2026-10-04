@@ -31,7 +31,7 @@ const isRequestDeadlineResponse = (
  * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
  * (GitHub edge blip, a momentarily unusable private-mirror credential, a
  * mid-transfer timeout). The API already classifies the cause out of its OWN
- * Sentry (`apps/api/src/projects/git/mirror.ts`'s `isTransientGitMirrorError`)
+ * Sentry (`apps/api/src/services/git/mirror.ts`'s `isTransientGitMirrorError`)
  * and answers a clean 503 + `Retry-After`; this is the frontend mirror.
  *
  * The 503 RESPONSE crosses the boundary: `makeRequest` extracts the message
@@ -45,7 +45,7 @@ const isRequestDeadlineResponse = (
  * message/code still reports.
  *
  * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
- * `apps/api/src/projects/git/mirror.ts`. `LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE`
+ * `apps/api/src/services/git/mirror.ts`. `LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE`
  * covers a response from an API deployed before the typed code (the same
  * rollout shim as `LEGACY_REQUEST_DEADLINE_MESSAGE`).
  */

@@ -3,8 +3,8 @@
  * question that gates it.
  *
  * Nothing else in the API has ever updated that column. Two modules assert it
- * in prose — `projects/lib/secret-grant.ts` ("a column nothing ever updates")
- * and `projects/lib/session-token-grant.ts:395` ("the create-time agent and
+ * in prose — `services/secrets/secret-grant.ts` ("a column nothing ever updates")
+ * and `services/sessions/session-token-grant.ts:395` ("the create-time agent and
  * nothing ever updates it"). Both stay true in spirit: the column is still the
  * agent the session IS, and the only thing that moves it is the manifest
  * dropping the agent it named. `repointSessionAgentToDeclaredDefault` below is

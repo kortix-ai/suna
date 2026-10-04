@@ -56,7 +56,7 @@ import type { SandboxExecOptions, SandboxExecResult } from '../../../platform/pr
 import { isProviderNotFound } from '../../../platform/providers/status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../../lib/config';
-import { currentInstanceId } from '../../../projects/instance-scope';
+import { currentInstanceId } from '../../sessions/instance-scope';
 import { isOpencodePort } from '../../sessions/opencode-ports';
 import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from './client';
 import { sandboxFrontendBaseUrl } from '../../../platform/sandbox-frontend-url';
@@ -426,7 +426,7 @@ export class PlatinumProvider implements SandboxProvider {
     // Platinum AUTO-STOPS idle boxes natively and resumes them CoW on reopen
     // (the CH UFFD resume bug that once forced persistent is fixed; verified
     // stop→resume ~2.3s). Its native timer is the BACKSTOP for when this API is
-    // dead — `deadline_at` (projects/sandbox-deadline.ts) is the primary stop, so
+    // dead — `deadline_at` (services/sandboxes/sandbox-deadline.ts) is the primary stop, so
     // the native interval sits well above the longest real turn and never kills a
     // box mid-work. See providerAutoStopBackstopMinutes(), which is now that
     // policy alone and no longer doubles as the billing clamp's grace.
@@ -476,7 +476,7 @@ export class PlatinumProvider implements SandboxProvider {
         'kortix.env': config.INTERNAL_KORTIX_ENV,
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
-        // Instance scope (projects/instance-scope.ts): `listManagedRunningSandboxes`
+        // Instance scope (services/sessions/instance-scope.ts): `listManagedRunningSandboxes`
         // skips another instance's boxes. Set by local dev worktrees and by PR
         // previews, where it names the preview host that owns this session box
         // (tests/src/core/preview-session-reaper.ts). Absent in deployed

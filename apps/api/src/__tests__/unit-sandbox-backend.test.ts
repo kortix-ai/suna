@@ -21,7 +21,7 @@ mock.module('../services/sandboxes/daytona/client', () => ({
   isDaytonaDiskQuotaError: () => false,
   listStoppedDaytonaSandboxesOldestFirst: async function* () {},
 }));
-mock.module('../projects/disk-quota-guard', () => ({
+mock.module('../services/sandboxes/disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that

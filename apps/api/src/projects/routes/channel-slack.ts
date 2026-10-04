@@ -22,7 +22,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../lib/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
+import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
 import { readJsonObject } from '../../lib/http-body';
 
 interface SlackAuthTest {

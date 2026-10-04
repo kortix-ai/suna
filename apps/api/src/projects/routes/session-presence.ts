@@ -4,10 +4,10 @@ import { and, eq } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../lib/db';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { extendSandboxDeadline, previewGrantMs } from '../sandbox-deadline';
+import { extendSandboxDeadline, previewGrantMs } from '../../services/sandboxes/sandbox-deadline';
 export function registerSessionPresenceRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'put', path: '/{projectId}/sessions/{sessionId}/presence', tags: ['sessions'],

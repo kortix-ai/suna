@@ -55,7 +55,7 @@
  * manifest.
  */
 
-import type { GitConnectionRef, GitHostBackend, SeedFile } from './git-backends/types';
+import type { GitConnectionRef, GitHostBackend, SeedFile } from '../services/git/backends/types';
 
 /** Recorded on `project.metadata.git.seed`. */
 export interface ManagedRepoSeedState {
@@ -325,7 +325,7 @@ export async function pushSeedFiles(input: {
     });
     return;
   }
-  const { seedRepoViaGitPush } = await import('./git-backends/seed');
+  const { seedRepoViaGitPush } = await import('../services/git/backends/seed');
   await seedRepoViaGitPush({
     upstreamUrl: input.connRef.upstreamUrl,
     token: input.token,
@@ -395,7 +395,7 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
     if (!row) return { repaired: false, skipped: 'project_missing' };
 
     const { buildConnectionRef, getProjectGitConnection, getProjectGitRemote, withProjectGitAuth } =
-      await import('./lib/git');
+      await import('../services/git/project-git');
     const remote = getProjectGitRemote(row, await getProjectGitConnection(projectId));
     if (!remote.managed) return { repaired: false, skipped: 'not_managed' };
     if (!shouldSelfHealManagedRepoSeed({ managed: true, metadata: row.metadata })) {
@@ -403,7 +403,7 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
     }
 
     const access = await withProjectGitAuth(row);
-    const { invalidateProjectMirror, remoteBranchExists } = await import('./git');
+    const { invalidateProjectMirror, remoteBranchExists } = await import('../services/git');
     const gitProject = {
       projectId,
       repoUrl: access.repoUrl,
@@ -416,7 +416,7 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
       return { repaired: false, skipped: 'already_seeded' };
     }
 
-    const { getBackend, hasBackend } = await import('./git-backends');
+    const { getBackend, hasBackend } = await import('../services/git/backends');
     if (!hasBackend(remote.provider)) return { repaired: false, skipped: 'no_backend' };
     const backend = getBackend(remote.provider);
     const connRef = buildConnectionRef(row, remote);

@@ -4,7 +4,7 @@ import {
   isSweepStale,
   mapWithConcurrency,
   withTimeout,
-} from '../projects/lib/triggers';
+} from '../services/triggers/trigger-runtime';
 
 // These primitives are what keep one hung trigger fire from freezing the entire
 // cron scheduler — the 2026-06-21 fleet-wide outage, where a single

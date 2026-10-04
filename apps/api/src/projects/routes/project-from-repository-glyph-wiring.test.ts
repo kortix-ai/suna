@@ -2,8 +2,8 @@
  * Task 4 wiring test for `metadata.icon_glyph` on `project-from-repository.ts`'s three create call
  * sites — `/link-repository` PAT path, `/link-repository` GitHub-App path,
  * and `/create-repo`. Mirrors `./project-from-repository-icon-wiring.test.ts`'s mocking shape
- * exactly: same fakes, same mocked `../lib/access`, `../../iam`, `../lib/git`,
- * `../github`, `../../snapshots/builder`, and `../lib/project-registration`
+ * exactly: same fakes, same mocked `../lib/access`, `../../iam`, `../../services/git/project-git`,
+ * `../../services/github/github`, `../../snapshots/builder`, and `../lib/project-registration`
  * modules, so this file needs no database and no GitHub network access.
  *
  * `mock.module` is process-global in bun:test, so this file MUST stay
@@ -87,8 +87,8 @@ mock.module('../../iam', () => ({
 
 // ── GitHub import/auth resolution — no network. Only the three functions
 // project-from-repository.ts's target routes call are overridden; everything else stays real.
-const realGit = await import('../lib/git');
-mock.module('../lib/git', () => ({
+const realGit = await import('../../services/git/project-git');
+mock.module('../../services/git/project-git', () => ({
   ...realGit,
   resolveGitHubImportWithPat: async () => ({
     repo: fakeRepo('glyph-pat-ok'),
@@ -110,8 +110,8 @@ mock.module('../lib/git', () => ({
 
 // ── Raw GitHub REST calls (create-repo's repo-create + starter-file commits)
 // — no network.
-const realGithub = await import('../github');
-mock.module('../github', () => ({
+const realGithub = await import('../../services/github/github');
+mock.module('../../services/github/github', () => ({
   ...realGithub,
   createRepo: async (input: { name: string }) => fakeRepo(input.name),
   commitFile: async () => {},

@@ -22,7 +22,7 @@ import { qualifiedColumn } from '../lib/sql-qualified-column';
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../lib/db';
-import type { DaemonConfigReport } from '../projects/lib/session-config-release';
+import type { DaemonConfigReport } from '../services/sessions/session-config-release';
 import { noteRunningRelease } from './running-release';
 import { isUuid } from '../lib/validate';
 

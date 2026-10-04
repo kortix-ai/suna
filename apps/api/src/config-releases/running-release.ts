@@ -2,7 +2,7 @@
  * What the API last SAW a box running, per session.
  *
  * A leaf module on purpose: `config-releases/quarantine.ts` writes it and
- * `projects/lib/turn-start-convergence.ts` reads it, and putting it in either
+ * `services/sessions/turn-start-convergence.ts` reads it, and putting it in either
  * of those closes an import cycle through `config-releases/desired.ts` — which
  * bun resolves as `Cannot access 'dbConfigReleaseLedger' before initialization`
  * at module load, in every test file that touches the graph. It imports

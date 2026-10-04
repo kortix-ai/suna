@@ -173,13 +173,13 @@ export {
   authorizeGitProxy,
   RETRYABLE_GIT_AUTH_REASONS,
   type GitProxyAuth,
-} from './lib/git';
+} from '../services/git/project-git';
 
 // Session helpers (consumed by channels and provisioning).
 export {
   buildSessionSandboxEnvVars,
   createProjectSession,
-} from './lib/sessions';
+} from '../services/sessions/sessions';
 
 export {
   createSession,
@@ -187,7 +187,7 @@ export {
   continueSession,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
-} from './session-lifecycle';
+} from '../services/sessions/lifecycle';
 
 // Trigger + manifest helpers (consumed by channels / connector / the boot
 // sequence in src/index.ts).
@@ -200,4 +200,4 @@ export {
   schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,
-} from './lib/triggers';
+} from '../services/triggers/trigger-runtime';

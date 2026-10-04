@@ -1,7 +1,7 @@
-import type { ParsedManifest } from '../triggers';
+import type { ParsedManifest } from '../../services/triggers';
 import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../../iam/actions';
-import type { GitBackedProject, MirrorRefresh } from '../git';
+import type { GitBackedProject, MirrorRefresh } from '../../services/git';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   resolveGrantSet,
@@ -173,7 +173,7 @@ export async function loadProjectAgents(
   project: GitBackedProject,
   opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
 ): Promise<LoadedAgents> {
-  const { readManifest, synthesizeBlankManifest } = await import('../triggers');
+  const { readManifest, synthesizeBlankManifest } = await import('../../services/triggers');
   let manifest: ParsedManifest | null;
   try {
     manifest = await readManifest(project, opts);
@@ -187,7 +187,7 @@ export async function loadProjectAgents(
     // unreadable manifest becomes a synthesized `secrets: 'all'` manifest below,
     // and an unparseable one produces the error-carrying result below, which
     // `grantFromLoadedAgents` resolves to null — i.e. UNRESTRICTED — for the
-    // `default` sentinel. See projects/lib/secret-grant.ts.
+    // `default` sentinel. See services/secrets/secret-grant.ts.
     if (opts?.rethrowReadErrors) throw err;
     // The manifest failed to parse before we learned which candidate file it
     // actually was (.yaml/.yml/.toml) — fall back to the project's configured

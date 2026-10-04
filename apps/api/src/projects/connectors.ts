@@ -31,7 +31,7 @@
  *       app: gmail
  *       account: work                # 1-click connected in the dashboard
  *
- * Parser mirrors `projects/agents.ts` + `projects/triggers.ts`: never throws on
+ * Parser mirrors `projects/agents.ts` + `services/triggers/index.ts`: never throws on
  * a bad entry, collects them in `errors` so the UI can render them next to the
  * good ones. CRUD round-trips this same file (connectorSpecToTomlEntry).
  */
@@ -50,8 +50,8 @@ import {
   areValidConditions,
   normalizeConditions,
 } from '../connectors/policy';
-import { isValidSecretName } from './secrets';
-import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
+import { isValidSecretName } from '../services/secrets/secrets';
+import { MANIFEST_FILENAME, type ParsedManifest } from '../services/triggers';
 
 export type ConnectorProvider = ManifestConnectorProvider | 'computer';
 const PROVIDERS: readonly ConnectorProvider[] = [

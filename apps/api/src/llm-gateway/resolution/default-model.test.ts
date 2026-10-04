@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as resolveCandidatesModule from './resolve-candidates';
 import * as modelPreferencesModule from '../../repositories/model-preferences';
-import * as secretsModule from '../../projects/secrets';
+import * as secretsModule from '../../services/secrets/secrets';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -23,7 +23,7 @@ import {
 // This spies on the individual named exports (spyOn + mock.restore()) rather
 // than replacing the whole modules with mock.module() — `./resolve-candidates`
 // is itself the system-under-test of resolve-candidates.test.ts, and
-// `../../repositories/model-preferences` / `../../projects/secrets` are each
+// `../../repositories/model-preferences` / `../../services/secrets/secrets` are each
 // mocked wholesale by OTHER sibling test files (seed-default.test.ts,
 // resolve-candidates.test.ts) with different shapes; mock.module() replaces a
 // module for the whole bun test PROCESS (every *.test.ts file runs together —

@@ -18,9 +18,9 @@ import {
   isSystemProjectSecretName,
   loadSecretViewsForUser,
 } from '../lib/serializers';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { propagateProjectSecretsToActiveSandboxes } from '../../services/sandboxes/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
-import { encryptProjectSecret, isValidSecretName } from '../secrets';
+import { encryptProjectSecret, isValidSecretName } from '../../services/secrets/secrets';
 export function registerSecretPersonalRoutes(): void {
   // PUT /v1/projects/:projectId/secrets/:name/personal
   // Any project member sets/updates THEIR OWN per-key override (the "use mine"

@@ -6,7 +6,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayPerform, assertAgentScope, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { logger } from '../../lib/logger';
 import { refusesSelfMerge } from '../change-request-policy';
-// Its own module, not the `../git` barrel: several route suites replace the
+// Its own module, not the `../../services/git` barrel: several route suites replace the
 // barrel wholesale with `mock.module`.
 import { manifestChange } from '../change-request-governance';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
@@ -21,10 +21,10 @@ import {
   MergeConflictError,
   mergeBranches,
   readManifestFromRepo,
-} from '../git';
+} from '../../services/git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../lib/http-body';

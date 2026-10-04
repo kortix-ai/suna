@@ -5,7 +5,7 @@
  *     kortix.toml)
  *   - parseFrontmatter:   YAML-ish frontmatter from a SKILL.md / agent .md
  *
- * These intentionally mirror apps/api/src/projects/git/config.ts so the CLI
+ * These intentionally mirror apps/api/src/services/git/config.ts so the CLI
  * (which scans a working tree) and the API (which scans a git tree) agree on
  * where things live and how their metadata is read.
  */

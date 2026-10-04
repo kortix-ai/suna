@@ -1,5 +1,5 @@
-import type { ResolvedProjectSecret } from '../projects/secrets';
-import { isReservedSandboxEnvName } from '../projects/lib/sandbox-env-names';
+import type { ResolvedProjectSecret } from '../services/secrets/secrets';
+import { isReservedSandboxEnvName } from '../services/sandboxes/sandbox-env-names';
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;

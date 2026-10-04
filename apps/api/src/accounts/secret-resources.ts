@@ -3,7 +3,7 @@ import { accountMembers, accountSecretGrants, accountSecretResources, projects, 
 import { and, eq, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { db } from '../lib/db';
-import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../secrets/account-resource';
+import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../services/secrets/account-resource';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';

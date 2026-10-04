@@ -21,7 +21,7 @@
  * and `payload.pid` is cross-checked against it on resolve.
  */
 import { randomBytes } from 'node:crypto';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptProjectSecret, encryptProjectSecret } from '../services/secrets/secrets';
 
 const TOKEN_PREFIX = 'ksl_';
 // Secret/connector links are relayed out-of-band (Slack, email) to a human who

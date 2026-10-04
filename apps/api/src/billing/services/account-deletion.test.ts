@@ -36,7 +36,7 @@ import {
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realProviders from '../../platform/providers';
-import * as realSandboxReaper from '../../projects/sandbox-reaper';
+import * as realSandboxReaper from '../../services/sandboxes/sandbox-reaper';
 
 /**
  * Every table the deletion must sweep that the accounts-row cascade cannot
@@ -228,7 +228,7 @@ mock.module('../../platform/providers', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../projects/sandbox-reaper', () => ({
+mock.module('../../services/sandboxes/sandbox-reaper', () => ({
   ...realSandboxReaper,
   isAlreadyNotRunning: (err: unknown) =>
     err instanceof Error && err.message.toLowerCase().includes('already stopped'),

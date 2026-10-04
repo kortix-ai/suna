@@ -15,7 +15,7 @@ import {
   grantFromLoadedAgents,
   resolveGovernedAgentGrant,
 } from './agents';
-import { parseManifestString } from './triggers';
+import { parseManifestString } from '../services/triggers';
 
 const v2 = (block: string) =>
   parseManifestString(

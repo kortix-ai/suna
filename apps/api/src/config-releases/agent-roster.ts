@@ -14,10 +14,10 @@
  * the TTL is short is to bound memory, not freshness.
  */
 
-import { readManifestFromRepo } from '../projects/git';
-import type { GitBackedProject } from '../projects/git/types';
+import { readManifestFromRepo } from '../services/git';
+import type { GitBackedProject } from '../services/git/types';
 import { extractAgents } from '../projects/agents';
-import { parseManifestString } from '../projects/triggers';
+import { parseManifestString } from '../services/triggers';
 import { manifestCandidatePaths, manifestFormatForPath } from '@kortix/manifest-schema';
 import { ttlMemo } from '../lib/ttl-memo';
 import type { DeclaredAgentRoster } from './session-agent';

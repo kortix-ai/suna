@@ -5,7 +5,7 @@ import {
   parseConvergeResponse,
   parseDaemonConfigReport,
   toSessionConfigRelease,
-} from '../session-config-release';
+} from '../../../services/sessions/session-config-release';
 
 const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);

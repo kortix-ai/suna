@@ -21,7 +21,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../services/sessions/lifecycle', () => ({
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     enqueued.push(input);
     return { row: {}, deduped: false };

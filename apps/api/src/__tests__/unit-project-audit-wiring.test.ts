@@ -20,7 +20,7 @@ const provisionCoreSource = readFileSync(
   'utf8',
 );
 const sessionsSource = readFileSync(
-  new URL('../projects/lib/session-create.ts', import.meta.url),
+  new URL('../services/sessions/session-create.ts', import.meta.url),
   'utf8',
 );
 

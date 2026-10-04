@@ -34,7 +34,7 @@ import {
   sessionConnectorBindingsRequirePrivateVisibility,
   sessionHasPersonalConnectorBinding,
   validateSessionConnectorBindings,
-} from '../projects/lib/session-connector-bindings';
+} from '../services/sessions/session-connector-bindings';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 

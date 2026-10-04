@@ -1,4 +1,4 @@
-import type { ReleaseOutcome } from '../projects/session-lifecycle/release-runtime-question';
+import type { ReleaseOutcome } from '../services/sessions/lifecycle/release-runtime-question';
 
 /**
  * Releasing a channel session's blocking `question` call, from the server.
@@ -80,7 +80,7 @@ export async function releaseChannelQuestion(input: {
   // for `abortRuntimeTurn`). `channelOfSessionMetadata` above stays pure, so
   // turn-relay.ts can import this file without pulling the engine in.
   const { releaseRuntimeQuestion } = await import(
-    '../projects/session-lifecycle/release-runtime-question'
+    '../services/sessions/lifecycle/release-runtime-question'
   );
   const outcome = await releaseRuntimeQuestion(input.sessionId, input.requestId, answers);
   if (outcome === 'unreachable') {

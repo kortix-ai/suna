@@ -14,7 +14,7 @@
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { propagateLlmGatewayModeToActiveSandboxes } from '../services/sandboxes/sandbox-env-sync';
 
 export interface FeatureFlagToggleContext {
   key: FeatureFlagKey;

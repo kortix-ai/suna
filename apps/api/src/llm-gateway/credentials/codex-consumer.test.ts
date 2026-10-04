@@ -26,7 +26,7 @@ const resolveProjectSecretForConsumer = mock(async () =>
       },
 );
 
-mock.module('../../projects/secrets', () => ({
+mock.module('../../services/secrets/secrets', () => ({
   encryptProjectSecret: (_projectId: string, value: string) => value,
   resolveProjectSecretForConsumer,
 }));

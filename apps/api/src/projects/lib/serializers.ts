@@ -6,7 +6,7 @@ import type {
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
-import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
+import { normalizeRuntimeSessionSnapshots } from '../../services/sessions/runtime-session-snapshot';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -17,7 +17,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { sessionInitiatorLabel } from './session-initiator';
+import { sessionInitiatorLabel } from '../../services/sessions/session-initiator';
 import { type SandboxProviderName, config } from '../../lib/config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
@@ -32,13 +32,13 @@ import {
 } from '../../snapshots/error-classify';
 import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import type { ProjectRole } from '../access';
-import type { ProjectConfigSummary } from '../git/types';
-import { type GitHubRepo, isGithubAppConfigured } from '../github';
-import { parseGitHubRepoUrl } from './git';
-import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
+import type { ProjectConfigSummary } from '../../services/git/types';
+import { type GitHubRepo, isGithubAppConfigured } from '../../services/github/github';
+import { parseGitHubRepoUrl } from '../../services/git/project-git';
+import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from '../../services/sessions/opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { isWarmProjectSession } from './warm-sessions';
+import { isWarmProjectSession } from '../../services/sessions/warm-sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -60,7 +60,7 @@ export type RequestAuditContext = {
 // Session-status constants live in a dependency-free module so lean callers (the
 // sandbox reaper) can import them without this heavy serializer graph. Re-exported
 // here for the existing import sites. See session-status.ts for the index note.
-export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './session-status';
+export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from '../../services/sessions/session-status';
 
 export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 

@@ -37,7 +37,7 @@ import {
   assertAppQuotaAvailable,
 } from './limits';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
+import { callerKortixSessionId } from '../services/sessions/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import { readAgentsGrantingApp } from './agent-grants';

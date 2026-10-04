@@ -36,7 +36,7 @@ done
 # skip foreign boxes, and the box reaper leaves them alone — so this stack's
 # quick-tunnel URL never lands in a worktree's sandbox (2026-08-22 incidents).
 # Launcher-only: deployed environments never set it (one KORTIX_URL) and every
-# scope check is then a no-op. See apps/api/src/projects/instance-scope.ts.
+# scope check is then a no-op. See apps/api/src/services/sessions/instance-scope.ts.
 export KORTIX_INSTANCE_ID="${KORTIX_INSTANCE_ID:-primary}"
 
 load_local_env() {

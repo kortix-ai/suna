@@ -12,9 +12,9 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
-import * as realLifecycle from '../session-lifecycle';
-import * as realHoldSettle from '../session-lifecycle/inbox-hold-settle';
-import * as realTurnLifecycle from '../sandbox-turn-lifecycle';
+import * as realLifecycle from '../../services/sessions/lifecycle';
+import * as realHoldSettle from '../../services/sessions/lifecycle/inbox-hold-settle';
+import * as realTurnLifecycle from '../../services/sandboxes/sandbox-turn-lifecycle';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -258,7 +258,7 @@ let sendState: { held: boolean; pending: boolean } | null = null;
 let edits: Array<{ sessionId: string; promptId: string; text: string }> = [];
 let editOutcome: 'edited' | 'delivering' | 'missing' = 'edited';
 
-mock.module('../session-lifecycle', () => ({
+mock.module('../../services/sessions/lifecycle', () => ({
   ...realLifecycle,
   inboxSendState: async (sessionId: string) => sendState ?? realLifecycle.inboxSendState(sessionId),
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
@@ -346,17 +346,17 @@ mock.module('../lib/agent-access', () => ({
 // must stamp the requested stop on the open turn BEFORE the settle starts.
 // Both are recorded into one ordered log.
 const stopLog: unknown[][] = [];
-const realTurnLedger = await import('../session-turn-ledger');
-mock.module('../session-turn-ledger', () => ({
+const realTurnLedger = await import('../../services/sessions/session-turn-ledger');
+mock.module('../../services/sessions/session-turn-ledger', () => ({
   ...realTurnLedger,
   markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
     stopLog.push(['stamp', sessionId, name, scope]);
   },
 }));
-mock.module('../sandbox-turn-lifecycle', () => ({
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
 }));
-mock.module('../session-lifecycle/inbox-hold-settle', () => ({
+mock.module('../../services/sessions/lifecycle/inbox-hold-settle', () => ({
   ...realHoldSettle,
   settleInboxHoldAfterStopInBackground: (sessionId: string) => {
     stopLog.push(['settle', sessionId]);

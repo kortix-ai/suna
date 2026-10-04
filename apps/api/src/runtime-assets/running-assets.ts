@@ -3,7 +3,7 @@
  * the managed-skill overlay and OpenCode — per session.
  *
  * The sibling of `config-releases/running-release.ts`, and a LEAF for the same
- * reason: it imports nothing. `projects/lib/turn-start-convergence.ts` writes and
+ * reason: it imports nothing. `services/sessions/turn-start-convergence.ts` writes and
  * reads it, and putting it in that module would close an import cycle the
  * moment anything in the runtime-assets graph wanted to read it back.
  *

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 describe("managed GitHub authentication order", () => {
   test("checks the managed PAT before minting a GitHub App token", async () => {
     const source = await Bun.file(
-      new URL("../projects/lib/git.ts", import.meta.url),
+      new URL("../services/git/project-git.ts", import.meta.url),
     ).text();
     const start = source.indexOf("export async function resolveProjectGitAuth");
     const end = source.indexOf(

@@ -64,7 +64,7 @@ mock.module('../../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => false,
 }));
 
-mock.module('../../projects/secrets', () => ({
+mock.module('../../services/secrets/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'operators-own-anthropic-key',

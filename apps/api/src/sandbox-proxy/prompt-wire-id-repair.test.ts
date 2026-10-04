@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { WIRE_MESSAGE_ID, newestWireIdTime, wireIdTime } from '../projects/wire-message-id';
+import { WIRE_MESSAGE_ID, newestWireIdTime, wireIdTime } from '../services/sessions/wire-message-id';
 import {
   isPromptWireIdRepairPath,
   promptTranscriptReadPath,

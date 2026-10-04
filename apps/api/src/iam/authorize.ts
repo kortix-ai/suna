@@ -832,7 +832,7 @@ export function customRoleAllows(
  * not seen the write means "still open to everyone", which is a stale
  * over-grant for anyone the new grant was meant to exclude, not a harmless
  * stale negative. `secret` is the same case: a value's audience (keyed by
- * `secret_id`, `projects/lib/secret-audience.ts`) is open until its first
+ * `secret_id`, `services/secrets/secret-audience.ts`) is open until its first
  * grant. `skill`/`app`/`trigger` are OPEN by unscoped default and have no
  * per-object grant writer today, so their empty map can never go stale and
  * stays cache-eligible. Kept as a constant here because the

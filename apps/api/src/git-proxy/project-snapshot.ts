@@ -21,7 +21,7 @@
  * like a clone without `--recurse-submodules`).
  */
 import { config } from '../lib/config';
-import { validateRef } from '../projects/git-ref';
+import { validateRef } from '../services/git/git-ref';
 import { PROJECT_SNAPSHOT_FORMAT, type ProjectSnapshotRepository } from './project-snapshot-store';
 
 export const PROJECT_SNAPSHOT_MODES = ['git', 'prefer-s3', 'require-s3'] as const;

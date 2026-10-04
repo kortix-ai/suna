@@ -12,7 +12,7 @@ A filter that promises "only rows that match" must skip that append or apply
 itself to it. Add the filter to the cursor's `filter` seal in the same change.
 
 **Trigger surface:** adding a query parameter to `SessionListFilter` /
-`sessionListFilterSql` in `apps/api/src/projects/lib/session-list.ts`, or to any
+`sessionListFilterSql` in `apps/api/src/services/sessions/session-list.ts`, or to any
 list route that post-processes its page (ancestors, pinned rows, the caller's
 own session).
 

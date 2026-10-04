@@ -19,18 +19,18 @@ import { TemplateNotFoundError } from '../../snapshots/templates';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SnapshotSchema, projectsApp } from '../lib/app';
-import { loadGitProject } from '../lib/git';
-import { allowStaleMirrorReads } from '../git/mirror';
+import { loadGitProject } from '../../services/git/project-git';
+import { allowStaleMirrorReads } from '../../services/git/mirror';
 import {
   normalizeString,
   requestAuditContext,
   serializeBuildSummary,
   serializeTemplate,
 } from '../lib/serializers';
-import { sendSessionCreateError } from '../lib/sessions';
-import { createSession } from '../session-lifecycle';
+import { sendSessionCreateError } from '../../services/sessions/sessions';
+import { createSession } from '../../services/sessions/lifecycle';
 import { rebuildFailureResponse, runProviderActions } from '../../snapshots/provider-actions';
-import { templateProviderObservation } from '../lib/template-provider-observation';
+import { templateProviderObservation } from '../../services/sandboxes/template-provider-observation';
 import { readJsonObject } from '../../lib/http-body';
 
 /**

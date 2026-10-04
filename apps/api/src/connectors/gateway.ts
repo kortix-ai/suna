@@ -633,7 +633,7 @@ async function appAuthorizationForCall(
 
 /**
  * The connector's credential is a project secret whose audience does not
- * include the person this call acts for (projects/lib/secret-audience.ts).
+ * include the person this call acts for (services/secrets/secret-audience.ts).
  * `resolveCredential` throws it instead of returning null, so the caller is
  * told the truth — not shared with them — rather than `needs_auth`.
  */

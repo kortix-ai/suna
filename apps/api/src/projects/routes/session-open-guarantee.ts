@@ -8,10 +8,10 @@ import type { SessionStartResult } from '@kortix/api-contract';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { runtimeAdmissionEnforced } from '../../runtime-convergence/admission';
 import { admitRunningSandbox } from '../../runtime-convergence/admit-running-sandbox';
-import { sessionHoldsTurnAuthority } from '../session-lifecycle/inbox-admission';
-import type { StartCallLog } from '../session-lifecycle/start-envelope';
-import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
-import { pinnedRuntimeMayServe } from '../lib/pinned-runtime';
+import { sessionHoldsTurnAuthority } from '../../services/sessions/lifecycle/inbox-admission';
+import type { StartCallLog } from '../../services/sessions/lifecycle/start-envelope';
+import { repositoryAccessFromSessionMetadata } from '../../services/sessions/session-sandbox-metadata';
+import { pinnedRuntimeMayServe } from '../../services/sessions/pinned-runtime';
 import type { OpenSessionArgs, OpenSessionRow } from './session-open-context';
 import { replaceRefusedRuntimeOnOpen } from './session-open-provision';
 import { serializeSandboxRow, sessionRuntimeUrlPath } from './stopped-wake-result';
@@ -66,7 +66,7 @@ export async function enforceRuntimeGuarantee(
     // pattern as `session-lifecycle/stop.ts`'s `captureSessionTranscriptMirror`
     // dynamic import — this call site is already inside an async function,
     // so the dynamic import costs nothing extra on the hot path.
-    const { guaranteeCurrentRuntimeOnOpen } = await import('../lib/legacy-runtime-bootstrap-wiring');
+    const { guaranteeCurrentRuntimeOnOpen } = await import('../../services/sandboxes/legacy-runtime-bootstrap-wiring');
     const guarantee = await guaranteeCurrentRuntimeOnOpen({
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,

@@ -94,21 +94,21 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async (input: { providerSecretPools?: Record<string, string[]> }) =>
     Boolean((input.providerSecretPools ?? Object.fromEntries(pools)).anthropic?.length),
 }));
-const realEnvSync = await import('../lib/sandbox-env-sync');
-mock.module('../lib/sandbox-env-sync', () => ({ ...realEnvSync, pushSessionModelToSandbox: async () => ({ ok: true }) }));
+const realEnvSync = await import('../../services/sandboxes/sandbox-env-sync');
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({ ...realEnvSync, pushSessionModelToSandbox: async () => ({ ok: true }) }));
 mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 mock.module('../../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (providerId: string) => (providerId === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
 }));
-mock.module('../lib/secret-grant', () => ({ resolveSessionAgentGrant: async () => ({ env: agentEnv }) }));
+mock.module('../../services/secrets/secret-grant', () => ({ resolveSessionAgentGrant: async () => ({ env: agentEnv }) }));
 mock.module('../agents', () => ({ DEFAULT_AGENT_SENTINEL: 'default' }));
 mock.module('../lib/personal-resources', () => ({ resolveSessionPersonalOwner: async () => sessionPersonal }));
 
-// The key reads are mocked at their seam in secrets/account-resource.ts. The
+// The key reads are mocked at their seam in services/secrets/account-resource.ts. The
 // SQL behind them (provider, key name, ids, member join, grant join) runs
 // against PostgreSQL in __tests__/integration-usable-gateway-secrets.test.ts.
 // Here a key is usable by the same rule the SQL rows pass through.
-const realAccountResource = await import('../../secrets/account-resource');
+const realAccountResource = await import('../../services/secrets/account-resource');
 function usableKeys(q: { projectId: string; grantUserId: string | null; providerId?: string; name?: string; ids?: string[] }) {
   return keys
     .filter((key) => key.active && (!q.providerId || key.providerId === q.providerId) && (!q.name || key.name === q.name))
@@ -118,7 +118,7 @@ function usableKeys(q: { projectId: string; grantUserId: string | null; provider
     ))
     .map((key) => ({ secretId: key.secretId, providerId: key.providerId, name: key.name, label: key.secretId, accessMode: key.accessMode }));
 }
-mock.module('../../secrets/account-resource', () => ({
+mock.module('../../services/secrets/account-resource', () => ({
   ...realAccountResource,
   memberMayReadProject: async (_accountId: string, _projectId: string, userId: string) => {
     readGates.push(userId);
@@ -173,7 +173,7 @@ mock.module('../../lib/db', () => ({ db: {
 } }));
 (await import('./provider-secret-pools')).registerProviderSecretPoolsRoutes();
 (await import('./session-scope')).registerSessionScopeRoutes();
-const { MAX_KEYS_PER_PROVIDER } = await import('../../secrets/provider-key-selection');
+const { MAX_KEYS_PER_PROVIDER } = await import('../../services/secrets/provider-key-selection');
 
 const putModel = (model: string) => app.request(`/${projectId}/sessions/${sessionId}/model`, {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ opencode_model: model }),

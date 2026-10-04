@@ -49,10 +49,10 @@ import { applyOpenCodeAuditRateLimit } from '../../services/audit/opencode-audit
 import { isUuid } from '../../lib/validate';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
-import { readSessionAuditActions } from '../lib/session-audit-read';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
+import { flagSessionAuditRateLimited } from '../../services/sessions/session-audit-rate-flag';
+import { readSessionAuditActions } from '../../services/sessions/session-audit-read';
 
 /**
  * The human a session acts on behalf of, for OpenCode audit ingestion. A
@@ -791,7 +791,7 @@ export function registerProjectAuditRoutes(): void {
 
       // Same query, same batched email + connector-slug lookups, same
       // `approval_url` rule as before — now shared with the session-open
-      // bundle's `audit` leg (`../lib/session-audit-read.ts`) so the two can
+      // bundle's `audit` leg (`../../services/sessions/session-audit-read.ts`) so the two can
       // never disagree about what is pending.
       const names = await auditCredentialNames(eventRows);
       const auditActions = await readSessionAuditActions({

@@ -26,7 +26,7 @@ const order: string[] = [];
 describe('abortRuntimeTurn', () => {
   test('posts abort to the session the runtime is holding', async () => {
     calls.length = 0;
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     expect(await abortRuntimeTurn('kortix-session-1')).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.method).toBe('POST');
@@ -35,7 +35,7 @@ describe('abortRuntimeTurn', () => {
 
   test('an empty session id does nothing', async () => {
     calls.length = 0;
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     expect(await abortRuntimeTurn('')).toBe(false);
     expect(calls).toHaveLength(0);
   });
@@ -43,7 +43,7 @@ describe('abortRuntimeTurn', () => {
   test('a session with no reachable runtime is a no-op, not a throw', async () => {
     calls.length = 0;
     endpoint = null;
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     expect(await abortRuntimeTurn('kortix-session-1')).toBe(false);
     expect(calls).toHaveLength(0);
     endpoint = {
@@ -60,7 +60,7 @@ describe('abortRuntimeTurn', () => {
   ])('%s reports false instead of throwing', async (_label, runtime) => {
     ok = runtime.ok;
     throws = runtime.throws;
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     try {
       expect(await abortRuntimeTurn('kortix-session-1')).toBe(false);
     } finally {
@@ -76,7 +76,7 @@ describe('abortRuntimeTurn', () => {
     calls.length = 0;
     marks.length = 0;
     order.length = 0;
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     expect(await abortRuntimeTurn('kortix-session-1', { requestedStop: true })).toBe(true);
     expect(marks).toEqual([{ sessionId: 'kortix-session-1', name: 'UserStop', opencodeSessionId: 'ses_123' }]);
     expect(calls).toHaveLength(1);
@@ -87,7 +87,7 @@ describe('abortRuntimeTurn', () => {
 
   test('a housekeeping abort stamps nothing', async () => {
     marks.length = 0;
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     await abortRuntimeTurn('kortix-session-1');
     expect(marks).toEqual([]);
   });
@@ -95,20 +95,20 @@ describe('abortRuntimeTurn', () => {
   test('a stamp that fails never blocks the stop', async () => {
     calls.length = 0;
     markThrows = true;
-    const { abortRuntimeTurn } = await import('../projects/session-lifecycle/abort-runtime-turn');
+    const { abortRuntimeTurn } = await import('../services/sessions/lifecycle/abort-runtime-turn');
     expect(await abortRuntimeTurn('kortix-session-1', { requestedStop: true })).toBe(true);
     expect(calls).toHaveLength(1);
     markThrows = false;
   });
 });
 
-mock.module('../projects/session-lifecycle/runtime-client', () => ({
+mock.module('../services/sessions/lifecycle/runtime-client', () => ({
   resolveSessionOpencodeEndpoint: async () => endpoint,
 }));
 
-const realTurnLedger = await import('../projects/session-turn-ledger');
+const realTurnLedger = await import('../services/sessions/session-turn-ledger');
 
-mock.module('../projects/session-turn-ledger', () => ({
+mock.module('../services/sessions/session-turn-ledger', () => ({
   ...realTurnLedger,
   markTurnStopRequested: async (sessionId: string, name: string, scope: { opencodeSessionId?: string | null }) => {
     if (markThrows) throw new Error('db down');
@@ -117,7 +117,7 @@ mock.module('../projects/session-turn-ledger', () => ({
   },
 }));
 
-mock.module('../projects/sandbox-fetch', () => ({
+mock.module('../services/sandboxes/sandbox-fetch', () => ({
   sandboxRuntimeRequestHeaders: (h: Record<string, string>) => h,
 }));
 

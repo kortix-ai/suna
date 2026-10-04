@@ -8,8 +8,8 @@
  * booting the server environment. The DB halves live in ./monitor-ingest.ts
  * (write path) and ./monitor-observer.ts (drain path).
  */
-import type { GitTriggerSpec } from '../triggers';
-import { isPlainPayloadObject, templateValue } from './trigger-payload';
+import type { GitTriggerSpec } from '../../services/triggers';
+import { isPlainPayloadObject, templateValue } from '../../services/triggers/trigger-payload';
 
 import {
   MONITOR_INGEST_MAX_EVENTS,

@@ -5,7 +5,7 @@ import type { ProjectSession } from '@kortix/sdk';
  * immediately, not seconds later when the sandbox wakes.
  *
  * Root cause: a warm session used to be hidden from the `visible` list scope by
- * `metadata.warm` (`apps/api/src/projects/lib/session-inventory.ts`; today the
+ * `metadata.warm` (`apps/api/src/services/sessions/session-inventory.ts`; today the
  * row lists as soon as its box is live, but the marker still hides a box-less
  * warm row). The
  * server now drops that marker at adoption time — the first `POST .../start`

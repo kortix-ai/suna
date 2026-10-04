@@ -23,6 +23,6 @@ genuine ones, about 20% of the route's requests, filed as a sustained prod 5xx
 rise. No user impact; every session create returned `201`. Same latent collision
 in `cancel-forwarded.ts` (`{ status: res.status }`).
 
-**Enforcement:** `apps/api/src/projects/session-title-generate-gateway-log.test.ts`
+**Enforcement:** `apps/api/src/services/sessions/session-title-generate-gateway-log.test.ts`
 (this PR) fails when the gateway warn carries a `status` field or misses
 `upstream_status`.

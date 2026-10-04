@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { GitBackedProject } from "../projects/git/types";
+import type { GitBackedProject } from "../services/git/types";
 import {
   __clearCompiledRuntimeBuildsForTests,
   buildCompiledRuntimeArtifact,

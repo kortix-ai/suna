@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import * as realAccess from '../projects/lib/access';
-import * as realReach from '../projects/lib/session-secret-reach';
+import * as realReach from '../services/sessions/session-secret-reach';
 
 // POST /v1/projects/:projectId/secret-requests — when a session mints a runtime
 // link for a name its own agent cannot receive, the mint response says so. The
@@ -38,7 +38,7 @@ mock.module('../projects/lib/access', () => ({
 
 let grantEnv: string[] | 'all' = 'all';
 const lookups: Array<{ sessionId: string; names: string[] }> = [];
-mock.module('../projects/lib/session-secret-reach', () => ({
+mock.module('../services/sessions/session-secret-reach', () => ({
   ...realReach,
   sessionWithheldSecrets: async (sessionId: string, names: string[]) => {
     lookups.push({ sessionId, names });

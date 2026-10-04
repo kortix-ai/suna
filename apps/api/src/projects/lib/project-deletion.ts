@@ -1,9 +1,9 @@
-import { getBackend, type GitHostBackend } from '../git-backends';
+import { getBackend, type GitHostBackend } from '../../services/git/backends';
 import {
   buildConnectionRef,
   getProjectGitConnection,
   getProjectGitRemote,
-} from './git';
+} from '../../services/git/project-git';
 import type { ProjectGitConnectionRow, ProjectRow } from './serializers';
 
 export interface ProjectDeletionDeps {

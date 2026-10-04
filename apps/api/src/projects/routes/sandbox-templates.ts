@@ -17,10 +17,10 @@ import {
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { SandboxTemplateSchema, projectsApp } from '../lib/app';
-import { loadGitProject } from '../lib/git';
-import { allowStaleMirrorReads } from '../git/mirror';
+import { loadGitProject } from '../../services/git/project-git';
+import { allowStaleMirrorReads } from '../../services/git/mirror';
 import { serializeTemplate } from '../lib/serializers';
-import { templateProviderObservation } from '../lib/template-provider-observation';
+import { templateProviderObservation } from '../../services/sandboxes/template-provider-observation';
 import { readJsonObject } from '../../lib/http-body';
 export function registerSandboxTemplatesRoutes(): void {
   // ─── Template CRUD ─────────────────────────────────────────────────────────

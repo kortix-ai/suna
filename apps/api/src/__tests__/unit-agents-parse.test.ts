@@ -15,7 +15,7 @@ import {
   sandboxFromLoadedAgents,
   type AgentSpec,
 } from '../projects/agents';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 import { GRANTABLE_KORTIX_PERMISSIONS as SCHEMA_GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
 
 const MIN_PROJECT = `

@@ -9,13 +9,13 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { db } from '../../lib/db';
-import { runStoppedObservationFollowUp } from '../session-lifecycle/stopped-observation-followup';
-import type { StartCallLog } from '../session-lifecycle/start-envelope';
+import { runStoppedObservationFollowUp } from '../../services/sessions/lifecycle/stopped-observation-followup';
+import type { StartCallLog } from '../../services/sessions/lifecycle/start-envelope';
 import {
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
   markInPlaceRuntimeRecoveryAccepted,
-} from '../runtime-identity';
+} from '../../services/sandboxes/runtime-identity';
 import type {
   OpenSessionArgs,
   OpenSessionRow,
@@ -173,7 +173,7 @@ export async function openNotRunningBox(
       // flow with the turn's work lost. So it takes the same confirmation gate
       // as the reaper's poll: a second `stopped` read, one window later.
       const activeExternalId = row.externalId;
-      const stateSync = await import('../reaping/sandbox-state-sync');
+      const stateSync = await import('../../services/sandboxes/reaping/sandbox-state-sync');
       const parked = await stateSync.reconcileSandboxStoppedByExternalId(
         activeExternalId,
         new Date(),
@@ -269,7 +269,7 @@ export async function syncRecoveredRunningRow(
   // live box. Only a row that carries a marker pays for the write, and the
   // reaper's own running read does the same thing for rows nobody is polling.
   if (sandboxMetadata(row).pendingStopObservedAtMs !== undefined) {
-    await import('../reaping/sandbox-state-sync').then((m) =>
+    await import('../../services/sandboxes/reaping/sandbox-state-sync').then((m) =>
       m.clearPendingStopObservation(row.sandboxId),
     );
   }

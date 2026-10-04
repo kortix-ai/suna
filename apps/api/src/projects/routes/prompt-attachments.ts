@@ -13,7 +13,7 @@ import {
   readPromptAttachmentChunk,
   resolveRuntimePromptAttachmentDescriptor,
   uploadPromptAttachmentChunk,
-} from '../prompt-attachments';
+} from '../../services/attachments/prompt-attachments';
 
 const metadata = z.object({
   attachment_id: z.string(),

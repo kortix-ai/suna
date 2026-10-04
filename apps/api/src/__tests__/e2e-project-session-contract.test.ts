@@ -16,7 +16,7 @@ import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import type { SandboxRuntimeHealth } from '../projects/runtime-inspection';
+import type { SandboxRuntimeHealth } from '../services/sandboxes/runtime-inspection';
 import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -284,13 +284,13 @@ mock.module('../middleware/auth', () => ({
 // slowly (~0.4 s), which let fire-and-forget provisions from earlier tests
 // land inside a later test's counter window. Resolve it instantly here; the
 // hint itself is covered by fast-boot-git-hint.test.ts and the REST flows.
-const realFastBootGitHint = await import('../projects/lib/fast-boot-git-hint');
-mock.module('../projects/lib/fast-boot-git-hint', () => ({
+const realFastBootGitHint = await import('../services/git/fast-boot-git-hint');
+mock.module('../services/git/fast-boot-git-hint', () => ({
   ...realFastBootGitHint,
   resolveFastBootGitHintWithCache: async () => undefined,
 }));
 
-mock.module('../projects/git', () => ({
+mock.module('../services/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
@@ -384,11 +384,11 @@ mock.module('../snapshots/builder', () => ({
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
 // that only lists the exports it overrides deletes every other one — and the
-// next export added to `projects/github.ts` becomes
+// next export added to `services/github/github.ts` becomes
 // `SyntaxError: Export named 'X' not found` in this file, which that change
 // never touched (.claude/skills/learnings/SKILL.md).
-const actualGithub = await import('../projects/github');
-mock.module('../projects/github', () => ({
+const actualGithub = await import('../services/github/github');
+mock.module('../services/github/github', () => ({
   ...actualGithub,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: TEST_GITHUB_OWNER,
@@ -529,8 +529,8 @@ mock.module('../platform/providers', () => ({
 
 // Count the open path's dead-daemon relaunches instead of running one: the
 // real repair is fire-and-forget against the mocked provider above.
-const realBootstrapWiring = await import('../projects/lib/legacy-runtime-bootstrap-wiring');
-mock.module('../projects/lib/legacy-runtime-bootstrap-wiring', () => ({
+const realBootstrapWiring = await import('../services/sandboxes/legacy-runtime-bootstrap-wiring');
+mock.module('../services/sandboxes/legacy-runtime-bootstrap-wiring', () => ({
   ...realBootstrapWiring,
   scheduleLegacyRuntimeBootstrap: (_row: unknown, reason?: string) => {
     if (reason === 'session-open-dead-daemon') deadDaemonRepairs += 1;
@@ -538,8 +538,8 @@ mock.module('../projects/lib/legacy-runtime-bootstrap-wiring', () => ({
   },
 }));
 
-const realRuntimeInspection = await import('../projects/runtime-inspection');
-mock.module('../projects/runtime-inspection', () => ({
+const realRuntimeInspection = await import('../services/sandboxes/runtime-inspection');
+mock.module('../services/sandboxes/runtime-inspection', () => ({
   ...realRuntimeInspection,
   inspectSandboxRuntime: async () => {
     runtimeContactCalls += 1;
@@ -547,7 +547,7 @@ mock.module('../projects/runtime-inspection', () => ({
   },
 }));
 
-mock.module('../projects/opencode-mapping', () => ({
+mock.module('../services/sessions/opencode-mapping', () => ({
   pickCanonicalRoot: () => 'ses_root_existing',
   resolveRootSessionId: () => 'ses_root_existing',
   sandboxOpencodeEndpoint: async () => {
@@ -1117,8 +1117,8 @@ mock.module('../lib/db', () => ({
 // does not model those tables; the release SQL is covered by
 // integration-prompt-attachments.test.ts.
 const releasedAttachmentSessions: string[] = [];
-const realPromptAttachments = await import('../projects/prompt-attachments');
-mock.module('../projects/prompt-attachments', () => ({
+const realPromptAttachments = await import('../services/attachments/prompt-attachments');
+mock.module('../services/attachments/prompt-attachments', () => ({
   ...realPromptAttachments,
   releasePromptAttachmentsForSession: async (input: { sessionId: string }) => {
     releasedAttachmentSessions.push(input.sessionId);
@@ -1128,12 +1128,12 @@ mock.module('../projects/prompt-attachments', () => ({
 
 const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
 registerAllProjectRoutes();
-const { encryptProjectSecret } = await import('../projects/secrets');
+const { encryptProjectSecret } = await import('../services/secrets/secrets');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
-const { TITLE_SOURCE_MAX_CHARS } = await import('../projects/session-title-generate');
+const { TITLE_SOURCE_MAX_CHARS } = await import('../services/sessions/session-title-generate');
 const { invalidateSandbox, resolveSandboxIngress } = await import('../sandbox-proxy/backend');
 const { reconcileSandboxStoppedByExternalId } = await import(
-  '../projects/reaping/sandbox-state-sync'
+  '../services/sandboxes/reaping/sandbox-state-sync'
 );
 
 function createApp() {

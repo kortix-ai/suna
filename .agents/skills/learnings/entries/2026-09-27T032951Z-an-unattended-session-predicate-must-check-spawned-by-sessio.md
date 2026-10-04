@@ -31,7 +31,7 @@ inherited from `parentOnBehalfOf` for a spawned child, not derived from origin
 alone. `isUnattendedSession` in `unattended-runtime-recovery.ts` is the first
 place this exact two-part predicate is written down for a RECOVERY decision.
 
-**Enforcement:** `apps/api/src/projects/session-lifecycle/unattended-runtime-recovery.test.ts`
+**Enforcement:** `apps/api/src/services/sessions/lifecycle/unattended-runtime-recovery.test.ts`
 — "a worker/sub-agent session is unattended even though its origin is `user`"
 pins the `spawned_by_session` half; "a human session, or a KaaB backend
 session, is attended" pins that `backend` origin stays attended (the remote

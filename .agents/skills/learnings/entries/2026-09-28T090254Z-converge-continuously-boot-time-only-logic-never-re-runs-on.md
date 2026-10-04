@@ -47,7 +47,7 @@ words "not converged", and cost a diagnostic cycle.
 the repair-in-flight guard on the wake fence and was red-proofed against the
 unfixed code (2 of 7 failed, on exactly the repair-in-flight cases; the 5 that
 must still park passed both before and after).
-`apps/api/src/projects/lib/session-model-repair.test.ts` and the
+`apps/api/src/services/sessions/session-model-repair.test.ts` and the
 platform-default-floor block in
 `apps/api/src/llm-gateway/resolution/session-model.test.ts` pin the model
 repair. No enforcer exists for the general "does this also run on resume?"

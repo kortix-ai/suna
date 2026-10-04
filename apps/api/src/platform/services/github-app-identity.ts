@@ -36,7 +36,7 @@ export interface AppIdentity {
   /**
    * A slug an operator configured. It is a FALLBACK only: the live slug is
    * derived from `GET /app` with this identity's own JWT
-   * (`resolveGitHubAppSlug` in projects/github.ts).
+   * (`resolveGitHubAppSlug` in services/github/github.ts).
    */
   configuredSlug: string | null;
 }

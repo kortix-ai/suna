@@ -4,14 +4,14 @@ import { actorOf } from '../../iam/actor';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isSelfHostOperator } from '../../iam/platform-roles';
-import { managedGithubToken } from '../git-backends';
+import { managedGithubToken } from '../../services/git/backends';
 import {
   addRepositoryToInstallation,
   commitFiles,
   createRepo,
-} from '../github';
-import { GitHubPersonalAccountCreateUnsupportedError } from '../lib/github-create-errors';
-import { resolveGitHubUserToken } from '../lib/github-user-token';
+} from '../../services/github/github';
+import { GitHubPersonalAccountCreateUnsupportedError } from '../../services/github/github-create-errors';
+import { resolveGitHubUserToken } from '../../services/github/github-user-token';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -25,11 +25,11 @@ import {
   resolveGitHubImport,
   resolveGitHubImportWithPat,
   resolveGitHubRepoAuth,
-} from '../lib/git';
+} from '../../services/git/project-git';
 import {
   githubInstallationUnreachableBody,
   isGitHubInstallationUnreachable,
-} from '../lib/github-installation-errors';
+} from '../../services/github/github-installation-errors';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';

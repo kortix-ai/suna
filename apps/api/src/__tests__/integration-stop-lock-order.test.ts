@@ -12,8 +12,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { applyStoppedState } from '../projects/reaping/sandbox-state-sync';
-import { transitionRuntime } from '../projects/session-lifecycle/status-transitions';
+import { applyStoppedState } from '../services/sandboxes/reaping/sandbox-state-sync';
+import { transitionRuntime } from '../services/sessions/lifecycle/status-transitions';
 import { db } from '../lib/db';
 
 const ACCOUNT_ID = crypto.randomUUID();

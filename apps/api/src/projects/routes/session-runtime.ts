@@ -12,18 +12,18 @@ import {
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '../lib/app';
 import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
-import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
+import { backfillSessionTranscriptMirrorOnWake } from '../../services/sessions/session-transcript-capture';
 import { isUuid } from '../../lib/validate';
-import { restartSession, startSession, stopSession } from '../session-lifecycle';
-import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
-import { isWarmProjectSession } from '../lib/warm-sessions';
+import { restartSession, startSession, stopSession } from '../../services/sessions/lifecycle';
+import { START_AWAIT_MAX_MS } from '../../services/sessions/lifecycle/await-stage';
+import { isWarmProjectSession } from '../../services/sessions/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
-import { readSessionTurnState } from '../lib/session-turn-read';
+import { readSessionTurnState } from '../../services/sessions/session-turn-read';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 export function registerSessionRuntimeRoutes(): void {
   // POST /v1/projects/:projectId/sessions/:sessionId/start

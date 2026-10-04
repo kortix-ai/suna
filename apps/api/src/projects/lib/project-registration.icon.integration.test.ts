@@ -36,7 +36,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Database, accounts, createDb, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import type { GitHubRepo } from '../github';
+import type { GitHubRepo } from '../../services/github/github';
 import { normalizeProjectIcon } from './project-icon';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from './project-registration';
 

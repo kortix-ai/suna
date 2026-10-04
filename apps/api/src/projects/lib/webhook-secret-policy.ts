@@ -1,7 +1,7 @@
 import {
   getProjectSecretConsumerConfigurationStatus,
   type ProjectSecretConsumerConfigurationStatus,
-} from "../secrets";
+} from "../../services/secrets/secrets";
 
 export type WebhookSecretErrorCode =
   | "webhook_secret_missing"

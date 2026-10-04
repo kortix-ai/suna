@@ -11,18 +11,18 @@ import { type SandboxProviderName, config } from '../../lib/config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { db } from '../../lib/db';
-import { withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { type ProjectRow } from '../lib/serializers';
-import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import { allocateSessionRuntime } from '../../services/sessions/session-runtime-allocator';
 import {
   projectImageAllowedForSession,
   repositoryAccessFromSessionMetadata,
   sandboxSlugFromSessionMetadata,
-} from '../lib/session-sandbox-metadata';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+} from '../../services/sessions/session-sandbox-metadata';
+import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../../services/sessions/sessions';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
-import { transitionSession } from '../session-lifecycle/status-transitions';
-import type { StartCallLog } from '../session-lifecycle/start-envelope';
+import { transitionSession } from '../../services/sessions/lifecycle/status-transitions';
+import type { StartCallLog } from '../../services/sessions/lifecycle/start-envelope';
 import {
   RUNTIME_IDENTITY_UNAVAILABLE,
   parkEstablishedRuntime,
@@ -30,8 +30,8 @@ import {
   retireRefusedRuntime,
   retireUnmaterializedRuntime,
   runtimeLossVerdict,
-} from '../runtime-identity';
-import type { StopReason } from '../stop-reason';
+} from '../../services/sandboxes/runtime-identity';
+import type { StopReason } from '../../services/sandboxes/stop-reason';
 import type {
   OpenSessionArgs,
   OpenSessionRow,

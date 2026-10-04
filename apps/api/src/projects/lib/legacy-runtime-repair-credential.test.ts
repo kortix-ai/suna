@@ -6,7 +6,7 @@ import {
   REQUIRED_RUNTIME_CAPABILITIES,
   bootstrapLegacyRuntime,
   renderLegacyBootstrapScript,
-} from './legacy-runtime-bootstrap';
+} from '../../services/sandboxes/legacy-runtime-bootstrap';
 
 /**
  * A repair may never depend on the credential of the box it is repairing.

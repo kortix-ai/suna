@@ -22,6 +22,6 @@ could have read Teams data of another organization that consented to the app.
 Fixed on branch `ino/teams-permissions`: the tenant comes from `chat_installs`,
 and the secrets API refuses to write or delete `MS_TEAMS_*` names.
 
-**Enforcement:** `apps/api/src/projects/lib/secret-write-input.test.ts` (an
+**Enforcement:** `apps/api/src/services/secrets/secret-write-input.test.ts` (an
 `MS_TEAMS_*` write is refused), and `unit-teams-file-proxy.test.ts` (Graph
 tokens are minted for the proven tenant, never the secret).

@@ -3,7 +3,7 @@ import { logger } from '../../lib/logger';
 import { admitRunningSandbox } from '../admit-running-sandbox';
 import { managedLineupFingerprint } from '../catalog-fingerprint';
 import { MIN_DAEMON_BUILD } from '../admission';
-import type { GitBackedProject } from '../../projects/git/types';
+import type { GitBackedProject } from '../../services/git/types';
 
 const PROJECT: GitBackedProject = {
   projectId: 'proj_x',

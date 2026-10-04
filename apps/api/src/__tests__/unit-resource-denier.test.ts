@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { buildResourceDenier } from '../projects/lib/project-resources';
-import type { ProjectConfigSummary } from '../projects/git/types';
+import type { ProjectConfigSummary } from '../services/git/types';
 
 const CONFIG = {
   is_kortix_repo: true,

@@ -9,10 +9,10 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { type SandboxStatus } from '../../platform/providers';
 import { db } from '../../lib/db';
-import { ensureOpencodeSessionPin, sandboxOpencodeEndpoint, type EnsureResult } from '../opencode-mapping';
-import { runtimeCapabilities } from '../session-lifecycle/runtime-fetch';
-import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
-import type { StartCallLog } from '../session-lifecycle/start-envelope';
+import { ensureOpencodeSessionPin, sandboxOpencodeEndpoint, type EnsureResult } from '../../services/sessions/opencode-mapping';
+import { runtimeCapabilities } from '../../services/sessions/lifecycle/runtime-fetch';
+import { metadataDelta, stripMetadataKeys } from '../../services/sessions/lifecycle/sandbox-metadata-sql';
+import type { StartCallLog } from '../../services/sessions/lifecycle/start-envelope';
 import {
   RUNTIME_PROVEN_AT_KEY,
   RUNTIME_READINESS_CLOCK_KEYS,
@@ -23,7 +23,7 @@ import {
   runtimeProvenThisBoot,
   servesThroughProbeMiss,
   staleRuntimeReadyReason,
-} from '../session-lifecycle/readiness-clocks';
+} from '../../services/sessions/lifecycle/readiness-clocks';
 import type {
   OpenSessionArgs,
   OpenSessionRow,
@@ -360,7 +360,7 @@ export async function judgeBootBudget(
       // The repair re-probes twice and checks the provider before it touches
       // anything, so a slow boot is never relaunched on this word alone.
       const { decideDeadDaemonOnOpen, DEAD_DAEMON_REPAIR_REQUESTED_KEY, LEGACY_CHECK_METADATA_KEY } =
-        await import('../lib/legacy-runtime-bootstrap');
+        await import('../../services/sandboxes/legacy-runtime-bootstrap');
       const since = Date.parse(String(readinessValue(metadataForBudget, 'runtimeUnreachableWaitStartedAt') ?? ''));
       const action = decideDeadDaemonOnOpen({
         provider: row.provider,
@@ -370,7 +370,7 @@ export async function judgeBootBudget(
       });
       let repairing = action === 'wait';
       if (action === 'request') {
-        const { scheduleLegacyRuntimeBootstrap } = await import('../lib/legacy-runtime-bootstrap-wiring');
+        const { scheduleLegacyRuntimeBootstrap } = await import('../../services/sandboxes/legacy-runtime-bootstrap-wiring');
         // A `current` verdict from hours ago says nothing about a daemon that
         // just refused a connection; without dropping it the repair's 6 h
         // recent-check gate skips exactly this box.

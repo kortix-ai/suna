@@ -78,7 +78,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
     endpoint: { url: 'http://sandbox.internal', headers: { 'X-Sandbox-Token': 't' } },
   };
 
-  mock.module('../projects/session-lifecycle/runtime-client', () => ({
+  mock.module('../services/sessions/lifecycle/runtime-client', () => ({
     resolveSessionOpencodeEndpoint: async () => resolved,
   }));
 
@@ -96,7 +96,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
     globalThis.fetch = realFetch;
   });
 
-  const load = async () => await import('../projects/session-lifecycle/release-runtime-question');
+  const load = async () => await import('../services/sessions/lifecycle/release-runtime-question');
 
   test('posts the answers to the runtime`s own reply endpoint', async () => {
     const { releaseRuntimeQuestion } = await load();

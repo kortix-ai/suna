@@ -18,23 +18,23 @@ import {
 } from '../../channels/turn-relay';
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { db } from '../../lib/db';
-import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
-import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
-import { childIdleGraceMs } from '../sandbox-deadline';
+import { captureSessionTranscriptMirror } from '../../services/sessions/session-transcript-capture';
+import { recordTriggerRunEnd } from '../../services/triggers/trigger-run-outcome';
+import { childIdleGraceMs } from '../../services/sandboxes/sandbox-deadline';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
-} from '../sandbox-turn-lifecycle';
-import { drainSessionLifecycleQueue } from '../session-lifecycle';
-import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
-import { promoteNextInboxRow } from '../session-lifecycle/store';
-import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+} from '../../services/sandboxes/sandbox-turn-lifecycle';
+import { drainSessionLifecycleQueue } from '../../services/sessions/lifecycle';
+import { reconcileForwardedTurnsAtEnd } from '../../services/sessions/lifecycle/forwarded-strand-reconcile';
+import { promoteNextInboxRow } from '../../services/sessions/lifecycle/store';
+import { generateSessionTitleFromFirstPrompt } from '../../services/sessions/session-title-generate';
 import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
-} from '../session-turn-ledger';
+} from '../../services/sessions/session-turn-ledger';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;

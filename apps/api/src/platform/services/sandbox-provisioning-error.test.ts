@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
+import { networkBoundaryPolicyError } from '../../services/secrets/network-boundary';
 import {
   INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
   SANDBOX_PROVIDER_CAPACITY_MESSAGE,

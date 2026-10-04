@@ -10,7 +10,7 @@
  */
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
+import { validateNativeOpencodeModelRef } from '../../services/sessions/session-model-change';
 import { config } from '../../lib/config';
 import {
   type ChannelModelScope,

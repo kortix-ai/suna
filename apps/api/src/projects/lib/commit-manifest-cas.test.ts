@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-const git = await import('../git');
-const branches = await import('../git/branches');
-const mirror = await import('../git/mirror');
-const github = await import('../github');
+const git = await import('../../services/git');
+const branches = await import('../../services/git/branches');
+const mirror = await import('../../services/git/mirror');
+const github = await import('../../services/github/github');
 
 let commitError: Error | null = null;
 let gitCommit:
@@ -16,7 +16,7 @@ let contentsWrites = 0;
 let shaReads = 0;
 let shaError: Error | null = null;
 
-mock.module('../git', () => ({
+mock.module('../../services/git', () => ({
   ...git,
   commitFileToBranch: async (
     project: Parameters<typeof git.commitFileToBranch>[0],
@@ -28,7 +28,7 @@ mock.module('../git', () => ({
   },
 }));
 
-mock.module('../github', () => ({
+mock.module('../../services/github/github', () => ({
   ...github,
   getFileSha: async () => {
     shaReads += 1;
@@ -40,7 +40,7 @@ mock.module('../github', () => ({
   },
 }));
 
-const { commitManifest } = await import('./triggers');
+const { commitManifest } = await import('../../services/triggers/trigger-runtime');
 
 const project = {
   projectId: 'project-cas',

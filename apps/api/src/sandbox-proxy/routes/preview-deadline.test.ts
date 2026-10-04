@@ -67,19 +67,19 @@ mock.module('../../services/sessions/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../services/sessions/session-token-grant', () => ({
   // The proxy's declared-agent guard; these suites exercise other behavior.
   agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../services/sessions/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-mock.module('../../projects/session-activity', () => ({
+mock.module('../../services/sessions/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
 mock.module('../../projects/routes/shared', () => ({
@@ -89,22 +89,22 @@ mock.module('../../projects/routes/shared', () => ({
 // classifiers (isTurnStartRequest / isPreviewUseObservation / isSandboxAuthored)
 // and the grant sizes are the REAL ones, because the thing under test here is
 // which requests reach a writer and with what grant.
-const realDeadline = await import('../../projects/sandbox-deadline-policy');
-const realDeadlineWrites = await import('../../projects/sandbox-deadline');
-mock.module('../../projects/sandbox-deadline', () => ({
+const realDeadline = await import('../../services/sandboxes/sandbox-deadline-policy');
+const realDeadlineWrites = await import('../../services/sandboxes/sandbox-deadline');
+mock.module('../../services/sandboxes/sandbox-deadline', () => ({
   ...realDeadlineWrites,
   ...realDeadline,
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extends_.push({ target, grantMs });
   },
 }));
-const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
-const realTurnLedger = await import('../../projects/session-turn-ledger');
-mock.module('../../projects/session-turn-ledger', () => ({
+const realTurnLifecycle = await import('../../services/sandboxes/sandbox-turn-lifecycle');
+const realTurnLedger = await import('../../services/sessions/session-turn-ledger');
+mock.module('../../services/sessions/session-turn-ledger', () => ({
   ...realTurnLedger,
   extractTurnIdentity: () => ({ opencodeSessionId: 'sess-1', messageId: 'msg-turn-1' }),
 }));
-mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async (target: unknown, turn: Record<string, unknown>) => {
     begunTurns.push({ target, turn });

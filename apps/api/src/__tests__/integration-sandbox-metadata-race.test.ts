@@ -171,7 +171,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
         runtimeStartFailureCount: 2,
         stopReason: 'idle',
       });
-      const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
+      const { claimInPlaceRestart } = await import('../services/sessions/lifecycle/runtime-restart-claim');
       const restart = claim();
       let owned = false;
       await interleave(
@@ -207,7 +207,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
 
     test('a /start readiness write from a row read before the claim does not erase it', async () => {
       const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
-      const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
+      const { claimInPlaceRestart } = await import('../services/sessions/lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
       await claimInPlaceRestart({ sandboxId: SANDBOX_ID, externalId: EXTERNAL_ID, claim: restart });
@@ -241,7 +241,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
 
     test('a /start wake mark from a row read before the claim does not erase it', async () => {
       const { markRuntimeWakeStarted } = await import('../projects/routes/shared');
-      const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
+      const { claimInPlaceRestart } = await import('../services/sessions/lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
       await claimInPlaceRestart({ sandboxId: SANDBOX_ID, externalId: EXTERNAL_ID, claim: restart });

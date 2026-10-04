@@ -1,0 +1,186 @@
+// Shared types for the git-backed-project operations module.
+// Pure leaf module: no runtime imports, only type declarations (the
+// manifest-verdict import below is `import type`, so it erases at build).
+
+import type { ProjectManifestVerdict } from '../../projects/lib/manifest-verdict';
+
+export interface GitBackedProject {
+  projectId: string;
+  repoUrl: string;
+  defaultBranch: string;
+  manifestPath: string;
+  gitAuthToken?: string | null;
+  /** Provider-formatted HTTP headers for authenticated clone/fetch/push. */
+  gitAuthHeaders?: Record<string, string>;
+}
+
+export interface ProjectFileEntry {
+  path: string;
+  type: 'file';
+  size: number | null;
+}
+
+export interface ProjectConfigSummary {
+  is_kortix_repo: boolean;
+  signals: Record<string, boolean>;
+  manifest_raw: string | null;
+  manifest: Record<string, unknown>;
+  /** Server-decided manifest version verdict — the only thing a client may read
+   *  to decide whether to offer an upgrade. See `../../projects/lib/manifest-verdict`. */
+  manifest_version: ProjectManifestVerdict;
+  env: { required: string[]; optional: string[] };
+  /** The text of the project's `opencode.jsonc`: OpenCode's own config file. */
+  open_code_raw: string | null;
+  /** The project's default agent. */
+  default_agent: string | null;
+  /** @deprecated The pre-W4 name of `default_agent`. Same value. */
+  open_code_default_agent: string | null;
+  agent_discovery: 'opencode' | 'declarative';
+  agents: Array<{
+    name: string;
+    path: string;
+    description: string | null;
+    mode: string | null;
+    /** The agent's `model:` frontmatter (`provider/model`), null when it
+     *  follows the project default. */
+    model?: string | null;
+    source: 'opencode' | 'kortix.yaml';
+    /** True for a platform-owned agent the API injects (the Meta coordinator),
+     *  not one declared in `kortix.yaml`. Hosts render it read-only. */
+    platform?: boolean;
+    enabled?: boolean;
+    sandbox?: string | null;
+    /** Per-agent governance from the manifest's `agents` declarations (v2
+     *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
+     *  Read-only mirror of the allowlists the parser resolved — `'all'`
+     *  means unscoped (every secret/connector the launching user can see). */
+    scope?: {
+      env: string[] | 'all';
+      connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions) the agent may exercise. */
+      kortix_permissions: string[] | 'all';
+      /** @deprecated Wire alias of `kortix_permissions` for pre-rename clients. */
+      kortix_cli: string[] | 'all';
+      /** Kortix Apps (by slug) the agent may open when restricted/private
+       *  (spec 2026-09-22 §2.5). `[]` = none (the default). Optional: the
+       *  platform meta-agent's synthetic entry carries no App grant. */
+      apps?: string[] | 'all';
+    };
+  }>;
+  skills: Array<{ name: string; path: string; description: string | null }>;
+  commands: Array<{ name: string; path: string; description: string | null }>;
+}
+
+export interface RepoGrepMatch {
+  path: string;
+  line_number: number;
+  line_text: string;
+}
+
+// ---------------------------------------------------------------------------
+// Branches / commits / diffs — drives the Versions (branches) and Checkpoints
+// (commits) panels in the project file viewer. Internal types still use Git
+// vocabulary; user-facing strings are translated in the web layer.
+// ---------------------------------------------------------------------------
+
+export interface GitBranchInfo {
+  name: string;
+  is_default: boolean;
+  tip: string;
+  tip_short: string;
+  subject: string;
+  committer_name: string;
+  committer_email: string;
+  committed_at: string;
+  ahead: number | null;
+  behind: number | null;
+}
+
+export interface GitLogEntry {
+  hash: string;
+  short_hash: string;
+  parents: string[];
+  author_name: string;
+  author_email: string;
+  authored_at: string;
+  committer_name: string;
+  committer_email: string;
+  committed_at: string;
+  subject: string;
+  body: string;
+}
+
+export interface GitCommitFile {
+  path: string;
+  old_path: string | null;
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';
+  additions: number;
+  deletions: number;
+}
+
+export interface GitCommitDetail extends GitLogEntry {
+  files: GitCommitFile[];
+}
+
+export interface ListCommitsOptions {
+  ref?: string;
+  path?: string | null;
+  limit?: number;
+  skip?: number;
+}
+
+export interface GetCommitDiffOptions {
+  /** When set, only emit the diff for this single path. */
+  path?: string | null;
+}
+
+export interface CommitDiff {
+  hash: string;
+  parent: string | null;
+  patch: string;
+}
+
+export interface GetFileHistoryOptions {
+  ref?: string;
+  limit?: number;
+  skip?: number;
+}
+
+export interface GetFileAtRefResult {
+  content: string;
+  found: boolean;
+}
+
+export interface BranchDiffSummary {
+  files: GitCommitFile[];
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  patch: string;
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+}
+
+export interface MergePreview {
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+  can_fast_forward: boolean;
+  can_merge: boolean;
+  conflicts: string[];
+  is_up_to_date: boolean;
+}
+
+export interface MergeOptions {
+  authorName?: string;
+  authorEmail?: string;
+  message?: string;
+}
+
+export interface MergeResult {
+  merge_commit_sha: string;
+  fast_forward: boolean;
+  base_sha_before: string;
+  base_sha_after: string;
+}

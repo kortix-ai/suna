@@ -11,7 +11,7 @@
  * sandbox access.
  *
  * Both sources go through the one projection the authenticated transcript
- * uses (`projects/lib/session-transcript-compact.ts`), then through
+ * uses (`services/sessions/session-transcript-compact.ts`), then through
  * `toPublicMessage`: only message role, text, tool NAME + status (no
  * args/output), file NAME + mime (no content), and a `reasoning_omitted` flag
  * are ever returned — raw tool call arguments, command output, file contents,
@@ -24,18 +24,18 @@ import { db } from '../../lib/db';
 import {
   isPlaceholderOpencodeTitle,
   runtimeRootTitleFromSnapshot,
-} from '../../projects/lib/opencode-title';
+} from './opencode-title';
 import {
   type CompactMessage,
   compactMessage,
   normalizeMessageList,
-} from '../../projects/lib/session-transcript-compact';
-import { projectionIdentity } from '../../projects/lib/session-runtime-projection';
-import { fetchRuntimeMessages, fetchRuntimeState } from '../../projects/lib/session-runtime-transport';
+} from './session-transcript-compact';
+import { projectionIdentity } from './session-runtime-projection';
+import { fetchRuntimeMessages, fetchRuntimeState } from './session-runtime-transport';
 import {
   type MirrorSnapshot,
   readSessionTranscriptMirror,
-} from '../../projects/lib/session-transcript-mirror';
+} from './session-transcript-mirror';
 import type { PublicShareRow } from './session-public-shares';
 
 const MAX_MESSAGE_CHARS = 4000;

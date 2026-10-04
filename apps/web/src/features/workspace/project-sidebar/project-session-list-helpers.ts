@@ -151,7 +151,7 @@ function activityMs(value: unknown): number | null {
 /** When the API last accepted a prompt for this session.
  *
  * Stamped server-side in the preview proxy the moment a prompt is admitted
- * (`apps/api/src/projects/session-activity.ts`), so it needs no sandbox
+ * (`apps/api/src/services/sessions/session-activity.ts`), so it needs no sandbox
  * round-trip and cannot silently go missing the way the snapshot below can. */
 function promptActivityMs(session: ProjectSession): number | null {
   return activityMs((session.metadata as Record<string, unknown> | null)?.last_activity_at);

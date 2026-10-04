@@ -18,7 +18,7 @@ import {
   LIFECYCLE_CLAIM_LOCK_MS,
   heartbeatCommandLease,
   withCommandLeaseHeartbeat,
-} from '../projects/session-lifecycle/command-lease';
+} from '../services/sessions/lifecycle/command-lease';
 import {
   LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
   MAX_RUNTIME_UNREACHABLE_RETRIES,
@@ -33,8 +33,8 @@ import {
   parkPromptForUnreachableRuntime,
   reArmRuntimeBlockedPrompts,
   requeueForAdmission,
-} from '../projects/session-lifecycle/store';
-import type { CreateSessionCommand } from '../projects/session-lifecycle/types';
+} from '../services/sessions/lifecycle/store';
+import type { CreateSessionCommand } from '../services/sessions/lifecycle/types';
 import { logger } from '../lib/logger';
 import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';

@@ -12,7 +12,7 @@
  *
  * Project SECRETS no longer use this — secret sharing was retired (a secret is
  * always project-wide; see migration 20260706_secrets_v2_identifier_model.sql
- * and projects/secrets.ts). CONNECTORS no longer use this either — a connector
+ * and services/secrets/secrets.ts). CONNECTORS no longer use this either — a connector
  * is always project-wide visible; the only access gate is the agent-side
  * `[[agents]].connectors` grant (iam/agent-scope.ts). This file keeps the
  * generic pure helpers + session DB helpers only.
@@ -275,7 +275,7 @@ export function isTriggerCreatedSessionMetadata(metadata: unknown): boolean {
 /**
  * A trigger's run: the session the trigger created, or a worker that session
  * spawned (`initiator_type = 'trigger'` is server-derived and copied from the
- * parent at create, see projects/lib/session-initiator.ts). Managers who may
+ * parent at create, see services/sessions/session-initiator.ts). Managers who may
  * read the coordinator may read its workers.
  */
 export function isTriggerRunSession(session: { metadata: unknown; initiatorType?: string | null }): boolean {

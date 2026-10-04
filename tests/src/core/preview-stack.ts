@@ -269,7 +269,7 @@ export function buildPreviewComposeOverlay(
       - "127.0.0.1:15432:5432"
   # The git mirror must outlive the container.
   #
-  # \`cacheRoot()\` (apps/api/src/projects/git/mirror.ts) is
+  # \`cacheRoot()\` (apps/api/src/services/git/mirror.ts) is
   # \`/tmp/kortix/git-cache\`, and kortix-api runs with NO volumes — so every
   # redeploy recreates the container and deletes every project's mirror. On a
   # deployment whose managed repos exist on GitHub that is only a slow re-clone.

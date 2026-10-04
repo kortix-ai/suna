@@ -5,7 +5,7 @@ incident_date: 2026-10-01
 # A server-side check about a member must not run the browser MFA gate; ask it with the request's level only for the caller's own request
 
 **Rule:** Account-wide MFA (`authorize` step 6, `mfaGateBlocks`) guards a person's own browser requests. Two cases:
-- **A check about a member,** where nobody is stepping up in a browser right now: build the actor with the gate satisfied. Examples: may this member read the project, may this session use this key, may this grantee receive a key. This is `memberMayReadProject`'s default in `apps/api/src/secrets/account-resource.ts`.
+- **A check about a member,** where nobody is stepping up in a browser right now: build the actor with the gate satisfied. Examples: may this member read the project, may this session use this key, may this grantee receive a key. This is `memberMayReadProject`'s default in `apps/api/src/services/secrets/account-resource.ts`.
 - **A route that authorizes the caller's own request through such a helper alone:** pass that request's level (`{ mfaAal: c.get('mfaAal') }`).
 
 A bare `actorForUser(userId, accountId)` has no level. In an account that requires MFA, it refuses everyone except a super admin.

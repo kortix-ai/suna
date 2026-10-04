@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { parseManifestString, serializeManifest } from '../projects/triggers';
+import { parseManifestString, serializeManifest } from '../services/triggers';
 import { applyAgentScopeV2 } from '../projects/lib/agent-config-v2';
 import { extractAgents } from '../projects/agents';
 

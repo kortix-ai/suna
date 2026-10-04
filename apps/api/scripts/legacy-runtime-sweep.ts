@@ -15,8 +15,8 @@ import {
   buildLegacyBootstrapDeps,
   runLegacyRuntimeBootstrap,
   type LegacyBootstrapRow,
-} from '../src/projects/lib/legacy-runtime-bootstrap-wiring';
-import { classifyDaemonHealth, describeLegacyBootstrapRetry } from '../src/projects/lib/legacy-runtime-bootstrap';
+} from '../src/services/sandboxes/legacy-runtime-bootstrap-wiring';
+import { classifyDaemonHealth, describeLegacyBootstrapRetry } from '../src/services/sandboxes/legacy-runtime-bootstrap';
 
 function args() {
   const out: { sessions: string[]; running: boolean; limit: number; force: boolean; dryRun: boolean } = {

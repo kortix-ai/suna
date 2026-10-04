@@ -11,12 +11,12 @@ import {
   type GitHubAppInstallation,
   verifyGitHubAppInstallStatePayload,
   verifyGitHubInstallationAdmin,
-} from '../github';
+} from '../../services/github/github';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations } from '@kortix/db';
 import { and, eq, ne } from 'drizzle-orm';
 import { resolveProjectAccount } from '../lib/access';
-import { deleteGitHubUserTokens, saveGitHubUserToken } from '../lib/github-user-token';
+import { deleteGitHubUserTokens, saveGitHubUserToken } from '../../services/github/github-user-token';
 import { AnyObject, projectsApp } from '../lib/app';
 import {
   consumeGitHubInstallationState,
@@ -24,7 +24,7 @@ import {
   createGitHubInstallationInstallUrl,
   getAccountGitHubInstallation,
   listAccountGitHubInstallations,
-} from '../lib/git';
+} from '../../services/git/project-git';
 import {
   normalizeString,
   serializeGitHubInstallation,

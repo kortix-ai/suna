@@ -10,7 +10,7 @@ import { approvalPreviewReviewable } from '../../connectors/args-preview';
 import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
 import { recordAuditEvent } from '../../services/audit/audit';
 import { db } from '../../lib/db';
-import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
+import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../../services/sessions/lifecycle';
 
 export type ApprovalDecision = 'approve' | 'deny';
 

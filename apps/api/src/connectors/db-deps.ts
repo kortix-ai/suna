@@ -10,7 +10,7 @@ import { HTTPException } from 'hono/http-exception';
 import { config } from '../lib/config';
 import { bindIntegrationPrincipal } from '../services/audit/audit-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
-import { invalidateProjectMirror } from '../projects/git';
+import { invalidateProjectMirror } from '../services/git';
 import {
   connectionIsReachable,
   type ConnectorConnectOwner,
@@ -18,7 +18,7 @@ import {
 import {
   canonicalConnectorAlias,
   listEntitledConnectorConnections,
-} from '../projects/lib/session-connector-bindings';
+} from '../services/sessions/session-connector-bindings';
 import { db } from '../lib/db';
 import { connectorAttachmentStore } from './attachments';
 import { notifyConnectorSession } from './notify-session';

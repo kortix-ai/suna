@@ -23,7 +23,7 @@ import { C, pad, status } from '../style.ts';
 // polls that preparation — it takes no query params and always reports the
 // project's latest transition plus the last 10.
 
-/** apps/api/src/projects/provider-transition/provider-transition-core.ts:10. */
+/** apps/api/src/services/sandboxes/provider-transition/provider-transition-core.ts:10. */
 const LIVE_TRANSITION_STATUSES = ['pending', 'building', 'ready', 'activating'] as const;
 
 interface TransitionView {

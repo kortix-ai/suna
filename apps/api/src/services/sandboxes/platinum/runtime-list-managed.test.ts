@@ -118,7 +118,7 @@ test('a box with no readable creation time reports createdAt null so the reaper 
 
 test('INSTANCE SCOPE: with KORTIX_INSTANCE_ID set, only a box stamped with THIS id is listed', async () => {
   // Shared Platinum org: instance A must never stop instance B's boxes
-  // (projects/instance-scope.ts). An UNSTAMPED box is not ours either: every
+  // (services/sessions/instance-scope.ts). An UNSTAMPED box is not ours either: every
   // PR preview shares one org and one `kortix.env=preview` tag, each with its
   // own database, so a box another preview created before the stamp existed
   // has no row here and would read as an orphan. The orphan reaper STOPS what

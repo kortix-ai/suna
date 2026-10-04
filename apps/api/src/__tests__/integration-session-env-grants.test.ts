@@ -27,8 +27,8 @@ import {
   projectSessions,
 } from '@kortix/db';
 import { db } from '../lib/db';
-import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
-import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
+import { resolveSandboxEnvSnapshot } from '../services/sandboxes/sandbox-env-sync';
+import { buildSessionSandboxEnvVars } from '../services/sessions/sessions';
 import {
   AmbiguousSecretGrantError,
   confineSharedProjectSecretToConnector,
@@ -36,7 +36,7 @@ import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
   writeSharedProjectSecret,
-} from '../projects/secrets';
+} from '../services/secrets/secrets';
 import { insertIntoView } from './helpers/compat-views';
 import { seedAccount } from './helpers/integration-fixtures';
 

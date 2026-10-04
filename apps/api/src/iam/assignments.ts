@@ -721,7 +721,7 @@ async function assertObjectAssignable(
 ): Promise<void> {
   if (object.type === 'secret') {
     // A `secret` grant names one SHARED value by `secret_id` — the audience of
-    // that value (projects/lib/secret-audience.ts). A personal override belongs
+    // that value (services/secrets/secret-audience.ts). A personal override belongs
     // to its owner and has no audience.
     if (pendingSecretId && pendingSecretId === object.id) return;
     const result = await db.execute<{ found: number }>(sql`

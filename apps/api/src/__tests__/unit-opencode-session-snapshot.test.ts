@@ -25,8 +25,8 @@ mock.module('../lib/db', () => ({
 }));
 
 const { syncOpencodeSessionSnapshot, scheduleOpencodeSnapshotSync, pendingSnapshotSyncs } =
-  await import('../projects/opencode-session-snapshot');
-type RuntimeLeg = Awaited<ReturnType<typeof import('../projects/lib/session-runtime-projection').readRuntimeLeg>>;
+  await import('../services/sessions/opencode-session-snapshot');
+type RuntimeLeg = Awaited<ReturnType<typeof import('../services/sessions/session-runtime-projection').readRuntimeLeg>>;
 
 function row(over: Partial<ProjectSessionRow> = {}): ProjectSessionRow {
   return {

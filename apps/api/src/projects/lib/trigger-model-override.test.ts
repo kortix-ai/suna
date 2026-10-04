@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { triggerModelOverride } from './triggers';
+import { triggerModelOverride } from '../../services/triggers/trigger-runtime';
 
 describe('triggerModelOverride', () => {
   test('a wire ref becomes the prompt override OpenCode expects', () => {

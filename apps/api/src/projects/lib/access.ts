@@ -3,6 +3,6 @@
 // `getAccountMembership` moved here from ./git (user-identity.ts).
 export { agentSessionStanding } from './agent-session-standing';
 export * from './project-quota';
-export * from './session-visibility';
+export * from '../../services/sessions/session-visibility';
 export * from './user-identity';
 export * from './project-access';

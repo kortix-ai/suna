@@ -9,7 +9,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
 import { config } from '../lib/config';
-import { cancelForwardedPrompt } from '../projects/session-lifecycle/cancel-forwarded';
+import { cancelForwardedPrompt } from '../services/sessions/lifecycle/cancel-forwarded';
 import { db } from '../lib/db';
 import {
   LIFECYCLE_COMMAND_SETTLED_CHANNEL,

@@ -27,7 +27,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../projects/secrets', () => ({
+mock.module('../services/secrets/secrets', () => ({
   listProjectSecrets: async () => ({}),
   decryptProjectSecret: (_projectId: string, value: string) => value.replace(/^enc:/, ''),
   encryptProjectSecret: (projectId: string, value: string) => {

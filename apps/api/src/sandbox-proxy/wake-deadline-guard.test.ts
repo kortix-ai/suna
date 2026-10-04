@@ -32,7 +32,7 @@ mock.module('../services/sessions/kortix-user-context', () => ({
 }));
 let providerStatusBeforeWake: 'running' | 'stopped' | 'unknown' = 'running';
 const recoveryCalls: Array<Record<string, unknown>> = [];
-mock.module('../projects/session-lifecycle/runtime-restart-recovery', () => ({
+mock.module('../services/sessions/lifecycle/runtime-restart-recovery', () => ({
   recoverTurnsAfterRuntimeRestart: async (input: Record<string, unknown>) => {
     recoveryCalls.push(input);
     return { lost: [], redeliveries: [] };

@@ -36,7 +36,7 @@ import {
   newestWireIdTime,
   wireIdClockDelta,
   wireIdTime,
-} from '../projects/wire-message-id';
+} from '../services/sessions/wire-message-id';
 
 /** Newest-N messages read before a delivery. Small on purpose: this sits on the
  *  delivery path of every direct send, and only the tip decides placement. */

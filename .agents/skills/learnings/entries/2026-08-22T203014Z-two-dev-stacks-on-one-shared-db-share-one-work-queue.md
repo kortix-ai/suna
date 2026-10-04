@@ -39,7 +39,7 @@ default failure mode of a shared DB, not a one-off.
    the launchers only: `scripts/dev-local.sh` exports `primary`,
    `scripts/worktree/lib/launch-env.ts` exports the worktree name.
    `provisionSessionSandbox` stamps `session_sandboxes.metadata.instanceId`;
-   `sandboxBelongsToThisInstance()` (`apps/api/src/projects/instance-scope.ts`)
+   `sandboxBelongsToThisInstance()` (`apps/api/src/services/sessions/instance-scope.ts`)
    is consulted by the lifecycle drain (`drainSessionLifecycleQueue` RELEASES a
    claimed command whose sandbox another instance owns — `queued`, due in 2 s,
    attempt given back, never dead-lettered), by the env-sync project fan-out

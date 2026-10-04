@@ -7,13 +7,13 @@ import {
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { grantProjectRole } from './access';
 import { db } from '../../lib/db';
-import type { GitHubRepo } from '../github';
+import type { GitHubRepo } from '../../services/github/github';
 import {
   type ProjectGitWriteAuth,
   buildProjectGitConnectionValues,
   buildProjectGitMetadata,
   upsertProjectGitCredential,
-} from './project-git-write';
+} from '../../services/git/project-git-write';
 import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;

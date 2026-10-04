@@ -9,8 +9,8 @@ import { and, eq } from 'drizzle-orm';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { type SandboxProviderName } from '../../lib/config';
 import { db } from '../../lib/db';
-import { inspectSandboxRuntime } from '../runtime-inspection';
-import { createStartCallLog, withStartEnvelope, type StartCallLog } from '../session-lifecycle/start-envelope';
+import { inspectSandboxRuntime } from '../../services/sandboxes/runtime-inspection';
+import { createStartCallLog, withStartEnvelope, type StartCallLog } from '../../services/sessions/lifecycle/start-envelope';
 import type {
   OpenSessionArgs,
   OpenSessionRowWithExternalId,
@@ -62,7 +62,7 @@ export async function openSession(args: OpenSessionArgs): Promise<SessionStartRe
   if (result.stage === 'ready') {
     try {
       const { pinNeedsRepair, repairRetiredSessionModelOnOpen } = await import(
-        '../lib/session-model-repair'
+        '../../services/sessions/session-model-repair'
       );
       const metadata = (args.visible.row.metadata ?? null) as Record<string, unknown> | null;
       if (pinNeedsRepair(metadata)) {

@@ -20,10 +20,10 @@
  */
 
 import { logger } from '../lib/logger';
-import type { GitBackedProject } from '../projects/git/types';
+import type { GitBackedProject } from '../services/git/types';
 import { resolveDesiredRelease } from '../config-releases/desired';
-import { sandboxOpencodeEndpoint } from '../projects/opencode-mapping';
-import { sandboxRuntimeRequestHeaders } from '../projects/sandbox-fetch';
+import { sandboxOpencodeEndpoint } from '../services/sessions/opencode-mapping';
+import { sandboxRuntimeRequestHeaders } from '../services/sandboxes/sandbox-fetch';
 import { admitSandboxForSession } from './admit-sandbox';
 import { runtimeAdmissionEnforced, type RuntimeAdmissionVerdict } from './admission';
 

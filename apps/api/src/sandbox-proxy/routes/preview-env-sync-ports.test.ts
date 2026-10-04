@@ -52,12 +52,12 @@ mock.module('../../iam', () => ({
   PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
   authorize: async () => ({ allowed: true, reason: 'role' }),
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async (input: { sessionId: string; requestedAgent: string | null }) => {
     envSyncCalls.push({ sessionId: input.sessionId, requestedAgent: input.requestedAgent ?? null });
   },
 }));
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../services/sessions/session-token-grant', () => ({
   agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async (input: {
     sessionAgent: string;
@@ -71,18 +71,18 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   },
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/lib/turn-start-convergence', () => ({
+mock.module('../../services/sessions/turn-start-convergence', () => ({
   // No database in this file; the real gate would wait out the driver's connect
   // timeout on every prompt. This suite is about the env-sync gate beside it.
   convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../services/sessions/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
-mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+const realTurnLifecycle = await import('../../services/sandboxes/sandbox-turn-lifecycle');
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
   acceptSandboxTurn: async () => true,

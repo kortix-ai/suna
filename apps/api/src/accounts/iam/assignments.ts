@@ -14,7 +14,7 @@
 // member.update for an account role, policy.create for a custom role), so the
 // ceiling cannot be side-stepped by picking a different route — which is
 // exactly what five parallel endpoints made possible.
-import { propagateProjectSecretsToActiveSandboxes } from '../../projects/lib/sandbox-env-sync';
+import { propagateProjectSecretsToActiveSandboxes } from '../../services/sandboxes/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { iamRoles } from '@kortix/db';

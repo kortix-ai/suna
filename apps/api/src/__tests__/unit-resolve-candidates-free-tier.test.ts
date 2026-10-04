@@ -75,7 +75,7 @@ mock.module('../billing/services/entitlements', () => ({
     billingEnabled ? !realAccountIsFreeTierForModels(accountTier) : true,
 }));
 
-mock.module('../projects/secrets', () => ({
+mock.module('../services/secrets/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'user-key',

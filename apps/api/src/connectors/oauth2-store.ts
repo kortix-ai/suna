@@ -13,7 +13,7 @@ import {
 } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { connectionRowIsReachable } from '../projects/lib/connection-access';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptProjectSecret, encryptProjectSecret } from '../services/secrets/secrets';
 import { db } from '../lib/db';
 import { isUniqueViolation } from '../lib/postgres-errors';
 import { config } from '../lib/config';

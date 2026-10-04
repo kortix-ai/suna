@@ -10,8 +10,8 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { config } from '../../lib/config';
 import * as realCompile from './compile-agent-config';
-import * as realSecrets from '../secrets';
-import * as realSecretGrant from './secret-grant';
+import * as realSecrets from '../../services/secrets/secrets';
+import * as realSecretGrant from '../../services/secrets/secret-grant';
 
 process.env.KORTIX_URL = 'https://api.example.com';
 
@@ -85,14 +85,14 @@ mock.module('../../lib/db', () => ({
   },
 }));
 
-mock.module('./secret-grant', () => ({
+mock.module('../../services/secrets/secret-grant', () => ({
   ...realSecretGrant,
   resolveSessionSecretGrant: async () => 'all' as const,
 }));
 // Spread the real module: overriding only the DB-backed reader keeps every other
 // export (sanitizers, revision hashing) intact — a partial mock silently removes
 // the rest and the module fails to load.
-mock.module('../secrets', () => ({
+mock.module('../../services/secrets/secrets', () => ({
   ...realSecrets,
   // `{ env, names, revision }` — the real return shape. An array here made
   // `.env` undefined, which produced the "no env snapshot" the test below
@@ -108,7 +108,7 @@ mock.module('../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
-mock.module('./network-secret-boundary', () => ({
+mock.module('../../services/secrets/network-secret-boundary', () => ({
   resolveSessionNetworkBoundary: async () => [],
 }));
 
@@ -142,7 +142,7 @@ let daemonRunningConfig: Record<string, unknown> | null = null;
 };
 
 const { propagateProjectSecretsToActiveSandboxes, pushSessionAgentConfigToSandbox } =
-  await import('./sandbox-env-sync');
+  await import('../../services/sandboxes/sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',

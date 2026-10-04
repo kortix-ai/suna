@@ -1,7 +1,7 @@
 import { getProjectModelAccess } from '../../repositories/project-model-access';
 import { modelAccessAllows } from '../model-access';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
+import { listProjectSecretNamesForConsumer } from '../../services/secrets/secrets';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { resolveEnablement } from '../model-enablement';
@@ -10,7 +10,7 @@ import { gatewayModelCatalog } from './catalog-models';
 import { projectPickerCatalog } from './picker-catalog';
 import { platformDefaultModelId } from './served-managed-models';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
-import { listGrantedGatewaySecretNames } from '../../secrets/account-resource';
+import { listGrantedGatewaySecretNames } from '../../services/secrets/account-resource';
 
 type GatewayModel = ReturnType<typeof gatewayModelCatalog>[string];
 

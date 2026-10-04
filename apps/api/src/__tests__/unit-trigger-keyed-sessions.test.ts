@@ -12,8 +12,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { renderSessionKey, triggerFilterMatches } from '../projects/lib/trigger-payload';
-import type { GitTriggerSpec } from '../projects/triggers';
+import { renderSessionKey, triggerFilterMatches } from '../services/triggers/trigger-payload';
+import type { GitTriggerSpec } from '../services/triggers';
 
 function spec(overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec {
   return {
@@ -126,7 +126,7 @@ describe('trigger filter', () => {
 
 describe('keyed lookups never bind to an unusable session', () => {
   const SOURCE = readFileSync(
-    join(import.meta.dir, '..', 'projects', 'lib', 'trigger-fire.ts'),
+    join(import.meta.dir, '..', 'services', 'triggers', 'trigger-fire.ts'),
     'utf8',
   );
 

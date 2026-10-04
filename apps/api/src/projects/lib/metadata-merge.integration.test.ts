@@ -10,7 +10,7 @@ import {
   activateWithCas,
   readActiveRouting,
   reserveSwitchTransition,
-} from '../provider-transition/provider-transition-store';
+} from '../../services/sandboxes/provider-transition/provider-transition-store';
 
 // DB-backed behavior of the atomic metadata merge. Runs in the `db-suites`
 // lane of `pnpm test` against a throwaway migrated database. The static

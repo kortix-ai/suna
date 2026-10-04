@@ -14,7 +14,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import * as realShared from '../projects/routes/shared';
-import * as realTitle from '../projects/session-title-generate';
+import * as realTitle from '../services/sessions/session-title-generate';
 import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
@@ -25,12 +25,12 @@ mock.module('../projects/routes/shared', () => ({
   ...realShared,
   openSession: async (args: { sessionId: string }) => openSessionImpl(args.sessionId),
 }));
-mock.module('../projects/session-title-generate', () => ({
+mock.module('../services/sessions/session-title-generate', () => ({
   ...realTitle,
   generateSessionTitleFromFirstPrompt: async () => undefined,
 }));
 
-const { continueSession } = await import('../projects/session-lifecycle/continue-session');
+const { continueSession } = await import('../services/sessions/lifecycle/continue-session');
 
 type Row = Record<string, unknown>;
 const rows = (result: unknown) => ((result as { rows?: Row[] }).rows ?? result) as Row[];

@@ -6,7 +6,7 @@ import * as realAccess from '../projects/lib/access';
 import type {
   ProjectSecretPropagationResult,
   ProjectSecretPropagationTarget,
-} from '../projects/lib/sandbox-env-sync';
+} from '../services/sandboxes/sandbox-env-sync';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -224,8 +224,8 @@ mock.module('../projects/lib/access', () => ({
   assertProjectCapability: async () => undefined,
 }));
 
-const realSync = await import('../projects/lib/sandbox-env-sync');
-mock.module('../projects/lib/sandbox-env-sync', () => ({
+const realSync = await import('../services/sandboxes/sandbox-env-sync');
+mock.module('../services/sandboxes/sandbox-env-sync', () => ({
   ...realSync,
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, options: unknown) => {
     propagations.push({ projectId, options });

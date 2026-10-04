@@ -189,7 +189,7 @@ describe('secret_call MCP tool', () => {
     // The confidentiality property the broker provides: the guest names a
     // secret, it never holds or transmits one. An upstream that echoes the
     // credential back is handled server-side by `redactSecretFromResponse`
-    // (apps/api/src/secrets/http-broker.ts) — out of scope for this tool test,
+    // (apps/api/src/services/secrets/http-broker.ts) — out of scope for this tool test,
     // which only proves the request side.
     respondWith = () =>
       jsonResponse({

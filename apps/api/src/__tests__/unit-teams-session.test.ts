@@ -775,7 +775,7 @@ describe('createOrJoinTeamsConversationSession — the create key is per message
   });
 
   test('why: an existing command under the key answers the create — a failed one forever', async () => {
-    const { resultFromExistingCommand } = await import('../projects/session-lifecycle/store');
+    const { resultFromExistingCommand } = await import('../services/sessions/lifecycle/store');
     const answer = resultFromExistingCommand({
       commandId: 'cmd-1',
       status: 'dead_lettered',

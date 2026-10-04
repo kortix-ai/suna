@@ -21,8 +21,8 @@ import {
   patchedSandboxMetadata,
   transitionSandbox,
   transitionSession,
-} from '../../projects/session-lifecycle/status-transitions';
-import { signalSessionRuntimeActive } from '../../projects/session-lifecycle/runtime-active-signal';
+} from '../../services/sessions/lifecycle/status-transitions';
+import { signalSessionRuntimeActive } from '../../services/sessions/lifecycle/runtime-active-signal';
 import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
 import { notifySessionProvisioningFailed } from '../../services/sessions/session-failure-notifier';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -37,7 +37,7 @@ import {
 import {
   readActiveRouting,
   type ActiveRouting,
-} from '../../projects/provider-transition/provider-transition-store';
+} from '../../services/sandboxes/provider-transition/provider-transition-store';
 import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
@@ -61,25 +61,25 @@ import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
-import type { GitBackedProject } from '../../projects/git';
+import type { GitBackedProject } from '../../services/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { readManifest } from '../../projects/triggers';
+import { readManifest } from '../../services/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
-import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
-import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
-import { instanceStampMetadata } from '../../projects/instance-scope';
+import { RuntimeIdentityConflictError } from '../../services/sandboxes/runtime-identity-error';
+import { grantWarmPoolLifetime } from '../../services/sandboxes/sandbox-deadline';
+import { instanceStampMetadata } from '../../services/sessions/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../lib/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
-import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
+import { resolveSessionNetworkBoundary } from '../../services/secrets/network-secret-boundary';
 import {
   type PreparedInitialSandboxTurn,
   initialSandboxTurnMetadata,
-} from '../../projects/session-turn-ledger';
+} from '../../services/sessions/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
 import { logger } from '../../lib/logger';
 
@@ -398,7 +398,7 @@ async function createOrClaimSessionSandboxRow(
       metadata: {
         ...(opts.metadata ?? {}),
         // Instance scope for background work on a shared DB — see
-        // projects/instance-scope.ts. `{}` when KORTIX_INSTANCE_ID is unset.
+        // services/sessions/instance-scope.ts. `{}` when KORTIX_INSTANCE_ID is unset.
         ...instanceStampMetadata(),
         ...(opts.initialTurn
           ? {
@@ -676,7 +676,7 @@ export async function provisionSessionSandbox(opts: {
     // auto_stop_minutes). That timer is a LAST-RESORT backstop for a box this API
     // can no longer reach — 12h, deliberately far above any real turn, because it
     // sees only inbound traffic and nothing resets it during a local tool run.
-    // The primary stop is `deadline_at` (projects/sandbox-deadline.ts), enforced
+    // The primary stop is `deadline_at` (services/sandboxes/sandbox-deadline.ts), enforced
     // by the reaper. Platinum NO LONGER forces persistent — the CH resume-freeze
     // that required autoStop=0 is FIXED (verified ~2.3s stop→resume), so it
     // idle-stops + CoW-resumes natively too.

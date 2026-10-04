@@ -1858,7 +1858,7 @@ flow(
 // `session-oversight.ts:85-88`) and answers with the pre-flip verdict until
 // its own copy expires. Both readers of `hasAccountSessionOversight` —
 // the single-session read (`apps/api/src/projects/lib/access.ts:365`) and the
-// project session inventory (`apps/api/src/projects/lib/session-list.ts:154`)
+// project session inventory (`apps/api/src/services/sessions/session-list.ts:154`)
 // — go through the same memo, so for up to ~15 s after an owner turns
 // oversight OFF, an admin hitting an unlucky replica still opens a member's
 // private session and still finds it in their manager inventory. The steps

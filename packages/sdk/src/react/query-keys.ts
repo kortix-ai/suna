@@ -239,7 +239,7 @@ export const qk = {
      * `'visible'` (the default; matches passing no `options` at all) returns
      * what the caller can see, while `'project'` is the manager-only lifecycle
      * inventory that also includes accessible warm and soft-deleted rows
-     * (`apps/api/src/projects/lib/session-inventory.ts`). Neither scope returns
+     * (`apps/api/src/services/sessions/session-inventory.ts`). Neither scope returns
      * sessions the caller cannot open.
      * Before this, both scopes shared one scope-less key, so whichever fetch
      * resolved last silently overwrote what the OTHER scope's readers saw —
@@ -254,7 +254,7 @@ export const qk = {
      * the identical array a scoped list produces, and the two would silently
      * overwrite each other. Session ids are `crypto.randomUUID()`
      * client-side and rejected server-side otherwise
-     * (`apps/api/src/projects/lib/sessions.ts`), so that made the collision
+     * (`apps/api/src/services/sessions/sessions.ts`), so that made the collision
      * unreachable, not impossible — safety by an invariant enforced in a
      * DIFFERENT package, with no link back to this file. `'list'` makes
      * `sessions(...)` structurally longer than `session(...)` for every

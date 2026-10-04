@@ -13,7 +13,7 @@ import {
   isValidIdentifier,
   resolveGrantedSecretEnv,
   type ResolvedProjectSecret,
-} from '../projects/secrets';
+} from '../services/secrets/secrets';
 import { agentMayUseEnv } from '../iam/agent-scope';
 import type { AgentGrant } from '@kortix/db';
 

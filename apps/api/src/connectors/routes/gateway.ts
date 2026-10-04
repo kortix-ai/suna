@@ -6,7 +6,7 @@ import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
 import { auth, errors, json } from '../../openapi';
-import { canonicalConnectorAlias } from '../../projects/lib/session-connector-bindings';
+import { canonicalConnectorAlias } from '../../services/sessions/session-connector-bindings';
 import { ATTACHMENT_REF_KEY } from '../attachment-inline';
 import { MAX_CONNECTOR_ATTACHMENT_BYTES, type StageConnectorAttachmentInput } from '../attachments';
 import { handleCall } from '../gateway';

@@ -27,7 +27,7 @@ function bunEval(script: string): string {
 }
 
 function gitTransportModuleUrl(): string {
-  return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git.ts')).href;
+  return pathToFileURL(join(import.meta.dir, '..', 'services', 'git', 'index.ts')).href;
 }
 
 describe('session branch git transport', () => {

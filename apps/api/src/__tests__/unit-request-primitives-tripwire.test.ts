@@ -68,7 +68,7 @@ const XFF_ALLOW: Record<string, string> = {
   'scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
   // TODO(follow-up): convert once PR #7403 lands. The raw header is stored on
   // purpose as webhook delivery metadata, so the follow-up keeps the raw value.
-  'projects/lib/trigger-webhook-auth.ts': 'webhook payload stores the raw forwarded header as metadata',
+  'services/triggers/trigger-webhook-auth.ts': 'webhook payload stores the raw forwarded header as metadata',
 };
 
 // Any 8-4-4-4-12 hex regex literal, strict or loose.

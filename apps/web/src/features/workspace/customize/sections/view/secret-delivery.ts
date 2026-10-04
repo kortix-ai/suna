@@ -56,7 +56,7 @@ export type SecretExposure = 'enforced' | 'environment' | 'disabled';
  *
  *  - `llm_gateway` — the LLM providers screen (`provider-connect.tsx`).
  *  - `connector`   — the connector binding, whose own control stays editable.
- *  - `git`         — the git-connection flow (`apps/api/src/projects/lib/git.ts`).
+ *  - `git`         — the git-connection flow (`apps/api/src/services/git/project-git.ts`).
  *
  * Offering any of them in the exposure picker would offer a choice that does
  * not exist, and saving would move the secret off the consumer the assigning
@@ -649,7 +649,7 @@ function admitsIdentifier(list: readonly string[], identifier: string): boolean 
  * governance posture?
  *
  * `agent_discovery` is the server's own verdict on whether the manifest
- * declares any agent (apps/api/src/projects/git/config.ts `resolveConfigAgents`)
+ * declares any agent (apps/api/src/services/git/config.ts `resolveConfigAgents`)
  * — `declarative` means it does, `opencode` means it declares none. Anything
  * else is a config we cannot read, and an unread config confirms rather than
  * guesses: a missed confirmation silently revokes working runtime secrets.
@@ -985,7 +985,7 @@ export type SecretEchoNotice = {
  *
  * There is one answer now. The relay returns an ordinary response with
  * `[REDACTED]` in place of the value (`redactSecretFromResponse`,
- * apps/api/src/secrets/http-broker.ts), on every sandbox provider. The
+ * apps/api/src/services/secrets/http-broker.ts), on every sandbox provider. The
  * provider-edge story — a cut connection that reads as `curl: (52) Empty reply
  * from server` — described a mechanism that no longer serves any project, and
  * telling a user to expect it made a working request look broken.

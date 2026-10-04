@@ -84,7 +84,7 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 // can't use — a free-tier managed model, or a BYOK model whose provider isn't
 // connected. The SAME wording is also returned as a 400 with
 // `code: 'INVALID_SESSION_MODEL'` (`apps/api/src/projects/routes/r7.ts:2811`
-// and `apps/api/src/projects/lib/sessions.ts:741`) for an explicit session
+// and `apps/api/src/services/sessions/sessions.ts:741`) for an explicit session
 // model. Both are EXPECTED, user-facing validation states — the SDK's
 // `useModelDefaults` `setMutation` `onError` already branches on the typed
 // 409 code and surfaces a user-facing toast via `platformConfig().onToast`,

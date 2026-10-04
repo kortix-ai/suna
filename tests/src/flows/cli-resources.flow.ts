@@ -346,7 +346,7 @@ flow(
         // Triggers are git-manifest-backed. Each API replica serves `triggers ls`
         // from its own in-process mirror cache, refreshed at most every
         // KORTIX_GIT_REFRESH_INTERVAL_MS (default 60_000 —
-        // apps/api/src/projects/git/mirror.ts refreshIntervalMs/lastRefreshAt).
+        // apps/api/src/services/git/mirror.ts refreshIntervalMs/lastRefreshAt).
         // The POST above may be served by one replica and this GET by a sibling,
         // so a just-created trigger is legitimately invisible for up to 60s on a
         // multi-replica deployment. Poll past one full refresh window instead of

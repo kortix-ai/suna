@@ -16,7 +16,7 @@ import {
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
-import { sessionMessageAuthors } from '../projects/lib/session-message-authors';
+import { sessionMessageAuthors } from '../services/sessions/session-message-authors';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 

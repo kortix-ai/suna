@@ -27,7 +27,7 @@ test('getProvider(platinum) throws without PLATINUM_API_KEY (fail-closed)', asyn
     // key. We assert the guard exists in the factory source as the durable check.
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
-    const src = readFileSync(join(import.meta.dir, 'index.ts'), 'utf8');
+    const src = readFileSync(join(import.meta.dir, '../../../platform/providers/index.ts'), 'utf8');
     expect(src.includes("case 'platinum':")).toBe(true);
     expect(/Platinum provider requires PLATINUM_API_KEY/.test(src)).toBe(true);
   } finally {

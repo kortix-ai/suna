@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
-import { parseManifestString } from '../projects/triggers';
+import { parseManifestString } from '../services/triggers';
 
 const v2 = (block: string) =>
   parseManifestString(`kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n${block}`, 'yaml', 'kortix.yaml');

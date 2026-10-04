@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let readCalls = 0;
 let readDelayMs = 20;
 
-mock.module('../session-reload', () => ({
+mock.module('../../../services/sessions/session-reload', () => ({
   readSandboxConfigState: async (_input: { sessionId: string }) => {
     readCalls += 1;
     await new Promise((resolve) => setTimeout(resolve, readDelayMs));
@@ -40,7 +40,7 @@ mock.module('../../../runtime-assets/manifest', () => ({
 }));
 
 const { probeRunningRelease, __resetTurnStartConvergenceForTests } = await import(
-  '../turn-start-convergence'
+  '../../../services/sessions/turn-start-convergence'
 );
 const { lastKnownRunningRelease } = await import('../../../config-releases/running-release');
 

@@ -15,7 +15,7 @@ export interface ApiLaunchOpts {
    *  name). Worktrees share the primary Supabase by default, so the lifecycle
    *  queue / env-sync / box reaper are one queue across every running API;
    *  `KORTIX_INSTANCE_ID` is what keeps one stack's (possibly dead) tunnel URL
-   *  out of another stack's sandboxes. See apps/api/src/projects/instance-scope.ts. */
+   *  out of another stack's sandboxes. See apps/api/src/services/sessions/instance-scope.ts. */
   instanceId?: string;
 }
 

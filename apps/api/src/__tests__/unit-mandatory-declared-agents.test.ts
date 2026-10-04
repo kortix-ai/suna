@@ -13,7 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_STARTER_TEMPLATE_ID, getStarterFiles } from '@kortix/starter';
 import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 /**
  * The manifest's own `default_agent`, asserted present. Every starter assertion

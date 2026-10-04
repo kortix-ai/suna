@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-import { loadProjectSessionInventory } from '../projects/lib/session-list';
+import { loadProjectSessionInventory } from '../services/sessions/session-list';
 import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();

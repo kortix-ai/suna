@@ -17,7 +17,7 @@ import {
   previewMerge,
   resolveBranchAheadState,
   resolveBranchTip,
-} from '../git';
+} from '../../services/git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -29,13 +29,13 @@ import {
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
 import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../lib/app';
-import { withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../lib/http-body';
-import { continueSession } from '../session-lifecycle';
+import { continueSession } from '../../services/sessions/lifecycle';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;

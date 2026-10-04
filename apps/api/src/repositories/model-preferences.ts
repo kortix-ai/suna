@@ -179,7 +179,7 @@ export async function deleteAccountModelPreference(params: {
  * `chooseEffectiveAgent` (llm-gateway/resolution/effective.ts) and its use in
  * default-model.ts's `cachedSessionAgent`. A session's `agent_name` column
  * lands on the `'default'` sentinel whenever session creation didn't resolve a
- * concrete name (see `createProjectSession` in projects/lib/sessions.ts), most
+ * concrete name (see `createProjectSession` in services/sessions/sessions.ts), most
  * commonly because `project.metadata.default_agent` wasn't populated even
  * though the project's kortix.yaml declares one — without this fallback, an
  * agent-scope model pin keyed by that declared name is silently never applied.

@@ -20,7 +20,7 @@ import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 // Imported BEFORE the `mock.module` below replaces the module: the fake daemon
 // answers with real SSE bytes, so the route must keep the real parser.
-import { parseSseFrames as realParseSseFrames } from '../lib/session-runtime-transport';
+import { parseSseFrames as realParseSseFrames } from '../../services/sessions/session-runtime-transport';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -64,7 +64,7 @@ mock.module('../lib/access', () => ({
   loadVisibleSession: async () => visibleSession,
 }));
 
-mock.module('../lib/session-runtime-transport', () => ({
+mock.module('../../services/sessions/session-runtime-transport', () => ({
   openRuntimeEventStream: async (
     _target: unknown,
     options: { since?: number | null; epoch?: string | null },
@@ -75,22 +75,22 @@ mock.module('../lib/session-runtime-transport', () => ({
   parseSseFrames: realParseSseFrames,
 }));
 
-mock.module('../lib/session-runtime-projection-refresh', () => ({
+mock.module('../../services/sessions/session-runtime-projection-refresh', () => ({
   refreshRuntimeProjection: async () => ({ refreshed: false, reason: 'test' }),
   scheduleRuntimeProjectionRefresh: () => {},
 }));
 
-mock.module('../lib/session-runtime-projection', () => ({
+mock.module('../../services/sessions/session-runtime-projection', () => ({
   readRuntimeLeg: async () => ({ known: false, reason: 'no_projection' }),
 }));
 
-const controlEvents = await import('../lib/session-control-events');
+const controlEvents = await import('../../services/sessions/session-control-events');
 const { publishControlEvent, CONTROL_EPOCH, __resetControlEventsForTests } = controlEvents;
 
 /** The reconciler is replaced with a hand-driven one: this file is about the
  *  ROUTE, and a real reconciler would put a DB poll on a 5 s timer inside it. */
 let reconcilerSnapshot: unknown[] = [];
-mock.module('../lib/session-control-reconciler', () => ({
+mock.module('../../services/sessions/session-control-reconciler', () => ({
   acquireControlReconciler: () => ({
     ready: async () => {},
     snapshot: () => reconcilerSnapshot,

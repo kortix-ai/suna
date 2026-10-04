@@ -20,7 +20,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import { resolveSessionOwnerIdentities } from '../../projects/lib/access';
-import type { SessionOwnerIdentity } from '../../projects/lib/session-inventory';
+import type { SessionOwnerIdentity } from '../sessions/session-inventory';
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from '../../lib/db';
 import {

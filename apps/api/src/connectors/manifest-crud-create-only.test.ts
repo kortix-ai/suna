@@ -67,7 +67,7 @@ const fakeDb: any = {
 };
 
 mock.module('../lib/db', () => ({ db: fakeDb }));
-mock.module('../projects/lib/git', () => ({
+mock.module('../services/git/project-git', () => ({
   withProjectGitAuth: async (project: Record<string, unknown>) => ({
     ...project,
     gitAuthToken: 'test-token',

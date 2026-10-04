@@ -1,5 +1,5 @@
 // No runtime imports beyond @kortix/shared: `projects/agents.ts` resolves the
-// coordinator's grant from here, and `projects/git/config.ts` imports that —
+// coordinator's grant from here, and `services/git/config.ts` imports that —
 // which `e2e-project-session-branch-git` loads in a `bun --eval` subprocess and
 // parses stdout from. Pulling `feature-flags/registry` (and through it the
 // config module, which banners on stdout) into that chain breaks it. The
@@ -10,7 +10,7 @@ import {
   META_SANDBOX_SLUG,
 } from '@kortix/shared';
 import type { AgentGrant } from '@kortix/db';
-import type { ProjectConfigSummary } from '../git/types';
+import type { ProjectConfigSummary } from '../../services/git/types';
 
 export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {
   return {

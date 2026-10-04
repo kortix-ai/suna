@@ -1,7 +1,7 @@
 /**
  * Regression test for Better Stack error `8d0cffbb…`
  * ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — state
- * Reoccurred, call site `runGit` at `apps/api/src/projects/git/mirror.ts`).
+ * Reoccurred, call site `runGit` at `apps/api/src/services/git/mirror.ts`).
  *
  * Root cause: `git clone --bare` writes its progress line
  *   `Cloning into bare repository '/…/….git'...`
@@ -16,7 +16,7 @@
  * skipped the clone, and tried to `fetch` from a broken half-repo — wedging
  * every reader for the process lifetime.
  *
- * The fix (in `projects/git/mirror.ts`):
+ * The fix (in `services/git/mirror.ts`):
  *   1. `runGit` now throws a typed `GitOperationError` (kind 'timeout' |
  *      'failed'). A killed/timed-out process is `kind: 'timeout'` with a
  *      message that names the timeout + signal — NEVER the `Cloning into …`
@@ -49,7 +49,7 @@ const {
   refreshMirror,
   repoCachePath,
   runGit,
-} = await import('../projects/git/mirror');
+} = await import('../services/git/mirror');
 
 test('runGit applies backend-produced Authorization headers without rebuilding GitHub auth', async () => {
   const basic = `Basic ${Buffer.from('t:code-storage-jwt').toString('base64')}`;

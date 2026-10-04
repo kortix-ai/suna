@@ -21,7 +21,7 @@
 import { type ManifestFormat, parseManifestText } from '@kortix/manifest-schema';
 
 /** Highest manifest schema version this platform ships and reads. Mirrored by
- *  `MAX_SCHEMA_VERSION` in `../triggers` (kept separate to avoid an import
+ *  `MAX_SCHEMA_VERSION` in `../../services/triggers` (kept separate to avoid an import
  *  cycle: `triggers` pulls in the git layer, which consumes this module). */
 export const LATEST_MANIFEST_VERSION = 3;
 

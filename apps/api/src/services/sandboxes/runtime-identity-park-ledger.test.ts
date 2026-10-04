@@ -1,0 +1,280 @@
+/**
+ * The two parks that are NOT applyStoppedState.
+ *
+ * `preserveEstablishedRuntime` (the provider says the box is gone) and
+ * `parkEstablishedRuntime` (stop it and leave it wakeable) both flip a row to
+ * `stopped` in their own transaction. Every token-scoped `session_turns` settle
+ * requires an `active`/`provisioning` row, so after either of them commits
+ * nothing can ever close a turn that was still open — the row would claim a
+ * turn is running for ever. These tests pin the settle into those two
+ * transactions.
+ *
+ * `runtime-identity.test.ts` stays pure-function only; this file carries the
+ * database mock so that suite keeps needing no harness.
+ */
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
+import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realSentry from '../../lib/sentry';
+import * as realProviders from '../../platform/providers';
+import { mockConfigModule } from './reaping/test-support/mock-config';
+
+let statements: Array<{ sql: string; inTransaction: boolean }> = [];
+let sandboxUpdates = 0;
+let inTransaction = false;
+let liveSession = true;
+let liveSandbox = true;
+let providerStops = 0;
+/** Whether a transaction was open when the provider stop ran. */
+let stopsInTransaction = 0;
+let computeEnds = 0;
+let savepoints = 0;
+/** When set, every `tx.execute` fails with this message. */
+let executeThrows: string | null = null;
+/** `runtime_lost` exceptions filed. */
+let lostReports = 0;
+
+function describeSql(expression: unknown): string {
+  const chunks = (expression as { queryChunks?: unknown[] } | null)?.queryChunks ?? [];
+  return chunks
+    .map((chunk) => {
+      if (typeof chunk === 'string') return chunk;
+      if (!chunk || typeof chunk !== 'object') return '';
+      const value = (chunk as { value?: unknown }).value;
+      if (Array.isArray(value)) return value.join('');
+      if (typeof value === 'string') return value;
+      return (chunk as { name?: string }).name ?? '';
+    })
+    .join(' ');
+}
+
+mock.module('../../lib/config', () => mockConfigModule());
+
+const updater = (table: unknown) => ({
+  set: () => ({
+    where: () => ({
+      returning: async () => {
+        if (table === projectSessions) return liveSession ? [{ sessionId: 'sess-1' }] : [];
+        if (!liveSandbox) return [];
+        sandboxUpdates += 1;
+        return [{ sandboxId: 'sb-1', sessionId: 'sess-1' }];
+      },
+    }),
+  }),
+});
+
+const executor = async (statement: unknown) => {
+  statements.push({ sql: describeSql(statement), inTransaction });
+  if (executeThrows) throw new Error(executeThrows);
+};
+
+// A nested drizzle transaction is a SAVEPOINT: the settle rides inside one so a
+// ledger failure cannot abort a park whose provider box is already stopped.
+const transactionScope: Record<string, unknown> = {
+  update: updater,
+  execute: executor,
+  transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+    savepoints += 1;
+    return fn(transactionScope);
+  },
+};
+
+mock.module('../../lib/db', () => ({
+  db: {
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      inTransaction = true;
+      try {
+        return await fn(transactionScope);
+      } finally {
+        inTransaction = false;
+      }
+    },
+    update: updater,
+    execute: executor,
+  },
+}));
+
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits.
+mock.module('../../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
+  endComputeSession: async () => {
+    computeEnds += 1;
+  },
+  reopenComputeForSandbox: async () => undefined,
+}));
+
+mock.module('../../lib/sentry', () => ({
+  ...realSentry,
+  captureException: (error: unknown) => {
+    if (String(error).includes('runtime_lost')) lostReports += 1;
+  },
+}));
+
+mock.module('../../platform/providers', () => ({
+  ...realProviders,
+  getProvider: () => ({
+    stop: async () => {
+      providerStops += 1;
+      if (inTransaction) stopsInTransaction += 1;
+    },
+  }),
+}));
+
+const { parkEstablishedRuntime, preserveEstablishedRuntime } = await import('./runtime-identity');
+
+const ROW = {
+  sandboxId: 'sb-1',
+  sessionId: 'sess-1',
+  externalId: 'ext-1',
+  metadata: {
+    activeTurns: {
+      'open-token': { token: 'open-token', state: 'active', opencodeSessionId: 'ses_root' },
+    },
+  },
+  provider: 'daytona',
+  updatedAt: new Date('2026-08-23T00:00:00.000Z'),
+};
+
+beforeEach(() => {
+  statements = [];
+  sandboxUpdates = 0;
+  inTransaction = false;
+  liveSession = true;
+  liveSandbox = true;
+  providerStops = 0;
+  stopsInTransaction = 0;
+  computeEnds = 0;
+  savepoints = 0;
+  executeThrows = null;
+  lostReports = 0;
+});
+
+describe('parks outside applyStoppedState settle the turn ledger', () => {
+  test('preserveEstablishedRuntime settles open turns as runtime_gone, in its transaction', async () => {
+    await preserveEstablishedRuntime(ROW, 'provider_webhook_removed', 'provider_removed');
+
+    expect(sandboxUpdates).toBe(1);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]?.inTransaction).toBe(true);
+    expect(statements[0]?.sql).toContain('UPDATE kortix.session_turns');
+    expect(statements[0]?.sql).toContain('runtime_gone');
+    expect(statements[0]?.sql).toContain('sb-1');
+    expect(statements[0]?.sql).toContain("state <> 'ended'");
+  });
+
+  test('parkEstablishedRuntime settles open turns as runtime_gone, in its transaction', async () => {
+    await parkEstablishedRuntime(
+      ROW as Parameters<typeof parkEstablishedRuntime>[0],
+      'opencode_ready_wait_stale',
+      'runtime_boot_failed',
+    );
+
+    // The stop claim, then the park.
+    expect(sandboxUpdates).toBe(2);
+    // The provider stop runs between them, with no transaction open.
+    expect(providerStops).toBe(1);
+    expect(stopsInTransaction).toBe(0);
+    expect(computeEnds).toBe(1);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]?.inTransaction).toBe(true);
+    expect(statements[0]?.sql).toContain('UPDATE kortix.session_turns');
+    expect(statements[0]?.sql).toContain('runtime_gone');
+  });
+
+  test('a park that loses the session CAS writes no ledger settle', async () => {
+    liveSession = false;
+
+    expect(await preserveEstablishedRuntime(ROW, 'provider_gone', 'provider_removed')).toBeNull();
+
+    // Nothing was parked, so nothing ended.
+    expect(sandboxUpdates).toBe(0);
+    expect(statements).toEqual([]);
+  });
+
+  test('a stale readiness park that loses the sandbox CAS preserves the newer wake', async () => {
+    liveSandbox = false;
+
+    expect(
+      await parkEstablishedRuntime(
+        ROW as Parameters<typeof parkEstablishedRuntime>[0],
+        'runtime_wake_timeout',
+        'runtime_wake_failed',
+      ),
+    ).toBeNull();
+
+    expect(providerStops).toBe(0);
+    expect(computeEnds).toBe(0);
+    expect(sandboxUpdates).toBe(0);
+    expect(statements).toEqual([]);
+  });
+
+  // The settle is savepoint-bounded so an observation-table failure cannot
+  // abort the park transaction. parkEstablishedRuntime stops the provider only
+  // after its stop claim wins, and parks the rows only after the stop.
+  test('a ledger settle that throws leaves the park committed', async () => {
+    executeThrows = 'canceling statement due to statement timeout';
+    const error = console.error;
+    console.error = () => {};
+    try {
+      expect(
+        await parkEstablishedRuntime(
+          ROW as Parameters<typeof parkEstablishedRuntime>[0],
+          'opencode_ready_wait_stale',
+          'runtime_boot_failed',
+        ),
+      ).not.toBeNull();
+    } finally {
+      console.error = error;
+    }
+
+    expect(sandboxUpdates).toBe(2);
+    expect(savepoints).toBe(1);
+  });
+
+  test('each settle runs inside a savepoint of the park transaction', async () => {
+    await preserveEstablishedRuntime(ROW, 'provider_webhook_removed', 'provider_removed');
+
+    expect(savepoints).toBe(1);
+  });
+});
+
+describe('a lost runtime is reported once', () => {
+  test('the first preserve reports it; a repeat for the same identity does not', async () => {
+    await preserveEstablishedRuntime(ROW, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+
+    // Every open of a lost session runs the removed path again.
+    const alreadyLost = {
+      ...ROW,
+      metadata: { runtimeIdentityState: 'unavailable', preservedExternalId: 'ext-1' },
+    };
+    await preserveEstablishedRuntime(alreadyLost, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+
+    // A DIFFERENT box lost by the same session is a new loss.
+    await preserveEstablishedRuntime(
+      { ...alreadyLost, externalId: 'ext-2' },
+      'runtime_removed',
+      'provider_removed',
+    );
+    expect(lostReports).toBe(2);
+  });
+});
+
+describe('a Kortix-initiated removal is not a lost runtime', () => {
+  const removal = (extra: Record<string, unknown>) =>
+    preserveEstablishedRuntime({ ...ROW, ...extra }, 'provider_webhook_removed', 'provider_removed');
+
+  test('account teardown stamp, archived session and pending removal are not reported', async () => {
+    expect(await removal({ metadata: { kortixRemovalIntentAt: '2026-10-01T00:00:00Z' } })).not.toBeNull();
+    expect(await removal({ status: 'archived', metadata: {} })).not.toBeNull();
+    expect(await removal({ metadata: { providerRemovalPendingAt: '2026-10-01T00:00:00Z' } })).not.toBeNull();
+    expect(lostReports).toBe(0);
+  });
+
+  test('the same webhook for a live session is still reported', async () => {
+    await removal({ status: 'active', metadata: {} });
+    expect(lostReports).toBe(1);
+  });
+});

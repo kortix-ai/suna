@@ -11,8 +11,8 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { buildContinueSessionCommandValues } from '../projects/session-lifecycle';
-import { continuationOverrides } from '../projects/session-lifecycle/queued-continue-delivery';
+import { buildContinueSessionCommandValues } from '../services/sessions/lifecycle';
+import { continuationOverrides } from '../services/sessions/lifecycle/queued-continue-delivery';
 import { db } from '../lib/db';
 import {
   removeSeeded,

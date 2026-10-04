@@ -1,18 +1,18 @@
 /** Inbound trigger webhooks: `POST /v1/webhooks/projects/:projectId/:slug` fires a webhook trigger. */
 import { db } from '../../lib/db';
-import { getProjectSecretValueForConsumer } from '../secrets';
-import { loadProjectTriggers } from '../triggers';
-import { invalidateProjectMirror } from '../git';
+import { getProjectSecretValueForConsumer } from '../../services/secrets/secrets';
+import { loadProjectTriggers } from '../../services/triggers';
+import { invalidateProjectMirror } from '../../services/git';
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json } from '../../openapi';
 import { TriggerFireResultSchema, projectWebhooksApp } from '../lib/app';
-import { withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../lib/validate';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../../services/triggers/trigger-runtime';
 import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,

@@ -27,7 +27,7 @@ stored archive: 404". `serveConfigArchive`
 project's git origin is replaced with a second, unrelated repository, the OLD
 config tree is unreachable from the new origin's history — no fetch
 regenerates it. The bare mirror lives on per-ECS-task ephemeral disk
-(`apps/api/src/projects/git/mirror.ts`, `repoCachePath` keyed only by
+(`apps/api/src/services/git/mirror.ts`, `repoCachePath` keyed only by
 `projectId`), not shared across replicas, so a replica whose mirror never
 warmed before the replacement clones straight from the CURRENT origin and can
 never contain the old tree — a permanent 404 there, even though the archive

@@ -17,8 +17,8 @@ import {
   reloadSessionConfig,
   type SessionReloadDeps,
   type SessionReloadResult,
-} from '../session-reload';
-import type { DaemonConvergeResponse } from '../session-config-release';
+} from '../../../services/sessions/session-reload';
+import type { DaemonConvergeResponse } from '../../../services/sessions/session-config-release';
 
 const RELEASE_A = 'a'.repeat(64);
 const RELEASE_B = 'b'.repeat(64);
@@ -417,8 +417,8 @@ describe('compiled-governance push callers', () => {
       // The definition files hold the symbol; only callers count.
       if (
         file.endsWith('.test.ts') ||
-        file.endsWith('projects/lib/sandbox-env-sync.ts') ||
-        file.endsWith('projects/lib/sandbox-session-push.ts')
+        file.endsWith('services/sandboxes/sandbox-env-sync.ts') ||
+        file.endsWith('services/sandboxes/sandbox-session-push.ts')
       )
         continue;
       const code = readFileSync(join(src, file), 'utf8')
@@ -428,8 +428,8 @@ describe('compiled-governance push callers', () => {
       if (code.includes('pushSessionAgentConfigToSandbox')) users.push(relative(src, join(src, file)));
     }
     expect(users.sort()).toEqual([
-      'projects/lib/session-config-convergence.ts',
-      'projects/lib/session-reload.ts',
+      'services/sessions/session-config-convergence.ts',
+      'services/sessions/session-reload.ts',
     ]);
   });
 });

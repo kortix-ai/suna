@@ -3,7 +3,7 @@
  * sibling of `running-assets.ts` (binaries) and `config-releases/
  * running-release.ts` (config releases), and a LEAF for the identical reason
  * both of those are: it imports nothing, so `projects/lib/
- * turn-start-convergence.ts` and `projects/lib/model-catalog-turn-start.ts`
+ * turn-start-convergence.ts` and `services/sessions/model-catalog-turn-start.ts`
  * can both read it without an import cycle.
  *
  * An OPTIMISATION, never an authority. A miss costs one extra

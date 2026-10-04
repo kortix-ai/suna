@@ -53,35 +53,35 @@ mock.module('../lib/access', () => ({
   },
   loadVisibleSession: async () => visibleSession,
 }));
-mock.module('../lib/session-turn-read', () => ({
+mock.module('../../services/sessions/session-turn-read', () => ({
   readSessionTurnState: async () => {
     legCalls.push('turn');
     return turnLeg();
   },
 }));
-mock.module('../session-lifecycle/inbox-rows', () => ({
+mock.module('../../services/sessions/lifecycle/inbox-rows', () => ({
   listInboxPrompts: async () => {
     legCalls.push('queue');
     return queueLeg();
   },
 }));
-mock.module('../lib/session-transcript', () => ({
+mock.module('../../services/sessions/session-transcript', () => ({
   buildSessionTranscriptSyncEnvelope: async (input: { limit: number }) => {
     legCalls.push('transcript');
     transcriptLimits.push(input.limit);
     return transcriptLeg(input.limit);
   },
 }));
-mock.module('../lib/session-prompt-view', () => ({
+mock.module('../../services/sessions/session-prompt-view', () => ({
   serializePrompt: (row: Record<string, unknown>) => row,
 }));
-mock.module('../lib/session-runtime-projection', () => ({
+mock.module('../../services/sessions/session-runtime-projection', () => ({
   readRuntimeLeg: async () => {
     legCalls.push('runtime');
     return runtimeLeg();
   },
 }));
-mock.module('../lib/session-runtime-projection-refresh', () => ({
+mock.module('../../services/sessions/session-runtime-projection-refresh', () => ({
   scheduleRuntimeProjectionRefresh: (target: Record<string, unknown>) => {
     refreshCalls.push(target);
   },
@@ -99,7 +99,7 @@ mock.module('../../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => true,
   accountHasEntitlement: async () => auditedAccount,
 }));
-mock.module('../lib/session-audit-read', () => ({
+mock.module('../../services/sessions/session-audit-read', () => ({
   readSessionAuditActions: async () => {
     legCalls.push('audit');
     return auditLeg();

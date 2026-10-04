@@ -9,7 +9,7 @@ mock.module('node:dns/promises', () => ({
 const { assertConnectorEndpointUrl, createConnectorEgressFetch } = await import('./egress');
 const { resolveCatalog } = await import('./sync');
 import type { ConnectorSpec } from '../projects/connectors';
-import type { GitBackedProject } from '../projects/git';
+import type { GitBackedProject } from '../services/git';
 
 let fetchCalls: string[] = [];
 let responses: Array<{ status: number; headers?: Record<string, string>; body?: string }> = [];

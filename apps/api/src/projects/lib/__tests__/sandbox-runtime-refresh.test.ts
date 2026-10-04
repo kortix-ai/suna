@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   refreshSandboxRuntimeAssets,
   type SandboxRuntimeRefreshDeps,
-} from '../sandbox-runtime-refresh';
+} from '../../../services/sandboxes/sandbox-runtime-refresh';
 
 const SANDBOX = { externalId: 'sbx-1', serviceKey: 'svc-key-1' };
 

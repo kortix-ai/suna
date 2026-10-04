@@ -12,7 +12,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { type SandboxStatus } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { serializeSessionSandboxConfig } from '../lib/serializers';
-import { repairInFlight } from '../session-lifecycle/readiness-clocks';
+import { repairInFlight } from '../../services/sessions/lifecycle/readiness-clocks';
 import {
   RUNTIME_START_MAX_FAILURES,
   RUNTIME_WAKE_GRACE_MS,
@@ -20,7 +20,7 @@ import {
   runtimeStartRetryAtMs,
   runtimeWakeInProgress,
   stampedRuntimeFailureState,
-} from '../session-lifecycle/runtime-wake-fence';
+} from '../../services/sessions/lifecycle/runtime-wake-fence';
 
 /**
  * The relative proxy path a client uses for all OpenCode (port 8000) traffic for

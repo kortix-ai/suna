@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { readAgentsGrantingApp } from './agent-grants';
-import type { GitBackedProject } from '../projects/git/types';
+import type { GitBackedProject } from '../services/git/types';
 
 // Release gate AGP-9 (v0.13.31): the grant was written to kortix.yaml on the
 // default branch, and GET /apps/:appId/agents, served by an API replica with a

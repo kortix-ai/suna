@@ -46,8 +46,8 @@ import { db } from '../../lib/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, grantsByAgent } from '../agents';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
-import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
-import { isRemotePushPolicyRejection } from '../git/mirror';
+import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../../services/git/branches';
+import { isRemotePushPolicyRejection } from '../../services/git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
@@ -69,11 +69,11 @@ import {
   manifestRuntime,
   selectSessionHarness,
 } from '../lib/compile-agent-config';
-import { withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../../services/git/project-git';
 import { metadataMerge } from '../lib/metadata-merge';
-import { loadManifestForEdit } from '../lib/triggers';
-import { allowStaleMirrorReads } from '../git/mirror';
-import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
+import { loadManifestForEdit } from '../../services/triggers/trigger-runtime';
+import { allowStaleMirrorReads } from '../../services/git/mirror';
+import { MANIFEST_FILENAME, manifestWrites } from '../../services/triggers';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_permissions actions, etc.) happens in

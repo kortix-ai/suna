@@ -101,7 +101,7 @@ export async function notifyConnectorSession(
     const meta = (session.metadata ?? {}) as Record<string, unknown>;
     if (typeof meta.deletedAt === 'string') return;
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
-      '../projects/session-lifecycle'
+      '../services/sessions/lifecycle'
     );
     // Idempotent by construction. Several callers legitimately observe the same
     // connect landing — the browser poll, the server-side completion watch, a

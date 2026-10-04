@@ -119,7 +119,7 @@ describe('abortErrorReason', () => {
 // `data.reason` — `applyOptimisticAbort` ('user') and
 // `markSessionAbortedLocally` ('runtime-disposed') — plus the two
 // not-yet-produced members declared ahead of their own follow-up work
-// (mirrors `apps/api/src/projects/stop-reason.ts`'s
+// (mirrors `apps/api/src/services/sandboxes/stop-reason.ts`'s
 // `STOP_REASONS_NOT_YET_EMITTED` pattern).
 describe('ABORT_REASONS', () => {
   test("declares 'user' and 'runtime-disposed' as the two currently-emitted reasons", () => {

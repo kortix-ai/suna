@@ -46,7 +46,7 @@ import { getProvider, type ProviderName } from '../../platform/providers';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../lib/db';
 import { logger } from '../../lib/logger';
-import { isPlausibleServiceKey } from './heal-session-token';
+import { isPlausibleServiceKey } from '../../services/sessions/heal-session-token';
 
 export { isPlausibleServiceKey };
 

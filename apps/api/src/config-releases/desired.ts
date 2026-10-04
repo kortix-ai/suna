@@ -12,10 +12,10 @@
  * unbootable.
  */
 
-import { resolveCommitSha } from '../projects/git/commits';
-import { invalidateProjectMirror } from '../projects/git/mirror';
-import type { GitBackedProject } from '../projects/git/types';
-import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
+import { resolveCommitSha } from '../services/git/commits';
+import { invalidateProjectMirror } from '../services/git/mirror';
+import type { GitBackedProject } from '../services/git/types';
+import { repositoryAccessFromSessionMetadata } from '../services/sessions/session-sandbox-metadata';
 import {
   buildConfigRelease,
   toDescriptor,

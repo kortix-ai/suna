@@ -11,7 +11,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * server-side only.
  */
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptProjectSecret, encryptProjectSecret } from '../services/secrets/secrets';
 import { db } from '../lib/db';
 import { isUniqueViolation } from '../lib/postgres-errors';
 import {

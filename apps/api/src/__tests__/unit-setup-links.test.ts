@@ -5,7 +5,7 @@
  * (the HKDF input) is present.
  */
 import { describe, expect, test } from 'bun:test';
-import { encryptProjectSecret } from '../projects/secrets';
+import { encryptProjectSecret } from '../services/secrets/secrets';
 import { mintSetupLink, resolveSetupLink } from '../setup-links/token';
 
 const PROJECT_A = '11111111-1111-4111-8111-111111111111';

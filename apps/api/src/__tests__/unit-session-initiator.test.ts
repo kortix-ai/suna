@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { inheritParentOrigin } from '../projects/lib/session-origin';
-import { resolveRootSessionInitiator, sessionInitiatorLabel } from '../projects/lib/session-initiator';
-import { sessionRowMatchesSearch } from '../projects/lib/session-list';
+import { inheritParentOrigin } from '../services/sessions/session-origin';
+import { resolveRootSessionInitiator, sessionInitiatorLabel } from '../services/sessions/session-initiator';
+import { sessionRowMatchesSearch } from '../services/sessions/session-list';
 
 const USER = '11111111-1111-1111-1111-111111111111';
 const root = (source: string | null, extra: Partial<Parameters<typeof resolveRootSessionInitiator>[0]> = {}) =>

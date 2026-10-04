@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { GitBackedProject } from '../projects/git/types';
+import type { GitBackedProject } from '../services/git/types';
 import {
   prebuildCompiledBootArtifacts,
   prebuildDefaultBranchArtifacts,

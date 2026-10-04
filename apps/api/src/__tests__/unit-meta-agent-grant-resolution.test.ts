@@ -20,8 +20,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { grantFromLoadedAgents, type LoadedAgents } from '../projects/agents';
 import { platformMetaAgentGrant } from '../projects/lib/platform-meta-agent';
-import { remintDecisionFor } from '../projects/lib/session-token-grant';
-import { agentGrantDiffers } from '../projects/lib/secret-grant';
+import { remintDecisionFor } from '../services/sessions/session-token-grant';
+import { agentGrantDiffers } from '../services/secrets/secret-grant';
 
 const UNGOVERNED: LoadedAgents = { specs: [], errors: [], defaultAgent: null };
 

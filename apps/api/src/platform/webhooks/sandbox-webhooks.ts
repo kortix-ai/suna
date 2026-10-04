@@ -1,6 +1,6 @@
 /**
  * Provider sandbox-lifecycle webhook ingress — the DETERMINISTIC billing-close
- * path. The reaper sweep (projects/sandbox-reaper.ts) is the backstop; these
+ * path. The reaper sweep (services/sandboxes/sandbox-reaper.ts) is the backstop; these
  * webhooks make billing close the instant a provider reports a box stopped,
  * instead of up to a sweep-interval later.
  *
@@ -24,7 +24,7 @@ import { recordWebhookEvent } from '../../billing/services/webhook-concurrency';
 import {
   reconcileSandboxStoppedByExternalId,
   reconcileSandboxRemovedByExternalId,
-} from '../../projects/sandbox-reaper';
+} from '../../services/sandboxes/sandbox-reaper';
 import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 import { readStandardWebhookHeaders, verifyStandardWebhook } from '../../lib/webhooks/standard-webhooks';
 

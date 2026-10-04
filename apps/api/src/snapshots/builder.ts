@@ -14,7 +14,7 @@
  */
 
 import { runWorkerTick } from '../services/audit/audit-scope';
-import { resolveCommitSha, type GitBackedProject } from '../projects/git';
+import { resolveCommitSha, type GitBackedProject } from '../services/git';
 import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
 import {
   computeTemplateIdentity,

@@ -1,4 +1,4 @@
-import { commitManifest, loadManifestForEdit } from '../projects/lib/triggers';
+import { commitManifest, loadManifestForEdit } from '../services/triggers/trigger-runtime';
 
 export type ManifestMutationResult =
   | { ok: true; commitMessage: string | null }

@@ -18,8 +18,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountGithubInstallations } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
-import type { GitHubAppInstallation } from '../projects/github';
-import { dropAccountGitHubInstallation, listAccountGitHubInstallations } from '../projects/lib/git';
+import type { GitHubAppInstallation } from '../services/github/github';
+import { dropAccountGitHubInstallation, listAccountGitHubInstallations } from '../services/git/project-git';
 import { upsertAccountGitHubInstallation } from '../projects/routes/github-installations';
 import { db } from '../lib/db';
 import { seedAccount } from './helpers/integration-fixtures';

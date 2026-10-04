@@ -20,11 +20,11 @@ import type { ConnectionOwnerType } from '../projects/lib/connection-access';
 import {
   getProjectSecretConsumerConfigurationStatus,
   getProjectSecretValueForConsumer,
-} from '../projects/secrets';
+} from '../services/secrets/secrets';
 import {
   canonicalConnectorAlias,
   resolveSessionConnectorConnectionOutcome,
-} from '../projects/lib/session-connector-bindings';
+} from '../services/sessions/session-connector-bindings';
 import { db } from '../lib/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { connectorAttachmentStore } from './attachments';

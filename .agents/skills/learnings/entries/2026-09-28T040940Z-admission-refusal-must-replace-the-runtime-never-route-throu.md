@@ -36,7 +36,7 @@ because replacement deletes the sandbox row the old counter would have lived
 on. Never pulls a box out from under a live turn
 (`sessionHoldsTurnAuthority`).
 
-**Enforcement:** `apps/api/src/projects/runtime-identity-replace-refused.test.ts`
+**Enforcement:** `apps/api/src/services/sandboxes/runtime-identity-replace-refused.test.ts`
 (retire claims/stops/deletes correctly, never touches a serving box),
 `apps/api/src/projects/routes/replace-refused-runtime-on-open.test.ts` (refusal
 on a running box yields `stage:'provisioning'`/`'starting'`, `retriable:true`,

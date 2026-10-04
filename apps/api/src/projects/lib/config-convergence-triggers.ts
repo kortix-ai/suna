@@ -4,7 +4,7 @@
  * `convergeSessionConfig`; neither ends or delays a turn.
  *
  * They are a WARM-UP, not the guarantee. The guarantee is
- * `convergeBeforeTurnStart` (projects/lib/turn-start-convergence.ts): a prompt
+ * `convergeBeforeTurnStart` (services/sessions/turn-start-convergence.ts): a prompt
  * on a box that is behind converges before it runs. These triggers move a box
  * onto the new config while nobody is waiting, so that gate finds it current.
  *
@@ -30,9 +30,9 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../lib/db';
-import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
-import { invalidateDesiredRelease } from './turn-start-convergence';
-import { invalidateProjectMirror } from '../git/mirror';
+import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from '../../services/sessions/session-config-convergence';
+import { invalidateDesiredRelease } from '../../services/sessions/turn-start-convergence';
+import { invalidateProjectMirror } from '../../services/git/mirror';
 import { isUuid } from '../../lib/validate';
 
 export const BASE_MOVE_WINDOW_MS = 30_000;

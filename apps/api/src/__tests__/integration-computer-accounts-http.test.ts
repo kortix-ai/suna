@@ -49,7 +49,7 @@ import { setImpersonationContext } from '../iam/impersonation';
 import { handleCall } from '../connectors/gateway';
 import type { ConnectorPrincipal } from '../connectors/router';
 import { app } from '../index';
-import { listEntitledConnectorConnections } from '../projects/lib/session-connector-bindings';
+import { listEntitledConnectorConnections } from '../services/sessions/session-connector-bindings';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { db } from '../lib/db';

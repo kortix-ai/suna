@@ -2720,7 +2720,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// OpenCode stamps `data.isRetryable === true` and keeps writing the
 			// SAME assistant message, and apps/api reaches the same conclusion
 			// from this same event (`isTerminalTurnEnd`,
-			// apps/api/src/projects/sandbox-deadline-policy.ts:295). Writing
+			// apps/api/src/services/sandboxes/sandbox-deadline-policy.ts:295). Writing
 			// `idle` here made a live turn byte-identical to a finished one, and
 			// `endedByRuntime` (core/session/working.ts) then vetoed the still-open
 			// ledger row with no time bound — the Stop button disappeared mid-turn

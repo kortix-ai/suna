@@ -31,7 +31,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../src/lib/db';
 import { generateAccountTokenPair, hashSecretKey } from '../src/lib/crypto';
 import { createApiKey } from '../src/repositories/api-keys';
-import { encryptProjectSecret } from '../src/projects/secrets';
+import { encryptProjectSecret } from '../src/services/secrets/secrets';
 
 const KORTIX_URL = (process.env.KORTIX_URL || 'http://localhost:8009').replace(/\/$/, '');
 const REPO = process.env.E2E_REPO || 'markokraemer/kortix-proxy-e2e';

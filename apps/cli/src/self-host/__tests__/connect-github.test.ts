@@ -130,7 +130,7 @@ describe('extractParam / callback parsing', () => {
 });
 
 describe('buildAppCredentialsEnvPatch (env-wiring, step after manifest exchange)', () => {
-  test('produces exactly the keys apps/api/src/projects/github.ts reads, plus stored credentials', () => {
+  test('produces exactly the keys apps/api/src/services/github/github.ts reads, plus stored credentials', () => {
     const patch = buildAppCredentialsEnvPatch({
       appId: '123456',
       slug: 'kortix-self-host-abcd',

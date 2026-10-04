@@ -14,7 +14,7 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import {
   type ConnectionAudienceReach,
   type ConnectionOwnerType,
@@ -27,7 +27,7 @@ import { loadConnectionSharing } from '../lib/connection-sharing';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readJsonObject } from '../../lib/http-body';
-import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
+import { canonicalConnectorAlias } from '../../services/sessions/session-connector-bindings';
 import {
   ConnectionViewSchema,
   computerConnectionFields,

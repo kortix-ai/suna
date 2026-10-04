@@ -205,7 +205,7 @@ const envSchema = z.object({
   // running API). Set by the launchers (`scripts/dev-local.sh` → `primary`,
   // `scripts/worktree/lib/launch-env.ts` → the worktree name). Unset in every
   // deployed environment → every scope check is a no-op.
-  // See projects/instance-scope.ts.
+  // See services/sessions/instance-scope.ts.
   KORTIX_INSTANCE_ID: z.string().trim().optional(),
 
   // Wildcard domain every preview ORIGIN sits under
@@ -357,7 +357,7 @@ const envSchema = z.object({
   CODE_STORAGE_ORG: optStr,
   // PKCS8 PEM private key (EC or RSA — algorithm auto-detected) code.storage
   // issued you; signs every management-API and git-push/pull JWT server-side
-  // (projects/git-backends/code-storage.ts's `mintCodeStorageJwt`). Never
+  // (services/git/backends/code-storage.ts's `mintCodeStorageJwt`). Never
   // logged, returned to a caller, or embedded verbatim — only its signatures
   // leave this process. \n-escaped or quote-wrapped values are normalized.
   CODE_STORAGE_PRIVATE_KEY: optStr,

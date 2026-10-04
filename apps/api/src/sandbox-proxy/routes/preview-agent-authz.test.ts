@@ -65,12 +65,12 @@ mock.module('../../iam', () => ({
       : { allowed: false, reason: 'resource_scope_insufficient' };
   },
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async (input: { requestedAgent?: string | null }) => {
     envSyncCalls.push({ requestedAgent: input.requestedAgent });
   },
 }));
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../services/sessions/session-token-grant', () => ({
   // Declared-agent guard: every name these cases use is declared unless a test
   // puts it in `undeclaredAgents`.
   agentLaunchableInProject: async (_projectId: string, agentName: string) =>
@@ -81,7 +81,7 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   },
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/lib/turn-start-convergence', () => ({
+mock.module('../../services/sessions/turn-start-convergence', () => ({
   // The C9 turn-start convergence gate reads the session's project row before
   // every prompt. There is no database in this file, so each call waits out the
   // driver's connect timeout — 5 s per prompt, which times these cases out.
@@ -94,11 +94,11 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // immediately keeps every case in this file off the network.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../services/sessions/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
-mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+const realTurnLifecycle = await import('../../services/sandboxes/sandbox-turn-lifecycle');
+mock.module('../../services/sandboxes/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
   acceptSandboxTurn: async () => true,

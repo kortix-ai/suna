@@ -16,7 +16,7 @@ import { isUuid } from '../../lib/validate';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -32,7 +32,7 @@ import {
   parseReminderDraft,
   serializeSessionReminder,
   setSessionReminderEnabled,
-} from '../lib/session-reminders';
+} from '../../services/sessions/session-reminders';
 
 const ReminderSchema = z.object({}).passthrough();
 const sessionParams = z.object({ projectId: z.string(), sessionId: z.string() });

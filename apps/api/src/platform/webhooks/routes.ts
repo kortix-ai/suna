@@ -9,7 +9,7 @@ import { handleDaytonaWebhook, handlePlatinumWebhook } from './sandbox-webhooks'
  *
  * This is the FAST path of a deliberate two-tier strategy:
  *   1. webhook (here) — closes billing the moment the provider reports a stop;
- *   2. the reaper sweep (projects/sandbox-reaper.ts) — polls the provider's real
+ *   2. the reaper sweep (services/sandboxes/sandbox-reaper.ts) — polls the provider's real
  *      state every maintenance cycle and reconciles/closes anything the webhook
  *      missed. The sweep needs ZERO per-environment config, so local/dev/preview
  *      are fully correct on the reaper alone; webhooks are a prod latency win,

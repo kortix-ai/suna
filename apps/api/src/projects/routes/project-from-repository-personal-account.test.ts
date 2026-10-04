@@ -17,7 +17,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import { GitHubPersonalAccountCreateUnsupportedError } from '../lib/github-create-errors';
+import { GitHubPersonalAccountCreateUnsupportedError } from '../../services/github/github-create-errors';
 
 const FAKE_ACCOUNT_ID = '00000000-0000-4000-a000-000000009930';
 const FAKE_USER_ID = '00000000-0000-4000-a000-000000009931';
@@ -72,8 +72,8 @@ mock.module('../../iam', () => ({
   assertAuthorized: async () => {},
 }));
 
-const realGit = await import('../lib/git');
-mock.module('../lib/git', () => ({
+const realGit = await import('../../services/git/project-git');
+mock.module('../../services/git/project-git', () => ({
   ...realGit,
   resolveGitHubRepoAuth: async () => ({
     auth: {
@@ -90,8 +90,8 @@ mock.module('../lib/git', () => ({
 }));
 
 let storedUserToken: { token: string; githubLogin: string; expiresAt: number | null } | null = null;
-const realUserToken = await import('../lib/github-user-token');
-mock.module('../lib/github-user-token', () => ({
+const realUserToken = await import('../../services/github/github-user-token');
+mock.module('../../services/github/github-user-token', () => ({
   ...realUserToken,
   resolveGitHubUserToken: async (input: { ownerLogin: string }) =>
     storedUserToken && storedUserToken.githubLogin.toLowerCase() === input.ownerLogin.toLowerCase()
@@ -99,10 +99,10 @@ mock.module('../lib/github-user-token', () => ({
       : null,
 }));
 
-const realGithub = await import('../github');
+const realGithub = await import('../../services/github/github');
 
 // The real `createRepo` refuses an installation token under a personal owner
-// (`../github.test.ts` pins that). Here the mock reproduces the refusal so this
+// (`../../services/github/github.test.ts` pins that). Here the mock reproduces the refusal so this
 // file tests what the ROUTE does: which credential it hands over, and what it
 // answers when there is none.
 const mockAddRepositoryToInstallation = mock(
@@ -114,7 +114,7 @@ const mockCreateRepo = mock(async (input: { name: string; auth?: { source?: stri
   }
   return fakeRepo(currentOwner.login, input.name);
 });
-mock.module('../github', () => ({
+mock.module('../../services/github/github', () => ({
   ...realGithub,
   createRepo: mockCreateRepo,
   addRepositoryToInstallation: mockAddRepositoryToInstallation,

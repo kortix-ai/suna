@@ -15,20 +15,20 @@ import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from 
 import { projectsApp } from '../lib/app';
 import { isUuid } from '../../lib/validate';
 import { readJsonObject } from '../../lib/http-body';
-import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { allowStaleMirrorReads } from '../git/mirror';
+import { resolveEffectiveSessionConnectorBindings } from '../../services/sessions/session-connector-bindings';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { allowStaleMirrorReads } from '../../services/git/mirror';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { resolveSessionAgentGrant } from '../lib/secret-grant';
+import { resolveSessionAgentGrant } from '../../services/secrets/secret-grant';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../lib/session-model-change';
-import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
+import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../../services/sessions/session-model-change';
+import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../../services/sandboxes/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../connectors/connector-alias';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { admitSessionModelChange } from '../lib/session-model-keys';
+import { admitSessionModelChange } from '../../services/sessions/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import {
   authorizeScopeRescope,

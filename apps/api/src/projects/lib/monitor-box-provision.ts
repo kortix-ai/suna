@@ -20,15 +20,15 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { createApiKey } from '../../repositories/api-keys';
 import { db } from '../../lib/db';
 import { DEFAULT_SANDBOX_SLUG, ensureSandboxImage, resolveTemplate } from '../../snapshots/builder';
-import type { GitBackedProject } from '../git/types';
-import { listProjectSecretsSnapshotForUser } from '../secrets';
-import { resolveProjectAutomationActor } from '../session-lifecycle/actor';
+import type { GitBackedProject } from '../../services/git/types';
+import { listProjectSecretsSnapshotForUser } from '../../services/secrets/secrets';
+import { resolveProjectAutomationActor } from '../../services/sessions/lifecycle/actor';
 import type { MonitorCatalogRow, MonitorProjectSnapshot } from './monitor-box-core';
 import { buildMonitorEnvPayload, intersectMonitorSecretGrants } from './monitor-box-core';
 import { MONITOR_PROVIDER, monitorProviderConfigured } from './monitor-box-provider';
-import { isReservedSandboxEnvName } from './sandbox-env-names';
-import { resolveSessionSecretGrant } from './secret-grant';
-import { deriveKortixApiBase, proxyGitUrl } from './sessions';
+import { isReservedSandboxEnvName } from '../../services/sandboxes/sandbox-env-names';
+import { resolveSessionSecretGrant } from '../../services/secrets/secret-grant';
+import { deriveKortixApiBase, proxyGitUrl } from '../../services/sessions/sessions';
 
 /**
  * The monitor box's metering spec fallback. Matched to the session default for

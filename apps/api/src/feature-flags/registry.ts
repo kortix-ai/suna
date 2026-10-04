@@ -172,7 +172,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote:
       'Enablement forks the whole model path: KORTIX_LLM_* env injection at ' +
       'sandbox provision, provider-key secret delivery (withheld when on, ' +
-      'plaintext env when off — projects/secrets.ts materializeSecretDelivery), ' +
+      'plaintext env when off — services/secrets/secrets.ts materializeSecretDelivery), ' +
       'gateway model validation vs native provider/model refs, the gated ' +
       'llm-catalog/model-picker/model-defaults routes, and gateway title ' +
       'generation. Toggling propagates to active sandboxes via ' +
@@ -304,7 +304,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
-      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
+      'Read at session provisioning (services/sessions/sessions.ts buildSessionSandboxEnvVars → ' +
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
   {

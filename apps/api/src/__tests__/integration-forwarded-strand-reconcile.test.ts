@@ -19,9 +19,9 @@
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
-import * as realOpencodeMapping from '../projects/opencode-mapping';
-import * as realDrain from '../projects/session-lifecycle/drain';
-import { WIRE_ID_TIME_SCALE } from '../projects/wire-message-id';
+import * as realOpencodeMapping from '../services/sessions/opencode-mapping';
+import * as realDrain from '../services/sessions/lifecycle/drain';
+import { WIRE_ID_TIME_SCALE } from '../services/sessions/wire-message-id';
 
 const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
@@ -59,11 +59,11 @@ function nextKick(timeoutMs = 5_000): Promise<'kicked' | 'timeout'> {
   });
 }
 
-mock.module('../projects/opencode-mapping', () => ({
+mock.module('../services/sessions/opencode-mapping', () => ({
   ...realOpencodeMapping,
   sandboxOpencodeEndpoint: async () => ({ url: BOX_URL, headers: {} }),
 }));
-mock.module('../projects/session-lifecycle/drain', () => ({
+mock.module('../services/sessions/lifecycle/drain', () => ({
   ...realDrain,
   drainSessionLifecycleQueue: (input: Record<string, unknown>) => {
     drainKicks.push(input);
@@ -74,10 +74,10 @@ mock.module('../projects/session-lifecycle/drain', () => ({
 
 const { db } = await import('../lib/db');
 const { reconcileForwardedTurnsAtEnd } = await import(
-  '../projects/session-lifecycle/forwarded-strand-reconcile'
+  '../services/sessions/lifecycle/forwarded-strand-reconcile'
 );
 const { enqueueContinueSessionCommand, markCommandForwarded } = await import(
-  '../projects/session-lifecycle/store'
+  '../services/sessions/lifecycle/store'
 );
 
 /** OpenCode's `GET /session/:id/message` body: ANSWERED, then STRANDED below

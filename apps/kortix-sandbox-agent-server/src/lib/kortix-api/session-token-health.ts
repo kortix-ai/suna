@@ -57,7 +57,7 @@ import { logger } from '../log/logger'
  * one `warn` 401 per 60 s tick to the API log. It never converts the dead token
  * into a terminal state of the box. The volume problem it was built for is
  * closed at its source: a box whose row and VM disagree is reconciled within
- * one sweep (apps/api/src/projects/reaping/row-vm-divergence.ts).
+ * one sweep (apps/api/src/services/sandboxes/reaping/row-vm-divergence.ts).
  */
 // Keep terminal credential-state reasons aligned with validateToken in
 // apps/api/src/repositories/account-tokens.ts. Other responses reset the streak.

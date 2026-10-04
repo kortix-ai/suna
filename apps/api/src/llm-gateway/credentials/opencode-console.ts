@@ -23,8 +23,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { accountSecretResources, projectSecrets } from '@kortix/db';
 import type { ProviderKind } from '@kortix/llm-gateway';
 import { db } from '../../lib/db';
-import { decryptProjectSecret, encryptProjectSecret } from '../../projects/secrets/envelope';
-import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
+import { decryptProjectSecret, encryptProjectSecret } from '../../services/secrets/envelope';
+import { decryptAccountSecret, encryptAccountSecret } from '../../services/secrets/account-resource';
 import { recordAuditEvent } from '../../services/audit/audit';
 import { isPermanentRefreshRejection, refreshErrorCode } from './codex-core';
 

@@ -8,7 +8,7 @@ set statement_timeout = '30s';
 -- for. origin is derived from the caller's token kind at create time (never
 -- the request body) and gates which overrides the caller may set; origin_ref
 -- is the wrapper's opaque user id, non-null only on backend-origin sessions.
--- See apps/api/src/projects/lib/session-origin.ts and the KaaB v1 plan.
+-- See apps/api/src/services/sessions/session-origin.ts and the KaaB v1 plan.
 --
 -- Purely additive:
 --   [x] New enum type (no table touched).

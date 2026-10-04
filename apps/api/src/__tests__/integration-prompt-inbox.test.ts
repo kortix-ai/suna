@@ -17,11 +17,11 @@ import {
   admitInboxPrompt,
   hasLaterReleasedSibling,
   sessionHoldsTurnAuthority,
-} from '../projects/session-lifecycle/inbox-admission';
+} from '../services/sessions/lifecycle/inbox-admission';
 import {
   confirmInboxPromptConsumed,
   reconcileForwardedPrompts,
-} from '../projects/session-lifecycle/consumption';
+} from '../services/sessions/lifecycle/consumption';
 import {
   deleteInboxPrompt,
   editInboxPrompt,
@@ -32,12 +32,12 @@ import {
   releaseInboxHold,
   sessionHasHoldMark,
   retryInboxPrompt,
-} from '../projects/session-lifecycle/inbox-rows';
-import { remintForRepair } from '../projects/session-lifecycle/inbox-placement';
-import { requeueAbandonedPrompt } from '../projects/session-lifecycle/redelivery';
-import { findInboxRowIdByMessageId } from '../projects/session-lifecycle/cancel-forwarded';
-import { settleInboxHoldAfterStop } from '../projects/session-lifecycle/inbox-hold-settle';
-import { acceptSandboxTurn } from '../projects/sandbox-turn-lifecycle';
+} from '../services/sessions/lifecycle/inbox-rows';
+import { remintForRepair } from '../services/sessions/lifecycle/inbox-placement';
+import { requeueAbandonedPrompt } from '../services/sessions/lifecycle/redelivery';
+import { findInboxRowIdByMessageId } from '../services/sessions/lifecycle/cancel-forwarded';
+import { settleInboxHoldAfterStop } from '../services/sessions/lifecycle/inbox-hold-settle';
+import { acceptSandboxTurn } from '../services/sandboxes/sandbox-turn-lifecycle';
 import {
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,
@@ -48,11 +48,11 @@ import {
   promoteNextInboxRow,
   requeueForAdmission,
   requeueUnverifiedRedelivery,
-} from '../projects/session-lifecycle/store';
-import type { CommandLease } from '../projects/session-lifecycle/command-lease';
+} from '../services/sessions/lifecycle/store';
+import type { CommandLease } from '../services/sessions/lifecycle/command-lease';
 import { db } from '../lib/db';
 import { logger } from '../lib/logger';
-import { promptState } from '../projects/lib/session-prompt-view';
+import { promptState } from '../services/sessions/session-prompt-view';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();

@@ -24,8 +24,8 @@ mock.module('../projects/routes/shared', () => ({
   openSession: async () => ({ stage: 'starting', sandbox: null, opencode_session_id: null, retriable: true }),
 }));
 
-const { healSupersededSessionToken } = await import('../projects/lib/heal-session-token');
-const { startSession } = await import('../projects/session-lifecycle/start-session');
+const { healSupersededSessionToken } = await import('../services/sessions/heal-session-token');
+const { startSession } = await import('../services/sessions/lifecycle/start-session');
 
 type Row = Record<string, unknown>;
 const rows = (result: unknown) => ((result as { rows?: Row[] }).rows ?? result) as Row[];

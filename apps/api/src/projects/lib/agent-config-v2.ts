@@ -26,7 +26,7 @@ import {
   validateManifest,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
-import type { ParsedManifest } from '../triggers';
+import type { ParsedManifest } from '../../services/triggers';
 import { isDeepStrictEqual } from 'node:util';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses

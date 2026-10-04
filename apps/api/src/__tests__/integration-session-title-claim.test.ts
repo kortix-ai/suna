@@ -16,14 +16,14 @@ import { eq, sql } from 'drizzle-orm';
 import {
   PLACEHOLDER_TITLE_SQL_PATTERN,
   isPlaceholderOpencodeTitle,
-} from '../projects/lib/opencode-title';
+} from '../services/sessions/opencode-title';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
-import { transitionSession } from '../projects/session-lifecycle/status-transitions';
-import { persistTitle } from '../projects/session-title-generate';
+import { transitionSession } from '../services/sessions/lifecycle/status-transitions';
+import { persistTitle } from '../services/sessions/session-title-generate';
 import { db } from '../lib/db';
 import { getPublicSessionInfo } from '../services/sessions/public-session-share-view';
 
-const { syncOpencodeSessionSnapshot } = await import('../projects/opencode-session-snapshot');
+const { syncOpencodeSessionSnapshot } = await import('../services/sessions/opencode-session-snapshot');
 
 // The runtime projection a running sandbox reported to the snapshot pass.
 const runtimeLeg = (async () => ({

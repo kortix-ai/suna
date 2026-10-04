@@ -11,7 +11,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../lib/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager } from '../access';
-import { getBackend, hasBackend } from '../git-backends';
+import { getBackend, hasBackend } from '../../services/git/backends';
 import { buildProvisionContext, runProvision } from '../provision-core';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
@@ -22,7 +22,7 @@ import {
   GitHubInstallationRequiredError,
   createGitHubInstallationInstallUrl,
   resolveGitHubImport,
-} from '../lib/git';
+} from '../../services/git/project-git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import {
   deriveProjectName,

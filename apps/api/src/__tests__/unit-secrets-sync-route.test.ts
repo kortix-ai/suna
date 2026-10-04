@@ -56,8 +56,8 @@ const REPORT = {
 };
 const projectWide: string[] = [];
 const ownSession: Array<[string, string]> = [];
-const realSync = await import('../projects/lib/sandbox-env-sync');
-mock.module('../projects/lib/sandbox-env-sync', () => ({
+const realSync = await import('../services/sandboxes/sandbox-env-sync');
+mock.module('../services/sandboxes/sandbox-env-sync', () => ({
   ...realSync,
   propagateProjectSecretsToActiveSandboxes: async (projectId: string) => {
     projectWide.push(projectId);
@@ -71,8 +71,8 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
 
 const reconciled: string[] = [];
 let reconcileThrows = false;
-const realGrant = await import('../projects/lib/session-token-grant');
-mock.module('../projects/lib/session-token-grant', () => ({
+const realGrant = await import('../services/sessions/session-token-grant');
+mock.module('../services/sessions/session-token-grant', () => ({
   ...realGrant,
   reconcileStoredSessionAgentGrant: async (input: { sessionId: string }) => {
     reconciled.push(input.sessionId);

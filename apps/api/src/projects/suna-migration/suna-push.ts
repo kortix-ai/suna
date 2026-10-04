@@ -8,8 +8,8 @@
  */
 import { dirname, join } from 'node:path';
 import { mkdirSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
-import { getDefaultManagedBackend } from '../git-backends/registry';
-import type { GitConnectionRef } from '../git-backends/types';
+import { getDefaultManagedBackend } from '../../services/git/backends/registry';
+import type { GitConnectionRef } from '../../services/git/backends/types';
 import { buildStarterFiles } from '../starter';
 
 const STARTER_TEMPLATE = 'general-knowledge-worker';

@@ -14,5 +14,5 @@ code for every session that never asked for a provider by name. *Incident:*
 provider at capacity in one hour with ZERO handoffs recorded in
 `session_sandboxes` — `createProjectSession` forwarded the balancer's pick and
 the provisioner read any provider as explicit. *Enforcer:*
-`apps/api/src/projects/lib/sessions.provider-failover-wiring.test.ts` fails if
+`apps/api/src/services/sessions/sessions.provider-failover-wiring.test.ts` fails if
 either end stops honoring `providerLocked`.

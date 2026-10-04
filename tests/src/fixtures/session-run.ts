@@ -22,7 +22,7 @@ export function runtimePath(sandboxId: string, suffix: string): string {
 /**
  * `POST /stop` answers 200 `stopped` when the provider confirms inside the API's
  * 17 s budget, and 200 `stopping` when it does not (the stop then finishes in
- * the background; apps/api/src/projects/session-lifecycle/stop.ts). Both are the
+ * the background; apps/api/src/services/sessions/lifecycle/stop.ts). Both are the
  * contract. For `stopping`, this helper waits until the stop landed: the sandbox
  * row leaves `active`, which a repeat `/stop` reports as 409 "not running".
  * `waitUntilStoppable` retries a 409 on the FIRST call while the row is still

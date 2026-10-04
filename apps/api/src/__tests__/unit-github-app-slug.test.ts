@@ -16,7 +16,7 @@ import {
   resolveGitHubAppPermissions,
   resetGitHubAppSlugCache,
   resolveGitHubAppSlug,
-} from '../projects/github';
+} from '../services/github/github';
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,

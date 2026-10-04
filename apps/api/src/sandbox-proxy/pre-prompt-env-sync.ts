@@ -3,7 +3,7 @@
  * out of `routes/preview.ts` so it can be imported WITHOUT evaluating the route.
  *
  * That split is load-bearing, not cosmetic. `routes/preview.ts` binds its
- * collaborators (`../projects/lib/sandbox-env-sync`, `session-token-grant`,
+ * collaborators (`../services/sandboxes/sandbox-env-sync`, `session-token-grant`,
  * `opencode-session-snapshot`, `../../config`, `../backend`, `../../iam`, …) at
  * module-evaluation time, and every sibling proxy suite replaces exactly those
  * modules with `mock.module` before importing the route. Bun's module registry
@@ -27,21 +27,21 @@
  * `routes/preview.ts` re-exports the public names, so every existing import
  * path keeps working.
  */
-import { isTurnStartRequest } from '../projects/turn-start-request';
+import { isTurnStartRequest } from '../services/sandboxes/turn-start-request';
 import { classifyRuntimeRequest } from './runtime-request';
 import type { ProviderName } from '../platform/providers';
 import type { bindSessionTurnIdentity } from '../projects/lib/on-behalf-of';
-import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
-import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
+import type { syncSandboxEnvForPrompt } from '../services/sandboxes/sandbox-env-sync';
+import { SecretGrantResolutionError } from '../services/secrets/secret-grant';
 import {
   SessionGrantRemintError,
   type remintGrantForAgentSwitch,
-} from '../projects/lib/session-token-grant';
-import type { scheduleOpencodeSnapshotSync } from '../projects/opencode-session-snapshot';
+} from '../services/sessions/session-token-grant';
+import type { scheduleOpencodeSnapshotSync } from '../services/sessions/opencode-session-snapshot';
 import {
   extractPromptInfo,
   type generateSessionTitleFromFirstPrompt,
-} from '../projects/session-title-generate';
+} from '../services/sessions/session-title-generate';
 
 /** One JSON error body with the proxy's CORS pair applied. Lives here rather
  *  than in the route because every refusal below builds one, and the route must
@@ -88,7 +88,7 @@ const RETRYABLE_ENV_SYNC_ERROR_CODES = new Set([
 
 export function isRetryableEnvSyncFailure(err: unknown): boolean {
   const e = err as { name?: unknown; code?: unknown; status?: unknown } | null | undefined;
-  // `EnvSyncHttpError` (projects/lib/sandbox-env-push.ts), matched by name so
+  // `EnvSyncHttpError` (services/sandboxes/sandbox-env-push.ts), matched by name so
   // this module does not import the push module's DB graph.
   if (e?.name === 'EnvSyncHttpError') return e.status === 502 || e.status === 503 || e.status === 504;
   return RETRYABLE_ENV_SYNC_ERROR_NAMES.has(String(e?.name)) || RETRYABLE_ENV_SYNC_ERROR_CODES.has(String(e?.code));
@@ -272,7 +272,7 @@ export function bodyWithoutPromptAgent(
  *
  * Every case refuses the prompt rather than forwarding it: the sandbox's env is
  * provisioned for ONE agent's grant, so a prompt we can't prove is entitled to
- * that env must not reach OpenCode. See projects/lib/secret-grant.ts.
+ * that env must not reach OpenCode. See services/secrets/secret-grant.ts.
  */
 export function secretGrantErrorResponse(err: unknown, origin?: string): Response | null {
   // NOTE: no branch here returns 409. A prompt naming a different agent is
@@ -435,7 +435,7 @@ export async function runPrePromptEnvSync(
         providerHeaders: input.providerHeaders,
         providerName: record.provider as ProviderName,
         // The secret grant is resolved from the agent this prompt actually runs,
-        // not the session's create-time column — see projects/lib/secret-grant.ts.
+        // not the session's create-time column — see services/secrets/secret-grant.ts.
         requestedAgent,
       }),
       input.bindTurnIdentity && userId

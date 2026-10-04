@@ -10,7 +10,7 @@
  * keeping its own regex.
  *
  * A LEAF: it imports nothing, so a proxy suite that replaces a module with
- * `mock.module` cannot poison it (see `projects/turn-start-request.ts`).
+ * `mock.module` cannot poison it (see `services/sandboxes/turn-start-request.ts`).
  */
 
 /** The verb of a turn-starting request. `prompt` is the Kortix route. */

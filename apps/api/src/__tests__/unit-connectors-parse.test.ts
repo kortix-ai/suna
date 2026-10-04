@@ -14,7 +14,7 @@ import {
   KNOWN_SCHEMA_VERSION,
   parseManifestString,
   serializeManifest,
-} from '../projects/triggers';
+} from '../services/triggers';
 
 const MIN_PROJECT = `project:
   name: test

@@ -179,7 +179,7 @@ switch (command) {
     let sha = arg('sha');
     if (!sha) {
       const project = await loadProject(projectId);
-      const { resolveCommitSha } = await import('../src/projects/git/commits');
+      const { resolveCommitSha } = await import('../src/services/git/commits');
       sha = await resolveCommitSha(project, project.defaultBranch);
     }
     process.exit(await printStatus(projectId, sha));

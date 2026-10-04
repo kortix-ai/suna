@@ -10,4 +10,4 @@ incident_date: 2026-09-29
 
 **Incident:** 2026-09-29, a near-miss found while removing the `session_transcript_history` flag. Delivery named each file's saved copy in its reference, but the legacy repair matched only the reference without it. It threw "does not map to one runtime part" and kept every later prompt of the session queued. That happened only when the repair marker write had failed after the first prompt. No production report.
 
-**Enforcement:** `apps/api/src/projects/session-lifecycle/legacy-inline-attachment-repair.test.ts` ("recognizes command-key XML that names its saved copy"), and the two pending-first recovery tests in `__tests__/queued-continue-inbox-delivery.test.ts`, which now always deliver with a saved copy.
+**Enforcement:** `apps/api/src/services/sessions/lifecycle/legacy-inline-attachment-repair.test.ts` ("recognizes command-key XML that names its saved copy"), and the two pending-first recovery tests in `__tests__/queued-continue-inbox-delivery.test.ts`, which now always deliver with a saved copy.

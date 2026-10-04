@@ -24,7 +24,7 @@ import {
   RETRYABLE_GIT_AUTH_REASONS,
   type GitProxyAuth,
 } from '../projects';
-import type { GitScope, UpstreamGit } from '../projects/git-backends';
+import type { GitScope, UpstreamGit } from '../services/git/backends';
 import type { ProjectRow } from '../projects/lib/serializers';
 import type { AppEnv } from '../types/app-env';
 import { deriveRequestContext } from '../iam/cache';
@@ -49,10 +49,10 @@ import {
 } from './parse';
 import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
-import { loadGitProject } from '../projects/lib/git';
-import { refreshMirror, runGit } from '../projects/git/mirror';
-import { writeScaffoldDeltaBundle } from '../projects/git/commits';
-import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-hint';
+import { loadGitProject } from '../services/git/project-git';
+import { refreshMirror, runGit } from '../services/git/mirror';
+import { writeScaffoldDeltaBundle } from '../services/git/commits';
+import { resolveFastBootGitHintWithCache } from '../services/git/fast-boot-git-hint';
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -1082,7 +1082,7 @@ gitProxyApp.openapi(
     // route authenticates with its own token (git Basic/Bearer), so it must
     // place the grant `authorizeGitProxy` resolved. Without it a session is
     // default-denied beyond its own branch regardless of `project.gitops.ref.any`
-    // / `kortix_permissions: all` — see projects/lib/git.ts.
+    // / `kortix_permissions: all` — see services/git/project-git.ts.
     c.set('agentGrant', auth.agentGrant ?? null);
     // Ref policy runs HERE, between authorization and transmission — the only
     // point where both the principal and the refs it wants to move are known.

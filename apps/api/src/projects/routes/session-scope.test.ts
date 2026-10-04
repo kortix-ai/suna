@@ -111,16 +111,16 @@ mock.module('../lib/access', () => ({
     ownerIsMachine: false,
   }),
 }));
-const realMirror = await import('../git/mirror');
+const realMirror = await import('../../services/git/mirror');
 let staleReadCalls = 0;
-mock.module('../git/mirror', () => ({
+mock.module('../../services/git/mirror', () => ({
   ...realMirror,
   allowStaleMirrorReads: () => {
     staleReadCalls++;
   },
 }));
-const realSecretGrant = await import('../lib/secret-grant');
-mock.module('../lib/secret-grant', () => ({
+const realSecretGrant = await import('../../services/secrets/secret-grant');
+mock.module('../../services/secrets/secret-grant', () => ({
   ...realSecretGrant,
   resolveSessionAgentGrant: async () => {
     if (grantThrows) throw new Error('manifest unreadable');
@@ -130,13 +130,13 @@ mock.module('../lib/secret-grant', () => ({
 mock.module('../lib/personal-resources', () => ({
   resolveSessionPersonalOwner: async () => ownerId,
 }));
-const realSecrets = await import('../secrets');
-mock.module('../secrets', () => ({
+const realSecrets = await import('../../services/secrets/secrets');
+mock.module('../../services/secrets/secrets', () => ({
   ...realSecrets,
   listResolvedProjectSecrets: async () => availableSecretRows,
 }));
-const realEnvSync = await import('../lib/sandbox-env-sync');
-mock.module('../lib/sandbox-env-sync', () => ({
+const realEnvSync = await import('../../services/sandboxes/sandbox-env-sync');
+mock.module('../../services/sandboxes/sandbox-env-sync', () => ({
   ...realEnvSync,
   pushSessionScopeToSandbox: async () => {
     pushCalls++;
@@ -144,8 +144,8 @@ mock.module('../lib/sandbox-env-sync', () => ({
   },
   pushSessionModelToSandbox: async () => ({ ok: true }),
 }));
-const realScb = await import('../lib/session-connector-bindings');
-mock.module('../lib/session-connector-bindings', () => ({
+const realScb = await import('../../services/sessions/session-connector-bindings');
+mock.module('../../services/sessions/session-connector-bindings', () => ({
   ...realScb,
   resolveEffectiveSessionConnectorBindings: async () =>
     invalidated ? effectiveAfter : effectiveBefore,

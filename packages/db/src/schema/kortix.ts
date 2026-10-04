@@ -1111,7 +1111,7 @@ export const projectSessions = kortixSchema.table(
       .where(sql`${table.parentSessionId} is not null`),
     // Served the retired per-END-USER Kortix-as-a-Backend session cap (COUNT
     // of one origin_ref's live sessions); no query reads it now. Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
-    // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
+    // apps/api/src/services/sessions/session-status.ts) and on origin_ref IS NOT
     // NULL, so it indexes only live backend sessions — a small fraction of the
     // table, and nothing at all for non-KaaB projects.
     // Supports the KaaB "list this end-user's sessions" filter, which spans ALL
@@ -2121,8 +2121,8 @@ export const sessionSandboxes = kortixSchema.table(
     // and re-anchors it only after a park the trigger witnessed itself.
     activeSince: timestamp('active_since', { withTimezone: true }).defaultNow().notNull(),
     // When the control plane stops this box. Writers:
-    // apps/api/src/projects/sandbox-deadline.ts and
-    // apps/api/src/projects/sandbox-turn-lifecycle.ts. Active turns renew this
+    // apps/api/src/services/sandboxes/sandbox-deadline.ts and
+    // apps/api/src/services/sandboxes/sandbox-turn-lifecycle.ts. Active turns renew this
     // value only after fresh control-plane observation.
     deadlineAt: timestamp('deadline_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4823,7 +4823,7 @@ export const accessRequests = kortixSchema.table(
 // PR-equivalent for Kortix-native git workflows. A change_request proposes
 // merging `head_ref` into `base_ref` for a given project. The CR is metadata;
 // the underlying git operations (fetch, diff, merge) run through
-// apps/api/src/projects/git.ts and work against whichever backend the
+// apps/api/src/services/git/index.ts and work against whichever backend the
 // project's repo URL points to (GitHub, GitLab, plain git).
 
 export const changeRequestStatusEnum = kortixSchema.enum('change_request_status', [

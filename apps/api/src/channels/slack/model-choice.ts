@@ -14,7 +14,7 @@ import { config } from '../../lib/config';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
+import { validateNativeOpencodeModelRef } from '../../services/sessions/session-model-change';
 import {
   type ChannelModelOption,
   type ChannelModelScope,

@@ -28,8 +28,8 @@ mock.module('../lib/db', () => ({
 // `projectConfig` is mutable so governance tests can flip a project between
 // legacy (no fixed catalog) and declarative (`[[agents]]` adopted).
 let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null }>; agent_discovery?: string } = { agents: [] };
-mock.module('../projects/lib/git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
-mock.module('../projects/git', () => ({
+mock.module('../services/git/project-git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
+mock.module('../services/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => projectConfig,
   readManifestFromRepo: async () => null,

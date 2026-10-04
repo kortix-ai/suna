@@ -9,13 +9,13 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../lib/db';
-import { continueSession } from '../session-lifecycle';
+import { continueSession } from '../../services/sessions/lifecycle';
 import {
   getOpenQuestion,
   recordPendingQuestion,
   renderAnswerPrompt,
   resolvePendingQuestion,
-} from '../lib/pending-questions';
+} from '../../services/sessions/pending-questions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import {
@@ -24,8 +24,8 @@ import {
   TurnQuestionRelayBodySchema,
 } from '@kortix/api-contract/runtime-relay';
 import { AnyObject, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
 import { readJsonObject } from '../../lib/http-body';
 import { notifySessionEvent } from '../../notifications/session-push';
 export function registerTurnQuestionsRoutes(): void {

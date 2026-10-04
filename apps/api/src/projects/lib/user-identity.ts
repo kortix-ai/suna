@@ -11,7 +11,7 @@ import { ttlMemo } from '../../lib/ttl-memo';
 import { isUuid } from '../../lib/validate';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { accountRoleFor } from '../../iam/read-models';
-import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
+import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from '../../services/sessions/session-inventory';
 
 export interface UserIdentity {
   /** Email from the auth provider, or null if the user has none. */

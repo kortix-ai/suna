@@ -16,5 +16,5 @@ heartbeat probe's `sessions new` cold-cloned a private mirror, got `fatal:
 repository '<url>' not found`, and hard-failed with HTTP 500 (KX-HOURLY FAIL,
 2026-09-23T10:06Z) — while the git proxy served the same repository 200 seconds
 before and after. **Enforcers:** `isTransientGitMirrorError` and
-`cloneBareWithRetry` in `apps/api/src/projects/git/mirror.ts`;
+`cloneBareWithRetry` in `apps/api/src/services/git/mirror.ts`;
 `mirror-transient.test.ts`, `unit-git-mirror-transient-onerror.test.ts`.

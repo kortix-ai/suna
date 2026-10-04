@@ -33,14 +33,14 @@ import {
   listProjectSecrets,
   listResolvedProjectSecrets,
   writeSharedProjectSecret,
-} from '../projects/secrets';
-import { resolveGrantedSecretSelection } from '../projects/secrets/grant-policy';
+} from '../services/secrets/secrets';
+import { resolveGrantedSecretSelection } from '../services/secrets/grant-policy';
 import {
   clearSecretAudience,
   secretAudienceSubject,
   sessionPersonOnlyPlaintextSecrets,
   setSecretAudience,
-} from '../projects/lib/secret-audience';
+} from '../services/secrets/secret-audience';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 

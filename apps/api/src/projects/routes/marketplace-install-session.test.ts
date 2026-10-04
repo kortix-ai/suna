@@ -58,7 +58,7 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => gatewayOn,
 }));
-mock.module('../session-lifecycle', () => ({
+mock.module('../../services/sessions/lifecycle', () => ({
   createSession: async () => {
     createSessionCalls += 1;
     return {
@@ -67,8 +67,8 @@ mock.module('../session-lifecycle', () => ({
     };
   },
 }));
-const realGit = await import('../lib/git');
-mock.module('../lib/git', () => ({
+const realGit = await import('../../services/git/project-git');
+mock.module('../../services/git/project-git', () => ({
   ...realGit,
   loadGitProject: async () => ({ row: {}, manifestPath: null }),
 }));
