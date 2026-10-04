@@ -10,6 +10,7 @@ import {
   buildProjectGitConnectionValues,
   buildProjectGitMetadata,
   type ProjectGitWriteAuth,
+  upsertProjectGitCredential,
 } from './project-git-write';
 import { resolveGitHubImportWithPat } from './git';
 
@@ -177,16 +178,13 @@ export async function persistProjectRepositoryReplacement(input: {
         eq(projectGitCredentials.provider, 'github'),
       ));
     } else {
-      const valueEnc = encryptProjectSecret(input.projectId, input.token);
-      const [credential] = await tx.insert(projectGitCredentials).values({
-        accountId: input.accountId, projectId: input.projectId, provider: 'github',
-        authMethod: 'token', valueEnc, createdBy: input.actorId, updatedAt: now,
-      }).onConflictDoUpdate({
-        target: [projectGitCredentials.projectId, projectGitCredentials.provider],
-        set: { valueEnc, createdBy: input.actorId, updatedAt: now },
-      }).returning();
-      if (!credential) throw new Error('Project Git credential was not persisted');
-      credentialId = credential.credentialId;
+      credentialId = await upsertProjectGitCredential(tx, {
+        accountId: input.accountId,
+        projectId: input.projectId,
+        token: input.token,
+        createdBy: input.actorId,
+        now,
+      });
     }
 
     const connectionValues = buildProjectGitConnectionValues(input.repo, auth, {
