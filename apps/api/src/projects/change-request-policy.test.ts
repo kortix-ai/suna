@@ -145,10 +145,10 @@ describe('requiredManifestActions — a merge needs what the direct route assert
     expect(requiredManifestActions(withTrigger, base, 'yaml')).toEqual(['project.trigger.delete']);
   });
 
-  test('switching default_agent needs project.customize.write', () => {
+  test('switching default_agent needs project.agent.write', () => {
     const two = `${base}  b: {}\n`;
     expect(requiredManifestActions(two, two.replace('default_agent: a', 'default_agent: b'), 'yaml')).toEqual([
-      'project.customize.write',
+      'project.agent.write',
     ]);
   });
 

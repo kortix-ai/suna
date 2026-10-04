@@ -200,7 +200,7 @@ export interface ConnectorPrincipal {
   requestedConnectorAccount?: string | null;
   /**
    * Present when the caller is an agent session under the agent-principal
-   * model (flag `agent_principal` ON, governed grant). Personal resources
+   * model (a governed grant). Personal resources
    * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
