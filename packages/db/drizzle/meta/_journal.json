@@ -831,6 +831,13 @@
     {
       "idx": 118,
       "version": "7",
+      "when": 1791081225637,
+      "tag": "20261004023345_chat_pending_auth_messages_project_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
       "when": 1791084603328,
       "tag": "20261004033003_gateway_logs_session_rollup_index",
       "breakpoints": true
