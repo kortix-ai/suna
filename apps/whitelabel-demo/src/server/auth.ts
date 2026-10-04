@@ -80,7 +80,7 @@ export function verifySession(token: string | null | undefined): SessionPayload 
 }
 
 /** Pull the bearer token out of an `Authorization: Bearer …` header, if present. */
-function bearerFromHeader(req: Request): string | null {
+export function bearerFromHeader(req: Request): string | null {
   const header = req.headers.get('authorization');
   if (!header?.startsWith('Bearer ')) return null;
   return header.slice('Bearer '.length).trim() || null;

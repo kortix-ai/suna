@@ -2,6 +2,7 @@ import type { SessionCostSummary } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
+import { upstreamBase } from '@/server/upstream-path';
 import { isValidProjectId, listOwnedProjects } from '@/server/users';
 import type {
   SessionCostsResponse,
@@ -11,13 +12,6 @@ import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function upstreamBase(): string {
-  return (process.env.KORTIX_UPSTREAM ?? 'https://api.kortix.com/v1').replace(
-    /\/+$/,
-    '',
-  );
-}
 
 function markupMultiplier(): number {
   const value = Number(process.env.COST_MARKUP ?? 1.2);

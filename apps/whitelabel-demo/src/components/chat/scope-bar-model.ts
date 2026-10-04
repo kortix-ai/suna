@@ -20,8 +20,8 @@ import {
   collidingIdentifiers,
   normalizeSecretKey,
 } from '@/lib/secret-collisions';
-import { isAllowlistable } from '@/lib/secret-scope';
-import { type ScopeRowKey, isFixedAtStart } from '@/lib/session-scope';
+import { selectAllowlistableSecrets } from '@/lib/secret-scope';
+import { type ScopeRowKey, isFixedAtStart, scopeBadge } from '@/lib/session-scope';
 import type {
   BindableConnection,
   ConnectorBindingChoice,
@@ -44,19 +44,19 @@ export interface ScopeControl {
 
 const COPY: Record<ScopeControlKey, { badge: string; note: string }> = {
   model: {
-    badge: 'Changeable now',
+    badge: scopeBadge('model'),
     note: 'Switching re-points the running runtime, which restarts it and ends the in-flight turn. If it cannot be applied to the running box the choice is saved and takes effect the next time this session starts — the picker says which happened.',
   },
   agent: {
-    badge: 'Per message',
+    badge: scopeBadge('agent'),
     note: 'Each message names the agent that runs it, and the composer above picks it. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.',
   },
   secrets: {
-    badge: 'Changeable',
+    badge: scopeBadge('secrets'),
     note: 'What you set REPLACES the current list, from the next prompt. Dropping one stops it being delivered — it cannot un-read a value the agent already has in its context or in a shell it already started, so rotate it if that matters.',
   },
   connections: {
-    badge: 'Changeable',
+    badge: scopeBadge('connections'),
     note: 'What you set REPLACES the current bindings. Unlike secrets this is fully retroactive — a binding is resolved server-side on each tool call, so the next call already uses the new one. An alias you unbind falls back to the project default.',
   },
 };
@@ -118,9 +118,7 @@ export function scopeBarSecrets(input: {
   // Only runtime-scoped rows can be named at all — create resolves the
   // allowlist against those alone, so listing a channel-install row as
   // "excluded" would invent a decision nobody could have made.
-  const rows: ScopeBarSecretRow[] = (input.secrets ?? [])
-    .filter(isAllowlistable)
-    .map((secret) => ({
+  const rows: ScopeBarSecretRow[] = selectAllowlistableSecrets(input.secrets).map((secret) => ({
       identifier: secret.identifier,
       name: secret.name,
       membership: narrowed
@@ -136,9 +134,7 @@ export function scopeBarSecrets(input: {
   // disappearance `missing` exists to prevent. It cannot be in a live allowlist
   // legitimately anyway: create would have refused it.
   const known = new Set(
-    (input.secrets ?? [])
-      .filter(isAllowlistable)
-      .map((secret) => secret.identifier),
+    selectAllowlistableSecrets(input.secrets).map((secret) => secret.identifier),
   );
   const missing = (allowlist ?? []).filter(
     (identifier) => !known.has(identifier),
@@ -207,7 +203,7 @@ export function scopeDraftIssues(
   // left the start button enabled, and produced a guaranteed
   // 404 SECRET_IDENTIFIER_NOT_FOUND. This module exists to pre-empt exactly that
   // refusal, so it is the one place the filter must not be skipped.
-  const items = (secrets ?? []).filter(isAllowlistable);
+  const items = selectAllowlistableSecrets(secrets);
   const drafted = new Set(draft);
   const issues: ScopeDraftIssue[] = [];
 
@@ -254,9 +250,9 @@ export function classifyTypedIdentifier(
     return { kind: 'already_listed', identifier };
   // Same filter as scopeDraftIssues: "exists" here must mean "can be allowed",
   // otherwise the field tells the user an identifier is fine and create 404s.
-  const exists = (input.secrets ?? [])
-    .filter(isAllowlistable)
-    .some((secret) => secret.identifier === identifier);
+  const exists = selectAllowlistableSecrets(input.secrets).some(
+    (secret) => secret.identifier === identifier,
+  );
   return exists
     ? { kind: 'existing', identifier }
     : { kind: 'unknown', identifier };

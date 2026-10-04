@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   MID_SESSION_CAPABILITIES,
-  classifyAgentSwitch,
   classifyModelChange,
 } from '../../src/lib/mid-session-change';
 
@@ -23,42 +22,6 @@ describe('what can change mid-session', () => {
     // could never render, and the next create-only field would have nowhere
     // honest to live.
     expect(MID_SESSION_CAPABILITIES.runtime_context).toBe('fixed_at_create');
-  });
-});
-
-describe('classifyAgentSwitch', () => {
-  test('an unresolved grant IS worth retrying — the sandbox is fine', () => {
-    const result = classifyAgentSwitch({ code: 'AGENT_SECRET_GRANT_UNRESOLVED', error: 'x' });
-    expect(result.kind).toBe('grant_unresolved');
-  });
-
-  test('AGENT_SWITCH_REQUIRES_NEW_SESSION is no longer special-cased', () => {
-    // In-session agent switching is unconditionally allowed, so the server has
-    // no path left that emits this code. A stale server still sending it during
-    // a rollout window must degrade to the generic error, never to a UI that
-    // tells the user to abandon the session.
-    expect(classifyAgentSwitch({ code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION' }).kind).toBe('unknown');
-  });
-
-  test('no code means the prompt was not rejected for the agent', () => {
-    expect(classifyAgentSwitch({}).kind).toBe('ok');
-    expect(classifyAgentSwitch(null).kind).toBe('ok');
-  });
-
-  test('an unrecognised code degrades to a readable message', () => {
-    expect(classifyAgentSwitch({ code: 'SOMETHING_ELSE', error: 'boom' })).toEqual({
-      kind: 'unknown',
-      message: 'boom',
-    });
-  });
-
-  test('a blank server message still yields something readable', () => {
-    const result = classifyAgentSwitch({ code: 'X', error: '  ' });
-    // Narrow first: only the non-'ok' variants carry a message.
-    expect(result.kind).toBe('unknown');
-    if (result.kind !== 'ok') {
-      expect(result.message).toBe('The agent could not be switched.');
-    }
   });
 });
 

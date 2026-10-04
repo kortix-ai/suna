@@ -8,8 +8,6 @@ import { InvitesSection } from '@/components/account/invites-section';
 import { MembersSection } from '@/components/account/members-section';
 import { ProjectsSection } from '@/components/account/projects-section';
 import { ApiKeyGate } from '@/components/api-key-gate';
-import { BrandMark } from '@/components/brand-mark';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { ModeNotice } from '@/components/mode-notice';
 import { useWrapperMode } from '../providers';
 
 /**
@@ -28,35 +27,19 @@ import { useWrapperMode } from '../providers';
  */
 export default function AccountPage() {
   const wrapperMode = useWrapperMode();
-  if (wrapperMode) return <WrapperAccountNotice />;
+  if (wrapperMode)
+    return (
+      <ModeNotice title="Not available in wrapper mode">
+        This app's wrapper backend manages the underlying Kortix account
+        on your behalf — end users don't get direct account
+        administration. See{' '}
+        <Link href="/session-costs" className="underline">
+          Session costs
+        </Link>{' '}
+        for the wrapper pricing surface instead.
+      </ModeNotice>
+    );
   return <DirectAccountPage />;
-}
-
-function WrapperAccountNotice() {
-  return (
-    <div className="grid min-h-dvh place-items-center bg-background px-4">
-      <Card className="w-full max-w-sm p-6 text-center">
-        <BrandMark className="mx-auto mb-4" />
-        <h1 className="text-lg font-semibold tracking-tight">
-          Not available in wrapper mode
-        </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          This app&apos;s wrapper backend manages the underlying Kortix account
-          on your behalf — end users don&apos;t get direct account
-          administration. See{' '}
-          <Link href="/session-costs" className="underline">
-            Session costs
-          </Link>{' '}
-          for the wrapper pricing surface instead.
-        </p>
-        <Button asChild className="mt-5 gap-2">
-          <Link href="/">
-            <ArrowLeft className="size-4" /> Back to projects
-          </Link>
-        </Button>
-      </Card>
-    </div>
-  );
 }
 
 function DirectAccountPage() {

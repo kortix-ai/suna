@@ -39,16 +39,14 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import { kortix } from '@/lib/kortix';
-import { invalidateSessions, qk } from '@/lib/query-keys';
-import { getSessionToken } from '@/lib/session';
-import { sessionCreateFailure } from '@/lib/session-create-failure';
-import { buildSessionCreateInput } from '@/lib/session-overrides';
+import { qk } from '@/lib/query-keys';
+import { useSessionModel } from '@/lib/session-model';
+import { useCreateSession } from '@/lib/use-create-session';
 import {
   buildCompleteSessionScopeReplacement,
   readScopeBindingIds,
   sessionScopeIsReadable,
 } from '@/lib/session-scope';
-import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -102,24 +100,10 @@ export function ScopeBar({
     retry: false,
   });
   const connectors = useConnectorBindingChoices(projectId);
-  // Same query key the switcher inside the popover uses, so this label is the
-  // switcher's own answer rather than a second opinion — and costs no second
-  // request. The upstream field is named after the runtime, which is why this
-  // goes through the neutral route instead of the SDK.
-  const model = useQuery({
-    queryKey: ['session-model', projectId, sessionId],
-    queryFn: async () => {
-      const token = getSessionToken();
-      const res = await fetch(
-        `/api/session-model?projectId=${encodeURIComponent(projectId)}&sessionId=${encodeURIComponent(sessionId)}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-      );
-      if (!res.ok) return { model: null as string | null };
-      return (await res.json()) as { model: string | null };
-    },
-    staleTime: 30_000,
-    retry: false,
-  });
+  // The switcher inside the popover shares this hook's cache entry, so this
+  // label is the switcher's own answer rather than a second opinion — and it
+  // costs no second request.
+  const model = useSessionModel(projectId, sessionId);
 
   // A redacted session arrives as a perfectly good HTTP 200 with
   // `secrets_allowlist: null` — the exact value that means "not narrowed". Read
@@ -160,31 +144,19 @@ export function ScopeBar({
   const nextBindings = draftBindings ?? liveBindings;
   const issues = scopeDraftIssues(nextSecrets ?? [], items);
 
-  const start = useMutation({
-    mutationFn: async () => {
-      const nextId = generateSessionId();
-      await kortix.project(projectId).sessions.create(
-        buildSessionCreateInput(
-          // The agent comes along too, or "with this scope" would quietly drop
-          // the one part of the scope that is already right.
-          {
-            agent: data?.agent_name ?? null,
-            secrets: nextSecrets,
-            bindings: nextBindings,
-            runtimeContext: null,
-          },
-          { sessionId: nextId },
-        ),
-      );
-      return nextId;
-    },
-    onSuccess: (nextId) => {
-      invalidateSessions(qc, projectId);
+  const start = useCreateSession(projectId, {
+    input: () => ({
+      // The agent comes along too, or "with this scope" would quietly drop
+      // the one part of the scope that is already right.
+      overrides: {
+        agent: data?.agent_name ?? null,
+        secrets: nextSecrets,
+        bindings: nextBindings,
+        runtimeContext: null,
+      },
+    }),
+    onCreated: (nextId) => {
       router.push(`/projects/${projectId}/sessions/${nextId}`);
-    },
-    onError: (err) => {
-      const failure = sessionCreateFailure(err);
-      toast.error(failure.title, { description: failure.detail });
     },
   });
 

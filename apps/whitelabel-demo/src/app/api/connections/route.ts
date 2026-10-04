@@ -16,17 +16,10 @@
 import { selectConnectorBindingChoices } from '@/server/bindable-connections';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
+import { upstreamBase } from '@/server/upstream-path';
 import { isOwner, isValidProjectId } from '@/server/users';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
-
-function upstreamBase(): string {
-  return (
-    process.env.KORTIX_UPSTREAM ??
-    process.env.KORTIX_API_URL ??
-    'https://api.kortix.com/v1'
-  ).replace(/\/+$/, '');
-}
 
 export async function GET(req: NextRequest) {
   const apiKey = process.env.KORTIX_API_KEY;
@@ -51,10 +44,6 @@ export async function GET(req: NextRequest) {
   }
 
   const kortix = createScopedKortix({
-    // KORTIX_UPSTREAM first, like the proxy and every other server route: a
-    // deployment that only sets it (the documented setup) was silently sending
-    // this lookup to the PUBLIC api, whose failure this route swallows as "no
-    // connections" — an empty picker with no error anywhere.
     backendUrl: upstreamBase(),
     getToken: async () => apiKey,
   });

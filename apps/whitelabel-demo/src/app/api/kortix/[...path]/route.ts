@@ -20,7 +20,7 @@
  */
 
 import { getRequestSession } from '@/server/auth';
-import { buildUpstreamPath } from '@/server/upstream-path';
+import { buildUpstreamPath, upstreamBase } from '@/server/upstream-path';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
 import {
@@ -33,13 +33,6 @@ import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function upstreamBase(): string {
-  return (process.env.KORTIX_UPSTREAM ?? 'https://api.kortix.com/v1').replace(
-    /\/+$/,
-    '',
-  );
-}
 
 function jsonError(status: number, error: string, extraHeaders?: HeadersInit) {
   return Response.json({ error }, { status, headers: extraHeaders });

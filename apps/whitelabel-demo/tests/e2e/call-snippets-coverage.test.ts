@@ -363,7 +363,6 @@ describe('every snippet builds', () => {
       projectName: 'Acme workspace',
       executionId: 'exec_1',
       agent: 'support',
-      model: 'anthropic/claude-sonnet-4-5',
       secret: { identifier: 'STRIPE_KEY', name: 'STRIPE_SECRET_KEY' },
     };
     for (const id of CALL_SNIPPET_IDS) {

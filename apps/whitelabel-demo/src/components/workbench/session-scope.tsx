@@ -21,7 +21,6 @@ import type { CallSnippetId } from '@/lib/call-snippets';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import {
-  isFixedAtStart,
   readScopeBindingIds,
   sessionScopeIsReadable,
   sessionScopeRows,
@@ -116,22 +115,16 @@ export function SessionScope({
     <div className="space-y-2">
       {rows.map((row) => {
         const Icon = ICONS[row.key];
-        const fixed = isFixedAtStart(row.key);
         return (
           <div
             key={row.key}
             className="flex items-start gap-3 rounded-md border border-border bg-card px-3 py-2.5"
           >
-            <Icon
-              className={`mt-0.5 size-4 shrink-0 ${fixed ? 'text-muted-foreground' : 'text-brand'}`}
-            />
+            <Icon className="mt-0.5 size-4 shrink-0 text-brand" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{row.label}</span>
-                <Badge
-                  variant={fixed ? 'secondary' : 'outline'}
-                  className="text-xs"
-                >
+                <Badge variant="outline" className="text-xs">
                   {row.badge}
                 </Badge>
               </div>

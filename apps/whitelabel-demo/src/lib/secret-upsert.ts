@@ -67,16 +67,6 @@ export function secretWriteIntent(
   return { kind: 'rotate' };
 }
 
-/** The `POST /secrets` body — both fields, always, plus the value. */
-export function buildSecretUpsertInput(draft: SecretDraft): {
-  identifier: string;
-  name: string;
-  value: string;
-} {
-  const { identifier, name, value } = normalizeSecretDraft(draft);
-  return { identifier, name, value };
-}
-
 /**
  * A rotate is an upsert that reuses the row's existing KEY. Passing the key
  * back is not optional: the endpoint requires `name`, and sending anything else
@@ -86,5 +76,5 @@ export function buildSecretRotateInput(
   secret: Pick<ProjectSecret, 'identifier' | 'name'>,
   value: string,
 ): { identifier: string; name: string; value: string } {
-  return buildSecretUpsertInput({ identifier: secret.identifier, name: secret.name, value });
+  return normalizeSecretDraft({ identifier: secret.identifier, name: secret.name, value });
 }

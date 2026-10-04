@@ -20,6 +20,7 @@ import {
   createSessionPrompt,
   createSessionPublicShare,
   findActiveTranscriptShare,
+  resolvePublicShareUrl,
   claimWarmProjectSession,
   deleteProjectSession,
   deleteSessionPrompt,
@@ -1611,4 +1612,43 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
   nextResponse = { status: 200, body };
   expect(await getSessionMessageAuthors('P1', 'S1')).toEqual(body as never);
   expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/message-authors');
+});
+
+// ── resolvePublicShareUrl ────────────────────────────────────────────────────
+
+test('resolvePublicShareUrl prefers the share absolute public_url', () => {
+  expect(
+    resolvePublicShareUrl(
+      share({
+        public_url: 'https://preview.example/p/abc/',
+        public_path: '/p/abc',
+        proxy_path: '/v1/p/abc',
+      }),
+      'https://api.example.com',
+    ),
+  ).toBe('https://preview.example/p/abc/');
+});
+
+test('resolvePublicShareUrl resolves a relative path against the given origin', () => {
+  expect(
+    resolvePublicShareUrl(share({ public_path: '/p/abc' }), 'https://api.example.com'),
+  ).toBe('https://api.example.com/p/abc');
+  expect(
+    resolvePublicShareUrl(share({ proxy_path: '/v1/p/abc' }), 'https://api.example.com'),
+  ).toBe('https://api.example.com/v1/p/abc');
+});
+
+test('resolvePublicShareUrl returns the raw path when no origin is given', () => {
+  // A host with no window (Node, RN) passes no origin and renders the path.
+  expect(resolvePublicShareUrl(share({ public_path: '/p/abc' }))).toBe('/p/abc');
+});
+
+test('resolvePublicShareUrl is empty when the share carries no address at all', () => {
+  expect(resolvePublicShareUrl(share({}), 'https://api.example.com')).toBe('');
+});
+
+test('resolvePublicShareUrl falls back to public_token last', () => {
+  expect(
+    resolvePublicShareUrl(share({ public_token: 'tok_123' }), 'https://api.example.com'),
+  ).toBe('https://api.example.com/tok_123');
 });

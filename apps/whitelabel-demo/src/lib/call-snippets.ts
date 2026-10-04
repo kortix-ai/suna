@@ -46,7 +46,6 @@ const PLACEHOLDER = {
   envKey: '{ENV_KEY}',
   model: 'anthropic/claude-sonnet-4-5',
   projectName: 'Acme workspace',
-  connector: '{connector}',
 } as const;
 
 /**
@@ -83,8 +82,6 @@ export interface SnippetContext {
   overrides?: SessionOverrides;
   /** The agent a prompt would name, when one is picked. */
   agent?: string | null;
-  /** The model a mid-session change would move to. */
-  model?: string | null;
   executionId?: string;
   /** The project name a provision would send, when the field is filled in. */
   projectName?: string;
@@ -93,8 +90,6 @@ export interface SnippetContext {
    * type is the boundary that keeps secret material out of every snippet.
    */
   secret?: { identifier?: string; name?: string };
-  /** The connector alias a setup link would be minted for. */
-  connector?: string;
 }
 
 /**
@@ -104,7 +99,7 @@ export interface SnippetContext {
  * Printing a path there would teach hand-rolling the one thing the SDK exists
  * to hold.
  */
-export type HttpForm =
+type HttpForm =
   | {
       kind: 'rest';
       method: string;
@@ -318,7 +313,7 @@ function sessionRescope(ctx: SnippetContext): CallSnippet {
 }
 
 function sessionModel(ctx: SnippetContext): CallSnippet {
-  const model = ctx.model ?? PLACEHOLDER.model;
+  const model = PLACEHOLDER.model;
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
 

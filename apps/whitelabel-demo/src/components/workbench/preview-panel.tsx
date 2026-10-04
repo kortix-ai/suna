@@ -48,7 +48,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
-import { getSessionToken } from '@/lib/session';
+import { authHeaders, getSessionToken } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import type { SessionPublicShare } from '@kortix/sdk';
 
@@ -116,7 +116,7 @@ async function resolvePreviewUrl({
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...authHeaders(token),
     },
     body: JSON.stringify({
       projectId,
@@ -253,7 +253,8 @@ export function PreviewPanel({
       qc.invalidateQueries({ queryKey: sharesKey });
       toast.success('Sharing updated');
     },
-    onError: (err: any) => toast.error(err?.message ?? 'Failed to update sharing'),
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : 'Failed to update sharing'),
   });
 
   const createMut = useMutation({
@@ -276,7 +277,8 @@ export function PreviewPanel({
       setCreateOpen(false);
       setShareLabel('');
     },
-    onError: (err: any) => toast.error(err?.message ?? 'Failed to create share'),
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : 'Failed to create share'),
   });
 
   const revokeMut = useMutation({
@@ -285,7 +287,8 @@ export function PreviewPanel({
       qc.invalidateQueries({ queryKey: sharesKey });
       toast.success('Share revoked');
     },
-    onError: (err: any) => toast.error(err?.message ?? 'Failed to revoke share'),
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : 'Failed to revoke share'),
   });
 
   const loadingPreviews = previewsQuery.isLoading || (!!selected && previewUrlQuery.isLoading);

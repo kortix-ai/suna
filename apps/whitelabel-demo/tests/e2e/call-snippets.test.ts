@@ -160,10 +160,11 @@ describe('the other calls', () => {
   });
 
   test('the model change shows both hops and neither spells the runtime field', () => {
+    // The model text is the module's own placeholder — no caller names a model,
+    // so `SnippetContext` has no `model` field to pass one through.
     const snippet = callSnippet('session.model', {
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
-      model: 'anthropic/claude-sonnet-4-5',
     });
     expect(snippet.sdk).toContain("changeModel('anthropic/claude-sonnet-4-5')");
     expect(snippet.sdk).toContain('/api/session-model');

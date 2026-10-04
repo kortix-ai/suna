@@ -31,8 +31,8 @@ import { scopeExplanation, secretScope } from '@/lib/secret-scope';
 import {
   type SecretWriteIntent,
   buildSecretRotateInput,
-  buildSecretUpsertInput,
   defaultIdentifier,
+  normalizeSecretDraft,
   secretWriteIntent,
 } from '@/lib/secret-upsert';
 import type { ProjectSecret } from '@kortix/sdk';
@@ -91,7 +91,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
   const collidesWith = pendingKeyCollision(items, draft);
 
   const upsert = useMutation({
-    mutationFn: () => kortix.project(projectId).secrets.upsert(buildSecretUpsertInput(draft)),
+    mutationFn: () => kortix.project(projectId).secrets.upsert(normalizeSecretDraft(draft)),
     onSuccess: () => {
       setName('');
       setIdentifier('');

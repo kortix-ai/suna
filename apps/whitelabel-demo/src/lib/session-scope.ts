@@ -1,4 +1,4 @@
-import { MID_SESSION_CAPABILITIES } from './mid-session-change';
+import { MID_SESSION_CAPABILITIES, type MidSessionCapability } from './mid-session-change';
 import type {
   SessionConnectorBindings,
   SessionScope,
@@ -82,7 +82,7 @@ export function buildCompleteSessionScopeReplacement(
   };
 }
 
-export function describeSecretsAllowlist(
+function describeSecretsAllowlist(
   allowlist: string[] | null | undefined,
   agentName: string | null | undefined,
 ): string {
@@ -93,6 +93,22 @@ export function describeSecretsAllowlist(
   // where the UI says "all" for null is the whole point of the distinction.
   if (allowlist.length === 0) return 'No project secrets';
   return allowlist.join(', ');
+}
+
+/**
+ * The short "can I change this now?" badge, derived from the capability table
+ * so a row's badge can never drift away from the contract it describes. This
+ * is the ONE place the mapping lives: the scope-bar chips and this panel's
+ * rows both read it.
+ */
+const CAPABILITY_BADGE: Record<MidSessionCapability, string> = {
+  changeable: 'Changeable',
+  per_prompt: 'Per message',
+  fixed_at_create: 'Fixed at start',
+};
+
+export function scopeBadge(key: keyof typeof MID_SESSION_CAPABILITIES): string {
+  return CAPABILITY_BADGE[MID_SESSION_CAPABILITIES[key]];
 }
 
 export function sessionScopeRows(
@@ -106,7 +122,7 @@ export function sessionScopeRows(
     {
       key: 'model',
       label: 'Model',
-      badge: 'Changeable now',
+      badge: scopeBadge('model'),
       value: null,
       detail:
         'Switching restarts the runtime, which ends the in-flight turn. If it cannot be applied live the change is saved and takes effect the next time this session starts — the switcher says which happened.',
@@ -115,7 +131,7 @@ export function sessionScopeRows(
     {
       key: 'agent',
       label: 'Agent',
-      badge: 'Per message',
+      badge: scopeBadge('agent'),
       value: agentLabel,
       detail: agent
         ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
@@ -125,7 +141,7 @@ export function sessionScopeRows(
     {
       key: 'secrets',
       label: 'Secrets',
-      badge: 'Changeable now',
+      badge: scopeBadge('secrets'),
       value: describeSecretsAllowlist(input.secretsAllowlist, agent),
       detail:
         input.secretsAllowlist === null || input.secretsAllowlist === undefined
@@ -136,7 +152,7 @@ export function sessionScopeRows(
     {
       key: 'connections',
       label: 'Connections',
-      badge: 'Changeable now',
+      badge: scopeBadge('connections'),
       value:
         bound.length === 0
           ? 'The project default for every connector'

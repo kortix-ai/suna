@@ -35,19 +35,16 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { kortix } from '@/lib/kortix';
-import { invalidateSessions, qk } from '@/lib/query-keys';
-import { sessionCreateFailure } from '@/lib/session-create-failure';
+import { qk } from '@/lib/query-keys';
 import {
   NO_OVERRIDES,
   type SessionOverrides,
-  buildSessionCreateInput,
 } from '@/lib/session-overrides';
-import { generateSessionId } from '@kortix/sdk';
+import { useCreateSession } from '@/lib/use-create-session';
 import { useProjectConfig, useVisibleAgents } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
 export function NewSessionDialog({
   projectId,
@@ -96,7 +93,6 @@ function NewSessionForm({
   onDone: () => void;
 }) {
   const router = useRouter();
-  const qc = useQueryClient();
 
   const [agent, setAgent] = useState<string | null>(initialAgent);
   const [bindings, setBindings] = useState<Record<string, string>>({});
@@ -142,29 +138,11 @@ function NewSessionForm({
     secrets: narrowSecrets ? checked : null,
   };
 
-  const start = useMutation({
-    mutationFn: async () => {
-      const sessionId = generateSessionId();
-      await kortix.project(projectId).sessions.create(
-        buildSessionCreateInput(overrides, {
-          sessionId,
-        }),
-      );
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
+  const start = useCreateSession(projectId, {
+    input: () => ({ overrides }),
+    onCreated: (sessionId) => {
       onDone();
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
-    },
-    onError: (err) => {
-      // Each KaaB refusal has a distinct code and a different person who can
-      // fix it — collapsing them into one string throws that away. There is no
-      // create-time connector pre-flight any more: a session can never be
-      // refused for an unconnected connector, so every create failure goes
-      // through the shared classifier.
-      const failure = sessionCreateFailure(err);
-      toast.error(failure.title, { description: failure.detail });
     },
   });
 

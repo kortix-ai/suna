@@ -163,15 +163,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
           )}
 
           {c.permissions.map((p) => (
-            <PermissionPrompt
-              key={(p as { id: string }).id}
-              request={p}
-              onAnswer={c.answerPermission}
-            />
+            <PermissionPrompt key={p.id} request={p} onAnswer={c.answerPermission} />
           ))}
           {c.questions.map((q) => (
             <QuestionPrompt
-              key={(q as { id: string }).id}
+              key={q.id}
               request={q}
               onAnswer={c.answerQuestion}
               onCancel={c.cancel}

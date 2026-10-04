@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
+import { ApiError } from '@kortix/sdk';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, UserMinus } from 'lucide-react';
@@ -65,9 +66,9 @@ export function MembersSection({ accountId }: { accountId: string }) {
       if (result.status === 'pending') toast.success(`Invitation sent to ${result.email}`);
       else toast.success(`${result.email} added`);
     },
-    onError: (err: any) => {
-      const msg = String(err?.message ?? '');
-      toast.error(msg.includes('409') ? 'Already a member or invited' : 'Could not invite');
+    onError: (err: unknown) => {
+      const conflict = err instanceof ApiError && err.status === 409;
+      toast.error(conflict ? 'Already a member or invited' : 'Could not invite');
     },
   });
 

@@ -1,22 +1,21 @@
 'use client';
 
-import { BrandMark } from '@/components/brand-mark';
 import { CallSnippet } from '@/components/dev/call-snippet';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getSessionToken } from '@/lib/session';
+import { authHeaders, getSessionToken } from '@/lib/session';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Receipt } from 'lucide-react';
 import Link from 'next/link';
+import { ModeNotice } from '@/components/mode-notice';
 import { useWrapperMode } from '../providers';
 import type { SessionCostsResponse } from './contract';
 
 async function fetchSessionCosts(): Promise<SessionCostsResponse> {
   const token = getSessionToken();
   const response = await fetch('/api/session-costs', {
-    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    headers: authHeaders(token),
   });
   if (!response.ok) {
     throw new Error(`session cost request failed (${response.status})`);
@@ -30,30 +29,14 @@ function usd(value: number | undefined): string {
 
 export default function SessionCostsPage() {
   const wrapperMode = useWrapperMode();
-  if (!wrapperMode) return <NotInDirectMode />;
+  if (!wrapperMode)
+    return (
+      <ModeNotice title="Wrapper mode only">
+        This view uses the wrapper's project ownership records to select
+        sessions.
+      </ModeNotice>
+    );
   return <SessionCostsDashboard />;
-}
-
-function NotInDirectMode() {
-  return (
-    <div className="grid min-h-dvh place-items-center bg-background px-4">
-      <Card className="w-full max-w-sm p-6 text-center">
-        <BrandMark className="mx-auto mb-4" />
-        <h1 className="text-lg font-semibold tracking-tight">
-          Wrapper mode only
-        </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          This view uses the wrapper&apos;s project ownership records to select
-          sessions.
-        </p>
-        <Button asChild className="mt-5 gap-2">
-          <Link href="/">
-            <ArrowLeft className="size-4" /> Back to projects
-          </Link>
-        </Button>
-      </Card>
-    </div>
-  );
 }
 
 function SessionCostsDashboard() {

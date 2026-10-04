@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
+import { ApiError } from '@kortix/sdk';
 import { qk } from '@/lib/query-keys';
 import { cn, relativeTime } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
@@ -30,9 +31,7 @@ const STATUS_DOT: Record<string, string> = {
 
 /** 403/404 from the API — access denied or the project doesn't exist here. */
 function isAccessError(err: unknown): boolean {
-  const e = err as { status?: number; message?: string } | undefined;
-  if (e?.status === 403 || e?.status === 404) return true;
-  return /\b40[34]\b|forbidden|do not have access|not found/i.test(e?.message ?? '');
+  return err instanceof ApiError && (err.status === 403 || err.status === 404);
 }
 
 export function ProjectShell({ children }: { children: React.ReactNode }) {
