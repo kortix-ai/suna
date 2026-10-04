@@ -1,5 +1,5 @@
 {
-  "source_hash": "481bd82cc844e570a5d3bd8ecc940eedb6d587ec8d60d5a29f4eaa7e9dd2b670",
+  "source_hash": "df9e5e794d7878d372fed87f453fa5df8e47027d89dff521920fa3826e2b5aef",
   "diff_files": [
     "apps/web/scripts/sdk-boundary.mjs",
     "apps/whitelabel-demo/scripts/sdk-boundary.mjs",
@@ -77,16 +77,15 @@
     "packages/sdk/src/core/rest/projects-client/sessions.ts",
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json",
-    "pnpm-lock.yaml",
     "scripts/lib/sdk-boundary-scan.mjs"
   ],
-  "diff_hash": "97a10ddbab03af2448f5fa7a7ba45553cf1c2efbb7535f0e4e379f312b372bf3",
-  "head": "3818cff3f419b26e147d9eca73bcc88552515397",
-  "passed": false,
+  "diff_hash": "d4cb8b71f63342eb5d6d83d069dd42c2a06de80b23e8a63c8c18ab09c1b9d88b",
+  "head": "f118e35efc689f14d2d7be26651e12bdb2e2a9be",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T04:24:16.692Z"
+  "at": "2026-10-04T05:29:58.087Z"
 }
