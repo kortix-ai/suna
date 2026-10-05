@@ -20587,62 +20587,54 @@
     },
     "duration": {
       "hoursMinutes": "{hours} 時間 {minutes} 分",
-      "minutes": "{minutes} 分"
-    },
-    "shell": {
-      "title": "Capture",
-      "timeline": "タイムライン"
+      "minutes": "{minutes} 分",
+      "minutesSeconds": "{minutes}分{seconds}秒",
+      "seconds": "{seconds}秒"
     },
     "timeline": {
       "title": "タイムライン",
-      "person": "メンバー",
-      "you": "あなた",
       "recordedDays": "記録のある日",
       "today": "今日",
       "yesterday": "昨日",
-      "aMember": "メンバー",
-      "viewingMember": "{member} のタイムラインを表示しています",
-      "viewingMemberAudit": "他のメンバーの Capture データを表示するたびに、プロジェクトの監査ログに記録されます。",
-      "auditNotice": "このプロジェクトの管理者はあなたのタイムラインを開けます。表示するたびに、プロジェクトの監査ログに記録されます。",
+      "notFound": "このコンピュータは {name} にありません。",
+      "backToDevices": "デバイスに戻る",
+      "breadcrumb": "パンくずリスト",
+      "previousDay": "前の録画日",
+      "nextDay": "次の録画日",
       "empty": {
-        "noDevicesTitle": "コンピューターの記録はまだありません",
-        "noDevicesBody": "Kortix desktop で Capture をオンにします: あなたのコンピューター → My Capture。",
-        "noDevicesMember": "このメンバーは記録しているコンピューターがありません。",
         "noDataTitle": "{device} の記録がここに表示されます"
       },
       "layers": "レイヤー",
       "layer": {
+        "screen": "画面",
         "actions": "操作",
         "audio": "音声"
       },
-      "more": "その他",
-      "menu": {
-        "ranges": "区間",
-        "people": "メンバー",
-        "settings": "設定"
-      },
-      "now": "現在",
+      "live": "ライブ",
+      "liveHint": "最新のフレームへ移動 (L)",
+      "player": "プレーヤー",
+      "screenHidden": "画面レイヤーは非表示です。アクションとステップは引き続き表示されます。",
+      "play": "再生 (スペース)",
+      "pause": "一時停止 (スペース)",
       "zoomIn": "拡大",
       "zoomOut": "縮小",
+      "lane": {
+        "episodes": "エピソード",
+        "apps": "アプリ",
+        "actions": "アクション",
+        "audio": "音声"
+      },
+      "keysHint": "{mod}← {mod}→ アプリ間 · ← → フレーム · スペースで再生",
       "previousRun": "前のアプリ ({shortcut})",
       "nextRun": "次のアプリ ({shortcut})",
-      "picker": {
-        "label": "コンピューターを選択",
-        "devices": "コンピューター",
-        "noDevice": "コンピューターなし",
-        "none": "記録したコンピューターがここに表示されます。",
-        "noneMember": "このメンバーは記録しているコンピューターがありません。",
-        "getDesktop": "Kortix デスクトップアプリを入手"
-      },
-      "saveRange": "区間を保存",
+      "previousEpisode": "前のエピソード",
+      "nextEpisode": "次のエピソード",
+      "speed": "速度",
       "trackLabel": "タイムライン上の瞬間",
       "unknownApp": "不明なアプリ",
       "search": {
-        "open": "検索",
-        "label": "記録を検索",
-        "placeholder": "見たこと、したこと、聞いたことを検索",
-        "close": "検索を閉じる",
-        "hint": "入力して、このコンピューターの画面上のテキスト、操作、音声を検索します。",
+        "label": "このデバイスを検索",
+        "placeholder": "このデバイスを検索",
         "results": "検索結果",
         "none": "このコンピューターに検索に一致するものはありません。",
         "kind": {
@@ -20651,10 +20643,31 @@
           "audio": "音声"
         }
       },
+      "moment": {
+        "eyebrow": "再生位置",
+        "nothing": "この時点の録画はありません",
+        "window": "ウィンドウ",
+        "address": "アドレス",
+        "steps": "この時点前後のアクション",
+        "noSteps": "この時点前後に記録されたアクションはありません。",
+        "said": "この時点前後の発言"
+      },
+      "episode": {
+        "eyebrow": "再生位置のエピソード",
+        "untitled": "無題のエピソード",
+        "goal": "目標",
+        "outcome": "結果",
+        "steps": "ステップ · {count}",
+        "noSteps": "エピソードがトレースされるとステップが表示されます。",
+        "partOf": "所属するワークフロー",
+        "variant": "バリアント {key} · {name}",
+        "noWorkflow": "まだワークフローに属していません。"
+      },
       "frame": {
         "label": "{app} の画面収録",
         "none": "この瞬間の記録はありません。",
-        "encrypted": "デバイスがこの録画を暗号化しました。Kortix は表示できません。"
+        "encrypted": "デバイスがこの録画を暗号化しました。Kortix は表示できません。",
+        "failed": "この録画はこのブラウザでは再生できません。"
       },
       "jump": {
         "label": "日時を指定して移動",
@@ -20667,70 +20680,6 @@
         "audio": "音声",
         "gap": "ここには記録がありません。{shortcut} を押すと戻ります。"
       }
-    },
-    "saveRange": {
-      "title": "区間を保存",
-      "description": "保存した区間には、ステップ、文字起こし、要約が付きます。処理は保存時に始まります。",
-      "name": "名前",
-      "namePlaceholder": "リリースチェックリストの実行",
-      "from": "開始",
-      "to": "終了",
-      "endBeforeStart": "終了は開始より後にしてください。",
-      "cancel": "キャンセル",
-      "submit": "区間を保存",
-      "saved": "区間を保存しました",
-      "failed": "区間を保存できませんでした。"
-    },
-    "ranges": {
-      "title": "区間",
-      "description": "ステップ、文字起こし、要約が付いたタイムラインの一部です。Kortix はアクティビティセッションごとに 1 つ検出します。自分の区間は保存できます。",
-      "sourceLabel": "ソース",
-      "source": {
-        "all": "すべて",
-        "saved": "保存済み",
-        "detected": "検出済み"
-      },
-      "periodLabel": "期間",
-      "period": {
-        "week": "7 日間",
-        "month": "30 日間"
-      },
-      "status": {
-        "open": "記録中",
-        "closed": "キュー待ち",
-        "processing": "処理中",
-        "processed": "処理済み",
-        "failed": "失敗"
-      },
-      "span": "{from}–{to}",
-      "allDevices": "すべてのデバイス",
-      "loadFailed": "区間を読み込めませんでした。",
-      "tryAgain": "再試行",
-      "empty": "区間がここに表示されます",
-      "emptyHint": "Kortix はアクティビティセッションごとに区間を検出します。自分の区間はタイムラインから保存できます。"
-    },
-    "range": {
-      "backToRanges": "区間",
-      "openInTimeline": "タイムラインで開く",
-      "processAgain": "再処理",
-      "queuedToast": "区間をキューに追加しました",
-      "reprocessFailed": "区間をキューに追加できませんでした。",
-      "tab": {
-        "steps": "ステップ",
-        "transcript": "文字起こし",
-        "summary": "要約"
-      },
-      "processing": "処理中です。パイプラインが完了すると、ステップ、文字起こし、要約がここに表示されます。",
-      "queued": "キュー待ちです。処理は 1 分以内に始まります。",
-      "failed": "この区間を処理できませんでした。",
-      "noSteps": "この区間にステップはありません。",
-      "noTranscript": "この区間の文字起こしはありません。",
-      "noSummary": "この区間の要約はありません。",
-      "timeByApp": "アプリ別の時間",
-      "noScreen": "この区間に画面の操作はありません。",
-      "unknownApp": "不明なアプリ",
-      "notFound": "この区間は存在しません。",
-      "notFoundHint": "リンクが間違っているか、区間が別のメンバーのものです。"
     },
     "devices": {
       "status": {
@@ -20755,49 +20704,60 @@
       "syncFailed": "デバイスを同期できませんでした",
       "revoke": "コンピューターを取り消す",
       "revokeTitle": "このコンピューターを取り消しますか?",
-      "revokeDescription": "{name} はすぐにこのプロジェクトへの記録を停止します。再び記録するには、そのコンピューターで「このコンピューターを記録」をオンにしてください。",
+      "revokeDescription": "{name} はこの組織への録画をすぐに停止します。再び録画するには、そのコンピュータの「このコンピュータ」からサインインしてください。",
       "revoked": "コンピューターを取り消しました",
       "revokeFailed": "コンピューターを取り消せませんでした",
-      "recordThisComputer": "このコンピューターを記録"
-    },
-    "people": {
-      "title": "メンバー",
-      "description": "メンバーごとの稼働時間、使ったアプリ、区間、デバイスです。",
-      "periodLabel": "期間",
-      "period": {
-        "today": "今日",
-        "week": "7 日間",
-        "month": "30 日間"
+      "recordThisComputer": "このコンピューターを記録",
+      "title": "デバイス",
+      "descriptionAll": "{name} に録画するすべてのコンピュータ。管理者と閲覧者は全メンバーのものを、メンバーは自分のものを見られます。",
+      "descriptionMine": "あなたのコンピュータ。録画内容を見られるのは、あなたとこの組織の管理者だけです。",
+      "viewLabel": "表示",
+      "viewAll": "すべてのデバイス",
+      "viewMine": "自分のデバイス",
+      "thisComputer": "このコンピュータ",
+      "thisComputerBadge": "このコンピュータ",
+      "addDevice": "デバイスを追加",
+      "filterLabel": "ステータスで絞り込む",
+      "filter": {
+        "all": "すべて",
+        "recording": "録画中",
+        "paused": "一時停止中",
+        "permission": "権限が必要",
+        "offline": "オフライン"
       },
-      "auditTitle": "このページを見られるのは、このプロジェクトの管理者だけです",
-      "auditBody": "このページやメンバーのタイムラインを開くと、プロジェクトの監査ログにエントリが書き込まれます。メンバーは自分のタイムラインで、管理者が閲覧できることを確認できます。",
-      "column": {
-        "member": "メンバー",
-        "active": "稼働時間",
-        "apps": "よく使うアプリ",
-        "ranges": "区間",
-        "devices": "デバイス",
-        "open": "開く"
-      },
-      "role": {
-        "manager": "管理者",
-        "member": "メンバー",
-        "viewer": "閲覧者",
-        "none": "メンバーではなくなりました"
-      },
-      "you": "{email}（あなた）",
-      "formerMember": "元メンバー",
-      "noActivity": "アクティビティなし",
-      "unknownApp": "不明なアプリ",
-      "openTimeline": "タイムラインを開く",
-      "openTimelineOf": "{member} のタイムラインを開く",
-      "loadFailed": "メンバーの概要を読み込めませんでした。",
+      "loadFailed": "デバイスを読み込めませんでした。",
       "tryAgain": "再試行",
-      "empty": "メンバーがここに表示されます"
+      "empty": {
+        "allTitle": "{name} に録画しているコンピュータはまだありません",
+        "mineTitle": "録画しているコンピュータはまだありません",
+        "body": "Kortix デスクトップをインストールしてサインインし、「このコンピュータ」で Kortix Capture をオンにします。"
+      },
+      "getDesktop": "Kortix デスクトップアプリを入手",
+      "listLabel": "デバイス一覧",
+      "noMatch": "このステータスのデバイスはありません。",
+      "showing": "{total} 件中 {shown} 件を表示",
+      "layersNote": "レイヤーは組織のポリシーで決まります。取り消し線はそのデバイスでオフを示します。",
+      "col": {
+        "device": "デバイス",
+        "person": "ユーザー",
+        "os": "OS",
+        "status": "ステータス",
+        "lastFrame": "最後のフレーム",
+        "layers": "レイヤー",
+        "actions": "アクション"
+      },
+      "layer": {
+        "screen": "画面",
+        "actions": "アクション",
+        "audio": "音声"
+      },
+      "layerOff": "{layer} オフ",
+      "never": "なし",
+      "pausedUntil": "{time} まで"
     },
     "settings": {
       "title": "設定",
-      "description": "このプロジェクトのすべてのデバイスが Capture ストアから読み込む Capture ポリシーです。",
+      "description": "{name}: Kortix Capture のオン/オフ、誰が何を見られるか、デバイスが録画する内容。",
       "layersTitle": "レイヤー",
       "layer": {
         "screen": "画面",
@@ -20811,14 +20771,14 @@
       "masking": "個人データをマスク",
       "maskingHint": "デバイスは、記録内容の個人データを、コンピューターの外に出る前にマスクします。",
       "pause": "記録を一時停止",
-      "pauseHint": "オフにするまで、このプロジェクトのすべてのデバイスがすべてのレイヤーを停止します。",
+      "pauseHint": "これをオフにするまで、この組織のすべてのデバイスがすべてのレイヤーを停止します。",
       "retentionTitle": "保持",
       "localHours": "デバイス上（時間）",
       "localHoursHint": "アップロード後にデバイスがメディアを保持する時間です。0 は無期限に保持します。",
       "remoteDays": "Kortix 上（日）",
       "remoteDaysHint": "Kortix がインデックス済みの項目を保持する日数です。0 は無期限に保持します。",
       "noticeTitle": "お知らせ",
-      "noticePlaceholder": "このプロジェクトでは記録がオンです。",
+      "noticePlaceholder": "この組織の録画はオンです。",
       "noticeHint": "デバイスは、このテキストをアプリのメニューと設定ウインドウに表示します。",
       "lastChanged": "最終変更 {time}",
       "defaultPolicy": "既定のポリシーが適用されます。",
@@ -20827,7 +20787,34 @@
       "saved": "Capture ポリシーを保存しました",
       "saveFailed": "Capture ポリシーを保存できませんでした",
       "loadFailed": "Capture ポリシーを読み込めませんでした。",
-      "tryAgain": "再試行"
+      "tryAgain": "再試行",
+      "switchTitle": "Kortix Capture",
+      "switchLabel": "{name} の Kortix Capture",
+      "switchHint": "オフにすると、この組織のすべてのデバイスが停止し、メンバー向けの画面が閉じます。",
+      "switchOwnersOnly": "オンとオフの切り替えはアカウントオーナーと管理者が行います。",
+      "switchedOn": "Kortix Capture をオンにしました",
+      "switchedOff": "Kortix Capture をオフにしました",
+      "switchFailed": "Kortix Capture を変更できませんでした",
+      "rolesTitle": "メンバーとロール",
+      "rolesHint": "管理者は全員を見られ、この設定を変更できます。閲覧者は全員を見られます。メンバーは自分のコンピュータを見られます。他のメンバーの閲覧はすべて監査ログに記録されます。",
+      "rolesFailed": "メンバーを読み込めませんでした。",
+      "roleSaved": "ロールを保存しました",
+      "roleFailed": "ロールを保存できませんでした",
+      "youLabel": "{email} (あなた)",
+      "accountRole": {
+        "owner": "アカウントオーナー",
+        "admin": "アカウント管理者",
+        "member": "アカウントメンバー"
+      },
+      "roleSet": "このユーザーに設定済み",
+      "roleDefault": "アカウントのロールから",
+      "roleFor": "{name} の Capture ロール",
+      "role": {
+        "admin": "管理者",
+        "viewer": "閲覧者",
+        "member": "メンバー"
+      },
+      "roleReset": "アカウントのロールを使う"
     },
     "dialog": {
       "product": "Kortix Capture",
@@ -20918,6 +20905,271 @@
         "signedOut": "Kortix Capture からサインアウトしました"
       },
       "pausedByOrgHint": "{org}の管理者が記録を一時停止しました。一時停止が解除されると再開します。"
+    },
+    "area": {
+      "wordmark": "Kortix Capture",
+      "backToKortix": "Kortix に戻る",
+      "signedInAs": "{email} でサインイン中",
+      "switchOrg": "組織を切り替える",
+      "organizations": "組織",
+      "nav": {
+        "overview": "概要",
+        "workflows": "ワークフロー",
+        "ask": "質問",
+        "devices": "デバイス",
+        "settings": "設定",
+        "timeline": "タイムライン",
+        "thisComputer": "このコンピュータ"
+      },
+      "range": {
+        "label": "期間",
+        "today": "今日",
+        "lastDays": "過去 {days} 日間"
+      },
+      "off": {
+        "title": "{name} の Kortix Capture はオフです",
+        "bodyAdmin": "オンにすると、この組織のコンピュータを録画します。録画のオンは、引き続き各自のコンピュータで行います。",
+        "bodyMember": "この組織の管理者にオンにするよう依頼してください。",
+        "turnOn": "Kortix Capture をオンにする",
+        "failed": "Kortix Capture をオンにできませんでした"
+      }
+    },
+    "overview": {
+      "title": "概要",
+      "description": "{name} の {people, plural, other {#人}}と{devices, plural, other {#台のデバイス}}、{span}",
+      "loadFailed": "概要を読み込めませんでした。",
+      "tryAgain": "再試行",
+      "totals": "合計",
+      "hoursRecorded": "録画時間",
+      "hoursValue": "{hours} 時間",
+      "noPrevious": "この期間より前の録画はありません",
+      "changeOnPrevious": "前の{days, plural, other {#日間}}比 {change}",
+      "peopleRecording": "録画中のユーザー",
+      "of": "/ {total}",
+      "peopleNote": "{count, plural, =0 {全員が録画中} other {現在録画していない人: #人}}",
+      "devicesOnline": "オンラインのデバイス",
+      "needPermission": "{count, plural, other {権限が必要なデバイス: #台}}",
+      "needPermissionHint": "これらではアクションが記録されません",
+      "allPermissions": "すべてのデバイスに権限があります",
+      "automatable": "見つかった自動化可能な時間",
+      "perWeek": "{hours} 時間 / 週",
+      "perWeekShort": "{hours} 時間/週",
+      "acrossWorkflows": "{count, plural, other {#件のワークフロー全体}}",
+      "topTitle": "自動化の主な機会",
+      "topHint": "週あたりの実行回数 × 標準所要時間 × ステップの決定性",
+      "allWorkflows": "すべてのワークフロー",
+      "hoursPerWeek": "時間 / 週",
+      "topFooter": "上位 {count} 件の合計は {hours} 時間 / 週です。{more, plural, =0 {ワークフローにこれ以外はありません。} other {ワークフローにさらに #件あります。}}",
+      "newTitle": "今週の新着",
+      "viewAll": "{count} 件をすべて表示",
+      "newEmpty": "今週の新しいワークフローはありません。",
+      "newMeta": "検出 {day} · {people, plural, other {#人}} · {runs, plural, other {#回の実行}}",
+      "trendTitle": "見つかった自動化可能な時間",
+      "trendHint": "検出週ごとの週あたり時間。新しいワークフローがまとまるほど増えます。",
+      "trendNow": "現在 {hours} 時間 / 週",
+      "trendLabel": "自動化可能な時間は、過去12週間で週あたり {from} から {to} に増えました",
+      "trendEmpty": "自動化可能な時間はまだ見つかっていません。",
+      "thisWeek": "今週",
+      "quickLinks": "クイックリンク",
+      "linkAsk": "ワークフローについて質問",
+      "linkAskHint": "回答にはワークフロー、エピソード、時点が引用されます",
+      "linkReview": "{count, plural, other {検出された#件のワークフローを確認}}",
+      "linkReviewHint": "録画から見つかり、未確認です",
+      "linkDevices": "デバイス",
+      "linkDevicesHint": "録画しているすべてのコンピュータとそのステータス",
+      "linkExport": "データをエクスポート",
+      "linkExportHint": "エピソード、ステップ、ワークフローを JSONL または Parquet で"
+    },
+    "workflows": {
+      "title": "ワークフロー",
+      "description": "{count, plural, =0 {手順はまだ見つかっていません。} other {#件の手順が見つかりました。エージェントが引き受けられる週あたりの時間順です。}}",
+      "export": "データをエクスポート",
+      "searchLabel": "ワークフローを検索",
+      "searchPlaceholder": "ワークフロー、ステップ、アプリを検索",
+      "statusLabel": "ステータス",
+      "all": "すべて",
+      "status": {
+        "detected": "検出済み",
+        "reviewed": "確認済み",
+        "exported": "スキルをエクスポート済み"
+      },
+      "appLabel": "アプリ",
+      "allApps": "すべてのアプリ",
+      "sortLabel": "並べ替え",
+      "sort": {
+        "hours": "並べ替え: 時間 / 週",
+        "runs": "並べ替え: 実行回数 / 週",
+        "newest": "並べ替え: 新しい順"
+      },
+      "listLabel": "ワークフロー一覧",
+      "loadFailed": "ワークフローを読み込めませんでした。",
+      "tryAgain": "再試行",
+      "noMatch": "一致するワークフローはありません。検索をクリアするか、別のステータスを選んでください。",
+      "showing": "{total} 件中 {shown} 件を表示",
+      "formula": "自動化 = 実行回数 / 週 × 標準所要時間 × ステップの決定性",
+      "col": {
+        "workflow": "ワークフロー",
+        "runs": "実行 / 週",
+        "typical": "標準",
+        "people": "ユーザー",
+        "apps": "アプリ",
+        "automation": "自動化",
+        "status": "ステータス"
+      },
+      "rowMeta": "{steps, plural, other {#ステップ}} · {variants, plural, other {#バリアント}} · 初回検出 {first}",
+      "appsPeople": "{apps} · {count, plural, other {#人}}",
+      "people": "{count, plural, other {#人}}",
+      "perWeekShort": "{hours} 時間/週",
+      "determinismShort": "決定性 {value}",
+      "learning": {
+        "title": "Kortix Capture がチームのワークフローを学習中です",
+        "body": "同じ作業が複数の録画に現れると、ワークフローとして表示されます。",
+        "bodyWithHours": "同じ作業が複数の録画に現れると、ワークフローとして表示されます。これまでに {hours} 時間を録画しました。"
+      }
+    },
+    "workflow": {
+      "breadcrumb": "パンくずリスト",
+      "notFound": "このワークフローはこの組織にありません。",
+      "back": "ワークフローに戻る",
+      "firstSeen": "初回検出 {date}",
+      "reviewedBy": "{name} が {date} に確認",
+      "runsTotal": "合計 {count, plural, other {#回の実行}}",
+      "aMember": "メンバー",
+      "you": "あなた",
+      "goal": "目標: {goal}",
+      "outcome": "結果: {outcome}",
+      "review": "確認",
+      "exportSkill": "スキルとしてエクスポート",
+      "exportAgain": "もう一度エクスポート",
+      "skillLine": "{date} にスキルとしてエクスポート済み:",
+      "openProject": "プロジェクトを開く",
+      "typical": "標準所要時間",
+      "success": "成功率",
+      "determinism": "ステップの決定性",
+      "procedure": "{count, plural, other {標準手順 · #ステップ}}",
+      "variablesHint": "等幅の値は変数です",
+      "noSteps": "ステップはまだありません。",
+      "decision": "{question} 「はい」はバリアント {variant} に進みます (実行の {share})。",
+      "variants": "バリアント",
+      "variantsHint": "濃いセグメントは標準の経路と異なります",
+      "variantSteps": "{count, plural, other {#ステップ}}、うち {differ} が異なる",
+      "who": "実行しているユーザー",
+      "personRuns": "{count, plural, other {#回の実行}} · {duration}",
+      "runs": "実行",
+      "runsHint": "{count, plural, other {#回の実行}}。それぞれ開始位置でデバイスのタイムラインを開きます。",
+      "noRuns": "表示する実行はありません。",
+      "openTimeline": "タイムラインで開く",
+      "col": {
+        "person": "ユーザー",
+        "device": "デバイス",
+        "started": "開始",
+        "duration": "所要時間",
+        "variant": "バリアント",
+        "outcome": "結果",
+        "open": "開く"
+      },
+      "reviewTitle": "ワークフローを確認",
+      "reviewDescription": "チームでの呼び方で名前を付けます。その後、ワークフローは確認済みになります。",
+      "reviewName": "名前",
+      "reviewGoal": "目標",
+      "reviewOutcome": "結果",
+      "markReviewed": "確認済みにする",
+      "cancel": "キャンセル",
+      "reviewed": "ワークフローを確認しました",
+      "reviewFailed": "ワークフローを確認できませんでした"
+    },
+    "skill": {
+      "title": "スキルとしてエクスポート",
+      "description": "{runs, plural, other {#回の実行}}と{variants, plural, other {#個のバリアント}}から下書きしました。公開する前に読んでください。",
+      "drafting": "スキルを下書き中…",
+      "draftFailed": "スキルを下書きできませんでした。",
+      "tryAgain": "再試行",
+      "name": "スキル名",
+      "nameHint": "小文字、数字、ハイフン。",
+      "project": "公開先のプロジェクト",
+      "projectPlaceholder": "プロジェクトを選択",
+      "projectHint": "Kortix はデフォルトブランチに skills/<name>/SKILL.md を書き込みます。",
+      "noProjects": "この組織にはまだプロジェクトがありません。",
+      "markdown": "SKILL.md",
+      "inputs": "入力",
+      "checks": "公開前の確認",
+      "publish": "スキルを公開",
+      "published": "スキルを公開しました",
+      "publishedBody": "{time} に {project} へ公開しました:",
+      "publishFailed": "スキルを公開できませんでした",
+      "cancel": "キャンセル",
+      "close": "閉じる",
+      "openProject": "プロジェクトを開く"
+    },
+    "export": {
+      "title": "データをエクスポート",
+      "description": "{range} のエピソード、ステップ、ワークフロー。",
+      "format": "形式",
+      "formatJsonl": "JSONL",
+      "formatParquet": "Parquet",
+      "include": "含める項目",
+      "part": {
+        "episodes": "エピソード",
+        "steps": "ステップ",
+        "workflows": "ワークフロー"
+      },
+      "start": "エクスポートを開始",
+      "running": "エクスポート中…",
+      "ready": "{rows, plural, other {準備完了: #行}}",
+      "empty": "この期間にエクスポートするものはありません。",
+      "failed": "エクスポートに失敗しました",
+      "download": "ダウンロード",
+      "close": "閉じる"
+    },
+    "ask": {
+      "title": "録画された作業について質問",
+      "intro": "回答にはワークフロー、エピソード、時点が引用されます。下で、誰の作業について質問するか選んでください。",
+      "example1": "最も時間がかかるワークフローはどれで、スキルにできるのはどれですか。",
+      "example2": "請求書の作業が最も多いのは誰で、どれくらい時間がかかっていますか。",
+      "example3": "昨日、チームは何に取り組みましたか。",
+      "exampleMine1": "昨日、私は何に取り組みましたか。",
+      "exampleMine2": "私が最もよく繰り返す作業は何ですか。",
+      "questions": "質問",
+      "newQuestion": "新しい質問",
+      "thisConversation": "この会話",
+      "conversation": "会話",
+      "label": "質問",
+      "placeholder": "ワークフロー、ユーザー、アプリ、特定の日について質問",
+      "send": "送信",
+      "answerFrom": "回答の対象: {scope}",
+      "scope": {
+        "org": "{name}",
+        "me": "自分のコンピュータ",
+        "person": "{name}",
+        "device": "{name}",
+        "people": "ユーザー",
+        "devices": "コンピュータ"
+      },
+      "unnamed": "名前のないコンピュータ",
+      "aMember": "メンバー",
+      "searching": "録画を検索中…",
+      "writing": "{count, plural, other {#件のソースを読み込み中…}}",
+      "cited": "{count, plural, =0 {引用したソースなし} other {#件のソースを引用}}",
+      "failed": "回答できませんでした",
+      "citation": "ソース {n}",
+      "sources": "ソース",
+      "sourcesCount": "{count, plural, other {#件を引用}}",
+      "sourcesEmpty": "回答のソースがここに表示されます。",
+      "kind": {
+        "workflow": "ワークフロー",
+        "episode": "エピソード",
+        "moment": "時点"
+      },
+      "openWorkflow": "ワークフローを開く",
+      "openTimeline": "タイムラインで開く"
+    },
+    "thisComputer": {
+      "title": "このコンピュータ",
+      "breadcrumb": "パンくずリスト",
+      "browserDescription": "Kortix デスクトップアプリからコンピュータを録画します。",
+      "browserTitle": "このコンピュータを録画するには Kortix デスクトップを開いてください",
+      "browserBody": "Kortix Capture はデスクトップアプリから録画します。インストールしてサインインし、Kortix Capture › このコンピュータ を開いてください。",
+      "getDesktop": "Kortix デスクトップアプリを入手"
     }
   }
 }

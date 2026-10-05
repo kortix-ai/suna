@@ -20587,62 +20587,54 @@
     },
     "duration": {
       "hoursMinutes": "{hours} 小时 {minutes} 分钟",
-      "minutes": "{minutes} 分钟"
-    },
-    "shell": {
-      "title": "Capture",
-      "timeline": "时间线"
+      "minutes": "{minutes} 分钟",
+      "minutesSeconds": "{minutes} 分 {seconds} 秒",
+      "seconds": "{seconds} 秒"
     },
     "timeline": {
       "title": "时间线",
-      "person": "成员",
-      "you": "你",
       "recordedDays": "有记录的日期",
       "today": "今天",
       "yesterday": "昨天",
-      "aMember": "一位成员",
-      "viewingMember": "你正在查看 {member} 的时间线",
-      "viewingMemberAudit": "每次查看其他成员的 Capture 数据，都会记录在项目的审计日志中。",
-      "auditNotice": "管理此项目的人可以打开你的时间线。每次查看都会记录在项目的审计日志中。",
+      "notFound": "此电脑不在 {name} 中。",
+      "backToDevices": "返回设备",
+      "breadcrumb": "面包屑导航",
+      "previousDay": "上一个录制日",
+      "nextDay": "下一个录制日",
       "empty": {
-        "noDevicesTitle": "还没有电脑录制内容",
-        "noDevicesBody": "在 Kortix desktop 中开启 Capture：你的电脑 → My Capture。",
-        "noDevicesMember": "这位成员没有录制任何电脑。",
         "noDataTitle": "{device} 的录制内容会显示在这里"
       },
       "layers": "图层",
       "layer": {
+        "screen": "屏幕",
         "actions": "操作",
         "audio": "音频"
       },
-      "more": "更多",
-      "menu": {
-        "ranges": "片段",
-        "people": "成员",
-        "settings": "设置"
-      },
-      "now": "现在",
+      "live": "实时",
+      "liveHint": "跳到最新一帧 (L)",
+      "player": "播放器",
+      "screenHidden": "屏幕层已隐藏。操作和步骤仍会显示。",
+      "play": "播放 (空格键)",
+      "pause": "暂停 (空格键)",
       "zoomIn": "放大",
       "zoomOut": "缩小",
+      "lane": {
+        "episodes": "片段",
+        "apps": "应用",
+        "actions": "操作",
+        "audio": "音频"
+      },
+      "keysHint": "{mod}← {mod}→ 切换应用 · ← → 逐帧 · 空格键播放",
       "previousRun": "上一个应用（{shortcut}）",
       "nextRun": "下一个应用（{shortcut}）",
-      "picker": {
-        "label": "选择电脑",
-        "devices": "电脑",
-        "noDevice": "没有电脑",
-        "none": "你录制的电脑会显示在这里。",
-        "noneMember": "这位成员没有录制任何电脑。",
-        "getDesktop": "获取 Kortix 桌面应用"
-      },
-      "saveRange": "保存片段",
+      "previousEpisode": "上一个片段",
+      "nextEpisode": "下一个片段",
+      "speed": "速度",
       "trackLabel": "时间线上的时刻",
       "unknownApp": "未知应用",
       "search": {
-        "open": "搜索",
-        "label": "搜索录制内容",
-        "placeholder": "搜索你看到、做过或听到的内容",
-        "close": "关闭搜索",
-        "hint": "输入以搜索这台电脑的屏幕文字、操作和音频。",
+        "label": "搜索此设备",
+        "placeholder": "搜索此设备",
         "results": "搜索结果",
         "none": "这台电脑上没有与搜索匹配的内容。",
         "kind": {
@@ -20651,10 +20643,31 @@
           "audio": "音频"
         }
       },
+      "moment": {
+        "eyebrow": "播放头位置",
+        "nothing": "此刻没有录制内容",
+        "window": "窗口",
+        "address": "地址",
+        "steps": "此刻前后的操作",
+        "noSteps": "此刻前后没有录制到操作。",
+        "said": "此刻前后的发言"
+      },
+      "episode": {
+        "eyebrow": "播放头所在的片段",
+        "untitled": "未命名片段",
+        "goal": "目标",
+        "outcome": "结果",
+        "steps": "步骤 · {count}",
+        "noSteps": "片段完成追踪后会显示步骤。",
+        "partOf": "所属工作流",
+        "variant": "变体 {key} · {name}",
+        "noWorkflow": "尚不属于任何工作流。"
+      },
       "frame": {
         "label": "{app} 的屏幕录制",
         "none": "此刻没有录制内容。",
-        "encrypted": "设备已加密此录制。Kortix 无法显示。"
+        "encrypted": "设备已加密此录制。Kortix 无法显示。",
+        "failed": "此浏览器无法播放这段录制。"
       },
       "jump": {
         "label": "跳转到日期和时间",
@@ -20667,70 +20680,6 @@
         "audio": "音频",
         "gap": "此处无录制内容。按 {shortcut} 跳回。"
       }
-    },
-    "saveRange": {
-      "title": "保存片段",
-      "description": "保存的片段会生成步骤、转写和摘要。保存时开始处理。",
-      "name": "名称",
-      "namePlaceholder": "发布检查清单执行",
-      "from": "开始",
-      "to": "结束",
-      "endBeforeStart": "结束时间必须晚于开始时间。",
-      "cancel": "取消",
-      "submit": "保存片段",
-      "saved": "片段已保存",
-      "failed": "无法保存片段。"
-    },
-    "ranges": {
-      "title": "片段",
-      "description": "时间线上带有步骤、转写和摘要的一段。Kortix 会为每个活动会话检测一个；你可以保存自己的片段。",
-      "sourceLabel": "来源",
-      "source": {
-        "all": "全部",
-        "saved": "已保存",
-        "detected": "已检测"
-      },
-      "periodLabel": "时间段",
-      "period": {
-        "week": "7 天",
-        "month": "30 天"
-      },
-      "status": {
-        "open": "录制中",
-        "closed": "排队中",
-        "processing": "处理中",
-        "processed": "已处理",
-        "failed": "失败"
-      },
-      "span": "{from}–{to}",
-      "allDevices": "所有设备",
-      "loadFailed": "无法加载片段。",
-      "tryAgain": "重试",
-      "empty": "片段会显示在这里",
-      "emptyHint": "Kortix 会为每个活动会话检测一个片段。你可以从时间线保存自己的片段。"
-    },
-    "range": {
-      "backToRanges": "片段",
-      "openInTimeline": "在时间线中打开",
-      "processAgain": "重新处理",
-      "queuedToast": "片段已加入队列",
-      "reprocessFailed": "无法将片段加入队列。",
-      "tab": {
-        "steps": "步骤",
-        "transcript": "转写",
-        "summary": "摘要"
-      },
-      "processing": "处理中。流水线完成后，步骤、转写和摘要会显示在这里。",
-      "queued": "排队中。一分钟内开始处理。",
-      "failed": "无法处理此片段。",
-      "noSteps": "此片段中没有步骤。",
-      "noTranscript": "此片段没有转写。",
-      "noSummary": "此片段没有摘要。",
-      "timeByApp": "各应用用时",
-      "noScreen": "此片段中没有屏幕活动。",
-      "unknownApp": "未知应用",
-      "notFound": "此片段已不存在。",
-      "notFoundHint": "链接可能有误，或该片段属于其他人。"
     },
     "devices": {
       "status": {
@@ -20755,49 +20704,60 @@
       "syncFailed": "无法同步设备",
       "revoke": "撤销电脑",
       "revokeTitle": "撤销这台电脑？",
-      "revokeDescription": "{name} 会立即停止记录到此项目。要再次记录，请在那台电脑上开启“记录这台电脑”。",
+      "revokeDescription": "{name} 会立即停止向此组织录制。要再次录制，请在该电脑上从“此电脑”登录。",
       "revoked": "电脑已撤销",
       "revokeFailed": "无法撤销这台电脑",
-      "recordThisComputer": "记录这台电脑"
-    },
-    "people": {
-      "title": "成员",
-      "description": "按成员显示：活跃时间、使用的应用、片段和设备。",
-      "periodLabel": "时间段",
-      "period": {
-        "today": "今天",
-        "week": "7 天",
-        "month": "30 天"
+      "recordThisComputer": "记录这台电脑",
+      "title": "设备",
+      "descriptionAll": "所有向 {name} 录制的电脑。管理员和查看者可看到所有成员的设备，成员只能看到自己的。",
+      "descriptionMine": "你的电脑。只有你和此组织的管理员能看到它们录制的内容。",
+      "viewLabel": "视图",
+      "viewAll": "所有设备",
+      "viewMine": "我的设备",
+      "thisComputer": "此电脑",
+      "thisComputerBadge": "此电脑",
+      "addDevice": "添加设备",
+      "filterLabel": "按状态筛选",
+      "filter": {
+        "all": "全部",
+        "recording": "录制中",
+        "paused": "已暂停",
+        "permission": "需要权限",
+        "offline": "离线"
       },
-      "auditTitle": "只有管理此项目的人能看到此页面",
-      "auditBody": "打开此页面或某位成员的时间线，会在项目的审计日志中写入一条记录。成员可在自己的时间线上看到管理者能够查看它。",
-      "column": {
-        "member": "成员",
-        "active": "活跃时间",
-        "apps": "常用应用",
-        "ranges": "片段",
-        "devices": "设备",
-        "open": "打开"
-      },
-      "role": {
-        "manager": "管理者",
-        "member": "成员",
-        "viewer": "查看者",
-        "none": "已不是成员"
-      },
-      "you": "{email}（你）",
-      "formerMember": "前成员",
-      "noActivity": "没有活动",
-      "unknownApp": "未知应用",
-      "openTimeline": "打开时间线",
-      "openTimelineOf": "打开 {member} 的时间线",
-      "loadFailed": "无法加载成员概览。",
+      "loadFailed": "无法加载设备。",
       "tryAgain": "重试",
-      "empty": "成员会显示在这里"
+      "empty": {
+        "allTitle": "还没有电脑向 {name} 录制",
+        "mineTitle": "你还没有录制任何电脑",
+        "body": "安装 Kortix 桌面版并登录，然后在“此电脑”中开启 Kortix Capture。"
+      },
+      "getDesktop": "获取 Kortix 桌面应用",
+      "listLabel": "设备列表",
+      "noMatch": "没有处于此状态的设备。",
+      "showing": "显示 {shown} / {total}",
+      "layersNote": "录制层由组织策略设定。删除线表示该设备上已关闭。",
+      "col": {
+        "device": "设备",
+        "person": "成员",
+        "os": "系统",
+        "status": "状态",
+        "lastFrame": "最后一帧",
+        "layers": "录制层",
+        "actions": "操作"
+      },
+      "layer": {
+        "screen": "屏幕",
+        "actions": "操作",
+        "audio": "音频"
+      },
+      "layerOff": "{layer}已关闭",
+      "never": "从未",
+      "pausedUntil": "至 {time}"
     },
     "settings": {
       "title": "设置",
-      "description": "此项目中每台设备从 Capture 存储读取的 Capture 策略。",
+      "description": "{name}：Kortix Capture 是否开启、谁能看到什么，以及设备录制什么。",
       "layersTitle": "图层",
       "layer": {
         "screen": "屏幕",
@@ -20811,14 +20771,14 @@
       "masking": "遮盖个人数据",
       "maskingHint": "设备会在录制内容离开电脑之前，遮盖其中的个人数据。",
       "pause": "暂停录制",
-      "pauseHint": "在你关闭此选项之前，此项目中的每台设备都会停止所有图层。",
+      "pauseHint": "在你关闭此项之前，此组织的每台设备都会停止所有录制层。",
       "retentionTitle": "保留",
       "localHours": "在设备上（小时）",
       "localHoursHint": "设备在上传后保留媒体的时长。0 表示不限期保留。",
       "remoteDays": "在 Kortix 中（天）",
       "remoteDaysHint": "Kortix 保留已索引项目的时长。0 表示不限期保留。",
       "noticeTitle": "通知",
-      "noticePlaceholder": "此项目已开启录制。",
+      "noticePlaceholder": "此组织已开启录制。",
       "noticeHint": "设备会在应用的菜单和设置窗口中显示此文字。",
       "lastChanged": "最后修改于 {time}",
       "defaultPolicy": "当前使用默认策略。",
@@ -20827,7 +20787,34 @@
       "saved": "Capture 策略已保存",
       "saveFailed": "无法保存 Capture 策略",
       "loadFailed": "无法加载 Capture 策略。",
-      "tryAgain": "重试"
+      "tryAgain": "重试",
+      "switchTitle": "Kortix Capture",
+      "switchLabel": "{name} 的 Kortix Capture",
+      "switchHint": "关闭会停止此组织的每台设备，并对成员关闭该区域。",
+      "switchOwnersOnly": "账户所有者和管理员可开启或关闭此项。",
+      "switchedOn": "Kortix Capture 已开启",
+      "switchedOff": "Kortix Capture 已关闭",
+      "switchFailed": "无法更改 Kortix Capture",
+      "rolesTitle": "成员和角色",
+      "rolesHint": "管理员可看到所有人并更改这些设置。查看者可看到所有人。成员可看到自己的电脑。每次查看其他成员都会记入审计日志。",
+      "rolesFailed": "无法加载成员。",
+      "roleSaved": "角色已保存",
+      "roleFailed": "无法保存角色",
+      "youLabel": "{email} (你)",
+      "accountRole": {
+        "owner": "账户所有者",
+        "admin": "账户管理员",
+        "member": "账户成员"
+      },
+      "roleSet": "已为此人设置",
+      "roleDefault": "来自账户角色",
+      "roleFor": "{name} 的 Capture 角色",
+      "role": {
+        "admin": "管理员",
+        "viewer": "查看者",
+        "member": "成员"
+      },
+      "roleReset": "使用账户角色"
     },
     "dialog": {
       "product": "Kortix Capture",
@@ -20918,6 +20905,271 @@
         "signedOut": "已退出 Kortix Capture"
       },
       "pausedByOrgHint": "{org} 的管理者暂停了记录。解除暂停后会继续。"
+    },
+    "area": {
+      "wordmark": "Kortix Capture",
+      "backToKortix": "返回 Kortix",
+      "signedInAs": "已登录为 {email}",
+      "switchOrg": "切换组织",
+      "organizations": "组织",
+      "nav": {
+        "overview": "概览",
+        "workflows": "工作流",
+        "ask": "提问",
+        "devices": "设备",
+        "settings": "设置",
+        "timeline": "时间线",
+        "thisComputer": "此电脑"
+      },
+      "range": {
+        "label": "日期范围",
+        "today": "今天",
+        "lastDays": "最近 {days} 天"
+      },
+      "off": {
+        "title": "{name} 的 Kortix Capture 已关闭",
+        "bodyAdmin": "开启后即可录制此组织的电脑。每个人仍需在自己的电脑上开启录制。",
+        "bodyMember": "请让此组织的管理员开启。",
+        "turnOn": "开启 Kortix Capture",
+        "failed": "无法开启 Kortix Capture"
+      }
+    },
+    "overview": {
+      "title": "概览",
+      "description": "{name} 中有 {people, plural, other {# 人}}和 {devices, plural, other {# 台设备}}，{span}",
+      "loadFailed": "无法加载概览。",
+      "tryAgain": "重试",
+      "totals": "合计",
+      "hoursRecorded": "录制时长",
+      "hoursValue": "{hours} 小时",
+      "noPrevious": "此范围之前没有录制内容",
+      "changeOnPrevious": "较前 {days, plural, other {# 天}} {change}",
+      "peopleRecording": "正在录制的成员",
+      "of": "/ {total}",
+      "peopleNote": "{count, plural, =0 {所有人都在录制} other {当前未录制：# 人}}",
+      "devicesOnline": "在线设备",
+      "needPermission": "{count, plural, other {# 台设备需要权限}}",
+      "needPermissionHint": "这些设备上不会录制操作",
+      "allPermissions": "所有设备都已具备权限",
+      "automatable": "发现的可自动化时间",
+      "perWeek": "{hours} 小时 / 周",
+      "perWeekShort": "{hours} 小时/周",
+      "acrossWorkflows": "{count, plural, other {涉及 # 个工作流}}",
+      "topTitle": "主要自动化机会",
+      "topHint": "每周运行次数 × 典型时长 × 步骤确定性",
+      "allWorkflows": "所有工作流",
+      "hoursPerWeek": "小时 / 周",
+      "topFooter": "前 {count} 项合计 {hours} 小时 / 周。{more, plural, =0 {工作流中没有更多了。} other {工作流中还有 # 项。}}",
+      "newTitle": "本周新增",
+      "viewAll": "查看全部 {count} 项",
+      "newEmpty": "本周没有新工作流。",
+      "newMeta": "{day}检测到 · {people, plural, other {# 人}} · {runs, plural, other {# 次运行}}",
+      "trendTitle": "发现的可自动化时间",
+      "trendHint": "按检测周统计的每周小时数。随着新工作流被归类而增长。",
+      "trendNow": "现为 {hours} 小时 / 周",
+      "trendLabel": "过去 12 周内，每周可自动化小时数从 {from} 增至 {to}",
+      "trendEmpty": "尚未发现可自动化时间。",
+      "thisWeek": "本周",
+      "quickLinks": "快捷入口",
+      "linkAsk": "就你的工作流提问",
+      "linkAskHint": "回答会引用工作流、片段和时刻",
+      "linkReview": "{count, plural, other {审核 # 个检测到的工作流}}",
+      "linkReviewHint": "在录制中发现，尚未审核",
+      "linkDevices": "设备",
+      "linkDevicesHint": "所有正在录制的电脑及其状态",
+      "linkExport": "导出数据",
+      "linkExportHint": "以 JSONL 或 Parquet 导出片段、步骤和工作流"
+    },
+    "workflows": {
+      "title": "工作流",
+      "description": "{count, plural, =0 {尚未发现流程。} other {发现 # 个流程。按智能体每周可接手的小时数排序。}}",
+      "export": "导出数据",
+      "searchLabel": "搜索工作流",
+      "searchPlaceholder": "搜索工作流、步骤、应用",
+      "statusLabel": "状态",
+      "all": "全部",
+      "status": {
+        "detected": "已检测",
+        "reviewed": "已审核",
+        "exported": "已导出技能"
+      },
+      "appLabel": "应用",
+      "allApps": "所有应用",
+      "sortLabel": "排序",
+      "sort": {
+        "hours": "排序：小时 / 周",
+        "runs": "排序：运行次数 / 周",
+        "newest": "排序：最新"
+      },
+      "listLabel": "工作流列表",
+      "loadFailed": "无法加载工作流。",
+      "tryAgain": "重试",
+      "noMatch": "没有匹配的工作流。请清除搜索或选择其他状态。",
+      "showing": "显示 {shown} / {total}",
+      "formula": "自动化 = 运行次数 / 周 × 典型时长 × 步骤确定性",
+      "col": {
+        "workflow": "工作流",
+        "runs": "运行 / 周",
+        "typical": "典型",
+        "people": "成员",
+        "apps": "应用",
+        "automation": "自动化",
+        "status": "状态"
+      },
+      "rowMeta": "{steps, plural, other {# 个步骤}} · {variants, plural, other {# 个变体}} · 首次出现于 {first}",
+      "appsPeople": "{apps} · {count, plural, other {# 人}}",
+      "people": "{count, plural, other {# 人}}",
+      "perWeekShort": "{hours} 小时/周",
+      "determinismShort": "确定性 {value}",
+      "learning": {
+        "title": "Kortix Capture 正在学习你团队的工作流",
+        "body": "同一项任务在多段录制中出现后，才会生成工作流。",
+        "bodyWithHours": "同一项任务在多段录制中出现后，才会生成工作流。目前已录制 {hours} 小时。"
+      }
+    },
+    "workflow": {
+      "breadcrumb": "面包屑导航",
+      "notFound": "此工作流不在此组织中。",
+      "back": "返回工作流",
+      "firstSeen": "首次出现于 {date}",
+      "reviewedBy": "{name} 于 {date} 审核",
+      "runsTotal": "共 {count, plural, other {# 次运行}}",
+      "aMember": "某位成员",
+      "you": "你",
+      "goal": "目标：{goal}",
+      "outcome": "结果：{outcome}",
+      "review": "审核",
+      "exportSkill": "导出为技能",
+      "exportAgain": "再次导出",
+      "skillLine": "已于 {date} 导出为技能：",
+      "openProject": "打开项目",
+      "typical": "典型时长",
+      "success": "成功率",
+      "determinism": "步骤确定性",
+      "procedure": "{count, plural, other {标准流程 · # 个步骤}}",
+      "variablesHint": "等宽字体的值是变量",
+      "noSteps": "还没有步骤。",
+      "decision": "{question} 选“是”会进入变体 {variant} (占运行的 {share})。",
+      "variants": "变体",
+      "variantsHint": "深色片段与标准路径不同",
+      "variantSteps": "{count, plural, other {# 个步骤}}，其中 {differ} 个不同",
+      "who": "谁在运行",
+      "personRuns": "{count, plural, other {# 次运行}} · {duration}",
+      "runs": "运行记录",
+      "runsHint": "{count, plural, other {# 次运行}}。点击任一项，会在其起点打开设备时间线。",
+      "noRuns": "没有可显示的运行记录。",
+      "openTimeline": "在时间线中打开",
+      "col": {
+        "person": "成员",
+        "device": "设备",
+        "started": "开始时间",
+        "duration": "时长",
+        "variant": "变体",
+        "outcome": "结果",
+        "open": "打开"
+      },
+      "reviewTitle": "审核工作流",
+      "reviewDescription": "按你团队的叫法命名。之后此工作流会显示为已审核。",
+      "reviewName": "名称",
+      "reviewGoal": "目标",
+      "reviewOutcome": "结果",
+      "markReviewed": "标记为已审核",
+      "cancel": "取消",
+      "reviewed": "工作流已审核",
+      "reviewFailed": "无法审核工作流"
+    },
+    "skill": {
+      "title": "导出为技能",
+      "description": "根据 {runs, plural, other {# 次运行}}和 {variants, plural, other {# 个变体}}起草。发布前请先阅读。",
+      "drafting": "正在起草技能…",
+      "draftFailed": "无法起草技能。",
+      "tryAgain": "重试",
+      "name": "技能名称",
+      "nameHint": "小写字母、数字和连字符。",
+      "project": "发布到项目",
+      "projectPlaceholder": "选择项目",
+      "projectHint": "Kortix 会在默认分支上写入 skills/<name>/SKILL.md。",
+      "noProjects": "此组织还没有项目。",
+      "markdown": "SKILL.md",
+      "inputs": "输入",
+      "checks": "发布前检查",
+      "publish": "发布技能",
+      "published": "技能已发布",
+      "publishedBody": "已于 {time} 发布到 {project}：",
+      "publishFailed": "无法发布技能",
+      "cancel": "取消",
+      "close": "关闭",
+      "openProject": "打开项目"
+    },
+    "export": {
+      "title": "导出数据",
+      "description": "{range} 的片段、步骤和工作流。",
+      "format": "格式",
+      "formatJsonl": "JSONL",
+      "formatParquet": "Parquet",
+      "include": "包含",
+      "part": {
+        "episodes": "片段",
+        "steps": "步骤",
+        "workflows": "工作流"
+      },
+      "start": "开始导出",
+      "running": "正在导出…",
+      "ready": "{rows, plural, other {已就绪：# 行}}",
+      "empty": "此范围内没有可导出的内容。",
+      "failed": "导出失败",
+      "download": "下载",
+      "close": "关闭"
+    },
+    "ask": {
+      "title": "就录制的工作提问",
+      "intro": "回答会引用工作流、片段和时刻。请在下方选择要询问谁的工作。",
+      "example1": "哪些工作流最耗时，哪些可以变成技能？",
+      "example2": "谁处理的发票工作最多，用时多久？",
+      "example3": "团队昨天做了什么？",
+      "exampleMine1": "我昨天做了什么？",
+      "exampleMine2": "我最常重复哪些任务？",
+      "questions": "问题",
+      "newQuestion": "新问题",
+      "thisConversation": "此对话",
+      "conversation": "对话",
+      "label": "问题",
+      "placeholder": "询问工作流、成员、应用或某一天",
+      "send": "发送",
+      "answerFrom": "回答来源：{scope}",
+      "scope": {
+        "org": "{name}",
+        "me": "我的电脑",
+        "person": "{name}",
+        "device": "{name}",
+        "people": "成员",
+        "devices": "电脑"
+      },
+      "unnamed": "未命名电脑",
+      "aMember": "某位成员",
+      "searching": "正在搜索录制内容…",
+      "writing": "{count, plural, other {正在读取 # 个来源…}}",
+      "cited": "{count, plural, =0 {未引用来源} other {引用了 # 个来源}}",
+      "failed": "无法回答",
+      "citation": "来源 {n}",
+      "sources": "来源",
+      "sourcesCount": "{count, plural, other {引用 # 项}}",
+      "sourcesEmpty": "回答的来源会显示在这里。",
+      "kind": {
+        "workflow": "工作流",
+        "episode": "片段",
+        "moment": "时刻"
+      },
+      "openWorkflow": "打开工作流",
+      "openTimeline": "在时间线中打开"
+    },
+    "thisComputer": {
+      "title": "此电脑",
+      "breadcrumb": "面包屑导航",
+      "browserDescription": "通过 Kortix 桌面应用录制电脑。",
+      "browserTitle": "打开 Kortix 桌面版来录制此电脑",
+      "browserBody": "Kortix Capture 通过桌面应用录制。安装并登录后，打开 Kortix Capture › 此电脑。",
+      "getDesktop": "获取 Kortix 桌面应用"
     }
   }
 }
