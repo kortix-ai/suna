@@ -394,6 +394,84 @@ Return ONLY JSON: {"same":[<numbers of the pairs that are the same procedure>]}`
 
 export const MINE_QUEUE = 'capture.mine';
 
+/** Episodes as runs: their steps loaded, those with fewer than 2 steps or no signature left out. */
+async function runsOf(episodes: Array<typeof captureEpisodes.$inferSelect>): Promise<Run[]> {
+  const stepRows = episodes.length
+    ? await db
+        .select()
+        .from(captureEpisodeSteps)
+        .where(inArray(captureEpisodeSteps.episodeId, episodes.map((e) => e.episodeId)))
+        .orderBy(asc(captureEpisodeSteps.episodeId), asc(captureEpisodeSteps.index))
+    : [];
+  const stepsOf = new Map<string, Run['steps']>();
+  for (const s of stepRows) stepsOf.set(s.episodeId, [...(stepsOf.get(s.episodeId) ?? []), { verb: s.verb, app: s.app, object: s.object, params: s.params, variables: s.variables }]);
+  return episodes
+    .filter((e) => e.signature && (stepsOf.get(e.episodeId)?.length ?? 0) >= 2)
+    .map((e) => ({
+      episodeId: e.episodeId,
+      userId: e.userId,
+      start: e.startAt,
+      end: e.endAt,
+      label: e.label ?? '',
+      goal: e.goal,
+      outcome: e.outcome,
+      outcomeStatus: e.outcomeStatus,
+      signature: e.signature!,
+      workflowId: e.workflowId,
+      steps: stepsOf.get(e.episodeId)!,
+    }));
+}
+
+/**
+ * Rebuild workflows from the runs they still hold, with no model call: after a forget, nothing a
+ * workflow shows may come from a run that is gone. Steps, variants and stats are recomputed. A
+ * detected workflow also takes its name, goal and outcome from its own remaining runs (the most
+ * common label, the latest goal and outcome) and is named again by the next mining run; a
+ * reviewed or exported one keeps the name a person gave it. Below MIN_RUNS runs, a detected
+ * workflow is deleted and a reviewed one keeps its row with no steps.
+ */
+export async function refreshWorkflows(workflowIds: string[], now = Date.now()): Promise<void> {
+  if (!workflowIds.length) return;
+  const rows = await db.select().from(captureWorkflows).where(inArray(captureWorkflows.workflowId, workflowIds));
+  for (const w of rows) {
+    const members = await db.select().from(captureEpisodes).where(eq(captureEpisodes.workflowId, w.workflowId)).orderBy(asc(captureEpisodes.startAt));
+    const runs = await runsOf(members);
+    const finished = runs.filter((r) => r.outcomeStatus !== 'abandoned');
+    if (finished.length < MIN_RUNS) {
+      if (w.status === 'detected') await db.delete(captureWorkflows).where(eq(captureWorkflows.workflowId, w.workflowId));
+      else await db.update(captureWorkflows).set({ steps: [], variants: [], runsTotal: runs.length, updatedAt: new Date() }).where(eq(captureWorkflows.workflowId, w.workflowId));
+      await db.update(captureEpisodes).set({ workflowId: null, variantKey: null }).where(eq(captureEpisodes.workflowId, w.workflowId));
+      continue;
+    }
+    const m = describeCluster(runs, now);
+    const labels = new Map<string, number>();
+    for (const r of finished) if (r.label) labels.set(r.label, (labels.get(r.label) ?? 0) + 1);
+    const latest = finished[finished.length - 1]!;
+    const own = w.status === 'detected';
+    await db
+      .update(captureWorkflows)
+      .set({
+        ...(own ? { name: [...labels].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Unnamed workflow', goal: latest.goal, outcome: latest.outcome, model: null } : {}),
+        steps: m.steps as unknown as Record<string, unknown>[],
+        variants: m.variants.map((v) => ({ ...v, name: v.key === 'A' ? 'Canonical path' : v.name, note: v.note })) as unknown as Record<string, unknown>[],
+        apps: m.apps,
+        runsTotal: m.stats.runsTotal,
+        runsPerWeek: m.stats.runsPerWeek.toFixed(2),
+        durationP50S: Math.round(m.stats.p50),
+        durationP90S: Math.round(m.stats.p90),
+        peopleCount: m.stats.people,
+        successRate: m.stats.successRate === null ? null : m.stats.successRate.toFixed(4),
+        determinism: m.stats.determinism.toFixed(4),
+        automationHoursPerWeek: m.stats.hoursPerWeek.toFixed(2),
+        firstSeenAt: m.stats.first,
+        lastSeenAt: m.stats.last,
+        updatedAt: new Date(),
+      })
+      .where(eq(captureWorkflows.workflowId, w.workflowId));
+    for (const path of m.paths) await db.update(captureEpisodes).set({ variantKey: path.key }).where(inArray(captureEpisodes.episodeId, path.runs.map((r) => r.episodeId)));
+  }
+}
+
 /** Re-mine one account. Returns how many workflows it holds after the run, and the model spend. */
 export async function mineAccount(accountId: string, caller?: Caller, now = Date.now()): Promise<{ workflows: number; costUsd: number }> {
   if (!caller) {
@@ -413,30 +491,7 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
     .from(captureEpisodes)
     .where(and(eq(captureEpisodes.accountId, accountId), eq(captureEpisodes.status, 'traced'), gte(captureEpisodes.startAt, since)))
     .orderBy(asc(captureEpisodes.startAt));
-  const stepRows = episodes.length
-    ? await db
-        .select()
-        .from(captureEpisodeSteps)
-        .where(inArray(captureEpisodeSteps.episodeId, episodes.map((e) => e.episodeId)))
-        .orderBy(asc(captureEpisodeSteps.episodeId), asc(captureEpisodeSteps.index))
-    : [];
-  const stepsOf = new Map<string, Run['steps']>();
-  for (const s of stepRows) stepsOf.set(s.episodeId, [...(stepsOf.get(s.episodeId) ?? []), { verb: s.verb, app: s.app, object: s.object, params: s.params, variables: s.variables }]);
-  const runs: Run[] = episodes
-    .filter((e) => e.signature && (stepsOf.get(e.episodeId)?.length ?? 0) >= 2)
-    .map((e) => ({
-      episodeId: e.episodeId,
-      userId: e.userId,
-      start: e.startAt,
-      end: e.endAt,
-      label: e.label ?? '',
-      goal: e.goal,
-      outcome: e.outcome,
-      outcomeStatus: e.outcomeStatus,
-      signature: e.signature!,
-      workflowId: e.workflowId,
-      steps: stepsOf.get(e.episodeId)!,
-    }));
+  const runs = await runsOf(episodes);
 
   // 1–2. Cluster the signature groups of finished runs.
   const abandoned = runs.filter((r) => r.outcomeStatus === 'abandoned');
@@ -523,7 +578,7 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
     });
   const names = new Map<MinedWorkflow, z.output<typeof nameZod>>();
   for (const p of plan) {
-    const unnamed = p.keep?.name === 'Unnamed workflow';
+    const unnamed = p.keep?.name === 'Unnamed workflow' || (p.keep?.status === 'detected' && p.keep.model === null);
     if (p.keep && !unnamed && (!p.changed || p.keep.status !== 'detected')) continue;
     try {
       await spend(async (usage) => {

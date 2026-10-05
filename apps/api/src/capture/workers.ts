@@ -18,7 +18,7 @@
  *     remote retention, prunes expired sign-ins and finished jobs.
  */
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
-import { captureDeviceGrants, captureDevices, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
+import { captureDeviceGrants, captureDevices, captureEpisodes, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
 import { and, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -26,13 +26,13 @@ import { runWorkerTick } from '../shared/audit-scope';
 import { db } from '../shared/db';
 import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '../shared/job-queue';
 import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, statusReportedAt, utcDay } from './format';
-import './exports';
+import { expireExports } from './exports';
 import { RANGE_GAP_MS, ingestManifest } from './ingest';
 import { readWorkspace } from './workspace';
 import { processRange } from './processing';
 import { CaptureBudgetExceeded } from './budget';
 import { EPISODES_QUEUE, traceRange } from './episodes';
-import { MINE_QUEUE, mineAccount } from './mining';
+import { MINE_QUEUE, mineAccount, refreshWorkflows } from './mining';
 import { captureRegion, captureStore, captureStoreConfigured, getCaptureObjectIfChanged } from './store';
 
 export const INGEST_QUEUE = 'capture.ingest';
@@ -215,21 +215,39 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
 export async function forgetManifests(deviceId: string, keys: string[]): Promise<number> {
   if (keys.length === 0) return 0;
   const chunks = await db
-    .select({ chunkId: timelineChunks.chunkId, startAt: timelineChunks.startAt, endAt: timelineChunks.endAt })
+    .select({ chunkId: timelineChunks.chunkId, accountId: timelineChunks.accountId, startAt: timelineChunks.startAt, endAt: timelineChunks.endAt })
     .from(timelineChunks)
     .where(and(eq(timelineChunks.deviceId, deviceId), inArray(timelineChunks.manifestKey, keys)));
   if (chunks.length === 0) return 0;
   const from = new Date(Math.min(...chunks.map((c) => c.startAt.getTime())));
   const to = new Date(Math.max(...chunks.map((c) => Math.max(c.startAt.getTime(), c.endAt.getTime()))));
+  let forgotten: Array<{ rangeId: string; accountId: string; endAt: Date }> = [];
+  let touched: string[] = [];
+  let episodesGone = 0;
   await db.transaction(async (tx) => {
     await removeChunkRows(tx, chunks);
     const ranges = await tx
       .update(timelineRanges)
       .set({ status: 'closed', updatedAt: sql`now()` })
       .where(and(eq(timelineRanges.deviceId, deviceId), lte(timelineRanges.startAt, to), gte(timelineRanges.endAt, from), ne(timelineRanges.status, 'open')))
-      .returning({ rangeId: timelineRanges.rangeId });
+      .returning({ rangeId: timelineRanges.rangeId, accountId: timelineRanges.accountId, endAt: timelineRanges.endAt, source: timelineRanges.source });
     if (ranges.length) await tx.delete(rangeOutputs).where(inArray(rangeOutputs.rangeId, ranges.map((r) => r.rangeId)));
+    // What was derived from the forgotten item goes with it: the device's detected episodes over its
+    // span (their labels and steps quote it). A saved episode is the person's own title and stays.
+    const gone = await tx
+      .delete(captureEpisodes)
+      .where(and(eq(captureEpisodes.deviceId, deviceId), eq(captureEpisodes.source, 'detected'), lte(captureEpisodes.startAt, to), gte(captureEpisodes.endAt, from)))
+      .returning({ workflowId: captureEpisodes.workflowId });
+    touched = [...new Set(gone.map((e) => e.workflowId).filter((id): id is string => !!id))];
+    episodesGone = gone.length;
+    forgotten = ranges.filter((r) => r.source === 'detected');
   });
+  // Then what was built on those episodes: the workflows rebuild from the runs they still hold
+  // (no model call), and every finished export of the account expires.
+  await refreshWorkflows(touched);
+  if (episodesGone) await expireExports(chunks[0]!.accountId);
+  // The ranges trace again without the item (and mining follows).
+  for (const range of forgotten) await enqueueEpisodes(range, `:forget-${Date.now()}`);
   logger.info('[capture] forgot items', { deviceId, items: chunks.length });
   return chunks.length;
 }

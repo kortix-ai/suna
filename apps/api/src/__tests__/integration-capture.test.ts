@@ -378,11 +378,14 @@ describe('intelligence: episodes (L1/L2) and mining (L3)', () => {
     expect(run.episodes_queued).toBeGreaterThanOrEqual(1);
     expect(run.mining_queued).toBe(true);
     expect((await runIntelligence(ACCOUNT, { miningOnly: true })).episodes_queued).toBe(0);
+    await db.update(timelineRanges).set({ status: 'processed' }).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
   });
 });
 
 describe('forget', () => {
-  test('a delete line retracts the item, its rows and the outputs of overlapping ranges; a re-poll is a no-op', async () => {
+  test('a delete line retracts the item, its rows, the outputs and detected episodes of overlapping ranges (queued to trace again); a re-poll is a no-op', async () => {
+    const { captureEpisodes } = await import('@kortix/db');
+    const { jobQueue } = await import('@kortix/db');
     const key = [...objects.keys()].find((k) => k.startsWith(`${PREFIX}/${deviceId}/`) && /\/\d+-1\.manifest\.json$/.test(k))!;
     const [chunk] = await db.select().from(timelineChunks).where(eq(timelineChunks.manifestKey, key));
     const chunkFrames = await count('timeline_frames', sql`chunk_id = ${chunk!.chunkId}::uuid`);
@@ -404,9 +407,100 @@ describe('forget', () => {
     const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, processed!.rangeId));
     expect(range!.status).toBe('closed');
     expect(await db.select().from(rangeOutputs).where(eq(rangeOutputs.rangeId, range!.rangeId))).toEqual([]);
+    const left = await db.select().from(captureEpisodes).where(and(eq(captureEpisodes.deviceId, deviceId), eq(captureEpisodes.source, 'detected'), sql`${captureEpisodes.startAt} <= ${range!.endAt.toISOString()}::timestamptz`));
+    expect(left.filter((e) => e.endAt >= range!.startAt && e.label === 'Plan roadmap')).toEqual([]);
+    const queued = await db.select().from(jobQueue).where(and(eq(jobQueue.queue, 'capture.episodes'), sql`${jobQueue.jobKey} LIKE ${`${range!.rangeId}:%:forget-%`}`));
+    expect(queued.length).toBe(1);
 
     const [again] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
     expect(await pollDevice(again!)).toEqual({ enqueued: 0, forgotten: 0 });
+  });
+});
+
+describe('forget reaches every derived artifact', () => {
+  test('a forgotten item\'s unique marker appears nowhere afterwards: episodes, steps, workflows, exports (old and new), Ask sources', async () => {
+    const { traceRange } = await import('../capture/episodes');
+    const { mineAccount } = await import('../capture/mining');
+    const { exportJsonl } = await import('../capture/exports');
+    const { retrieve } = await import('../capture/ask');
+    const { captureEpisodes, captureEpisodeSteps, captureExports, captureWorkflows } = await import('@kortix/db');
+    const MARK = 'Zebraquartz';
+    const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+    const enc = (t: string) => new TextEncoder().encode(t);
+    // One small item on an old day whose screen shows the marker, written as the engine writes it.
+    const start = Date.UTC(2026, 8, 1, 10);
+    const base = `${deviceId}/2026/09/01/${start}-900`;
+    const lines = [0, 1, 2].map((i) => JSON.stringify({ app: { bundle_id: 'com.example.billing', name: 'Billing' }, frame_index: i, ts_ms: start + i * 10_000, title: `${MARK} invoice — Billing`, ocr: { foreground: `${MARK} invoice review`, background: '', lines: [] }, windows: [] }));
+    const frames = Bun.zstdCompressSync(enc(`${lines.join('\n')}\n`));
+    const video = enc('video-bytes');
+    const info = (key: string, body: Uint8Array) => ({ key, size: body.byteLength, sha256: sha(body), plain_size: body.byteLength, plain_sha256: sha(body) });
+    const manifest = { app_version: '0.1.0', created_at_ms: start + 40_000, device_id: deviceId, encryption: null, end_ms: start + 30_000, frame_count: 3, height: 360, kind: 'chunk', objects: { frames: info(`${base}.frames.jsonl.zst`, frames), video: info(`${base}.mp4`, video) }, privacy: { mode: 'off', redact_pii: false }, schema: 2, start_ms: start, video_id: 900, video_name: `${start}.mp4`, width: 640 };
+    const manifestKey = `${PREFIX}/${base}.manifest.json`;
+    objects.set(`${PREFIX}/${base}.frames.jsonl.zst`, frames);
+    objects.set(`${PREFIX}/${base}.mp4`, video);
+    objects.set(manifestKey, enc(JSON.stringify(manifest)));
+    const indexKey = `${PREFIX}/${deviceId}/index/2026-09-01.jsonl`;
+    objects.set(indexKey, enc(`${JSON.stringify({ op: 'put', kind: 'chunk', base, start_ms: start, end_ms: start + 30_000, manifest: true, at_ms: start + 41_000, frames: 3, video_id: 900 })}\n`));
+    expect((await ingestManifest(manifestKey)).status).toBe('indexed');
+    const [range] = await db.select().from(timelineRanges).where(and(eq(timelineRanges.deviceId, deviceId), sql`${timelineRanges.startAt} = ${new Date(start).toISOString()}::timestamptz`));
+    await db.update(timelineRanges).set({ status: 'closed' }).where(eq(timelineRanges.rangeId, range!.rangeId));
+
+    // The model echoes the marker everywhere it can: label, goal, step objects, workflow name.
+    const echo = (prompt: string) => (prompt.includes(MARK) ? MARK : 'plain');
+    const caller = {
+      model: 'scripted-model',
+      async call(schema: { parse: (v: unknown) => unknown }, prompt: string, _images: unknown[], usage: Record<string, number>) {
+        usage.requests += 1;
+        if (prompt.includes('Each pair shows')) return schema.parse({ same: [] });
+        if (prompt.includes('Name the procedure')) return schema.parse({ name: `Review ${echo(prompt)} invoices`, goal: `Check ${echo(prompt)} invoices.`, outcome: 'Approved.', variants: [] });
+        return schema.parse({ episodes: [{ first: 1, last: 9, label: `Review ${MARK} invoice`, goal: `Review the ${MARK} invoice.`, outcome: 'Approved.', outcome_status: 'succeeded', procedural: true, steps: [
+          { moment: 1, verb: 'Open', app: 'Billing', object: `${MARK} invoice`, variables: ['invoice_id'] },
+          { moment: 1, verb: 'Read', app: 'Billing', object: 'invoice lines', variables: [] },
+          { moment: 1, verb: 'Approve', app: 'Billing', object: 'invoice payment', variables: [] },
+        ] }] });
+      },
+    };
+    await traceRange(range!.rangeId, caller as never);
+    // Three more runs of the same procedure on other days, with no marker: the workflow outlives the forget.
+    for (let i = 0; i < 3; i++) {
+      const at = new Date(Date.UTC(2026, 8, 2 + i, 10));
+      const [e] = await db.insert(captureEpisodes).values({ accountId: ACCOUNT, userId: MEMBER, deviceId, startAt: at, endAt: new Date(at.getTime() + 300_000), label: 'Approve an invoice', goal: 'Approve a supplier invoice.', status: 'traced', outcomeStatus: 'succeeded', stepsCount: 3, signature: 'open@billing read@billing approve@billing' }).returning();
+      await db.insert(captureEpisodeSteps).values([['Open', 'invoice'], ['Read', 'invoice lines'], ['Approve', 'invoice payment']].map(([verb, object], index) => ({ episodeId: e!.episodeId, accountId: ACCOUNT, index, ts: new Date(at.getTime() + index * 1000), verb: verb!, app: 'Billing', object: object!, variables: [] })));
+    }
+    const workflowsBefore = (await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT))).map((w) => w.workflowId);
+    await mineAccount(ACCOUNT, caller as never, Date.UTC(2026, 8, 10));
+    const hits = async () => {
+      const q = (table: string) => sql`SELECT count(*)::int AS n FROM ${sql.identifier('kortix')}.${sql.identifier(table)} t WHERE account_id = ${ACCOUNT}::uuid AND row_to_json(t)::text ILIKE ${`%${MARK}%`}`;
+      const n = async (table: string) => Array.from(await db.execute<{ n: number }>(q(table)))[0]!.n;
+      return { episodes: await n('capture_episodes'), steps: await n('capture_episode_steps'), workflows: await n('capture_workflows') };
+    };
+    const before = await hits();
+    expect(before.episodes).toBeGreaterThan(0);
+    expect(before.steps).toBeGreaterThan(0);
+    expect(before.workflows).toBeGreaterThan(0);
+    // An export taken before the forget holds the marker.
+    const old = await exportJsonl(ACCOUNT, {});
+    expect(old.body).toContain(MARK);
+    const oldKey = `${PREFIX}/exports/forget-test.jsonl`;
+    objects.set(oldKey, enc(old.body));
+    const [exp] = await db.insert(captureExports).values({ accountId: ACCOUNT, requestedBy: MEMBER, format: 'jsonl', status: 'done', objectKey: oldKey, rows: old.rows }).returning();
+
+    // The engine forgets the item: objects deleted, a delete line appended; the reader retracts it.
+    for (const k of [...objects.keys()]) if (k.startsWith(`${PREFIX}/${base}.`)) objects.delete(k);
+    objects.set(indexKey, enc(`${new TextDecoder().decode(objects.get(indexKey)!)}${JSON.stringify({ op: 'delete', kind: 'chunk', base, reason: 'forget', at_ms: Date.now() })}\n`));
+    const [device] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
+    expect((await pollDevice(device!)).forgotten).toBe(1);
+
+    expect(await hits()).toEqual({ episodes: 0, steps: 0, workflows: 0 });
+    // The workflow rebuilt from its 3 remaining runs: same identity, their label, their steps.
+    const after = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT));
+    const kept = after.find((w) => !workflowsBefore.includes(w.workflowId))!;
+    expect([kept.name, kept.runsTotal, (kept.steps as Array<{ object: string }>).map((s) => s.object)]).toEqual(['Approve an invoice', 3, ['invoice', 'invoice lines', 'invoice payment']]);
+    const [expired] = await db.select().from(captureExports).where(eq(captureExports.exportId, exp!.exportId));
+    expect([expired!.status, expired!.objectKey, objects.has(oldKey)]).toEqual(['failed', null, false]);
+    expect((await exportJsonl(ACCOUNT, {})).body).not.toContain(MARK);
+    const sources = await retrieve(ACCOUNT, null, true, { question: `What happened with ${MARK} invoices?`, scope: { from: '2026-08-01T00:00:00Z', to: '2026-10-01T00:00:00Z' } });
+    expect(JSON.stringify(sources)).not.toContain(MARK);
   });
 });
 

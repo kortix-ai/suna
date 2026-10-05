@@ -4,7 +4,7 @@
  * `orgs/<account_id>/exports/<export_id>.jsonl` and downloaded by signed URL.
  */
 import { captureEpisodeSteps, captureEpisodes, captureExports, captureWorkflows } from '@kortix/db';
-import { and, asc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { enqueueJob, registerJobHandler } from '../shared/job-queue';
 import { accountPrefix } from './format';
@@ -71,6 +71,26 @@ registerJobHandler(EXPORT_QUEUE, async (job) => {
     throw error;
   }
 });
+
+/**
+ * After a forget, no export may still hold what was forgotten: every finished export of the
+ * account loses its object and reads as failed ("expired"). A new export reads the data as it is now.
+ */
+export async function expireExports(accountId: string): Promise<number> {
+  const done = await db
+    .select({ exportId: captureExports.exportId, objectKey: captureExports.objectKey })
+    .from(captureExports)
+    .where(and(eq(captureExports.accountId, accountId), eq(captureExports.status, 'done')));
+  const keys = done.map((e) => e.objectKey).filter((k): k is string => !!k);
+  if (keys.length) await captureStore.remove(keys);
+  if (done.length) {
+    await db
+      .update(captureExports)
+      .set({ status: 'failed', objectKey: null, error: 'expired: an item in its span was forgotten; export again', updatedAt: sql`now()` })
+      .where(inArray(captureExports.exportId, done.map((e) => e.exportId)));
+  }
+  return done.length;
+}
 
 export async function exportDownload(objectKey: string | null) {
   if (!objectKey) return null;

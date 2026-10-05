@@ -46,7 +46,7 @@ export function questionTerms(question: string): string[] {
   return [...new Set(question.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu) ?? [])].filter((w) => !STOP.has(w)).slice(0, 8);
 }
 
-async function retrieve(accountId: string, subject: string | null, accountWide: boolean, input: AskInput): Promise<AskSource[]> {
+export async function retrieve(accountId: string, subject: string | null, accountWide: boolean, input: AskInput): Promise<AskSource[]> {
   const terms = questionTerms(input.question);
   const to = input.scope?.to ? new Date(input.scope.to) : new Date(Date.now() + 60_000);
   const from = input.scope?.from ? new Date(input.scope.from) : new Date(to.getTime() - 90 * 86_400_000);
