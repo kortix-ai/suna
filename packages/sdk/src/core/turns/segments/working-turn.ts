@@ -1,3 +1,4 @@
+import type { SessionPrompt } from '../../rest/projects-client/sessions';
 import { showTurnBusyIndicator } from './turn-busy-visibility';
 
 /**
@@ -129,6 +130,33 @@ export function turnIsConfirmedActive(input: {
   pendingDelivery: boolean;
 }): boolean {
   return input.isTurnWorking && !input.pendingDelivery && input.activeTurnId === input.turnId;
+}
+
+/**
+ * Does this turn's bubble read as queued (muted text, a Sending or Queued line)?
+ *
+ * Only while the agent has not reached the prompt. The inbox holding the row is
+ * not that fact: every send goes through the inbox, an idle one too. An idle
+ * send is the working turn from its first frame (`freshSendHint`) and draws
+ * Thinking under its bubble, so it reads as sent while the inbox delivers it.
+ * The server's own `waiting` (a live turn, an older prompt, or a Stop hold) and
+ * `failed` keep the queued look on any turn.
+ */
+export function turnRendersQueued(input: {
+  /** `turnIsConfirmedActive` for this turn. */
+  confirmedActive: boolean;
+  /** This turn is the working turn of a working session. */
+  isTurnWorking: boolean;
+  /** This turn is after the working turn with no answer (`pendingTurnIds`). */
+  behindWorkingTurn: boolean;
+  /** The inbox row this turn renders, while the server still holds it. */
+  inboxPrompt?: Pick<SessionPrompt, 'state' | 'reason'> | null;
+}): boolean {
+  if (input.confirmedActive) return false;
+  if (input.behindWorkingTurn) return true;
+  if (!input.inboxPrompt) return false;
+  if (!input.isTurnWorking) return true;
+  return input.inboxPrompt.state === 'waiting' || input.inboxPrompt.state === 'failed';
 }
 
 /**

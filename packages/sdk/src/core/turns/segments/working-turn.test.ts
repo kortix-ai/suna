@@ -6,6 +6,7 @@ import {
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
   turnIsConfirmedActive,
+  turnRendersQueued,
   workingTurnDrawsBusyRow,
 } from './working-turn';
 
@@ -423,6 +424,51 @@ describe('only a confirmed active turn drops its pending presentation', () => {
       turnId: 'sent',
       activeTurnId: 'sent',
       pendingDelivery: false,
+    })).toBe(false);
+  });
+});
+
+describe('a bubble reads as queued only while the agent has not reached it', () => {
+  const base = { confirmedActive: false, isTurnWorking: false, behindWorkingTurn: false };
+
+  test('an idle send the inbox is still delivering reads as the active prompt', () => {
+    // Enter on an idle session painted the bubble muted with
+    // "Sending", then "Queued", until the server named the turn. The agent was
+    // already on it: the fresh-send hint made it the working turn, Thinking
+    // drew under it, and nothing ran ahead of it.
+    const working = { ...base, isTurnWorking: true };
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'queued', reason: null } })).toBe(false);
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'delivering', reason: null } })).toBe(false);
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'delivering', reason: 'forwarded' } })).toBe(false);
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'queued', reason: 'runtime_unreachable' } })).toBe(false);
+  });
+
+  test('the working turn keeps the queued look when the server says it waits or failed', () => {
+    const working = { ...base, isTurnWorking: true };
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'waiting', reason: 'turn_active' } })).toBe(true);
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'waiting', reason: 'older_prompt_pending' } })).toBe(true);
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'waiting', reason: 'held' } })).toBe(true);
+    expect(turnRendersQueued({ ...working, inboxPrompt: { state: 'failed', reason: null } })).toBe(true);
+  });
+
+  test('a send behind the running turn reads as queued', () => {
+    expect(turnRendersQueued({ ...base, behindWorkingTurn: true })).toBe(true);
+    expect(turnRendersQueued({ ...base, inboxPrompt: { state: 'queued', reason: null } })).toBe(true);
+    expect(turnRendersQueued({ ...base, inboxPrompt: { state: 'delivering', reason: null } })).toBe(true);
+  });
+
+  test('a turn with no inbox row and nothing ahead of it reads as sent', () => {
+    expect(turnRendersQueued(base)).toBe(false);
+    expect(turnRendersQueued({ ...base, isTurnWorking: true })).toBe(false);
+  });
+
+  test('a server-confirmed active turn never reads as queued', () => {
+    expect(turnRendersQueued({
+      ...base,
+      confirmedActive: true,
+      isTurnWorking: true,
+      behindWorkingTurn: true,
+      inboxPrompt: { state: 'failed', reason: null },
     })).toBe(false);
   });
 });
