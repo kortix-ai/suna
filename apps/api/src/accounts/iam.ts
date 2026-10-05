@@ -22,7 +22,7 @@
 //
 // ─── Structure ──────────────────────────────────────────────────────────────
 // This file is a thin BARREL. The router instance + shared OpenAPI schemas
-// live in ./iam/app, shared helpers in ./iam/helpers, and the ~36 routes are
+// live in ./iam/app, shared helpers in ./iam/http-helpers, and the ~36 routes are
 // split across ./iam/<group> modules; each exports a registerIam<Group>Routes()
 // function. registerIamRoutes() calls them in route-registration order.
 // OpenAPIHono dispatches in registration order, and that order is part of the

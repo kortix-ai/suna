@@ -27,7 +27,7 @@ import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from 
 import { GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
-import { requireEntitlement } from '../../accounts/iam/helpers';
+import { requireEntitlement } from '../../accounts/iam/http-helpers';
 
 /**
  * A group→project role grant. `kortix.project_group_grants` is a view over

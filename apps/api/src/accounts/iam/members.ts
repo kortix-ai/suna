@@ -41,7 +41,7 @@ import {
   EffectiveBatchResultSchema,
   isResourceType,
 } from './app';
-import { auditIam } from './helpers';
+import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 
 /**

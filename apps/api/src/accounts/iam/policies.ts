@@ -9,7 +9,7 @@ import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, HttpError } from './helpers';
+import { auditIam, HttpError } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 
 // ─── Session policy ───────────────────────────────────────────────────────

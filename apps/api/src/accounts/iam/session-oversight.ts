@@ -17,7 +17,7 @@ import { actorOf } from '../../iam/actor';
 import { accountRoleFor } from '../../iam/read-models';
 import { invalidateSessionOversight } from '../../iam/session-oversight';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from './helpers';
+import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 
 const SessionOversightStatus = z.object({

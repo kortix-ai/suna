@@ -70,7 +70,7 @@
       "count": 10
     }
   },
-  "src/accounts/iam/helpers.ts": {
+  "src/accounts/iam/http-helpers.ts": {
     "no-console": {
       "count": 1
     }

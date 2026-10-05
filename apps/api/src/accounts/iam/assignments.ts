@@ -31,7 +31,7 @@ import {
 } from '../../iam/assignments';
 import { loadPermissionCatalog, type ObjectType, type ScopeType } from '../../iam/catalog';
 import { iamRouter, AccountIdParam } from './app';
-import { requireEntitlement } from './helpers';
+import { requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 

@@ -16,7 +16,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { buildFilters } from '../../accounts/audit-filters';
-import { requireEntitlement } from '../../accounts/iam/helpers';
+import { requireEntitlement } from '../../accounts/iam/http-helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { PROJECT_ACTIONS } from '../../iam';
 import { logger as appLogger } from '../../lib/logger';

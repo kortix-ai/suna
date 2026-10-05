@@ -14,7 +14,7 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from './helpers';
+import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 
 export function registerIamMfaRoutes(): void {
