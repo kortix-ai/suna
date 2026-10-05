@@ -332,7 +332,8 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
     paths,
     steps,
     variants,
-    apps: [...new Set(runs.flatMap((r) => r.steps.map((s) => s.app)).filter((a): a is string => !!a))],
+    // The apps of the named paths: a detour inside one run (a chat reply) is not something the workflow needs.
+    apps: [...new Set(paths.flatMap((p) => p.representative.steps.map((s) => s.app)).filter((a): a is string => !!a))],
     stats: {
       runsTotal: runs.length,
       runsPerWeek,
@@ -460,13 +461,24 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
   const borderline: Array<[number, number, number]> = [];
   for (const a of big) for (const b of big) if (a.i < b.i && between(a.i, b.i) >= ASK_FROM) borderline.push([a.i, b.i, between(a.i, b.i)]);
   borderline.sort((x, y) => y[2] - x[2]);
-  const asked = borderline.slice(0, MAX_JUDGEMENTS);
-  if (asked.length) {
+  // A pair whose runs mostly belonged to one workflow before was judged the same then: merge it
+  // without asking again (a model outage must not split a workflow the last run held together).
+  const before = (m: MinedWorkflow) => {
+    const votes = new Map<string, number>();
+    for (const r of m.runs) if (r.workflowId) votes.set(r.workflowId, (votes.get(r.workflowId) ?? 0) + 1);
+    const [id, n] = [...votes].sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+    return id && n >= m.runs.length * 0.5 ? id : null;
+  };
+  const remembered = borderline.filter(([i, j]) => before(mined[i]!) && before(mined[i]!) === before(mined[j]!));
+  const asked = borderline.filter((pair) => !remembered.includes(pair)).slice(0, MAX_JUDGEMENTS);
+  if (asked.length || remembered.length) {
     let same: number[] = [];
     try {
-      await spend(async (usage) => {
-        same = (await caller.call(judgeZod, judgePrompt(asked.map(([i, j]) => [mined[i]!, mined[j]!])), [], usage)).same;
-      });
+      if (asked.length) {
+        await spend(async (usage) => {
+          same = (await caller.call(judgeZod, judgePrompt(asked.map(([i, j]) => [mined[i]!, mined[j]!])), [], usage)).same;
+        });
+      }
     } catch (error) {
       // No judgement this run (model busy or down): the clusters stay apart until the next run.
       if (error instanceof CaptureBudgetExceeded) throw error;
@@ -474,9 +486,8 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
     }
     const parent = mined.map((_, i) => i);
     const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
-    for (const n of same) {
-      const pair = asked[n - 1];
-      if (pair) parent[find(pair[1])] = find(pair[0]);
+    for (const pair of [...remembered, ...same.map((n) => asked[n - 1]).filter((p): p is [number, number, number] => !!p)]) {
+      parent[find(pair[1])] = find(pair[0]);
     }
     const merged = new Map<number, Run[]>();
     for (const [i, m] of mined.entries()) merged.set(find(i), [...(merged.get(find(i)) ?? []), ...m.runs]);

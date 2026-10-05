@@ -287,6 +287,100 @@ describe('ranges and processing', () => {
   });
 });
 
+describe('intelligence: episodes (L1/L2) and mining (L3)', () => {
+  const scripted = (answer: (prompt: string) => unknown, prompts: string[] = []) => ({
+    model: 'scripted-model',
+    async call(schema: { parse: (v: unknown) => unknown }, prompt: string, _images: unknown[], usage: Record<string, number>) {
+      prompts.push(prompt);
+      usage.requests += 1;
+      usage.cost_usd += 0.0002;
+      return schema.parse(answer(prompt));
+    },
+  });
+
+  test('a closed range becomes episodes: literal-free labels, value-only variables, strictly ordered step times; spend recorded; the range reads processed', async () => {
+    const { traceRange } = await import('../capture/episodes');
+    const { captureEpisodes, captureEpisodeSteps, captureAiUsage } = await import('@kortix/db');
+    const [range] = await db.select().from(timelineRanges).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
+    const prompts: string[] = [];
+    const caller = scripted(
+      () => ({
+        episodes: [
+          {
+            first: 1, last: 99, label: 'Plan roadmap SO-123456', goal: 'Draft the roadmap for ticket #41234.', outcome: 'Roadmap saved.', outcome_status: 'succeeded', procedural: true,
+            steps: [
+              { moment: 1, verb: 'Open', app: 'Editor', object: 'roadmap guide', variables: ['roadmap_guide'] },
+              { moment: 1, verb: 'Type', app: 'Editor', object: 'plan for order SO-123456', variables: ['Order ID'] },
+              { moment: 1, verb: 'Reply', app: 'Editor', object: 'summary', variables: [] },
+            ],
+          },
+        ],
+      }),
+      prompts,
+    );
+    const result = await traceRange(range!.rangeId, caller as never);
+    expect(result.episodes).toBe(1);
+    expect(prompts[0]).toContain('m1 ');
+    const [episode] = await db.select().from(captureEpisodes).where(eq(captureEpisodes.deviceId, deviceId));
+    expect([episode!.label, episode!.goal, episode!.status, episode!.stepsCount, episode!.signature]).toEqual(['Plan roadmap', 'Draft the roadmap for ticket.', 'traced', 3, 'open@editor fill@editor send@editor']);
+    const steps = await db.select().from(captureEpisodeSteps).where(eq(captureEpisodeSteps.episodeId, episode!.episodeId)).orderBy(captureEpisodeSteps.index);
+    expect(steps.map((s) => [s.verb, s.object, s.variables])).toEqual([['Open', 'roadmap guide', []], ['Fill', 'plan for order', ['order_id']], ['Send', 'summary', []]]);
+    const times = steps.map((s) => s.ts.getTime());
+    expect(new Set(times).size).toBe(3);
+    expect([...times].sort((a, b) => a - b)).toEqual(times);
+    const [usage] = await db.select().from(captureAiUsage).where(eq(captureAiUsage.accountId, ACCOUNT));
+    expect(Number(usage!.costUsd)).toBeGreaterThan(0);
+    const [after] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, range!.rangeId));
+    expect(after!.status).toBe('processed');
+    // A re-run replaces the range's detected episodes instead of adding to them.
+    await traceRange(range!.rangeId, caller as never);
+    expect((await db.select().from(captureEpisodes).where(eq(captureEpisodes.deviceId, deviceId))).length).toBe(1);
+  });
+
+  test('mining: clusters need 3 finished runs; an abandoned run joins the workflow it started; names are unique; identities and reviews survive a re-mine; runIntelligence queues ranges', async () => {
+    const { mineAccount } = await import('../capture/mining');
+    const { runIntelligence } = await import('../capture/workers');
+    const { captureEpisodes, captureEpisodeSteps, captureWorkflows } = await import('@kortix/db');
+    const now = Date.now();
+    const OTHER = crypto.randomUUID();
+    const add = async (i: number, userId: string, label: string, path: Array<[string, string, string]>, outcomeStatus = 'succeeded') => {
+      const start = new Date(now - (i + 1) * 3_600_000);
+      const [e] = await db
+        .insert(captureEpisodes)
+        .values({ accountId: ACCOUNT, userId, deviceId, startAt: start, endAt: new Date(start.getTime() + 300_000), label, status: 'traced', outcomeStatus, stepsCount: path.length, signature: path.map(([v, a]) => `${v.toLowerCase()}@${a.toLowerCase()}`).join(' ') })
+        .returning();
+      await db.insert(captureEpisodeSteps).values(path.map(([verb, app, object], index) => ({ episodeId: e!.episodeId, accountId: ACCOUNT, index, ts: new Date(start.getTime() + index * 1000), verb, app, object, variables: [] })));
+      return e!.episodeId;
+    };
+    const refund: Array<[string, string, string]> = [['Open', 'Helpdesk', 'damaged ticket'], ['Search', 'ERP', 'order by number'], ['Create', 'ERP', 'refund'], ['Send', 'Mail', 'refund confirmation']];
+    const invoice: Array<[string, string, string]> = [['Download', 'Mail', 'invoice attachment'], ['Match', 'ERP', 'invoice to purchase order'], ['Approve', 'Billing', 'invoice payment']];
+    for (let i = 0; i < 4; i++) await add(i, i % 2 ? MEMBER : OTHER, 'Refund a damaged order', refund);
+    for (let i = 4; i < 7; i++) await add(i, MEMBER, 'Approve a supplier invoice', invoice);
+    const abandoned = await add(8, MEMBER, 'Refund a damaged order', refund.slice(0, 2), 'abandoned');
+    const lonely = await add(9, MEMBER, 'Book travel', [['Open', 'Browser', 'travel site'], ['Create', 'Browser', 'booking']]);
+    const caller = scripted((prompt) => (prompt.includes('Each pair shows') ? { same: [] } : { name: 'Process a request', goal: 'Handle it.', outcome: 'Done.', variants: [] }));
+    const first = await mineAccount(ACCOUNT, caller as never, now);
+    expect(first.workflows).toBe(2);
+    const rows = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT)).orderBy(captureWorkflows.runsTotal);
+    expect(rows.map((w) => [w.name, w.runsTotal, w.peopleCount])).toEqual([['Process a request (2)', 3, 1], ['Process a request', 5, 2]]);
+    const [joined] = await db.select().from(captureEpisodes).where(eq(captureEpisodes.episodeId, abandoned));
+    expect(joined!.workflowId).toBe(rows[1]!.workflowId);
+    const [alone] = await db.select().from(captureEpisodes).where(eq(captureEpisodes.episodeId, lonely));
+    expect(alone!.workflowId).toBeNull();
+    // A person reviews one; a re-mine keeps both identities and the reviewed name.
+    await db.update(captureWorkflows).set({ name: 'Refund a damaged order', status: 'reviewed' }).where(eq(captureWorkflows.workflowId, rows[1]!.workflowId));
+    await mineAccount(ACCOUNT, caller as never, now);
+    const again = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT)).orderBy(captureWorkflows.runsTotal);
+    expect(again.map((w) => [w.workflowId, w.name, w.status])).toEqual([[rows[0]!.workflowId, 'Process a request (2)', 'detected'], [rows[1]!.workflowId, 'Refund a damaged order', 'reviewed']]);
+    // The admin "run" queues every closed detected range, then mining.
+    await db.update(timelineRanges).set({ status: 'closed' }).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
+    const run = await runIntelligence(ACCOUNT);
+    expect(run.episodes_queued).toBeGreaterThanOrEqual(1);
+    expect(run.mining_queued).toBe(true);
+    expect((await runIntelligence(ACCOUNT, { miningOnly: true })).episodes_queued).toBe(0);
+  });
+});
+
 describe('forget', () => {
   test('a delete line retracts the item, its rows and the outputs of overlapping ranges; a re-poll is a no-op', async () => {
     const key = [...objects.keys()].find((k) => k.startsWith(`${PREFIX}/${deviceId}/`) && /\/\d+-1\.manifest\.json$/.test(k))!;

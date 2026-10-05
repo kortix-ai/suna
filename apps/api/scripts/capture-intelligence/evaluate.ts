@@ -166,7 +166,8 @@ const drafts = await Promise.all(
     const variants = (w.variants as any[]).filter((v) => v.key !== 'A');
     const problems = [
       /\.\.(?!\.)/.test(d.markdown) && 'double period',
-      /^\s*[A-Z][\w ›]*\.\s*$/m.test(d.markdown.split('## Steps')[1] ?? '') && 'stray fragment line',
+      // Inside the steps, every line is a numbered step or its "If …" decision line.
+      ((d.markdown.split('## Steps')[1] ?? '').split(/\n## |\nNeeds:/)[0]!.split('\n').some((l: string) => l.trim() && !/^(\d+\. |If )/.test(l.trim()))) && 'stray fragment line',
       variants.some((v) => !v.name || /^(Variant|Path) [A-Z]$/.test(v.name)) && 'unnamed variant',
       variants.some((v) => !v.question) && 'variant without condition',
       /If the case calls for variant/.test(d.markdown) && 'bare decision',
