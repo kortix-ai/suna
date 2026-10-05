@@ -19,6 +19,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { CaptureSubpageHeader, ManagersOnly } from '../capture-shell';
 import { relativeTime } from '../capture-time';
+import { useCaptureAccountId } from '../use-capture-viewer';
 
 function SwitchRow({
   title,
@@ -46,8 +47,9 @@ function SwitchRow({
 }
 
 function PolicySection({ projectId }: { projectId: string }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.settings');
-  const record = useCapturePolicy(projectId);
+  const record = useCapturePolicy(accountId);
   if (record.isLoading) {
     return (
       <div className="space-y-3">
@@ -80,9 +82,10 @@ function PolicySection({ projectId }: { projectId: string }) {
 }
 
 function PolicyForm({ projectId, record }: { projectId: string; record: CapturePolicyRecord }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.settings');
   const locale = useLocale();
-  const save = useSetCapturePolicy(projectId);
+  const save = useSetCapturePolicy(accountId);
   const [draft, setDraft] = useState<CapturePolicy>(record.policy);
   const dirty = JSON.stringify(draft) !== JSON.stringify(record.policy);
   const patch = <K extends keyof CapturePolicy>(key: K, value: Partial<CapturePolicy[K]>) =>

@@ -4,12 +4,12 @@ import type { DesktopCaptureStatus } from '@/lib/desktop';
 
 import { activeLayers, capturePhase, missingGrants } from './capture-state';
 
-const P = '3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b';
+const A = '3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b';
 const recording: DesktopCaptureStatus = {
   available: true,
   signedIn: true,
   signInRequired: false,
-  projectId: P,
+  accountId: A,
   on: true,
   state: 'recording',
   layers: { screen: true, actions: true, audio: false },
@@ -20,20 +20,20 @@ const recording: DesktopCaptureStatus = {
 const phase = (
   view: DesktopCaptureStatus | null,
   extra: Partial<Parameters<typeof capturePhase>[1]> = {},
-) => capturePhase(view, { projectId: P, orgHasCapture: true, now: 1_000, ...extra });
+) => capturePhase(view, { accountId: A, captureOn: true, now: 1_000, ...extra });
 
 describe('capturePhase', () => {
   test('every phase, in priority order', () => {
     expect(phase(null)).toBe('unavailable');
     expect(phase({ available: false })).toBe('unavailable');
-    expect(phase(recording, { orgHasCapture: false })).toBe('orgOff');
+    expect(phase(recording, { captureOn: false })).toBe('captureOff');
     expect(phase(recording, { turningOn: true })).toBe('turningOn');
     expect(phase({ ...recording, signedIn: false, signInRequired: true })).toBe('signInRequired');
     expect(phase(recording, { failed: true })).toBe('error');
     expect(phase({ ...recording, state: 'crashed' })).toBe('error');
     expect(phase({ ...recording, signedIn: false })).toBe('off');
     expect(phase({ ...recording, on: false })).toBe('off');
-    expect(phase({ ...recording, projectId: 'another' })).toBe('off');
+    expect(phase({ ...recording, accountId: 'another' })).toBe('off');
     expect(phase({ ...recording, state: 'stopped' })).toBe('off');
     expect(phase({ ...recording, state: 'paused' })).toBe('paused');
     expect(phase({ ...recording, pausedUntilMs: 2_000 })).toBe('paused');
@@ -50,9 +50,9 @@ describe('capturePhase', () => {
     expect(phase(recording)).toBe('recording');
   });
 
-  test('a refusal for another project does not hijack this one', () => {
+  test('a refusal for another account does not hijack this one', () => {
     expect(
-      phase({ ...recording, projectId: 'another', signInRequired: true, signedIn: false }),
+      phase({ ...recording, accountId: 'another', signInRequired: true, signedIn: false }),
     ).toBe('off');
   });
 });

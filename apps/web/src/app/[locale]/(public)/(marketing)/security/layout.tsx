@@ -1,7 +1,9 @@
-import { marketingMetadata } from '@/lib/seo/metadata';
+import { localizedMarketingMetadata } from '@/lib/seo/metadata';
 import type { ReactNode } from 'react';
 
-export const metadata = marketingMetadata('/security');
+export function generateMetadata() {
+  return localizedMarketingMetadata('/security');
+}
 
 export default function SecurityLayout({ children }: { children: ReactNode }) {
   return children;

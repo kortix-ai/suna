@@ -45,7 +45,7 @@ MinIO ignores the role ARN and enforces the session policy
 (`apps/api/src/capture/credentials.ts`). Measured on 2026-10-03 with the root
 user as the caller: a device credential writes its own folder, reads
 `<prefix>/policy.json`, lists its own folder, and gets `AccessDenied` for another
-device's folder, for writing `policy.json`, and for listing the project prefix.
+device's folder, for writing `policy.json`, and for listing the account prefix (`orgs/<account_id>`).
 
 ## Limits
 

@@ -13,19 +13,17 @@ import { isUuid } from '../shared/validate';
 
 export const CAPTURE_SCHEMA = 2;
 
-/** Kortix's prefix for one project. The device writes under `<prefix>/<device_id>/`. */
-export function projectPrefix(accountId: string, projectId: string): string {
-  return `orgs/${accountId}/projects/${projectId}`;
+/** Kortix's prefix for one account (the Capture tenant). The device writes under `<prefix>/<device_id>/`. */
+export function accountPrefix(accountId: string): string {
+  return `orgs/${accountId}`;
 }
 
-/** Split an object key of the Kortix layout. Null for any other key. */
-export function parseCaptureKey(
-  key: string,
-): { accountId: string; projectId: string; deviceId: string; rest: string } | null {
-  const [orgs, accountId, projects, projectId, deviceId, ...rest] = key.split('/');
-  if (orgs !== 'orgs' || projects !== 'projects' || rest.length === 0 || !rest.every(Boolean)) return null;
-  if (!isUuid(accountId) || !isUuid(projectId) || !isUuid(deviceId)) return null;
-  return { accountId, projectId, deviceId, rest: rest.join('/') };
+/** Split an object key of the Kortix layout, `orgs/<account_id>/<device_id>/…`. Null for any other key. */
+export function parseCaptureKey(key: string): { accountId: string; deviceId: string; rest: string } | null {
+  const [orgs, accountId, deviceId, ...rest] = key.split('/');
+  if (orgs !== 'orgs' || rest.length === 0 || !rest.every(Boolean)) return null;
+  if (!isUuid(accountId) || !isUuid(deviceId)) return null;
+  return { accountId, deviceId, rest: rest.join('/') };
 }
 
 // ─── Manifests ───────────────────────────────────────────────────────────────
@@ -266,7 +264,7 @@ export const PolicySchema = z.object({
 });
 export type CapturePolicy = z.infer<typeof PolicySchema>;
 
-/** The project policy before an operator sets one. Audio is off until someone turns it on. */
+/** The account policy before an admin sets one. Audio is off until someone turns it on. */
 export const DEFAULT_POLICY: CapturePolicy = PolicySchema.parse({});
 
 /** The `policy.json` object body, as devices read it. */

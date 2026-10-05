@@ -9,7 +9,6 @@ import {
   WarningIcon,
   type Icon,
 } from '@phosphor-icons/react';
-import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -60,23 +59,23 @@ const TONES: Partial<Record<CapturePhase, StatusTone>> = {
  * phase at a time (capture-state.ts), one primary action per phase. Renders
  * the header, body and footer of a `Modal`.
  */
-export function CaptureThisComputer({ onClose }: { onClose: () => void }) {
+export function CaptureThisComputer() {
   const t = useTranslations('capture.dialog');
   const locale = useLocale();
   const status = useDesktopCaptureStatus({ poll: true });
   const view = status.data ?? null;
-  const org = useCaptureOrganization(view?.projectId);
+  const org = useCaptureOrganization();
   const [waitingOnPage, setWaitingOnPage] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
-  const actions = useDesktopCaptureActions(org.projectId ?? '', {
+  const actions = useDesktopCaptureActions(org.accountId, {
     onWaitingOnPage: () => setWaitingOnPage(true),
   });
   // The last status read (every 2 s) is "now", so render stays pure.
   const now = status.dataUpdatedAt;
   const phase = capturePhase(view, {
     now,
-    projectId: org.projectId ?? '',
-    orgHasCapture: org.enabled,
+    accountId: org.accountId,
+    captureOn: org.captureOn,
     turningOn: actions.turnOn.isPending,
     failed: actions.turnOn.isError,
   });
@@ -124,13 +123,13 @@ export function CaptureThisComputer({ onClose }: { onClose: () => void }) {
     />
   );
 
-  if (!view || phase === 'unavailable' || phase === 'orgOff') {
+  if (!view || phase === 'unavailable' || phase === 'captureOff') {
     return (
       <>
         {header}
         <ModalBody>
           <p className="text-muted-foreground text-sm text-pretty">
-            {phase === 'orgOff' ? t('orgOff', { org: org.name }) : view?.error || t('unavailable')}
+            {phase === 'captureOff' ? t('orgOff', { org: org.name }) : view?.error || t('unavailable')}
           </p>
         </ModalBody>
       </>
@@ -174,7 +173,7 @@ export function CaptureThisComputer({ onClose }: { onClose: () => void }) {
           <p className="text-muted-foreground text-sm text-pretty">{t('noLayers')}</p>
         ) : !on ? (
           <p className="text-muted-foreground text-sm text-pretty">
-            {phase === 'off' && view.signedIn && view.projectId !== org.projectId
+            {phase === 'off' && view.signedIn && view.accountId !== org.accountId
               ? t('otherOrg', { org: org.name })
               : t('intro', { org: org.name })}
           </p>
@@ -238,14 +237,6 @@ export function CaptureThisComputer({ onClose }: { onClose: () => void }) {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {org.projectId ? (
-            // ponytail: the timeline is project-scoped until the web lane's top-level /capture area lands.
-            <Button variant="outline" asChild>
-              <Link href={`/projects/${org.projectId}/capture`} onClick={onClose}>
-                {t('actions.openTimeline')}
-              </Link>
-            </Button>
-          ) : null}
           <PrimaryAction
             phase={phase}
             pausedByOrg={Boolean(view.policy?.paused)}

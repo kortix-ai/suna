@@ -48,7 +48,7 @@ export function deviceSessionPolicy(bucket: string, prefix: string, deviceId: st
         Resource: [`arn:aws:s3:::${bucket}/${folder}/*`],
       },
       {
-        Sid: 'ProjectPolicy',
+        Sid: 'AccountPolicy',
         Effect: 'Allow',
         Action: ['s3:GetObject'],
         Resource: [`arn:aws:s3:::${bucket}/${prefix}/policy.json`],

@@ -6609,13 +6609,55 @@ export const jobQueue = kortixSchema.table(
 
 // ─── Kortix Capture ──────────────────────────────────────────────────────────
 //
-// The desktop app writes the Kortix Capture format (schema 2) to S3 under
-// `orgs/<account_id>/projects/<project_id>/<device_id>/`. Kortix signs devices
-// in (RFC 8628 grants below), issues scoped S3 credentials, and indexes every
-// finished item (one manifest) into the timeline tables. The timeline tables
-// that grow with recorded time (frames, actions, audio) are RANGE-partitioned
-// by month on their event time (migration *_capture_timeline); drizzle-kit has
-// no syntax for that, so they are declared here as their parents.
+// Capture is a standalone product whose tenant is a Kortix account (an
+// organization). It has no project anywhere in its model. The desktop app
+// writes the Kortix Capture format (schema 2) to S3 under
+// `orgs/<account_id>/<device_id>/`. Kortix signs devices in (RFC 8628 grants
+// below), issues scoped S3 credentials, and indexes every finished item (one
+// manifest) into the timeline tables. The timeline tables that grow with
+// recorded time (frames, actions, audio) are RANGE-partitioned by month on
+// their event time (migration *_capture_timeline); drizzle-kit has no syntax
+// for that, so they are declared here as their parents.
+
+/**
+ * One account's Capture workspace: the account-level switch and the policy,
+ * mirrored to `orgs/<account_id>/policy.json`. No row, or `enabled` false,
+ * means Capture is off for the account: no sign-in, credentials or ingest.
+ */
+export const captureWorkspaces = kortixSchema.table('capture_workspaces', {
+  accountId: uuid('account_id')
+    .primaryKey()
+    .references(() => accounts.accountId, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').default(false).notNull(),
+  policy: jsonb('policy').$type<Record<string, unknown>>().default({}).notNull(),
+  updatedBy: uuid('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * A person's Capture role when it differs from the default their account role
+ * gives (owner/admin → `admin`, member → `member`). `admin` reads every
+ * member's devices and timeline (audited) and writes the policy; `member` reads
+ * only their own; `viewer` reads everyone's but writes no policy.
+ */
+export const captureMembers = kortixSchema.table(
+  'capture_members',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    role: text('role').notNull(),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'capture_members_pkey', columns: [table.accountId, table.userId] }),
+    check('capture_members_role', sql`${table.role} in ('admin', 'member', 'viewer')`),
+  ],
+);
 
 /** One pending RFC 8628 device authorization. Short-lived (15 min). */
 export const captureDeviceGrants = kortixSchema.table(
@@ -6628,7 +6670,8 @@ export const captureDeviceGrants = kortixSchema.table(
     /** Untrusted device description sent with the request (hostname, os, …). */
     deviceInfo: jsonb('device_info').$type<Record<string, unknown>>().default({}).notNull(),
     status: text('status').default('pending').notNull(),
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** The account the person approved the device into. */
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
     userId: uuid('user_id'),
     deviceId: uuid('device_id'),
     lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
@@ -6646,24 +6689,16 @@ export const captureDeviceGrants = kortixSchema.table(
   ],
 );
 
-/** One signed-in device: one machine, one member, one project. */
+/** One signed-in device: one machine, one member, one account. */
 export const captureDevices = kortixSchema.table(
   'capture_devices',
   {
     deviceId: uuid('device_id').default(sql`kortix.uuid_v7()`).primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id')
+    accountId: uuid('account_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
     machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
-    /**
-     * The computer this device runs on, as the computer agent names it
-     * (`machineInfo.machineId` of a tunnel connection: sha256 of
-     * "kortix-machine:" + the OS machine id). Set by the Kortix desktop app at
-     * approval; joins a device to the person's computer. Null for other apps.
-     */
-    machineId: varchar('machine_id', { length: 64 }),
     /** Hash of the current device token (`hashSecretKey`). Null after a revoke. */
     tokenHash: varchar('token_hash', { length: 128 }),
     tokenIssuedAt: timestamp('token_issued_at', { withTimezone: true }),
@@ -6678,7 +6713,7 @@ export const captureDevices = kortixSchema.table(
     status: jsonb('status').$type<Record<string, unknown>>(),
     statusReportedAt: timestamp('status_reported_at', { withTimezone: true }),
     lastCredentialsAt: timestamp('last_credentials_at', { withTimezone: true }),
-    /** Operator override written to `<prefix>/<device_id>/policy.json`. Null = project policy. */
+    /** Admin override written to `orgs/<account_id>/<device_id>/policy.json`. Null = the account policy. */
     policyOverride: jsonb('policy_override').$type<Record<string, unknown>>(),
     /** Index reader cursor: the newest index day, `{"<day>": "<bytes>:<mtime>"}` of the day files read (index_etag), and their count. */
     indexDay: text('index_day'),
@@ -6691,34 +6726,23 @@ export const captureDevices = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_capture_devices_identity').on(
-      table.projectId,
+      table.accountId,
       table.machineKeySha256,
       table.userId,
     ),
     uniqueIndex('idx_capture_devices_token').on(table.tokenHash),
-    index('idx_capture_devices_project_user').on(table.projectId, table.userId),
+    index('idx_capture_devices_account_user').on(table.accountId, table.userId),
   ],
 );
-
-/** The operator's capture policy for a project, mirrored to `<prefix>/policy.json`. */
-export const capturePolicies = kortixSchema.table('capture_policies', {
-  projectId: uuid('project_id')
-    .primaryKey()
-    .references(() => projects.projectId, { onDelete: 'cascade' }),
-  policy: jsonb('policy').$type<Record<string, unknown>>().notNull(),
-  updatedBy: uuid('updated_by'),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
 
 /** One indexed item: one manifest (`chunk`, `audio` or `actions`). The ingest ledger. */
 export const timelineChunks = kortixSchema.table(
   'timeline_chunks',
   {
     chunkId: uuid('chunk_id').default(sql`kortix.uuid_v7()`).primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id')
+    accountId: uuid('account_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
     deviceId: uuid('device_id')
       .notNull()
       .references(() => captureDevices.deviceId, { onDelete: 'cascade' }),
@@ -6734,8 +6758,8 @@ export const timelineChunks = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_timeline_chunks_manifest').on(table.manifestKey),
-    index('idx_timeline_chunks_project_user_start').on(
-      table.projectId,
+    index('idx_timeline_chunks_account_user_start').on(
+      table.accountId,
       table.userId,
       table.startAt,
     ),
@@ -6757,7 +6781,7 @@ export const timelineFrames = kortixSchema.table(
     frameId: uuid('frame_id').default(sql`kortix.uuid_v7()`).notNull(),
     ts: timestamp('ts', { withTimezone: true }).notNull(),
     chunkId: uuid('chunk_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
     deviceId: uuid('device_id').notNull(),
     userId: uuid('user_id').notNull(),
     frameIndex: integer('frame_index'),
@@ -6772,7 +6796,7 @@ export const timelineFrames = kortixSchema.table(
   },
   (table) => [
     primaryKey({ name: 'timeline_frames_pkey', columns: [table.frameId, table.ts] }),
-    index('idx_timeline_frames_project_user_ts').on(table.projectId, table.userId, table.ts),
+    index('idx_timeline_frames_account_user_ts').on(table.accountId, table.userId, table.ts),
     index('idx_timeline_frames_chunk').on(table.chunkId),
     index('idx_timeline_frames_search').using(
       'gin',
@@ -6788,7 +6812,7 @@ export const timelineActions = kortixSchema.table(
     actionId: uuid('action_id').default(sql`kortix.uuid_v7()`).notNull(),
     ts: timestamp('ts', { withTimezone: true }).notNull(),
     chunkId: uuid('chunk_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
     deviceId: uuid('device_id').notNull(),
     userId: uuid('user_id').notNull(),
     kind: text('kind').notNull(),
@@ -6802,7 +6826,7 @@ export const timelineActions = kortixSchema.table(
   },
   (table) => [
     primaryKey({ name: 'timeline_actions_pkey', columns: [table.actionId, table.ts] }),
-    index('idx_timeline_actions_project_user_ts').on(table.projectId, table.userId, table.ts),
+    index('idx_timeline_actions_account_user_ts').on(table.accountId, table.userId, table.ts),
     index('idx_timeline_actions_chunk').on(table.chunkId),
     index('idx_timeline_actions_search').using(
       'gin',
@@ -6819,14 +6843,14 @@ export const timelineAudio = kortixSchema.table(
     ts: timestamp('ts', { withTimezone: true }).notNull(),
     endAt: timestamp('end_at', { withTimezone: true }).notNull(),
     chunkId: uuid('chunk_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
     deviceId: uuid('device_id').notNull(),
     userId: uuid('user_id').notNull(),
     text: text('text').notNull(),
   },
   (table) => [
     primaryKey({ name: 'timeline_audio_pkey', columns: [table.lineId, table.ts] }),
-    index('idx_timeline_audio_project_user_ts').on(table.projectId, table.userId, table.ts),
+    index('idx_timeline_audio_account_user_ts').on(table.accountId, table.userId, table.ts),
     index('idx_timeline_audio_chunk').on(table.chunkId),
     index('idx_timeline_audio_search').using('gin', timelineSearch(table.text)),
   ],
@@ -6837,10 +6861,9 @@ export const timelineRanges = kortixSchema.table(
   'timeline_ranges',
   {
     rangeId: uuid('range_id').default(sql`kortix.uuid_v7()`).primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id')
+    accountId: uuid('account_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
     /** Detected ranges belong to one device; a saved range may span several (null). */
     deviceId: uuid('device_id').references(() => captureDevices.deviceId, {
@@ -6856,8 +6879,8 @@ export const timelineRanges = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_timeline_ranges_project_user_start').on(
-      table.projectId,
+    index('idx_timeline_ranges_account_user_start').on(
+      table.accountId,
       table.userId,
       table.startAt,
     ),

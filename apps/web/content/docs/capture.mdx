@@ -1,0 +1,82 @@
+---
+title: Capture
+description: A searchable timeline of each member's screen, actions and audio, owned by the Kortix account.
+---
+
+Kortix Capture records a member's own computer: the screen (app, window title,
+URL, on-screen text), input actions with screenshots, and audio when the
+account's policy allows it. Kortix indexes the recordings into one timeline per
+person.
+
+Capture belongs to the **Kortix account** (your organization), not to a
+project. One account has one Capture workspace: one switch, one policy, one set
+of Capture roles. Devices sign in to the account.
+
+## Turn Capture on
+
+An account owner or admin turns Capture on for the account. It is off by
+default. While it is off:
+
+- every Capture route answers `403` with `code: "capture_disabled"`;
+- a device cannot sign in or get storage credentials;
+- nothing new is indexed.
+
+From the API: `PATCH /v1/accounts/<account_id>/capture` with `{"enabled": true}`.
+From TypeScript: `kortix.capture.account(accountId).workspace.setEnabled(true)`.
+
+## Who sees what
+
+Each member has a Capture role. The default comes from their account role; a
+Capture admin can set a different one per person.
+
+| Capture role | Default for | Reads | Writes |
+|---|---|---|---|
+| `admin` | account owners and admins | every member's devices and timeline, **People** | the policy, device overrides, Capture roles |
+| `viewer` | nobody (set it per person) | every member's devices and timeline, **People** | nothing |
+| `member` | account members | their own devices and timeline | their own ranges |
+| an agent | — | only the timeline of the person its private session acts for | nothing |
+
+Every read of another member's data writes a `capture.member_view` entry to the
+account's audit log; an account-wide read (all devices, **People**) writes
+`capture.account_view`; an agent's read writes `capture.agent_read`. Turning
+Capture on or off writes `capture.enable` or `capture.disable`; a role change
+writes `capture.member_role`.
+
+## The policy
+
+The policy is one per account, with an optional override per device:
+
+- layers: screen, actions, audio (audio is off until someone turns it on);
+- personal-data masking on the device;
+- an account-wide pause;
+- retention on the device and in Kortix (`remote_days`, default 90);
+- the notice the device shows the person being recorded.
+
+Kortix publishes it to `orgs/<account_id>/policy.json` in the capture store,
+where every device reads it. Kortix also enforces the layers when it indexes:
+a device never widens the policy.
+
+## Connect a device
+
+1. Install the Kortix desktop app, or the standalone Kortix Capture engine.
+2. Choose **Sign in with Kortix**. The browser opens `/capture/authorize` with
+   a code.
+3. Check that the code matches the app, then choose the account (only accounts
+   with Capture on are listed). The device records into that account as you.
+
+The device receives a revocable device token and, from it, short-lived storage
+credentials for its own folder (`orgs/<account_id>/<device_id>/`) and read
+access to the policy. Signing in again on the same computer reuses the device.
+Forgetting a time range on the device removes it from Kortix too.
+
+## Agents
+
+An agent in a member's private session can search that member's timeline with
+`kortix capture search`, `timeline` and `frame`. It reads only that person, in
+the session's account. A trigger run or a shared session acts for no person and
+gets `403 capture_no_human`.
+
+## Build on it
+
+See [SDK → reference](/docs/sdk/reference) (`kortix.capture`) for the client
+surface and the React hooks.

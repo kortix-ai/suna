@@ -10,6 +10,7 @@ import Ajv2020 from 'ajv/dist/2020';
 import {
   DEFAULT_POLICY,
   PolicySchema,
+  accountPrefix,
   checkManifest,
   jsonLines,
   liveState,
@@ -19,7 +20,6 @@ import {
   parseCaptureKey,
   parseFrameLine,
   policyDocument,
-  projectPrefix,
 } from './format';
 
 const CONTRACT = join(import.meta.dir, '../../../../tests/fixtures/capture-format-v2');
@@ -37,9 +37,8 @@ const json = (file: string) => JSON.parse(readFileSync(join(DAY, file), 'utf8'))
 const lines = (file: string) => jsonLines(new TextDecoder().decode(Bun.zstdDecompressSync(readFileSync(join(DAY, file)))));
 
 const ACCOUNT = '11111111-1111-4111-8111-111111111111';
-const PROJECT = '22222222-2222-4222-8222-222222222222';
 const DEVICE = '33333333-3333-4333-8333-333333333333';
-const PREFIX = projectPrefix(ACCOUNT, PROJECT);
+const PREFIX = accountPrefix(ACCOUNT);
 
 describe('the vendored fixture bucket', () => {
   test('every fixture object matches its schema (the contract Kortix reads)', () => {
@@ -97,9 +96,12 @@ describe('the vendored fixture bucket', () => {
 });
 
 describe('keys and index', () => {
-  test('a Kortix key splits into account, project, device and the rest', () => {
-    expect(parseCaptureKey(`${PREFIX}/${DEVICE}/2026/10/03/1-7.manifest.json`)).toEqual({ accountId: ACCOUNT, projectId: PROJECT, deviceId: DEVICE, rest: '2026/10/03/1-7.manifest.json' });
+  test('a Kortix key orgs/<account>/<device>/… splits into account, device and the rest; no project in the layout', () => {
+    expect(PREFIX).toBe(`orgs/${ACCOUNT}`);
+    expect(parseCaptureKey(`${PREFIX}/${DEVICE}/2026/10/03/1-7.manifest.json`)).toEqual({ accountId: ACCOUNT, deviceId: DEVICE, rest: '2026/10/03/1-7.manifest.json' });
     expect(parseCaptureKey(`${PREFIX}/policy.json`)).toBeNull();
+    // The retired project layout is not a Kortix key.
+    expect(parseCaptureKey(`${PREFIX}/projects/22222222-2222-4222-8222-222222222222/${DEVICE}/a.manifest.json`)).toBeNull();
     expect(parseCaptureKey(`fixture-prefix/${FIXTURE_DEVICE}/x.manifest.json`)).toBeNull();
   });
 

@@ -1,0 +1,107 @@
+---
+title: What is an AI Operating System?
+description: An AI Operating System is the layer a company runs its AI agents on. Kortix is the open-source AI Operating System. Here is what that means.
+---
+
+An **AI Operating System (AI OS)** is the layer a company runs its AI agents
+on. It holds the agents, the skills they share, the company's memory and the
+connections to its tools. It gives each piece of work a computer to run on,
+decides what each agent may touch, and records what it did.
+
+**Kortix is the open-source AI Operating System.** Your agents, skills,
+company memory and connectors live in one git repo you own. Each session runs
+on its own cloud computer, and the work reaches `main` through a change
+request a person approves.
+
+## AI tools, agent frameworks and an AI Operating System
+
+| | What it gives you | What it leaves to you |
+| --- | --- | --- |
+| **An AI tool** (a chat app, a coding assistant) | One assistant that answers while you drive it. | Everything around it: where agents run, what they may reach, how work is reviewed, what the company learns. |
+| **An agent framework** (a library for multi-agent code) | Building blocks to write agents in code. | Running them: computers, credentials, permissions, schedules, channels and review. |
+| **An AI Operating System** | The whole layer: agents, skills, memory, connectors, computers, permissions, triggers, channels and review, in one place. | Deciding what the agents should do. |
+
+An AI tool does a task while a person drives it. An AI Operating System keeps
+a part of the company running when nobody is at the keyboard, and still lets a
+person approve what changes.
+
+## The parts of an AI Operating System
+
+A computer's operating system has processes, a file system, drivers, a
+scheduler and permissions. An AI Operating System has the same parts, for
+agents. This is how Kortix implements each one.
+
+| Part | In a computer OS | In Kortix |
+| --- | --- | --- |
+| **Processes** | Programs that run in isolation | **Sessions.** One isolated sandbox per session. Each session has its own isolated machine and branch. |
+| **File system** | Where state lives | **The project repo.** Agents, skills, memory, connectors and triggers are files in one git repo. |
+| **Programs** | What you install and run | **Agents and skills.** An agent is `agents/<name>.md` plus its block in `kortix.yaml`. A skill is the markdown that encodes how your company does one job. |
+| **Drivers** | How the OS reaches hardware | **Connectors.** 3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP. Connector credentials are brokered server-side and never enter the machine. |
+| **Scheduler** | What runs when | **Triggers.** A cron schedule or a signed webhook starts a session with nobody present. |
+| **Permissions** | Who may do what | **Roles and rules.** Per-resource permissions for people and agents. Roles, groups, and an audit trail. Set each tool to Allow, Ask or Block. |
+| **Shell** | Where people give commands | **Channels and apps.** The web app, the CLI, Slack and Microsoft Teams. |
+| **Updates** | How the system changes | **Change requests.** Session work reaches `main` through a change request. Merge is default-deny for agents. |
+
+## Why an AI Operating System should be open source
+
+The AI Operating System holds your company's agents, memory and access to
+every tool. With a closed product, that layer lives in someone else's cloud,
+on someone else's models. With Kortix:
+
+- **You can read it.** Open source. Read it, fork it, audit it.
+- **You choose the model.** Any model provider with your own keys, or the
+  ChatGPT plan you already pay for.
+- **You choose where it runs.** Run it on Kortix Cloud, in your VPC, or on
+  your own on-prem network. Self-host is free.
+- **You own the configuration.** It is files in a repo you own, versioned and
+  reviewable like code.
+
+## What you can run on it
+
+- An open-source, self-hosted alternative to Claude Cowork or ChatGPT Work for
+  the whole team.
+- AI agents in Slack and Microsoft Teams that use your tools and reply in the
+  thread.
+- Background coding agents in the cloud: a sandbox and a branch per task, and
+  a change request you review.
+- Automations on a schedule or a webhook, in place of fixed workflow steps.
+- Work that waits for a person's approval before an agent acts.
+
+See [Kortix compared](/docs/compare) for when another tool fits better.
+
+## Start
+
+```bash
+curl -fsSL https://kortix.com/install | bash
+kortix init       # scaffold kortix.yaml, agents and skills
+kortix ship       # bring the project live in the cloud
+```
+
+To run it on your own infrastructure, use `kortix self-host start`. See
+[Self-host](/docs/host).
+
+## Questions
+
+**What is an AI OS?**
+AI OS is short for AI Operating System: the layer a company runs its AI
+agents on, with their skills, memory, connectors, computers, permissions and
+review in one place.
+
+**Is Kortix an AI Operating System?**
+Yes. Kortix is the open-source AI Operating System. Agents, skills, memory and
+connectors live in one git repo you own, and each session runs on its own
+cloud computer.
+
+**Is Kortix open source?**
+Yes. Read it, fork it, audit it at
+[github.com/kortix-ai/suna](https://github.com/kortix-ai/suna). Self-host is
+free.
+
+**Which models does an AI Operating System use?**
+Kortix uses any model provider with your own keys, or the ChatGPT plan you
+already pay for.
+
+**Do agents act on their own?**
+They act within the rules you set. Session work reaches `main` through a
+change request, and merge is default-deny for agents. Approval gates are off
+until you set them.

@@ -1,12 +1,11 @@
 'use client';
 
 import { approveCaptureDeviceGrant, revokeCaptureDevice } from '@kortix/sdk';
+import { useCaptureWorkspace } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { errorToast } from '@/components/ui/toast';
-import { useMemo } from 'react';
-
-import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   desktopCapturePause,
@@ -39,41 +38,32 @@ export function useDesktopCaptureStatus({ poll = false }: { poll?: boolean } = {
 }
 
 /**
- * The organization Capture records this computer for: the selected account,
- * else the first. Capture is organization-scoped; projects stay out of it.
- *
- * `projectId` bridges to today's device sign-in, which still names a project
- * with capture on: the one this computer records into when it belongs to this
- * organization, else its most recently opened one. It goes away when the
- * account-scoped device grant lands (backend lane).
+ * The organization (Kortix account, Capture's tenant) this computer records
+ * for: the selected account, else the first. Capture takes no project.
  */
-export function useCaptureOrganization(recordingInto?: string | null) {
-  const { sections, listsLoading } = useProjectSelectorData();
+export function useCaptureOrganization() {
+  const accounts = useAccountsList();
   const selected = useCurrentAccountStore((state) => state.selectedAccountId);
-  return useMemo(() => {
-    const section = sections.find((candidate) => candidate.accountId === selected) ?? sections[0] ?? null;
-    const captureProjects = (section?.projects ?? []).filter((project) => project.experimental?.capture);
-    const project =
-      captureProjects.find((candidate) => candidate.project_id === recordingInto) ?? captureProjects[0] ?? null;
-    return {
-      loading: listsLoading,
-      accountId: section?.accountId ?? null,
-      name: section?.accountName ?? '',
-      /** Capture is on for this organization. */
-      enabled: Boolean(project),
-      projectId: project?.project_id ?? null,
-    };
-  }, [sections, listsLoading, selected, recordingInto]);
+  const list = accounts.data ?? [];
+  const account = list.find((candidate) => candidate.account_id === selected) ?? list[0] ?? null;
+  const accountId = account?.account_id ?? null;
+  const workspace = useCaptureWorkspace(accountId);
+  return {
+    accountId,
+    name: account?.name ?? '',
+    captureOn: workspace.data?.enabled ?? false,
+    loading: accounts.isLoading || (!!accountId && workspace.isLoading),
+  };
 }
 
 /**
  * Every Capture action of "This computer". Turning on is the engine's own
  * device sign-in (`/v1/capture/device/*`), approved with this person's
- * session; the device keeps its own identity and never touches the computer
- * agent.
+ * session into the account; the device keeps its own identity and never
+ * touches the computer agent.
  */
 export function useDesktopCaptureActions(
-  projectId: string,
+  accountId: string | null,
   { onWaitingOnPage }: { onWaitingOnPage: () => void },
 ) {
   const queryClient = useQueryClient();
@@ -93,12 +83,13 @@ export function useDesktopCaptureActions(
     // The dialog shows a failed start inline, with "Try again".
     onError: () => undefined,
     mutationFn: async (view: DesktopCaptureStatus) => {
-      // Signed in for this organization already: only the switch.
-      if (view.signedIn && view.projectId === projectId && !view.signInRequired)
+      if (!accountId) throw new Error('No account to record into.');
+      // Signed in to this account already: only the switch.
+      if (view.signedIn && view.accountId === accountId && !view.signInRequired)
         return desktopCaptureSet({ on: true });
-      const result = await connectDesktopCapture(projectId, {
+      const result = await connectDesktopCapture(accountId, {
         start: desktopCaptureSignInStart,
-        approve: approveCaptureDeviceGrant,
+        approve: (userCode, target) => approveCaptureDeviceGrant(userCode, target),
         finish: desktopCaptureSignInFinish,
         cancel: desktopCaptureSignInCancel,
         openApproval: (url) => {
@@ -118,8 +109,8 @@ export function useDesktopCaptureActions(
     ...options,
     // Kortix first (the device loses access), then this computer forgets it and the service goes.
     mutationFn: async (view: DesktopCaptureStatus) => {
-      if (view.projectId && view.deviceId)
-        await revokeCaptureDevice(view.projectId, view.deviceId).catch(() => undefined);
+      if (view.accountId && view.deviceId)
+        await revokeCaptureDevice(view.accountId, view.deviceId).catch(() => undefined);
       return desktopCaptureSignOut();
     },
   });

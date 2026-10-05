@@ -8,8 +8,9 @@
  *   POST /credentials        (Bearer device token) → scoped S3 credentials, see credentials.ts
  *
  * Person (signed in, the approval page):
- *   GET  /device/grants/:user_code           → what is asking
- *   POST /device/grants/:user_code/approve   {project_id} → pairs the device to the caller in that project
+ *   GET  /device/grants/:user_code           → what is asking, and the caller's accounts with Capture on
+ *   POST /device/grants/:user_code/approve   {account_id?} → pairs the device to the caller in that account
+ *                                            (optional when exactly one of the caller's accounts has Capture on)
  *   POST /device/grants/:user_code/deny
  *
  * The data side is devices.ts.
@@ -17,17 +18,14 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { config } from '../config';
-import { featureDisabledBody } from '../feature-flags/gate';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { lookupEmailsByUserIds } from '../accounts/core/owner-emails';
 import { logger } from '../lib/logger';
 import { supabaseAuth } from '../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { loadProjectForUser } from '../projects/lib/access';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { requestClientKey } from '../shared/client-ip';
 import { readJsonObject } from '../shared/http-body';
-import { tunnelRateLimiter } from '../tunnel/core/rate-limiter';
+import { TokenBucketRateLimiter, type RateLimitPolicy } from '../shared/rate-limit';
 import type { AppEnv } from '../types';
 import { captureCredentialIssuer } from './credentials';
 import {
@@ -36,14 +34,15 @@ import {
   approveDeviceGrant,
   denyDeviceGrant,
   deviceForToken,
-  deviceProject,
   grantByUserCode,
   grantView,
   markCredentialsIssued,
   pollDeviceGrant,
   startDeviceGrant,
 } from './devices';
-import { projectPrefix } from './format';
+import { accountPrefix } from './format';
+import { CAPTURE_DISABLED, registerCaptureAgentRoutes } from './account-routes';
+import { captureAccountsFor, captureEnabled, captureRole, isAccountMember } from './workspace';
 import { ensurePolicyObject } from './policy';
 
 /** RFC 8628 / RFC 6749 §5.2 error body. */
@@ -63,8 +62,19 @@ async function readBody(c: Context): Promise<Record<string, unknown>> {
   return readJsonObject(c);
 }
 
-function limited(c: Context, endpoint: string, key: string): Response | null {
-  const verdict = tunnelRateLimiter.check(endpoint, key);
+// replica-local: limit × API replicas; stops runaway clients, not a quota.
+const limiter = new TokenBucketRateLimiter('capture');
+const LIMITS: Record<string, RateLimitPolicy> = {
+  captureAuthorizeGlobal: { limit: 100, windowMs: 60_000 },
+  captureAuthorize: { limit: 10, windowMs: 60_000 },
+  capturePoll: { limit: 30, windowMs: 60_000 },
+  captureCredentials: { limit: 30, windowMs: 60_000 },
+  captureGrantRead: { limit: 30, windowMs: 60_000 },
+  captureGrantDecide: { limit: 10, windowMs: 60_000 },
+};
+
+function limited(c: Context, endpoint: keyof typeof LIMITS, key: string): Response | null {
+  const verdict = limiter.check(`${endpoint}:${key}`, LIMITS[endpoint]!);
   if (verdict.allowed) return null;
   return rfcError(c, 'slow_down', `Too many requests; retry in ${Math.ceil((verdict.retryAfterMs ?? 1000) / 1000)} s`, 429);
 }
@@ -90,9 +100,13 @@ const GrantSchema = z.object({
     arch: z.string().nullable(),
     app_version: z.string().nullable(),
   }),
-  project_id: z.string().nullable(),
+  account_id: z.string().nullable(),
   device_id: z.string().nullable(),
 });
+
+const AccountChoiceSchema = z.object({ account_id: z.string(), name: z.string() });
+
+
 
 export function createCaptureRouter() {
   const app = makeOpenApiApp<AppEnv>();
@@ -265,11 +279,10 @@ export function createCaptureRouter() {
       }
       const blocked = limited(c, 'captureCredentials', device.deviceId);
       if (blocked) return blocked as never;
-      const project = await deviceProject(device.projectId);
-      if (!project || project.status === 'archived') {
-        return c.json({ error: 'The project is gone; sign in again', code: 'capture_device_unauthorized' }, 401);
+      if (!(await isAccountMember(device.accountId, device.userId))) {
+        return c.json({ error: 'The person left the account; sign in again', code: 'capture_device_unauthorized' }, 401);
       }
-      if (!resolveFeatureFlag(project.metadata, 'capture')) return c.json(featureDisabledBody('capture'), 403);
+      if (!(await captureEnabled(device.accountId))) return c.json(CAPTURE_DISABLED, 403);
       const issuer = captureCredentialIssuer();
       if (!issuer) {
         return c.json(
@@ -281,7 +294,7 @@ export function createCaptureRouter() {
         );
       }
       try {
-        const credentials = await issuer.issue({ prefix: projectPrefix(device.accountId, device.projectId), deviceId: device.deviceId });
+        const credentials = await issuer.issue({ prefix: accountPrefix(device.accountId), deviceId: device.deviceId });
         await markCredentialsIssued(device.deviceId);
         return c.json(credentials, 200);
       } catch (error) {
@@ -300,7 +313,10 @@ export function createCaptureRouter() {
       ...auth,
       middleware: [supabaseAuth] as const,
       request: { params: z.object({ user_code: z.string() }) },
-      responses: { 200: json(GrantSchema, 'The sign-in request'), ...errors(401, 403, 404, 429) },
+      responses: {
+        200: json(GrantSchema.extend({ accounts: z.array(AccountChoiceSchema) }), 'The sign-in request and the accounts it can sign into'),
+        ...errors(401, 403, 404, 429),
+      },
     }),
     async (c) => {
       const blocked = limited(c, 'captureGrantRead', c.get('userId') as string);
@@ -308,7 +324,7 @@ export function createCaptureRouter() {
       if (!humanCaller(c)) return c.json({ error: 'Only a person can approve a capture device' }, 403);
       const grant = await grantByUserCode(c.req.valid('param').user_code);
       if (!grant) return c.json({ error: 'Unknown code' }, 404);
-      return c.json(grantView(grant), 200);
+      return c.json({ ...grantView(grant), accounts: await captureAccountsFor(c.get('userId') as string) }, 200);
     },
   );
 
@@ -317,7 +333,7 @@ export function createCaptureRouter() {
       method: 'post',
       path: '/device/grants/{user_code}/approve',
       tags: ['capture'],
-      summary: 'Approve a capture device sign-in into one of your projects',
+      summary: 'Approve a capture device sign-in into one of your accounts',
       ...auth,
       middleware: [supabaseAuth] as const,
       request: {
@@ -326,12 +342,11 @@ export function createCaptureRouter() {
           content: {
             'application/json': {
               schema: z.object({
-                project_id: z.string().uuid(),
-                machine_id: z
+                account_id: z
                   .string()
-                  .regex(/^[0-9a-f]{64}$/)
+                  .uuid()
                   .optional()
-                  .describe("The computer agent's machine id for this computer (the Kortix desktop app sends it); joins the device to the person's computer"),
+                  .describe('The account to sign the device into. Optional when exactly one of your accounts has Capture on.'),
               }),
             },
           },
@@ -344,18 +359,30 @@ export function createCaptureRouter() {
       const blocked = limited(c, 'captureGrantDecide', userId);
       if (blocked) return blocked as never;
       if (!humanCaller(c)) return c.json({ error: 'Only a person can approve a capture device' }, 403);
-      const projectId = c.req.valid('json').project_id;
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      if (!resolveFeatureFlag(loaded.row.metadata, 'capture')) return c.json(featureDisabledBody('capture'), 403);
+      let accountId = c.req.valid('json').account_id;
+      if (!accountId) {
+        const choices = await captureAccountsFor(userId);
+        if (choices.length !== 1) {
+          return c.json(
+            {
+              error: choices.length ? 'Pick the account to sign the device into' : 'None of your accounts has Capture on',
+              code: choices.length ? 'capture_account_required' : 'capture_disabled',
+            },
+            choices.length ? 400 : 403,
+          );
+        }
+        accountId = choices[0]!.account_id;
+      }
+      if (!(await captureRole(accountId, userId))) return c.json({ error: 'Not found' }, 404);
+      if (!(await captureEnabled(accountId))) return c.json(CAPTURE_DISABLED, 403);
       const grant = await grantByUserCode(c.req.valid('param').user_code);
       if (!grant) return c.json({ error: 'Unknown code' }, 404);
       if (grant.status !== 'pending' || grant.expiresAt.getTime() < Date.now()) {
         return c.json({ error: `This sign-in is ${grantView(grant).status}`, code: 'capture_grant_not_pending' }, 409);
       }
-      const approved = await approveDeviceGrant(grant, { projectId, accountId: loaded.row.accountId, userId }, c.req.valid('json').machine_id);
+      const approved = await approveDeviceGrant(grant, { accountId, userId });
       if (!approved) return c.json({ error: 'This sign-in was decided already', code: 'capture_grant_not_pending' }, 409);
-      await ensurePolicyObject({ projectId, accountId: loaded.row.accountId });
+      await ensurePolicyObject(accountId);
       return c.json(grantView(approved), 200);
     },
   );
@@ -383,5 +410,6 @@ export function createCaptureRouter() {
     },
   );
 
+  registerCaptureAgentRoutes(app);
   return app;
 }

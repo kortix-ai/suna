@@ -1,5 +1,5 @@
-import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { getLocalizedAgentComputerContent } from './content';
 
@@ -28,7 +28,7 @@ export function BranchGraph(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { parallel } = getLocalizedAgentComputerContent(tI18nComplete);
   return (
-    <div className="border-border bg-card rounded-xl border p-6 sm:p-10">
+    <div className="border-border bg-card rounded-sm border p-6 sm:p-10">
       {/* main, before any session exists */}
       <div className="flex items-center gap-3">
         <Node />

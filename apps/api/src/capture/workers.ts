@@ -17,17 +17,16 @@
  *     remote retention, prunes expired sign-ins and finished jobs.
  */
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
-import { captureDeviceGrants, captureDevices, projects, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
+import { captureDeviceGrants, captureDevices, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
 import { and, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { config } from '../config';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { runWorkerTick } from '../shared/audit-scope';
 import { db } from '../shared/db';
 import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '../shared/job-queue';
-import { deviceFields, foldIndex, jsonLines, PolicySchema, projectPrefix, statusReportedAt, utcDay } from './format';
+import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, statusReportedAt, utcDay } from './format';
 import { RANGE_GAP_MS, ingestManifest } from './ingest';
-import { readProjectPolicy } from './policy';
+import { readWorkspace } from './workspace';
 import { processRange } from './processing';
 import { captureRegion, captureStore, captureStoreConfigured, getCaptureObjectIfChanged } from './store';
 
@@ -52,15 +51,16 @@ export function enqueueRangeProcessing(range: { rangeId: string; endAt: Date }, 
 
 // ─── Index reader ────────────────────────────────────────────────────────────
 
-/** Devices worth polling: not revoked, in a capture project, seen in the last day. */
+/** Devices worth polling: not revoked, in an account with Capture on, seen in the last day. */
 async function activeDevices() {
   const rows = await db
-    .select({ device: captureDevices, metadata: projects.metadata })
+    .select({ device: captureDevices })
     .from(captureDevices)
-    .innerJoin(projects, eq(projects.projectId, captureDevices.projectId))
+    .innerJoin(captureWorkspaces, eq(captureWorkspaces.accountId, captureDevices.accountId))
     .where(
       and(
         isNull(captureDevices.revokedAt),
+        eq(captureWorkspaces.enabled, true),
         or(
           gt(captureDevices.lastCredentialsAt, sql`now() - interval '1 day'`),
           gt(captureDevices.statusReportedAt, sql`now() - interval '1 day'`),
@@ -68,7 +68,7 @@ async function activeDevices() {
         ),
       ),
     );
-  return rows.filter((row) => resolveFeatureFlag(row.metadata, 'capture')).map((row) => row.device);
+  return rows.map((row) => row.device);
 }
 
 const decodeJson = (bytes: Uint8Array): Record<string, unknown> | null => {
@@ -82,7 +82,7 @@ const decodeJson = (bytes: Uint8Array): Record<string, unknown> | null => {
 
 /** Read one device's status, description and index. Exported for the flow-facing sync route and tests. */
 export async function pollDevice(device: typeof captureDevices.$inferSelect): Promise<{ enqueued: number; forgotten: number }> {
-  const folder = `${projectPrefix(device.accountId, device.projectId)}/${device.deviceId}`;
+  const folder = `${accountPrefix(device.accountId)}/${device.deviceId}`;
   const patch: Partial<typeof captureDevices.$inferInsert> = {};
 
   const status = await getCaptureObjectIfChanged(`${folder}/status.json`, null);
@@ -121,7 +121,7 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
     if (cursor[day] === mark) continue;
     const body = await captureStore.getText(file.key);
     if (body === null) continue;
-    const { live, deleted } = foldIndex(projectPrefix(device.accountId, device.projectId), device.deviceId, body);
+    const { live, deleted } = foldIndex(accountPrefix(device.accountId), device.deviceId, body);
     enqueued += await enqueueJobs(INGEST_QUEUE, live.map((key) => ({ key, payload: { key } })));
     forgotten += await forgetManifests(device.deviceId, deleted);
   }
@@ -239,23 +239,23 @@ export async function closeQuietRanges(): Promise<number> {
   return closed.length;
 }
 
-/** Delete indexed items (rows and objects) older than each project's `remote_days`. Bounded per tick. */
-export async function applyRetention(limitPerProject = 200): Promise<number> {
+/** Delete indexed items (rows and objects) older than each account's `remote_days`. Bounded per tick. */
+export async function applyRetention(limitPerAccount = 200): Promise<number> {
   if (!captureStoreConfigured()) return 0;
-  const projectIds = await db.selectDistinct({ projectId: timelineChunks.projectId }).from(timelineChunks);
+  const accountIds = await db.selectDistinct({ accountId: timelineChunks.accountId }).from(timelineChunks);
   let removed = 0;
-  for (const { projectId } of projectIds) {
-    const { policy } = await readProjectPolicy(projectId);
+  for (const { accountId } of accountIds) {
+    const { policy } = await readWorkspace(accountId);
     const days = PolicySchema.parse(policy).retention.remote_days;
     if (!days) continue;
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const old = await db
       .select({ chunkId: timelineChunks.chunkId, manifestKey: timelineChunks.manifestKey, manifest: timelineChunks.manifest, startAt: timelineChunks.startAt, endAt: timelineChunks.endAt })
       .from(timelineChunks)
-      .where(and(eq(timelineChunks.projectId, projectId), lt(timelineChunks.endAt, cutoff)))
-      .limit(limitPerProject);
+      .where(and(eq(timelineChunks.accountId, accountId), lt(timelineChunks.endAt, cutoff)))
+      .limit(limitPerAccount);
     if (old.length === 0) continue;
-    const prefix = old[0]!.manifestKey.split('/').slice(0, 4).join('/');
+    const prefix = accountPrefix(accountId);
     const keys = old.flatMap((chunk) => [
       chunk.manifestKey,
       ...Object.values((chunk.manifest.objects ?? {}) as Record<string, { key: string }>).map((o) =>
@@ -266,7 +266,7 @@ export async function applyRetention(limitPerProject = 200): Promise<number> {
     await captureStore.remove(keys);
     await db.transaction(async (tx) => {
       await removeChunkRows(tx, old);
-      await tx.delete(timelineRanges).where(and(eq(timelineRanges.projectId, projectId), lt(timelineRanges.endAt, cutoff)));
+      await tx.delete(timelineRanges).where(and(eq(timelineRanges.accountId, accountId), lt(timelineRanges.endAt, cutoff)));
     });
     removed += old.length;
   }

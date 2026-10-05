@@ -205,7 +205,7 @@ describe('sign-in', () => {
     const { spawnFn, calls } = fakeSpawn((child) => {
       child.stderr.emit('data', stderr.slice(0, 40));
       child.stderr.emit('data', stderr.slice(40));
-      child.stdout.emit('data', JSON.stringify({ ok: true, device_id: 'dev1', prefix: `orgs/a/projects/${UUID}` }));
+      child.stdout.emit('data', JSON.stringify({ ok: true, device_id: 'dev1', prefix: `orgs/${UUID}` }));
       child.emit('close', 0);
     });
     const challenges = [];
@@ -220,7 +220,7 @@ describe('sign-in', () => {
     expect(calls[0].args).toEqual(['--json', 'sync', 'setup', '--provider', 'kortix', '--issuer', 'http://localhost:8008', '--no-browser']);
     expect(calls[0].options.env.KORTIX_CAPTURE_DIR).toBe('/lib');
     expect(challenges).toEqual([{ userCode: 'ABCD-1234', verificationUrl: 'http://localhost:3000/capture/authorize?user_code=ABCD-1234' }]);
-    expect(result).toEqual({ ok: true, deviceId: 'dev1', prefix: `orgs/a/projects/${UUID}` });
+    expect(result).toEqual({ ok: true, deviceId: 'dev1', prefix: `orgs/${UUID}` });
   });
 
   test('a denied or expired sign-in resolves with the engine error line', async () => {
@@ -260,10 +260,13 @@ describe('paths and environment', () => {
     expect(capture.issuerFromBackend('https://example.com/kortix/v1')).toBe('https://example.com/kortix');
   });
 
-  test('the project comes from the prefix the issuer returned', () => {
-    expect(capture.projectFromPrefix(`orgs/acc/projects/${UUID}`)).toBe(UUID);
-    expect(capture.projectFromPrefix('kortix-capture')).toBeNull();
-    expect(capture.projectFromPrefix(null)).toBeNull();
+  test('the account (the Capture tenant) comes from the prefix the issuer returned', () => {
+    expect(capture.accountFromPrefix(`orgs/${UUID}`)).toBe(UUID);
+    expect(capture.accountFromPrefix(`orgs/${UUID}/`)).toBe(UUID);
+    // The retired project layout is not an account prefix.
+    expect(capture.accountFromPrefix(`orgs/${UUID}/projects/${UUID}`)).toBeNull();
+    expect(capture.accountFromPrefix('kortix-capture')).toBeNull();
+    expect(capture.accountFromPrefix(null)).toBeNull();
   });
 
   test('one library per backend; the engine env points every part at it and never at the engine tray', () => {
@@ -312,8 +315,8 @@ describe('paths and environment', () => {
 
 describe('status and tray', () => {
   const sync = {
-    kortix: { signed_in: true, sign_in_required: false, prefix: `orgs/a/projects/${UUID}`, device_id: 'dev1', member_email: null },
-    policy: { source: 'orgs/a/projects/x/policy.json', fetched_at_ms: 1, policy: { layers: { audio: false }, notice: 'Recorded for the support team', recording: { paused: false } } },
+    kortix: { signed_in: true, sign_in_required: false, prefix: `orgs/${UUID}`, device_id: 'dev1', member_email: null },
+    policy: { source: `orgs/${UUID}/policy.json`, fetched_at_ms: 1, policy: { layers: { audio: false }, notice: 'Recorded for the support team', recording: { paused: false } } },
     state: { state: 'ok', pending: 2, last_upload_ms: 5, last_error: null },
   };
   const status = { effective_state: 'recording', recorder_running: true, inactive_reason: null, recording_enabled: true, audio_enabled: false };
@@ -333,7 +336,7 @@ describe('status and tray', () => {
       on: true,
       signedIn: true,
       state: 'recording',
-      projectId: UUID,
+      accountId: UUID,
       deviceId: 'dev1',
       layers: { screen: true, actions: true, audio: false },
       policy: { layers: { screen: true, actions: true, audio: false }, notice: 'Recorded for the support team', paused: false },

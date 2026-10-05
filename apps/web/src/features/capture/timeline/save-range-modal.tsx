@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/modal';
 import { successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
+import { useCaptureAccountId } from '../use-capture-viewer';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const hhmm = (ms: number) => {
@@ -60,9 +61,10 @@ export function SaveRangeModal({ open, ...props }: SaveRangeProps & { open: bool
 }
 
 function SaveRangeForm({ projectId, onOpenChange, dayStart, initial, deviceId }: SaveRangeProps) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.saveRange');
   const router = useRouter();
-  const save = useSaveCaptureRange(projectId);
+  const save = useSaveCaptureRange(accountId);
   const [title, setTitle] = useState('');
   const [from, setFrom] = useState(() => hhmm(initial.start));
   const [to, setTo] = useState(() => hhmm(initial.end));

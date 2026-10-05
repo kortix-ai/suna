@@ -1,14 +1,14 @@
 /**
  * Capture device sign-in (RFC 8628) and device tokens: the data side of
- * device-routes.ts. One device row per (project, machine_key_sha256, member);
+ * device-routes.ts. One device row per (account, machine_key_sha256, member);
  * signing in again revives that row (same device_id, same S3 folder) and
  * replaces its token. A token is stored only as `hashSecretKey(token)`.
  */
-import { captureDeviceGrants, captureDevices, projects } from '@kortix/db';
+import { captureDeviceGrants, captureDevices } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { generateDeviceCode, hashSecretKey, randomAlphanumeric } from '../shared/crypto';
 import { db } from '../shared/db';
-import { deviceFields, projectPrefix } from './format';
+import { accountPrefix, deviceFields } from './format';
 
 export const GRANT_TTL_MS = 15 * 60_000;
 /** RFC 8628 §3.2 default. A poll faster than this answers `slow_down`. */
@@ -23,7 +23,7 @@ export interface GrantView {
   status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired';
   expires_at: string;
   device: { name: string | null; os: string | null; os_version: string | null; arch: string | null; app_version: string | null };
-  project_id: string | null;
+  account_id: string | null;
   device_id: string | null;
 }
 
@@ -34,7 +34,7 @@ export function grantView(grant: Grant): GrantView {
     status: (grant.status === 'pending' && grant.expiresAt.getTime() < Date.now() ? 'expired' : grant.status) as GrantView['status'],
     expires_at: grant.expiresAt.toISOString(),
     device: { name: fields.name, os: fields.os, os_version: fields.osVersion, arch: fields.arch, app_version: fields.appVersion },
-    project_id: grant.projectId,
+    account_id: grant.accountId,
     device_id: grant.deviceId,
   };
 }
@@ -95,7 +95,7 @@ export async function pollDeviceGrant(deviceCode: string): Promise<PollOutcome> 
     return row ?? null;
   });
   if (!device) return { kind: 'invalid_grant' };
-  return { kind: 'token', token, prefix: projectPrefix(device.accountId, device.projectId), deviceId: device.deviceId, userId: device.userId };
+  return { kind: 'token', token, prefix: accountPrefix(device.accountId), deviceId: device.deviceId, userId: device.userId };
 }
 
 /** The device behind a bearer device token, or null. Always read from the row: a revoke on any replica wins. */
@@ -108,15 +108,6 @@ export async function deviceForToken(header: string | undefined): Promise<Device
     .where(and(eq(captureDevices.tokenHash, hashSecretKey(token)), isNull(captureDevices.revokedAt)))
     .limit(1);
   return device ?? null;
-}
-
-export async function deviceProject(projectId: string) {
-  const [project] = await db
-    .select({ metadata: projects.metadata, status: projects.status })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return project ?? null;
 }
 
 export async function markCredentialsIssued(deviceId: string): Promise<void> {
@@ -135,26 +126,21 @@ export async function grantByUserCode(userCode: string): Promise<Grant | null> {
   return grant ?? null;
 }
 
-/** Pair the device to `userId` in the project. Null when the grant was decided meanwhile. */
-export async function approveDeviceGrant(
-  grant: Grant,
-  owner: { projectId: string; accountId: string; userId: string },
-  /** The computer agent's id for this machine (sent by the Kortix desktop app). */
-  machineId?: string,
-): Promise<Grant | null> {
-  const fields = { ...deviceFields(grant.deviceInfo), ...(machineId ? { machineId } : {}) };
+/** Pair the device to `userId` in the account. Null when the grant was decided meanwhile. */
+export async function approveDeviceGrant(grant: Grant, owner: { accountId: string; userId: string }): Promise<Grant | null> {
+  const fields = deviceFields(grant.deviceInfo);
   return db.transaction(async (tx) => {
     const [device] = await tx
       .insert(captureDevices)
       .values({ ...owner, machineKeySha256: grant.machineKeySha256, ...fields, deviceInfo: grant.deviceInfo })
       .onConflictDoUpdate({
-        target: [captureDevices.projectId, captureDevices.machineKeySha256, captureDevices.userId],
+        target: [captureDevices.accountId, captureDevices.machineKeySha256, captureDevices.userId],
         set: { ...fields, revokedAt: null, revokedBy: null, updatedAt: sql`now()` },
       })
       .returning({ deviceId: captureDevices.deviceId });
     const [updated] = await tx
       .update(captureDeviceGrants)
-      .set({ status: 'approved', projectId: owner.projectId, userId: owner.userId, deviceId: device!.deviceId })
+      .set({ status: 'approved', accountId: owner.accountId, userId: owner.userId, deviceId: device!.deviceId })
       .where(and(eq(captureDeviceGrants.grantId, grant.grantId), eq(captureDeviceGrants.status, 'pending')))
       .returning();
     return updated ?? null;

@@ -1,7 +1,7 @@
 /**
  * Range processing: the kortix-ai/capture `apps/web/src/lib/ai/` pipelines,
  * ported onto Kortix's own LLM gateway (managed open-weight vision model,
- * billed to the project's account through a short-lived project gateway key).
+ * billed to the account through a short-lived account token, revoked after the run).
  *
  *   segmentation  work / communication / personal / entertainment / idle / other
  *                 blocks; idle windows (no input for >= 120 s) override the model
@@ -17,7 +17,6 @@
  * serves no embedding model. Outputs are searchable through their text.
  */
 import {
-  captureDevices,
   rangeOutputs,
   timelineActions,
   timelineAudio,
@@ -29,11 +28,10 @@ import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { config } from '../config';
 import { logger } from '../lib/logger';
-import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
-import { createGatewayKey, deleteGatewayKey } from '../llm-gateway/gateway-keys';
-import { standaloneGatewayUrl } from '../projects/session-title-generate';
+import { standaloneGatewayUrl } from '../llm-gateway/standalone-url';
+import { createAccountToken, revokeAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
-import { projectPrefix } from './format';
+import { accountPrefix } from './format';
 import { captureStore } from './store';
 
 const MAX_EVENTS = 2400;
@@ -43,7 +41,7 @@ const IDLE_GAP_SEC = 120;
 const GAP_EPSILON_SEC = 2;
 const MAX_TRANSCRIPT_WINDOWS = 12;
 const CALL_TIMEOUT_MS = 300_000;
-const KEY_NAME = 'internal-capture-processing';
+const TOKEN_NAME = 'internal-capture-processing';
 
 // ─── Input ───────────────────────────────────────────────────────────────────
 
@@ -83,7 +81,7 @@ export function sampleEvenly<T>(items: T[], max: number): T[] {
 async function loadInput(range: typeof timelineRanges.$inferSelect): Promise<RangeInput> {
   const start = range.startAt.getTime();
   const owner = and(
-    eq(timelineFrames.projectId, range.projectId),
+    eq(timelineFrames.accountId, range.accountId),
     eq(timelineFrames.userId, range.userId),
     ...(range.deviceId ? [eq(timelineFrames.deviceId, range.deviceId)] : []),
     gte(timelineFrames.ts, range.startAt),
@@ -100,7 +98,7 @@ async function loadInput(range: typeof timelineRanges.$inferSelect): Promise<Ran
     .from(timelineActions)
     .where(
       and(
-        eq(timelineActions.projectId, range.projectId),
+        eq(timelineActions.accountId, range.accountId),
         eq(timelineActions.userId, range.userId),
         ...(range.deviceId ? [eq(timelineActions.deviceId, range.deviceId)] : []),
         gte(timelineActions.ts, range.startAt),
@@ -114,7 +112,7 @@ async function loadInput(range: typeof timelineRanges.$inferSelect): Promise<Ran
     .from(timelineAudio)
     .where(
       and(
-        eq(timelineAudio.projectId, range.projectId),
+        eq(timelineAudio.accountId, range.accountId),
         eq(timelineAudio.userId, range.userId),
         ...(range.deviceId ? [eq(timelineAudio.deviceId, range.deviceId)] : []),
         gte(timelineAudio.ts, range.startAt),
@@ -143,13 +141,7 @@ async function loadInput(range: typeof timelineRanges.$inferSelect): Promise<Ran
   const shotIndex = new Map<string, number>();
   const images: RangeInput['images'] = [];
   for (const action of shots) {
-    const [device] = await db
-      .select({ accountId: captureDevices.accountId })
-      .from(captureDevices)
-      .where(eq(captureDevices.deviceId, action.deviceId))
-      .limit(1);
-    if (!device) continue;
-    const key = `${projectPrefix(device.accountId, range.projectId)}/${action.deviceId}/assets/${action.screenshot}`;
+    const key = `${accountPrefix(range.accountId)}/${action.deviceId}/assets/${action.screenshot}`;
     const bytes = await captureStore.getBytes(key).catch(() => null);
     if (!bytes || bytes.byteLength > MAX_IMAGE_BYTES) continue;
     const mime = action.screenshot!.endsWith('.png') ? 'image/png' : action.screenshot!.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
@@ -788,13 +780,19 @@ export async function processRange(rangeId: string, caller?: Caller): Promise<vo
   const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, rangeId)).limit(1);
   if (!range) return;
   await db.update(timelineRanges).set({ status: 'processing', updatedAt: sql`now()` }).where(eq(timelineRanges.rangeId, rangeId));
-  let keyId: string | null = null;
+  let tokenId: string | null = null;
   try {
     if (!caller) {
-      if (!(await projectLlmGatewayEnabledById(range.projectId))) throw new Error('the LLM gateway is off for this project');
-      const key = await createGatewayKey({ accountId: range.accountId, projectId: range.projectId, name: KEY_NAME, createdBy: range.userId });
-      keyId = key.key_id;
-      caller = gatewayCaller(`Bearer ${key.secret_key}`, config.KORTIX_CAPTURE_MODEL);
+      // An account token of the range's person, billed to the account. It
+      // outlives no run: 1 h at most, revoked in `finally`.
+      const token = await createAccountToken({
+        accountId: range.accountId,
+        userId: range.userId,
+        name: TOKEN_NAME,
+        expiresAt: new Date(Date.now() + 60 * 60_000),
+      });
+      tokenId = token.tokenId;
+      caller = gatewayCaller(`Bearer ${token.secretKey}`, config.KORTIX_CAPTURE_MODEL);
     }
     const input = await loadInput(range);
     const meta = {
@@ -825,6 +823,6 @@ export async function processRange(rangeId: string, caller?: Caller): Promise<vo
     await db.update(timelineRanges).set({ status: 'failed', updatedAt: sql`now()` }).where(eq(timelineRanges.rangeId, rangeId));
     throw error;
   } finally {
-    if (keyId) await deleteGatewayKey(range.projectId, keyId).catch(() => {});
+    if (tokenId) await revokeAccountToken(tokenId, range.accountId).catch(() => {});
   }
 }

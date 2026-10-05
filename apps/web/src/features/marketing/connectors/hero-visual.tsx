@@ -95,7 +95,7 @@ export function ConnectorsHeroVisual(): ReactNode {
       role="img"
       aria-label={tI18nComplete.raw('text7f09a839ed67')}
     >
-      <div className="relative h-[23rem] w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-background sm:h-[26rem]">
+      <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
         {/* ── the catalog, larger than the frame ──────────────────────── */}
         <div
           className="absolute inset-y-0 -left-14 flex w-[74%] flex-col justify-center gap-2.5 mask-y-from-70% mask-y-to-100% mask-x-from-55% mask-x-to-100%"

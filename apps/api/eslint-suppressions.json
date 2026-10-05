@@ -681,9 +681,6 @@
     },
     "no-console": {
       "count": 3
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/config-releases/desired.ts": {
@@ -693,6 +690,11 @@
   },
   "src/config-releases/quarantine.ts": {
     "kortix-api/replica-local": {
+      "count": 1
+    }
+  },
+  "src/config-releases/release-tree.ts": {
+    "no-restricted-properties": {
       "count": 1
     }
   },

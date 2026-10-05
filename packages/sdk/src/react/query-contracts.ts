@@ -158,5 +158,7 @@ export const FRESHNESS = {
   /** A timeline grows while its devices upload; no mutation of ours announces it. */
   captureTimeline: 'inventory',
   capturePolicy: 'config',
+  captureWorkspace: 'config',
+  captureMembers: 'directory',
   capturePeople: 'inventory',
 } as const satisfies Record<string, FreshnessTier>;

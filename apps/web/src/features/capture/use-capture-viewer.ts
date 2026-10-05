@@ -1,19 +1,35 @@
 'use client';
 
 import { getProjectDetail, listProjectAccess } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk, useCaptureWorkspace } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
 /**
+ * The Capture tenant of this page: the account that owns the project. Capture
+ * has no project in its model; the area lives under a project route only until
+ * it moves to an account route, so the page resolves the project's account and
+ * every Capture call takes that.
+ */
+export function useCaptureAccountId(projectId: string): string | null {
+  const detail = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
+    ...contract('config'),
+  });
+  return detail.data?.project?.account_id ?? null;
+}
+
+/**
  * Who is looking at the Capture area, and with which rights. The API decides
- * scope the same way (`apps/api/src/capture/project-routes.ts` `captureAccess`):
- * a project manager (effective role `manager`) may read another member and the
- * whole project; everyone else reads only their own data.
+ * scope the same way (`apps/api/src/capture/account-routes.ts`
+ * `captureAccessFor`): a Capture `admin` or `viewer` may read another member
+ * and the whole account; a `member` reads only their own data. Capture is on
+ * or off for the whole account.
  */
 export function useCaptureViewer(projectId: string) {
-  const flag = useFeatureFlag(projectId, 'capture');
   const detail = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
@@ -21,12 +37,16 @@ export function useCaptureViewer(projectId: string) {
     ...contract('config'),
   });
   const project = detail.data?.project;
+  const workspace = useCaptureWorkspace(project?.account_id ?? null);
+  const role = workspace.data?.role ?? null;
   return {
-    enabled: flag.enabled,
-    // A cached "off" (hydrated or stale) is not an answer while a refetch runs:
-    // turning the flag on elsewhere must not 404 the area until the fresh read lands.
-    isLoading: flag.isLoading || detail.isLoading || (!flag.enabled && detail.isFetching),
-    isManager: project?.effective_project_role === 'manager',
+    accountId: project?.account_id ?? null,
+    enabled: workspace.data?.enabled ?? false,
+    isLoading: detail.isLoading || workspace.isLoading,
+    /** Reads other members and the account (Capture admin or viewer). */
+    isManager: role === 'admin' || role === 'viewer',
+    /** Writes the policy (Capture admin). */
+    isAdmin: role === 'admin',
     projectName: project?.name ?? '',
   };
 }

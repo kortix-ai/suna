@@ -434,16 +434,16 @@ export interface DesktopCaptureStatus {
   /** The person's switch: record while Kortix runs. */
   on?: boolean;
   signedIn?: boolean;
-  /** The issuer refused this device (revoked, or Capture turned off for the project). */
+  /** The issuer refused this device (revoked, or Capture turned off for the account). */
   signInRequired?: boolean;
-  /** The project this device records into (from its sign-in). */
-  projectId?: string | null;
+  /** The account (Capture's tenant) this device records into (from its sign-in). */
+  accountId?: string | null;
   deviceId?: string | null;
   /** `recording`, `paused`, `permission_missing`, `not_recording`, `starting`, `crashed`, `off`, `signInRequired`, `signedOut`. */
   state?: string;
   reason?: string | null;
   layers?: Record<DesktopCaptureLayer, boolean>;
-  /** The project's policy; a layer set to false is off whatever the person chose. */
+  /** The account's policy; a layer set to false is off whatever the person chose. */
   policy?: { layers: Record<DesktopCaptureLayer, boolean>; notice: string; paused: boolean } | null;
   pausedUntilMs?: number | null;
   /** macOS grants Kortix holds for Capture; null elsewhere. `inputMonitoring` only from engines that report it. */

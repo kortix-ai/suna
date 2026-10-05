@@ -3,7 +3,7 @@
  * the timeline tables. Both readers (SQS events, index polling) only enqueue
  * `capture.ingest` jobs keyed by the manifest key; the job runs this.
  *
- *   1. the key must be a Kortix key of a known device in a project with `capture` on
+ *   1. the key must be a Kortix key of a known device in an account with Capture on
  *   2. read the manifest; reject a newer schema or another device's manifest
  *   3. read every object it lists; its size and SHA-256 must match (else retry)
  *   4. parse frames / actions / transcript lines, skipping layers the policy turned off
@@ -14,7 +14,6 @@
 import { createHash } from 'node:crypto';
 import {
   captureDevices,
-  projects,
   timelineActions,
   timelineAudio,
   timelineChunks,
@@ -22,7 +21,6 @@ import {
   timelineRanges,
 } from '@kortix/db';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { db } from '../shared/db';
 import { logger } from '../lib/logger';
 import {
@@ -34,10 +32,10 @@ import {
   parseActionLine,
   parseCaptureKey,
   parseFrameLine,
-  projectPrefix,
+  accountPrefix,
   type Manifest,
 } from './format';
-import { readProjectPolicy } from './policy';
+import { captureEnabled, readWorkspace } from './workspace';
 import { captureStore } from './store';
 
 export type IngestOutcome =
@@ -73,18 +71,12 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
     .where(
       and(
         eq(captureDevices.deviceId, parsed.deviceId),
-        eq(captureDevices.projectId, parsed.projectId),
         eq(captureDevices.accountId, parsed.accountId),
       ),
     )
     .limit(1);
   if (!device) return { status: 'ignored', reason: 'unknown device' };
-  const [project] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, device.projectId))
-    .limit(1);
-  if (!project || !resolveFeatureFlag(project.metadata, 'capture')) return { status: 'skipped', reason: 'capture is off for the project' };
+  if (!(await captureEnabled(device.accountId))) return { status: 'skipped', reason: 'capture is off for the account' };
   const [existing] = await db
     .select({ chunkId: timelineChunks.chunkId })
     .from(timelineChunks)
@@ -103,13 +95,13 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
   const checked = checkManifest(raw, device.deviceId);
   if (!checked.ok) return { status: 'ignored', reason: checked.reason };
   const manifest = checked.manifest;
-  const prefix = projectPrefix(device.accountId, device.projectId);
+  const prefix = accountPrefix(device.accountId);
 
   // Server-side enforcement of the layers: a device never widens the policy, and
   // neither does the index.
   const policy = device.policyOverride
     ? PolicySchema.parse(device.policyOverride)
-    : (await readProjectPolicy(device.projectId)).policy;
+    : (await readWorkspace(device.accountId)).policy;
   const layer = { chunk: 'screen', actions: 'actions', audio: 'audio' } as const;
   if (!policy.layers[layer[manifest.kind]]) return { status: 'skipped', reason: `${layer[manifest.kind]} layer is off by policy` };
 
@@ -121,7 +113,7 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
     objects[role] = await readObject(full, info);
   }
 
-  const owner = { projectId: device.projectId, deviceId: device.deviceId, userId: device.userId };
+  const owner = { accountId: device.accountId, deviceId: device.deviceId, userId: device.userId };
   const encrypted = isEncrypted(manifest);
   const frames =
     manifest.kind === 'chunk' && !encrypted && objects.frames
@@ -141,7 +133,6 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
     const [chunk] = await tx
       .insert(timelineChunks)
       .values({
-        accountId: device.accountId,
         ...owner,
         kind: manifest.kind,
         manifestKey: key,
@@ -185,7 +176,7 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
  * was closed or processed reopens, so its outputs are recomputed.
  */
 export async function extendDetectedRange(
-  device: { accountId: string; projectId: string; userId: string; deviceId: string },
+  device: { accountId: string; userId: string; deviceId: string },
   startAt: Date,
   endAt: Date,
 ): Promise<void> {
@@ -206,7 +197,6 @@ export async function extendDetectedRange(
     if (touching.length === 0) {
       await tx.insert(timelineRanges).values({
         accountId: device.accountId,
-        projectId: device.projectId,
         userId: device.userId,
         deviceId: device.deviceId,
         source: 'detected',

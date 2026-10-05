@@ -1,12 +1,12 @@
 /**
- * Kortix Capture timeline reads and writes behind project-routes.ts: devices,
+ * Kortix Capture timeline reads and writes behind account-routes.ts: devices,
  * the timeline, items, search, media, ranges, the people summary. Every query
- * is bound to (project, person); the route decides who may ask.
+ * is bound to (account, person); the route decides who may ask.
  */
 import { captureDevices, projectSessions, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
 import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { PolicySchema, isEncrypted, liveState, objectKey, projectPrefix, type Manifest } from './format';
+import { PolicySchema, accountPrefix, isEncrypted, liveState, objectKey, type Manifest } from './format';
 import { captureStore, captureStoreConfigured } from './store';
 
 export type Device = typeof captureDevices.$inferSelect;
@@ -32,11 +32,16 @@ export function isoRows<T extends Record<string, unknown>>(rows: Iterable<T>): T
   });
 }
 
-export async function sessionVisibility(sessionId: string, projectId: string): Promise<string | null> {
+/**
+ * The one place Capture reads a project table: the agent tool's edge. An agent
+ * session (in some project) reads the Capture data of the person it acts for,
+ * and only in a private session. Returns the session's visibility, or null.
+ */
+export async function sessionVisibility(sessionId: string): Promise<string | null> {
   const [session] = await db
     .select({ visibility: projectSessions.visibility })
     .from(projectSessions)
-    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+    .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   return session?.visibility ?? null;
 }
@@ -52,7 +57,6 @@ export function deviceView(device: Device, now = Date.now()) {
     os_version: device.osVersion,
     arch: device.arch,
     app_version: device.appVersion,
-    machine_id: device.machineId,
     live: { state: liveState(device.status, now), status: device.status, reported_at: device.statusReportedAt?.toISOString() ?? null },
     policy_override: device.policyOverride ? PolicySchema.parse(device.policyOverride) : null,
     last_credentials_at: device.lastCredentialsAt?.toISOString() ?? null,
@@ -61,19 +65,19 @@ export function deviceView(device: Device, now = Date.now()) {
   };
 }
 
-export async function listDevices(projectId: string, userId: string | null): Promise<Device[]> {
+export async function listDevices(accountId: string, userId: string | null): Promise<Device[]> {
   return db
     .select()
     .from(captureDevices)
-    .where(and(eq(captureDevices.projectId, projectId), ...(userId ? [eq(captureDevices.userId, userId)] : [])))
+    .where(and(eq(captureDevices.accountId, accountId), ...(userId ? [eq(captureDevices.userId, userId)] : [])))
     .orderBy(desc(captureDevices.updatedAt));
 }
 
-export async function deviceInProject(projectId: string, deviceId: string): Promise<Device | null> {
+export async function deviceInAccount(accountId: string, deviceId: string): Promise<Device | null> {
   const [device] = await db
     .select()
     .from(captureDevices)
-    .where(and(eq(captureDevices.deviceId, deviceId), eq(captureDevices.projectId, projectId)))
+    .where(and(eq(captureDevices.deviceId, deviceId), eq(captureDevices.accountId, accountId)))
     .limit(1);
   return device ?? null;
 }
@@ -90,7 +94,7 @@ export async function revokeDevice(deviceId: string, by: string): Promise<Device
 // ─── Timeline ────────────────────────────────────────────────────────────────
 
 /** Consecutive frames of one device with the same app and window title, no gap over 2 minutes. */
-export async function timelineRuns(projectId: string, userId: string, span: Span, deviceId?: string) {
+export async function timelineRuns(accountId: string, userId: string, span: Span, deviceId?: string) {
   return isoRows(
     await db.execute<Record<string, unknown>>(sql`
       SELECT device_id, app, title, (array_agg(url ORDER BY ts))[1] AS url,
@@ -102,7 +106,7 @@ export async function timelineRuns(projectId: string, userId: string, span: Span
                                    AND ts - lag(ts) OVER w < interval '2 minutes'
                                   THEN 0 ELSE 1 END AS brk
                         FROM kortix.timeline_frames
-                       WHERE project_id = ${projectId}::uuid AND user_id = ${userId}::uuid
+                       WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid
                          AND ts >= ${at(span.from)} AND ts < ${at(span.to)} AND NOT inactive ${onDevice(deviceId)}
                       WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
        GROUP BY device_id, grp, app, title
@@ -111,7 +115,7 @@ export async function timelineRuns(projectId: string, userId: string, span: Span
   );
 }
 
-export async function timelineChunksIn(projectId: string, userId: string, span: Span, deviceId?: string) {
+export async function timelineChunksIn(accountId: string, userId: string, span: Span, deviceId?: string) {
   return db
     .select({
       chunk_id: timelineChunks.chunkId,
@@ -125,7 +129,7 @@ export async function timelineChunksIn(projectId: string, userId: string, span: 
     .from(timelineChunks)
     .where(
       and(
-        eq(timelineChunks.projectId, projectId),
+        eq(timelineChunks.accountId, accountId),
         eq(timelineChunks.userId, userId),
         gte(timelineChunks.endAt, span.from),
         lte(timelineChunks.startAt, span.to),
@@ -141,21 +145,21 @@ export async function timelineChunksIn(projectId: string, userId: string, span: 
  * `tz` with its first and last recorded moment and its seconds of screen chunks.
  * Grouped over items (5-minute chunks), not frames, so a year costs ~100k rows at most.
  */
-export async function recordedDays(projectId: string, userId: string, opts: { tz: string; deviceId?: string }) {
+export async function recordedDays(accountId: string, userId: string, opts: { tz: string; deviceId?: string }) {
   const rows = await db.execute<{ day: string; start_at: string; end_at: string; screen_seconds: number }>(sql`
     SELECT to_char((start_at AT TIME ZONE ${opts.tz})::date, 'YYYY-MM-DD') AS day,
            min(start_at) AS start_at, max(end_at) AS end_at,
            coalesce(round(sum(EXTRACT(EPOCH FROM (end_at - start_at))) FILTER (WHERE kind = 'chunk')), 0)::int AS screen_seconds
       FROM kortix.timeline_chunks
-     WHERE project_id = ${projectId}::uuid AND user_id = ${userId}::uuid ${onDevice(opts.deviceId)}
+     WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid ${onDevice(opts.deviceId)}
      GROUP BY 1
      ORDER BY 1 DESC
      LIMIT 366`);
   return isoRows(rows).map((row) => ({ ...row, screen_seconds: Number(row.screen_seconds) }));
 }
 
-export async function timelineItems(projectId: string, userId: string, span: Span, deviceId?: string) {
-  const where = sql`project_id = ${projectId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}`;
+export async function timelineItems(accountId: string, userId: string, span: Span, deviceId?: string) {
+  const where = sql`account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}`;
   const [frames, actions, audio] = await Promise.all([
     db.execute<Record<string, unknown>>(sql`SELECT frame_id, ts, device_id, chunk_id, frame_index, app, bundle_id, title, url, domain, ocr_text, inactive FROM kortix.timeline_frames WHERE ${where} ORDER BY ts LIMIT 500`),
     db.execute<Record<string, unknown>>(sql`SELECT action_id, ts, device_id, chunk_id, kind, app, window_title, description, target, screenshot FROM kortix.timeline_actions WHERE ${where} ORDER BY ts LIMIT 500`),
@@ -186,11 +190,11 @@ export function snippet(text: string | null, q: string): string {
 
 /** Newest first; one screen hit per (chunk, window title), so a still screen is one hit, not 15. */
 export async function searchTimeline(
-  projectId: string,
+  accountId: string,
   userId: string,
   opts: { q: string; from: Date; to: Date; kinds: Set<SearchKind>; app?: string; deviceId?: string; limit: number },
 ) {
-  const scope = sql`project_id = ${projectId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(opts.from)} AND ts < ${at(opts.to)} ${onDevice(opts.deviceId)} ${opts.app ? sql` AND lower(app) = lower(${opts.app})` : sql``}`;
+  const scope = sql`account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(opts.from)} AND ts < ${at(opts.to)} ${onDevice(opts.deviceId)} ${opts.app ? sql` AND lower(app) = lower(${opts.app})` : sql``}`;
   const query = sql`websearch_to_tsquery('simple', ${opts.q})`;
   const parts = [
     opts.kinds.has('screen') &&
@@ -211,10 +215,10 @@ export async function searchTimeline(
 
 const MEDIA_TTL_SECONDS = 300;
 
-export async function frameOf(projectId: string, userId: string, frameId: string) {
+export async function frameOf(accountId: string, userId: string, frameId: string) {
   const [frame] = isoRows(
     await db.execute<Record<string, unknown>>(
-      sql`SELECT * FROM kortix.timeline_frames WHERE frame_id = ${frameId}::uuid AND project_id = ${projectId}::uuid AND user_id = ${userId}::uuid LIMIT 1`,
+      sql`SELECT * FROM kortix.timeline_frames WHERE frame_id = ${frameId}::uuid AND account_id = ${accountId}::uuid AND user_id = ${userId}::uuid LIMIT 1`,
     ),
   );
   if (!frame) return null;
@@ -238,11 +242,11 @@ export async function frameVideoOffsetMs(frame: Record<string, unknown>): Promis
   return (row?.n ?? 0) * 1000;
 }
 
-export async function chunkOf(projectId: string, userId: string, chunkId: string): Promise<Chunk | null> {
+export async function chunkOf(accountId: string, userId: string, chunkId: string): Promise<Chunk | null> {
   const [chunk] = await db
     .select()
     .from(timelineChunks)
-    .where(and(eq(timelineChunks.chunkId, chunkId), eq(timelineChunks.projectId, projectId), eq(timelineChunks.userId, userId)))
+    .where(and(eq(timelineChunks.chunkId, chunkId), eq(timelineChunks.accountId, accountId), eq(timelineChunks.userId, userId)))
     .limit(1);
   return chunk ?? null;
 }
@@ -251,14 +255,14 @@ export async function chunkOf(projectId: string, userId: string, chunkId: string
 export async function mediaUrl(chunk: Chunk, role: string) {
   const info = (chunk.manifest as Manifest).objects?.[role];
   if (!info || !captureStoreConfigured()) return null;
-  const key = objectKey(projectPrefix(chunk.accountId, chunk.projectId), chunk.deviceId, info.key);
+  const key = objectKey(accountPrefix(chunk.accountId), chunk.deviceId, info.key);
   if (!key) return null;
   const signed = await captureStore.presignDownload(key, MEDIA_TTL_SECONDS);
   return { url: signed.url, expires_at: signed.expiresAt.toISOString(), encrypted: isEncrypted(chunk.manifest as Manifest) };
 }
 
-export async function assetUrl(accountId: string, projectId: string, deviceId: string, name: string) {
-  const signed = await captureStore.presignDownload(`${projectPrefix(accountId, projectId)}/${deviceId}/assets/${name}`, MEDIA_TTL_SECONDS);
+export async function assetUrl(accountId: string, deviceId: string, name: string) {
+  const signed = await captureStore.presignDownload(`${accountPrefix(accountId)}/${deviceId}/assets/${name}`, MEDIA_TTL_SECONDS);
   return { url: signed.url, expires_at: signed.expiresAt.toISOString() };
 }
 
@@ -279,11 +283,11 @@ export function rangeView(range: Range) {
   };
 }
 
-export async function rangesFor(projectId: string, userId: string, span: Span) {
+export async function rangesFor(accountId: string, userId: string, span: Span) {
   const rows = await db
     .select()
     .from(timelineRanges)
-    .where(and(eq(timelineRanges.projectId, projectId), eq(timelineRanges.userId, userId), gte(timelineRanges.endAt, span.from), lte(timelineRanges.startAt, span.to)))
+    .where(and(eq(timelineRanges.accountId, accountId), eq(timelineRanges.userId, userId), gte(timelineRanges.endAt, span.from), lte(timelineRanges.startAt, span.to)))
     .orderBy(asc(timelineRanges.startAt))
     .limit(1000);
   return rows.map(rangeView);
@@ -291,7 +295,6 @@ export async function rangesFor(projectId: string, userId: string, span: Span) {
 
 export async function saveRange(input: {
   accountId: string;
-  projectId: string;
   userId: string;
   deviceId: string | null;
   title: string | null;
@@ -305,11 +308,11 @@ export async function saveRange(input: {
   return range!;
 }
 
-export async function rangeInProject(projectId: string, rangeId: string): Promise<Range | null> {
+export async function rangeInAccount(accountId: string, rangeId: string): Promise<Range | null> {
   const [range] = await db
     .select()
     .from(timelineRanges)
-    .where(and(eq(timelineRanges.rangeId, rangeId), eq(timelineRanges.projectId, projectId)))
+    .where(and(eq(timelineRanges.rangeId, rangeId), eq(timelineRanges.accountId, accountId)))
     .limit(1);
   return range ?? null;
 }
@@ -326,26 +329,26 @@ export async function closeRangeForReprocess(rangeId: string): Promise<void> {
 // ─── People ──────────────────────────────────────────────────────────────────
 
 /** Per member: a frame's time runs until the next frame of its device, capped at 60 s (a pause is not work). */
-export async function peopleSummary(projectId: string, span: Span) {
+export async function peopleSummary(accountId: string, span: Span) {
   const perApp = Array.from(
     await db.execute<{ user_id: string; app: string | null; seconds: number }>(sql`
       SELECT user_id, app, round(sum(LEAST(EXTRACT(EPOCH FROM (next_ts - ts)), 60)))::int AS seconds
         FROM (SELECT user_id, app, ts, inactive, lead(ts) OVER (PARTITION BY device_id ORDER BY ts) AS next_ts
                 FROM kortix.timeline_frames
-               WHERE project_id = ${projectId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)}) f
+               WHERE account_id = ${accountId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)}) f
        WHERE NOT inactive AND next_ts IS NOT NULL
        GROUP BY user_id, app`),
   );
   const ranges = Array.from(
     await db.execute<{ user_id: string; ranges: number }>(sql`
       SELECT user_id, count(*)::int AS ranges FROM kortix.timeline_ranges
-       WHERE project_id = ${projectId}::uuid AND end_at >= ${at(span.from)} AND start_at < ${at(span.to)}
+       WHERE account_id = ${accountId}::uuid AND end_at >= ${at(span.from)} AND start_at < ${at(span.to)}
        GROUP BY user_id`),
   );
   const devices = await db
     .select({ userId: captureDevices.userId, count: sql<number>`count(*)::int` })
     .from(captureDevices)
-    .where(and(eq(captureDevices.projectId, projectId), isNull(captureDevices.revokedAt)))
+    .where(and(eq(captureDevices.accountId, accountId), isNull(captureDevices.revokedAt)))
     .groupBy(captureDevices.userId);
   const people = new Map<string, { user_id: string; active_seconds: number; apps: Array<{ app: string | null; seconds: number }>; ranges: number; devices: number }>();
   const person = (userId: string) => {

@@ -1,8 +1,12 @@
 /**
  * Kortix Capture — device sign-in (RFC 8628), the credential endpoint,
  * ingestion of the Kortix Capture format (schema 2), the timeline, search,
- * policy, scoping, audit, and the agent tool. Spec: tests/spec/end-to-end.md §
- * Capture. Source of truth: apps/api/src/capture/.
+ * policy, roles, scoping, audit, and the agent tool. Spec:
+ * tests/spec/end-to-end.md § Capture. Source of truth: apps/api/src/capture/.
+ *
+ * Capture's tenant is the Kortix account: no step creates a project except
+ * CAP-3, whose agent session (the one edge where Capture meets a project) needs
+ * one to run in.
  *
  * Request and response bodies are the engine's (kortix-ai/capture at the commit
  * in tests/fixtures/capture-format-v2/SOURCE.json) and are validated against its
@@ -24,6 +28,7 @@ import { captureSchemaErrors, deleteCaptureObjects, localCaptureStore, readCaptu
 import { createHash } from 'node:crypto';
 import { CliSandbox } from '../fixtures/cli';
 
+const A = '/v1/accounts/:accountId/capture';
 const R = {
   authorize: 'POST /v1/capture/device/authorize',
   token: 'POST /v1/capture/device/token',
@@ -31,24 +36,31 @@ const R = {
   grant: 'GET /v1/capture/device/grants/:user_code',
   approve: 'POST /v1/capture/device/grants/:user_code/approve',
   deny: 'POST /v1/capture/device/grants/:user_code/deny',
-  devices: 'GET /v1/projects/:projectId/capture/devices',
-  revoke: 'DELETE /v1/projects/:projectId/capture/devices/:deviceId',
-  sync: 'POST /v1/projects/:projectId/capture/devices/:deviceId/sync',
-  devicePolicy: 'PUT /v1/projects/:projectId/capture/devices/:deviceId/policy',
-  asset: 'GET /v1/projects/:projectId/capture/devices/:deviceId/assets/:name',
-  policyGet: 'GET /v1/projects/:projectId/capture/policy',
-  policyPut: 'PUT /v1/projects/:projectId/capture/policy',
-  timeline: 'GET /v1/projects/:projectId/capture/timeline',
-  items: 'GET /v1/projects/:projectId/capture/timeline/items',
-  days: 'GET /v1/projects/:projectId/capture/days',
-  search: 'GET /v1/projects/:projectId/capture/search',
-  frame: 'GET /v1/projects/:projectId/capture/frames/:frameId',
-  media: 'GET /v1/projects/:projectId/capture/chunks/:chunkId/media',
-  ranges: 'GET /v1/projects/:projectId/capture/ranges',
-  saveRange: 'POST /v1/projects/:projectId/capture/ranges',
-  range: 'GET /v1/projects/:projectId/capture/ranges/:rangeId',
-  process: 'POST /v1/projects/:projectId/capture/ranges/:rangeId/process',
-  people: 'GET /v1/projects/:projectId/capture/people',
+  workspace: `GET ${A}`,
+  setEnabled: `PATCH ${A}`,
+  members: `GET ${A}/members`,
+  setRole: `PUT ${A}/members/:userId`,
+  devices: `GET ${A}/devices`,
+  revoke: `DELETE ${A}/devices/:deviceId`,
+  sync: `POST ${A}/devices/:deviceId/sync`,
+  devicePolicy: `PUT ${A}/devices/:deviceId/policy`,
+  asset: `GET ${A}/devices/:deviceId/assets/:name`,
+  policyGet: `GET ${A}/policy`,
+  policyPut: `PUT ${A}/policy`,
+  timeline: `GET ${A}/timeline`,
+  items: `GET ${A}/timeline/items`,
+  days: `GET ${A}/days`,
+  search: `GET ${A}/search`,
+  frame: `GET ${A}/frames/:frameId`,
+  media: `GET ${A}/chunks/:chunkId/media`,
+  ranges: `GET ${A}/ranges`,
+  saveRange: `POST ${A}/ranges`,
+  range: `GET ${A}/ranges/:rangeId`,
+  process: `POST ${A}/ranges/:rangeId/process`,
+  people: `GET ${A}/people`,
+  meSearch: 'GET /v1/capture/me/search',
+  meTimeline: 'GET /v1/capture/me/timeline',
+  meFrame: 'GET /v1/capture/me/frames/:frameId',
 };
 const path = (route: string) => route.split(' ')[1]!;
 
@@ -64,29 +76,29 @@ const engineAuthorize = (machineKey: string, deviceId = '') => ({
   device: { device_id: deviceId, machine_key_sha256: machineKey, hostname: 'fixture-host.local', computer_name: 'Fixture Computer', os: 'macos', os_version: '26.0', arch: 'aarch64', app_version: '0.1.0' },
 });
 
-async function captureProject(ctx: FlowContext, opts: { managedGit?: boolean } = {}) {
+/** A team account (Capture's tenant) with a plain member. No project. */
+async function captureAccount(ctx: FlowContext) {
   const team = await ctx.fixtures.team();
-  // An agent session needs a manifest commit, so CAP-3 uses a project with a Git repository.
-  const project = await team.project(opts.managedGit ? { managedGit: true } : undefined);
   const member = await team.addMember('member');
-  await team.grantProjectRole(project.id, member.userId!, 'member');
-  return { team, project, member };
+  return { team, member };
 }
 
-async function enableCapture(ctx: FlowContext, projectId: string) {
-  (await ctx.client.as(ctx.P.OWNER).patch('/v1/projects/:projectId/features', { feature: 'capture', enabled: true }, { params: { projectId } }))
+/** The account owner turns Capture on for the account. */
+async function enableCapture(ctx: FlowContext, accountId: string) {
+  (await ctx.client.as(ctx.P.OWNER).patch(path(R.setEnabled), { enabled: true }, { params: { accountId } }))
     .status(200)
     .body()
-    .has('$.experimental.capture', true);
+    .has('$.enabled', true)
+    .has('$.role', 'admin');
 }
 
-/** The whole device sign-in, approved by `who` into `projectId`. */
-async function signInDevice(ctx: FlowContext, who: Principal, projectId: string, machineKey: string) {
+/** The whole device sign-in, approved by `who` into `accountId`. */
+async function signInDevice(ctx: FlowContext, who: Principal, accountId: string, machineKey: string) {
   const anon = ctx.client.as(ctx.P.ANON);
   const started = await anon.post(path(R.authorize), engineAuthorize(machineKey));
   started.status(200);
   const grant = started.json<{ device_code: string; user_code: string; interval: number }>();
-  (await ctx.client.as(who).post(path(R.approve), { project_id: projectId }, { params: { user_code: grant.user_code } })).status(200);
+  (await ctx.client.as(who).post(path(R.approve), { account_id: accountId }, { params: { user_code: grant.user_code } })).status(200);
   const token = await anon.post(path(R.token), { grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: grant.device_code, client_id: 'kortix-capture' });
   token.status(200);
   return token.json<{ device_token: string; prefix: string; device_id: string }>();
@@ -98,13 +110,13 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 120_000,
-    routes: [R.authorize, R.token, R.credentials, R.grant, R.approve, R.deny, R.devices, R.revoke],
+    routes: [R.authorize, R.token, R.credentials, R.grant, R.approve, R.deny, R.workspace, R.setEnabled, R.devices, R.revoke],
   },
   async (ctx) => {
-    const { team, project, member } = await captureProject(ctx);
+    const { team, member } = await captureAccount(ctx);
     const anon = ctx.client.as(ctx.P.ANON);
     const asMember = ctx.client.as(member);
-    const projectId = project.id;
+    const accountId = team.id;
     const machineKey = syntheticMachineKey(ctx.fixtures.name('cap1'));
     let grant = { device_code: '', user_code: '' };
 
@@ -139,40 +151,47 @@ flow(
       (await anon.get(path(R.grant), { params: { user_code: grant.user_code } })).status(401);
     });
 
-    await ctx.step('approving into a project with capture off → 403 feature_disabled; the project reads → 403 too', async () => {
-      (await asMember.post(path(R.approve), { project_id: projectId }, { params: { user_code: grant.user_code } }))
+    await ctx.step('Capture is off for a new account: the member reads the workspace (off, role member, cannot manage); approving and reading → 403 capture_disabled; a member cannot turn it on', async () => {
+      (await asMember.get(path(R.workspace), { params: { accountId } }))
+        .status(200)
+        .body()
+        .has('$.enabled', false)
+        .has('$.role', 'member')
+        .has('$.can_manage', false);
+      (await asMember.post(path(R.approve), { account_id: accountId }, { params: { user_code: grant.user_code } }))
         .status(403)
         .body()
-        .has('$.code', 'feature_disabled');
-      (await asMember.get(path(R.devices), { params: { projectId } })).status(403).body().has('$.code', 'feature_disabled');
+        .has('$.code', 'capture_disabled');
+      (await asMember.get(path(R.devices), { params: { accountId } })).status(403).body().has('$.code', 'capture_disabled');
+      (await asMember.patch(path(R.setEnabled), { enabled: true }, { params: { accountId } })).status(403).body().has('$.code', 'capture_forbidden');
+      // The grant read lists only accounts with Capture on: none yet.
+      (await asMember.get(path(R.grant), { params: { user_code: grant.user_code } })).status(200).body().has('$.accounts', []);
     });
 
-    await enableCapture(ctx, projectId);
+    await enableCapture(ctx, accountId);
     let device = { device_token: '', prefix: '', device_id: '' };
 
-    const computerMachineId = syntheticMachineKey(ctx.fixtures.name('cap1-computer'));
-
-    await ctx.step('approving with a machine_id that is not 64 hex → 400', async () => {
-      (await asMember.post(path(R.approve), { project_id: projectId, machine_id: 'not-hex' }, { params: { user_code: grant.user_code } })).status(400);
-    });
-
-    await ctx.step('the member approves into the project with this computer’s machine_id → approved; a second decision → 409', async () => {
-      (await asMember.post(path(R.approve), { project_id: projectId, machine_id: computerMachineId }, { params: { user_code: grant.user_code } }))
+    await ctx.step('the grant read now lists the account; approving without naming it picks the member’s one account with Capture on → approved; a second decision → 409', async () => {
+      (await asMember.get(path(R.grant), { params: { user_code: grant.user_code } }))
+        .status(200)
+        .body()
+        .has('$.accounts[0].account_id', accountId);
+      (await asMember.post(path(R.approve), {}, { params: { user_code: grant.user_code } }))
         .status(200)
         .body()
         .has('$.status', 'approved')
-        .has('$.project_id', projectId);
+        .has('$.account_id', accountId);
       (await asMember.post(path(R.deny), {}, { params: { user_code: grant.user_code } })).status(409);
     });
 
-    await ctx.step('the device exchanges the code once → device token, prefix orgs/<account>/projects/<project>, device id; again → invalid_grant', async () => {
+    await ctx.step('the device exchanges the code once → device token, prefix orgs/<account>, device id; again → invalid_grant', async () => {
       await new Promise((resolve) => setTimeout(resolve, 5_100));
       const r = await anon.post(path(R.token), { device_code: grant.device_code });
       r.status(200).body().has('$.token_type', 'Bearer').has('$.member.email', member.email!);
       conforms('issuer-device-token', r.json());
       device = r.json();
       if (!device.device_token.startsWith('kortix_cap_')) throw new Error('device token prefix');
-      if (device.prefix !== `orgs/${team.id}/projects/${projectId}`) throw new Error(`prefix ${device.prefix}`);
+      if (device.prefix !== `orgs/${accountId}`) throw new Error(`prefix ${device.prefix}`);
       (await anon.post(path(R.token), { device_code: grant.device_code })).status(400).body().has('$.error', 'invalid_grant');
     });
 
@@ -182,17 +201,14 @@ flow(
     });
 
     await ctx.step('signing in again on the same machine reuses the device (same device_id) and retires the old token', async () => {
-      const again = await signInDevice(ctx, member, projectId, machineKey);
+      const again = await signInDevice(ctx, member, accountId, machineKey);
       if (again.device_id !== device.device_id) throw new Error(`device ${again.device_id} != ${device.device_id}`);
       (await anon.withBearer(device.device_token).post(path(R.credentials))).status(401);
       device = again;
-      // An approval without machine_id keeps the computer link the first one set.
-      (await asMember.get(path(R.devices), { params: { projectId } }))
-        .status(200)
-        .body()
-        .has('$.devices[0].device_id', device.device_id)
-        .has('$.devices[0].name', 'Fixture Computer')
-        .has('$.devices[0].machine_id', computerMachineId);
+      const listed = await asMember.get(path(R.devices), { params: { accountId } });
+      listed.status(200).body().has('$.devices[0].device_id', device.device_id).has('$.devices[0].name', 'Fixture Computer');
+      // Capture keeps no link to the computer agent.
+      if ('machine_id' in listed.json<{ devices: Record<string, unknown>[] }>().devices[0]!) throw new Error('machine_id on a capture device');
     });
 
     await ctx.step('a denied sign-in → the device reads access_denied', async () => {
@@ -204,9 +220,13 @@ flow(
       conforms('issuer-device-token', refused.json());
     });
 
-    await ctx.step('the owner cannot see the member’s device without asking for the project; revoking it kills the token → 401', async () => {
-      (await ctx.client.as(ctx.P.OWNER).get(path(R.devices), { params: { projectId } })).status(200).body().has('$.devices', []);
-      (await asMember.del(path(R.revoke), { params: { projectId, deviceId: device.device_id } })).status(200);
+    await ctx.step('the owner (Capture admin) sees no device of their own, and the member’s with scope=account; the member revokes it and the token → 401', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get(path(R.devices), { params: { accountId } })).status(200).body().has('$.devices', []);
+      (await ctx.client.as(ctx.P.OWNER).get(path(R.devices), { params: { accountId }, query: { scope: 'account' } }))
+        .status(200)
+        .body()
+        .has('$.devices[0].device_id', device.device_id);
+      (await asMember.del(path(R.revoke), { params: { accountId, deviceId: device.device_id } })).status(200);
       (await anon.withBearer(device.device_token).post(path(R.credentials))).status(401);
     });
   },
@@ -219,27 +239,27 @@ interface Hit {
   chunk_id: string;
 }
 
-async function ingestedWorld(ctx: FlowContext, label: string, opts: { managedGit?: boolean } = {}) {
-  const { team, project, member } = await captureProject(ctx, opts);
-  await enableCapture(ctx, project.id);
+async function ingestedWorld(ctx: FlowContext, label: string) {
+  const { team, member } = await captureAccount(ctx);
+  await enableCapture(ctx, team.id);
   const machineKey = syntheticMachineKey(ctx.fixtures.name(label));
-  const device = await signInDevice(ctx, member, project.id, machineKey);
+  const device = await signInDevice(ctx, member, team.id, machineKey);
   const store = await localCaptureStore();
   // Audio is off by default: turn it on first, so the audio item indexes too.
-  (await ctx.client.as(ctx.P.OWNER).put(path(R.policyPut), { policy: { layers: { screen: true, actions: true, audio: true } } }, { params: { projectId: project.id } })).status(200);
+  (await ctx.client.as(ctx.P.OWNER).put(path(R.policyPut), { policy: { layers: { screen: true, actions: true, audio: true } } }, { params: { accountId: team.id } })).status(200);
   const day = vendoredDevice({ prefix: device.prefix, deviceId: device.device_id, machineKeySha256: machineKey });
   await uploadCaptureObjects(store, day.objects);
   const asMember = ctx.client.as(member);
   // "Sync now": read the device's index and status at once (the local profile runs no leader readers).
-  (await asMember.post(path(R.sync), {}, { params: { projectId: project.id, deviceId: device.device_id } }))
+  (await asMember.post(path(R.sync), {}, { params: { accountId: team.id, deviceId: device.device_id } }))
     .status(200)
     .body()
     .has('$.enqueued', day.manifestKeys.length);
   await waitFor(
-    async () => (await asMember.get(path(R.timeline), { params: { projectId: project.id }, query: { day: day.day } })).json<{ chunks?: unknown[] }>(),
+    async () => (await asMember.get(path(R.timeline), { params: { accountId: team.id }, query: { day: day.day } })).json<{ chunks?: unknown[] }>(),
     { until: (t) => (t.chunks?.length ?? 0) >= day.expected.chunks, timeoutMs: 60_000, intervalMs: 1_000, description: 'the job worker to ingest every queued item' },
   );
-  return { team, project, member, device, store, day, asMember };
+  return { team, member, device, store, day, asMember };
 }
 
 flow(
@@ -248,12 +268,12 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [R.devices, R.sync, R.timeline, R.days, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.devicePolicy, R.ranges, R.saveRange, R.range, R.process, R.people],
+    routes: [R.devices, R.sync, R.timeline, R.days, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.devicePolicy, R.ranges, R.saveRange, R.range, R.process, R.people, R.members, R.setRole],
   },
   async (ctx) => {
-    const { project, member, device, store, day, asMember } = await ingestedWorld(ctx, 'cap2');
+    const { team, member, device, store, day, asMember } = await ingestedWorld(ctx, 'cap2');
     const owner = ctx.client.as(ctx.P.OWNER);
-    const params = { projectId: project.id };
+    const params = { accountId: team.id };
     const window = { day: day.day };
 
     await ctx.step('a second sync finds nothing new; every item of the day is indexed once and the counts match the device output', async () => {
@@ -317,15 +337,15 @@ flow(
       if ((await fetch(asset.url)).status !== 200) throw new Error('asset URL');
     });
 
-    await ctx.step('scoping: the member cannot read the owner or the project; the owner reads the member → 200 and a capture.member_view audit row', async () => {
+    await ctx.step('scoping: the member cannot read the owner or the account; the owner reads the member → 200 and a capture.member_view audit row', async () => {
       (await asMember.get(path(R.timeline), { params, query: { user_id: ctx.P.OWNER.userId! } })).status(403).body().has('$.code', 'capture_forbidden');
       (await asMember.get(path(R.people), { params })).status(403);
-      (await asMember.get(path(R.devices), { params, query: { scope: 'project' } })).status(403);
+      (await asMember.get(path(R.devices), { params, query: { scope: 'account' } })).status(403);
       (await owner.get(path(R.search), { params, query: { q: 'roadmap', user_id: member.userId! } })).status(200);
       const db = await openDb(ctx);
       try {
         const rows = await waitFor(
-          async () => (await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE project_id = $1 AND action = 'capture.member_view' AND actor_user_id = $2 AND resource_id = $3`, [project.id, ctx.P.OWNER.userId, member.userId])).rows[0]!.n,
+          async () => (await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE account_id = $1 AND action = 'capture.member_view' AND actor_user_id = $2 AND resource_id = $3`, [team.id, ctx.P.OWNER.userId, member.userId])).rows[0]!.n,
           { until: (n) => Number(n) >= 1, timeoutMs: 15_000, intervalMs: 500, description: 'the member_view audit row' },
         );
         if (Number(rows) < 1) throw new Error('no audit row');
@@ -334,10 +354,43 @@ flow(
       }
     });
 
-    await ctx.step('the people summary (owner) gives the member active time per app; it is audited as capture.project_view', async () => {
+    await ctx.step('the people summary (owner) gives the member active time per app; it is audited as capture.account_view', async () => {
       const people = (await owner.get(path(R.people), { params, query: window })).status(200).json<{ people: any[] }>().people;
       const row = people.find((p) => p.user_id === member.userId);
       if (!row || row.active_seconds <= 0 || !row.apps.some((a: any) => a.app === 'Editor')) throw new Error(`people ${JSON.stringify(people)}`);
+      const db = await openDb(ctx);
+      try {
+        const n = await waitFor(
+          async () => Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE account_id = $1 AND action = 'capture.account_view' AND actor_user_id = $2`, [team.id, ctx.P.OWNER.userId])).rows[0]!.n),
+          { until: (count) => count >= 1, timeoutMs: 15_000, intervalMs: 500, description: 'the account_view audit row' },
+        );
+        if (n < 1) throw new Error('no account_view row');
+      } finally {
+        await db.end();
+      }
+    });
+
+    await ctx.step('roles: the owner lists Capture roles (owner admin, member member); a viewer override lets the member read the owner and People, a member cannot change roles, clearing it takes the reads away', async () => {
+      const members = (await owner.get(path(R.members), { params })).status(200).json<{ members: any[] }>().members;
+      const roleOf = (userId: string) => members.find((m) => m.user_id === userId)?.role;
+      if (roleOf(ctx.P.OWNER.userId!) !== 'admin' || roleOf(member.userId!) !== 'member') throw new Error(`roles ${JSON.stringify(members)}`);
+      (await asMember.get(path(R.members), { params })).status(403);
+      (await asMember.put(path(R.setRole), { role: 'admin' }, { params: { ...params, userId: member.userId! } })).status(403);
+      (await owner.put(path(R.setRole), { role: 'viewer' }, { params: { ...params, userId: member.userId! } }))
+        .status(200)
+        .body()
+        .has('$.role', 'viewer')
+        .has('$.overridden', true);
+      (await asMember.get(path(R.people), { params, query: window })).status(200);
+      (await asMember.get(path(R.timeline), { params, query: { user_id: ctx.P.OWNER.userId! } })).status(200);
+      // A viewer writes nothing.
+      (await asMember.put(path(R.policyPut), { policy: { layers: { screen: true, actions: true, audio: true } } }, { params })).status(403);
+      (await owner.put(path(R.setRole), { role: null }, { params: { ...params, userId: member.userId! } }))
+        .status(200)
+        .body()
+        .has('$.role', 'member')
+        .has('$.overridden', false);
+      (await asMember.get(path(R.people), { params })).status(403);
     });
 
     await ctx.step('policy: a member cannot write it; the owner writes it and the device reads the same policy.json from the store', async () => {
@@ -393,14 +446,18 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 240_000,
-    routes: [R.search, R.timeline, R.frame],
+    routes: [R.meSearch, R.meTimeline, R.meFrame, R.search],
   },
   async (ctx) => {
-    const { team, project, member } = await ingestedWorld(ctx, 'cap3', { managedGit: true });
+    const { team, member } = await ingestedWorld(ctx, 'cap3');
+    // The agent edge: an agent session runs in some project of the account (it
+    // needs a manifest commit, so a managed Git project). Capture itself never
+    // sees the project.
+    const project = await team.project({ managedGit: true });
+    await team.grantProjectRole(project.id, member.userId!, 'member');
     const marker = 'quarterly';
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
     const sandbox = new CliSandbox('cap3');
-    const params = { projectId: project.id };
     try {
       await world.writeManifest(
         'kortix_version: 2\nproject:\n  name: ke2e-capture\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n',
@@ -410,16 +467,16 @@ flow(
       const shared = await world.mintAgentSession({ agent: 'kortix', launcher: member, visibility: 'project' });
       const trigger = await world.mintAgentSession({ agent: 'kortix', launcher: null });
 
-      await ctx.step('an agent in the member’s private session searches the member’s timeline → their hits, audited as capture.agent_read', async () => {
-        const r = await own.client.get(path(R.search), { params, query: { q: marker } });
+      await ctx.step('an agent in the member’s private session searches the member’s timeline through /capture/me → their hits, audited as capture.agent_read', async () => {
+        const r = await own.client.get(path(R.meSearch), { query: { q: marker } });
         r.status(200).body().has('$.user_id', member.userId!);
         if (r.json<{ hits: Hit[] }>().hits.length === 0) throw new Error('no hits for the agent');
       });
 
-      await ctx.step('the agent cannot name another member, and a shared or trigger session has no person → 403', async () => {
-        (await own.client.get(path(R.search), { params, query: { q: marker, user_id: ctx.P.OWNER.userId! } })).status(403).body().has('$.code', 'capture_forbidden');
-        (await shared.client.get(path(R.search), { params, query: { q: marker } })).status(403).body().has('$.code', 'capture_no_human');
-        (await trigger.client.get(path(R.timeline), { params, query: { day: '2026-10-01' } })).status(403).body().has('$.code', 'capture_no_human');
+      await ctx.step('the agent cannot reach the account routes (its token is project-scoped); a shared or trigger session has no person → 403', async () => {
+        (await own.client.get(path(R.search), { params: { accountId: team.id }, query: { q: marker } })).status(403);
+        (await shared.client.get(path(R.meSearch), { query: { q: marker } })).status(403).body().has('$.code', 'capture_no_human');
+        (await trigger.client.get(path(R.meTimeline), { query: { day: '2026-10-01' } })).status(403).body().has('$.code', 'capture_no_human');
       });
 
       await ctx.step('real CLI inside the session: `kortix capture search <marker> --json` exits 0 with the member’s hits; `capture frame` prints the text', async () => {
@@ -437,7 +494,7 @@ flow(
         const db = await openDb(ctx);
         try {
           const n = await waitFor(
-            async () => Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE project_id = $1 AND action = 'capture.agent_read' AND resource_id = $2`, [project.id, member.userId])).rows[0]!.n),
+            async () => Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE account_id = $1 AND action = 'capture.agent_read' AND resource_id = $2`, [team.id, member.userId])).rows[0]!.n),
             { until: (count) => count >= 2, timeoutMs: 15_000, intervalMs: 500, description: 'capture.agent_read rows' },
           );
           if (n < 2) throw new Error(`agent_read rows ${n}`);
