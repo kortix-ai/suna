@@ -190,13 +190,6 @@ describe('FileViewer toolbar', () => {
   });
 });
 
-// ── The split button ────────────────────────────────────────────────────────
-// The toolbar used to be six flat icon peers. Everything that is a way of
-// TAKING the output with you now lives in one labelled control plus a caret,
-// and only full screen and close — which act on the panel, not the file — stay
-// outside it. These lock the shape, because "one more little icon button" is
-// exactly how the old row grew.
-
 // ── An HTML file is SERVED, never injected ─────────────────────────────────
 // The regression: the preview handed the file's text to the frame as `srcDoc`.
 // A `srcDoc` document has no URL, so `./style.css`, `img/logo.png` and `app.js`
@@ -256,40 +249,45 @@ describe('FileViewer — HTML is served, not injected', () => {
   });
 });
 
+// ── The address pill ────────────────────────────────────────────────────────
+// The header is one filled pill naming the file, with the file's own actions
+// (Refresh, Copy, Copy link) inside it, then Download, full screen and close
+// outside it. There is no menu: "one more little control behind a caret" is
+// how the old row grew, so these lock the shape.
 describe('FileViewer actions', () => {
-  test('the primary action is a word, with no icon at all', () => {
-    // Owner direction: an icon beside a label that already reads "Copy" is
-    // decoration, and decoration is what made the old row unreadable. The
-    // button's whole content is the word — asserted on the rendered element,
-    // not on its neighbours, so a re-added <svg> fails this immediately.
-    const md = renderShareable('notes.txt', 'hi');
-    const open = md.indexOf('aria-label="Copy file contents"');
-    expect(open).toBeGreaterThan(-1);
-    const button = md.slice(md.lastIndexOf('<button', open), md.indexOf('</button>', open));
-    expect(button).not.toContain('<svg');
-    expect(button.endsWith('>Copy')).toBe(true);
+  test('the pill shows the folders and the file name', () => {
+    const nested = renderToStaticMarkup(
+      <Wrapped>
+        <FileViewer content="hi" fileName="Home.tsx" path="/workspace/src/pages/Home.tsx" />
+      </Wrapped>,
+    );
+    expect(nested).toContain('src / pages /');
+    expect(nested).toContain('title="/workspace/src/pages/Home.tsx"');
   });
 
-  test('Copy link is behind the caret, not beside it', () => {
+  test('Copy is an icon button in the pill, before Copy link', () => {
     const md = renderShareable('notes.txt', 'hi');
-    expect(md).toContain('aria-label="More actions"');
-    // Radix renders menu content only once opened, so the item itself cannot
-    // appear in static markup — its absence here is the proof it is not
-    // sitting in the toolbar row.
-    expect(md).not.toContain('title="Copy public link"');
+    const copy = md.indexOf('aria-label="Copy file contents"');
+    const link = md.indexOf('aria-label="Copy link"');
+    expect(copy).toBeGreaterThan(-1);
+    expect(link).toBeGreaterThan(copy);
+    const button = md.slice(md.lastIndexOf('<button', copy), md.indexOf('</button>', copy));
+    expect(button).toContain('<svg');
   });
 
-  test('Download is a visible button, exactly one', () => {
-    // Download used to hide behind the caret. It is now a first-class icon
-    // button, so it needs no menu opened.
+  test('there is no menu — every action is one click', () => {
+    expect(renderShareable('notes.txt', 'hi')).not.toContain('aria-label="More actions"');
+  });
+
+  test('Download is a visible button outside the pill, exactly one', () => {
     const md = renderShareable('notes.txt', 'hi');
     expect(count(md, 'aria-label="Download"')).toBe(1);
     expect(count(md, 'data-viewer-download=""')).toBe(1);
-    // Order: split button, then Download, then the panel controls.
-    const copy = md.indexOf('aria-label="Copy file contents"');
+    // Order: pill actions, then Download, then the panel controls.
+    const link = md.indexOf('aria-label="Copy link"');
     const download = md.indexOf('aria-label="Download"');
     const fullScreen = md.indexOf('aria-label="Full screen"');
-    expect(copy).toBeLessThan(download);
+    expect(link).toBeLessThan(download);
     expect(download).toBeLessThan(fullScreen);
   });
 
@@ -301,40 +299,32 @@ describe('FileViewer actions', () => {
     expect(md).not.toContain('aria-label="Open in a new tab"');
   });
 
-  test('full screen and close stay outside the group — they act on the panel', () => {
-    const md = renderShareable('notes.txt', 'hi');
-    expect(md).toContain('aria-label="Full screen"');
-  });
-
-  test('a file with nothing but its text offers no caret at all', () => {
-    // No path (nothing to download) and no share context (no link to mint), so
-    // Copy is the only action. A menu holding zero items is a click for
-    // nothing, so the group collapses to the lone button.
+  test('a file with nothing but its text offers Copy alone', () => {
+    // No path (nothing to download) and no share context (no link to mint).
     const bare = renderToStaticMarkup(
       <Wrapped>
         <FileViewer content="hi" fileName="notes.txt" />
       </Wrapped>,
     );
     expect(bare).toContain('aria-label="Copy file contents"');
-    expect(bare).not.toContain('aria-label="More actions"');
+    expect(bare).not.toContain('aria-label="Copy link"');
+    expect(bare).not.toContain('aria-label="Download"');
   });
 
   test('share context alone is not enough — a file with no path cannot be shared', () => {
     // `fileShareInput` returns null without a path, which is what withholds
-    // Copy link. Download needs the path too, so nothing is left for a menu.
+    // Copy link.
     const noPath = renderToStaticMarkup(
       <Wrapped>
         <FileViewer content="hi" fileName="notes.txt" shareContext={SHARE_CONTEXT} />
       </Wrapped>,
     );
-    expect(noPath).not.toContain('aria-label="More actions"');
+    expect(noPath).not.toContain('aria-label="Copy link"');
   });
 
-  test('a path with no share context shows Download, and no caret for it', () => {
-    // Download is never a menu item, so without Copy link there is nothing
-    // left for a menu: Copy stands alone and Download is visible beside it.
+  test('a path with no share context shows Download, and no Copy link', () => {
     const md = render('notes.txt', 'hi');
-    expect(md).not.toContain('aria-label="More actions"');
+    expect(md).not.toContain('aria-label="Copy link"');
     expect(count(md, 'aria-label="Download"')).toBe(1);
   });
 });

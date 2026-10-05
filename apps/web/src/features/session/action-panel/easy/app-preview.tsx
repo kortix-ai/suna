@@ -21,7 +21,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Button } from '@/components/ui/button';
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
@@ -288,31 +288,33 @@ export function AppPreview({
           onNavigate={navigateTo}
           placeholder={tI18nComplete.raw('text878abd024f27')}
           inputRef={addressRef}
-        />
-
-        {/* An app has no file to save and no text to put on a clipboard, so the
-            split button's primary falls through to `Copy link` — the one thing
-            you can hand someone for a running port. Opening the app in a real
-            browser tab is the only capability the panel itself cannot offer,
-            so it stays, behind the caret rather than as a seventh glyph. */}
-        <ViewerActions
-          shareContext={shareContext}
-          shareInput={shareInput}
-          className="ml-0.5"
-          extraMenuItems={
-            <DropdownMenuItem
-              disabled={!hasPreview}
-              onSelect={() => {
-                if (!previewUrl) return;
-                track('app_opened_new_tab');
-                window.open(previewUrl, '_blank', 'noopener,noreferrer');
-              }}
-            >
-              <ArrowSquareOutIcon />
-              {tI18nComplete.raw('text306ef19c8ac3')}
-            </DropdownMenuItem>
+          trailing={
+            // An app has no file to save and no text to put on a clipboard, so
+            // `Copy link` is the one copy action — the thing you can hand
+            // someone for a running port.
+            <ViewerActions shareContext={shareContext} shareInput={shareInput} />
           }
         />
+
+        {/* Opening the app in a real browser tab is the only capability the
+            panel itself cannot offer, so it is a visible control outside the
+            pill. */}
+        <Hint label={tI18nComplete.raw('text306ef19c8ac3')} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={!hasPreview}
+            aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+            onClick={() => {
+              if (!previewUrl) return;
+              track('app_opened_new_tab');
+              window.open(previewUrl, '_blank', 'noopener,noreferrer');
+            }}
+            className="size-7 shrink-0 active:scale-[0.96]"
+          >
+            <ArrowSquareOutIcon className="size-3.5" />
+          </Button>
+        </Hint>
 
         <PanelWidthButton isMobile={isMobile} />
 
