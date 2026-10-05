@@ -823,14 +823,6 @@
       "count": 2
     }
   },
-  "src/git-proxy/compiled-pi-runtime-artifact.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/git-proxy/compiled-runtime-artifact.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -844,18 +836,13 @@
       "count": 2
     },
     "no-console": {
-      "count": 15
+      "count": 13
     },
     "no-restricted-properties": {
       "count": 2
     },
     "no-restricted-syntax": {
       "count": 6
-    }
-  },
-  "src/git-proxy/pi-worker-bundle.ts": {
-    "no-restricted-properties": {
-      "count": 2
     }
   },
   "src/git-proxy/project-snapshot-build.ts": {
@@ -1276,11 +1263,6 @@
       "count": 1
     }
   },
-  "src/platform/services/pi-worker-pool.ts": {
-    "no-console": {
-      "count": 9
-    }
-  },
   "src/platform/services/provider-events.ts": {
     "no-console": {
       "count": 1
@@ -1291,14 +1273,9 @@
       "count": 1
     }
   },
-  "src/platform/services/session-environment.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/platform/services/session-sandbox.ts": {
     "no-console": {
-      "count": 21
+      "count": 20
     },
     "no-restricted-properties": {
       "count": 1
@@ -1501,7 +1478,7 @@
   },
   "src/projects/lib/session-create.ts": {
     "no-console": {
-      "count": 10
+      "count": 8
     }
   },
   "src/projects/lib/session-reload.ts": {
@@ -3057,7 +3034,7 @@
   },
   "src/snapshots/runtime-images.ts": {
     "kortix-api/replica-local": {
-      "count": 3
+      "count": 1
     },
     "no-console": {
       "count": 5

@@ -4,7 +4,7 @@ import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRu
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -50,14 +50,13 @@ import {
   repositoryAccessFromLoadedAgents,
   legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch , resolveCommitSha } from '../git';
+import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 
 import { validateNativeOpencodeModelRef } from './session-model-change';
 import { listResolvedProjectSecrets, parseSessionSecretsAllowlist, secretKeyCollisionInAllowlist } from '../secrets';
 
 
-import { resolveManifestRuntime } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { repositoryGeneration } from './repository-generation';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
@@ -90,7 +89,6 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { buildPiWorkerSessionEnvVars } from './session-runtime-env';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
 
@@ -779,47 +777,10 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  // Harness/worker split: with the project's pi_worker flag on AND the manifest
-  // declaring `runtime: pi`, the session boots the shared pi worker image and
-  // its compiled runtime artifact instead of the OpenCode stack. Both gates or
-  // nothing — the flag alone only compiles artifacts, the manifest alone is
-  // inert, and any resolution failure falls back to the OpenCode path.
-  let piWorkerBoot = false;
-  let piWorkerSha: string | null = null;
-  if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
-    try {
-      const authedProject = await withProjectGitAuth(project);
-      const ref = (baseRef ?? '').trim() || project.defaultBranch;
-      // One round trip, not two: the runtime read and the tip resolution are
-      // independent, and both sit on the POST /sessions critical path. A
-      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
-      // a full sequential git hop.
-      const [runtime, sha] = await Promise.all([
-        resolveManifestRuntime(authedProject, baseRef),
-        resolveCommitSha(authedProject, ref).catch(() => null),
-      ]);
-      if (runtime === 'pi' && sha) {
-        piWorkerSha = sha;
-        piWorkerBoot = true;
-        sandboxSlug = PI_WORKER_SANDBOX_SLUG;
-      } else if (runtime === 'pi') {
-        console.warn(
-          `[sessions] pi manifest on ${projectId} but tip resolution for '${ref}' failed; booting OpenCode path`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[sessions] pi worker resolution failed for ${projectId}; booting OpenCode path:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
   if (
     !platformMetaAgent &&
     sandboxSlug &&
-    sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
-    sandboxSlug !== PI_WORKER_SANDBOX_SLUG
+    sandboxSlug !== DEFAULT_SANDBOX_SLUG
   ) {
     try {
       await resolveTemplate(
@@ -1198,10 +1159,8 @@ export async function createProjectSession(input: {
       // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
       // OpenCode before the checkout. Bounded by the 2 s race below; a miss
       // just means the daemon's fetch fallback.
-      // The worker path never clones: the scaffold/delta hint is pure waste
-      // there, and the hint alone holds the env build for up to 2 s.
       const fastBootGitHintPromise =
-        !piWorkerBoot && config.KORTIX_FAST_GIT_BOOT_ENABLED
+        config.KORTIX_FAST_GIT_BOOT_ENABLED
         ? Promise.race([
             projectWithGitAuthPromise
               .then((projectWithGitAuth) =>
@@ -1219,9 +1178,7 @@ export async function createProjectSession(input: {
             if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
           })
         : Promise.resolve(undefined);
-      // OpenCode compiled-boot artifacts serve the daemon path only; a worker
-      // boot fetches its own per-commit pi artifact instead.
-      if (!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
+      if (config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
         void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
           .then(([projectWithGitAuth, hint]) =>
             hint?.baseSha
@@ -1253,36 +1210,7 @@ export async function createProjectSession(input: {
             });
           });
       }
-      // Worker boots skip the OpenCode env build entirely: the compiled
-      // artifact already carries the agent map, v0 grants the worker no
-      // project secrets (the gateway resolves BYOK server-side per request),
-      // and nothing clones. Measured on dev 2026-08-27, the full chain
-      // (hint race + compiled config + secret grant + secrets snapshot) cost
-      // 1.1–2.4 s of every cold pi boot.
-      const envPromise = piWorkerBoot
-        ? Promise.resolve(
-            buildPiWorkerSessionEnvVars({
-              projectId,
-              sessionId,
-              agentName,
-              // Only an EXPLICIT session model may override the baked agent
-              // model — the platform/project fallback resolution exists for
-              // the OpenCode path and must not clobber the artifact's own
-              // model (KORTIX_MODEL wins over the bake inside the worker).
-              // Stripped to the native ref: the worker's env path takes the
-              // value verbatim, unlike the baked path which de-prefixes.
-              opencodeModel:
-                opencodeModelSource === 'explicit' && opencodeModel
-                  ? opencodeModel.replace(/^kortix\//, '')
-                  : null,
-              apiUrl: deriveKortixApiBase(),
-              frontendUrl: sandboxFrontendBaseUrl(),
-            }),
-          ).then((envVars) => {
-            tl.mark('env-vars');
-            return envVars;
-          })
-        : fastBootGitHintPromise
+      const envPromise = fastBootGitHintPromise
         .then(async (fastBootGitHint) => {
           // S3 config provider: pin a PREPARED archive for the exact base tip
           // and presign its download descriptor right here (local signing, no
@@ -1395,17 +1323,7 @@ export async function createProjectSession(input: {
       // Not awaited here: provisioning reads it only when it builds the provider
       // input, so the env build overlaps the image check and the token mint.
       const extraEnvVars = envPromise.then((env) => {
-        const merged = mergeSessionSandboxEnv(env, input.extraEnvVars);
-        return piWorkerBoot && piWorkerSha
-          ? {
-              ...merged,
-              // The worker's entrypoint composes the artifact URL from these
-              // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
-              // already receives.
-              KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
-              KORTIX_PI_RUNTIME_SHA: piWorkerSha,
-            }
-          : merged;
+        return mergeSessionSandboxEnv(env, input.extraEnvVars);
       });
 
       const provisionPromise = provisionSessionSandbox({
@@ -1414,18 +1332,12 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         agentName,
-        allowProjectImage: piWorkerBoot
-          ? false
-          : projectImageAllowedForSession(agentName, repositoryAccess),
-        // v0 pins the worker to Daytona: the entrypoint override in
-        // ensurePiWorkerImage is only exercised there so far. Lift once the
-        // other adapters' entrypoint handling is verified.
-        provider: piWorkerBoot ? 'daytona' : providerName,
-        providerLocked: piWorkerBoot ? true : providerLocked,
+        allowProjectImage: projectImageAllowedForSession(agentName, repositoryAccess),
+        provider: providerName,
+        providerLocked,
         metadata: {
           session_id: sessionId,
           project_id: projectId,
-          ...(piWorkerBoot ? { pi_worker_boot: true } : {}),
           ...(input.metadata ?? {}),
         },
         initialTurn,

@@ -1159,10 +1159,6 @@
           "name": "Secretos de proveedor compartidos",
           "description": "Los miembros conectan sus propias suscripciones de ChatGPT y claves de proveedor, las comparten cuando hace falta y eligen cuáles usa cada sesión."
         },
-        "pi_worker": {
-          "name": "Entorno del worker Pi (compilado)",
-          "description": "Ejecuta sesiones con el entorno experimental del worker Pi."
-        },
         "pi_harness": {
           "name": "Harness Pi (en el sandbox)",
           "description": "Ejecuta las sesiones con el harness Pi dentro del sandbox de la sesión en lugar de OpenCode. Desactivado, `runtime: pi` en el manifiesto sigue seleccionando Pi."
@@ -17685,7 +17681,6 @@
       "texted13dee8f1f7": "El repositorio es la empresa. Hazle fork, crea ramas, revierte cambios o entrégalo a una máquina nueva: toda la configuración va incluida.",
       "texted1596a9787f": "Usar un token de acceso",
       "texted1d87390f65": "Emite un atributo de grupo (por ejemplo, llamado groups) que contenga los grupos del usuario.",
-      "texted21e91b4d87": "Runtime compilado del trabajador pi descargado",
       "texted26c1af81cf": "Herramientas de escritura",
       "texted2d94ab1136": "Inicia sesión en el centro de administración de Microsoft Entra (entra.microsoft.com) como administrador de tu tenant.",
       "texted2e59c337d0": "Narrativa",
@@ -18828,9 +18823,7 @@
       "textb0f59e5a2722": "Inicio de sesión OAuth del proveedor de modelos iniciado",
       "text0dd455816ef6": "Reconstrucción de la instantánea del sandbox iniciada",
       "text40cef5fd1dbd": "Compilación de la plantilla de sandbox iniciada",
-      "text09917783e494": "Entorno de la sesión iniciado",
       "text18065b39fc81": "Kortix App detenida",
-      "textb88830cc18af": "Entorno de la sesión detenido",
       "text464b0b69fd48": "Eventos del túnel de equipo transmitidos",
       "text970caaaceccc": "Solicitud transmitida mediante el relé de secretos",
       "text64a93d38e11a": "Respuesta del relé de secretos transmitida",
@@ -18989,7 +18982,6 @@
       "text5ed3e15fac9f": "Transición de proveedor de sandbox consultada",
       "text70a61d85334a": "Sesión consultada",
       "textd7aa05eaf609": "Libro de costes de la sesión consultado",
-      "text4e22b3354b8f": "Entorno de la sesión consultado",
       "text48b65bbc9863": "Política de sesión consultada",
       "text7c649f4bf685": "Grupo de secretos de proveedor de la sesión consultado",
       "text3fd349f95ce2": "Ámbito de la sesión consultado",

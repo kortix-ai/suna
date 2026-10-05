@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 700 route actions and 64 other events.
+This page lists 696 route actions and 64 other events.
 
 ## `account.`
 
@@ -370,7 +370,6 @@ This page lists 700 route actions and 64 other events.
 | `git.commit.list` | Listed Git commits | `GET /v1/projects/:projectId/commits` |
 | `git.commit.read` | Viewed Git commit | `GET /v1/projects/:projectId/commits/:sha` |
 | `git.compiled_checkout.download` | Downloaded compiled project checkout | `GET /v1/git/:project/compiled-checkout` |
-| `git.compiled_pi_runtime.download` | Downloaded compiled pi worker runtime | `GET /v1/git/:project/compiled-pi-runtime` |
 | `git.compiled_runtime.download` | Downloaded compiled session runtime | `GET /v1/git/:project/compiled-runtime` |
 | `git.connection.read` | Viewed Git connection status | `GET /v1/projects/:projectId/git/connection` |
 | `git.credential.set` | Set project Git credential | `PUT /v1/projects/:projectId/git-credential` |
@@ -752,9 +751,6 @@ This page lists 700 route actions and 64 other events.
 | `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
-| `session.environment.read` | Viewed session environment | `GET /v1/projects/:projectId/sessions/:sessionId/environment` |
-| `session.environment.start` | Started session environment | `POST /v1/projects/:projectId/sessions/:sessionId/environment/ensure` |
-| `session.environment.stop` | Stopped session environment | `POST /v1/projects/:projectId/sessions/:sessionId/environment/stop` |
 | `session.event.stream` | Streamed session events | `GET /v1/projects/:projectId/sessions/:sessionId/events` |
 | `session.git.push` | Committed and pushed session changes | `POST /v1/projects/:projectId/sessions/:sessionId/commit-push` |
 | `session.list` | Listed project sessions | `GET /v1/projects/:projectId/sessions` |

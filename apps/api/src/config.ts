@@ -572,16 +572,6 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
-  // Pi worker pool (harness/worker split P1.8): keep this many PARKED boxes of
-  // the shared pi-worker snapshot per environment, claimed at session create
-  // (a claim skips provider create + box boot, ~4s of the cold path measured
-  // on dev 2026-08-27). 0 = off. Pure accelerator: claim failure falls back to
-  // an ordinary cold create.
-  KORTIX_PI_WORKER_POOL_TARGET: optInt(0),
-  // Parked boxes older than this are reaped and replaced; also the Daytona
-  // auto-stop backstop a parked box is created with, so an orphaned box
-  // reclaims itself even if every API instance dies.
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -1370,8 +1360,6 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,

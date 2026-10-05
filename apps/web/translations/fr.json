@@ -1159,10 +1159,6 @@
           "name": "Secrets de fournisseur partagés",
           "description": "Les membres connectent leurs propres abonnements ChatGPT et clés de fournisseur, les partagent si besoin et choisissent ceux que chaque session utilise."
         },
-        "pi_worker": {
-          "name": "Environnement du worker Pi (compilé)",
-          "description": "Exécutez les sessions avec l’environnement expérimental du worker Pi."
-        },
         "pi_harness": {
           "name": "Harness Pi (dans le bac à sable)",
           "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
@@ -17685,7 +17681,6 @@
       "texted13dee8f1f7": "Le dépôt est l’entreprise. Dupliquez-le, créez une branche, revenez en arrière ou transmettez-le à une nouvelle machine : toute la configuration l’accompagne.",
       "texted1596a9787f": "Utiliser un jeton d’accès",
       "texted1d87390f65": "Émettez un attribut de groupe (par ex. nommé groups) listant les groupes de l’utilisateur.",
-      "texted21e91b4d87": "Runtime compilé du worker pi téléchargé",
       "texted26c1af81cf": "Outils d’écriture",
       "texted2d94ab1136": "Connectez-vous au centre d’administration Microsoft Entra (entra.microsoft.com) en tant qu’administrateur de votre tenant.",
       "texted2e59c337d0": "Récit",
@@ -18828,9 +18823,7 @@
       "textb0f59e5a2722": "Connexion OAuth au fournisseur de modèles démarrée",
       "text0dd455816ef6": "Reconstruction de l’instantané du sandbox démarrée",
       "text40cef5fd1dbd": "Build du modèle de sandbox démarré",
-      "text09917783e494": "Environnement de session démarré",
       "text18065b39fc81": "Kortix App arrêtée",
-      "textb88830cc18af": "Environnement de session arrêté",
       "text464b0b69fd48": "Événements du Computer Tunnel diffusés",
       "text970caaaceccc": "Requête diffusée via le relais de secrets",
       "text64a93d38e11a": "Réponse du relais de secrets diffusée",
@@ -18989,7 +18982,6 @@
       "text5ed3e15fac9f": "Transition de fournisseur de sandbox consultée",
       "text70a61d85334a": "Session consultée",
       "textd7aa05eaf609": "Registre des coûts de la session consulté",
-      "text4e22b3354b8f": "Environnement de session consulté",
       "text48b65bbc9863": "Stratégie de session consultée",
       "text7c649f4bf685": "Pool de secrets de fournisseur de la session consulté",
       "text3fd349f95ce2": "Portée de la session consultée",

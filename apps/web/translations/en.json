@@ -985,10 +985,6 @@
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
         },
-        "pi_worker": {
-          "name": "Pi Worker Runtime (compiled)",
-          "description": "Run sessions with the experimental Pi worker runtime."
-        },
         "pi_harness": {
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
@@ -17696,7 +17692,6 @@
       "texted13dee8f1f7": "The repo is the company. Fork it, branch it, roll it back, or hand it to a new machine — the whole configuration comes with it.",
       "texted1596a9787f": "Use an access token",
       "texted1d87390f65": "Emit a group attribute (e.g. named groups) listing the user’s groups.",
-      "texted21e91b4d87": "Downloaded compiled pi worker runtime",
       "texted26c1af81cf": "Write tools",
       "texted2d94ab1136": "Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.",
       "texted2e59c337d0": "Narrative",
@@ -18839,9 +18834,7 @@
       "textb0f59e5a2722": "Started model provider OAuth login",
       "text0dd455816ef6": "Started sandbox snapshot rebuild",
       "text40cef5fd1dbd": "Started sandbox template build",
-      "text09917783e494": "Started session environment",
       "text18065b39fc81": "Stopped Kortix App",
-      "textb88830cc18af": "Stopped session environment",
       "text464b0b69fd48": "Streamed computer tunnel events",
       "text970caaaceccc": "Streamed request via secret relay",
       "text64a93d38e11a": "Streamed secret relay response",
@@ -19000,7 +18993,6 @@
       "text5ed3e15fac9f": "Viewed sandbox provider transition",
       "text70a61d85334a": "Viewed session",
       "textd7aa05eaf609": "Viewed session cost ledger",
-      "text4e22b3354b8f": "Viewed session environment",
       "text48b65bbc9863": "Viewed session policy",
       "text7c649f4bf685": "Viewed session provider secret pool",
       "text3fd349f95ce2": "Viewed session scope",

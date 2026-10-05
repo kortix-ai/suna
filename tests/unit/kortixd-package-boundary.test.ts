@@ -20,13 +20,7 @@ const DAEMON = 'apps/kortix-sandbox-agent-server';
 const DAEMON_SRC = `${DAEMON}/src`;
 
 /** Each entry is `<file> -> <target>` with the reason it stays. Remove it with the reason. */
-const ALLOWED: Record<string, string> = {
-  // apps/kortix-worker is workspace-excluded and has no test lane. This is the
-  // only proof that its env-rpc client speaks the daemon's user-context codec.
-  // It goes away with apps/kortix-worker (refactor plan R6.6).
-  [`${DAEMON}/src/__tests__/env-rpc-worker-integration.test.ts -> apps/kortix-worker/src/lazy-env.ts`]:
-    'kortix-worker has no test lane of its own',
-};
+const ALLOWED: Record<string, string> = {};
 
 const SOURCE = /\.(?:[cm]?[jt]sx?)$/;
 const TEST = /(?:\.test\.[cm]?[jt]sx?$|\/__tests__\/)/;

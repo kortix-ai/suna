@@ -160,9 +160,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // is read off the SAME fetch that compiles the agent config, so selecting
   // pi costs no extra git round trip. Every provisioning path (create,
   // restart, resume, open/ensure) builds its env here, so a pi project stays
-  // on pi across the session's whole life. The `pi_worker` feature flag is
-  // the one exception: it routes `runtime: pi` to the split worker topology
-  // BEFORE this builder runs (createSession), and never reaches it.
+  // on pi across the session's whole life.
   let manifestHarness: 'opencode' | 'pi' | null = null;
   let manifestPackages: unknown[] = [];
   let harness: 'opencode' | 'pi' = 'opencode';

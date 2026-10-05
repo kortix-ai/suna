@@ -14,7 +14,6 @@
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
 import {
@@ -56,7 +55,6 @@ import {
   type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { config } from '../../config';
-import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
@@ -103,7 +101,7 @@ const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 
  * The spec compute metering bills a session at.
  *
  * The image that booted is the authority: the provider allocates the box from
- * the size that image was built with. Meta and pi-worker images are built at
+ * the size that image was built with. Meta images are built at
  * 1 vCPU / 2 GB / 8 GB and have no project template, so a template lookup for
  * them always failed and billed the 2 / 4 / 20 fallback instead.
  */
@@ -419,26 +417,7 @@ export async function provisionSessionSandbox(opts: {
   ): Promise<EnsureSandboxImageResult> =>
     slug === META_SANDBOX_SLUG
       ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
-      : slug === PI_WORKER_SANDBOX_SLUG
-        ? // The pi worker is a shared content-hashed image like meta — never a
-          // project template. Its harness arrives at boot as the compiled
-          // artifact (KORTIX_PI_RUNTIME_REF/SHA in extraEnvVars).
-          //
-          // Imported lazily, and ONLY this name. `mock.module` replaces a
-          // module wholesale, so every suite that stubs `snapshots/builder` by
-          // listing its exports drops the ones it did not name. Adding
-          // `ensurePiWorkerImage` to the static import above made all eleven of
-          // those suites die at import with `SyntaxError: Export named
-          // 'ensurePiWorkerImage' not found` — attributed to no test, and it
-          // takes an unrelated parallel worker down with it. The register's
-          // rule is "fix the import, not the mocks" (learnings entry
-          // 2026-08-27T142521Z-a-new-import-edge-into-a-widely-mocked-graph-breaks-hand-wri.md). This edge is reached once,
-          // on the pi-worker branch only, so deferring it costs nothing and
-          // needs no test churn.
-          import('../../snapshots/builder').then(({ ensurePiWorkerImage }) =>
-            ensurePiWorkerImage({ source: 'session-start', provider: targetProvider }),
-          )
-        : ensureSandboxImage(gitProject, {
+      : ensureSandboxImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
@@ -630,7 +609,7 @@ export async function provisionSessionSandbox(opts: {
       slug: string;
       contentHash: string;
       isDefault: boolean;
-      runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+      runtimeProfile?: 'standard' | 'meta';
       spec?: SandboxImageSpec;
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
@@ -727,34 +706,6 @@ export async function provisionSessionSandbox(opts: {
       // and platinum alike. The guest holds a handle; the broker route substitutes server-side.
       let result: ProvisionResult;
       let attempts: number;
-      // P1.8 (harness/worker split): a pi worker boot tries the parked pool
-      // first. The claim delivers the exact env the create would have
-      // (session token + gateway URL included), so the box boots the same
-      // session either way; null falls through to the cold create unchanged.
-      const pooledClaim =
-        opts.metadata?.pi_worker_boot === true && providerName === 'daytona'
-          ? await claimParkedPiWorkerBox(providerCreateInput.envVars ?? {}).catch((err) => {
-              console.warn(
-                `[session-sandbox] pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
-                err,
-              );
-              return null;
-            })
-          : null;
-      if (pooledClaim) {
-        result = {
-          externalId: pooledClaim.externalId,
-          baseUrl: pooledClaim.baseUrl,
-          metadata: {
-            provisionedBy: opts.userId,
-            daytonaSandboxId: pooledClaim.externalId,
-            snapshot: imageInfo!.snapshotName,
-            pooled: true,
-          },
-        };
-        attempts = 0;
-        tl.mark('pool-claim');
-      } else {
       try {
       ({ result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
         onAttemptStart: async (attempt, maxAttempts) => {
@@ -819,12 +770,6 @@ export async function provisionSessionSandbox(opts: {
           continue provisioning;
         }
         throw createErr;
-      }
-      }
-      // Refill toward target after every pi boot — a consumed claim leaves a
-      // hole, and a claim miss means the pool is empty. Fire-and-forget.
-      if (opts.metadata?.pi_worker_boot === true && providerName === 'daytona') {
-        void maintainPiWorkerPool();
       }
       bgExternalId = result.externalId;
       tl.mark(`provider-create:${attempts}x`);
