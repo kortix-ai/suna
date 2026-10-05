@@ -651,7 +651,9 @@
       "deviceLastActive": "上次活动：{date}",
       "signOutDevice": "退出登录",
       "signedOutDevice": "已退出该设备",
-      "signOutDeviceFailed": "无法退出该设备"
+      "signOutDeviceFailed": "无法退出该设备",
+      "copyIp": "复制 IP 地址",
+      "ipCopied": "已复制 IP 地址"
     },
     "appearance": {
       "theme": "主题",

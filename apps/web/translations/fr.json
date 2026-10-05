@@ -651,7 +651,9 @@
       "deviceLastActive": "Dernière activité : {date}",
       "signOutDevice": "Se déconnecter",
       "signedOutDevice": "Appareil déconnecté",
-      "signOutDeviceFailed": "Impossible de déconnecter cet appareil"
+      "signOutDeviceFailed": "Impossible de déconnecter cet appareil",
+      "copyIp": "Copier l’adresse IP",
+      "ipCopied": "Adresse IP copiée"
     },
     "appearance": {
       "theme": "Thème",

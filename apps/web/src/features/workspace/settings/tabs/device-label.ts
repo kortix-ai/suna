@@ -2,9 +2,24 @@
  * Name a signed-in device from the User-Agent it signed in with: "Chrome" on
  * "macOS". First match wins, so the browsers that also claim "Chrome" or
  * "Safari" in their UA come first. A UA that is not a browser (a script, the
- * CLI) keeps its product token ("Bun"); an empty one names nothing and the
- * row falls back to "Unknown device".
+ * CLI) keeps its product token ("Bun"); the generic `Mozilla/` token names
+ * nothing. An empty UA names nothing and the row falls back to "Unknown device".
+ *
+ * `brand` picks the corner logo: the browser's mark when it has one, else the
+ * system's (ChromeOS shares the Chrome mark), else none.
  */
+export type DeviceBrand = 'chrome' | 'safari' | 'firefox' | 'edge' | 'linux' | 'bun';
+
+const BRAND_OF: Record<string, DeviceBrand> = {
+  Chrome: 'chrome',
+  Safari: 'safari',
+  Firefox: 'firefox',
+  Edge: 'edge',
+  Linux: 'linux',
+  Bun: 'bun',
+  ChromeOS: 'chrome',
+};
+
 const BROWSERS: [RegExp, string][] = [
   [/Electron\//, 'Kortix desktop'],
   [/Edg(A|iOS)?\//, 'Edge'],
@@ -28,10 +43,14 @@ export function describeUserAgent(userAgent: string | null): {
   browser: string | null;
   os: string | null;
   mobile: boolean;
+  brand: DeviceBrand | null;
 } {
   const ua = userAgent ?? '';
+  const token = /^([\w.-]+)\//.exec(ua)?.[1];
   const browser =
-    BROWSERS.find(([pattern]) => pattern.test(ua))?.[1] ?? (/^([\w.-]+)\//.exec(ua)?.[1] || null);
+    BROWSERS.find(([pattern]) => pattern.test(ua))?.[1] ??
+    (token && token !== 'Mozilla' ? token : null);
   const os = SYSTEMS.find(([pattern]) => pattern.test(ua))?.[1] ?? null;
-  return { browser, os, mobile: os === 'iOS' || os === 'Android' };
+  const brand = (browser && BRAND_OF[browser]) || (os && BRAND_OF[os]) || null;
+  return { browser, os, mobile: os === 'iOS' || os === 'Android', brand };
 }

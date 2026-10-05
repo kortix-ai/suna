@@ -651,7 +651,9 @@
       "deviceLastActive": "Последња активност: {date}",
       "signOutDevice": "Одјави",
       "signedOutDevice": "Уређај је одјављен",
-      "signOutDeviceFailed": "Одјава уређаја није успела"
+      "signOutDeviceFailed": "Одјава уређаја није успела",
+      "copyIp": "Копирај IP адресу",
+      "ipCopied": "IP адреса је копирана"
     },
     "appearance": {
       "theme": "Тема",

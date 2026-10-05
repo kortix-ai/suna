@@ -651,7 +651,9 @@
       "deviceLastActive": "Zuletzt aktiv {date}",
       "signOutDevice": "Abmelden",
       "signedOutDevice": "Gerät abgemeldet",
-      "signOutDeviceFailed": "Das Gerät konnte nicht abgemeldet werden"
+      "signOutDeviceFailed": "Das Gerät konnte nicht abgemeldet werden",
+      "copyIp": "IP-Adresse kopieren",
+      "ipCopied": "IP-Adresse kopiert"
     },
     "appearance": {
       "theme": "Design",

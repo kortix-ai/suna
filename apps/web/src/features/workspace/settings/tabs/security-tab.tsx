@@ -40,6 +40,7 @@ import { CopyButton } from '@/components/markdown/copy-button';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -53,12 +54,28 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
+import { useCopy } from '@/hooks/use-copy';
 import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
-import { describeUserAgent } from './device-label';
+import { Bun } from '@/features/icon/icons/bun';
+import { Chrome } from '@/features/icon/icons/chrome';
+import { Edge } from '@/features/icon/icons/edge';
+import { Firefox } from '@/features/icon/icons/firefox';
+import { Linux } from '@/features/icon/icons/linux';
+import { Safari } from '@/features/icon/icons/safari';
+import { type DeviceBrand, describeUserAgent } from './device-label';
+
+const BRAND_MARK: Record<DeviceBrand, (props: { className?: string }) => React.JSX.Element> = {
+  chrome: Chrome,
+  safari: Safari,
+  firefox: Firefox,
+  edge: Edge,
+  linux: Linux,
+  bun: Bun,
+};
 
 /** Supabase hands the TOTP QR back as an SVG data URL (or raw SVG in older
  *  versions) — normalize both into something an <img> can render. */
@@ -192,7 +209,7 @@ export function EnrollDialog({
                       // The real input is invisible; the cell it is typing into
                       // wears the Input focus treatment while the field has focus.
                       i === Math.min(code.length, CODE_LENGTH - 1) &&
-                        'group-focus-within:border-ring group-focus-within:ring-ring/15 group-focus-within:ring-3',
+                      'group-focus-within:border-ring group-focus-within:ring-ring/15 group-focus-within:ring-3',
                     )}
                   >
                     {code[i] ?? ''}
@@ -274,6 +291,8 @@ export interface SecurityTabViewProps {
   onRetryDevices?: () => void;
 
   onSignOutDevice?: (id: string) => void;
+  /** Copies a device's IP address; the container owns the clipboard and the toast. */
+  onCopyIp?: (ip: string) => void;
   /** The device whose sign-out is in flight. */
   signingOutDeviceId?: string | null;
 
@@ -291,7 +310,11 @@ export interface DeviceRow {
   id: string;
   label: string;
   detail?: string;
+  /** Shown after `detail`; a click copies it. */
+  ip?: string | null;
   mobile?: boolean;
+  /** The corner logo; none when the user agent names no known browser or system. */
+  brand?: DeviceBrand | null;
   /** The browser this page runs in: badged, never signed out from its row. */
   current?: boolean;
 }
@@ -322,6 +345,7 @@ export interface SecurityTabCopy {
   devices: string;
   currentDevice: string;
   signOutDevice: string;
+  copyIp: string;
   noDevices: string;
   noDevicesDescription: string;
   devicesLoadFailed: string;
@@ -364,6 +388,7 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
   devices: 'Devices',
   currentDevice: 'This browser',
   signOutDevice: 'Sign out',
+  copyIp: 'Copy IP address',
   noDevices: 'No signed-in devices',
   noDevicesDescription: 'You are not signed in on any device right now.',
   devicesLoadFailed: 'Couldn’t load your signed-in devices',
@@ -384,27 +409,28 @@ export function SecurityTabView({
   factors = [],
   factorsLoading = false,
   factorsError = false,
-  onRetryFactors = () => {},
+  onRetryFactors = () => { },
   removeFactorTarget = null,
-  onRequestRemoveFactor = () => {},
-  onCancelRemoveFactor = () => {},
-  onConfirmRemoveFactor = () => {},
+  onRequestRemoveFactor = () => { },
+  onCancelRemoveFactor = () => { },
+  onConfirmRemoveFactor = () => { },
   isRemovingFactor = false,
   enrolling = null,
   enrollCode = '',
-  onEnrollCodeChange = () => {},
-  onStartEnroll = () => {},
+  onEnrollCodeChange = () => { },
+  onStartEnroll = () => { },
   isStartingEnroll = false,
-  onVerifyEnroll = () => {},
+  onVerifyEnroll = () => { },
   isVerifyingEnroll = false,
-  onCancelEnroll = () => {},
+  onCancelEnroll = () => { },
   devices = [],
   devicesLoading = false,
   devicesError = false,
-  onRetryDevices = () => {},
-  onSignOutDevice = () => {},
+  onRetryDevices = () => { },
+  onSignOutDevice = () => { },
+  onCopyIp = () => { },
   signingOutDeviceId = null,
-  onSignOutOtherDevices = () => {},
+  onSignOutOtherDevices = () => { },
   isSigningOutOtherDevices = false,
   copy: copyOverrides = {},
 }: SecurityTabViewProps) {
@@ -512,90 +538,165 @@ export function SecurityTabView({
         />
       </section>
 
-      {/* Devices */}
-      <section className="space-y-3">
-        <SettingsSubsectionHeader title={copy.devices} />
-        <SettingsRowGroup>
-          {/* While the list is in flight, one shape-matched skeleton stands in
-              for a device row, so the group does not jump when the answer
-              lands — same answer as the factor list above. */}
-          {devicesLoading ? (
-            <div className="px-4 py-3">
-              <Skeleton className="h-8 w-full rounded-sm" />
-            </div>
-          ) : (
-            devices.map((device) => {
-              const DeviceIcon = device.mobile ? Smartphone : Desktop;
-              return (
-                <div key={device.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
+      <DevicesSection
+        devices={devices}
+        devicesLoading={devicesLoading}
+        devicesError={devicesError}
+        onRetryDevices={onRetryDevices}
+        onSignOutDevice={onSignOutDevice}
+        onCopyIp={onCopyIp}
+        signingOutDeviceId={signingOutDeviceId}
+        onSignOutOtherDevices={onSignOutOtherDevices}
+        isSigningOutOtherDevices={isSigningOutOtherDevices}
+        copy={copy}
+      />
+    </div>
+  );
+}
+
+export type DevicesSectionProps = Pick<
+  SecurityTabViewProps,
+  | 'devices'
+  | 'devicesLoading'
+  | 'devicesError'
+  | 'onRetryDevices'
+  | 'onSignOutDevice'
+  | 'onCopyIp'
+  | 'signingOutDeviceId'
+  | 'onSignOutOtherDevices'
+  | 'isSigningOutOtherDevices'
+> & { copy: SecurityTabCopy };
+
+/** The Devices section on its own — `SecurityTabView` renders it, and
+ *  `/debug/devices` renders it once per state. */
+export function DevicesSection({
+  devices = [],
+  devicesLoading = false,
+  devicesError = false,
+  onRetryDevices = () => { },
+  onSignOutDevice = () => { },
+  onCopyIp = () => { },
+  signingOutDeviceId = null,
+  onSignOutOtherDevices = () => { },
+  isSigningOutOtherDevices = false,
+  copy,
+}: DevicesSectionProps) {
+  return (
+    <section className="space-y-3">
+      <SettingsSubsectionHeader title={copy.devices} />
+      <SettingsRowGroup>
+        {/* While the list is in flight, one shape-matched skeleton stands in
+            for a device row, so the group does not jump when the answer
+            lands — same answer as the factor list above. */}
+        {devicesLoading ? (
+          <div className="px-4 py-3">
+            <Skeleton className="h-8 w-full rounded-sm" />
+          </div>
+        ) : (
+          devices.map((device) => {
+            const DeviceIcon = device.mobile ? Smartphone : Desktop;
+            const BrandMark = device.brand ? BRAND_MARK[device.brand] : null;
+            return (
+              <div key={device.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {/* The device kind, with the browser's logo pinned bottom-right — the
+                      marketplace avatar's corner badge. Its ring takes the group's
+                      fill, so it reads as a cut-out, not an outline. */}
+                  <span className="relative inline-flex shrink-0">
+                    <span className="bg-muted flex size-8 items-center justify-center rounded-sm">
                       <DeviceIcon className="text-muted-foreground size-4" />
                     </span>
-                    <div className="min-w-0">
-                      <div className="text-foreground truncate text-sm">{device.label}</div>
-                      {device.detail ? (
-                        <div className="text-muted-foreground truncate text-xs">{device.detail}</div>
-                      ) : null}
-                    </div>
+                    {BrandMark ? (
+                      <Hint label={device.label} side="bottom" sideOffset={6} alignOffset={0} align="start">
+                        <span
+                          data-device-brand={device.brand}
+                          className="ring-popover absolute -right-1.5 -bottom-1.5 inline-flex rounded ring-1"
+                        >
+                          {/* size-5 around a size-3.5 mark: clear on every side, so a
+                              round logo never meets the border. */}
+                          <span className="border-border bg-background flex size-5 items-center justify-center rounded border">
+                            <BrandMark className="size-3.5 shrink-0" />
+                          </span>
+                        </span>
+                      </Hint>
+                    ) : null}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-foreground truncate text-sm">{device.label}</div>
+                    {device.detail || device.ip ? (
+                      <div className="text-muted-foreground truncate text-xs">
+                        {device.detail}
+                        {device.detail && device.ip ? ' · ' : null}
+                        {device.ip ? (
+                          <button
+                            type="button"
+                            aria-label={`${copy.copyIp}: ${device.ip}`}
+                            onClick={() => onCopyIp(device.ip!)}
+                            className="hover:text-foreground focus-visible:ring-ring rounded-xs tabular-nums transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:outline-none"
+                          >
+                            {device.ip}
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                  {device.current ? (
-                    <Badge variant="success" size="xs">
-                      {copy.currentDevice}
-                    </Badge>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => onSignOutDevice(device.id)}
-                      disabled={signingOutDeviceId !== null}
-                    >
-                      {signingOutDeviceId === device.id ? (
-                        <Loading className="size-3.5 shrink-0" />
-                      ) : null}
-                      {copy.signOutDevice}
-                    </Button>
-                  )}
                 </div>
-              );
-            })
-          )}
-          <SettingsRow
-            label={copy.signOutOtherDevices}
-            description={copy.signOutOtherDevicesDescription}
-          >
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={onSignOutOtherDevices}
-              disabled={isSigningOutOtherDevices}
-            >
-              {isSigningOutOtherDevices ? <Loading className="size-3.5 shrink-0" /> : null}
-              {copy.signOutOtherDevices}
-            </Button>
-          </SettingsRow>
-        </SettingsRowGroup>
-
-        {/* The three answers the device list can give, below the group so no
-            state nests a second border inside it — the same split the factor
-            list makes. A failed fetch is an error with a Retry, never the
-            empty-state copy; an empty list is said out loud. Loading outranks
-            both. */}
-        {devicesLoading ? null : devicesError ? (
-          <ErrorState
+                {device.current ? (
+                  <Badge variant="success" size="xs">
+                    {copy.currentDevice}
+                  </Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onSignOutDevice(device.id)}
+                    disabled={signingOutDeviceId !== null}
+                  >
+                    {signingOutDeviceId === device.id ? (
+                      <Loading variant="spokes" className="size-3.5 shrink-0" />
+                    ) : null}
+                    {copy.signOutDevice}
+                  </Button>
+                )}
+              </div>
+            );
+          })
+        )}
+        <SettingsRow
+          label={copy.signOutOtherDevices}
+          description={copy.signOutOtherDevicesDescription}
+        >
+          <Button
             size="sm"
-            title={copy.devicesLoadFailed}
-            action={
-              <Button variant="outline" size="sm" onClick={onRetryDevices}>
-                {copy.retry}
-              </Button>
-            }
-          />
-        ) : devices.length === 0 ? (
-          <EmptyState size="sm" title={copy.noDevices} description={copy.noDevicesDescription} />
-        ) : null}
-      </section>
-    </div>
+            variant="secondary"
+            onClick={onSignOutOtherDevices}
+            disabled={isSigningOutOtherDevices}
+          >
+            {isSigningOutOtherDevices ? <Loading variant="spokes" className="size-3.5 shrink-0" /> : null}
+            {copy.signOutOtherDevices}
+          </Button>
+        </SettingsRow>
+      </SettingsRowGroup>
+
+      {/* The three answers the device list can give, below the group so no
+          state nests a second border inside it — the same split the factor
+          list makes. A failed fetch is an error with a Retry, never the
+          empty-state copy; an empty list is said out loud. Loading outranks
+          both. */}
+      {devicesLoading ? null : devicesError ? (
+        <ErrorState
+          size="sm"
+          title={copy.devicesLoadFailed}
+          action={
+            <Button variant="outline" size="sm" onClick={onRetryDevices}>
+              {copy.retry}
+            </Button>
+          }
+        />
+      ) : devices.length === 0 ? (
+        <EmptyState size="sm" title={copy.noDevices} description={copy.noDevicesDescription} />
+      ) : null}
+    </section>
   );
 }
 
@@ -630,6 +731,7 @@ export function SecurityTab() {
     devices: t('devices'),
     currentDevice: t('currentDevice'),
     signOutDevice: t('signOutDevice'),
+    copyIp: t('copyIp'),
     noDevices: t('noDevices'),
     noDevicesDescription: t('noDevicesDescription'),
     devicesLoadFailed: t('devicesLoadFailed'),
@@ -645,6 +747,7 @@ export function SecurityTab() {
   const mfa = useMfa();
 
   const queryClient = useQueryClient();
+  const { copy: copyText } = useCopy({ successMessage: t('ipCopied') });
 
   // Every device signed in as you: the account's live auth sessions, read by
   // the API from `auth.sessions` (`GET /accounts/me/devices`) — GoTrue gives a
@@ -658,7 +761,7 @@ export function SecurityTab() {
   const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'long' });
   const dateTimeFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
   const devices: DeviceRow[] = (deviceQuery.data ?? []).map((device) => {
-    const { browser, os, mobile } = describeUserAgent(device.user_agent);
+    const { browser, os, mobile, brand } = describeUserAgent(device.user_agent);
     const label =
       browser && os
         ? t('deviceName', { browser, os })
@@ -669,8 +772,10 @@ export function SecurityTab() {
     return {
       id: device.session_id,
       label,
-      detail: device.ip ? `${when} · ${device.ip}` : when,
+      detail: when,
+      ip: device.ip,
       mobile,
+      brand,
       current: device.current,
     };
   });
@@ -741,6 +846,7 @@ export function SecurityTab() {
       devicesError={deviceQuery.isError}
       onRetryDevices={() => deviceQuery.refetch()}
       onSignOutDevice={(id) => runWithStepUp(() => signOutOne.mutate(id))}
+      onCopyIp={(ip) => void copyText(ip)}
       signingOutDeviceId={signOutOne.isPending ? (signOutOne.variables ?? null) : null}
       onSignOutOtherDevices={() => runWithStepUp(() => signOutOthers.mutate())}
       isSigningOutOtherDevices={signOutOthers.isPending}

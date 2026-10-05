@@ -651,7 +651,9 @@
       "deviceLastActive": "Última atividade: {date}",
       "signOutDevice": "Sair",
       "signedOutDevice": "Sessão encerrada nesse dispositivo",
-      "signOutDeviceFailed": "Não foi possível encerrar a sessão nesse dispositivo"
+      "signOutDeviceFailed": "Não foi possível encerrar a sessão nesse dispositivo",
+      "copyIp": "Copiar endereço IP",
+      "ipCopied": "Endereço IP copiado"
     },
     "appearance": {
       "theme": "Tema",

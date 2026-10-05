@@ -651,7 +651,9 @@
       "deviceLastActive": "最終アクティブ: {date}",
       "signOutDevice": "サインアウト",
       "signedOutDevice": "そのデバイスからサインアウトしました",
-      "signOutDeviceFailed": "そのデバイスからサインアウトできませんでした"
+      "signOutDeviceFailed": "そのデバイスからサインアウトできませんでした",
+      "copyIp": "IP アドレスをコピー",
+      "ipCopied": "IP アドレスをコピーしました"
     },
     "appearance": {
       "theme": "テーマ",

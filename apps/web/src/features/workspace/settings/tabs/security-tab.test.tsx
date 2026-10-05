@@ -122,6 +122,14 @@ describe('SecurityTabView — devices list states', () => {
     expect(out.match(/>Sign out</g)).toHaveLength(1);
   });
 
+  test('the IP address is a copy button after the detail, and absent when unknown', () => {
+    const out = renderToStaticMarkup(
+      <SecurityTabView devices={[{ id: 's-ip', label: 'Chrome on macOS', detail: 'Last active Oct 5, 2026', ip: '198.51.100.24' }, ...devices]} />,
+    );
+    expect(out).toContain('Last active Oct 5, 2026 · <button type="button" aria-label="Copy IP address: 198.51.100.24"');
+    expect(out.match(/aria-label="Copy IP address/g)).toHaveLength(1);
+  });
+
   test('a sign-out in flight disables every per-device sign-out', () => {
     const out = renderToStaticMarkup(
       <SecurityTabView devices={[...devices, { id: 's-tablet', label: 'Edge on Windows' }]} signingOutDeviceId="s-phone" />,
