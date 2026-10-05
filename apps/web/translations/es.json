@@ -20818,6 +20818,7 @@
       "tryAgain": "Reintentar"
     },
     "dialog": {
+      "product": "Kortix Capture",
       "title": "Grabar este ordenador",
       "status": {
         "off": "Desactivado",
@@ -20834,7 +20835,7 @@
         "captureOff": "Desactivado para tu organización"
       },
       "unavailable": "Esta app de escritorio no incluye Kortix Capture. Actualiza Kortix a la versión más reciente.",
-      "orgOff": "Capture no está activado para {org}. Quienes lo gestionan pueden activarlo.",
+      "orgOff": "Kortix Capture no está activado para {org}. Quienes lo gestionan pueden activarlo.",
       "intro": "Graba este ordenador para {org}, para que tú y tus agentes podáis buscar lo que hiciste. Tú y quienes gestionan {org} podéis verlo.",
       "layersTitle": "Qué se graba",
       "layers": {
@@ -20855,15 +20856,15 @@
       "otherOrg": "Este ordenador graba ahora para otra organización. Empezar aquí lo pasa a {org}.",
       "signInRequired": {
         "title": "Se cerró la sesión de este ordenador",
-        "hint": "Puede que Capture esté desactivado para tu organización o que alguien haya quitado este ordenador. Vuelve a iniciar sesión para grabar."
+        "hint": "Puede que Kortix Capture esté desactivado para tu organización o que alguien haya quitado este ordenador. Vuelve a iniciar sesión para grabar."
       },
       "error": {
-        "title": "Capture se detuvo",
+        "title": "Kortix Capture se detuvo",
         "fallback": "La grabación se detuvo. Inténtalo de nuevo o abre los registros."
       },
       "permissions": {
         "title": "Permite que Kortix grabe",
-        "hint": "macOS pide cada permiso una vez. Van a Kortix, así Capture graba sin volver a preguntar.",
+        "hint": "macOS pide cada permiso una vez. Van a Kortix, así Kortix Capture graba sin volver a preguntar.",
         "needed": "Aún no permitido",
         "waiting": "Esperándote",
         "allowed": "Permitido",
@@ -20890,11 +20891,11 @@
         "more": "Más acciones",
         "showLogs": "Mostrar registros",
         "stop": "Dejar de grabar",
-        "signOut": "Cerrar sesión de Capture…"
+        "signOut": "Cerrar sesión de Kortix Capture…"
       },
       "signOut": {
-        "title": "¿Cerrar la sesión de Capture?",
-        "description": "Capture se detiene en este ordenador, y este ordenador pierde el acceso al proyecto. Las grabaciones se quedan en el proyecto. Para volver a grabar, empieza a grabar de nuevo.",
+        "title": "¿Cerrar la sesión de Kortix Capture?",
+        "description": "Kortix Capture se detiene en este ordenador, y este ordenador pierde el acceso a {org}. Las grabaciones se quedan en {org}. Para volver a grabar, empieza a grabar de nuevo.",
         "confirm": "Cerrar sesión"
       },
       "toast": {
@@ -20902,7 +20903,7 @@
         "stopped": "Grabación detenida",
         "paused": "Grabación en pausa",
         "resumed": "Grabación reanudada",
-        "signedOut": "Sesión de Capture cerrada"
+        "signedOut": "Sesión de Kortix Capture cerrada"
       },
       "pausedByOrgHint": "Quienes gestionan {org} pausaron la grabación. Se reanuda cuando quiten la pausa."
     }

@@ -46,7 +46,7 @@ function setupCaptureTray(deps) {
         { type: 'separator' },
         {
           id: 'capture-quit',
-          label: deps.keepsRunning() ? 'Quit Kortix (Capture keeps recording)' : 'Quit Kortix',
+          label: deps.keepsRunning() ? 'Quit Kortix (Kortix Capture keeps recording)' : 'Quit Kortix',
           click: () => app.quit(),
         },
       ]),

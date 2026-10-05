@@ -20818,6 +20818,7 @@
       "tryAgain": "重试"
     },
     "dialog": {
+      "product": "Kortix Capture",
       "title": "记录这台电脑",
       "status": {
         "off": "关闭",
@@ -20834,7 +20835,7 @@
         "captureOff": "你的组织已关闭"
       },
       "unavailable": "此桌面应用不包含 Kortix Capture。请将 Kortix 更新到最新版本。",
-      "orgOff": "{org} 尚未开启 Capture。管理者可以开启它。",
+      "orgOff": "{org} 尚未开启 Kortix Capture。管理者可以开启它。",
       "intro": "为 {org} 记录这台电脑，让你和你的智能体可以搜索你做过的事。你和 {org} 的管理者可以查看。",
       "layersTitle": "记录的内容",
       "layers": {
@@ -20855,15 +20856,15 @@
       "otherOrg": "这台电脑目前在为另一个组织记录。在这里开始会将它切换到 {org}。",
       "signInRequired": {
         "title": "这台电脑已退出",
-        "hint": "你的组织可能关闭了 Capture，或有人移除了这台电脑。重新登录即可记录。"
+        "hint": "你的组织可能关闭了 Kortix Capture，或有人移除了这台电脑。重新登录即可记录。"
       },
       "error": {
-        "title": "Capture 已停止",
+        "title": "Kortix Capture 已停止",
         "fallback": "记录已停止。请重试，或打开日志。"
       },
       "permissions": {
         "title": "允许 Kortix 记录",
-        "hint": "macOS 对每项权限只询问一次。权限授予 Kortix，Capture 之后无需再次询问即可记录。",
+        "hint": "macOS 对每项权限只询问一次。权限授予 Kortix，Kortix Capture 之后无需再次询问即可记录。",
         "needed": "尚未允许",
         "waiting": "等待你操作",
         "allowed": "已允许",
@@ -20890,11 +20891,11 @@
         "more": "更多操作",
         "showLogs": "显示日志",
         "stop": "停止记录",
-        "signOut": "退出 Capture…"
+        "signOut": "退出 Kortix Capture…"
       },
       "signOut": {
-        "title": "退出 Capture？",
-        "description": "Capture 会在这台电脑上停止，这台电脑会失去对项目的访问。记录会保留在项目中。要再次记录，请重新开始记录。",
+        "title": "退出 Kortix Capture？",
+        "description": "Kortix Capture 会在这台电脑上停止，这台电脑将失去对 {org} 的访问。记录会保留在 {org}。要再次记录，请重新开始记录。",
         "confirm": "退出"
       },
       "toast": {
@@ -20902,7 +20903,7 @@
         "stopped": "已停止记录",
         "paused": "已暂停记录",
         "resumed": "已继续记录",
-        "signedOut": "已退出 Capture"
+        "signedOut": "已退出 Kortix Capture"
       },
       "pausedByOrgHint": "{org} 的管理者暂停了记录。解除暂停后会继续。"
     }
