@@ -13,7 +13,7 @@ it; do not reuse a park/preserve helper for a new population just because the
 call site is already there — give the new population its own function.
 
 **Trigger surface:** Adding a new refusal/rejection reason to a session-open
-chokepoint (`runOpenSession` in `apps/api/src/projects/session-open/index.ts`) that
+chokepoint (`runOpenSession` in `apps/api/src/projects/routes/shared.ts`) that
 already has an established-runtime failure helper in scope. Also: any time a
 kill-switched enforcement flag exists — the wrong wiring is invisible while
 the flag is off, so review it as if the flag were already on.
@@ -38,8 +38,8 @@ on. Never pulls a box out from under a live turn
 
 **Enforcement:** `apps/api/src/projects/runtime-identity-replace-refused.test.ts`
 (retire claims/stops/deletes correctly, never touches a serving box),
-`apps/api/src/projects/session-open/replace-refused-runtime-on-open.test.ts` (refusal
+`apps/api/src/projects/routes/replace-refused-runtime-on-open.test.ts` (refusal
 on a running box yields `stage:'provisioning'`/`'starting'`, `retriable:true`,
 never `'failed'` with `RUNTIME_IDENTITY_UNAVAILABLE`), and
-`apps/api/src/projects/session-open/preserve-established-runtime-on-open.test.ts`
+`apps/api/src/projects/routes/preserve-established-runtime-on-open.test.ts`
 (the four pre-existing park/preserve populations are unchanged).
