@@ -1166,10 +1166,6 @@
           "name": "共享提供商密钥",
           "description": "成员连接自己的 ChatGPT 订阅和提供商密钥，按需共享，并为每个会话选择要使用的连接。"
         },
-        "pi_worker": {
-          "name": "Pi 工作器运行时（已编译）",
-          "description": "使用实验性 Pi 工作器运行时来运行会话。"
-        },
         "pi_harness": {
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
@@ -9473,7 +9469,6 @@
       "text016cec7c484d": "已撤销连接器",
       "text017245d54fdb": "在 Slack 中。",
       "text018069eabbfd": "定义",
-      "text018912e44371": "已下载编译后的项目检出内容",
       "text019929eebb12": "从“成员”（账户级）或“项目”（项目级）分配角色。自定义角色会与内置角色一起显示在角色选择器中。",
       "text01a556bb9792": "人员的角色和代理声明的授权必须同时允许该操作。",
       "text01b50fe973da": "刷新配置健康状态",
@@ -15840,6 +15835,7 @@
       "textb9819d569c9a": "配置几个沙箱后，相关耗时和结果会显示在这里。",
       "textb99e1742613b": "- 标识: morning-brief",
       "textb99fa6c06150": "无法预览",
+      "showPreviewUnavailableHint": "应用没有响应。请在会话中启动它，然后刷新。",
       "textb9acc1017895": "为 IdP 发送的每个群组创建一个 Kortix 群组——无需逐组映射。",
       "textb9ad2f00fba7": "项变更需要",
       "textb9addc023078": "marko@kortix.com",
@@ -17692,7 +17688,6 @@
       "texted13dee8f1f7": "代码仓库就是公司。可以复刻、创建分支、回滚，或将其交给新计算机——完整配置都会随之而来。",
       "texted1596a9787f": "使用访问令牌",
       "texted1d87390f65": "发送一个 group attribute（例如命名为 groups），列出用户所属的组。",
-      "texted21e91b4d87": "已下载编译后的 pi worker 运行时",
       "texted26c1af81cf": "写入工具",
       "texted2d94ab1136": "以租户管理员身份登录 Microsoft Entra 管理中心（entra.microsoft.com）。",
       "texted2e59c337d0": "叙述",
@@ -17871,7 +17866,6 @@
       "textf27a58a42762": "无法加载文件",
       "textf27bcbb5e1e2": "可关闭",
       "textf27c4fdb823a": "Cloudflare Access 默认传递 email。将 Kortix 读取的其他属性——id、firstName、lastName——添加为“SAML attribute statements”：每项包含一个 Name，以及它映射到的上游 IdP claim（登录方式 claims 的下拉列表）。",
-      "textf27e24caeef3": "已下载编译后的会话运行时",
       "textf29674479db4": "正在连接到 OpenAI…",
       "textf297f631ba78": "它汇总每位面试官写下的内容，并按评分表而不是按输入字数排列，同时突出两位面试官意见不一致的地方。找出分歧才是重点，解决分歧则是面试小组的工作。",
       "textf29ad8b8092c": "属性名称（groups）必须与 Kortix 的 group claim 匹配，该值会在连接步骤中预填。Cloudflare 会透传上游 IdP 发送的群组名称。",
@@ -18835,9 +18829,7 @@
       "textb0f59e5a2722": "已开始模型提供商 OAuth 登录",
       "text0dd455816ef6": "已开始重建沙盒快照",
       "text40cef5fd1dbd": "已开始构建沙盒模板",
-      "text09917783e494": "已启动会话环境",
       "text18065b39fc81": "已停止 Kortix App",
-      "textb88830cc18af": "已停止会话环境",
       "text464b0b69fd48": "已流式传输电脑隧道事件",
       "text970caaaceccc": "已通过密钥中继流式传输请求",
       "text64a93d38e11a": "已流式传输密钥中继响应",
@@ -18996,7 +18988,6 @@
       "text5ed3e15fac9f": "已查看沙盒提供商切换",
       "text70a61d85334a": "已查看会话",
       "textd7aa05eaf609": "已查看会话成本账本",
-      "text4e22b3354b8f": "已查看会话环境",
       "text48b65bbc9863": "已查看会话策略",
       "text7c649f4bf685": "已查看会话提供商密钥池",
       "text3fd349f95ce2": "已查看会话范围",
@@ -19238,7 +19229,9 @@
       "text09e71792c6c3": "面向销售团队的 AI Agent",
       "textaaab3a59b808": "面向市场团队的 AI Agent",
       "text8f480bae8d16": "面向财务团队的 AI Agent",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "查看了已登录的设备",
+      "text976811d9540a": "已将一台设备退出登录"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

@@ -18,9 +18,6 @@ const BoolFlag = z.preprocess((v) => {
   return s === '1' || s === 'true' || s === 'yes' || s === 'on'
 }, z.boolean())
 
-export const CompiledBootModeSchema = z.enum(['off', 'shadow', 'prefer', 'required'])
-export type CompiledBootMode = z.infer<typeof CompiledBootModeSchema>
-
 /**
  * S3 config provider rollout mode (src/services/config-provider). `git` never attempts
  * S3 and is the rollback mode; `prefer-s3` tries a prepared archive and falls
@@ -55,7 +52,6 @@ const Schema = z.object({
   KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: z.string().optional(),
   KORTIX_GIT_DELTA_BUNDLE_REMOTE: z.string().optional(),
-  KORTIX_COMPILED_BOOT_MODE: CompiledBootModeSchema.default('off'),
   KORTIX_PROJECT_SNAPSHOT_MODE: ProjectSnapshotModeSchema.default('git'),
   // `<commit-sha>:<archive-sha256>:<archive-bytes>` of a PREPARED archive at
   // KORTIX_BASE_SHA. Identity only, never a URL: the daemon exchanges it for
@@ -140,7 +136,6 @@ export type Config = {
   gitDeltaParentCommitBase64?: string
   /** Delta exceeds the env cap: fetch it with one GET from the API (KORTIX_GIT_DELTA_BUNDLE_REMOTE=1). */
   gitDeltaBundleRemote?: boolean
-  compiledBootMode: CompiledBootMode
   /** S3 config provider mode; absent/`git` = never attempt S3. Optional so hand-built test configs stay valid. */
   projectSnapshotMode?: ProjectSnapshotMode
   /** Prepared-archive identity `<sha>:<sha256>:<bytes>`, when the API pinned one. */
@@ -187,7 +182,6 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
     KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
     KORTIX_GIT_DELTA_BUNDLE_REMOTE: env.KORTIX_GIT_DELTA_BUNDLE_REMOTE,
-    KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_PIN: env.KORTIX_PROJECT_SNAPSHOT_PIN,
     KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR,
@@ -224,7 +218,6 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
     gitDeltaParentCommitBase64: parsed.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
     gitDeltaBundleRemote: parsed.KORTIX_GIT_DELTA_BUNDLE_REMOTE === '1',
-    compiledBootMode: parsed.KORTIX_COMPILED_BOOT_MODE,
     projectSnapshotMode: parsed.KORTIX_PROJECT_SNAPSHOT_MODE,
     projectSnapshotPin: parsed.KORTIX_PROJECT_SNAPSHOT_PIN?.trim() || undefined,
     projectSnapshotDescriptor: parsed.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR?.trim() || undefined,

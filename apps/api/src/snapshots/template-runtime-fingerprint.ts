@@ -17,7 +17,6 @@ import {
   UV_VERSION,
 } from '@kortix/shared';
 import { SANDBOX_VERSION, config } from '../config';
-import { snapshotEmbedsAgentForBootMode } from './compiled-runtime-fingerprint';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
@@ -231,6 +230,9 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   // includes @kortix/sdk because the compiled CLI owns the Connector client.
   ...cliConnectorRuntimeArtifacts(CLI_ROOT),
 ];
+
+/** Every runtime input of the snapshot: the daemon binary's sources, then the rest. */
+export const RUNTIME_ARTIFACTS = [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
 // NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
@@ -278,7 +280,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
   runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: runtimeArtifactsForBootMode(config.KORTIX_COMPILED_BOOT_MODE),
+    artifacts: [...RUNTIME_ARTIFACTS],
   })
     .then((value) => {
       runtimeFingerprintCache = { key, value };
@@ -290,17 +292,6 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
       throw err;
     });
   return runtimeFingerprintInflight;
-}
-
-export function runtimeArtifactsForBootMode(
-  mode: 'off' | 'shadow' | 'prefer' | 'required',
-): Array<(typeof AGENT_RUNTIME_ARTIFACTS)[number] | (typeof NON_AGENT_RUNTIME_ARTIFACTS)[number]> {
-  // In prefer/required mode server.mjs carries the daemon. Daemon source is no
-  // longer an image input, so changing it must not mint an 8 GB snapshot.
-  // Shadow/off still execute the baked daemon and retain the original identity.
-  return snapshotEmbedsAgentForBootMode(mode)
-    ? [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS]
-    : [...NON_AGENT_RUNTIME_ARTIFACTS];
 }
 
 /**

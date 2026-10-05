@@ -1166,10 +1166,6 @@
           "name": "Segreti del provider condivisi",
           "description": "I membri collegano i propri abbonamenti ChatGPT e chiavi dei provider, li condividono quando serve e scelgono quali usa ogni sessione."
         },
-        "pi_worker": {
-          "name": "Runtime worker Pi (compilato)",
-          "description": "Esegui sessioni con il runtime sperimentale del worker Pi."
-        },
         "pi_harness": {
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
@@ -9473,7 +9469,6 @@
       "text016cec7c484d": "Connettore revocato",
       "text017245d54fdb": "in Slack.",
       "text018069eabbfd": "La definizione",
-      "text018912e44371": "Checkout compilato del progetto scaricato",
       "text019929eebb12": "Assegna i ruoli da Membri (account) o Progetti (per progetto). I ruoli personalizzati vengono visualizzati nello stesso selettore dei ruoli integrati.",
       "text01a556bb9792": "Sia il ruolo della persona sia l'autorizzazione dichiarata dell'agente devono consentirlo.",
       "text01b50fe973da": "Aggiorna stato provisioning",
@@ -15840,6 +15835,7 @@
       "textb9819d569c9a": "Esegui il provisioning di alcune sandbox: tempi ed esito verranno mostrati qui.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Anteprima non disponibile",
+      "showPreviewUnavailableHint": "L’app non ha risposto. Avviala nella tua sessione, poi aggiorna.",
       "textb9acc1017895": "Crea un gruppo Kortix per ogni gruppo inviato dall'IdP — senza mappatura per gruppo.",
       "textb9ad2f00fba7": "richiedono modifiche",
       "textb9addc023078": "marko@kortix.com",
@@ -17692,7 +17688,6 @@
       "texted13dee8f1f7": "Il repo è l’azienda. Fai un fork, crea un branch, torna a una versione precedente o assegnalo a una nuova macchina: l’intera configurazione viene con esso.",
       "texted1596a9787f": "Usa un token di accesso",
       "texted1d87390f65": "Emetti un attributo di gruppo (ad es. chiamato groups) che elenchi i gruppi dell'utente.",
-      "texted21e91b4d87": "Runtime compilato del worker pi scaricato",
       "texted26c1af81cf": "Strumenti di scrittura",
       "texted2d94ab1136": "Accedi al centro di amministrazione Microsoft Entra (entra.microsoft.com) come amministratore del tuo tenant.",
       "texted2e59c337d0": "Narrativa",
@@ -17871,7 +17866,6 @@
       "textf27a58a42762": "Impossibile caricare il file",
       "textf27bcbb5e1e2": "Ignorabile",
       "textf27c4fdb823a": "Cloudflare Access passa l'email per impostazione predefinita. Aggiungi gli altri attributi letti da Kortix — id, firstName, lastName — come \"SAML attribute statements\": ciascuno è composto da un Name e dal claim dell'IdP upstream a cui viene associato (un menu dei claim del metodo di accesso).",
-      "textf27e24caeef3": "Runtime compilato della sessione scaricato",
       "textf29674479db4": "Connessione a OpenAI…",
       "textf297f631ba78": "Assembla ciò che ha scritto ogni intervistatore, organizzandolo secondo la scorecard invece che in base a chi ha scritto di più, e mette in evidenza i disaccordi. Far emergere il disaccordo è lo scopo. Risolverlo è compito del panel.",
       "textf29ad8b8092c": "Il nome dell'attributo (groups) deve corrispondere al claim dei gruppi di Kortix, precompilato durante la connessione. Cloudflare trasferisce i NOMI dei gruppi inviati dall'IdP upstream.",
@@ -18835,9 +18829,7 @@
       "textb0f59e5a2722": "Accesso OAuth del provider di modelli avviato",
       "text0dd455816ef6": "Ricostruzione dello snapshot della sandbox avviata",
       "text40cef5fd1dbd": "Compilazione del template della sandbox avviata",
-      "text09917783e494": "Ambiente della sessione avviato",
       "text18065b39fc81": "Kortix App arrestata",
-      "textb88830cc18af": "Ambiente della sessione arrestato",
       "text464b0b69fd48": "Eventi del tunnel del computer trasmessi in streaming",
       "text970caaaceccc": "Richiesta trasmessa in streaming tramite il relay dei segreti",
       "text64a93d38e11a": "Risposta del relay dei segreti trasmessa in streaming",
@@ -18996,7 +18988,6 @@
       "text5ed3e15fac9f": "Transizione del provider di sandbox visualizzata",
       "text70a61d85334a": "Sessione visualizzata",
       "textd7aa05eaf609": "Registro dei costi della sessione visualizzato",
-      "text4e22b3354b8f": "Ambiente della sessione visualizzato",
       "text48b65bbc9863": "Policy della sessione visualizzata",
       "text7c649f4bf685": "Pool di segreti del provider della sessione visualizzato",
       "text3fd349f95ce2": "Ambito della sessione visualizzato",
@@ -19238,7 +19229,9 @@
       "text09e71792c6c3": "Agenti IA per i team vendite",
       "textaaab3a59b808": "Agenti IA per i team marketing",
       "text8f480bae8d16": "Agenti IA per i team finanza",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "Ha visualizzato i dispositivi connessi",
+      "text976811d9540a": "Ha disconnesso un dispositivo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

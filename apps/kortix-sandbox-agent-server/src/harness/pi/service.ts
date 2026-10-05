@@ -137,5 +137,4 @@ export const piDefinition: HarnessDefinition = {
   createService: (cfg, projectEnv, options) => createPiHarnessService(requirePiConfig(cfg), projectEnv, options),
   run: async (context) => (await import('./boot')).runPi({ ...context, cfg: requirePiConfig(context.cfg) }),
   // pi has no separate binary to stage: the daemon IS the runtime.
-  installCompiledRuntime: async () => ({ path: process.execPath }),
 }
