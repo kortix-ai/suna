@@ -3,6 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   approveCaptureDeviceGrant,
+  getCaptureWorkspace,
+  listCaptureMembers,
+  setCaptureEnabled,
+  setCaptureMemberRole,
+  type CaptureRole,
   denyCaptureDeviceGrant,
   getCaptureChunkMedia,
   getCaptureDays,
@@ -27,7 +32,7 @@ import {
   type CaptureSearchQuery,
   type CaptureWindowQuery,
   type SaveCaptureRangeInput,
-} from '../core/rest/projects-client';
+} from '../core/rest/platform-client/capture';
 import { contract, FRESHNESS } from './query-contracts';
 import { qk } from './query-keys';
 
@@ -44,12 +49,12 @@ export function useCaptureDeviceGrant(userCode: string | null | undefined) {
   });
 }
 
-/** Pair the asking device to the caller in one of their projects with capture on. */
+/** Pair the asking device to the caller in one of their accounts with Capture on (`accountId` optional when there is one). */
 export function useApproveCaptureDevice() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (args: { userCode: string; projectId: string }) =>
-      approveCaptureDeviceGrant(args.userCode, args.projectId),
+    mutationFn: (args: { userCode: string; accountId?: string }) =>
+      approveCaptureDeviceGrant(args.userCode, args.accountId),
     onSuccess: (grant, args) => queryClient.setQueryData(qk.capture.deviceGrant(args.userCode), grant),
   });
 }
@@ -63,90 +68,90 @@ export function useDenyCaptureDevice() {
   });
 }
 
-type ProjectId = string | null | undefined;
+type AccountId = string | null | undefined;
 
 // ── Devices ───────────────────────────────────────────────────────────────────
 
 /**
- * Devices with live status: yours, a member's (`userId`), or the project's
- * (`scope: 'project'`, managers). Polls every 10 s: a device heartbeats every
+ * Devices with live status: yours, a member's (`userId`), or the account's
+ * (`scope: 'account'`, Capture admins and viewers). Polls every 10 s: a device heartbeats every
  * 30 s and reads as offline after 120 s without one.
  */
-export function useCaptureDevices(projectId: ProjectId, opts: { scope?: 'mine' | 'project'; userId?: string } = {}) {
+export function useCaptureDevices(accountId: AccountId, opts: { scope?: 'mine' | 'account'; userId?: string } = {}) {
   return useQuery({
-    queryKey: qk.project.captureDevices(projectId ?? '', opts.scope ?? 'mine', opts.userId ?? null),
-    queryFn: () => listCaptureDevices(projectId as string, opts),
-    enabled: !!projectId,
+    queryKey: qk.capture.devices(accountId ?? '', opts.scope ?? 'mine', opts.userId ?? null),
+    queryFn: () => listCaptureDevices(accountId as string, opts),
+    enabled: !!accountId,
     ...contract(FRESHNESS.captureDevices),
   });
 }
 
 /** Revoke a device: its token stops working at once. */
-export function useRevokeCaptureDevice(projectId: ProjectId) {
+export function useRevokeCaptureDevice(accountId: AccountId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (deviceId: string) => revokeCaptureDevice(projectId as string, deviceId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.capture(projectId ?? '') }),
+    mutationFn: (deviceId: string) => revokeCaptureDevice(accountId as string, deviceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.capture.account(accountId ?? '') }),
   });
 }
 
 /** Read a device's status and index now ("Sync now"); the timeline refreshes with it. */
-export function useSyncCaptureDevice(projectId: ProjectId) {
+export function useSyncCaptureDevice(accountId: AccountId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (deviceId: string) => syncCaptureDevice(projectId as string, deviceId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.capture(projectId ?? '') }),
+    mutationFn: (deviceId: string) => syncCaptureDevice(accountId as string, deviceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.capture.account(accountId ?? '') }),
   });
 }
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
 
 /** The days with recorded items, newest first, grouped in `query.tz`. */
-export function useCaptureDays(projectId: ProjectId, query: CaptureDaysQuery = {}) {
+export function useCaptureDays(accountId: AccountId, query: CaptureDaysQuery = {}) {
   return useQuery({
-    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'days', query),
-    queryFn: () => getCaptureDays(projectId as string, query),
-    enabled: !!projectId,
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'days', query),
+    queryFn: () => getCaptureDays(accountId as string, query),
+    enabled: !!accountId,
     ...contract(FRESHNESS.captureTimeline),
   });
 }
 
 /** Activity runs, indexed items and ranges of one person in a window. `null` reads nothing. */
-export function useCaptureTimeline(projectId: ProjectId, query: CaptureWindowQuery | null) {
+export function useCaptureTimeline(accountId: AccountId, query: CaptureWindowQuery | null) {
   return useQuery({
-    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'runs', query),
-    queryFn: () => getCaptureTimeline(projectId as string, query ?? undefined),
-    enabled: !!projectId && !!query,
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'runs', query),
+    queryFn: () => getCaptureTimeline(accountId as string, query ?? undefined),
+    enabled: !!accountId && !!query,
     ...contract(FRESHNESS.captureTimeline),
   });
 }
 
 /** Frames, actions and audio lines in a window (at most 500 of each). `null` reads nothing. */
-export function useCaptureTimelineItems(projectId: ProjectId, query: CaptureWindowQuery | null) {
+export function useCaptureTimelineItems(accountId: AccountId, query: CaptureWindowQuery | null) {
   return useQuery({
-    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'items', query),
-    queryFn: () => getCaptureTimelineItems(projectId as string, query ?? undefined),
-    enabled: !!projectId && !!query,
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'items', query),
+    queryFn: () => getCaptureTimelineItems(accountId as string, query ?? undefined),
+    enabled: !!accountId && !!query,
     ...contract(FRESHNESS.captureTimeline),
   });
 }
 
 /** Full-text search of one person's timeline. `null` (or an empty `q`) reads nothing. */
-export function useCaptureSearch(projectId: ProjectId, query: CaptureSearchQuery | null) {
+export function useCaptureSearch(accountId: AccountId, query: CaptureSearchQuery | null) {
   return useQuery({
-    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'search', query),
-    queryFn: () => searchCapture(projectId as string, query as CaptureSearchQuery),
-    enabled: !!projectId && !!query?.q.trim(),
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'search', query),
+    queryFn: () => searchCapture(accountId as string, query as CaptureSearchQuery),
+    enabled: !!accountId && !!query?.q.trim(),
     ...contract(FRESHNESS.captureTimeline),
   });
 }
 
 /** One frame with its on-screen text and a signed URL (5 min) of its video chunk. */
-export function useCaptureFrame(projectId: ProjectId, frameId: string | null | undefined, opts: { userId?: string } = {}) {
+export function useCaptureFrame(accountId: AccountId, frameId: string | null | undefined, opts: { userId?: string } = {}) {
   return useQuery({
-    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'frame', { frameId, userId: opts.userId ?? null }),
-    queryFn: () => getCaptureFrame(projectId as string, frameId as string, opts),
-    enabled: !!projectId && !!frameId,
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'frame', { frameId, userId: opts.userId ?? null }),
+    queryFn: () => getCaptureFrame(accountId as string, frameId as string, opts),
+    enabled: !!accountId && !!frameId,
     ...contract(FRESHNESS.captureTimeline),
   });
 }
@@ -156,14 +161,14 @@ export function useCaptureFrame(projectId: ProjectId, frameId: string | null | u
  * inside one chunk's video while it scrubs, so it reads this once per chunk.
  */
 export function useCaptureChunkMedia(
-  projectId: ProjectId,
+  accountId: AccountId,
   chunkId: string | null | undefined,
   opts: { userId?: string } = {},
 ) {
   return useQuery({
-    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'media', { chunkId, userId: opts.userId ?? null }),
-    queryFn: () => getCaptureChunkMedia(projectId as string, chunkId as string, opts),
-    enabled: !!projectId && !!chunkId,
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'media', { chunkId, userId: opts.userId ?? null }),
+    queryFn: () => getCaptureChunkMedia(accountId as string, chunkId as string, opts),
+    enabled: !!accountId && !!chunkId,
     ...contract(FRESHNESS.captureTimeline),
     // The URLs expire after 300 s; read them again before that.
     staleTime: 240_000,
@@ -174,11 +179,11 @@ export function useCaptureChunkMedia(
 // ── Ranges ────────────────────────────────────────────────────────────────────
 
 /** One person's ranges (detected and saved) in a window. `null` reads nothing. */
-export function useCaptureRanges(projectId: ProjectId, query: CaptureWindowQuery | null) {
+export function useCaptureRanges(accountId: AccountId, query: CaptureWindowQuery | null) {
   return useQuery({
-    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'ranges', query),
-    queryFn: () => listCaptureRanges(projectId as string, query ?? undefined),
-    enabled: !!projectId && !!query,
+    queryKey: qk.capture.timelineRead(accountId ?? '', 'ranges', query),
+    queryFn: () => listCaptureRanges(accountId as string, query ?? undefined),
+    enabled: !!accountId && !!query,
     ...contract(FRESHNESS.captureTimeline),
   });
 }
@@ -190,66 +195,110 @@ const rangeBusy = (range: CaptureRangeDetail | undefined) =>
     range.outputs.some((output) => output.status === 'running'));
 
 /** One range with its outputs. Polls every 5 s while its pipelines are queued or running. */
-export function useCaptureRange(projectId: ProjectId, rangeId: string | null | undefined) {
+export function useCaptureRange(accountId: AccountId, rangeId: string | null | undefined) {
   return useQuery({
-    queryKey: qk.project.captureRange(projectId ?? '', rangeId ?? ''),
-    queryFn: () => getCaptureRange(projectId as string, rangeId as string),
-    enabled: !!projectId && !!rangeId,
+    queryKey: qk.capture.range(accountId ?? '', rangeId ?? ''),
+    queryFn: () => getCaptureRange(accountId as string, rangeId as string),
+    enabled: !!accountId && !!rangeId,
     ...contract(FRESHNESS.captureTimeline),
     refetchInterval: (query) => (rangeBusy(query.state.data) ? 5_000 : false),
   });
 }
 
 /** Save a span of your own timeline as a range; its pipelines start at once. */
-export function useSaveCaptureRange(projectId: ProjectId) {
+export function useSaveCaptureRange(accountId: AccountId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: SaveCaptureRangeInput) => saveCaptureRange(projectId as string, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.captureTimeline(projectId ?? '') }),
+    mutationFn: (input: SaveCaptureRangeInput) => saveCaptureRange(accountId as string, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.capture.timeline(accountId ?? '') }),
   });
 }
 
 /** Run a range's pipelines again. */
-export function useProcessCaptureRange(projectId: ProjectId) {
+export function useProcessCaptureRange(accountId: AccountId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (rangeId: string) => processCaptureRange(projectId as string, rangeId),
+    mutationFn: (rangeId: string) => processCaptureRange(accountId as string, rangeId),
     onSuccess: (_result, rangeId) => {
-      void queryClient.invalidateQueries({ queryKey: qk.project.captureRange(projectId ?? '', rangeId) });
-      void queryClient.invalidateQueries({ queryKey: qk.project.captureTimeline(projectId ?? '') });
+      void queryClient.invalidateQueries({ queryKey: qk.capture.range(accountId ?? '', rangeId) });
+      void queryClient.invalidateQueries({ queryKey: qk.capture.timeline(accountId ?? '') });
     },
   });
 }
 
-// ── Policy and people (managers) ──────────────────────────────────────────────
+// ── Policy and people (admins, viewers) ────────────────────────────────────────────
 
-export function useCapturePolicy(projectId: ProjectId) {
+export function useCapturePolicy(accountId: AccountId) {
   return useQuery({
-    queryKey: qk.project.capturePolicy(projectId ?? ''),
-    queryFn: () => getCapturePolicy(projectId as string),
-    enabled: !!projectId,
+    queryKey: qk.capture.policy(accountId ?? ''),
+    queryFn: () => getCapturePolicy(accountId as string),
+    enabled: !!accountId,
     ...contract(FRESHNESS.capturePolicy),
   });
 }
 
-/** Replace the project policy and publish it to devices. Managers only. */
-export function useSetCapturePolicy(projectId: ProjectId) {
+/** Replace the account policy and publish it to devices. Capture admins only. */
+export function useSetCapturePolicy(accountId: AccountId) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (policy: CapturePolicy) => setCapturePolicy(projectId as string, policy),
-    onSuccess: (record) => queryClient.setQueryData(qk.project.capturePolicy(projectId ?? ''), record),
+    mutationFn: (policy: CapturePolicy) => setCapturePolicy(accountId as string, policy),
+    onSuccess: (record) => queryClient.setQueryData(qk.capture.policy(accountId ?? ''), record),
   });
 }
 
-/** Per member: active time, time per app, ranges, devices. Managers only; audited. `null` reads nothing. */
+/** Per member: active time, time per app, ranges, devices. Capture admins and viewers; audited. `null` reads nothing. */
 export function useCapturePeople(
-  projectId: ProjectId,
+  accountId: AccountId,
   query: Omit<CaptureWindowQuery, 'userId' | 'deviceId'> | null,
 ) {
   return useQuery({
-    queryKey: qk.project.capturePeople(projectId ?? '', query),
-    queryFn: () => getCapturePeople(projectId as string, query ?? undefined),
-    enabled: !!projectId && !!query,
+    queryKey: qk.capture.people(accountId ?? '', query),
+    queryFn: () => getCapturePeople(accountId as string, query ?? undefined),
+    enabled: !!accountId && !!query,
     ...contract(FRESHNESS.capturePeople),
+  });
+}
+
+// ── Workspace and roles ───────────────────────────────────────────────────────
+
+/** The account's Capture workspace: on or off, your Capture role, whether you may turn it on. */
+export function useCaptureWorkspace(accountId: AccountId) {
+  return useQuery({
+    queryKey: qk.capture.workspace(accountId ?? ''),
+    queryFn: () => getCaptureWorkspace(accountId as string),
+    enabled: !!accountId,
+    ...contract(FRESHNESS.captureWorkspace),
+  });
+}
+
+/** Turn Capture on or off for the account (account owners and admins). */
+export function useSetCaptureEnabled(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => setCaptureEnabled(accountId as string, enabled),
+    onSuccess: (workspace) => {
+      queryClient.setQueryData(qk.capture.workspace(accountId ?? ''), workspace);
+      void queryClient.invalidateQueries({ queryKey: qk.capture.account(accountId ?? '') });
+    },
+  });
+}
+
+/** Every account member with their Capture role (Capture admins). */
+export function useCaptureMembers(accountId: AccountId) {
+  return useQuery({
+    queryKey: qk.capture.members(accountId ?? ''),
+    queryFn: () => listCaptureMembers(accountId as string),
+    enabled: !!accountId,
+    ...contract(FRESHNESS.captureMembers),
+  });
+}
+
+/** Set a member's Capture role, or clear it (null) back to the account-role default (Capture admins). */
+export function useSetCaptureMemberRole(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { userId: string; role: CaptureRole | null }) =>
+      setCaptureMemberRole(accountId as string, args.userId, args.role),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.capture.members(accountId ?? '') }),
   });
 }
