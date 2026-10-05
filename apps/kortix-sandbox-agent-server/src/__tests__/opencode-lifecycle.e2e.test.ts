@@ -48,7 +48,6 @@ let ctl: string
 let lifecycle: Opencode | null
 
 const ENV_KEYS = [
-  'KORTIX_COMPILED_RUNTIME_FORMAT',
   'KORTIX_CONTINUATION_DISABLED',
   'KORTIX_LLM_PROXY_URL',
   'KORTIX_LLM_CATALOG_FILE',
@@ -345,16 +344,13 @@ describe('spawn and readiness', () => {
   }, 90_000)
 
   test('the spawn env carries the Kortix-managed values over conflicting inputs', async () => {
-    // Compiled boot: the binary embeds a models snapshot; a remote refresh is
-    // network contention. Passive continuation is a platform decision a
-    // project or daemon env value cannot turn back on.
-    process.env.KORTIX_COMPILED_RUNTIME_FORMAT = 'kortix.compiled-runtime.v1'
+    // Passive continuation is a platform decision a project or daemon env
+    // value cannot turn back on.
     process.env.KORTIX_CONTINUATION_DISABLED = 'false'
     const r = rig()
     const pid = await startReady(r)
 
     expect(spawnEnv(pid)).toMatchObject({
-      OPENCODE_DISABLE_MODELS_FETCH: '1',
       KORTIX_CONTINUATION_DISABLED: '1',
     })
   }, 30_000)

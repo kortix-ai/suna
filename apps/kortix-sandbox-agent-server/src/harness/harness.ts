@@ -65,7 +65,6 @@ export interface HarnessDefinition {
   createService(cfg: Config, projectEnv?: ProjectEnvStore, options?: HarnessStartupOptions): HarnessService
   run(context: HarnessBootContext): Promise<void>
   runWarmSeed?(context: HarnessBootContext): Promise<boolean>
-  installCompiledRuntime(cfg: Config): Promise<{ path: string }>
 }
 
 /**

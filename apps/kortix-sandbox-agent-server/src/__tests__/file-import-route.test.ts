@@ -56,7 +56,6 @@ function config(overrides: Partial<Config> = {}): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
-    compiledBootMode: 'off',
     workload: '',
     monitorsJson: '',
     monitorBoxEpoch: '',
