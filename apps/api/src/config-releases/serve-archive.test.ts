@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildConfigArchive, readComposedRelease, resolveReleaseTreeSource } from './builder';
 import { publicDownloadTarget, serveConfigArchive, storageOriginIsPublic } from './serve-archive';
-import { MemoryConfigArchiveStore, configArchiveKey } from './store';
+import { configArchiveKey } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 let root = '';
 let repo = '';

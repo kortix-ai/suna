@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { locales } from '@/i18n/config';
-import { languageAlternates, localePath, marketingMetadata } from '@/lib/seo/metadata';
+import { languageAlternates, localePath, marketingMetadata, metaDescription } from '@/lib/seo/metadata';
 import { getPublicContentRecords } from '@/lib/seo/public-content';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
@@ -61,5 +61,29 @@ describe('locale-routed marketing pages', () => {
       );
     }
     expect(languages['x-default']).toBe(`${CANONICAL_ORIGIN}/legal`);
+  });
+});
+
+describe('metaDescription', () => {
+  test('keeps whole sentences up to 155 characters', () => {
+    const first = `${'A '.repeat(40).trim()}.`;
+    expect(metaDescription(`${first} ${'B '.repeat(60).trim()}.`)).toBe(first);
+  });
+
+  test('cuts a first sentence longer than the limit at a word', () => {
+    const out = metaDescription(`${'word '.repeat(60).trim()}.`)!;
+    expect(out.length).toBeLessThanOrEqual(155);
+    expect(out).toEndWith('word…');
+  });
+
+  test('returns short text unchanged', () => {
+    expect(metaDescription('Short.')).toBe('Short.');
+  });
+
+  test('every marketing record renders a description of 155 characters or fewer', () => {
+    for (const record of getPublicContentRecords().filter((r) => r.kind === 'marketing')) {
+      const description = marketingMetadata(record.htmlPath, record).description ?? '';
+      expect(description.length, record.htmlPath).toBeLessThanOrEqual(155);
+    }
   });
 });

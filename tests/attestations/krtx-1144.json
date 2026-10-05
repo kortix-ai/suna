@@ -1,0 +1,16 @@
+{
+  "source_hash": "7d999072782bffde7612ba28b8d401f9af050fec7519146265e253ace9fbbf1f",
+  "diff_files": [
+    "packages/db/migrations/20261004033652453_project_select_auth_initplan.sql",
+    "packages/db/scripts/project-select-auth-initplan.integration.test.ts"
+  ],
+  "diff_hash": "f93614da01dfdc3cc0febc81052189edf11f8ee1f1901510067dcee56b73def9",
+  "head": "511d22b8c3577eadd3240ef648e5aa97ed5d2a2b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T05:22:21.434Z"
+}
