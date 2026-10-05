@@ -20500,5 +20500,20 @@
     "people": "Особе у овој сесији: {names}",
     "peopleMore": "Особе у овој сесији: {names} и још {count}",
     "more": "Još {count} može da otvori ovu sesiju"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix demo",
+    "stepDetails": "Vaši podaci",
+    "stepTime": "Izaberite termin",
+    "formTitle": "Pre nego što izaberemo termin",
+    "formDescription": "Iskoristićemo ovo da pripremimo prezentaciju za vaš tim.",
+    "seeTimes": "Pogledajte slobodne termine",
+    "close": "Zatvori",
+    "bookedLabel": "Termin je potvrđen",
+    "bookedMeta": "{minutes} min · Link je u pozivnici",
+    "inviteSent": "Pozivnica je poslata na {email}",
+    "reschedule": "Treba vam drugi termin? Koristite link iz pozivnice.",
+    "addToCalendar": "Dodaj u kalendar",
+    "done": "Gotovo"
   }
 }
