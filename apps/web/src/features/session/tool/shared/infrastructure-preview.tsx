@@ -195,8 +195,12 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
     frameContent: serviceFrameContent(proxy?.port),
     isLoading,
     hasError,
-    /** The frame has not loaded, or it shows the proxy's waiting page. */
-    appStarting: !!previewUrl && (isLoading || appWaiting),
+    /** Same condition as the viewport's "Loading preview…" overlay (no URL
+     *  yet, or the frame has not loaded), plus the proxy's waiting page. */
+    appStarting:
+      !!(proxy || externalUrl) &&
+      !prefersPreviewLink(previewUrl) &&
+      (isLoading || !previewUrl || appWaiting),
     /** Seeds the dot-matrix glyph, so one preview keeps one glyph. */
     matrixSeed: label || url,
     frameRef,

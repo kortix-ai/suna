@@ -322,6 +322,25 @@ describe('ShowTool header shows format-specific icons', () => {
     expect(html.match(/role="tab"/g)).toHaveLength(5);
   });
 
+  // KRTX-1644: while a port preview is still loading, the active tab shows the
+  // dot matrix in place of the desktop icon; the other tabs keep their icon.
+  test('a loading port carousel puts the dot matrix on the active tab only', () => {
+    const part = makePart({
+      items: [
+        { type: 'url', url: 'http://localhost:3000' },
+        { type: 'url', url: 'http://localhost:3001' },
+        { type: 'url', url: 'http://localhost:3002' },
+      ],
+    });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+    const tabs = html.split('role="tab"').slice(1);
+
+    expect(tabs).toHaveLength(3);
+    expect(tabs[0]).toContain('role="status"');
+    expect(tabs[1]).not.toContain('role="status"');
+    expect(tabs[2]).not.toContain('role="status"');
+  });
+
   test('a two-item carousel also shows no avatar group', () => {
     const part = makePart({
       items: [
