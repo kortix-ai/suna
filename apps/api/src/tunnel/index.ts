@@ -32,16 +32,13 @@ import { createRpcRouter } from './routes/rpc';
 import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
 import { heartbeatManager } from './core/heartbeat';
-import { startTunnelRpcForwarder, stopTunnelRpcForwarder } from './core/cluster-forwarder';
-import { effectiveRegisteredCapabilities, registerTunnelRelayPersistence } from './relay-persistence';
-import { runTunnelCleanupOnce } from './registrations';
+import { effectiveRegisteredCapabilities } from './relay-persistence';
 // Static imports — these MUST NOT be dynamic `await import(...)`. Under
 // `bun --hot` (local dev) a dynamic import inside the WS auth handler can wedge
 // and never settle, so onAuthenticate hangs → the agent never gets `auth_ok`
 // and the tunnel is stuck "offline" forever. See the prod-timeout incident note.
 import { fingerprintTunnelCredentialHash, isTunnelToken, verifySecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
-import { runWorkerTick } from '../shared/audit-scope';
 import { type AuditEventInput, recordAuditEvent } from '../shared/audit';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
@@ -200,37 +197,6 @@ tunnelRelay.on('message:pong', ({ tunnelId }) => {
   heartbeatManager.recordPong(tunnelId);
 });
 
-let cleanupInterval: ReturnType<typeof setInterval> | null = null;
-
-function startTunnelService(): void {
-  if (!config.TUNNEL_ENABLED) {
-    console.log('[TUNNEL] Tunnel disabled (TUNNEL_ENABLED=false)');
-    return;
-  }
-
-  heartbeatManager.start();
-  startTunnelRpcForwarder();
-
-  registerTunnelRelayPersistence();
-
-  // ── Rate-limiter + device-auth cleanup ───────────────────────────────
-
-  cleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', runTunnelCleanupOnce), 5 * 60_000);
-
-  console.log('[TUNNEL] Tunnel service started');
-}
-
-function stopTunnelService(): void {
-  if (cleanupInterval) {
-    clearInterval(cleanupInterval);
-    cleanupInterval = null;
-  }
-  stopTunnelRpcForwarder();
-  heartbeatManager.stop();
-  tunnelRelay.shutdown();
-  console.log('[TUNNEL] Tunnel service stopped');
-}
-
 function getTunnelServiceStatus(): {
   enabled: boolean;
   connectedAgents: number;
@@ -241,4 +207,5 @@ function getTunnelServiceStatus(): {
   };
 }
 
-export { tunnelApp, wsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus };
+export { startTunnelService, stopTunnelService } from '../workers/tunnel-worker';
+export { tunnelApp, wsHandlers, getTunnelServiceStatus };

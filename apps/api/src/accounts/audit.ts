@@ -38,6 +38,7 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
+import { wakeAuditWebhookWorker } from '../workers/audit-webhook-worker';
 import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { readExportPage } from '../shared/audit-archive/export-page';
 import { auditArchiveStore } from '../shared/audit-archive/store';
@@ -819,6 +820,7 @@ auditRouter.openapi(
     if (!hook) return c.json({ error: 'webhook not found' }, 404);
     const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
     if (!replayed) return c.json({ error: 'delivery not found' }, 404);
+    wakeAuditWebhookWorker();
     await recordAuditEvent({
       accountId,
       actorUserId: userId,
