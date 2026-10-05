@@ -418,8 +418,9 @@ these as standing rules whenever you touch the data/runtime layer:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
   control with `runtimeSupports`. OpenCode lists all ten; pi lists
-  `session.subagents`. pi does not serve rewind, compaction, slash commands,
-  MCP servers, the todo list, shell turns, part edits or `session.attach`.
+  `session.subagents`, `session.compact` and `session.commands`. pi does not
+  serve rewind, MCP servers, the todo list, shell turns, part edits or
+  `session.attach`.
   The harness rules and the pi gap list are in
   `apps/kortix-sandbox-agent-server/src/harness/README.md`.
 - **`apps/web` data modules are shims.** Files such as

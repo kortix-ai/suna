@@ -19228,7 +19228,17 @@
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
       "description": "Cualquier persona con el enlace puede verlo sin iniciar sesión. El enlace sigue activo hasta que lo revoques.",
-      "confirm": "Crear enlace"
+      "confirm": "Crear enlace",
+      "liveTitle": "Enlace público",
+      "liveDescription": "Cualquiera con el enlace puede verlo sin iniciar sesión.",
+      "liveCount": "{count} enlaces apuntan aquí; al revocarlos, se desactivan todos.",
+      "copy": "Copiar",
+      "revoke": "{count, plural, one {Revocar enlace} other {Revocar # enlaces}}",
+      "createDescription": "Cualquiera con el enlace puede ver esto sin iniciar sesión.",
+      "expiresAfter": "Caduca después de",
+      "cancel": "Cancelar",
+      "expiryNever": "Nunca",
+      "expiryDays": "{count, plural, one {# día} other {# días}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Enlace público",
@@ -20506,5 +20516,20 @@
     "people": "Personas en esta sesión: {names}",
     "peopleMore": "Personas en esta sesión: {names} y {count} más",
     "more": "{count} más pueden abrir esta sesión"
+  },
+  "demoBooking": {
+    "meetingTitle": "Demo de Kortix",
+    "stepDetails": "Tus datos",
+    "stepTime": "Elige una hora",
+    "formTitle": "Antes de elegir una hora",
+    "formDescription": "Lo usaremos para preparar una demostración para tu equipo.",
+    "seeTimes": "Ver horarios disponibles",
+    "close": "Cerrar",
+    "bookedLabel": "Reserva confirmada",
+    "bookedMeta": "{minutes} min · Enlace en tu invitación",
+    "inviteSent": "Invitación enviada a {email}",
+    "reschedule": "¿Necesitas otra hora? Usa el enlace de la invitación.",
+    "addToCalendar": "Añadir al calendario",
+    "done": "Listo"
   }
 }

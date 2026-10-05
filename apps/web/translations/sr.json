@@ -19228,7 +19228,17 @@
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
       "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
-      "confirm": "Направи линк"
+      "confirm": "Направи линк",
+      "liveTitle": "Јавни линк",
+      "liveDescription": "Свако ко има линк може да га види без пријаве.",
+      "liveCount": "{count} линкова води овде; опозивањем се сви искључују.",
+      "copy": "Копирај",
+      "revoke": "{count, plural, one {Опозови линк} few {Опозови # линка} other {Опозови # линкова}}",
+      "createDescription": "Свако ко има линк може ово да види без пријаве.",
+      "expiresAfter": "Истиче након",
+      "cancel": "Откажи",
+      "expiryNever": "Никад",
+      "expiryDays": "{count, plural, one {# дан} few {# дана} other {# дана}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Јавни линк",
@@ -20506,5 +20516,20 @@
     "people": "Особе у овој сесији: {names}",
     "peopleMore": "Особе у овој сесији: {names} и још {count}",
     "more": "Još {count} može da otvori ovu sesiju"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix demo",
+    "stepDetails": "Vaši podaci",
+    "stepTime": "Izaberite termin",
+    "formTitle": "Pre nego što izaberemo termin",
+    "formDescription": "Iskoristićemo ovo da pripremimo prezentaciju za vaš tim.",
+    "seeTimes": "Pogledajte slobodne termine",
+    "close": "Zatvori",
+    "bookedLabel": "Termin je potvrđen",
+    "bookedMeta": "{minutes} min · Link je u pozivnici",
+    "inviteSent": "Pozivnica je poslata na {email}",
+    "reschedule": "Treba vam drugi termin? Koristite link iz pozivnice.",
+    "addToCalendar": "Dodaj u kalendar",
+    "done": "Gotovo"
   }
 }
