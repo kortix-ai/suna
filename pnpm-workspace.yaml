@@ -12,7 +12,9 @@ packages:
 # are typically yanked within hours. 3 days covers Fri-night publish through
 # Monday-morning disclosure. Use minimumReleaseAgeExclude for emergency hotfixes.
 minimumReleaseAge: 4320
-minimumReleaseAgeExclude: []   # add specific packages here for emergency hotfixes
+# pi 1.0.3 (published 2026-10-05) was taken inside the cooldown on purpose (#8738 follow-up).
+minimumReleaseAgeExclude:
+  - '@earendil-works/*'
 
 # Block lifecycle scripts everywhere except the allow-list below. The TanStack
 # payload was a postinstall — this is the single most important defense.

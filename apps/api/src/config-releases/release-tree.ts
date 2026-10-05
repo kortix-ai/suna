@@ -12,17 +12,23 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { SKILLS_DIR, piConfigDirCandidates } from '@kortix/manifest-schema';
+import { SKILLS_DIR, opencodeConfigDirCandidates, piConfigDirCandidates } from '@kortix/manifest-schema';
 import { execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
 import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
 
-/** Cap on the compressed config archive. */
-export const MAX_CONFIG_ARCHIVE_BYTES = 4 * 1024 * 1024;
-/** Bound on the uncompressed tar, so a huge config dir cannot exhaust memory before the cap trips. */
-const MAX_CONFIG_TAR_BYTES = 64 * 1024 * 1024;
+/**
+ * The release archive cap. A release carries the root `skills/` too, and a
+ * skill with templates, fonts or images passed the old 4 MiB in one file
+ * (2026-10-05). The daemon's `MAX_CONFIG_ARCHIVE_BYTES` must match.
+ */
+export const MAX_CONFIG_ARCHIVE_BYTES = 32 * 1024 * 1024;
+/** Bound on the uncompressed tar, so a huge config dir cannot exhaust memory before the cap trips. The daemon's `MAX_EXTRACTED_BYTES` must match. */
+const MAX_CONFIG_TAR_BYTES = 128 * 1024 * 1024;
 
 export const HEX40 = /^[0-9a-f]{40}$/;
+/** Git's empty tree. Every repository resolves it without storing it. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 /**
  * `project` compiles every agent. `agent:<name>` compiles one selected agent.
@@ -350,9 +356,27 @@ export async function resolveReleaseTreeSource(
 ): Promise<{ source: ReleaseTreeSource } | { configDir: string | null; reason: string }> {
   const manifest = await readManifestAtSha(mirror, project, commit);
   const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit, manifest);
-  if (!configDir) return { configDir: null, reason: 'the commit has no OpenCode config dir' };
-  const configTree = await resolveConfigTreeId(mirror, commit, configDir);
-  if (!configTree) return { configDir, reason: `config dir ${configDir} is not a tree at ${commit}` };
+  const configTree = configDir ? await resolveConfigTreeId(mirror, commit, configDir) : null;
+  if (!configDir || !configTree) {
+    // No OpenCode config dir. The root skills and the pi config dir still ship,
+    // on an empty one: a pi-only project otherwise lost both (2026-10-05).
+    const rootSkills = await rootSkillRecords(mirror, commit);
+    const piTree = await resolvePiConfigTree(mirror, commit, manifest);
+    if (!rootSkills.length && !piTree) {
+      return configDir
+        ? { configDir, reason: `config dir ${configDir} is not a tree at ${commit}` }
+        : { configDir: null, reason: 'the commit has no OpenCode config dir' };
+    }
+    return {
+      source: {
+        configDir: configDir ?? opencodeConfigDirCandidates(manifest)[0]!,
+        configTree: EMPTY_TREE,
+        rootSkills,
+        plugins: null,
+        piTree,
+      },
+    };
+  }
   const plugins = variant.startsWith('agent:') ? selectedOpenCodePlugins(manifest, variant.slice(6)) : null;
   if (plugins !== null) {
     const available = (await listConfigFiles(mirror, configTree))
