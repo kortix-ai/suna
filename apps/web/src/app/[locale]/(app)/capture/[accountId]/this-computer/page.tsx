@@ -1,7 +1,10 @@
-import { ThisComputerPage } from '@/features/capture/desktop/capture-section';
+import { ThisComputerView } from '@/features/capture/this-computer/this-computer-view';
 
-/** Kortix Capture's "This computer" (desktop app): record this computer for the account. */
-export default async function CaptureThisComputerRoute({ params }: { params: Promise<{ accountId: string }> }) {
-  const { accountId } = await params;
-  return <ThisComputerPage accountId={accountId} />;
+import { captureMetadata } from '../capture-metadata';
+
+export const generateMetadata = () => captureMetadata('thisComputer');
+
+export default async function Page({ params }: { params: Promise<{ accountId: string }> }) {
+  const p = await params;
+  return <ThisComputerView accountId={p.accountId} />;
 }

@@ -20587,62 +20587,54 @@
     },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} m",
-      "minutes": "{minutes} m"
-    },
-    "shell": {
-      "title": "Capture",
-      "timeline": "Timeline"
+      "minutes": "{minutes} m",
+      "minutesSeconds": "{minutes} m {seconds} s",
+      "seconds": "{seconds} s"
     },
     "timeline": {
       "title": "Timeline",
-      "person": "Person",
-      "you": "You",
       "recordedDays": "Recorded days",
       "today": "Today",
       "yesterday": "Yesterday",
-      "aMember": "a member",
-      "viewingMember": "You are viewing the timeline of {member}",
-      "viewingMemberAudit": "Every view of another member's capture data is recorded in the project's audit log.",
-      "auditNotice": "People who manage this project can open your timeline. Every such view is recorded in the project's audit log.",
+      "notFound": "This computer is not in {name}.",
+      "backToDevices": "Back to devices",
+      "breadcrumb": "Breadcrumb",
+      "previousDay": "Previous recorded day",
+      "nextDay": "Next recorded day",
       "empty": {
-        "noDevicesTitle": "No computer records yet",
-        "noDevicesBody": "Turn on Capture in Kortix desktop: Your computer → My Capture.",
-        "noDevicesMember": "This person records no computers.",
         "noDataTitle": "Recordings from {device} will show up here"
       },
       "layers": "Layers",
       "layer": {
+        "screen": "Screen",
         "actions": "Actions",
         "audio": "Audio"
       },
-      "more": "More",
-      "menu": {
-        "ranges": "Ranges",
-        "people": "People",
-        "settings": "Settings"
-      },
-      "now": "Now",
+      "live": "Live",
+      "liveHint": "Go to the newest frame (L)",
+      "player": "Player",
+      "screenHidden": "Screen layer hidden. Actions and steps still show.",
+      "play": "Play (Space)",
+      "pause": "Pause (Space)",
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
+      "lane": {
+        "episodes": "Episodes",
+        "apps": "Apps",
+        "actions": "Actions",
+        "audio": "Audio"
+      },
+      "keysHint": "{mod}← {mod}→ between apps · ← → frames · Space plays",
       "previousRun": "Previous app ({shortcut})",
       "nextRun": "Next app ({shortcut})",
-      "picker": {
-        "label": "Choose a computer",
-        "devices": "Computers",
-        "noDevice": "No computer",
-        "none": "Computers you record will show up here.",
-        "noneMember": "This person records no computers.",
-        "getDesktop": "Get the Kortix desktop app"
-      },
-      "saveRange": "Save range",
+      "previousEpisode": "Previous episode",
+      "nextEpisode": "Next episode",
+      "speed": "Speed",
       "trackLabel": "Moment on the timeline",
       "unknownApp": "Unknown app",
       "search": {
-        "open": "Search",
-        "label": "Search recordings",
-        "placeholder": "Search what you saw, did or heard",
-        "close": "Close search",
-        "hint": "Type to search the screen text, actions and audio of this computer.",
+        "label": "Search this device",
+        "placeholder": "Search this device",
         "results": "Search results",
         "none": "Nothing on this computer matches the search.",
         "kind": {
@@ -20651,10 +20643,31 @@
           "audio": "Audio"
         }
       },
+      "moment": {
+        "eyebrow": "At the playhead",
+        "nothing": "No recording at this moment",
+        "window": "Window",
+        "address": "Address",
+        "steps": "Actions around this moment",
+        "noSteps": "No actions recorded around this moment.",
+        "said": "Said around this moment"
+      },
+      "episode": {
+        "eyebrow": "Episode under the playhead",
+        "untitled": "Untitled episode",
+        "goal": "Goal",
+        "outcome": "Outcome",
+        "steps": "Steps · {count}",
+        "noSteps": "Steps appear once the episode is traced.",
+        "partOf": "Part of workflow",
+        "variant": "Variant {key} · {name}",
+        "noWorkflow": "Not part of a workflow yet."
+      },
       "frame": {
         "label": "Screen recording of {app}",
         "none": "No recording at this moment.",
-        "encrypted": "The device encrypted this recording. Kortix cannot show it."
+        "encrypted": "The device encrypted this recording. Kortix cannot show it.",
+        "failed": "This recording cannot be played in this browser."
       },
       "jump": {
         "label": "Jump to a date and time",
@@ -20667,70 +20680,6 @@
         "audio": "audio",
         "gap": "No recording here. Press {shortcut} to jump back."
       }
-    },
-    "saveRange": {
-      "title": "Save range",
-      "description": "A saved range gets its steps, transcript and summary. Processing starts when you save.",
-      "name": "Name",
-      "namePlaceholder": "Release checklist run",
-      "from": "From",
-      "to": "To",
-      "endBeforeStart": "The end must be after the start.",
-      "cancel": "Cancel",
-      "submit": "Save range",
-      "saved": "Range saved",
-      "failed": "Could not save the range."
-    },
-    "ranges": {
-      "title": "Ranges",
-      "description": "Stretches of a timeline with steps, a transcript and a summary. Kortix detects one for every activity session; you save your own.",
-      "sourceLabel": "Source",
-      "source": {
-        "all": "All",
-        "saved": "Saved",
-        "detected": "Detected"
-      },
-      "periodLabel": "Period",
-      "period": {
-        "week": "7 days",
-        "month": "30 days"
-      },
-      "status": {
-        "open": "Recording",
-        "closed": "Queued",
-        "processing": "Processing",
-        "processed": "Processed",
-        "failed": "Failed"
-      },
-      "span": "{from}–{to}",
-      "allDevices": "All devices",
-      "loadFailed": "Could not load the ranges.",
-      "tryAgain": "Try again",
-      "empty": "Ranges will show up here",
-      "emptyHint": "Kortix detects a range for every activity session. Save your own from the timeline."
-    },
-    "range": {
-      "backToRanges": "Ranges",
-      "openInTimeline": "Open in timeline",
-      "processAgain": "Process again",
-      "queuedToast": "Range queued",
-      "reprocessFailed": "Could not queue the range.",
-      "tab": {
-        "steps": "Steps",
-        "transcript": "Transcript",
-        "summary": "Summary"
-      },
-      "processing": "Processing. The steps, transcript and summary appear here when the pipelines finish.",
-      "queued": "Queued. Processing starts within a minute.",
-      "failed": "Could not process this range.",
-      "noSteps": "No steps in this range.",
-      "noTranscript": "No transcript for this range.",
-      "noSummary": "No summary for this range.",
-      "timeByApp": "Time by app",
-      "noScreen": "No screen activity in this range.",
-      "unknownApp": "Unknown app",
-      "notFound": "This range is gone.",
-      "notFoundHint": "The link may be wrong, or the range belongs to another person."
     },
     "devices": {
       "status": {
@@ -20755,49 +20704,60 @@
       "syncFailed": "Could not sync the device",
       "revoke": "Revoke computer",
       "revokeTitle": "Revoke this computer?",
-      "revokeDescription": "{name} stops recording into this project at once. To record again, turn on Record this computer on that computer.",
+      "revokeDescription": "{name} stops recording into this organization at once. To record again, sign in from This computer on that computer.",
       "revoked": "Computer revoked",
       "revokeFailed": "Could not revoke the computer",
-      "recordThisComputer": "Record this computer"
-    },
-    "people": {
-      "title": "People",
-      "description": "Per member: active time, the apps they used, their ranges and devices.",
-      "periodLabel": "Period",
-      "period": {
-        "today": "Today",
-        "week": "7 days",
-        "month": "30 days"
+      "recordThisComputer": "Record this computer",
+      "title": "Devices",
+      "descriptionAll": "Every computer that records into {name}. Admins and viewers see every member; members see their own.",
+      "descriptionMine": "Your computers. Only you and the admins of this organization see what they record.",
+      "viewLabel": "View",
+      "viewAll": "All devices",
+      "viewMine": "My devices",
+      "thisComputer": "This computer",
+      "thisComputerBadge": "This computer",
+      "addDevice": "Add a device",
+      "filterLabel": "Filter by status",
+      "filter": {
+        "all": "All",
+        "recording": "Recording",
+        "paused": "Paused",
+        "permission": "Needs permission",
+        "offline": "Offline"
       },
-      "auditTitle": "Only people who manage this project see this page",
-      "auditBody": "Opening this page or a member's timeline writes an entry to the project's audit log. Members see on their own timeline that managers can view it.",
-      "column": {
-        "member": "Member",
-        "active": "Active time",
-        "apps": "Top apps",
-        "ranges": "Ranges",
-        "devices": "Devices",
-        "open": "Open"
-      },
-      "role": {
-        "manager": "Manager",
-        "member": "Member",
-        "viewer": "Viewer",
-        "none": "No longer a member"
-      },
-      "you": "{email} (you)",
-      "formerMember": "Former member",
-      "noActivity": "No activity",
-      "unknownApp": "Unknown app",
-      "openTimeline": "Open timeline",
-      "openTimelineOf": "Open the timeline of {member}",
-      "loadFailed": "Could not load the people summary.",
+      "loadFailed": "Could not load the devices.",
       "tryAgain": "Try again",
-      "empty": "Members will show up here"
+      "empty": {
+        "allTitle": "No computer records into {name} yet",
+        "mineTitle": "You record no computers yet",
+        "body": "Install Kortix desktop, sign in, then turn on Kortix Capture in This computer."
+      },
+      "getDesktop": "Get the Kortix desktop app",
+      "listLabel": "Device list",
+      "noMatch": "No device has this status.",
+      "showing": "Showing {shown} of {total}",
+      "layersNote": "The organization policy sets the layers. Struck through means off on that device.",
+      "col": {
+        "device": "Device",
+        "person": "Person",
+        "os": "OS",
+        "status": "Status",
+        "lastFrame": "Last frame",
+        "layers": "Layers",
+        "actions": "Actions"
+      },
+      "layer": {
+        "screen": "Screen",
+        "actions": "Actions",
+        "audio": "Audio"
+      },
+      "layerOff": "{layer} off",
+      "never": "Never",
+      "pausedUntil": "until {time}"
     },
     "settings": {
       "title": "Settings",
-      "description": "The capture policy that every device in this project reads from the capture store.",
+      "description": "{name}: whether Kortix Capture is on, who sees what, and what devices record.",
       "layersTitle": "Layers",
       "layer": {
         "screen": "Screen",
@@ -20811,14 +20771,14 @@
       "masking": "Mask personal data",
       "maskingHint": "Devices mask personal data in what they record, before it leaves the computer.",
       "pause": "Pause recording",
-      "pauseHint": "Every device in this project stops every layer until you turn this off.",
+      "pauseHint": "Every device of this organization stops every layer until you turn this off.",
       "retentionTitle": "Retention",
       "localHours": "On the device (hours)",
       "localHoursHint": "How long a device keeps media after its upload. 0 keeps it without a limit.",
       "remoteDays": "In Kortix (days)",
       "remoteDaysHint": "How long Kortix keeps indexed items. 0 keeps them without a limit.",
       "noticeTitle": "Notice",
-      "noticePlaceholder": "Recording is on for this project.",
+      "noticePlaceholder": "Recording is on for this organization.",
       "noticeHint": "Devices show this text in the app's menu and settings window.",
       "lastChanged": "Last changed {time}",
       "defaultPolicy": "The default policy applies.",
@@ -20827,7 +20787,34 @@
       "saved": "Capture policy saved",
       "saveFailed": "Could not save the capture policy",
       "loadFailed": "Could not load the capture policy.",
-      "tryAgain": "Try again"
+      "tryAgain": "Try again",
+      "switchTitle": "Kortix Capture",
+      "switchLabel": "Kortix Capture for {name}",
+      "switchHint": "Off stops every device of this organization and closes the area for members.",
+      "switchOwnersOnly": "Account owners and admins turn this on or off.",
+      "switchedOn": "Kortix Capture is on",
+      "switchedOff": "Kortix Capture is off",
+      "switchFailed": "Could not change Kortix Capture",
+      "rolesTitle": "Members and roles",
+      "rolesHint": "Admins see everyone and change these settings. Viewers see everyone. Members see their own computers. Every view of another member goes into the audit log.",
+      "rolesFailed": "Could not load the members.",
+      "roleSaved": "Role saved",
+      "roleFailed": "Could not save the role",
+      "youLabel": "{email} (you)",
+      "accountRole": {
+        "owner": "Account owner",
+        "admin": "Account admin",
+        "member": "Account member"
+      },
+      "roleSet": "Set for this person",
+      "roleDefault": "From the account role",
+      "roleFor": "Capture role of {name}",
+      "role": {
+        "admin": "Admin",
+        "viewer": "Viewer",
+        "member": "Member"
+      },
+      "roleReset": "Use the account role"
     },
     "dialog": {
       "product": "Kortix Capture",
@@ -20918,6 +20905,271 @@
         "signedOut": "Signed out of Kortix Capture"
       },
       "pausedByOrgHint": "The people who manage {org} paused recording. It resumes when they lift the pause."
+    },
+    "area": {
+      "wordmark": "Kortix Capture",
+      "backToKortix": "Back to Kortix",
+      "signedInAs": "Signed in as {email}",
+      "switchOrg": "Switch organization",
+      "organizations": "Organizations",
+      "nav": {
+        "overview": "Overview",
+        "workflows": "Workflows",
+        "ask": "Ask",
+        "devices": "Devices",
+        "settings": "Settings",
+        "timeline": "Timeline",
+        "thisComputer": "This computer"
+      },
+      "range": {
+        "label": "Date range",
+        "today": "Today",
+        "lastDays": "Last {days} days"
+      },
+      "off": {
+        "title": "Kortix Capture is off for {name}",
+        "bodyAdmin": "Turn it on to record the computers of this organization. Each person still turns on recording on their own computer.",
+        "bodyMember": "Ask an admin of this organization to turn it on.",
+        "turnOn": "Turn on Kortix Capture",
+        "failed": "Could not turn on Kortix Capture"
+      }
+    },
+    "overview": {
+      "title": "Overview",
+      "description": "{people, plural, one {# person} other {# people}} and {devices, plural, one {# device} other {# devices}} in {name}, {span}",
+      "loadFailed": "Could not load the overview.",
+      "tryAgain": "Try again",
+      "totals": "Totals",
+      "hoursRecorded": "Hours recorded",
+      "hoursValue": "{hours} h",
+      "noPrevious": "Nothing recorded before this range",
+      "changeOnPrevious": "{change} on the previous {days, plural, one {day} other {# days}}",
+      "peopleRecording": "People recording",
+      "of": "of {total}",
+      "peopleNote": "{count, plural, =0 {Everyone is recording} one {# not recording now} other {# not recording now}}",
+      "devicesOnline": "Devices online",
+      "needPermission": "{count, plural, one {# device needs permission} other {# devices need permission}}",
+      "needPermissionHint": "Actions are not recorded on them",
+      "allPermissions": "Every device has its permissions",
+      "automatable": "Automatable time found",
+      "perWeek": "{hours} h / week",
+      "perWeekShort": "{hours} h/wk",
+      "acrossWorkflows": "{count, plural, one {Across # workflow} other {Across # workflows}}",
+      "topTitle": "Top automation opportunities",
+      "topHint": "Runs per week × typical duration × step determinism",
+      "allWorkflows": "All workflows",
+      "hoursPerWeek": "Hours / week",
+      "topFooter": "Top {count} add up to {hours} h / week. {more, plural, =0 {No more in Workflows.} one {# more in Workflows.} other {# more in Workflows.}}",
+      "newTitle": "New this week",
+      "viewAll": "View all {count}",
+      "newEmpty": "No new workflows this week.",
+      "newMeta": "Detected {day} · {people, plural, one {# person} other {# people}} · {runs, plural, one {# run} other {# runs}}",
+      "trendTitle": "Automatable time found",
+      "trendHint": "Hours per week, by week of detection. Grows as new workflows cluster.",
+      "trendNow": "{hours} h / week now",
+      "trendLabel": "Automatable hours per week went from {from} to {to} over the last 12 weeks",
+      "trendEmpty": "No automatable time found yet.",
+      "thisWeek": "This wk",
+      "quickLinks": "Quick links",
+      "linkAsk": "Ask about your workflows",
+      "linkAskHint": "Answers cite workflows, episodes and moments",
+      "linkReview": "{count, plural, one {Review # detected workflow} other {Review # detected workflows}}",
+      "linkReviewHint": "Found in recordings, not reviewed yet",
+      "linkDevices": "Devices",
+      "linkDevicesHint": "Every computer that records, and its status",
+      "linkExport": "Export data",
+      "linkExportHint": "Episodes, steps and workflows as JSONL or Parquet"
+    },
+    "workflows": {
+      "title": "Workflows",
+      "description": "{count, plural, =0 {No procedures found yet.} one {# procedure found. Sorted by hours a week an agent could take.} other {# procedures found. Sorted by hours a week an agent could take.}}",
+      "export": "Export data",
+      "searchLabel": "Search workflows",
+      "searchPlaceholder": "Search workflows, steps, apps",
+      "statusLabel": "Status",
+      "all": "All",
+      "status": {
+        "detected": "Detected",
+        "reviewed": "Reviewed",
+        "exported": "Skill exported"
+      },
+      "appLabel": "App",
+      "allApps": "All apps",
+      "sortLabel": "Sort",
+      "sort": {
+        "hours": "Sort: hours / week",
+        "runs": "Sort: runs / week",
+        "newest": "Sort: newest"
+      },
+      "listLabel": "Workflow list",
+      "loadFailed": "Could not load the workflows.",
+      "tryAgain": "Try again",
+      "noMatch": "No workflows match. Clear the search or pick another status.",
+      "showing": "Showing {shown} of {total}",
+      "formula": "Automation = runs / week × typical duration × step determinism",
+      "col": {
+        "workflow": "Workflow",
+        "runs": "Runs / wk",
+        "typical": "Typical",
+        "people": "People",
+        "apps": "Apps",
+        "automation": "Automation",
+        "status": "Status"
+      },
+      "rowMeta": "{steps, plural, one {# step} other {# steps}} · {variants, plural, one {# variant} other {# variants}} · first seen {first}",
+      "appsPeople": "{apps} · {count, plural, one {# person} other {# people}}",
+      "people": "{count, plural, one {# person} other {# people}}",
+      "perWeekShort": "{hours} h/wk",
+      "determinismShort": "{value} det.",
+      "learning": {
+        "title": "Kortix Capture is learning your team's workflows",
+        "body": "A workflow appears once the same task shows up in several recordings.",
+        "bodyWithHours": "A workflow appears once the same task shows up in several recordings. {hours} h recorded so far."
+      }
+    },
+    "workflow": {
+      "breadcrumb": "Breadcrumb",
+      "notFound": "This workflow is not in this organization.",
+      "back": "Back to workflows",
+      "firstSeen": "First seen {date}",
+      "reviewedBy": "reviewed by {name} on {date}",
+      "runsTotal": "{count, plural, one {# run} other {# runs}} in total",
+      "aMember": "A member",
+      "you": "You",
+      "goal": "Goal: {goal}",
+      "outcome": "Outcome: {outcome}",
+      "review": "Review",
+      "exportSkill": "Export as skill",
+      "exportAgain": "Export again",
+      "skillLine": "Exported as a skill on {date}:",
+      "openProject": "Open project",
+      "typical": "Typical duration",
+      "success": "Success",
+      "determinism": "Step determinism",
+      "procedure": "{count, plural, one {Canonical procedure · # step} other {Canonical procedure · # steps}}",
+      "variablesHint": "Values in mono are variables",
+      "noSteps": "No steps yet.",
+      "decision": "{question} Yes goes to variant {variant} ({share} of runs).",
+      "variants": "Variants",
+      "variantsHint": "Dark segments differ from the canonical path",
+      "variantSteps": "{count, plural, one {# step} other {# steps}}, {differ} different",
+      "who": "Who runs it",
+      "personRuns": "{count, plural, one {# run} other {# runs}} · {duration}",
+      "runs": "Runs",
+      "runsHint": "{count, plural, one {# run} other {# runs}}. Each opens the device timeline at its start.",
+      "noRuns": "No runs to show.",
+      "openTimeline": "Open in timeline",
+      "col": {
+        "person": "Person",
+        "device": "Device",
+        "started": "Started",
+        "duration": "Duration",
+        "variant": "Variant",
+        "outcome": "Outcome",
+        "open": "Open"
+      },
+      "reviewTitle": "Review workflow",
+      "reviewDescription": "Name it the way your team says it. The workflow then reads as reviewed.",
+      "reviewName": "Name",
+      "reviewGoal": "Goal",
+      "reviewOutcome": "Outcome",
+      "markReviewed": "Mark reviewed",
+      "cancel": "Cancel",
+      "reviewed": "Workflow reviewed",
+      "reviewFailed": "Could not review the workflow"
+    },
+    "skill": {
+      "title": "Export as skill",
+      "description": "Drafted from {runs, plural, one {# run} other {# runs}} and {variants, plural, one {# variant} other {# variants}}. Read it before you publish.",
+      "drafting": "Drafting the skill…",
+      "draftFailed": "Could not draft the skill.",
+      "tryAgain": "Try again",
+      "name": "Skill name",
+      "nameHint": "Lower case letters, digits and dashes.",
+      "project": "Publish to project",
+      "projectPlaceholder": "Choose a project",
+      "projectHint": "Kortix writes skills/<name>/SKILL.md on its default branch.",
+      "noProjects": "This organization has no project yet.",
+      "markdown": "SKILL.md",
+      "inputs": "Inputs",
+      "checks": "Before you publish",
+      "publish": "Publish skill",
+      "published": "Skill published",
+      "publishedBody": "Published to {project} on {time}:",
+      "publishFailed": "Could not publish the skill",
+      "cancel": "Cancel",
+      "close": "Close",
+      "openProject": "Open project"
+    },
+    "export": {
+      "title": "Export data",
+      "description": "Episodes, steps and workflows of {range}.",
+      "format": "Format",
+      "formatJsonl": "JSONL",
+      "formatParquet": "Parquet",
+      "include": "Include",
+      "part": {
+        "episodes": "Episodes",
+        "steps": "Steps",
+        "workflows": "Workflows"
+      },
+      "start": "Start export",
+      "running": "Exporting…",
+      "ready": "{rows, plural, one {Ready: # row} other {Ready: # rows}}",
+      "empty": "Nothing to export in this range.",
+      "failed": "The export failed",
+      "download": "Download",
+      "close": "Close"
+    },
+    "ask": {
+      "title": "Ask about recorded work",
+      "intro": "Answers cite workflows, episodes and moments. Pick whose work to ask about below.",
+      "example1": "Which workflows take the most time, and which are ready to become skills?",
+      "example2": "Who runs the most invoice work, and how long does it take them?",
+      "example3": "What did the team work on yesterday?",
+      "exampleMine1": "What did I work on yesterday?",
+      "exampleMine2": "Which tasks do I repeat most often?",
+      "questions": "Questions",
+      "newQuestion": "New question",
+      "thisConversation": "This conversation",
+      "conversation": "Conversation",
+      "label": "Question",
+      "placeholder": "Ask about workflows, people, apps or a day",
+      "send": "Send",
+      "answerFrom": "Answer from: {scope}",
+      "scope": {
+        "org": "{name}",
+        "me": "My computers",
+        "person": "{name}",
+        "device": "{name}",
+        "people": "People",
+        "devices": "Computers"
+      },
+      "unnamed": "Unnamed computer",
+      "aMember": "A member",
+      "searching": "Searching recordings…",
+      "writing": "{count, plural, one {Reading # source…} other {Reading # sources…}}",
+      "cited": "{count, plural, =0 {No sources cited} one {# source cited} other {# sources cited}}",
+      "failed": "Could not answer",
+      "citation": "Source {n}",
+      "sources": "Sources",
+      "sourcesCount": "{count, plural, one {# cited} other {# cited}}",
+      "sourcesEmpty": "The sources of an answer show here.",
+      "kind": {
+        "workflow": "Workflow",
+        "episode": "Episode",
+        "moment": "Moment"
+      },
+      "openWorkflow": "Open workflow",
+      "openTimeline": "Open in timeline"
+    },
+    "thisComputer": {
+      "title": "This computer",
+      "breadcrumb": "Breadcrumb",
+      "browserDescription": "Record a computer from the Kortix desktop app.",
+      "browserTitle": "Open Kortix desktop to record this computer",
+      "browserBody": "Kortix Capture records from the desktop app. Install it, sign in, then open Kortix Capture › This computer.",
+      "getDesktop": "Get the Kortix desktop app"
     }
   }
 }

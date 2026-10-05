@@ -22,16 +22,50 @@ import {
 import type { Scrubber } from './use-scrubber';
 
 export interface TrackLayers {
+  screen: boolean;
   actions: boolean;
   audio: boolean;
 }
 
-// Canvas geometry in px (a drawing surface, not CSS spacing), as in the engine window:
-// the run line's top edge and thickness, the audio and actions lines below the icons.
-const TRACK_Y = 18.5;
+// Canvas geometry in px (a drawing surface, not CSS spacing). Lanes top to
+// bottom: the time axis, episodes, apps (the engine window's run line with
+// its app tiles), actions, audio. `LANES` gives the labels' vertical centers.
+const AXIS_H = 18;
+const EPISODE_Y = 24;
+const EPISODE_H = 24;
+const TRACK_Y = 58.5;
 const TRACK_H = 7;
-const AUDIO_Y = 37;
-const ACTIONS_Y = 41;
+const ACTIONS_Y = 82;
+const AUDIO_Y = 104;
+const LANE_H = 8;
+export const TRACK_HEIGHT = 122;
+export const LANES = {
+  episodes: EPISODE_Y + EPISODE_H / 2,
+  apps: TRACK_Y + TRACK_H / 2,
+  actions: ACTIONS_Y + LANE_H / 2,
+  audio: AUDIO_Y + LANE_H / 2,
+} as const;
+
+/** A task on the timeline: one goal, a start and an end, a label (L1 of the pipeline). */
+export interface TrackEpisode {
+  id: string;
+  s: number;
+  e: number;
+  label: string;
+}
+
+/** Axis tick steps in ms; the first that leaves at least 72 px between labels wins. */
+const TICKS = [
+  60_000,
+  5 * 60_000,
+  15 * 60_000,
+  30 * 60_000,
+  3_600_000,
+  3 * 3_600_000,
+  6 * 3_600_000,
+  12 * 3_600_000,
+  86_400_000,
+];
 // Third-party apps get a white tile in both themes, like catalogue logos (color.md, escape hatch 1).
 const ICON_TILE = '#ffffff'; // audit:allow third-party app tile, white in both themes (color.md escape hatch 1)
 // Canvas cannot read the --shadow-* tokens; this is shadow-sm's ink.
@@ -42,6 +76,8 @@ const rgb = ([r, g, b]: Rgb, a = 1) => `rgb(${r} ${g} ${b} / ${a})`; // audit:al
 export const appInkCss = (app: string | null) =>
   rgb(brighter(runColor({ k: app, app }, false), -0.22));
 export const APP_TILE = ICON_TILE;
+/** An app's band color on the track, for the legend. */
+export const appBandCss = (app: string, dark: boolean) => rgb(runColor({ k: app, app }, dark));
 
 function roundRect(
   g: CanvasRenderingContext2D,
@@ -72,12 +108,16 @@ export function TrackCanvas({
   runs,
   audio,
   actions,
+  episodes,
   layers,
   pad,
   onWidth,
+  onEpisode,
 }: {
   scrubber: Scrubber;
   runs: readonly TrackRun[];
+  episodes: readonly TrackEpisode[];
+  onEpisode: (episode: TrackEpisode) => void;
   audio: readonly { s: number; e: number }[];
   actions: readonly { s: number; e: number }[];
   layers: TrackLayers;
@@ -118,8 +158,49 @@ export function TrackCanvas({
     g.clearRect(0, 0, W, H);
     const ink = cssVar('--foreground');
     const weak = cssVar('--muted-foreground');
+    const line = cssVar('--border');
+    const font = cssVar('--font-sans') || 'system-ui';
     const dark = isDark();
     const cy = TRACK_Y + TRACK_H / 2;
+    const mid = W / 2;
+    // Time axis: a tick per step, a clock label on each.
+    const step = TICKS.find((ms) => ms / spp >= 72) ?? TICKS[TICKS.length - 1]!;
+    const offset = new Date(T).getTimezoneOffset() * 60_000;
+    const first = Math.floor((T - mid * spp - offset) / step) * step + offset;
+    g.font = `400 10px ${font}`;
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    for (let at = first; xOf(at) < W; at += step) {
+      const x = Math.round(xOf(at)) + 0.5;
+      g.fillStyle = line;
+      g.fillRect(x - 0.5, 0, 1, H);
+      g.fillStyle = weak;
+      g.fillText(clockTime(at, locale), x + 4, 4);
+    }
+    // Episodes: a labelled band per task; the one under the playhead is inverted.
+    g.font = `500 12px ${font}`;
+    g.textBaseline = 'middle';
+    for (const ep of episodes) {
+      const x0 = xOf(ep.s);
+      const x1 = xOf(ep.e);
+      if (x1 < 0 || x0 > W) continue;
+      const x = Math.max(-4, x0);
+      const w = Math.min(W + 4, x1) - x - 3;
+      if (w < 2) continue;
+      const on = T >= ep.s && T <= ep.e;
+      g.fillStyle = on ? ink : line;
+      roundRect(g, x, EPISODE_Y, w, EPISODE_H, 6);
+      g.fill();
+      if (w > 28) {
+        g.save();
+        g.beginPath();
+        g.rect(x + 8, EPISODE_Y, w - 16, EPISODE_H);
+        g.clip();
+        g.fillStyle = on ? cssVar('--background') : ink;
+        g.fillText(ep.label, Math.max(x, 0) + 8, EPISODE_Y + EPISODE_H / 2 + 0.5);
+        g.restore();
+      }
+    }
     // Idle base line: time before, between and after runs.
     g.globalAlpha = 0.3;
     g.fillStyle = weak;
@@ -127,12 +208,12 @@ export function TrackCanvas({
     g.fill();
     g.globalAlpha = 1;
     // Runs; the one under the playhead is brighter and glows in its own hue.
+    g.textBaseline = 'alphabetic';
     if (foldMemo.current.src !== runs || foldMemo.current.spp !== spp) {
       foldMemo.current = { src: runs, spp, out: foldRuns(runs, spp, pad) };
     }
     const laid = layoutRuns(foldMemo.current.out, xOf, W, pad);
     const cols = runColors(laid, dark);
-    const mid = W / 2;
     const underIdx = laid.findIndex((r) => mid >= r.x && mid <= r.x + r.w);
     laid.forEach((r, i) => {
       if (i === underIdx) return;
@@ -171,19 +252,19 @@ export function TrackCanvas({
       }
       g.restore();
     }
-    // Audio and actions: quiet lines below the icons.
+    // Actions and audio: one quiet bar per recorded stretch in their own lanes.
     g.fillStyle = weak;
-    if (layers.audio) {
-      g.globalAlpha = 0.55;
-      for (const b of audioBars(audio, xOf, W)) {
-        roundRect(g, b.x, AUDIO_Y, b.w, 2, 1);
+    if (layers.actions) {
+      g.globalAlpha = 0.45;
+      for (const b of audioBars(actions, xOf, W)) {
+        roundRect(g, b.x, ACTIONS_Y, b.w, LANE_H, 2);
         g.fill();
       }
     }
-    if (layers.actions) {
-      g.globalAlpha = 0.35;
-      for (const b of audioBars(actions, xOf, W)) {
-        roundRect(g, b.x, ACTIONS_Y, b.w, 2, 1);
+    if (layers.audio) {
+      g.globalAlpha = 0.3;
+      for (const b of audioBars(audio, xOf, W)) {
+        roundRect(g, b.x, AUDIO_Y, b.w, LANE_H, 2);
         g.fill();
       }
     }
@@ -207,7 +288,7 @@ export function TrackCanvas({
       g.fill();
       g.restore();
       g.fillStyle = rgb(brighter(col, -0.22));
-      g.font = `600 12px ${cssVar('--font-sans') || 'system-ui'}`;
+      g.font = `600 12px ${font}`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.fillText((ic.run.s.app ?? '?').trim().charAt(0).toUpperCase(), ic.cx, cy + 0.5);
@@ -216,10 +297,12 @@ export function TrackCanvas({
     if (hoverX.current != null && !drag.current) {
       g.globalAlpha = 0.5;
       g.fillStyle = weak;
-      g.fillRect(Math.round(hoverX.current) - 0.5, cy - 14, 1, 28);
+      g.fillRect(Math.round(hoverX.current) - 0.5, AXIS_H, 1, H - AXIS_H);
       g.globalAlpha = 1;
     }
-    // Playhead: a translucent rounded handle fixed at the center.
+    // Playhead: a line through every lane in the accent, and the engine's handle on the run line.
+    g.fillStyle = cssVar('--kortix-blue') || ink;
+    g.fillRect(Math.round(mid) - 1, 0, 2, H);
     g.fillStyle = ink;
     g.strokeStyle = ink;
     g.lineWidth = 1;
@@ -247,7 +330,7 @@ export function TrackCanvas({
       gapKey.current = key;
       setGap(next);
     }
-  }, [scrubber, pad, layers, audio, actions, runs]);
+  }, [scrubber, pad, layers, audio, actions, runs, episodes, locale]);
 
   const schedule = useCallback(() => {
     if (raf.current) return;
@@ -320,14 +403,21 @@ export function TrackCanvas({
       return;
     }
     const x = event.clientX - box.left;
+    const y = event.clientY - box.top;
     const at = timeAtX(x);
     const r = runAt(at);
+    const ep =
+      y >= EPISODE_Y && y <= EPISODE_Y + EPISODE_H
+        ? episodes.find((candidate) => at >= candidate.s && at <= candidate.e)
+        : undefined;
     const sound = audio.some((a) => at >= a.s && at < a.e);
     hoverX.current = x;
     schedule();
     setTip({
       x: Math.min(Math.max(x, 80), size.current.w - 80),
-      text: `${r ? (r.app ?? t('unknownApp')) : t('track.noCapture')}${sound ? ` · ${t('track.audio')}` : ''} · ${clockTime(at, locale)}`,
+      text: ep
+        ? `${ep.label} · ${clockTime(ep.s, locale)}–${clockTime(ep.e, locale)}`
+        : `${r ? (r.app ?? t('unknownApp')) : t('track.noCapture')}${sound ? ` · ${t('track.audio')}` : ''} · ${clockTime(at, locale)}`,
     });
   };
   const onPointerLeave = () => {
@@ -341,7 +431,14 @@ export function TrackCanvas({
     if (!d) return;
     if (!d.moved) {
       const box = event.currentTarget.getBoundingClientRect();
-      scrubber.panTo(timeAtX(event.clientX - box.left));
+      const at = timeAtX(event.clientX - box.left);
+      const y = event.clientY - box.top;
+      const ep =
+        y >= EPISODE_Y && y <= EPISODE_Y + EPISODE_H
+          ? episodes.find((candidate) => at >= candidate.s && at <= candidate.e)
+          : undefined;
+      if (ep) onEpisode(ep);
+      else scrubber.panTo(at);
       return;
     }
     d.samples.push({ t: performance.now(), x: event.clientX });
@@ -354,7 +451,7 @@ export function TrackCanvas({
     typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
   return (
-    <div ref={wrapRef} className="relative h-12 select-none">
+    <div ref={wrapRef} className="relative h-full select-none">
       <canvas
         ref={canvasRef}
         aria-hidden
@@ -366,7 +463,7 @@ export function TrackCanvas({
       />
       {tip ? (
         <div
-          className="bg-foreground text-background pointer-events-none absolute bottom-12 z-10 -translate-x-1/2 rounded-sm px-2 py-1 text-xs whitespace-nowrap tabular-nums"
+          className="bg-foreground text-background pointer-events-none absolute -top-8 z-10 -translate-x-1/2 rounded-sm px-2 py-1 text-xs whitespace-nowrap tabular-nums"
           style={{ left: tip.x }}
         >
           {tip.text}
@@ -374,8 +471,11 @@ export function TrackCanvas({
       ) : null}
       {gap ? (
         <p
-          className="text-muted-foreground pointer-events-none absolute top-1/2 -translate-y-1/2 text-xs whitespace-nowrap"
-          style={gap.side === 'right' ? { left: gap.offset } : { right: gap.offset }}
+          className="text-muted-foreground pointer-events-none absolute -translate-y-1/2 text-xs whitespace-nowrap"
+          style={{
+            top: LANES.apps,
+            ...(gap.side === 'right' ? { left: gap.offset } : { right: gap.offset }),
+          }}
         >
           {t('track.gap', { shortcut: `${modKey}←` })}
         </p>

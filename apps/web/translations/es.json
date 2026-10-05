@@ -20587,62 +20587,54 @@
     },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} min",
-      "minutes": "{minutes} min"
-    },
-    "shell": {
-      "title": "Capture",
-      "timeline": "Línea de tiempo"
+      "minutes": "{minutes} min",
+      "minutesSeconds": "{minutes} min {seconds} s",
+      "seconds": "{seconds} s"
     },
     "timeline": {
       "title": "Línea de tiempo",
-      "person": "Persona",
-      "you": "Tú",
       "recordedDays": "Días grabados",
       "today": "Hoy",
       "yesterday": "Ayer",
-      "aMember": "un miembro",
-      "viewingMember": "Estás viendo la línea de tiempo de {member}",
-      "viewingMemberAudit": "Cada vista de los datos de Capture de otro miembro se registra en el registro de auditoría del proyecto.",
-      "auditNotice": "Quienes gestionan este proyecto pueden abrir tu línea de tiempo. Cada vista se registra en el registro de auditoría del proyecto.",
+      "notFound": "Este equipo no está en {name}.",
+      "backToDevices": "Volver a dispositivos",
+      "breadcrumb": "Ruta de navegación",
+      "previousDay": "Día grabado anterior",
+      "nextDay": "Día grabado siguiente",
       "empty": {
-        "noDevicesTitle": "Aún no hay grabaciones de ordenadores",
-        "noDevicesBody": "Activa Capture en Kortix desktop: Tu ordenador → My Capture.",
-        "noDevicesMember": "Esta persona no graba ningún ordenador.",
         "noDataTitle": "Las grabaciones de {device} aparecerán aquí"
       },
       "layers": "Capas",
       "layer": {
+        "screen": "Pantalla",
         "actions": "Acciones",
         "audio": "Audio"
       },
-      "more": "Más",
-      "menu": {
-        "ranges": "Rangos",
-        "people": "Personas",
-        "settings": "Ajustes"
-      },
-      "now": "Ahora",
+      "live": "En vivo",
+      "liveHint": "Ir al fotograma más reciente (L)",
+      "player": "Reproductor",
+      "screenHidden": "Capa de pantalla oculta. Las acciones y los pasos siguen visibles.",
+      "play": "Reproducir (Espacio)",
+      "pause": "Pausar (Espacio)",
       "zoomIn": "Acercar",
       "zoomOut": "Alejar",
+      "lane": {
+        "episodes": "Episodios",
+        "apps": "Apps",
+        "actions": "Acciones",
+        "audio": "Audio"
+      },
+      "keysHint": "{mod}← {mod}→ entre apps · ← → fotogramas · Espacio reproduce",
       "previousRun": "Aplicación anterior ({shortcut})",
       "nextRun": "Aplicación siguiente ({shortcut})",
-      "picker": {
-        "label": "Elegir un ordenador",
-        "devices": "Ordenadores",
-        "noDevice": "Ningún ordenador",
-        "none": "Los ordenadores que grabes aparecerán aquí.",
-        "noneMember": "Esta persona no graba ningún ordenador.",
-        "getDesktop": "Descargar la app de escritorio de Kortix"
-      },
-      "saveRange": "Guardar rango",
+      "previousEpisode": "Episodio anterior",
+      "nextEpisode": "Episodio siguiente",
+      "speed": "Velocidad",
       "trackLabel": "Momento en la línea de tiempo",
       "unknownApp": "App desconocida",
       "search": {
-        "open": "Buscar",
-        "label": "Buscar grabaciones",
-        "placeholder": "Busca lo que viste, hiciste u oíste",
-        "close": "Cerrar búsqueda",
-        "hint": "Escribe para buscar en el texto de pantalla, las acciones y el audio de este ordenador.",
+        "label": "Buscar en este dispositivo",
+        "placeholder": "Buscar en este dispositivo",
         "results": "Resultados de búsqueda",
         "none": "Nada en este ordenador coincide con la búsqueda.",
         "kind": {
@@ -20651,10 +20643,31 @@
           "audio": "Audio"
         }
       },
+      "moment": {
+        "eyebrow": "En el cursor",
+        "nothing": "No hay grabación en este momento",
+        "window": "Ventana",
+        "address": "Dirección",
+        "steps": "Acciones alrededor de este momento",
+        "noSteps": "No se grabaron acciones alrededor de este momento.",
+        "said": "Dicho alrededor de este momento"
+      },
+      "episode": {
+        "eyebrow": "Episodio bajo el cursor",
+        "untitled": "Episodio sin título",
+        "goal": "Objetivo",
+        "outcome": "Resultado",
+        "steps": "Pasos · {count}",
+        "noSteps": "Los pasos aparecen cuando se traza el episodio.",
+        "partOf": "Parte del workflow",
+        "variant": "Variante {key} · {name}",
+        "noWorkflow": "Aún no forma parte de un workflow."
+      },
       "frame": {
         "label": "Grabación de pantalla de {app}",
         "none": "No hay grabación en este momento.",
-        "encrypted": "El dispositivo cifró esta grabación. Kortix no puede mostrarla."
+        "encrypted": "El dispositivo cifró esta grabación. Kortix no puede mostrarla.",
+        "failed": "Esta grabación no se puede reproducir en este navegador."
       },
       "jump": {
         "label": "Ir a una fecha y hora",
@@ -20667,70 +20680,6 @@
         "audio": "audio",
         "gap": "Aquí no hay grabación. Pulsa {shortcut} para volver."
       }
-    },
-    "saveRange": {
-      "title": "Guardar rango",
-      "description": "Un rango guardado obtiene sus pasos, transcripción y resumen. El procesamiento empieza al guardar.",
-      "name": "Nombre",
-      "namePlaceholder": "Ejecución de la lista de verificación de lanzamiento",
-      "from": "Desde",
-      "to": "Hasta",
-      "endBeforeStart": "El final debe ser posterior al inicio.",
-      "cancel": "Cancelar",
-      "submit": "Guardar rango",
-      "saved": "Rango guardado",
-      "failed": "No se pudo guardar el rango."
-    },
-    "ranges": {
-      "title": "Rangos",
-      "description": "Tramos de una línea de tiempo con pasos, transcripción y resumen. Kortix detecta uno por cada sesión de actividad; tú guardas los tuyos.",
-      "sourceLabel": "Origen",
-      "source": {
-        "all": "Todos",
-        "saved": "Guardados",
-        "detected": "Detectados"
-      },
-      "periodLabel": "Periodo",
-      "period": {
-        "week": "7 días",
-        "month": "30 días"
-      },
-      "status": {
-        "open": "Grabando",
-        "closed": "En cola",
-        "processing": "Procesando",
-        "processed": "Procesado",
-        "failed": "Con error"
-      },
-      "span": "{from}–{to}",
-      "allDevices": "Todos los dispositivos",
-      "loadFailed": "No se pudieron cargar los rangos.",
-      "tryAgain": "Reintentar",
-      "empty": "Los rangos aparecerán aquí",
-      "emptyHint": "Kortix detecta un rango por cada sesión de actividad. Guarda los tuyos desde la línea de tiempo."
-    },
-    "range": {
-      "backToRanges": "Rangos",
-      "openInTimeline": "Abrir en la línea de tiempo",
-      "processAgain": "Procesar de nuevo",
-      "queuedToast": "Rango en cola",
-      "reprocessFailed": "No se pudo poner el rango en cola.",
-      "tab": {
-        "steps": "Pasos",
-        "transcript": "Transcripción",
-        "summary": "Resumen"
-      },
-      "processing": "Procesando. Los pasos, la transcripción y el resumen aparecen aquí cuando terminen las canalizaciones.",
-      "queued": "En cola. El procesamiento empieza en menos de un minuto.",
-      "failed": "No se pudo procesar este rango.",
-      "noSteps": "No hay pasos en este rango.",
-      "noTranscript": "No hay transcripción para este rango.",
-      "noSummary": "No hay resumen para este rango.",
-      "timeByApp": "Tiempo por app",
-      "noScreen": "No hay actividad en pantalla en este rango.",
-      "unknownApp": "App desconocida",
-      "notFound": "Este rango ya no existe.",
-      "notFoundHint": "Puede que el enlace sea incorrecto o que el rango pertenezca a otra persona."
     },
     "devices": {
       "status": {
@@ -20755,49 +20704,60 @@
       "syncFailed": "No se pudo sincronizar el dispositivo",
       "revoke": "Revocar ordenador",
       "revokeTitle": "¿Revocar este ordenador?",
-      "revokeDescription": "{name} deja de grabar en este proyecto al instante. Para volver a grabar, activa Grabar este ordenador en ese ordenador.",
+      "revokeDescription": "{name} deja de grabar en esta organización de inmediato. Para volver a grabar, inicia sesión desde Este equipo en ese equipo.",
       "revoked": "Ordenador revocado",
       "revokeFailed": "No se pudo revocar el ordenador",
-      "recordThisComputer": "Grabar este ordenador"
-    },
-    "people": {
-      "title": "Personas",
-      "description": "Por miembro: tiempo activo, apps usadas, rangos y dispositivos.",
-      "periodLabel": "Periodo",
-      "period": {
-        "today": "Hoy",
-        "week": "7 días",
-        "month": "30 días"
+      "recordThisComputer": "Grabar este ordenador",
+      "title": "Dispositivos",
+      "descriptionAll": "Todos los equipos que graban en {name}. Los admins y lectores ven a todos los miembros; los miembros ven los suyos.",
+      "descriptionMine": "Tus equipos. Solo tú y los admins de esta organización veis lo que graban.",
+      "viewLabel": "Vista",
+      "viewAll": "Todos los dispositivos",
+      "viewMine": "Mis dispositivos",
+      "thisComputer": "Este equipo",
+      "thisComputerBadge": "Este equipo",
+      "addDevice": "Añadir un dispositivo",
+      "filterLabel": "Filtrar por estado",
+      "filter": {
+        "all": "Todos",
+        "recording": "Grabando",
+        "paused": "En pausa",
+        "permission": "Necesita permiso",
+        "offline": "Sin conexión"
       },
-      "auditTitle": "Solo quienes gestionan este proyecto ven esta página",
-      "auditBody": "Abrir esta página o la línea de tiempo de un miembro escribe una entrada en el registro de auditoría del proyecto. Los miembros ven en su propia línea de tiempo que los gestores pueden verla.",
-      "column": {
-        "member": "Miembro",
-        "active": "Tiempo activo",
-        "apps": "Apps principales",
-        "ranges": "Rangos",
-        "devices": "Dispositivos",
-        "open": "Abrir"
-      },
-      "role": {
-        "manager": "Gestor",
-        "member": "Miembro",
-        "viewer": "Lector",
-        "none": "Ya no es miembro"
-      },
-      "you": "{email} (tú)",
-      "formerMember": "Antiguo miembro",
-      "noActivity": "Sin actividad",
-      "unknownApp": "App desconocida",
-      "openTimeline": "Abrir línea de tiempo",
-      "openTimelineOf": "Abrir la línea de tiempo de {member}",
-      "loadFailed": "No se pudo cargar el resumen de personas.",
+      "loadFailed": "No se pudieron cargar los dispositivos.",
       "tryAgain": "Reintentar",
-      "empty": "Los miembros aparecerán aquí"
+      "empty": {
+        "allTitle": "Ningún equipo graba aún en {name}",
+        "mineTitle": "Aún no grabas ningún equipo",
+        "body": "Instala Kortix desktop, inicia sesión y activa Kortix Capture en Este equipo."
+      },
+      "getDesktop": "Obtener la app de escritorio de Kortix",
+      "listLabel": "Lista de dispositivos",
+      "noMatch": "Ningún dispositivo tiene este estado.",
+      "showing": "Mostrando {shown} de {total}",
+      "layersNote": "La política de la organización define las capas. Tachado significa desactivado en ese dispositivo.",
+      "col": {
+        "device": "Dispositivo",
+        "person": "Persona",
+        "os": "SO",
+        "status": "Estado",
+        "lastFrame": "Último fotograma",
+        "layers": "Capas",
+        "actions": "Acciones"
+      },
+      "layer": {
+        "screen": "Pantalla",
+        "actions": "Acciones",
+        "audio": "Audio"
+      },
+      "layerOff": "{layer} desactivado",
+      "never": "Nunca",
+      "pausedUntil": "hasta {time}"
     },
     "settings": {
       "title": "Configuración",
-      "description": "La política de Capture que cada dispositivo de este proyecto lee del almacén de Capture.",
+      "description": "{name}: si Kortix Capture está activado, quién ve qué y qué graban los dispositivos.",
       "layersTitle": "Capas",
       "layer": {
         "screen": "Pantalla",
@@ -20811,14 +20771,14 @@
       "masking": "Ocultar datos personales",
       "maskingHint": "Los dispositivos ocultan los datos personales en lo que graban, antes de que salga del ordenador.",
       "pause": "Pausar la grabación",
-      "pauseHint": "Todos los dispositivos de este proyecto detienen todas las capas hasta que lo desactives.",
+      "pauseHint": "Todos los dispositivos de esta organización detienen todas las capas hasta que lo desactives.",
       "retentionTitle": "Retención",
       "localHours": "En el dispositivo (horas)",
       "localHoursHint": "Cuánto tiempo conserva un dispositivo el contenido tras subirlo. 0 lo conserva sin límite.",
       "remoteDays": "En Kortix (días)",
       "remoteDaysHint": "Cuánto tiempo conserva Kortix los elementos indexados. 0 los conserva sin límite.",
       "noticeTitle": "Aviso",
-      "noticePlaceholder": "La grabación está activada en este proyecto.",
+      "noticePlaceholder": "La grabación está activada en esta organización.",
       "noticeHint": "Los dispositivos muestran este texto en el menú y en la ventana de configuración de la app.",
       "lastChanged": "Último cambio {time}",
       "defaultPolicy": "Se aplica la política predeterminada.",
@@ -20827,7 +20787,34 @@
       "saved": "Política de Capture guardada",
       "saveFailed": "No se pudo guardar la política de Capture",
       "loadFailed": "No se pudo cargar la política de Capture.",
-      "tryAgain": "Reintentar"
+      "tryAgain": "Reintentar",
+      "switchTitle": "Kortix Capture",
+      "switchLabel": "Kortix Capture para {name}",
+      "switchHint": "Desactivado detiene todos los dispositivos de esta organización y cierra el área para los miembros.",
+      "switchOwnersOnly": "Los propietarios y admins de la cuenta lo activan o desactivan.",
+      "switchedOn": "Kortix Capture está activado",
+      "switchedOff": "Kortix Capture está desactivado",
+      "switchFailed": "No se pudo cambiar Kortix Capture",
+      "rolesTitle": "Miembros y roles",
+      "rolesHint": "Los admins ven a todos y cambian estos ajustes. Los lectores ven a todos. Los miembros ven sus propios equipos. Cada vista de otro miembro queda en el registro de auditoría.",
+      "rolesFailed": "No se pudieron cargar los miembros.",
+      "roleSaved": "Rol guardado",
+      "roleFailed": "No se pudo guardar el rol",
+      "youLabel": "{email} (tú)",
+      "accountRole": {
+        "owner": "Propietario de la cuenta",
+        "admin": "Admin de la cuenta",
+        "member": "Miembro de la cuenta"
+      },
+      "roleSet": "Definido para esta persona",
+      "roleDefault": "Del rol de la cuenta",
+      "roleFor": "Rol de Capture de {name}",
+      "role": {
+        "admin": "Admin",
+        "viewer": "Lector",
+        "member": "Miembro"
+      },
+      "roleReset": "Usar el rol de la cuenta"
     },
     "dialog": {
       "product": "Kortix Capture",
@@ -20918,6 +20905,271 @@
         "signedOut": "Sesión de Kortix Capture cerrada"
       },
       "pausedByOrgHint": "Quienes gestionan {org} pausaron la grabación. Se reanuda cuando quiten la pausa."
+    },
+    "area": {
+      "wordmark": "Kortix Capture",
+      "backToKortix": "Volver a Kortix",
+      "signedInAs": "Sesión iniciada como {email}",
+      "switchOrg": "Cambiar de organización",
+      "organizations": "Organizaciones",
+      "nav": {
+        "overview": "Resumen",
+        "workflows": "Workflows",
+        "ask": "Preguntar",
+        "devices": "Dispositivos",
+        "settings": "Ajustes",
+        "timeline": "Línea de tiempo",
+        "thisComputer": "Este equipo"
+      },
+      "range": {
+        "label": "Rango de fechas",
+        "today": "Hoy",
+        "lastDays": "Últimos {days} días"
+      },
+      "off": {
+        "title": "Kortix Capture está desactivado en {name}",
+        "bodyAdmin": "Actívalo para grabar los equipos de esta organización. Cada persona sigue activando la grabación en su propio equipo.",
+        "bodyMember": "Pide a un admin de esta organización que lo active.",
+        "turnOn": "Activar Kortix Capture",
+        "failed": "No se pudo activar Kortix Capture"
+      }
+    },
+    "overview": {
+      "title": "Resumen",
+      "description": "{people, plural, one {# persona} other {# personas}} y {devices, plural, one {# dispositivo} other {# dispositivos}} en {name}, {span}",
+      "loadFailed": "No se pudo cargar el resumen.",
+      "tryAgain": "Reintentar",
+      "totals": "Totales",
+      "hoursRecorded": "Horas grabadas",
+      "hoursValue": "{hours} h",
+      "noPrevious": "No se grabó nada antes de este rango",
+      "changeOnPrevious": "{change} respecto {days, plural, one {al día anterior} other {a los # días anteriores}}",
+      "peopleRecording": "Personas grabando",
+      "of": "de {total}",
+      "peopleNote": "{count, plural, =0 {Todos están grabando} one {# no graba ahora} other {# no graban ahora}}",
+      "devicesOnline": "Dispositivos en línea",
+      "needPermission": "{count, plural, one {# dispositivo necesita permiso} other {# dispositivos necesitan permiso}}",
+      "needPermissionHint": "No se graban acciones en ellos",
+      "allPermissions": "Todos los dispositivos tienen sus permisos",
+      "automatable": "Tiempo automatizable encontrado",
+      "perWeek": "{hours} h / semana",
+      "perWeekShort": "{hours} h/sem",
+      "acrossWorkflows": "{count, plural, one {En # workflow} other {En # workflows}}",
+      "topTitle": "Mayores oportunidades de automatización",
+      "topHint": "Ejecuciones por semana × duración típica × determinismo de pasos",
+      "allWorkflows": "Todos los workflows",
+      "hoursPerWeek": "Horas / semana",
+      "topFooter": "Los {count} primeros suman {hours} h / semana. {more, plural, =0 {No hay más en Workflows.} one {# más en Workflows.} other {# más en Workflows.}}",
+      "newTitle": "Nuevo esta semana",
+      "viewAll": "Ver los {count}",
+      "newEmpty": "No hay workflows nuevos esta semana.",
+      "newMeta": "Detectado {day} · {people, plural, one {# persona} other {# personas}} · {runs, plural, one {# ejecución} other {# ejecuciones}}",
+      "trendTitle": "Tiempo automatizable encontrado",
+      "trendHint": "Horas por semana, según la semana de detección. Crece a medida que se agrupan nuevos workflows.",
+      "trendNow": "{hours} h / semana ahora",
+      "trendLabel": "Las horas automatizables por semana pasaron de {from} a {to} en las últimas 12 semanas",
+      "trendEmpty": "Aún no se encontró tiempo automatizable.",
+      "thisWeek": "Esta sem.",
+      "quickLinks": "Accesos rápidos",
+      "linkAsk": "Pregunta sobre tus workflows",
+      "linkAskHint": "Las respuestas citan workflows, episodios y momentos",
+      "linkReview": "{count, plural, one {Revisar # workflow detectado} other {Revisar # workflows detectados}}",
+      "linkReviewHint": "Encontrados en grabaciones, aún sin revisar",
+      "linkDevices": "Dispositivos",
+      "linkDevicesHint": "Todos los equipos que graban y su estado",
+      "linkExport": "Exportar datos",
+      "linkExportHint": "Episodios, pasos y workflows como JSONL o Parquet"
+    },
+    "workflows": {
+      "title": "Workflows",
+      "description": "{count, plural, =0 {Aún no se encontraron procedimientos.} one {# procedimiento encontrado. Ordenado por horas a la semana que un agente podría asumir.} other {# procedimientos encontrados. Ordenados por horas a la semana que un agente podría asumir.}}",
+      "export": "Exportar datos",
+      "searchLabel": "Buscar workflows",
+      "searchPlaceholder": "Buscar workflows, pasos, apps",
+      "statusLabel": "Estado",
+      "all": "Todos",
+      "status": {
+        "detected": "Detectado",
+        "reviewed": "Revisado",
+        "exported": "Skill exportada"
+      },
+      "appLabel": "App",
+      "allApps": "Todas las apps",
+      "sortLabel": "Orden",
+      "sort": {
+        "hours": "Orden: horas / semana",
+        "runs": "Orden: ejecuciones / semana",
+        "newest": "Orden: más recientes"
+      },
+      "listLabel": "Lista de workflows",
+      "loadFailed": "No se pudieron cargar los workflows.",
+      "tryAgain": "Reintentar",
+      "noMatch": "Ningún workflow coincide. Borra la búsqueda o elige otro estado.",
+      "showing": "Mostrando {shown} de {total}",
+      "formula": "Automatización = ejecuciones / semana × duración típica × determinismo de pasos",
+      "col": {
+        "workflow": "Workflow",
+        "runs": "Ejec. / sem",
+        "typical": "Típico",
+        "people": "Personas",
+        "apps": "Apps",
+        "automation": "Automatización",
+        "status": "Estado"
+      },
+      "rowMeta": "{steps, plural, one {# paso} other {# pasos}} · {variants, plural, one {# variante} other {# variantes}} · visto por primera vez {first}",
+      "appsPeople": "{apps} · {count, plural, one {# persona} other {# personas}}",
+      "people": "{count, plural, one {# persona} other {# personas}}",
+      "perWeekShort": "{hours} h/sem",
+      "determinismShort": "{value} det.",
+      "learning": {
+        "title": "Kortix Capture está aprendiendo los workflows de tu equipo",
+        "body": "Un workflow aparece cuando la misma tarea surge en varias grabaciones.",
+        "bodyWithHours": "Un workflow aparece cuando la misma tarea surge en varias grabaciones. {hours} h grabadas hasta ahora."
+      }
+    },
+    "workflow": {
+      "breadcrumb": "Ruta de navegación",
+      "notFound": "Este workflow no está en esta organización.",
+      "back": "Volver a workflows",
+      "firstSeen": "Visto por primera vez {date}",
+      "reviewedBy": "revisado por {name} el {date}",
+      "runsTotal": "{count, plural, one {# ejecución} other {# ejecuciones}} en total",
+      "aMember": "Un miembro",
+      "you": "Tú",
+      "goal": "Objetivo: {goal}",
+      "outcome": "Resultado: {outcome}",
+      "review": "Revisar",
+      "exportSkill": "Exportar como skill",
+      "exportAgain": "Exportar de nuevo",
+      "skillLine": "Exportado como skill el {date}:",
+      "openProject": "Abrir proyecto",
+      "typical": "Duración típica",
+      "success": "Éxito",
+      "determinism": "Determinismo de pasos",
+      "procedure": "{count, plural, one {Procedimiento canónico · # paso} other {Procedimiento canónico · # pasos}}",
+      "variablesHint": "Los valores en monoespaciado son variables",
+      "noSteps": "Aún no hay pasos.",
+      "decision": "{question} Sí lleva a la variante {variant} ({share} de las ejecuciones).",
+      "variants": "Variantes",
+      "variantsHint": "Los segmentos oscuros difieren del camino canónico",
+      "variantSteps": "{count, plural, one {# paso} other {# pasos}}, {differ} distintos",
+      "who": "Quién lo ejecuta",
+      "personRuns": "{count, plural, one {# ejecución} other {# ejecuciones}} · {duration}",
+      "runs": "Ejecuciones",
+      "runsHint": "{count, plural, one {# ejecución} other {# ejecuciones}}. Cada una abre la línea de tiempo del dispositivo en su inicio.",
+      "noRuns": "No hay ejecuciones que mostrar.",
+      "openTimeline": "Abrir en la línea de tiempo",
+      "col": {
+        "person": "Persona",
+        "device": "Dispositivo",
+        "started": "Inicio",
+        "duration": "Duración",
+        "variant": "Variante",
+        "outcome": "Resultado",
+        "open": "Abrir"
+      },
+      "reviewTitle": "Revisar workflow",
+      "reviewDescription": "Ponle el nombre que le da tu equipo. Después el workflow figura como revisado.",
+      "reviewName": "Nombre",
+      "reviewGoal": "Objetivo",
+      "reviewOutcome": "Resultado",
+      "markReviewed": "Marcar como revisado",
+      "cancel": "Cancelar",
+      "reviewed": "Workflow revisado",
+      "reviewFailed": "No se pudo revisar el workflow"
+    },
+    "skill": {
+      "title": "Exportar como skill",
+      "description": "Redactado a partir de {runs, plural, one {# ejecución} other {# ejecuciones}} y {variants, plural, one {# variante} other {# variantes}}. Léelo antes de publicar.",
+      "drafting": "Redactando la skill…",
+      "draftFailed": "No se pudo redactar la skill.",
+      "tryAgain": "Reintentar",
+      "name": "Nombre de la skill",
+      "nameHint": "Letras minúsculas, dígitos y guiones.",
+      "project": "Publicar en el proyecto",
+      "projectPlaceholder": "Elige un proyecto",
+      "projectHint": "Kortix escribe skills/<name>/SKILL.md en su rama predeterminada.",
+      "noProjects": "Esta organización aún no tiene proyectos.",
+      "markdown": "SKILL.md",
+      "inputs": "Entradas",
+      "checks": "Antes de publicar",
+      "publish": "Publicar skill",
+      "published": "Skill publicada",
+      "publishedBody": "Publicada en {project} el {time}:",
+      "publishFailed": "No se pudo publicar la skill",
+      "cancel": "Cancelar",
+      "close": "Cerrar",
+      "openProject": "Abrir proyecto"
+    },
+    "export": {
+      "title": "Exportar datos",
+      "description": "Episodios, pasos y workflows de {range}.",
+      "format": "Formato",
+      "formatJsonl": "JSONL",
+      "formatParquet": "Parquet",
+      "include": "Incluir",
+      "part": {
+        "episodes": "Episodios",
+        "steps": "Pasos",
+        "workflows": "Workflows"
+      },
+      "start": "Iniciar exportación",
+      "running": "Exportando…",
+      "ready": "{rows, plural, one {Listo: # fila} other {Listo: # filas}}",
+      "empty": "No hay nada que exportar en este rango.",
+      "failed": "La exportación falló",
+      "download": "Descargar",
+      "close": "Cerrar"
+    },
+    "ask": {
+      "title": "Pregunta sobre el trabajo grabado",
+      "intro": "Las respuestas citan workflows, episodios y momentos. Elige abajo sobre el trabajo de quién preguntar.",
+      "example1": "¿Qué workflows llevan más tiempo y cuáles están listos para ser skills?",
+      "example2": "¿Quién hace más trabajo de facturas y cuánto tarda?",
+      "example3": "¿En qué trabajó el equipo ayer?",
+      "exampleMine1": "¿En qué trabajé ayer?",
+      "exampleMine2": "¿Qué tareas repito más a menudo?",
+      "questions": "Preguntas",
+      "newQuestion": "Nueva pregunta",
+      "thisConversation": "Esta conversación",
+      "conversation": "Conversación",
+      "label": "Pregunta",
+      "placeholder": "Pregunta sobre workflows, personas, apps o un día",
+      "send": "Enviar",
+      "answerFrom": "Respuesta de: {scope}",
+      "scope": {
+        "org": "{name}",
+        "me": "Mis equipos",
+        "person": "{name}",
+        "device": "{name}",
+        "people": "Personas",
+        "devices": "Equipos"
+      },
+      "unnamed": "Equipo sin nombre",
+      "aMember": "Un miembro",
+      "searching": "Buscando en las grabaciones…",
+      "writing": "{count, plural, one {Leyendo # fuente…} other {Leyendo # fuentes…}}",
+      "cited": "{count, plural, =0 {Sin fuentes citadas} one {# fuente citada} other {# fuentes citadas}}",
+      "failed": "No se pudo responder",
+      "citation": "Fuente {n}",
+      "sources": "Fuentes",
+      "sourcesCount": "{count, plural, one {# citada} other {# citadas}}",
+      "sourcesEmpty": "Las fuentes de una respuesta aparecen aquí.",
+      "kind": {
+        "workflow": "Workflow",
+        "episode": "Episodio",
+        "moment": "Momento"
+      },
+      "openWorkflow": "Abrir workflow",
+      "openTimeline": "Abrir en la línea de tiempo"
+    },
+    "thisComputer": {
+      "title": "Este equipo",
+      "breadcrumb": "Ruta de navegación",
+      "browserDescription": "Graba un equipo desde la app de escritorio de Kortix.",
+      "browserTitle": "Abre Kortix desktop para grabar este equipo",
+      "browserBody": "Kortix Capture graba desde la app de escritorio. Instálala, inicia sesión y abre Kortix Capture › Este equipo.",
+      "getDesktop": "Obtener la app de escritorio de Kortix"
     }
   }
 }

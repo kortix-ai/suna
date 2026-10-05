@@ -14,7 +14,13 @@ import { useCaptureTimeline, useCaptureWorkspace, useSetCaptureEnabled } from '@
 // each must resolve to a function through the web app's own module resolution.
 describe('Capture names from @kortix/sdk resolve in the web app', () => {
   test('the REST functions from the root entry', () => {
-    for (const fn of [getCaptureTimeline, getCaptureWorkspace, searchCapture, searchMyCapture, approveCaptureDeviceGrant]) {
+    for (const fn of [
+      getCaptureTimeline,
+      getCaptureWorkspace,
+      searchCapture,
+      searchMyCapture,
+      approveCaptureDeviceGrant,
+    ]) {
       expect(typeof fn).toBe('function');
     }
   });

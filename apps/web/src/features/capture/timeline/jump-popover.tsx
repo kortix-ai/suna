@@ -86,19 +86,18 @@ export function JumpPopover({
     >
       <PopoverTrigger asChild>
         <Button
-          variant="secondary"
+          variant="outline"
           size="sm"
-          className="gap-2 font-mono tabular-nums"
+          className="gap-2 tabular-nums"
           disabled={!bounds}
           aria-label={t('jump.label')}
         >
           <CalendarBlankIcon className="size-3.5 shrink-0" />
-          {new Date(T).toLocaleString(locale, {
+          {new Date(T).toLocaleDateString(locale, {
+            weekday: 'short',
             day: 'numeric',
             month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
+            ...(new Date(T).getFullYear() === year ? {} : { year: 'numeric' }),
           })}
           <CaretDownIcon className="size-3 shrink-0" />
         </Button>
