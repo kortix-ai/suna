@@ -18,9 +18,11 @@ import {
 } from '../lib/project-resources';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
+import { accountMemberRow } from '../../iam/membership-read';
+import { accountGroupNamesAmong, accountGroupRow } from '../../iam/group-read';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroups, accountMembers, connectors } from '@kortix/db';
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { connectors } from '@kortix/db';
+import { and, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -167,15 +169,7 @@ export function registerResourceGrantsRoutes(): void {
         : new Map<string, string>();
       const groupNameById = new Map<string, string>();
       if (groupIds.length) {
-        const groupRows = await db
-          .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-          .from(accountGroups)
-          .where(
-            and(
-              eq(accountGroups.accountId, loaded.row.accountId),
-              inArray(accountGroups.groupId, groupIds),
-            ),
-          );
+        const groupRows = await accountGroupNamesAmong(loaded.row.accountId, groupIds);
         for (const g of groupRows) groupNameById.set(g.groupId, g.name);
       }
 
@@ -277,28 +271,10 @@ export function registerResourceGrantsRoutes(): void {
       // The principal must belong to THIS account — never grant a foreign member/
       // group via a guessed id.
       if (principalType === 'member') {
-        const [m] = await db
-          .select({ userId: accountMembers.userId })
-          .from(accountMembers)
-          .where(
-            and(
-              eq(accountMembers.accountId, loaded.row.accountId),
-              eq(accountMembers.userId, principalId),
-            ),
-          )
-          .limit(1);
+        const [m] = await accountMemberRow(loaded.row.accountId, principalId);
         if (!m) return c.json({ error: 'member not found in this account' }, 404);
       } else {
-        const [g] = await db
-          .select({ groupId: accountGroups.groupId })
-          .from(accountGroups)
-          .where(
-            and(
-              eq(accountGroups.accountId, loaded.row.accountId),
-              eq(accountGroups.groupId, principalId),
-            ),
-          )
-          .limit(1);
+        const [g] = await accountGroupRow(loaded.row.accountId, principalId);
         if (!g) return c.json({ error: 'group not found in this account' }, 404);
       }
 

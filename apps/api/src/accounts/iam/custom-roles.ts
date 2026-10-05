@@ -7,10 +7,11 @@
 // are editable and only custom roles can be bound via iam_policies.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, isNull, ne } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, projects } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
+import { accountCustomRoles, roleActionRows, systemRoleDescriptionRows } from '../../iam/role-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { countRoleBindings } from '../../iam/read-models';
 import { actorOf } from '../../iam/actor';
@@ -78,15 +79,7 @@ const SYSTEM_ROLE_ORDER = [
  * "built-in roles cannot be edited".
  */
 async function listSystemRolesWithDescription() {
-  const rows = await db
-    .select({
-      key: iamRoles.key,
-      name: iamRoles.name,
-      description: iamRoles.description,
-      scopeType: iamRoles.scopeType,
-    })
-    .from(iamRoles)
-    .where(isNull(iamRoles.accountId));
+  const rows = await systemRoleDescriptionRows();
   const rank = (r: { scopeType: string; key: string }) => {
     const i = SYSTEM_ROLE_ORDER.indexOf(`${r.scopeType}:${r.key}`);
     return i === -1 ? SYSTEM_ROLE_ORDER.length : i;
@@ -256,7 +249,7 @@ export function registerIamCustomRolesRoutes(): void {
       // hardcoded `true` beside a code constant that could drift from the seed.
       const [system, custom] = await Promise.all([
         listSystemRolesWithDescription(),
-        db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId)),
+        accountCustomRoles(accountId),
       ]);
       return c.json({
         roles: [...system.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
@@ -428,7 +421,7 @@ export function registerIamCustomRolesRoutes(): void {
 
       const role = await loadCustomRole(accountId, roleId);
       if (!role) return c.json({ error: 'role not found' }, 404);
-      const rows = await db.select({ action: iamRoleActions.action }).from(iamRoleActions).where(eq(iamRoleActions.roleId, roleId));
+      const rows = await roleActionRows(roleId);
       return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action) });
     },
   );

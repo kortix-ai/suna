@@ -2211,7 +2211,7 @@
   },
   "src/projects/routes/group-grants.ts": {
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 4
@@ -2469,11 +2469,6 @@
   "src/projects/routes/session-open-bundle.ts": {
     "no-console": {
       "count": 1
-    }
-  },
-  "src/projects/routes/session-participants.ts": {
-    "no-restricted-imports": {
-      "count": 2
     }
   },
   "src/projects/routes/session-presence.ts": {

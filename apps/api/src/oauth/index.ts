@@ -17,6 +17,7 @@ import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { eq, and, desc, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { anyAccountMembershipOf } from '../iam/membership-read';
 import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
 import { hashSecretKeyAsync } from '../shared/token-hash';
 import { supabaseAuth } from '../middleware/auth';
@@ -28,7 +29,6 @@ import {
   oauthAccessTokens,
   oauthConsents,
   oauthRefreshTokens,
-  accountMembers,
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './discovery';
@@ -574,11 +574,7 @@ oauthApp.openapi(
     }
 
     const userId = (c as any).get('userId') as string;
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(eq(accountMembers.userId, userId))
-      .limit(1);
+    const [membership] = await anyAccountMembershipOf(userId);
     const accountId = membership?.accountId ?? userId;
 
     const code = generateAuthCode();

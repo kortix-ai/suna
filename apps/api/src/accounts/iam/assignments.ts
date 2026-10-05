@@ -16,9 +16,9 @@
 // exactly what five parallel endpoints made possible.
 import { propagateProjectSecretsToActiveSandboxes } from '../../projects/lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, isNull, or } from 'drizzle-orm';
-import { iamRoles } from '@kortix/db';
+import { and, or } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { bindableRoleRow } from '../../iam/role-read';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
@@ -267,13 +267,7 @@ export function registerIamAssignmentsRoutes(): void {
       // is on POST /iam/policies. Without this check the new endpoint would be a
       // way to buy nothing and still bind custom roles.
       if (typeof roleId === 'string') {
-        const [role] = await db
-          .select({ roleAccountId: iamRoles.accountId })
-          .from(iamRoles)
-          .where(
-            and(eq(iamRoles.roleId, roleId), or(isNull(iamRoles.accountId), eq(iamRoles.accountId, accountId))),
-          )
-          .limit(1);
+        const [role] = await bindableRoleRow(roleId, accountId);
         if (!role) return c.json({ error: 'role not found in this account' }, 404);
         if (role.roleAccountId !== null) {
           const denied = await requireEntitlement(c, accountId, 'rbac');

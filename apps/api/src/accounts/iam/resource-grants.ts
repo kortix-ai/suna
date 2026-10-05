@@ -17,10 +17,11 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { accountGroups, projects } from '@kortix/db';
 import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';
+import { accountGroupNamesAmong } from '../../iam/group-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
@@ -135,10 +136,7 @@ export function registerIamResourceGrantsRoutes(): void {
         : new Map<string, string | null>();
       const groupNameById = new Map<string, string>();
       if (groupIds.length) {
-        const groupRows = await db
-          .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-          .from(accountGroups)
-          .where(and(eq(accountGroups.accountId, accountId), inArray(accountGroups.groupId, groupIds)));
+        const groupRows = await accountGroupNamesAmong(accountId, groupIds);
         for (const g of groupRows) groupNameById.set(g.groupId, g.name);
       }
 

@@ -20,9 +20,9 @@ import {
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
+import { accountGroupNames, groupInAccountRow, groupMemberAccountRows } from '../../iam/group-read';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
@@ -98,10 +98,7 @@ export function registerGroupGrantsRoutes(): void {
     // kept: an attachment whose group was deleted is not listed.
     const [assignments, groupRows] = await Promise.all([
       groupProjectGrants({ accountId: loaded.row.accountId, projectId }),
-      db
-        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-        .from(accountGroups)
-        .where(eq(accountGroups.accountId, loaded.row.accountId)),
+      accountGroupNames(loaded.row.accountId),
     ]);
     const nameByGroup = new Map(groupRows.map((g) => [g.groupId, g.name] as const));
     const rows = assignments
@@ -133,21 +130,7 @@ export function registerGroupGrantsRoutes(): void {
     const statsByGroup = new Map<string, GroupStats>();
     if (groupIds.length > 0) {
       const [memberRows, accountRoles] = await Promise.all([
-        db
-          .select({
-            groupId: accountGroupMembers.groupId,
-            isSuperAdmin: accountMembers.isSuperAdmin,
-            userId: accountMembers.userId,
-          })
-          .from(accountGroupMembers)
-          .innerJoin(
-            accountMembers,
-            and(
-              eq(accountMembers.userId, accountGroupMembers.userId),
-              eq(accountMembers.accountId, loaded.row.accountId),
-            ),
-          )
-          .where(inArray(accountGroupMembers.groupId, groupIds)),
+        groupMemberAccountRows(loaded.row.accountId, groupIds),
         accountRoleMap(loaded.row.accountId),
       ]);
       for (const m of memberRows) {
@@ -244,13 +227,7 @@ export function registerGroupGrantsRoutes(): void {
 
     // Confirm the group exists and belongs to this account — prevents
     // attaching a foreign-account group via a guessed UUID.
-    const [group] = await db
-      .select({ groupId: accountGroups.groupId })
-      .from(accountGroups)
-      .where(
-        and(eq(accountGroups.groupId, groupId), eq(accountGroups.accountId, loaded.row.accountId)),
-      )
-      .limit(1);
+    const [group] = await groupInAccountRow(groupId, loaded.row.accountId);
     if (!group) return c.json({ error: 'group not found in this account' }, 404);
 
     // THE write. The route already asserted `project.members.manage` above, so
