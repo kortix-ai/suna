@@ -1,9 +1,18 @@
 'use client';
 
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import Cal, { getCalApi } from '@calcom/embed-react';
-import { CheckIcon as Check, EnvelopeIcon as Mail } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
+import {
+  ArrowRightIcon as ArrowRight,
+  CalendarBlankIcon as CalendarBlank,
+  CheckIcon as Check,
+  EnvelopeIcon as Mail,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { KortixLogo } from '@/components/ui/kortix-logo';
+import { Close } from '@/features/icon/icons/close';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 
 import { isWorkEmail } from '@/lib/personal-email';
 
@@ -15,6 +24,7 @@ import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
+  ModalClose,
   ModalContent,
   ModalDescription,
   ModalFooter,
@@ -31,6 +41,13 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast } from '@/components/ui/toast';
 import Link from 'next/link';
+
+import {
+  formatBookedSlot,
+  subscribeBookingSuccess,
+  type CalBooking,
+  type CalEventApi,
+} from './demo-booking';
 
 const CAL_FIELD_COMPANY_SIZE = 'Company_size';
 const CAL_FIELD_COMPANY_NAME = 'Company_name';
@@ -56,6 +73,20 @@ const sizeQualifies = (s: CompanySize, email: string) =>
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Ticket perforation: each half of the confirmation is cut by an 11px
+// half-circle on both edges where the halves meet, so the overlay shows
+// through the notches.
+const notch = (y: '0' | '100%') =>
+  [
+    `radial-gradient(circle 11px at 0 ${y}, transparent 98%, #000) left / 51% 100% no-repeat`,
+    `radial-gradient(circle 11px at 100% ${y}, transparent 98%, #000) right / 51% 100% no-repeat`,
+  ].join(', ');
+const TICKET_TOP = { mask: notch('100%') };
+const TICKET_BOTTOM = { mask: notch('0') };
+
+// The Kortix logo tile is light in both themes.
+const LOGO_TILE = 'bg-white text-black';
+
 export interface DemoQualifierModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -69,20 +100,45 @@ export interface DemoQualifierModalProps {
   onBookingSuccessful?: () => void;
 }
 
+/** The demo's identity, shown above every step so the modal reads as one flow. */
+function MeetingHeader({ meta }: { meta: string }) {
+  const t = useTranslations('demoBooking');
+  return (
+    <div className="bg-sidebar border-border flex items-center gap-3 border-b px-5 py-4">
+      <div className={`flex size-8 shrink-0 items-center justify-center rounded-sm ${LOGO_TILE}`}>
+        <KortixLogo variant="icon" size={16} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-foreground text-sm font-medium">{t('meetingTitle')}</span>
+        <span className="text-muted-foreground truncate text-xs">{meta}</span>
+      </div>
+      <ModalClose asChild>
+        <Button variant="ghost" size="icon-base" className="shrink-0">
+          <Close className="size-4 stroke-1" />
+          <span className="sr-only">{t('close')}</span>
+        </Button>
+      </ModalClose>
+    </div>
+  );
+}
+
 export function DemoQualifierModal({
   open,
   onOpenChange,
   calLink,
   calNamespace,
   source = 'contact',
-  title = 'Book your demo',
-  description = "A couple of quick details so we can tailor the session — or point you to self-serve if that's faster.",
+  title,
+  description,
   defaultName = '',
   defaultEmail = '',
   onBookingSuccessful,
 }: DemoQualifierModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [step, setStep] = useState<'form' | 'cal' | 'received'>('form');
+  const t = useTranslations('demoBooking');
+  const locale = useLocale();
+  const [step, setStep] = useState<'form' | 'cal' | 'booked' | 'received'>('form');
+  const [booking, setBooking] = useState<CalBooking | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState(defaultName);
   const [email, setEmail] = useState(defaultEmail);
@@ -92,6 +148,7 @@ export function DemoQualifierModal({
   const [error, setError] = useState<string | null>(null);
 
   const companySizes = useMemo(() => companySizesForEmail(email), [email]);
+  const slot = useMemo(() => booking && formatBookedSlot(booking, locale), [booking, locale]);
 
   useEffect(() => {
     if (size === '1-10' && !isWorkEmail(email)) setSize(null);
@@ -100,6 +157,7 @@ export function DemoQualifierModal({
   useEffect(() => {
     if (open) {
       setStep('form');
+      setBooking(null);
       setError(null);
     }
   }, [open]);
@@ -117,18 +175,24 @@ export function DemoQualifierModal({
     // every enterprise CTA can open it) — the embed script loads lazily on
     // open, not on every page paint.
     if (!open) return;
-    (async function () {
-      const cal = await getCalApi({ namespace: calNamespace });
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void getCalApi({ namespace: calNamespace }).then((cal) => {
+      if (cancelled) return;
       cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
-      cal('on', {
-        action: 'bookingSuccessful',
-        callback: () => {
-          onBookingSuccessful?.();
-          window.setTimeout(() => onOpenChange(false), 1500);
-        },
+      // A booking swaps the embed for our confirmation. The modal stays open
+      // until the person closes it.
+      unsubscribe = subscribeBookingSuccess(cal as unknown as CalEventApi, (b) => {
+        setBooking(b);
+        setStep('booked');
+        onBookingSuccessful?.();
       });
-    })();
-  }, [open, calNamespace, onOpenChange, onBookingSuccessful]);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [open, calNamespace, onBookingSuccessful]);
 
   const submit = useCallback(async () => {
     if (!EMAIL_RE.test(email.trim())) {
@@ -190,11 +254,12 @@ export function DemoQualifierModal({
       {step === 'cal' ? (
         <ModalContent
           showCloseButton={false}
-          variant="transparent"
-          className="max-w-[min(980px,95vw)] gap-0 overflow-hidden rounded-2xl border-none bg-transparent p-0 shadow-none lg:h-auto"
+          variant="base"
+          className="gap-0 space-y-0 overflow-hidden p-0 lg:max-w-lg"
         >
-          <ModalTitle className="sr-only">{title}</ModalTitle>
-          <div className="h-[82vh] max-h-[780px] overflow-hidden rounded-2xl">
+          <ModalTitle className="sr-only">{t('meetingTitle')}</ModalTitle>
+          <MeetingHeader meta={t('stepTime')} />
+          <div className="h-[min(780px,82vh)] overflow-y-auto">
             <Cal
               namespace={calNamespace}
               calLink={calLink}
@@ -203,10 +268,101 @@ export function DemoQualifierModal({
             />
           </div>
         </ModalContent>
+      ) : step === 'booked' ? (
+        <ModalContent
+          showCloseButton={false}
+          variant="transparent"
+          // A confirmation must not vanish on a stray click or a focus shift.
+          // Only Done, the close button and Escape dismiss it.
+          closeOnOutsideClick={false}
+          className="gap-0 space-y-0 border-0 p-0 shadow-none drop-shadow-xl lg:max-w-sm"
+        >
+          <div className="bg-background rounded-t-xl pb-7.5" style={TICKET_TOP}>
+            <div className="flex items-center justify-between pt-4 pr-3 pl-5">
+              <div className="flex items-center gap-1.5">
+                <SolidCheckIcon className="text-kortix-green size-4" />
+                <ModalTitle className="text-kortix-green text-xs font-medium">
+                  {t('bookedLabel')}
+                </ModalTitle>
+              </div>
+              <ModalClose asChild>
+                <Button variant="ghost" size="icon-base">
+                  <Close className="size-4 stroke-1" />
+                  <span className="sr-only">{t('close')}</span>
+                </Button>
+              </ModalClose>
+            </div>
+
+            <div className="flex items-center gap-4 px-5 pt-3">
+              {slot && (
+                <div className="bg-muted flex h-19.5 w-17.5 shrink-0 flex-col items-center justify-center rounded-lg">
+                  <span className="text-kortix-red text-[11px] leading-3.5 font-semibold tracking-[0.1em] uppercase">
+                    {slot.month}
+                  </span>
+                  <span className="text-foreground text-[28px] leading-[30px] font-semibold tracking-[-0.03em] tabular-nums">
+                    {slot.day}
+                  </span>
+                  <span className="text-muted-foreground text-[11px] leading-3.5 font-medium">
+                    {slot.weekday}
+                  </span>
+                </div>
+              )}
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-foreground truncate text-xl leading-6 font-semibold tracking-[-0.015em]">
+                  {t('meetingTitle')}
+                </span>
+                {slot && (
+                  <span className="text-foreground pt-0.5 text-sm tabular-nums">
+                    {slot.time} {slot.zone}
+                  </span>
+                )}
+                {slot && (
+                  <span className="text-muted-foreground text-xs">
+                    {t('bookedMeta', { minutes: slot.minutes })}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-background relative -mt-px rounded-b-xl" style={TICKET_BOTTOM}>
+            <div className="border-foreground/15 absolute inset-x-4.5 top-0 border-t-2 border-dashed" />
+            <div className="flex flex-col gap-4 px-5 pt-6 pb-5">
+              <ModalDescription asChild>
+                <div className="flex flex-col gap-0.5 text-xs leading-5">
+                  <span className="text-foreground font-medium">
+                    {t('inviteSent', { email: email.trim() })}
+                  </span>
+                  <span className="text-muted-foreground">{t('reschedule')}</span>
+                </div>
+              </ModalDescription>
+              <div className="flex flex-col items-center gap-2.5">
+                <ModalClose asChild>
+                  <Button size="lg" className="w-full">
+                    {t('done')}
+                  </Button>
+                </ModalClose>
+                {booking?.uid && (
+                  <Button asChild variant="text" size="xs" className="text-xs">
+                    <a
+                      href={`https://cal.com/booking/${encodeURIComponent(booking.uid)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <CalendarBlank />
+                      {t('addToCalendar')}
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </ModalContent>
       ) : step === 'form' ? (
         <ModalContent
+          showCloseButton={false}
           variant="base"
-          className="gap-0 space-y-0 overflow-hidden p-0 sm:max-w-[420px]"
+          className="gap-0 space-y-0 overflow-hidden p-0 lg:max-w-lg"
         >
           <form
             className="contents"
@@ -215,27 +371,49 @@ export function DemoQualifierModal({
               void submit();
             }}
           >
-            <ModalHeader className="pb-4">
-              <ModalTitle>{title}</ModalTitle>
-              <ModalDescription>{description}</ModalDescription>
+            <MeetingHeader meta={t('stepDetails')} />
+
+            <ModalHeader className="px-6 pt-5 pb-0">
+              <ModalTitle className="text-xl font-semibold tracking-tight">
+                {title ?? t('formTitle')}
+              </ModalTitle>
+              <ModalDescription>{description ?? t('formDescription')}</ModalDescription>
             </ModalHeader>
 
-            <ModalBody className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="dq-name">
-                  {tI18nHardcoded.raw('i18nComplete.textdcd1d5223f73')}{' '}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="dq-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYourName7a7a05ae',
-                  )}
-                  autoComplete="name"
-                  required
-                />
+            <ModalBody className="space-y-4 px-6 pt-5 pb-5">
+              <div className="flex gap-3">
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor="dq-name">
+                    {tI18nHardcoded.raw('i18nComplete.textdcd1d5223f73')}
+                  </Label>
+                  <Input
+                    id="dq-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYourName7a7a05ae',
+                    )}
+                    autoComplete="name"
+                    required
+                  />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor="dq-company">
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxTextCompanyName04d8fd10',
+                    )}
+                  </Label>
+                  <Input
+                    id="dq-company"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    placeholder={tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderAcmeInc4c41f6f1',
+                    )}
+                    autoComplete="organization"
+                    required
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -243,7 +421,6 @@ export function DemoQualifierModal({
                   {tI18nHardcoded.raw(
                     'autoFeaturesContactDemoQualifierModalJsxTextWorkEmailc15a71d1',
                   )}
-                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="dq-email"
@@ -259,35 +436,16 @@ export function DemoQualifierModal({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="dq-company">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxTextCompanyName04d8fd10',
-                  )}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="dq-company"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  placeholder={tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderAcmeInc4c41f6f1',
-                  )}
-                  autoComplete="organization"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
                 <Label htmlFor="dq-size">
                   {tI18nHardcoded.raw(
                     'autoFeaturesContactDemoQualifierModalJsxTextCompanySizee13e1fef',
                   )}
-                  <span className="text-destructive">*</span>
                 </Label>
                 <Select value={size ?? undefined} onValueChange={(v) => setSize(v as CompanySize)}>
                   <SelectTrigger
                     id="dq-size"
-                    className="border-border bg-input text-foreground w-full"
+                    variant="outline"
+                    className="h-9 w-full px-3 font-medium"
                   >
                     <SelectValue
                       placeholder={tI18nHardcoded.raw(
@@ -329,27 +487,27 @@ export function DemoQualifierModal({
               {error && <p className="text-destructive text-sm">{error}</p>}
             </ModalBody>
 
-            <ModalFooter className="justify-between px-4 pb-4 sm:justify-between">
-              <span className="text-muted-foreground text-xs">
-                {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextNoSpamAd06b8b00')}
-              </span>
-              <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
+            <div className="px-6 pb-6">
+              <Button type="submit" disabled={submitting} className="group/cta w-full">
                 {submitting ? (
                   <>
-                    <Loading className="animate-spin" />
+                    <Loading />
                     {tI18nHardcoded.raw(
                       'autoFeaturesContactDemoQualifierModalJsxTextSendingb5b0a82a',
                     )}
                   </>
                 ) : (
-                  <>{tI18nHardcoded.raw('i18nComplete.text31fbef162594')}</>
+                  <>
+                    {t('seeTimes')}
+                    <ArrowRight className="transition-transform duration-(--duration-fast) ease-out group-hover/cta:translate-x-0.5 motion-reduce:transition-none" />
+                  </>
                 )}
               </Button>
-            </ModalFooter>
+            </div>
           </form>
         </ModalContent>
       ) : (
-        <ModalContent variant="base" className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
+        <ModalContent variant="base" className="gap-0 overflow-hidden p-0 lg:max-w-lg">
           <ModalHeader className="border-border/60 border-b px-6 pt-6 pb-4">
             <ModalTitle>
               {tI18nHardcoded.raw(

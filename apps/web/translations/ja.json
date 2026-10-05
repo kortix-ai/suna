@@ -20514,5 +20514,20 @@
     "people": "このセッションの参加者: {names}",
     "peopleMore": "このセッションの参加者: {names} ほか{count}人",
     "more": "ほか{count}人がこのセッションを開けます"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix デモ",
+    "stepDetails": "お客様情報",
+    "stepTime": "日時を選択",
+    "formTitle": "日時を選ぶ前に",
+    "formDescription": "チームに合わせたデモの準備に使います。",
+    "seeTimes": "空いている日時を見る",
+    "close": "閉じる",
+    "bookedLabel": "予約が確定しました",
+    "bookedMeta": "{minutes} 分 · リンクは招待状に記載",
+    "inviteSent": "{email} に招待状を送信しました",
+    "reschedule": "日時を変更する場合は招待状のリンクを使ってください。",
+    "addToCalendar": "カレンダーに追加",
+    "done": "完了"
   }
 }

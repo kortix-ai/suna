@@ -20514,5 +20514,20 @@
     "people": "Personen in dieser Sitzung: {names}",
     "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere",
     "more": "{count} weitere können diese Sitzung öffnen"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix-Demo",
+    "stepDetails": "Deine Angaben",
+    "stepTime": "Termin wählen",
+    "formTitle": "Bevor wir einen Termin wählen",
+    "formDescription": "Damit bereiten wir eine Vorführung für dein Team vor.",
+    "seeTimes": "Freie Termine ansehen",
+    "close": "Schließen",
+    "bookedLabel": "Termin bestätigt",
+    "bookedMeta": "{minutes} Min. · Link in deiner Einladung",
+    "inviteSent": "Einladung an {email} gesendet",
+    "reschedule": "Anderer Termin? Nutze den Link in der Einladung.",
+    "addToCalendar": "Zum Kalender hinzufügen",
+    "done": "Fertig"
   }
 }
