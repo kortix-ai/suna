@@ -1591,8 +1591,7 @@
       "failed": "ラベルを保存できませんでした",
       "tooLong": "ラベルは 64 文字以内です。",
       "tooMany": "1 つのセッションのラベルは 20 個までです。"
-    },
-    "capture": "Capture"
+    }
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -19331,9 +19330,7 @@
       "text4d2eb8231235": "プロジェクトの Capture データを表示",
       "textafa16172b21b": "エージェントが代理する人物の Capture タイムラインを読み取った",
       "textec9dc2164abe": "Capture デバイスを同期",
-      "textba3a78850415": "Capture タイムラインの日付を表示しました",
-      "text1900b478a586": "Capture",
-      "text536272f04b07": "capture タイムライン 画面 録画 範囲 デバイス kortix capture"
+      "textba3a78850415": "Capture タイムラインの日付を表示しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20648,55 +20645,59 @@
     },
     "shell": {
       "title": "Capture",
-      "tabs": {
-        "timeline": "タイムライン",
-        "ask": "質問",
-        "ranges": "区間",
-        "devices": "コンピューター",
-        "people": "メンバー",
-        "settings": "設定"
-      }
+      "timeline": "タイムライン"
     },
     "timeline": {
+      "title": "タイムライン",
       "person": "メンバー",
       "you": "あなた",
-      "device": "デバイス",
-      "allDevices": "すべてのデバイス",
-      "unnamedDevice": "名前のないデバイス",
-      "dayPicker": "日付を選択",
       "recordedDays": "記録のある日",
-      "noDay": "記録のある日はありません",
       "today": "今日",
       "yesterday": "昨日",
       "aMember": "メンバー",
       "viewingMember": "{member} のタイムラインを表示しています",
       "viewingMemberAudit": "他のメンバーの Capture データを表示するたびに、プロジェクトの監査ログに記録されます。",
       "auditNotice": "このプロジェクトの管理者はあなたのタイムラインを開けます。表示するたびに、プロジェクトの監査ログに記録されます。",
-      "loadFailed": "タイムラインを読み込めませんでした。",
-      "tryAgain": "再試行",
-      "empty": "記録のある日がここに表示されます",
-      "emptyHint": "Kortix Capture アプリでコンピューターを接続すると、タイムラインが始まります。",
-      "emptyMember": "このメンバーには記録のある日がまだありません",
-      "connectDevice": "デバイスを接続",
+      "empty": {
+        "noDevicesTitle": "コンピューターの記録はまだありません",
+        "noDevicesBody": "Kortix desktop で Capture をオンにします: あなたのコンピューター → My Capture。",
+        "noDevicesMember": "このメンバーは記録しているコンピューターがありません。",
+        "noDataTitle": "{device} の記録がここに表示されます"
+      },
       "layers": "レイヤー",
       "layer": {
-        "screen": "画面",
         "actions": "操作",
-        "audio": "音声",
-        "ranges": "区間"
+        "audio": "音声"
       },
-      "previousFrame": "前のフレーム",
-      "nextFrame": "次のフレーム",
+      "more": "その他",
+      "menu": {
+        "ranges": "区間",
+        "people": "メンバー",
+        "settings": "設定"
+      },
+      "now": "現在",
+      "zoomIn": "拡大",
+      "zoomOut": "縮小",
+      "previousRun": "前のアプリ ({shortcut})",
+      "nextRun": "次のアプリ ({shortcut})",
+      "picker": {
+        "label": "コンピューターを選択",
+        "devices": "コンピューター",
+        "noDevice": "コンピューターなし",
+        "none": "記録したコンピューターがここに表示されます。",
+        "noneMember": "このメンバーは記録しているコンピューターがありません。",
+        "getDesktop": "Kortix デスクトップアプリを入手"
+      },
       "saveRange": "区間を保存",
-      "trackLabel": "タイムライン上の瞬間",
-      "openRange": "区間 {range} を開く",
-      "rangeSpan": "{from}–{to}",
       "unknownApp": "不明なアプリ",
       "search": {
-        "label": "タイムラインを検索",
+        "open": "検索",
+        "label": "記録を検索",
         "placeholder": "見たこと、したこと、聞いたことを検索",
+        "close": "検索を閉じる",
+        "hint": "入力して、このコンピューターの画面上のテキスト、操作、音声を検索します。",
         "results": "検索結果",
-        "none": "このタイムラインに検索に一致するものはありません。",
+        "none": "このコンピューターに検索に一致するものはありません。",
         "kind": {
           "screen": "画面",
           "actions": "操作",
@@ -20705,19 +20706,19 @@
       },
       "frame": {
         "label": "{app} の画面収録",
-        "none": "この瞬間の近くに画面フレームはありません。",
-        "encrypted": "デバイスがこの録画を暗号化しました。Kortix は表示できません。",
-        "noVideo": "この瞬間の動画は Capture ストアにありません。"
+        "none": "この瞬間の記録はありません。",
+        "encrypted": "デバイスがこの録画を暗号化しました。Kortix は表示できません。"
       },
-      "details": {
-        "label": "この瞬間の詳細",
-        "noScreen": "画面の操作なし",
-        "onScreen": "画面上",
-        "actions": "この瞬間の前後の操作",
-        "noActions": "2 分以内の操作はありません。",
-        "audio": "この瞬間の前後の音声",
-        "noAudio": "2 分以内の音声はありません。",
-        "partOf": "所属"
+      "jump": {
+        "label": "日時を指定して移動",
+        "title": "移動先",
+        "go": "移動",
+        "none": "記録はまだありません。"
+      },
+      "track": {
+        "noCapture": "記録なし",
+        "audio": "音声",
+        "gap": "ここには記録がありません。{shortcut} を押すと戻ります。"
       }
     },
     "saveRange": {
@@ -20785,20 +20786,6 @@
       "notFoundHint": "リンクが間違っているか、区間が別のメンバーのものです。"
     },
     "devices": {
-      "title": "コンピューター",
-      "description": "このプロジェクトに記録しているすべてのコンピューターとそのライブ状態。状態が 120 秒届かないとオフラインになります。",
-      "scopeLabel": "誰のコンピューター",
-      "scopeMine": "自分のコンピューター",
-      "scopeProject": "プロジェクト全体",
-      "column": {
-        "device": "コンピューター",
-        "owner": "所有者",
-        "status": "状態",
-        "layers": "レイヤー",
-        "sync": "同期",
-        "lastFrame": "最後のフレーム",
-        "actions": "操作"
-      },
       "status": {
         "recording": "記録中",
         "paused": "一時停止中",
@@ -20807,28 +20794,11 @@
         "offline": "オフライン",
         "unknown": "不明"
       },
-      "detail": {
-        "permission": "不足: {permissions}",
-        "pausedUntil": "{time} まで",
-        "lastSeen": "最終状態 {time}"
-      },
       "permission": {
         "screen_recording": "画面収録",
         "accessibility": "アクセシビリティ",
         "microphone": "マイク"
       },
-      "layer": {
-        "screen": "画面",
-        "actions": "操作",
-        "audio": "音声"
-      },
-      "sync": {
-        "upToDate": "最新",
-        "pending": "{count, plural, other {# 件をキューに追加済み}}",
-        "failed": "アップロード失敗",
-        "unknown": "不明"
-      },
-      "never": "まだありません",
       "unnamed": "名前のないコンピューター",
       "you": "あなた",
       "member": "メンバー",
@@ -20841,13 +20811,7 @@
       "revokeDescription": "{name} はすぐにこのプロジェクトへの記録を停止します。再び記録するには、そのコンピューターで「このコンピューターを記録」をオンにしてください。",
       "revoked": "コンピューターを取り消しました",
       "revokeFailed": "コンピューターを取り消せませんでした",
-      "loadFailed": "コンピューターを読み込めませんでした。",
-      "tryAgain": "再試行",
-      "empty": "記録するコンピューターがここに表示されます",
-      "footnote": "コンピューターごとに 1 行。Kortix のあなたのコンピューターと同じ名前で表示されます。",
-      "openKortixOnComputer": "デスクトップ版 Kortix をダウンロード",
-      "recordThisComputer": "このコンピューターを記録",
-      "openKortixHint": "Capture は Kortix デスクトップアプリから記録します。コンピューターにインストールし、「このコンピューターを記録」をオンにしてください。"
+      "recordThisComputer": "このコンピューターを記録"
     },
     "people": {
       "title": "メンバー",
@@ -20917,21 +20881,6 @@
       "saveFailed": "Capture ポリシーを保存できませんでした",
       "loadFailed": "Capture ポリシーを読み込めませんでした。",
       "tryAgain": "再試行"
-    },
-    "ask": {
-      "title": "質問",
-      "description": "見たこと、したこと、聞いたことについて質問できます。エージェントが新しい非公開セッションで回答し、使ったすべての瞬間へのリンクを付けます。",
-      "label": "質問",
-      "placeholder": "昨日の午後は何に取り組んだ？",
-      "submit": "質問",
-      "scope": "エージェントは、あなたのために実行するセッションを通して、あなたのタイムラインだけを読み取ります。",
-      "suggestion": {
-        "yesterday": "昨日は何に取り組んだ？",
-        "lastOpened": "リリースチェックリストを最後に開いたのはいつ？",
-        "byApp": "今日をアプリ別に要約して。",
-        "said": "今日のスタンドアップで何が話された？"
-      },
-      "instructions": "私の Kortix Capture タイムラインから回答してください。`kortix capture search` で検索し、`kortix capture timeline` で 1 日分を読み、`kortix capture frame` で画面を開いてください。使ったすべての瞬間を Markdown リンクで引用してください: [14:32]({timelineUrl}?at=ISO-8601-TIME)。区間は [そのタイトル]({timelineUrl}/ranges/RANGE_ID) の形式で引用してください。私のタイムゾーンは {tz} です。質問と同じ言語で回答してください。"
     },
     "dialog": {
       "title": "このコンピューターを記録",

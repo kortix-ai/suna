@@ -17,7 +17,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { ManagersOnly } from '../capture-shell';
+import { CaptureSubpageHeader, ManagersOnly } from '../capture-shell';
 import { relativeTime } from '../capture-time';
 
 function SwitchRow({
@@ -226,6 +226,7 @@ export function CaptureSettingsView({ projectId }: { projectId: string }) {
   const t = useTranslations('capture.settings');
   return (
     <ManagersOnly projectId={projectId}>
+      <CaptureSubpageHeader projectId={projectId} title={t('title')} />
       <CapabilityPageShell title={t('title')} description={t('description')}>
         <PolicySection projectId={projectId} />
       </CapabilityPageShell>

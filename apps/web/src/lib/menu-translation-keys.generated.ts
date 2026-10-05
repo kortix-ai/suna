@@ -131,6 +131,4 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textaffaf0c2671a',
   'workspace access grants who can open repositories per workspace membership': 'text592dbd5acab8',
   'workspace agents skills commands tools build create': 'texta6dc82e13869',
-  Capture: 'text1900b478a586',
-  'capture timeline screen recording ranges devices kortix capture': 'text536272f04b07',
 };

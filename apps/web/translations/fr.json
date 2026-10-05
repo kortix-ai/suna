@@ -1591,8 +1591,7 @@
       "failed": "Impossible d’enregistrer les libellés",
       "tooLong": "Un libellé compte au plus 64 caractères.",
       "tooMany": "Une session a au plus 20 libellés."
-    },
-    "capture": "Capture"
+    }
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -19331,9 +19330,7 @@
       "text4d2eb8231235": "Données Capture d'un projet consultées",
       "textafa16172b21b": "Un agent a lu la chronologie Capture de la personne pour laquelle il agit",
       "textec9dc2164abe": "Appareil Capture synchronisé",
-      "textba3a78850415": "A consulté les jours d’une chronologie Capture",
-      "text1900b478a586": "Capture",
-      "text536272f04b07": "capture chronologie écran enregistrement plages appareils kortix capture"
+      "textba3a78850415": "A consulté les jours d’une chronologie Capture"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20648,55 +20645,59 @@
     },
     "shell": {
       "title": "Capture",
-      "tabs": {
-        "timeline": "Chronologie",
-        "ask": "Demander",
-        "ranges": "Plages",
-        "devices": "Ordinateurs",
-        "people": "Personnes",
-        "settings": "Paramètres"
-      }
+      "timeline": "Chronologie"
     },
     "timeline": {
+      "title": "Chronologie",
       "person": "Personne",
       "you": "Vous",
-      "device": "Appareil",
-      "allDevices": "Tous les appareils",
-      "unnamedDevice": "Appareil sans nom",
-      "dayPicker": "Choisir un jour",
       "recordedDays": "Jours enregistrés",
-      "noDay": "Aucun jour enregistré",
       "today": "Aujourd'hui",
       "yesterday": "Hier",
       "aMember": "un membre",
       "viewingMember": "Vous consultez la chronologie de {member}",
       "viewingMemberAudit": "Chaque consultation des données Capture d'un autre membre est consignée dans le journal d'audit du projet.",
       "auditNotice": "Les personnes qui gèrent ce projet peuvent ouvrir votre chronologie. Chaque consultation est consignée dans le journal d'audit du projet.",
-      "loadFailed": "Impossible de charger la chronologie.",
-      "tryAgain": "Réessayer",
-      "empty": "Vos jours enregistrés apparaîtront ici",
-      "emptyHint": "Connectez un ordinateur avec l'app Kortix Capture pour démarrer une chronologie.",
-      "emptyMember": "Cette personne n'a pas encore de jour enregistré",
-      "connectDevice": "Connecter un appareil",
+      "empty": {
+        "noDevicesTitle": "Aucun enregistrement d’ordinateur pour l’instant",
+        "noDevicesBody": "Activez Capture dans Kortix desktop : Votre ordinateur → My Capture.",
+        "noDevicesMember": "Cette personne n’enregistre aucun ordinateur.",
+        "noDataTitle": "Les enregistrements de {device} apparaîtront ici"
+      },
       "layers": "Couches",
       "layer": {
-        "screen": "Écran",
         "actions": "Actions",
-        "audio": "Audio",
-        "ranges": "Plages"
+        "audio": "Audio"
       },
-      "previousFrame": "Image précédente",
-      "nextFrame": "Image suivante",
+      "more": "Plus",
+      "menu": {
+        "ranges": "Plages",
+        "people": "Personnes",
+        "settings": "Réglages"
+      },
+      "now": "Maintenant",
+      "zoomIn": "Zoom avant",
+      "zoomOut": "Zoom arrière",
+      "previousRun": "Application précédente ({shortcut})",
+      "nextRun": "Application suivante ({shortcut})",
+      "picker": {
+        "label": "Choisir un ordinateur",
+        "devices": "Ordinateurs",
+        "noDevice": "Aucun ordinateur",
+        "none": "Les ordinateurs que vous enregistrez apparaîtront ici.",
+        "noneMember": "Cette personne n’enregistre aucun ordinateur.",
+        "getDesktop": "Télécharger l’app de bureau Kortix"
+      },
       "saveRange": "Enregistrer la plage",
-      "trackLabel": "Moment sur la chronologie",
-      "openRange": "Ouvrir la plage {range}",
-      "rangeSpan": "{from}–{to}",
       "unknownApp": "App inconnue",
       "search": {
-        "label": "Rechercher dans la chronologie",
+        "open": "Rechercher",
+        "label": "Rechercher dans les enregistrements",
         "placeholder": "Cherchez ce que vous avez vu, fait ou entendu",
+        "close": "Fermer la recherche",
+        "hint": "Saisissez pour rechercher dans le texte d’écran, les actions et l’audio de cet ordinateur.",
         "results": "Résultats de recherche",
-        "none": "Rien sur cette chronologie ne correspond à la recherche.",
+        "none": "Rien sur cet ordinateur ne correspond à la recherche.",
         "kind": {
           "screen": "Écran",
           "actions": "Action",
@@ -20705,19 +20706,19 @@
       },
       "frame": {
         "label": "Enregistrement d'écran de {app}",
-        "none": "Aucune image d'écran près de ce moment.",
-        "encrypted": "L'appareil a chiffré cet enregistrement. Kortix ne peut pas l'afficher.",
-        "noVideo": "La vidéo de ce moment n'est pas dans le stockage Capture."
+        "none": "Aucun enregistrement à cet instant.",
+        "encrypted": "L'appareil a chiffré cet enregistrement. Kortix ne peut pas l'afficher."
       },
-      "details": {
-        "label": "Détails du moment",
-        "noScreen": "Aucune activité à l'écran",
-        "onScreen": "À l'écran",
-        "actions": "Actions autour de ce moment",
-        "noActions": "Aucune action dans les deux minutes.",
-        "audio": "Audio autour de ce moment",
-        "noAudio": "Aucun audio dans les deux minutes.",
-        "partOf": "Fait partie de"
+      "jump": {
+        "label": "Aller à une date et une heure",
+        "title": "Aller à",
+        "go": "OK",
+        "none": "Aucun enregistrement pour l’instant."
+      },
+      "track": {
+        "noCapture": "Aucun enregistrement",
+        "audio": "audio",
+        "gap": "Aucun enregistrement ici. Appuyez sur {shortcut} pour revenir."
       }
     },
     "saveRange": {
@@ -20785,20 +20786,6 @@
       "notFoundHint": "Le lien est peut-être incorrect, ou la plage appartient à une autre personne."
     },
     "devices": {
-      "title": "Ordinateurs",
-      "description": "Chaque ordinateur qui enregistre dans ce projet, avec son état en direct. Un ordinateur est hors ligne après 120 secondes sans état.",
-      "scopeLabel": "Ordinateurs de qui",
-      "scopeMine": "Mes ordinateurs",
-      "scopeProject": "Tout le projet",
-      "column": {
-        "device": "Ordinateur",
-        "owner": "Propriétaire",
-        "status": "État",
-        "layers": "Couches",
-        "sync": "Synchro",
-        "lastFrame": "Dernière image",
-        "actions": "Actions"
-      },
       "status": {
         "recording": "Enregistre",
         "paused": "En pause",
@@ -20807,28 +20794,11 @@
         "offline": "Hors ligne",
         "unknown": "Inconnu"
       },
-      "detail": {
-        "permission": "Manquant : {permissions}",
-        "pausedUntil": "Jusqu'à {time}",
-        "lastSeen": "Dernier état {time}"
-      },
       "permission": {
         "screen_recording": "Enregistrement de l’écran",
         "accessibility": "Accessibilité",
         "microphone": "Microphone"
       },
-      "layer": {
-        "screen": "Écran",
-        "actions": "Actions",
-        "audio": "Audio"
-      },
-      "sync": {
-        "upToDate": "À jour",
-        "pending": "{count, plural, one {# élément en file d'attente} other {# éléments en file d'attente}}",
-        "failed": "Échec de l'envoi",
-        "unknown": "Inconnu"
-      },
-      "never": "Aucun pour l'instant",
       "unnamed": "Ordinateur sans nom",
       "you": "Vous",
       "member": "Un membre",
@@ -20841,13 +20811,7 @@
       "revokeDescription": "{name} cesse d’enregistrer dans ce projet immédiatement. Pour enregistrer à nouveau, activez Enregistrer cet ordinateur sur cet ordinateur.",
       "revoked": "Ordinateur révoqué",
       "revokeFailed": "Impossible de révoquer l’ordinateur",
-      "loadFailed": "Impossible de charger les ordinateurs.",
-      "tryAgain": "Réessayer",
-      "empty": "Les ordinateurs que vous enregistrez apparaîtront ici",
-      "footnote": "Une ligne par ordinateur, avec le même nom que vos ordinateurs dans Kortix.",
-      "openKortixOnComputer": "Télécharger Kortix pour ordinateur",
-      "recordThisComputer": "Enregistrer cet ordinateur",
-      "openKortixHint": "Capture enregistre depuis l’app de bureau Kortix. Installez-la sur votre ordinateur, puis activez Enregistrer cet ordinateur."
+      "recordThisComputer": "Enregistrer cet ordinateur"
     },
     "people": {
       "title": "Personnes",
@@ -20917,21 +20881,6 @@
       "saveFailed": "Impossible d'enregistrer la politique Capture",
       "loadFailed": "Impossible de charger la politique Capture.",
       "tryAgain": "Réessayer"
-    },
-    "ask": {
-      "title": "Demander",
-      "description": "Posez une question sur ce que vous avez vu, fait et entendu. Un agent répond dans une nouvelle session privée et lie chaque moment utilisé.",
-      "label": "Question",
-      "placeholder": "Sur quoi ai-je travaillé hier après-midi ?",
-      "submit": "Demander",
-      "scope": "L'agent lit uniquement votre chronologie, via la session qu'il exécute pour vous.",
-      "suggestion": {
-        "yesterday": "Sur quoi ai-je travaillé hier ?",
-        "lastOpened": "Quand ai-je ouvert la checklist de release pour la dernière fois ?",
-        "byApp": "Résume aujourd'hui par app.",
-        "said": "Qu'est-ce qui s'est dit au stand-up d'aujourd'hui ?"
-      },
-      "instructions": "Réponds à partir de ma chronologie Kortix Capture. Cherche dedans avec `kortix capture search`, lis un jour avec `kortix capture timeline` et ouvre un écran avec `kortix capture frame`. Cite chaque moment utilisé sous forme de lien Markdown : [14:32]({timelineUrl}?at=ISO-8601-TIME). Cite une plage ainsi : [son titre]({timelineUrl}/ranges/RANGE_ID). Mon fuseau horaire est {tz}. Réponds dans la langue de ma question."
     },
     "dialog": {
       "title": "Enregistrer cet ordinateur",

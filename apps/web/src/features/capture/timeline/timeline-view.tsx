@@ -1,489 +1,741 @@
 'use client';
 
-import type { CaptureSearchHit } from '@kortix/sdk';
+import type {
+  CaptureDevice,
+  CaptureSearchHit,
+  CaptureTimeline,
+  CaptureTimelineItems,
+} from '@kortix/sdk';
 import {
+  useCaptureChunkMedia,
   useCaptureDays,
   useCaptureDevices,
-  useCaptureFrame,
-  useCaptureSearch,
   useCaptureTimeline,
   useCaptureTimelineItems,
+  useTunnelConnections,
 } from '@kortix/sdk/react';
 import {
-  BookmarkSimpleIcon,
-  CaretDownIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  DotsThreeIcon,
   MagnifyingGlassIcon,
+  MinusIcon,
+  PlusIcon,
+  StackIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
-import {
-  InputGroupSearch,
-  InputGroupSearchClear,
-  InputGroupSearchIcon,
-  InputGroupSearchInput,
-} from '@/components/ui/input-group';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Toggle } from '@/components/ui/toggle';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Switch } from '@/components/ui/switch';
+import { computerDisplayName } from '@/features/tunnel/computer-connect';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { desktopDownloadUrl } from '@/lib/desktop';
 
-import {
-  clockTime,
-  dayWindow,
-  durationParts,
-  indexAtOrBefore,
-  localDayOf,
-  localTimeZone,
-  shortDate,
-  trackSpan,
-} from '../capture-time';
+import { dayWindow, indexAtOrBefore, localDayOf, localTimeZone } from '../capture-time';
+import { CaptureDialog } from '../desktop/capture-dialog';
+import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
+import { computerForDevice, deviceStatus } from '../devices/device-status';
 import { useCaptureMembers, useCaptureParams, useCaptureViewer } from '../use-capture-viewer';
-import { FrameViewer } from './frame-viewer';
-import { MomentDetails } from './moment-details';
+import { DevicePicker, StatusDot, useStatusText } from './device-picker';
+import { FrameStage } from './frame-stage';
+import { JumpPopover } from './jump-popover';
 import { SaveRangeModal } from './save-range-modal';
-import { TimelineTrack, type TrackLayers } from './timeline-track';
+import { SearchPanel } from './search-panel';
+import { APP_TILE, TrackCanvas, appInkCss, type TrackLayers } from './track-canvas';
+import {
+  foldRuns,
+  gapAt,
+  openingSpp,
+  runJumpTarget,
+  segCovers,
+  type TrackRun,
+} from './track-model';
+import { useScrubber } from './use-scrubber';
 
 const MINUTE = 60_000;
-/** Items load for a window around the moment, aligned to 5 minutes so small moves reuse it. */
-const ITEMS_BEFORE = 10 * MINUTE;
-const ITEMS_AFTER = 15 * MINUTE;
+const MAX_SPAN = 31 * 86_400_000;
+/** Frames load for a window around the playhead, aligned to 2 minutes (500 frames at most per read). */
+const ITEMS_ALIGN = 2 * MINUTE;
+const ITEMS_BEFORE = 3 * MINUTE;
+const ITEMS_AFTER = 5 * MINUTE;
 
-function useDuration() {
-  const t = useTranslations('capture');
-  return (seconds: number) => {
-    const { hours, minutes } = durationParts(seconds);
-    return hours > 0
-      ? t('duration.hoursMinutes', { hours, minutes })
-      : t('duration.minutes', { minutes });
-  };
+/** Keep the last answer on screen while the next window loads: the track never blanks while it scrolls. */
+function useLatest<T>(value: T | undefined): T | undefined {
+  const ref = useRef(value);
+  if (value !== undefined) ref.current = value;
+  return value ?? ref.current;
 }
 
-function SearchResults({
-  hits,
-  loading,
-  onPick,
-}: {
-  hits: CaptureSearchHit[];
-  loading: boolean;
-  onPick: (hit: CaptureSearchHit) => void;
-}) {
-  const t = useTranslations('capture.timeline');
-  const locale = useLocale();
-  if (loading) {
-    return (
-      <div className="space-y-1">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-14 rounded-md" />
-        ))}
-      </div>
-    );
+/** The viewer's most recently active device, else the newest one. */
+function defaultDevice(devices: readonly CaptureDevice[], thisComputer: string | null | undefined) {
+  if (thisComputer) {
+    const here = devices.find((d) => d.device_id === thisComputer);
+    if (here) return here;
   }
-  if (hits.length === 0)
-    return (
-      <p className="text-muted-foreground px-3 py-6 text-center text-xs">{t('search.none')}</p>
-    );
-  return (
-    <ul className="space-y-2" aria-label={t('search.results')}>
-      {hits.map((hit) => (
-        <li key={`${hit.kind}-${hit.id}`}>
-          <button
-            type="button"
-            onClick={() => onPick(hit)}
-            className="bg-background hover:bg-hover flex w-full items-start gap-3 rounded-md border px-4 py-2.5 text-left transition-colors active:scale-[0.998]"
-          >
-            <Badge variant="outline" size="sm" className="mt-0.5 shrink-0">
-              {t(`search.kind.${hit.kind}`)}
-            </Badge>
-            <span className="min-w-0 flex-1 space-y-0.5">
-              <span className="text-foreground block truncate text-sm font-medium">
-                {[hit.app, hit.title].filter(Boolean).join(' — ') || t(`search.kind.${hit.kind}`)}
-              </span>
-              <span className="text-muted-foreground line-clamp-2 block text-xs wrap-anywhere">
-                {hit.snippet}
-              </span>
-            </span>
-            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {shortDate(hit.ts, locale)} · {clockTime(hit.ts, locale)}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
+  const seen = (d: CaptureDevice) =>
+    Math.max(Date.parse(d.live.reported_at ?? '') || 0, Date.parse(d.created_at) || 0);
+  return [...devices].sort((a, b) => seen(b) - seen(a))[0] ?? null;
 }
+
+const MOD_KEY = () =>
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 /**
- * Timeline — one person's day: the screen at a moment, the track of app runs,
- * actions and audio, the moment's details, search across what they saw, did
- * and heard, and Save range. A manager picks a member (`?user=`); the API
- * writes a `capture.member_view` audit row for every such read.
+ * Timeline — a device's continuous recording, 24/7. Pick a computer (a
+ * manager picks a person first); the frame at the playhead fills the page; the
+ * track scrolls under a fixed playhead: drag it, scroll it, click a moment,
+ * Cmd/Ctrl+Left/Right between runs. The interaction is a port of the Kortix
+ * Capture engine's local timeline window.
  */
 export function TimelineView({ projectId }: { projectId: string }) {
   const t = useTranslations('capture.timeline');
+  const tDevices = useTranslations('capture.devices');
   const locale = useLocale();
-  const duration = useDuration();
+  const sidebar = useOptionalSidebar();
   const viewer = useCaptureViewer(projectId);
   const params = useCaptureParams();
-  const tz = useMemo(() => localTimeZone(), []);
-  const [now] = useState(() => Date.now());
   const members = useCaptureMembers(projectId, viewer.isManager);
+  const tz = useMemo(() => localTimeZone(), []);
   const userId =
     viewer.isManager && params.user && params.user !== members.viewerId ? params.user : undefined;
-  const subject = userId ? members.members.find((member) => member.user_id === userId) : null;
-  const deviceId = params.device ?? undefined;
 
-  const devices = useCaptureDevices(projectId, { userId });
-  const days = useCaptureDays(projectId, { tz, userId, deviceId });
+  // ── Device ────────────────────────────────────────────────────────────────
+  const devicesQuery = useCaptureDevices(projectId, { userId });
+  const devices = useMemo(
+    () => (devicesQuery.data?.devices ?? []).filter((d) => !d.revoked_at),
+    [devicesQuery.data],
+  );
+  const desktop = useDesktopCaptureStatus();
+  const computers = useTunnelConnections();
+  const nameOf = useCallback(
+    (d: CaptureDevice) => {
+      const computer = computerForDevice(d, computers.data);
+      return (
+        (computer && computerDisplayName(computer.name, computer.machineInfo)) ||
+        d.name ||
+        tDevices('unnamed')
+      );
+    },
+    [computers.data, tDevices],
+  );
+  const device =
+    devices.find((d) => d.device_id === params.device) ??
+    defaultDevice(devices, userId ? null : desktop.data?.deviceId);
+  const deviceId = device?.device_id;
+  const status = device ? deviceStatus(device) : null;
+  const statusText = useStatusText();
+
+  // ── Bounds and days ───────────────────────────────────────────────────────
+  const days = useCaptureDays(deviceId ? projectId : null, { tz, userId, deviceId });
   const dayList = days.data?.days ?? [];
-  const day = params.day ?? (params.at ? localDayOf(params.at) : null) ?? dayList[0]?.day ?? null;
-  const dayInfo = dayList.find((entry) => entry.day === day) ?? null;
-  const window = day ? dayWindow(day) : null;
-  const timeline = useCaptureTimeline(projectId, window ? { ...window, userId, deviceId } : null);
-  const runs = timeline.data?.runs ?? [];
-  const chunks = timeline.data?.chunks ?? [];
-  const ranges = timeline.data?.ranges ?? [];
-
-  const firstMs = dayInfo
-    ? Date.parse(dayInfo.start_at)
-    : runs[0]
-      ? Date.parse(runs[0].start_at)
-      : null;
-  const lastMs = dayInfo
-    ? Date.parse(dayInfo.end_at)
-    : runs.length
-      ? Date.parse(runs[runs.length - 1]!.end_at)
-      : null;
-  const span = day ? trackSpan(day, firstMs, lastMs) : null;
-  const at = params.at ? Date.parse(params.at) : lastMs;
-
-  const itemsWindow = useMemo(() => {
-    if (at === null) return null;
-    const anchor = Math.floor(at / (5 * MINUTE)) * 5 * MINUTE;
+  const bounds = useMemo(() => {
+    const list = days.data?.days ?? [];
+    if (!list.length) return null;
     return {
-      from: new Date(anchor - ITEMS_BEFORE).toISOString(),
-      to: new Date(anchor + ITEMS_AFTER).toISOString(),
-      userId,
-      deviceId,
+      first: Math.min(...list.map((d) => Date.parse(d.start_at))),
+      last: Math.max(...list.map((d) => Date.parse(d.end_at))),
     };
-  }, [at, userId, deviceId]);
-  const items = useCaptureTimelineItems(projectId, itemsWindow);
-  const frames = useMemo(
-    () => (items.data?.frames ?? []).filter((frame) => !frame.inactive),
-    [items.data],
-  );
-  const frameIndex = at === null ? -1 : indexAtOrBefore(frames, at);
-  const frame = frameIndex >= 0 ? frames[frameIndex]! : (frames[0] ?? null);
-  const frameDetail = useCaptureFrame(projectId, frame?.frame_id ?? null, { userId });
-  const rangeAt =
-    at === null
-      ? null
-      : (ranges.find(
-          (range) => Date.parse(range.start_at) <= at && at <= Date.parse(range.end_at),
-        ) ?? null);
+  }, [days.data]);
 
-  const [layers, setLayers] = useState<TrackLayers>({ screen: true, actions: true, audio: true });
-  const [query, setQuery] = useState(params.q ?? '');
-  const { q: urlQuery, set: setParams } = params;
+  // ── Playhead ──────────────────────────────────────────────────────────────
+  const [initialAt] = useState(() => (params.at ? Date.parse(params.at) : Date.now()));
+  const { scrubber, view } = useScrubber(initialAt, bounds);
+  const [trackW, setTrackW] = useState(0);
+  const follow = useRef(!params.at);
+  const placedFor = useRef<string | null>(null);
+
+  // A new device (or the first bounds): the requested moment, else the newest frame, and follow it.
   useEffect(() => {
-    const id = setTimeout(() => {
-      if ((urlQuery ?? '') !== query.trim()) setParams({ q: query.trim() || null });
-    }, 300);
-    return () => clearTimeout(id);
-  }, [query, urlQuery, setParams]);
-  const search = useCaptureSearch(
-    projectId,
-    params.q ? { q: params.q, userId, deviceId, limit: 30 } : null,
-  );
-  const [daysOpen, setDaysOpen] = useState(false);
-  const [saveOpen, setSaveOpen] = useState(false);
+    if (!bounds || !deviceId) return;
+    const key = `${deviceId}:${userId ?? ''}`;
+    if (placedFor.current === key) return;
+    placedFor.current = key;
+    const requested = params.at ? Date.parse(params.at) : NaN;
+    follow.current = !Number.isFinite(requested);
+    scrubber.setT(Number.isFinite(requested) ? requested : bounds.last);
+  }, [bounds, deviceId, userId, params.at, scrubber]);
+  // While following, a live device moves the playhead to its newest frame.
+  const lastSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (!bounds) return;
+    if (follow.current && lastSeen.current !== null && bounds.last > lastSeen.current)
+      scrubber.setT(bounds.last);
+    lastSeen.current = bounds.last;
+  }, [bounds, scrubber]);
+  const interact = useCallback(() => {
+    follow.current = false;
+  }, []);
 
-  const moveTo = (next: number) => params.set({ at: new Date(next).toISOString() });
-  const pickDay = (next: string, end: string) => {
-    params.set({ day: next, at: end });
-    setDaysOpen(false);
+  // ── Runs for the visible window and a margin ──────────────────────────────
+  const [range, setRange] = useState<[number, number]>([0, 0]);
+  useEffect(() => {
+    if (!trackW || !deviceId) return;
+    const a = view.T - (trackW / 2) * view.spp;
+    const b = view.T + (trackW / 2) * view.spp;
+    if (segCovers(range, a, b)) return;
+    const span = b - a;
+    let from = Math.floor(a - span * 2);
+    let to = Math.ceil(b + span * 2);
+    if (to - from > MAX_SPAN) {
+      from = Math.floor(view.T - MAX_SPAN / 2);
+      to = from + MAX_SPAN;
+    }
+    setRange([from, to]);
+  }, [view.T, view.spp, trackW, deviceId, range]);
+  const timeline = useLatest<CaptureTimeline>(
+    useCaptureTimeline(
+      projectId,
+      deviceId && range[1] > range[0]
+        ? {
+            from: new Date(range[0]).toISOString(),
+            to: new Date(range[1]).toISOString(),
+            userId,
+            deviceId,
+          }
+        : null,
+    ).data,
+  );
+  const runs = useMemo<TrackRun[]>(
+    () =>
+      (timeline?.runs ?? [])
+        .filter((r) => r.device_id === deviceId)
+        .map((r) => ({
+          s: Date.parse(r.start_at),
+          e: Date.parse(r.end_at),
+          k: r.app ?? r.title,
+          app: r.app,
+          title: r.title,
+          url: r.url,
+        })),
+    [timeline, deviceId],
+  );
+  const audio = useMemo(
+    () =>
+      (timeline?.chunks ?? [])
+        .filter((c) => c.kind === 'audio' && c.device_id === deviceId)
+        .map((c) => ({ s: Date.parse(c.start_at), e: Date.parse(c.end_at) })),
+    [timeline, deviceId],
+  );
+  const actions = useMemo(
+    () =>
+      (timeline?.chunks ?? [])
+        .filter((c) => c.kind === 'actions' && c.device_id === deviceId)
+        .map((c) => ({ s: Date.parse(c.start_at), e: Date.parse(c.end_at) })),
+    [timeline, deviceId],
+  );
+
+  // ── Frames around the playhead ────────────────────────────────────────────
+  const anchor = Math.floor(view.T / ITEMS_ALIGN) * ITEMS_ALIGN;
+  const items = useLatest<CaptureTimelineItems>(
+    useCaptureTimelineItems(
+      projectId,
+      deviceId && bounds
+        ? {
+            from: new Date(anchor - ITEMS_BEFORE).toISOString(),
+            to: new Date(anchor + ITEMS_AFTER).toISOString(),
+            userId,
+            deviceId,
+          }
+        : null,
+    ).data,
+  );
+  const frames = useMemo(
+    () => (items?.frames ?? []).filter((f) => !f.inactive && f.device_id === deviceId),
+    [items, deviceId],
+  );
+  // The capture interval: the median gap between frames, at least 2 s (the run end pad).
+  const pad = useMemo(() => {
+    const gaps = frames
+      .slice(1)
+      .map((f, i) => Date.parse(f.ts) - Date.parse(frames[i]!.ts))
+      .filter((g) => g > 0)
+      .sort((a, b) => a - b);
+    return Math.min(30_000, Math.max(2_000, gaps[Math.floor(gaps.length / 2)] ?? 2_000));
+  }, [frames]);
+  const frameIdx = indexAtOrBefore(frames, view.T);
+  const frame = frameIdx >= 0 ? frames[frameIdx]! : null;
+  const offFrame = !frame || view.T - Date.parse(frame.ts) > pad * 1.5;
+  const media = useCaptureChunkMedia(projectId, frame?.chunk_id ?? null, { userId });
+  const video = media.data?.video ?? null;
+
+  // The opening scale, once the first runs land for a device.
+  const scaledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deviceId || !trackW || !runs.length || !bounds || scaledFor.current === deviceId) return;
+    scaledFor.current = deviceId;
+    const { spp } = openingSpp(bounds.last, runs, trackW, pad);
+    scrubber.zoom(spp / scrubber.get().spp);
+  }, [deviceId, trackW, runs, bounds, pad, scrubber]);
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+  const runJump = useCallback(
+    (dir: -1 | 1, instant = false) => {
+      interact();
+      const target = runJumpTarget(
+        foldRuns(runs, scrubber.get().spp, pad),
+        scrubber.get().T,
+        dir,
+        pad,
+      );
+      if (target != null) scrubber.panTo(target, instant);
+    },
+    [runs, pad, scrubber, interact],
+  );
+  const step = useCallback(
+    (dir: -1 | 1) => {
+      interact();
+      const T = scrubber.get().T;
+      const next =
+        dir > 0
+          ? frames.find((f) => Date.parse(f.ts) > T + 1)
+          : frames[indexAtOrBefore(frames, T - 1)];
+      if (next) scrubber.setT(Date.parse(next.ts));
+      else runJump(dir, true);
+    },
+    [frames, scrubber, runJump, interact],
+  );
+  const jumpTo = useCallback(
+    (at: number) => {
+      interact();
+      scrubber.panTo(at, true);
+    },
+    [scrubber, interact],
+  );
+
+  // ── Panels ────────────────────────────────────────────────────────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [layers, setLayers] = useState<TrackLayers>({ actions: true, audio: true });
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
+
+  // Keyboard first, as in the engine window.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"]',
+        )
+      )
+        return;
+      if (searchOpen) return;
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && !event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        event.preventDefault();
+        runJump(event.key === 'ArrowLeft' ? -1 : 1, true);
+        return;
+      }
+      if (mod && (event.key === '=' || event.key === '+')) {
+        event.preventDefault();
+        scrubber.zoom(1 / 1.6);
+        return;
+      }
+      if (mod && event.key === '-') {
+        event.preventDefault();
+        scrubber.zoom(1.6);
+        return;
+      }
+      if (mod && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (mod || event.altKey) return;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        if (event.shiftKey) runJump(event.key === 'ArrowLeft' ? -1 : 1, true);
+        else step(event.key === 'ArrowLeft' ? -1 : 1);
+      } else if (event.key === '/') {
+        event.preventDefault();
+        setSearchOpen(true);
+      } else if (event.key === '+' || event.key === '=') scrubber.zoom(1 / 1.6);
+      else if (event.key === '-') scrubber.zoom(1.6);
+      else if ((event.key === 'n' || event.key === 'N') && bounds) {
+        follow.current = true;
+        scrubber.panTo(bounds.last, true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [searchOpen, runJump, step, scrubber, bounds]);
+
+  // Wheel and trackpad move time anywhere over the stage and the track; pinch (or Ctrl+wheel) zooms.
+  const scrubAreaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrubAreaRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if ((event.target as HTMLElement | null)?.closest('[data-no-scrub]')) return;
+      event.preventDefault();
+      if (event.ctrlKey) {
+        scrubber.zoom(Math.exp(event.deltaY * 0.012));
+        return;
+      }
+      interact();
+      scrubber.stop();
+      const d = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      scrubber.setT(scrubber.get().T + d * scrubber.get().spp);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [scrubber, interact]);
+
+  // The URL keeps the moment, so a reload or a shared link lands in the same place.
+  const { set: setParams, at: urlAt } = params;
+  useEffect(() => {
+    if (!bounds || follow.current) return;
+    const id = setTimeout(() => {
+      const at = new Date(Math.round(view.T)).toISOString();
+      if (at !== urlAt) setParams({ at, day: null });
+    }, 600);
+    return () => clearTimeout(id);
+  }, [view.T, bounds, urlAt, setParams]);
+
+  const pickDevice = (id: string) => {
+    placedFor.current = null;
+    scaledFor.current = null;
+    setRange([0, 0]);
+    setParams({ device: id, at: null, day: null });
+  };
+  const pickUser = (id: string | null) => {
+    placedFor.current = null;
+    scaledFor.current = null;
+    setRange([0, 0]);
+    setParams({ user: id, device: null, at: null, day: null });
   };
   const pickHit = (hit: CaptureSearchHit) => {
-    setQuery('');
-    params.set({ q: null, day: localDayOf(hit.ts), at: hit.ts });
+    setSearchOpen(false);
+    jumpTo(Date.parse(hit.ts));
   };
-  const step = (direction: -1 | 1) => {
-    const next = frames[frameIndex + direction];
-    if (next) moveTo(Date.parse(next.ts));
-  };
-  const dayLabel = (value: string) => {
-    if (value === localDayOf(now)) return t('today');
-    if (value === localDayOf(now - 86_400_000)) return t('yesterday');
-    return shortDate(dayWindow(value).from, locale);
-  };
-  const ownTimeline = !userId;
-  const saveInitial = rangeAt
-    ? { start: Date.parse(rangeAt.start_at), end: Date.parse(rangeAt.end_at) }
-    : { start: (at ?? now) - 15 * MINUTE, end: (at ?? now) + 15 * MINUTE };
 
-  const subjectDevices = (devices.data?.devices ?? []).filter((device) => !device.revoked_at);
+  const gap = gapAt(runs, view.T, pad);
+  const runUnder = runs.find((r) => r.s <= view.T && view.T <= r.e + pad) ?? null;
+  const metaApp = offFrame ? null : (frame?.app ?? runUnder?.app ?? null);
+  const metaTitle = offFrame ? null : (frame?.title ?? runUnder?.title ?? null);
+  const metaUrl = offFrame ? null : (frame?.url ?? null);
+  const loadingDevices = devicesQuery.isLoading;
+  const noDevices = !loadingDevices && devices.length === 0;
+  const noData = !!device && days.isSuccess && dayList.length === 0;
+  const own = !userId;
+  const saveDay = dayWindow(localDayOf(view.T));
+  const saveInitial = runUnder
+    ? { start: runUnder.s, end: runUnder.e + pad }
+    : { start: view.T - 15 * MINUTE, end: view.T + 15 * MINUTE };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-7xl space-y-4 px-4 py-6 pb-20">
-        <div className="flex flex-wrap items-center gap-2">
-          {viewer.isManager ? (
-            <Select
-              value={userId ?? 'me'}
-              onValueChange={(value) =>
-                params.set({
-                  user: value === 'me' ? null : value,
-                  device: null,
-                  day: null,
-                  at: null,
-                })
-              }
-            >
-              <SelectTrigger aria-label={t('person')} className="h-8 w-auto min-w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="me">{t('you')}</SelectItem>
-                {members.members
-                  .filter((member) => member.user_id !== members.viewerId)
-                  .map((member) => (
-                    <SelectItem key={member.user_id} value={member.user_id}>
-                      {member.email ?? member.user_id}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+    <div className="flex h-svh min-h-0 flex-col overflow-hidden">
+      {/* Header: whose computer, what is on screen, and the tools. */}
+      <header
+        className="kx-titlebar-row kx-capability-titlebar relative grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)] items-center gap-3 border-b px-2"
+        data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+      >
+        <div className="flex min-w-0 items-center gap-1">
+          <SidebarToggle />
+          <h1 className="sr-only">{t('title')}</h1>
+          {loadingDevices ? (
+            <Skeleton className="h-6 w-40 rounded-md" />
+          ) : (
+            <DevicePicker
+              projectId={projectId}
+              devices={devices}
+              device={device}
+              nameOf={nameOf}
+              onPick={pickDevice}
+              isManager={viewer.isManager}
+              members={members.members}
+              viewerId={members.viewerId}
+              userId={userId}
+              onPickUser={pickUser}
+              canRecordHere={Boolean(desktop.data?.available)}
+              onRecordHere={() => setRecordOpen(true)}
+            />
+          )}
+        </div>
+        <div className="flex max-w-md min-w-0 items-center gap-2.5 justify-self-center">
+          {metaApp || metaTitle ? (
+            <>
+              <span
+                aria-hidden
+                className="ring-border flex size-6 shrink-0 items-center justify-center rounded-sm text-xs font-semibold ring-1"
+                style={{ background: APP_TILE, color: appInkCss(metaApp) }}
+              >
+                {(metaApp ?? '?').charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0">
+                <span className="text-foreground block truncate text-sm font-medium">
+                  {metaApp ?? t('unknownApp')}
+                </span>
+                <span className="text-muted-foreground block truncate font-mono text-xs">
+                  {[metaTitle, metaUrl].filter(Boolean).join(' · ')}
+                </span>
+              </span>
+            </>
           ) : null}
-
-          <Select
-            value={deviceId ?? 'all'}
-            onValueChange={(value) =>
-              params.set({ device: value === 'all' ? null : value, day: null, at: null })
-            }
+        </div>
+        <div className="flex min-w-0 items-center justify-end gap-1">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="gap-2"
+            disabled={!device}
+            onClick={() => setSearchOpen(true)}
           >
-            <SelectTrigger aria-label={t('device')} className="h-8 w-auto min-w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('allDevices')}</SelectItem>
-              {subjectDevices.map((device) => (
-                <SelectItem key={device.device_id} value={device.device_id}>
-                  {device.name ?? t('unnamedDevice')}
-                </SelectItem>
+            <MagnifyingGlassIcon className="size-3.5 shrink-0" />
+            <span className="max-sm:hidden">{t('search.open')}</span>
+            <kbd className="text-muted-foreground font-mono text-xs max-sm:hidden">/</kbd>
+          </Button>
+          <Popover>
+            <Hint label={t('layers')}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label={t('layers')}>
+                  <StackIcon className="size-4 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+            </Hint>
+            <PopoverContent align="end" className="w-56 space-y-1 p-2">
+              {(['actions', 'audio'] as const).map((layer) => (
+                <label
+                  key={layer}
+                  className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-sm"
+                >
+                  {t(`layer.${layer}`)}
+                  <Switch
+                    checked={layers[layer]}
+                    onCheckedChange={(on) => setLayers((cur) => ({ ...cur, [layer]: on }))}
+                  />
+                </label>
               ))}
-            </SelectContent>
-          </Select>
+            </PopoverContent>
+          </Popover>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label={t('more')}>
+                <DotsThreeIcon className="size-4 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {own && device && bounds ? (
+                <DropdownMenuItem onSelect={() => setSaveOpen(true)}>
+                  {t('saveRange')}
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem asChild>
+                <Link
+                  href={`/projects/${projectId}/capture/ranges${userId ? `?user=${userId}` : ''}`}
+                >
+                  {t('menu.ranges')}
+                </Link>
+              </DropdownMenuItem>
+              {viewer.isManager ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href={`/projects/${projectId}/capture/people`}>{t('menu.people')}</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={`/projects/${projectId}/capture/settings`}>
+                      {t('menu.settings')}
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
 
-          <Popover open={daysOpen} onOpenChange={setDaysOpen}>
-            <PopoverTrigger asChild>
+      <div ref={scrubAreaRef} className="relative flex min-h-0 flex-1 flex-col">
+        <FrameStage
+          src={video && !video.encrypted ? video.url : null}
+          seconds={frame?.frame_index ?? 0}
+          label={t('frame.label', { app: metaApp ?? t('unknownApp') })}
+          dimmed={offFrame}
+        >
+          {noDevices ? (
+            <StageNotice
+              title={own ? t('empty.noDevicesTitle') : t('empty.noDevicesMember')}
+              body={own ? t('empty.noDevicesBody') : undefined}
+              action={
+                !own ? undefined : desktop.data?.available ? (
+                  <Button size="sm" variant="outline" onClick={() => setRecordOpen(true)}>
+                    {tDevices('recordThisComputer')}
+                  </Button>
+                ) : (
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={desktopDownloadUrl()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      prefetch={false}
+                    >
+                      {t('picker.getDesktop')}
+                    </Link>
+                  </Button>
+                )
+              }
+            />
+          ) : noData && device ? (
+            <StageNotice
+              title={t('empty.noDataTitle', { device: nameOf(device) })}
+              body={status ? statusText(status) : undefined}
+            />
+          ) : video?.encrypted && !offFrame ? (
+            <StageNotice title={t('frame.encrypted')} />
+          ) : bounds && offFrame && !gap ? (
+            <StageNotice title={t('frame.none')} />
+          ) : null}
+          {bounds ? (
+            <>
+              <Hint label={t('previousRun', { shortcut: `${MOD_KEY()}←` })}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t('previousRun', { shortcut: `${MOD_KEY()}←` })}
+                  onClick={() => runJump(-1)}
+                  className="bg-popover absolute top-1/2 left-4 z-10 -translate-y-1/2 rounded-full shadow-md"
+                >
+                  <CaretLeftIcon className="size-4 shrink-0" />
+                </Button>
+              </Hint>
+              <Hint label={t('nextRun', { shortcut: `${MOD_KEY()}→` })}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t('nextRun', { shortcut: `${MOD_KEY()}→` })}
+                  onClick={() => runJump(1)}
+                  className="bg-popover absolute top-1/2 right-4 z-10 -translate-y-1/2 rounded-full shadow-md"
+                >
+                  <CaretRightIcon className="size-4 shrink-0" />
+                </Button>
+              </Hint>
+            </>
+          ) : null}
+        </FrameStage>
+
+        {/* Dock: the clock, live status, zoom, and the track. */}
+        <footer className="bg-background shrink-0 border-t px-3 pt-2.5 pb-3 select-none">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <JumpPopover T={view.T} days={dayList} bounds={bounds} onJump={jumpTo} />
+              {status ? (
+                <span
+                  className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs"
+                  aria-live="polite"
+                >
+                  <StatusDot view={status} />
+                  <span className="truncate">{statusText(status)}</span>
+                </span>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Hint label={t('zoomOut')}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('zoomOut')}
+                  onClick={() => scrubber.zoomTween(1.6)}
+                >
+                  <MinusIcon className="size-3.5 shrink-0" />
+                </Button>
+              </Hint>
+              <Hint label={t('zoomIn')}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('zoomIn')}
+                  onClick={() => scrubber.zoomTween(1 / 1.6)}
+                >
+                  <PlusIcon className="size-3.5 shrink-0" />
+                </Button>
+              </Hint>
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5"
-                disabled={!day}
-                aria-label={t('dayPicker')}
+                disabled={!bounds}
+                onClick={() => {
+                  if (!bounds) return;
+                  follow.current = true;
+                  scrubber.panTo(bounds.last);
+                }}
               >
-                {day ? dayLabel(day) : t('noDay')}
-                <CaretDownIcon className="size-3.5 shrink-0" />
+                {t('now')}
               </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-64 p-1">
-              <ul aria-label={t('recordedDays')} className="max-h-80 overflow-y-auto">
-                {dayList.map((entry) => (
-                  <li key={entry.day}>
-                    <button
-                      type="button"
-                      onClick={() => pickDay(entry.day, entry.end_at)}
-                      className={cn(
-                        'hover:bg-hover flex w-full items-center justify-between gap-3 rounded-sm px-2 py-2 text-left text-sm transition-colors',
-                        entry.day === day && 'bg-active',
-                      )}
-                    >
-                      <span>{dayLabel(entry.day)}</span>
-                      <span className="text-muted-foreground text-xs tabular-nums">
-                        {duration(entry.screen_seconds)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </PopoverContent>
-          </Popover>
-
-          <div className="min-w-48 flex-1">
-            <InputGroupSearch>
-              <InputGroupSearchIcon>
-                <MagnifyingGlassIcon />
-              </InputGroupSearchIcon>
-              <InputGroupSearchInput
-                aria-label={t('search.label')}
-                placeholder={t('search.placeholder')}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                size="sm"
-              />
-              <InputGroupSearchClear onClick={() => setQuery('')} />
-            </InputGroupSearch>
-          </div>
-        </div>
-
-        {userId ? (
-          <InfoBanner
-            tone="neutral"
-            title={t('viewingMember', { member: subject?.email ?? t('aMember') })}
-          >
-            {t('viewingMemberAudit')}
-          </InfoBanner>
-        ) : null}
-
-        {params.q ? (
-          <SearchResults
-            hits={search.data?.hits ?? []}
-            loading={search.isLoading}
-            onPick={pickHit}
-          />
-        ) : days.isLoading ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <Skeleton className="aspect-video max-h-96 w-full rounded-md" />
-            <Skeleton className="h-64 rounded-md" />
-          </div>
-        ) : days.isError ? (
-          <ErrorState
-            size="sm"
-            title={t('loadFailed')}
-            action={
-              <Button variant="outline" size="sm" onClick={() => days.refetch()}>
-                {t('tryAgain')}
-              </Button>
-            }
-          />
-        ) : !day || !span || at === null ? (
-          <EmptyState
-            size="sm"
-            title={userId ? t('emptyMember') : t('empty')}
-            description={userId ? undefined : t('emptyHint')}
-            action={
-              userId ? undefined : (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/projects/${projectId}/capture/devices`}>{t('connectDevice')}</Link>
-                </Button>
-              )
-            }
-          />
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="min-w-0 space-y-3">
-              <FrameViewer
-                frame={frame}
-                detail={frameDetail.data}
-                loading={items.isLoading || frameDetail.isLoading}
-              />
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground text-xs">{t('layers')}</span>
-                {(['screen', 'actions', 'audio'] as const).map((layer) => (
-                  <Toggle
-                    key={layer}
-                    variant="outline"
-                    size="sm"
-                    pressed={layers[layer]}
-                    onPressedChange={(on) => setLayers((current) => ({ ...current, [layer]: on }))}
-                  >
-                    {t(`layer.${layer}`)}
-                  </Toggle>
-                ))}
-                <span className="flex-1" />
-                <Hint label={t('previousFrame')}>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label={t('previousFrame')}
-                    disabled={frameIndex <= 0}
-                    onClick={() => step(-1)}
-                  >
-                    <CaretLeftIcon className="size-3.5 shrink-0" />
-                  </Button>
-                </Hint>
-                <span className="text-foreground min-w-20 text-center text-xs tabular-nums">
-                  {clockTime(at, locale, true)}
-                </span>
-                <Hint label={t('nextFrame')}>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label={t('nextFrame')}
-                    disabled={frameIndex < 0 || frameIndex >= frames.length - 1}
-                    onClick={() => step(1)}
-                  >
-                    <CaretRightIcon className="size-3.5 shrink-0" />
-                  </Button>
-                </Hint>
-                {ownTimeline ? (
-                  <Button size="sm" className="gap-1.5" onClick={() => setSaveOpen(true)}>
-                    <BookmarkSimpleIcon className="size-3.5 shrink-0" />
-                    {t('saveRange')}
-                  </Button>
-                ) : null}
-              </div>
-
-              <TimelineTrack
-                projectId={projectId}
-                userParam={userId ?? null}
-                span={span}
-                runs={runs}
-                chunks={chunks}
-                ranges={ranges}
-                layers={layers}
-                at={at}
-                bounds={{ first: firstMs ?? span.start, last: lastMs ?? span.end }}
-                onMove={moveTo}
-              />
-              {ownTimeline ? (
-                <p className="text-muted-foreground text-xs text-pretty">{t('auditNotice')}</p>
-              ) : null}
             </div>
-
-            <MomentDetails
-              projectId={projectId}
-              userParam={userId ?? null}
-              at={at}
-              frame={frameDetail.data?.frame ?? frame}
-              ocrText={frameDetail.data?.frame.ocr_text ?? frame?.ocr_text ?? null}
-              actions={items.data?.actions ?? []}
-              audio={items.data?.audio ?? []}
-              range={rangeAt}
+          </div>
+          <div onPointerDown={interact}>
+            <TrackCanvas
+              scrubber={scrubber}
+              runs={runs}
+              audio={audio}
+              actions={actions}
               layers={layers}
+              pad={pad}
+              onWidth={setTrackW}
             />
           </div>
-        )}
+          <p className="sr-only" aria-live="polite">
+            {new Date(view.T).toLocaleString(locale)}
+          </p>
+        </footer>
+
+        {searchOpen && deviceId ? (
+          <div data-no-scrub>
+            <SearchPanel
+              projectId={projectId}
+              userId={userId}
+              deviceId={deviceId}
+              initialQuery=""
+              onPick={pickHit}
+              onClose={() => setSearchOpen(false)}
+            />
+          </div>
+        ) : null}
       </div>
 
-      {day && ownTimeline ? (
+      {own && device && bounds ? (
         <SaveRangeModal
           projectId={projectId}
           open={saveOpen}
           onOpenChange={setSaveOpen}
-          dayStart={Date.parse(dayWindow(day).from)}
+          dayStart={Date.parse(saveDay.from)}
           initial={saveInitial}
           deviceId={deviceId ?? null}
         />
       ) : null}
+      {desktop.data?.available ? (
+        <CaptureDialog projectId={projectId} open={recordOpen} onOpenChange={setRecordOpen} />
+      ) : null}
+    </div>
+  );
+}
+
+function StageNotice({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="absolute top-1/2 left-1/2 z-10 flex max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2 px-6 text-center">
+      <p className="text-foreground text-sm font-medium text-balance">{title}</p>
+      {body ? <p className="text-muted-foreground text-xs text-pretty">{body}</p> : null}
+      {action}
     </div>
   );
 }

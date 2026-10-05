@@ -1,6 +1,12 @@
 'use client';
 
-import { CursorClickIcon, KeyboardIcon, MicrophoneIcon, MonitorIcon, type Icon } from '@phosphor-icons/react';
+import {
+  CursorClickIcon,
+  KeyboardIcon,
+  MicrophoneIcon,
+  MonitorIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -63,7 +69,12 @@ export function CapturePermissions({
                 <p className="text-sm">{t(grant)}</p>
                 <p className="text-muted-foreground truncate text-xs">{t(`${grant}Description`)}</p>
               </div>
-              <span className={cn('flex shrink-0 items-center gap-1 text-xs', allowed ? 'text-foreground' : 'text-muted-foreground')}>
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 text-xs',
+                  allowed ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
                 {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
                 {allowed ? t('allowed') : asked ? t('waiting') : t('needed')}
               </span>
@@ -84,7 +95,9 @@ export function CapturePermissions({
             {requesting ? <Loading className="size-4 shrink-0" /> : null}
             {t('allow')}
           </Button>
-          {asked ? <p className="text-muted-foreground text-xs text-pretty">{t('settingsHint')}</p> : null}
+          {asked ? (
+            <p className="text-muted-foreground text-xs text-pretty">{t('settingsHint')}</p>
+          ) : null}
         </div>
       ) : null}
     </section>

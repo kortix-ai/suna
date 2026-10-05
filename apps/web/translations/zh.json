@@ -1591,8 +1591,7 @@
       "failed": "无法保存标签",
       "tooLong": "标签最多 64 个字符。",
       "tooMany": "每个会话最多 20 个标签。"
-    },
-    "capture": "Capture"
+    }
   },
   "dashboard": {
     "title": "仪表板",
@@ -19331,9 +19330,7 @@
       "text4d2eb8231235": "查看了项目的 Capture 数据",
       "textafa16172b21b": "智能体读取了其所代理人员的 Capture 时间线",
       "textec9dc2164abe": "同步了 Capture 设备",
-      "textba3a78850415": "查看了 Capture 时间线的日期",
-      "text1900b478a586": "Capture",
-      "text536272f04b07": "capture 时间线 屏幕 录制 范围 设备 kortix capture"
+      "textba3a78850415": "查看了 Capture 时间线的日期"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20648,55 +20645,59 @@
     },
     "shell": {
       "title": "Capture",
-      "tabs": {
-        "timeline": "时间线",
-        "ask": "提问",
-        "ranges": "片段",
-        "devices": "电脑",
-        "people": "成员",
-        "settings": "设置"
-      }
+      "timeline": "时间线"
     },
     "timeline": {
+      "title": "时间线",
       "person": "成员",
       "you": "你",
-      "device": "设备",
-      "allDevices": "所有设备",
-      "unnamedDevice": "未命名设备",
-      "dayPicker": "选择日期",
       "recordedDays": "有记录的日期",
-      "noDay": "没有有记录的日期",
       "today": "今天",
       "yesterday": "昨天",
       "aMember": "一位成员",
       "viewingMember": "你正在查看 {member} 的时间线",
       "viewingMemberAudit": "每次查看其他成员的 Capture 数据，都会记录在项目的审计日志中。",
       "auditNotice": "管理此项目的人可以打开你的时间线。每次查看都会记录在项目的审计日志中。",
-      "loadFailed": "无法加载时间线。",
-      "tryAgain": "重试",
-      "empty": "你有记录的日期会显示在这里",
-      "emptyHint": "用 Kortix Capture 应用连接一台电脑，开始创建时间线。",
-      "emptyMember": "此成员还没有有记录的日期",
-      "connectDevice": "连接设备",
+      "empty": {
+        "noDevicesTitle": "还没有电脑录制内容",
+        "noDevicesBody": "在 Kortix desktop 中开启 Capture：你的电脑 → My Capture。",
+        "noDevicesMember": "这位成员没有录制任何电脑。",
+        "noDataTitle": "{device} 的录制内容会显示在这里"
+      },
       "layers": "图层",
       "layer": {
-        "screen": "屏幕",
         "actions": "操作",
-        "audio": "音频",
-        "ranges": "片段"
+        "audio": "音频"
       },
-      "previousFrame": "上一帧",
-      "nextFrame": "下一帧",
+      "more": "更多",
+      "menu": {
+        "ranges": "片段",
+        "people": "成员",
+        "settings": "设置"
+      },
+      "now": "现在",
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "previousRun": "上一个应用（{shortcut}）",
+      "nextRun": "下一个应用（{shortcut}）",
+      "picker": {
+        "label": "选择电脑",
+        "devices": "电脑",
+        "noDevice": "没有电脑",
+        "none": "你录制的电脑会显示在这里。",
+        "noneMember": "这位成员没有录制任何电脑。",
+        "getDesktop": "获取 Kortix 桌面应用"
+      },
       "saveRange": "保存片段",
-      "trackLabel": "时间线上的时刻",
-      "openRange": "打开片段 {range}",
-      "rangeSpan": "{from}–{to}",
       "unknownApp": "未知应用",
       "search": {
-        "label": "搜索时间线",
+        "open": "搜索",
+        "label": "搜索录制内容",
         "placeholder": "搜索你看到、做过或听到的内容",
+        "close": "关闭搜索",
+        "hint": "输入以搜索这台电脑的屏幕文字、操作和音频。",
         "results": "搜索结果",
-        "none": "此时间线上没有与搜索匹配的内容。",
+        "none": "这台电脑上没有与搜索匹配的内容。",
         "kind": {
           "screen": "屏幕",
           "actions": "操作",
@@ -20705,19 +20706,19 @@
       },
       "frame": {
         "label": "{app} 的屏幕录制",
-        "none": "此时刻附近没有屏幕帧。",
-        "encrypted": "设备已加密此录制。Kortix 无法显示。",
-        "noVideo": "此时刻的视频不在 Capture 存储中。"
+        "none": "此刻没有录制内容。",
+        "encrypted": "设备已加密此录制。Kortix 无法显示。"
       },
-      "details": {
-        "label": "时刻详情",
-        "noScreen": "没有屏幕活动",
-        "onScreen": "屏幕上",
-        "actions": "此时刻前后的操作",
-        "noActions": "两分钟内没有操作。",
-        "audio": "此时刻前后的音频",
-        "noAudio": "两分钟内没有音频。",
-        "partOf": "属于"
+      "jump": {
+        "label": "跳转到日期和时间",
+        "title": "跳转到",
+        "go": "前往",
+        "none": "还没有录制内容。"
+      },
+      "track": {
+        "noCapture": "无录制",
+        "audio": "音频",
+        "gap": "此处无录制内容。按 {shortcut} 跳回。"
       }
     },
     "saveRange": {
@@ -20785,20 +20786,6 @@
       "notFoundHint": "链接可能有误，或该片段属于其他人。"
     },
     "devices": {
-      "title": "电脑",
-      "description": "记录到此项目的每台电脑及其实时状态。超过 120 秒没有状态即视为离线。",
-      "scopeLabel": "谁的电脑",
-      "scopeMine": "我的电脑",
-      "scopeProject": "整个项目",
-      "column": {
-        "device": "电脑",
-        "owner": "所有者",
-        "status": "状态",
-        "layers": "图层",
-        "sync": "同步",
-        "lastFrame": "最后一帧",
-        "actions": "操作"
-      },
       "status": {
         "recording": "录制中",
         "paused": "已暂停",
@@ -20807,28 +20794,11 @@
         "offline": "离线",
         "unknown": "未知"
       },
-      "detail": {
-        "permission": "缺少：{permissions}",
-        "pausedUntil": "直到 {time}",
-        "lastSeen": "最后状态 {time}"
-      },
       "permission": {
         "screen_recording": "屏幕录制",
         "accessibility": "辅助功能",
         "microphone": "麦克风"
       },
-      "layer": {
-        "screen": "屏幕",
-        "actions": "操作",
-        "audio": "音频"
-      },
-      "sync": {
-        "upToDate": "已是最新",
-        "pending": "{count, plural, other {# 项排队中}}",
-        "failed": "上传失败",
-        "unknown": "未知"
-      },
-      "never": "暂无",
       "unnamed": "未命名的电脑",
       "you": "你",
       "member": "一位成员",
@@ -20841,13 +20811,7 @@
       "revokeDescription": "{name} 会立即停止记录到此项目。要再次记录，请在那台电脑上开启“记录这台电脑”。",
       "revoked": "电脑已撤销",
       "revokeFailed": "无法撤销这台电脑",
-      "loadFailed": "无法加载电脑。",
-      "tryAgain": "重试",
-      "empty": "你记录的电脑会显示在这里",
-      "footnote": "每台电脑一行，名称与你在 Kortix 中的电脑相同。",
-      "openKortixOnComputer": "下载 Kortix 桌面版",
-      "recordThisComputer": "记录这台电脑",
-      "openKortixHint": "Capture 通过 Kortix 桌面应用记录。在你的电脑上安装它，然后开启“记录这台电脑”。"
+      "recordThisComputer": "记录这台电脑"
     },
     "people": {
       "title": "成员",
@@ -20917,21 +20881,6 @@
       "saveFailed": "无法保存 Capture 策略",
       "loadFailed": "无法加载 Capture 策略。",
       "tryAgain": "重试"
-    },
-    "ask": {
-      "title": "提问",
-      "description": "询问你看到、做过和听到的内容。智能体会在新的私有会话中回答，并链接它用到的每个时刻。",
-      "label": "问题",
-      "placeholder": "我昨天下午做了什么？",
-      "submit": "提问",
-      "scope": "智能体只通过为你运行的会话读取你的时间线。",
-      "suggestion": {
-        "yesterday": "我昨天做了什么？",
-        "lastOpened": "我上次打开发布检查清单是什么时候？",
-        "byApp": "按应用总结今天。",
-        "said": "今天的站会上说了什么？"
-      },
-      "instructions": "根据我的 Kortix Capture 时间线回答。用 `kortix capture search` 搜索，用 `kortix capture timeline` 读取某一天，用 `kortix capture frame` 打开屏幕。把用到的每个时刻引用为 Markdown 链接：[14:32]({timelineUrl}?at=ISO-8601-TIME)。把片段引用为 [其标题]({timelineUrl}/ranges/RANGE_ID)。我的时区是 {tz}。用我提问所用的语言回答。"
     },
     "dialog": {
       "title": "记录这台电脑",

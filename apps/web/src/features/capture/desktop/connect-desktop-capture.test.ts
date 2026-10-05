@@ -94,15 +94,25 @@ describe('turning on Capture never touches the computer agent (tunnel)', () => {
     const requests: string[] = [];
     const original = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      requests.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+      requests.push(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      );
       return Response.json({ user_code: 'ABCD-1234', status: 'approved', project_id: PROJECT });
     }) as typeof fetch;
     const bridge: string[] = [];
     try {
       createKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
       const result = await connectDesktopCapture(PROJECT, {
-        start: async () => (bridge.push('capture_sign_in_start'), { ok: true, userCode: 'ABCD-1234', verificationUrl: 'http://app.test/capture/authorize?user_code=ABCD-1234' }),
-        approve: (code, project) => approveCaptureDeviceGrant(code, project, { machineId: 'a'.repeat(64) }),
+        start: async () => (
+          bridge.push('capture_sign_in_start'),
+          {
+            ok: true,
+            userCode: 'ABCD-1234',
+            verificationUrl: 'http://app.test/capture/authorize?user_code=ABCD-1234',
+          }
+        ),
+        approve: (code, project) =>
+          approveCaptureDeviceGrant(code, project, { machineId: 'a'.repeat(64) }),
         finish: async () => (bridge.push('capture_sign_in_finish'), { ok: true }),
         cancel: async () => bridge.push('capture_sign_in_cancel'),
         openApproval: () => bridge.push('open-approval-page'),

@@ -40,12 +40,20 @@ export function missingGrants(view: DesktopCaptureStatus): CaptureGrant[] {
 
 /** Layers that record now: switched on here and allowed by the project policy. */
 export function activeLayers(view: DesktopCaptureStatus): DesktopCaptureLayer[] {
-  return CAPTURE_LAYERS.filter((layer) => view.layers?.[layer] && view.policy?.layers[layer] !== false);
+  return CAPTURE_LAYERS.filter(
+    (layer) => view.layers?.[layer] && view.policy?.layers[layer] !== false,
+  );
 }
 
 export function capturePhase(
   view: DesktopCaptureStatus | null | undefined,
-  { projectId, projectHasCapture, turningOn = false, failed = false, now = Date.now() }: {
+  {
+    projectId,
+    projectHasCapture,
+    turningOn = false,
+    failed = false,
+    now = Date.now(),
+  }: {
     projectId: string;
     projectHasCapture: boolean;
     turningOn?: boolean;
@@ -62,8 +70,14 @@ export function capturePhase(
   // `stopped`: the service was stopped outside the app; Record starts it again.
   if (!view.signedIn || !here || !view.on || view.state === 'stopped') return 'off';
   if (view.state === 'crashed') return 'error';
-  if (view.state === 'paused' || view.policy?.paused || (view.pausedUntilMs ?? 0) > now) return 'paused';
-  if (view.state === 'permission_missing' || view.state === 'permission_needed' || missingGrants(view).length > 0) return 'needsPermission';
+  if (view.state === 'paused' || view.policy?.paused || (view.pausedUntilMs ?? 0) > now)
+    return 'paused';
+  if (
+    view.state === 'permission_missing' ||
+    view.state === 'permission_needed' ||
+    missingGrants(view).length > 0
+  )
+    return 'needsPermission';
   if (view.state === 'recording') return 'recording';
   return 'starting';
 }

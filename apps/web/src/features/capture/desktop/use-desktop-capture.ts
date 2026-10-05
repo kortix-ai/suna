@@ -44,7 +44,9 @@ export function useCaptureProject(projectId: string) {
     () =>
       sections
         .flatMap((section) => section.projects)
-        .find((candidate) => candidate.project_id === projectId && candidate.experimental?.capture) ?? null,
+        .find(
+          (candidate) => candidate.project_id === projectId && candidate.experimental?.capture,
+        ) ?? null,
     [sections, projectId],
   );
   return { project, loading: listsLoading };
@@ -55,14 +57,21 @@ export function useCaptureProject(projectId: string) {
  * sign-in (`/v1/capture/device/*`), approved with this person's session and
  * this computer's machine id; it never touches the computer agent.
  */
-export function useDesktopCaptureActions(projectId: string, { onWaitingOnPage }: { onWaitingOnPage: () => void }) {
+export function useDesktopCaptureActions(
+  projectId: string,
+  { onWaitingOnPage }: { onWaitingOnPage: () => void },
+) {
   const queryClient = useQueryClient();
   const settle = (next: DesktopCaptureStatus | null | undefined) => {
     if (next) queryClient.setQueryData(DESKTOP_CAPTURE_STATUS_KEY, next);
     void queryClient.invalidateQueries({ queryKey: DESKTOP_CAPTURE_STATUS_KEY });
   };
   // Each action reports its own failure (this replaces the app-wide generic toast).
-  const options = { retry: false, onSuccess: settle, onError: (error: Error) => errorToast(error.message) } as const;
+  const options = {
+    retry: false,
+    onSuccess: settle,
+    onError: (error: Error) => errorToast(error.message),
+  } as const;
 
   const turnOn = useMutation({
     ...options,
@@ -70,11 +79,13 @@ export function useDesktopCaptureActions(projectId: string, { onWaitingOnPage }:
     onError: () => undefined,
     mutationFn: async (view: DesktopCaptureStatus) => {
       // Signed in to this project already: only the switch.
-      if (view.signedIn && view.projectId === projectId && !view.signInRequired) return desktopCaptureSet({ on: true });
+      if (view.signedIn && view.projectId === projectId && !view.signInRequired)
+        return desktopCaptureSet({ on: true });
       const machineId = view.machineId;
       const result = await connectDesktopCapture(projectId, {
         start: desktopCaptureSignInStart,
-        approve: (userCode, target) => approveCaptureDeviceGrant(userCode, target, machineId ? { machineId } : {}),
+        approve: (userCode, target) =>
+          approveCaptureDeviceGrant(userCode, target, machineId ? { machineId } : {}),
         finish: desktopCaptureSignInFinish,
         cancel: desktopCaptureSignInCancel,
         openApproval: (url) => {
@@ -94,7 +105,8 @@ export function useDesktopCaptureActions(projectId: string, { onWaitingOnPage }:
     ...options,
     // Kortix first (the device loses access), then this computer forgets it and the service goes.
     mutationFn: async (view: DesktopCaptureStatus) => {
-      if (view.projectId && view.deviceId) await revokeCaptureDevice(view.projectId, view.deviceId).catch(() => undefined);
+      if (view.projectId && view.deviceId)
+        await revokeCaptureDevice(view.projectId, view.deviceId).catch(() => undefined);
       return desktopCaptureSignOut();
     },
   });

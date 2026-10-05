@@ -17,8 +17,10 @@ const recording: DesktopCaptureStatus = {
   permissions: { screen: true, accessibility: true, microphone: false },
   pausedUntilMs: null,
 };
-const phase = (view: DesktopCaptureStatus | null, extra: Partial<Parameters<typeof capturePhase>[1]> = {}) =>
-  capturePhase(view, { projectId: P, projectHasCapture: true, now: 1_000, ...extra });
+const phase = (
+  view: DesktopCaptureStatus | null,
+  extra: Partial<Parameters<typeof capturePhase>[1]> = {},
+) => capturePhase(view, { projectId: P, projectHasCapture: true, now: 1_000, ...extra });
 
 describe('capturePhase', () => {
   test('every phase, in priority order', () => {
@@ -37,32 +39,67 @@ describe('capturePhase', () => {
     expect(phase({ ...recording, pausedUntilMs: 2_000 })).toBe('paused');
     expect(phase({ ...recording, pausedUntilMs: 500 })).toBe('recording');
     expect(phase({ ...recording, policy: { ...recording.policy!, paused: true } })).toBe('paused');
-    expect(phase({ ...recording, permissions: { screen: false, accessibility: true, microphone: false } })).toBe('needsPermission');
+    expect(
+      phase({
+        ...recording,
+        permissions: { screen: false, accessibility: true, microphone: false },
+      }),
+    ).toBe('needsPermission');
     expect(phase({ ...recording, state: 'permission_needed' })).toBe('needsPermission');
     expect(phase({ ...recording, state: 'not_recording' })).toBe('starting');
     expect(phase(recording)).toBe('recording');
   });
 
   test('a refusal for another project does not hijack this one', () => {
-    expect(phase({ ...recording, projectId: 'another', signInRequired: true, signedIn: false })).toBe('off');
+    expect(
+      phase({ ...recording, projectId: 'another', signInRequired: true, signedIn: false }),
+    ).toBe('off');
   });
 });
 
 test('missingGrants: Screen Recording and Accessibility always, the Microphone only with Audio', () => {
   expect(missingGrants(recording)).toEqual([]);
-  expect(missingGrants({ ...recording, permissions: { screen: false, accessibility: false, microphone: false } })).toEqual(['screen', 'accessibility']);
-  expect(missingGrants({ ...recording, layers: { screen: true, actions: true, audio: true } })).toEqual(['microphone']);
+  expect(
+    missingGrants({
+      ...recording,
+      permissions: { screen: false, accessibility: false, microphone: false },
+    }),
+  ).toEqual(['screen', 'accessibility']);
+  expect(
+    missingGrants({ ...recording, layers: { screen: true, actions: true, audio: true } }),
+  ).toEqual(['microphone']);
   expect(missingGrants({ ...recording, permissions: null })).toEqual([]);
 });
 
 test('missingGrants: Input Monitoring only with Actions on, allowed by the policy, and reported by the engine', () => {
-  const actionsOn = { ...recording, policy: { ...recording.policy!, layers: { screen: true, actions: true, audio: true } } };
-  const noListener = { screen: true, accessibility: true, microphone: false, inputMonitoring: false };
+  const actionsOn = {
+    ...recording,
+    policy: { ...recording.policy!, layers: { screen: true, actions: true, audio: true } },
+  };
+  const noListener = {
+    screen: true,
+    accessibility: true,
+    microphone: false,
+    inputMonitoring: false,
+  };
   expect(missingGrants({ ...actionsOn, permissions: noListener })).toEqual(['inputMonitoring']);
-  expect(missingGrants({ ...actionsOn, permissions: { ...noListener, inputMonitoring: true } })).toEqual([]);
+  expect(
+    missingGrants({ ...actionsOn, permissions: { ...noListener, inputMonitoring: true } }),
+  ).toEqual([]);
   // An engine that does not report it, Actions off here, or Actions off by policy: not asked.
-  expect(missingGrants({ ...actionsOn, permissions: { screen: true, accessibility: true, microphone: false } })).toEqual([]);
-  expect(missingGrants({ ...actionsOn, layers: { screen: true, actions: false, audio: false }, permissions: noListener })).toEqual([]);
+  expect(
+    missingGrants({
+      ...actionsOn,
+      permissions: { screen: true, accessibility: true, microphone: false },
+    }),
+  ).toEqual([]);
+  expect(
+    missingGrants({
+      ...actionsOn,
+      layers: { screen: true, actions: false, audio: false },
+      permissions: noListener,
+    }),
+  ).toEqual([]);
   expect(missingGrants({ ...recording, permissions: noListener })).toEqual([]);
 });
 

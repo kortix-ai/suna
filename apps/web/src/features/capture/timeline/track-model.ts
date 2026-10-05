@@ -76,7 +76,17 @@ export function hslToRgb(h0: number, s: number, l: number): Rgb {
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
   const [r, g, b] =
-    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+    h < 60
+      ? [c, x, 0]
+      : h < 120
+        ? [x, c, 0]
+        : h < 180
+          ? [0, c, x]
+          : h < 240
+            ? [0, x, c]
+            : h < 300
+              ? [x, 0, c]
+              : [c, 0, x];
   return [r + m, g + m, b + m].map((v) => Math.round(v * 255)) as Rgb;
 }
 
@@ -90,7 +100,10 @@ export function runColor(run: Pick<TrackRun, 'k' | 'app'>, dark: boolean): Rgb {
 }
 
 /** Colors for laid-out runs: neighbours with different keys never share a hue (they turn 35° until 22° apart). */
-export function runColors(runs: readonly { s: Pick<TrackRun, 'k' | 'app'> }[], dark: boolean): Rgb[] {
+export function runColors(
+  runs: readonly { s: Pick<TrackRun, 'k' | 'app'> }[],
+  dark: boolean,
+): Rgb[] {
   const out: Rgb[] = [];
   for (let i = 0; i < runs.length; i++) {
     let col = runColor(runs[i]!.s, dark);
@@ -99,7 +112,8 @@ export function runColors(runs: readonly { s: Pick<TrackRun, 'k' | 'app'> }[], d
       const [h0, s, l] = rgbToHsl(col);
       let h = h0;
       const ph = rgbToHsl(prev)[0];
-      for (let n = 0; n < 9 && Math.min(Math.abs(h - ph), 360 - Math.abs(h - ph)) < 22; n++) h += 35;
+      for (let n = 0; n < 9 && Math.min(Math.abs(h - ph), 360 - Math.abs(h - ph)) < 22; n++)
+        h += 35;
       col = hslToRgb(h, s, l);
     }
     out.push(col);
@@ -215,7 +229,13 @@ export const ICON_SIZE = 22;
  * edge while the run is partly scrolled off, skipped when closer than `space`
  * px to the previous icon or when the run is under `minRun` px.
  */
-export function placeIcons(runs: readonly LaidRun[], W: number, size = ICON_SIZE, space = 8, minRun = 18) {
+export function placeIcons(
+  runs: readonly LaidRun[],
+  W: number,
+  size = ICON_SIZE,
+  space = 8,
+  minRun = 18,
+) {
   const out: { run: LaidRun; cx: number }[] = [];
   let lastX = -Infinity;
   for (const r of runs) {
@@ -238,7 +258,13 @@ export function placeIcons(runs: readonly LaidRun[], W: number, size = ICON_SIZE
  * start; in an idle gap, Left goes to the start of the run before it. Right
  * goes to the next run's start. Null when there is nowhere to go.
  */
-export function runJumpTarget(runs: readonly TrackRun[], T: number, dir: -1 | 1, pad: number, eps = 1000): number | null {
+export function runJumpTarget(
+  runs: readonly TrackRun[],
+  T: number,
+  dir: -1 | 1,
+  pad: number,
+  eps = 1000,
+): number | null {
   let cur = -1;
   for (let i = 0; i < runs.length; i++) {
     if (runs[i]!.s <= T) cur = i;
@@ -270,7 +296,12 @@ export function gapAt(runs: readonly TrackRun[], T: number, pad: number, minGapM
 }
 
 /** Audio bars in [0, W]: one per stretch of sound; segments closer than `join` px merge. */
-export function audioBars(segs: readonly { s: number; e: number }[], xOf: (t: number) => number, W: number, join = 2) {
+export function audioBars(
+  segs: readonly { s: number; e: number }[],
+  xOf: (t: number) => number,
+  W: number,
+  join = 2,
+) {
   const out: { x: number; w: number }[] = [];
   for (const a of segs) {
     const x0 = xOf(a.s);
@@ -311,7 +342,12 @@ export function momentumStep(v: number, dt: number, tau = MOMENTUM_TAU) {
  * short and an earlier one ended long before it, so the view shows where
  * recording resumed. Capped at 6 hours across.
  */
-export function openingSpp(lastMs: number | null, runs: readonly TrackRun[], trackW: number, pad: number) {
+export function openingSpp(
+  lastMs: number | null,
+  runs: readonly TrackRun[],
+  trackW: number,
+  pad: number,
+) {
   const defaultMs = 12 * 60_000;
   const minFrac = 0.15;
   const capMs = 6 * 3_600_000;

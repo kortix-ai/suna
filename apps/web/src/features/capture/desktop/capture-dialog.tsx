@@ -33,13 +33,16 @@ import {
   desktopCaptureOpenLogs,
   desktopCaptureOpenTimeline,
   desktopCaptureSignInCancel,
-  type DesktopCaptureStatus,
 } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 
 import { CapturePermissions } from './capture-permissions';
 import { CAPTURE_LAYERS, activeLayers, capturePhase, type CapturePhase } from './capture-state';
-import { useCaptureProject, useDesktopCaptureActions, useDesktopCaptureStatus } from './use-desktop-capture';
+import {
+  useCaptureProject,
+  useDesktopCaptureActions,
+  useDesktopCaptureStatus,
+} from './use-desktop-capture';
 
 /**
  * The Capture dialog, opened by the desktop tray's "Capture…" (a desktop
@@ -96,7 +99,9 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
   const { project, loading } = useCaptureProject(projectId);
   const [waitingOnPage, setWaitingOnPage] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
-  const actions = useDesktopCaptureActions(projectId, { onWaitingOnPage: () => setWaitingOnPage(true) });
+  const actions = useDesktopCaptureActions(projectId, {
+    onWaitingOnPage: () => setWaitingOnPage(true),
+  });
   const view = status.data ?? null;
 
   const turnOn = () => {
@@ -132,7 +137,10 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
   const projectName = project?.name ?? '';
   const pausedUntil =
     view?.pausedUntilMs && view.pausedUntilMs > now
-      ? new Date(view.pausedUntilMs).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+      ? new Date(view.pausedUntilMs).toLocaleTimeString(locale, {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
       : null;
   const statusWord =
     phase === 'paused'
@@ -142,7 +150,11 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
           ? t('status.pausedUntil', { time: pausedUntil })
           : t('status.paused')
       : t(`status.${phase}`);
-  const on = phase === 'needsPermission' || phase === 'paused' || phase === 'starting' || phase === 'recording';
+  const on =
+    phase === 'needsPermission' ||
+    phase === 'paused' ||
+    phase === 'starting' ||
+    phase === 'recording';
   const recordingWhat = view ? activeLayers(view).map((layer) => t(`layers.${layer}`)) : [];
 
   if (phase === 'unavailable' || phase === 'projectOff') {
@@ -188,15 +200,23 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
         ) : null}
 
         {on ? (
-          recordingWhat.length > 0 ? null : <p className="text-muted-foreground text-sm">{t('noLayers')}</p>
+          recordingWhat.length > 0 ? null : (
+            <p className="text-muted-foreground text-sm">{t('noLayers')}</p>
+          )
         ) : (
-          <p className="text-muted-foreground text-sm text-pretty">{t('intro', { project: projectName })}</p>
+          <p className="text-muted-foreground text-sm text-pretty">
+            {t('intro', { project: projectName })}
+          </p>
         )}
 
         {phase === 'turningOn' ? (
           <div className="flex items-center gap-2 text-sm" role="status">
             <Loading className="size-4 shrink-0" />
-            <span>{waitingOnPage ? t('turningOn.waitingOnPage') : t('turningOn.progress', { project: projectName })}</span>
+            <span>
+              {waitingOnPage
+                ? t('turningOn.waitingOnPage')
+                : t('turningOn.progress', { project: projectName })}
+            </span>
           </div>
         ) : null}
         {phase === 'off' && view?.signedIn && view.projectId !== projectId ? (
@@ -209,7 +229,16 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
 
         {/* Stays once shown, so each row turns "Allowed" in place as macOS answers. */}
         {on && view ? (
-          <CapturePermissions view={view} requesting={actions.grants.isPending} onAllow={() => actions.grants.mutate({ audio: Boolean(view.layers?.audio), actions: Boolean(view.layers?.actions) })} />
+          <CapturePermissions
+            view={view}
+            requesting={actions.grants.isPending}
+            onAllow={() =>
+              actions.grants.mutate({
+                audio: Boolean(view.layers?.audio),
+                actions: Boolean(view.layers?.actions),
+              })
+            }
+          />
         ) : null}
 
         {view ? (
@@ -251,7 +280,10 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
             <MoreMenu
               canStop={on}
               onStop={() =>
-                actions.set.mutate({ on: false }, { onSuccess: () => successToast(t('toast.stopped')) })
+                actions.set.mutate(
+                  { on: false },
+                  { onSuccess: () => successToast(t('toast.stopped')) },
+                )
               }
               onSignOut={() => setConfirmSignOut(true)}
             />
@@ -264,7 +296,12 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
         </div>
         <div className="flex items-center gap-2">
           {on ? (
-            <Button variant="outline" onClick={() => void desktopCaptureOpenTimeline().catch((error: Error) => errorToast(error.message))}>
+            <Button
+              variant="outline"
+              onClick={() =>
+                void desktopCaptureOpenTimeline().catch((error: Error) => errorToast(error.message))
+              }
+            >
               {t('actions.openTimeline')}
             </Button>
           ) : null}
@@ -273,8 +310,14 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
             pausedByProject={Boolean(view?.policy?.paused)}
             busy={actions.pause.isPending || actions.resume.isPending}
             onStart={turnOn}
-            onPause={() => actions.pause.mutate(undefined, { onSuccess: () => successToast(t('toast.paused')) })}
-            onResume={() => actions.resume.mutate(undefined, { onSuccess: () => successToast(t('toast.resumed')) })}
+            onPause={() =>
+              actions.pause.mutate(undefined, { onSuccess: () => successToast(t('toast.paused')) })
+            }
+            onResume={() =>
+              actions.resume.mutate(undefined, {
+                onSuccess: () => successToast(t('toast.resumed')),
+              })
+            }
           />
         </div>
       </ModalFooter>
@@ -306,7 +349,11 @@ function Header({ title, status }: { title: string; status: ReactNode }) {
   return (
     <ModalHeader className="pr-12">
       <ModalTitle>{title}</ModalTitle>
-      {status ? <ModalDescription className="flex min-w-0 items-center gap-1.5 text-xs">{status}</ModalDescription> : null}
+      {status ? (
+        <ModalDescription className="flex min-w-0 items-center gap-1.5 text-xs">
+          {status}
+        </ModalDescription>
+      ) : null}
     </ModalHeader>
   );
 }
@@ -314,7 +361,13 @@ function Header({ title, status }: { title: string; status: ReactNode }) {
 function StatusLine({ phase, word }: { phase: CapturePhase; word: string }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5">
-      <span aria-hidden className={cn('inline-block size-2 shrink-0 rounded-full', DOT[phase] ?? 'bg-muted-foreground')} />
+      <span
+        aria-hidden
+        className={cn(
+          'inline-block size-2 shrink-0 rounded-full',
+          DOT[phase] ?? 'bg-muted-foreground',
+        )}
+      />
       <span>{word}</span>
     </span>
   );
@@ -372,7 +425,15 @@ function PrimaryAction({
   }
 }
 
-function MoreMenu({ canStop, onStop, onSignOut }: { canStop: boolean; onStop: () => void; onSignOut: () => void }) {
+function MoreMenu({
+  canStop,
+  onStop,
+  onSignOut,
+}: {
+  canStop: boolean;
+  onStop: () => void;
+  onSignOut: () => void;
+}) {
   const t = useTranslations('capture.dialog');
   return (
     <DropdownMenu>
@@ -382,10 +443,16 @@ function MoreMenu({ canStop, onStop, onSignOut }: { canStop: boolean; onStop: ()
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
-        <DropdownMenuItem onSelect={() => void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))}>
+        <DropdownMenuItem
+          onSelect={() =>
+            void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))
+          }
+        >
           {t('actions.showLogs')}
         </DropdownMenuItem>
-        {canStop ? <DropdownMenuItem onSelect={onStop}>{t('actions.stop')}</DropdownMenuItem> : null}
+        {canStop ? (
+          <DropdownMenuItem onSelect={onStop}>{t('actions.stop')}</DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onSignOut}>
           {t('actions.signOut')}

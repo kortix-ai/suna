@@ -75,5 +75,7 @@ export function computerForDevice<T extends { machineInfo: Record<string, unknow
   computers: readonly T[] | undefined,
 ): T | null {
   if (!device.machine_id) return null;
-  return computers?.find((computer) => computer.machineInfo?.machineId === device.machine_id) ?? null;
+  return (
+    computers?.find((computer) => computer.machineInfo?.machineId === device.machine_id) ?? null
+  );
 }

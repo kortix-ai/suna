@@ -1591,8 +1591,7 @@
       "failed": "Die Labels konnten nicht gespeichert werden",
       "tooLong": "Ein Label hat höchstens 64 Zeichen.",
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
-    },
-    "capture": "Capture"
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19331,9 +19330,7 @@
       "text4d2eb8231235": "Capture-Daten eines Projekts angesehen",
       "textafa16172b21b": "Ein Agent hat die Capture-Zeitleiste der Person gelesen, für die er handelt",
       "textec9dc2164abe": "Capture-Gerät synchronisiert",
-      "textba3a78850415": "Tage einer Capture-Zeitleiste angesehen",
-      "text1900b478a586": "Capture",
-      "text536272f04b07": "capture zeitleiste bildschirm aufnahme zeiträume geräte kortix capture"
+      "textba3a78850415": "Tage einer Capture-Zeitleiste angesehen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20648,55 +20645,59 @@
     },
     "shell": {
       "title": "Capture",
-      "tabs": {
-        "timeline": "Zeitleiste",
-        "ask": "Fragen",
-        "ranges": "Zeiträume",
-        "devices": "Computer",
-        "people": "Personen",
-        "settings": "Einstellungen"
-      }
+      "timeline": "Zeitleiste"
     },
     "timeline": {
+      "title": "Zeitleiste",
       "person": "Person",
       "you": "Du",
-      "device": "Gerät",
-      "allDevices": "Alle Geräte",
-      "unnamedDevice": "Unbenanntes Gerät",
-      "dayPicker": "Tag auswählen",
       "recordedDays": "Aufgezeichnete Tage",
-      "noDay": "Keine aufgezeichneten Tage",
       "today": "Heute",
       "yesterday": "Gestern",
       "aMember": "ein Mitglied",
       "viewingMember": "Du siehst die Zeitleiste von {member}",
       "viewingMemberAudit": "Jeder Aufruf der Capture-Daten eines anderen Mitglieds wird im Audit-Log des Projekts protokolliert.",
       "auditNotice": "Wer dieses Projekt verwaltet, kann deine Zeitleiste öffnen. Jeder solche Aufruf wird im Audit-Log des Projekts protokolliert.",
-      "loadFailed": "Die Zeitleiste konnte nicht geladen werden.",
-      "tryAgain": "Erneut versuchen",
-      "empty": "Deine aufgezeichneten Tage erscheinen hier",
-      "emptyHint": "Verbinde einen Computer mit der Kortix-Capture-App, um eine Zeitleiste zu starten.",
-      "emptyMember": "Diese Person hat noch keine aufgezeichneten Tage",
-      "connectDevice": "Gerät verbinden",
+      "empty": {
+        "noDevicesTitle": "Noch keine Computer-Aufnahmen",
+        "noDevicesBody": "Aktiviere Capture in Kortix desktop: Dein Computer → My Capture.",
+        "noDevicesMember": "Diese Person nimmt keine Computer auf.",
+        "noDataTitle": "Aufnahmen von {device} erscheinen hier"
+      },
       "layers": "Ebenen",
       "layer": {
-        "screen": "Bildschirm",
         "actions": "Aktionen",
-        "audio": "Audio",
-        "ranges": "Zeiträume"
+        "audio": "Audio"
       },
-      "previousFrame": "Vorheriges Bild",
-      "nextFrame": "Nächstes Bild",
+      "more": "Mehr",
+      "menu": {
+        "ranges": "Zeiträume",
+        "people": "Personen",
+        "settings": "Einstellungen"
+      },
+      "now": "Jetzt",
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "previousRun": "Vorherige App ({shortcut})",
+      "nextRun": "Nächste App ({shortcut})",
+      "picker": {
+        "label": "Computer auswählen",
+        "devices": "Computer",
+        "noDevice": "Kein Computer",
+        "none": "Computer, die du aufnimmst, erscheinen hier.",
+        "noneMember": "Diese Person nimmt keine Computer auf.",
+        "getDesktop": "Kortix Desktop-App holen"
+      },
       "saveRange": "Zeitraum speichern",
-      "trackLabel": "Moment auf der Zeitleiste",
-      "openRange": "Zeitraum {range} öffnen",
-      "rangeSpan": "{from}–{to}",
       "unknownApp": "Unbekannte App",
       "search": {
-        "label": "Zeitleiste durchsuchen",
+        "open": "Suchen",
+        "label": "Aufnahmen durchsuchen",
         "placeholder": "Suche, was du gesehen, getan oder gehört hast",
+        "close": "Suche schließen",
+        "hint": "Tippe, um Bildschirmtext, Aktionen und Audio dieses Computers zu durchsuchen.",
         "results": "Suchergebnisse",
-        "none": "Nichts auf dieser Zeitleiste entspricht der Suche.",
+        "none": "Nichts auf diesem Computer entspricht der Suche.",
         "kind": {
           "screen": "Bildschirm",
           "actions": "Aktion",
@@ -20705,19 +20706,19 @@
       },
       "frame": {
         "label": "Bildschirmaufnahme von {app}",
-        "none": "Kein Bildschirmbild in der Nähe dieses Moments.",
-        "encrypted": "Das Gerät hat diese Aufnahme verschlüsselt. Kortix kann sie nicht anzeigen.",
-        "noVideo": "Das Video dieses Moments ist nicht im Capture-Speicher."
+        "none": "Zu diesem Zeitpunkt gibt es keine Aufnahme.",
+        "encrypted": "Das Gerät hat diese Aufnahme verschlüsselt. Kortix kann sie nicht anzeigen."
       },
-      "details": {
-        "label": "Details zum Moment",
-        "noScreen": "Keine Bildschirmaktivität",
-        "onScreen": "Auf dem Bildschirm",
-        "actions": "Aktionen rund um diesen Moment",
-        "noActions": "Keine Aktionen innerhalb von zwei Minuten.",
-        "audio": "Audio rund um diesen Moment",
-        "noAudio": "Kein Audio innerhalb von zwei Minuten.",
-        "partOf": "Teil von"
+      "jump": {
+        "label": "Zu Datum und Uhrzeit springen",
+        "title": "Springen zu",
+        "go": "Los",
+        "none": "Noch keine Aufnahmen."
+      },
+      "track": {
+        "noCapture": "Keine Aufnahme",
+        "audio": "Audio",
+        "gap": "Hier gibt es keine Aufnahme. Drücke {shortcut}, um zurückzuspringen."
       }
     },
     "saveRange": {
@@ -20785,20 +20786,6 @@
       "notFoundHint": "Der Link ist möglicherweise falsch, oder der Zeitraum gehört einer anderen Person."
     },
     "devices": {
-      "title": "Computer",
-      "description": "Jeder Computer, der in dieses Projekt aufnimmt, mit seinem Live-Status. Ein Computer gilt nach 120 Sekunden ohne Status als offline.",
-      "scopeLabel": "Wessen Computer",
-      "scopeMine": "Meine Computer",
-      "scopeProject": "Ganzes Projekt",
-      "column": {
-        "device": "Computer",
-        "owner": "Besitzer",
-        "status": "Status",
-        "layers": "Ebenen",
-        "sync": "Sync",
-        "lastFrame": "Letztes Bild",
-        "actions": "Aktionen"
-      },
       "status": {
         "recording": "Nimmt auf",
         "paused": "Pausiert",
@@ -20807,28 +20794,11 @@
         "offline": "Offline",
         "unknown": "Unbekannt"
       },
-      "detail": {
-        "permission": "Fehlt: {permissions}",
-        "pausedUntil": "Bis {time}",
-        "lastSeen": "Letzter Status {time}"
-      },
       "permission": {
         "screen_recording": "Bildschirmaufnahme",
         "accessibility": "Bedienungshilfen",
         "microphone": "Mikrofon"
       },
-      "layer": {
-        "screen": "Bildschirm",
-        "actions": "Aktionen",
-        "audio": "Audio"
-      },
-      "sync": {
-        "upToDate": "Aktuell",
-        "pending": "{count, plural, one {# Element in Warteschlange} other {# Elemente in Warteschlange}}",
-        "failed": "Upload schlägt fehl",
-        "unknown": "Unbekannt"
-      },
-      "never": "Noch keins",
       "unnamed": "Unbenannter Computer",
       "you": "Du",
       "member": "Ein Mitglied",
@@ -20841,13 +20811,7 @@
       "revokeDescription": "{name} nimmt sofort nicht mehr in dieses Projekt auf. Um wieder aufzunehmen, schalte auf diesem Computer „Diesen Computer aufnehmen“ ein.",
       "revoked": "Computer widerrufen",
       "revokeFailed": "Computer konnte nicht widerrufen werden",
-      "loadFailed": "Die Computer konnten nicht geladen werden.",
-      "tryAgain": "Erneut versuchen",
-      "empty": "Computer, die du aufnimmst, erscheinen hier",
-      "footnote": "Eine Zeile pro Computer, mit demselben Namen wie deine Computer in Kortix.",
-      "openKortixOnComputer": "Kortix für den Desktop herunterladen",
-      "recordThisComputer": "Diesen Computer aufnehmen",
-      "openKortixHint": "Capture nimmt über die Kortix-Desktop-App auf. Installiere sie auf deinem Computer und schalte dann „Diesen Computer aufnehmen“ ein."
+      "recordThisComputer": "Diesen Computer aufnehmen"
     },
     "people": {
       "title": "Personen",
@@ -20917,21 +20881,6 @@
       "saveFailed": "Die Capture-Richtlinie konnte nicht gespeichert werden",
       "loadFailed": "Die Capture-Richtlinie konnte nicht geladen werden.",
       "tryAgain": "Erneut versuchen"
-    },
-    "ask": {
-      "title": "Fragen",
-      "description": "Frage nach dem, was du gesehen, getan und gehört hast. Ein Agent antwortet in einer neuen privaten Sitzung und verlinkt jeden Moment, den er nutzt.",
-      "label": "Frage",
-      "placeholder": "Woran habe ich gestern Nachmittag gearbeitet?",
-      "submit": "Fragen",
-      "scope": "Der Agent liest nur deine Zeitleiste, über die Sitzung, die er für dich ausführt.",
-      "suggestion": {
-        "yesterday": "Woran habe ich gestern gearbeitet?",
-        "lastOpened": "Wann habe ich zuletzt die Release-Checkliste geöffnet?",
-        "byApp": "Fasse den heutigen Tag nach App zusammen.",
-        "said": "Was wurde im heutigen Standup gesagt?"
-      },
-      "instructions": "Antworte anhand meiner Kortix-Capture-Zeitleiste. Durchsuche sie mit `kortix capture search`, lies einen Tag mit `kortix capture timeline` und öffne einen Bildschirm mit `kortix capture frame`. Belege jeden verwendeten Moment als Markdown-Link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Belege einen Zeitraum als [sein Titel]({timelineUrl}/ranges/RANGE_ID). Meine Zeitzone ist {tz}. Antworte in der Sprache meiner Frage."
     },
     "dialog": {
       "title": "Diesen Computer aufnehmen",

@@ -1591,8 +1591,7 @@
       "failed": "Impossibile salvare le etichette",
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
-    },
-    "capture": "Capture"
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19331,9 +19330,7 @@
       "text4d2eb8231235": "Visualizzati i dati Capture di un progetto",
       "textafa16172b21b": "Un agente ha letto la timeline di Capture della persona per cui agisce",
       "textec9dc2164abe": "Sincronizzato un dispositivo Capture",
-      "textba3a78850415": "Ha visualizzato i giorni di una timeline di Capture",
-      "text1900b478a586": "Capture",
-      "text536272f04b07": "capture timeline schermo registrazione intervalli dispositivi kortix capture"
+      "textba3a78850415": "Ha visualizzato i giorni di una timeline di Capture"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20648,55 +20645,59 @@
     },
     "shell": {
       "title": "Capture",
-      "tabs": {
-        "timeline": "Timeline",
-        "ask": "Chiedi",
-        "ranges": "Intervalli",
-        "devices": "Computer",
-        "people": "Persone",
-        "settings": "Impostazioni"
-      }
+      "timeline": "Timeline"
     },
     "timeline": {
+      "title": "Timeline",
       "person": "Persona",
       "you": "Tu",
-      "device": "Dispositivo",
-      "allDevices": "Tutti i dispositivi",
-      "unnamedDevice": "Dispositivo senza nome",
-      "dayPicker": "Scegli un giorno",
       "recordedDays": "Giorni registrati",
-      "noDay": "Nessun giorno registrato",
       "today": "Oggi",
       "yesterday": "Ieri",
       "aMember": "un membro",
       "viewingMember": "Stai guardando la timeline di {member}",
       "viewingMemberAudit": "Ogni visualizzazione dei dati Capture di un altro membro viene registrata nel log di audit del progetto.",
       "auditNotice": "Chi gestisce questo progetto può aprire la tua timeline. Ogni visualizzazione viene registrata nel log di audit del progetto.",
-      "loadFailed": "Impossibile caricare la timeline.",
-      "tryAgain": "Riprova",
-      "empty": "I tuoi giorni registrati compariranno qui",
-      "emptyHint": "Collega un computer con l'app Kortix Capture per avviare una timeline.",
-      "emptyMember": "Questa persona non ha ancora giorni registrati",
-      "connectDevice": "Collega un dispositivo",
+      "empty": {
+        "noDevicesTitle": "Ancora nessuna registrazione dei computer",
+        "noDevicesBody": "Attiva Capture in Kortix desktop: Il tuo computer → My Capture.",
+        "noDevicesMember": "Questa persona non registra alcun computer.",
+        "noDataTitle": "Le registrazioni di {device} compariranno qui"
+      },
       "layers": "Livelli",
       "layer": {
-        "screen": "Schermo",
         "actions": "Azioni",
-        "audio": "Audio",
-        "ranges": "Intervalli"
+        "audio": "Audio"
       },
-      "previousFrame": "Fotogramma precedente",
-      "nextFrame": "Fotogramma successivo",
+      "more": "Altro",
+      "menu": {
+        "ranges": "Intervalli",
+        "people": "Persone",
+        "settings": "Impostazioni"
+      },
+      "now": "Ora",
+      "zoomIn": "Ingrandisci",
+      "zoomOut": "Riduci",
+      "previousRun": "App precedente ({shortcut})",
+      "nextRun": "App successiva ({shortcut})",
+      "picker": {
+        "label": "Scegli un computer",
+        "devices": "Computer",
+        "noDevice": "Nessun computer",
+        "none": "I computer che registri compariranno qui.",
+        "noneMember": "Questa persona non registra alcun computer.",
+        "getDesktop": "Scarica l'app desktop di Kortix"
+      },
       "saveRange": "Salva intervallo",
-      "trackLabel": "Momento sulla timeline",
-      "openRange": "Apri intervallo {range}",
-      "rangeSpan": "{from}–{to}",
       "unknownApp": "App sconosciuta",
       "search": {
-        "label": "Cerca nella timeline",
+        "open": "Cerca",
+        "label": "Cerca nelle registrazioni",
         "placeholder": "Cerca ciò che hai visto, fatto o sentito",
+        "close": "Chiudi la ricerca",
+        "hint": "Scrivi per cercare nel testo dello schermo, nelle azioni e nell'audio di questo computer.",
         "results": "Risultati della ricerca",
-        "none": "Nulla in questa timeline corrisponde alla ricerca.",
+        "none": "Niente su questo computer corrisponde alla ricerca.",
         "kind": {
           "screen": "Schermo",
           "actions": "Azione",
@@ -20705,19 +20706,19 @@
       },
       "frame": {
         "label": "Registrazione dello schermo di {app}",
-        "none": "Nessun fotogramma dello schermo vicino a questo momento.",
-        "encrypted": "Il dispositivo ha cifrato questa registrazione. Kortix non può mostrarla.",
-        "noVideo": "Il video di questo momento non è nell'archivio Capture."
+        "none": "Nessuna registrazione in questo momento.",
+        "encrypted": "Il dispositivo ha cifrato questa registrazione. Kortix non può mostrarla."
       },
-      "details": {
-        "label": "Dettagli del momento",
-        "noScreen": "Nessuna attività sullo schermo",
-        "onScreen": "Sullo schermo",
-        "actions": "Azioni intorno a questo momento",
-        "noActions": "Nessuna azione entro due minuti.",
-        "audio": "Audio intorno a questo momento",
-        "noAudio": "Nessun audio entro due minuti.",
-        "partOf": "Parte di"
+      "jump": {
+        "label": "Vai a una data e un'ora",
+        "title": "Vai a",
+        "go": "Vai",
+        "none": "Ancora nessuna registrazione."
+      },
+      "track": {
+        "noCapture": "Nessuna registrazione",
+        "audio": "audio",
+        "gap": "Qui non c'è nessuna registrazione. Premi {shortcut} per tornare indietro."
       }
     },
     "saveRange": {
@@ -20785,20 +20786,6 @@
       "notFoundHint": "Il link potrebbe essere errato, oppure l'intervallo appartiene a un'altra persona."
     },
     "devices": {
-      "title": "Computer",
-      "description": "Ogni computer che registra in questo progetto, con il suo stato in tempo reale. Un computer è offline dopo 120 secondi senza stato.",
-      "scopeLabel": "Di chi",
-      "scopeMine": "I miei computer",
-      "scopeProject": "Intero progetto",
-      "column": {
-        "device": "Computer",
-        "owner": "Proprietario",
-        "status": "Stato",
-        "layers": "Livelli",
-        "sync": "Sincronizzazione",
-        "lastFrame": "Ultimo fotogramma",
-        "actions": "Azioni"
-      },
       "status": {
         "recording": "In registrazione",
         "paused": "In pausa",
@@ -20807,28 +20794,11 @@
         "offline": "Offline",
         "unknown": "Sconosciuto"
       },
-      "detail": {
-        "permission": "Mancano: {permissions}",
-        "pausedUntil": "Fino alle {time}",
-        "lastSeen": "Ultimo stato {time}"
-      },
       "permission": {
         "screen_recording": "Registrazione schermo",
         "accessibility": "Accessibilità",
         "microphone": "Microfono"
       },
-      "layer": {
-        "screen": "Schermo",
-        "actions": "Azioni",
-        "audio": "Audio"
-      },
-      "sync": {
-        "upToDate": "Aggiornato",
-        "pending": "{count, plural, one {# elemento in coda} other {# elementi in coda}}",
-        "failed": "Caricamento in errore",
-        "unknown": "Sconosciuto"
-      },
-      "never": "Ancora nessuno",
       "unnamed": "Computer senza nome",
       "you": "Tu",
       "member": "Un membro",
@@ -20841,13 +20811,7 @@
       "revokeDescription": "{name} smette subito di registrare in questo progetto. Per registrare di nuovo, attiva Registra questo computer su quel computer.",
       "revoked": "Computer revocato",
       "revokeFailed": "Impossibile revocare il computer",
-      "loadFailed": "Impossibile caricare i computer.",
-      "tryAgain": "Riprova",
-      "empty": "I computer che registri appariranno qui",
-      "footnote": "Una riga per computer, con lo stesso nome dei tuoi computer in Kortix.",
-      "openKortixOnComputer": "Scarica Kortix per desktop",
-      "recordThisComputer": "Registra questo computer",
-      "openKortixHint": "Capture registra dall’app desktop di Kortix. Installala sul tuo computer, poi attiva Registra questo computer."
+      "recordThisComputer": "Registra questo computer"
     },
     "people": {
       "title": "Persone",
@@ -20917,21 +20881,6 @@
       "saveFailed": "Impossibile salvare la policy Capture",
       "loadFailed": "Impossibile caricare la policy Capture.",
       "tryAgain": "Riprova"
-    },
-    "ask": {
-      "title": "Chiedi",
-      "description": "Chiedi di ciò che hai visto, fatto e sentito. Un agente risponde in una nuova sessione privata e collega ogni momento che usa.",
-      "label": "Domanda",
-      "placeholder": "A cosa ho lavorato ieri pomeriggio?",
-      "submit": "Chiedi",
-      "scope": "L'agente legge solo la tua timeline, tramite la sessione che esegue per te.",
-      "suggestion": {
-        "yesterday": "A cosa ho lavorato ieri?",
-        "lastOpened": "Quando ho aperto l'ultima volta la checklist di rilascio?",
-        "byApp": "Riassumi oggi per app.",
-        "said": "Cosa è stato detto nello standup di oggi?"
-      },
-      "instructions": "Rispondi dalla mia timeline di Kortix Capture. Cercala con `kortix capture search`, leggi un giorno con `kortix capture timeline` e apri uno schermo con `kortix capture frame`. Cita ogni momento che usi come link Markdown: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cita un intervallo come [il suo titolo]({timelineUrl}/ranges/RANGE_ID). Il mio fuso orario è {tz}. Rispondi nella lingua della mia domanda."
     },
     "dialog": {
       "title": "Registra questo computer",

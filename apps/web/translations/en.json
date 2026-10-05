@@ -1591,8 +1591,7 @@
       "failed": "Could not save the labels",
       "tooLong": "A label has at most 64 characters.",
       "tooMany": "A session has at most 20 labels."
-    },
-    "capture": "Capture"
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19342,9 +19341,7 @@
       "text4d2eb8231235": "Viewed the capture data of a project",
       "textafa16172b21b": "An agent read the capture timeline of the person it acts for",
       "textec9dc2164abe": "Synced a capture device",
-      "textba3a78850415": "Viewed the days of a capture timeline",
-      "text1900b478a586": "Capture",
-      "text536272f04b07": "capture timeline screen recording ranges devices kortix capture"
+      "textba3a78850415": "Viewed the days of a capture timeline"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20648,55 +20645,59 @@
     },
     "shell": {
       "title": "Capture",
-      "tabs": {
-        "timeline": "Timeline",
-        "ask": "Ask",
-        "ranges": "Ranges",
-        "devices": "Computers",
-        "people": "People",
-        "settings": "Settings"
-      }
+      "timeline": "Timeline"
     },
     "timeline": {
+      "title": "Timeline",
       "person": "Person",
       "you": "You",
-      "device": "Device",
-      "allDevices": "All devices",
-      "unnamedDevice": "Unnamed device",
-      "dayPicker": "Choose a day",
       "recordedDays": "Recorded days",
-      "noDay": "No recorded days",
       "today": "Today",
       "yesterday": "Yesterday",
       "aMember": "a member",
       "viewingMember": "You are viewing the timeline of {member}",
       "viewingMemberAudit": "Every view of another member's capture data is recorded in the project's audit log.",
       "auditNotice": "People who manage this project can open your timeline. Every such view is recorded in the project's audit log.",
-      "loadFailed": "Could not load the timeline.",
-      "tryAgain": "Try again",
-      "empty": "Your recorded days will show up here",
-      "emptyHint": "Connect a computer with the Kortix Capture app to start a timeline.",
-      "emptyMember": "This person has no recorded days yet",
-      "connectDevice": "Connect a device",
+      "empty": {
+        "noDevicesTitle": "No computer records yet",
+        "noDevicesBody": "Turn on Capture in Kortix desktop: Your computer → My Capture.",
+        "noDevicesMember": "This person records no computers.",
+        "noDataTitle": "Recordings from {device} will show up here"
+      },
       "layers": "Layers",
       "layer": {
-        "screen": "Screen",
         "actions": "Actions",
-        "audio": "Audio",
-        "ranges": "Ranges"
+        "audio": "Audio"
       },
-      "previousFrame": "Previous frame",
-      "nextFrame": "Next frame",
+      "more": "More",
+      "menu": {
+        "ranges": "Ranges",
+        "people": "People",
+        "settings": "Settings"
+      },
+      "now": "Now",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "previousRun": "Previous app ({shortcut})",
+      "nextRun": "Next app ({shortcut})",
+      "picker": {
+        "label": "Choose a computer",
+        "devices": "Computers",
+        "noDevice": "No computer",
+        "none": "Computers you record will show up here.",
+        "noneMember": "This person records no computers.",
+        "getDesktop": "Get the Kortix desktop app"
+      },
       "saveRange": "Save range",
-      "trackLabel": "Moment on the timeline",
-      "openRange": "Open range {range}",
-      "rangeSpan": "{from}–{to}",
       "unknownApp": "Unknown app",
       "search": {
-        "label": "Search the timeline",
+        "open": "Search",
+        "label": "Search recordings",
         "placeholder": "Search what you saw, did or heard",
+        "close": "Close search",
+        "hint": "Type to search the screen text, actions and audio of this computer.",
         "results": "Search results",
-        "none": "Nothing on this timeline matches the search.",
+        "none": "Nothing on this computer matches the search.",
         "kind": {
           "screen": "Screen",
           "actions": "Action",
@@ -20705,19 +20706,19 @@
       },
       "frame": {
         "label": "Screen recording of {app}",
-        "none": "No screen frame near this moment.",
-        "encrypted": "The device encrypted this recording. Kortix cannot show it.",
-        "noVideo": "The video of this moment is not in the capture store."
+        "none": "No recording at this moment.",
+        "encrypted": "The device encrypted this recording. Kortix cannot show it."
       },
-      "details": {
-        "label": "Details of the moment",
-        "noScreen": "No screen activity",
-        "onScreen": "On screen",
-        "actions": "Actions around this moment",
-        "noActions": "No actions within two minutes.",
-        "audio": "Audio around this moment",
-        "noAudio": "No audio within two minutes.",
-        "partOf": "Part of"
+      "jump": {
+        "label": "Jump to a date and time",
+        "title": "Jump to",
+        "go": "Go",
+        "none": "No recordings yet."
+      },
+      "track": {
+        "noCapture": "No recording",
+        "audio": "audio",
+        "gap": "No recording here. Press {shortcut} to jump back."
       }
     },
     "saveRange": {
@@ -20785,20 +20786,6 @@
       "notFoundHint": "The link may be wrong, or the range belongs to another person."
     },
     "devices": {
-      "title": "Computers",
-      "description": "Every computer that records into this project, with its live status. A computer counts as offline after 120 seconds without a status.",
-      "scopeLabel": "Whose computers",
-      "scopeMine": "My computers",
-      "scopeProject": "Whole project",
-      "column": {
-        "device": "Computer",
-        "owner": "Owner",
-        "status": "Status",
-        "layers": "Layers",
-        "sync": "Sync",
-        "lastFrame": "Last frame",
-        "actions": "Actions"
-      },
       "status": {
         "recording": "Recording",
         "paused": "Paused",
@@ -20807,28 +20794,11 @@
         "offline": "Offline",
         "unknown": "Unknown"
       },
-      "detail": {
-        "permission": "Missing: {permissions}",
-        "pausedUntil": "Until {time}",
-        "lastSeen": "Last status {time}"
-      },
       "permission": {
         "screen_recording": "Screen Recording",
         "accessibility": "Accessibility",
         "microphone": "Microphone"
       },
-      "layer": {
-        "screen": "Screen",
-        "actions": "Actions",
-        "audio": "Audio"
-      },
-      "sync": {
-        "upToDate": "Up to date",
-        "pending": "{count, plural, one {# item queued} other {# items queued}}",
-        "failed": "Upload failing",
-        "unknown": "Unknown"
-      },
-      "never": "None yet",
       "unnamed": "Unnamed computer",
       "you": "You",
       "member": "A member",
@@ -20841,13 +20811,7 @@
       "revokeDescription": "{name} stops recording into this project at once. To record again, turn on Record this computer on that computer.",
       "revoked": "Computer revoked",
       "revokeFailed": "Could not revoke the computer",
-      "loadFailed": "Could not load the computers.",
-      "tryAgain": "Try again",
-      "empty": "Computers you record will show up here",
-      "footnote": "One row per computer, with the same name as your computers in Kortix.",
-      "openKortixOnComputer": "Download Kortix for desktop",
-      "recordThisComputer": "Record this computer",
-      "openKortixHint": "Capture records from the Kortix desktop app. Install it on your computer, then turn on Record this computer."
+      "recordThisComputer": "Record this computer"
     },
     "people": {
       "title": "People",
@@ -20917,21 +20881,6 @@
       "saveFailed": "Could not save the capture policy",
       "loadFailed": "Could not load the capture policy.",
       "tryAgain": "Try again"
-    },
-    "ask": {
-      "title": "Ask",
-      "description": "Ask about what you saw, did and heard. An agent answers in a new private session and links every moment it uses.",
-      "label": "Question",
-      "placeholder": "What did I work on yesterday afternoon?",
-      "submit": "Ask",
-      "scope": "The agent reads only your timeline, through the session it runs for you.",
-      "suggestion": {
-        "yesterday": "What did I work on yesterday?",
-        "lastOpened": "When did I last open the release checklist?",
-        "byApp": "Summarize today by app.",
-        "said": "What was said in today's standup?"
-      },
-      "instructions": "Answer from my Kortix Capture timeline. Search it with `kortix capture search`, read a day with `kortix capture timeline`, and open a screen with `kortix capture frame`. Cite every moment you use as a Markdown link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cite a range as [its title]({timelineUrl}/ranges/RANGE_ID). My time zone is {tz}. Answer in the language of my question."
     },
     "dialog": {
       "title": "Record this computer",

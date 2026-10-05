@@ -7,8 +7,8 @@ import {
   foldRuns,
   gapAt,
   layoutRuns,
-  momentumStep,
   MOMENTUM_TAU,
+  momentumStep,
   openingSpp,
   placeIcons,
   rgbToHsl,
@@ -20,7 +20,14 @@ import {
   type TrackRun,
 } from './track-model';
 
-const run = (s: number, e: number, k: string): TrackRun => ({ s: s * 1000, e: e * 1000, k, app: k, title: null, url: null });
+const run = (s: number, e: number, k: string): TrackRun => ({
+  s: s * 1000,
+  e: e * 1000,
+  k,
+  app: k,
+  title: null,
+  url: null,
+});
 const PAD = 2000;
 const hueDiff = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
 
@@ -28,12 +35,20 @@ describe('folding', () => {
   test('a 6 s interruption between two runs of the same app folds into one run; 60 s stays', () => {
     const f = foldRuns([run(0, 100, 'a'), run(102, 108, 'b'), run(110, 200, 'a')], 1000, PAD);
     expect(f.map((r) => [r.s, r.e, r.n])).toEqual([[0, 200_000, 3]]);
-    expect(foldRuns([run(0, 100, 'a'), run(102, 162, 'b'), run(164, 300, 'a')], 1000, PAD)).toHaveLength(3);
+    expect(
+      foldRuns([run(0, 100, 'a'), run(102, 162, 'b'), run(164, 300, 'a')], 1000, PAD),
+    ).toHaveLength(3);
   });
 
   test('different apps do not sandwich-fold; at far zoom a tiny run joins the longer neighbour', () => {
-    expect(foldRuns([run(0, 100, 'a'), run(102, 108, 'b'), run(110, 200, 'c')], 1000, PAD)).toHaveLength(3);
-    const f = foldRuns([run(0, 1000, 'a'), run(1002, 1030, 'b'), run(1032, 2000, 'c')], 60_000, PAD);
+    expect(
+      foldRuns([run(0, 100, 'a'), run(102, 108, 'b'), run(110, 200, 'c')], 1000, PAD),
+    ).toHaveLength(3);
+    const f = foldRuns(
+      [run(0, 1000, 'a'), run(1002, 1030, 'b'), run(1032, 2000, 'c')],
+      60_000,
+      PAD,
+    );
     expect(f).toHaveLength(2);
     expect([f[0]!.k, f[0]!.s, f[0]!.e]).toEqual(['a', 0, 1_030_000]);
   });
@@ -48,14 +63,27 @@ describe('folding', () => {
 
 describe('layout and icons', () => {
   test('every run keeps its minimum width and runs never overlap', () => {
-    const L = layoutRuns([run(0, 0.2, 'a'), run(2, 100, 'b'), run(102, 200, 'c')], (t) => t / 1000, 1000, PAD);
+    const L = layoutRuns(
+      [run(0, 0.2, 'a'), run(2, 100, 'b'), run(102, 200, 'c')],
+      (t) => t / 1000,
+      1000,
+      PAD,
+    );
     expect(L.every((r) => r.w >= 1.5)).toBe(true);
-    for (let i = 1; i < L.length; i++) expect(L[i]!.x >= L[i - 1]!.x + L[i - 1]!.w - 1e-9 || L[i]!.w <= 3).toBe(true);
+    for (let i = 1; i < L.length; i++)
+      expect(L[i]!.x >= L[i - 1]!.x + L[i - 1]!.w - 1e-9 || L[i]!.w <= 3).toBe(true);
   });
 
   test('icons never overlap, a short run has none, a run scrolled partly off keeps its icon at the left edge', () => {
-    const laid = (x: number, w: number, app: string | null = 'a') => ({ x, w, s: { ...run(0, 1, 'a'), app } });
-    const xs = placeIcons([laid(100, 200), laid(110, 200), laid(140, 200), laid(200, 50)], 1000).map((i) => i.cx);
+    const laid = (x: number, w: number, app: string | null = 'a') => ({
+      x,
+      w,
+      s: { ...run(0, 1, 'a'), app },
+    });
+    const xs = placeIcons(
+      [laid(100, 200), laid(110, 200), laid(140, 200), laid(200, 50)],
+      1000,
+    ).map((i) => i.cx);
     for (let i = 1; i < xs.length; i++) expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(30);
     expect(placeIcons([laid(100, 10)], 1000)).toHaveLength(0);
     expect(placeIcons([laid(100, 200, null)], 1000)).toHaveLength(0);
@@ -77,12 +105,22 @@ describe('colors', () => {
     return s >= 0.44 && s <= 0.71 && l >= 0.54 && l <= 0.69;
   };
   test('a stable vivid hue per app, spread across apps; neighbours differ; the playhead run is brighter', () => {
-    expect(runColor({ k: 'Mail', app: 'Mail' }, true)).toEqual(runColor({ k: 'Mail', app: 'Mail' }, true));
+    expect(runColor({ k: 'Mail', app: 'Mail' }, true)).toEqual(
+      runColor({ k: 'Mail', app: 'Mail' }, true),
+    );
     expect(inBand(runColor({ k: 'Mail', app: 'Mail' }, true))).toBe(true);
-    const hues = new Set(['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'].map((k) => Math.round(rgbToHsl(runColor({ k, app: k }, true))[0])));
+    const hues = new Set(
+      ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'].map((k) =>
+        Math.round(rgbToHsl(runColor({ k, app: k }, true))[0]),
+      ),
+    );
     expect(hues.size).toBeGreaterThanOrEqual(4);
-    const cols = runColors(['x1', 'x2', 'x3', 'x4'].map((k) => ({ s: { k, app: k } })), true);
-    for (let i = 1; i < cols.length; i++) expect(hueDiff(rgbToHsl(cols[i]!)[0], rgbToHsl(cols[i - 1]!)[0])).toBeGreaterThanOrEqual(22);
+    const cols = runColors(
+      ['x1', 'x2', 'x3', 'x4'].map((k) => ({ s: { k, app: k } })),
+      true,
+    );
+    for (let i = 1; i < cols.length; i++)
+      expect(hueDiff(rgbToHsl(cols[i]!)[0], rgbToHsl(cols[i - 1]!)[0])).toBeGreaterThanOrEqual(22);
     const base = runColor({ k: 'a1', app: 'a1' }, true);
     expect(rgbToHsl(brighter(base))[2]).toBeGreaterThan(rgbToHsl(base)[2] + 0.08);
   });
@@ -107,7 +145,11 @@ describe('navigation', () => {
   test('the gap hint shows only inside a gap of 5 minutes or more between two runs', () => {
     const MIN = 60_000;
     const NOW = 100 * 3_600_000;
-    const r2 = (fromMin: number, toMin: number): TrackRun => ({ ...run(0, 1, 'a'), s: NOW - fromMin * MIN, e: NOW - toMin * MIN });
+    const r2 = (fromMin: number, toMin: number): TrackRun => ({
+      ...run(0, 1, 'a'),
+      s: NOW - fromMin * MIN,
+      e: NOW - toMin * MIN,
+    });
     const gs = [r2(120, 100), r2(30, 0)];
     const at = (m: number) => NOW - m * MIN;
     expect(gapAt(gs, at(110), PAD)).toBeNull();
@@ -118,7 +160,11 @@ describe('navigation', () => {
   });
 
   test('audio bars merge adjacent segments, split on gaps, and keep 1 px', () => {
-    const segs = [{ s: 60_000, e: 120_000 }, { s: 120_000, e: 150_000 }, { s: 400_000, e: 460_000 }];
+    const segs = [
+      { s: 60_000, e: 120_000 },
+      { s: 120_000, e: 150_000 },
+      { s: 400_000, e: 460_000 },
+    ];
     expect(audioBars(segs, (t) => t / 1000, 300)).toEqual([{ x: 60, w: 90 }]);
     expect(audioBars(segs, (t) => t / 1000, 1000)).toHaveLength(2);
     expect(audioBars(segs, (t) => t / 1e6, 1000).every((b) => b.w >= 1)).toBe(true);
@@ -128,8 +174,20 @@ describe('navigation', () => {
 describe('inertia and opening zoom', () => {
   test('release velocity uses the last 100 ms; steps compose; total travel is v × tau', () => {
     expect(velocityFromSamples([{ t: 1000, x: 0 }])).toBe(0);
-    expect(velocityFromSamples([{ t: 1000, x: 0 }, { t: 1050, x: 100 }])).toBe(2);
-    expect(velocityFromSamples([{ t: 1000, x: 0 }, { t: 1010, x: 500 }, { t: 1200, x: 510 }, { t: 1300, x: 520 }])).toBe(0.1);
+    expect(
+      velocityFromSamples([
+        { t: 1000, x: 0 },
+        { t: 1050, x: 100 },
+      ]),
+    ).toBe(2);
+    expect(
+      velocityFromSamples([
+        { t: 1000, x: 0 },
+        { t: 1010, x: 500 },
+        { t: 1200, x: 510 },
+        { t: 1300, x: 520 },
+      ]),
+    ).toBe(0.1);
     const one = momentumStep(2, 100);
     const half = momentumStep(2, 50);
     const half2 = momentumStep(half.v, 50);
@@ -141,14 +199,20 @@ describe('inertia and opening zoom', () => {
     const MIN = 60_000;
     const HR = 3_600_000;
     const NOW = 100 * HR;
-    const r2 = (fromMin: number, toMin: number): TrackRun => ({ ...run(0, 1, 'a'), s: NOW - fromMin * MIN, e: NOW - toMin * MIN });
+    const r2 = (fromMin: number, toMin: number): TrackRun => ({
+      ...run(0, 1, 'a'),
+      s: NOW - fromMin * MIN,
+      e: NOW - toMin * MIN,
+    });
     expect(openingSpp(NOW, [r2(40, 0)], 1200, PAD)).toEqual({ spp: 600, widened: false });
     expect(openingSpp(null, [], 1200, PAD)).toEqual({ spp: 600, widened: false });
     const o = openingSpp(NOW, [r2(120, 56), r2(0.5, 0)], 1200, PAD);
     expect(o.widened).toBe(true);
     expect((o.spp * 1200) / 2).toBeGreaterThanOrEqual(56 * MIN);
     expect((o.spp * 1200) / 2).toBeLessThanOrEqual(56 * MIN * 1.2);
-    expect(Math.abs(openingSpp(NOW, [r2(1500, 1200), r2(0.5, 0)], 1200, PAD).spp * 1200 - 6 * HR)).toBeLessThan(1);
+    expect(
+      Math.abs(openingSpp(NOW, [r2(1500, 1200), r2(0.5, 0)], 1200, PAD).spp * 1200 - 6 * HR),
+    ).toBeLessThan(1);
     expect(openingSpp(NOW, [r2(1, 0)], 1200, PAD).widened).toBe(false);
   });
 });
