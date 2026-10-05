@@ -25,7 +25,8 @@ const OUT = process.env.CAPTURE_EVAL_OUT ?? 'output/capture-eval';
 const SB = { url: process.env.SUPABASE_URL!, anon: process.env.SUPABASE_ANON_KEY!, service: process.env.SUPABASE_SERVICE_ROLE_KEY! };
 if (!SB.url || !SB.anon || !SB.service) throw new Error('SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are required');
 if (!/localhost|127\.0\.0\.1/.test(API + SB.url)) throw new Error('seed-eval runs against a local stack only');
-const PASSWORD = `Eval-${randomBytes(6).toString('hex')}`;
+// The eval users' password: CAPTURE_EVAL_PASSWORD (to share a local login), else a fresh random one.
+const PASSWORD = process.env.CAPTURE_EVAL_PASSWORD ?? `Eval-${randomBytes(6).toString('hex')}`;
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
 async function http(method: string, path: string, token?: string, body?: unknown, okStatuses = [200, 201]) {
@@ -88,7 +89,7 @@ for (const p of persons) {
   if (!token) throw new Error(`device token for ${p.person} never arrived`);
   const c = (await http('POST', '/capture/credentials', token.device_token)).json;
   const target = { endpoint: c.endpoint, bucket: c.bucket, region: c.region, accessKeyId: c.access_key_id, secretAccessKey: c.secret_access_key, sessionToken: c.session_token };
-  const objects = deviceObjects({ prefix: token.prefix, deviceId: token.device_id, machineKey, name: who.name, activity: p.activity });
+  const objects = await deviceObjects({ prefix: token.prefix, deviceId: token.device_id, machineKey, name: who.name, activity: p.activity });
   await upload(target, objects.data);
   await upload(target, objects.manifests);
   await upload(target, objects.rest);

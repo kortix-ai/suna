@@ -5,13 +5,9 @@
  * and status.json. Every object is validated against the vendored JSON Schemas.
  */
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { captureSchemaErrors, type CaptureObject, type CaptureSchemaName } from '../../../../tests/src/fixtures/capture';
 import type { Activity } from './synthetic';
-
-const FIX = join(import.meta.dir, '../../../../tests/fixtures/capture-format-v2/bucket/fixture-prefix/0f1e2d3c4b5a69788796a5b4c3d2e1f0');
-const VIDEO = new Uint8Array(readFileSync(join(FIX, '2026/10/01/1790845200000-1.mp4')));
+import { renderChunkVideo, VIDEO_HEIGHT, VIDEO_WIDTH } from './video';
 /** A real 160×100 JPEG (synthetic stripes): the screenshot of every screenshot action. */
 const SHOT = new Uint8Array(Buffer.from('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', 'base64'));
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -37,7 +33,7 @@ function groups<T extends { ts: number }>(items: T[], gapMs: number, max: number
   return out;
 }
 
-export function deviceObjects(input: { prefix: string; deviceId: string; machineKey: string; name: string; activity: Activity[] }) {
+export async function deviceObjects(input: { prefix: string; deviceId: string; machineKey: string; name: string; activity: Activity[] }) {
   const { prefix, deviceId } = input;
   const activity = [...input.activity].sort((a, b) => a.ts - b.ts);
   const data: CaptureObject[] = [];
@@ -48,8 +44,12 @@ export function deviceObjects(input: { prefix: string; deviceId: string; machine
     index.set(ymd(start), [...(index.get(ymd(start)) ?? []), JSON.stringify(line)]);
   };
   let id = 0;
-  // Screen chunks: up to 12 frames, split on 30 s without a frame.
-  for (const chunk of groups(activity.filter((a) => !a.action), 30_000, 12)) {
+  // Screen chunks: up to 12 frames, split on 30 s without a frame. Videos render 8 at a time.
+  const screenChunks = groups(activity.filter((a) => !a.action), 30_000, 12);
+  const videos: Uint8Array[] = [];
+  for (let i = 0; i < screenChunks.length; i += 8) videos.push(...(await Promise.all(screenChunks.slice(i, i + 8).map((c) => renderChunkVideo(c)))));
+  for (const [ci, chunk] of screenChunks.entries()) {
+    const VIDEO = videos[ci]!;
     id++;
     const start = chunk[0]!.ts;
     const end = chunk[chunk.length - 1]!.ts + 1_000;
@@ -57,11 +57,11 @@ export function deviceObjects(input: { prefix: string; deviceId: string; machine
     const lines = chunk.map((f, i) => {
       const line = {
         app: { bundle_id: `com.example.${f.app.toLowerCase()}`, icon: null, is_user_app: true, name: f.app, version: '1.0' },
-        capture_reason: 'interval', dhash: 'abcd', display: { h: 720, w: 1280, x: 0, y: 0 }, domain: null, domain_icon: null,
-        frame_index: i, height: 720, image_hash: null, inactive: false,
+        capture_reason: 'interval', dhash: 'abcd', display: { h: VIDEO_HEIGHT, w: VIDEO_WIDTH, x: 0, y: 0 }, domain: null, domain_icon: null,
+        frame_index: i, height: VIDEO_HEIGHT, image_hash: null, inactive: false,
         ocr: { background: '', foreground: f.text, lines: [{ h: 18, len: f.text.length, off: 0, text: f.text, w: 600, x: 10, y: 20 }] },
-        pii_redacted: false, segment: id, title: f.title, ts_ms: f.ts, url: null, width: 1280,
-        windows: [{ app: `com.example.${f.app.toLowerCase()}`, app_name: f.app, focused: true, h: 720, layer: 0, title: f.title, url: null, w: 1280, x: 0, y: 0, z: 0 }],
+        pii_redacted: false, segment: id, title: f.title, ts_ms: f.ts, url: null, width: VIDEO_WIDTH,
+        windows: [{ app: `com.example.${f.app.toLowerCase()}`, app_name: f.app, focused: true, h: VIDEO_HEIGHT, layer: 0, title: f.title, url: null, w: VIDEO_WIDTH, x: 0, y: 0, z: 0 }],
       };
       check('frames-line', line);
       return JSON.stringify(line);
@@ -70,7 +70,7 @@ export function deviceObjects(input: { prefix: string; deviceId: string; machine
     const fKey = `${base}.frames.jsonl.zst`;
     const vKey = `${base}.mp4`;
     data.push({ key: `${prefix}/${fKey}`, body: frames, contentType: 'application/zstd' }, { key: `${prefix}/${vKey}`, body: VIDEO, contentType: 'video/mp4' });
-    const manifest = { app_version: '0.1.0', created_at_ms: end + 2_000, device_id: deviceId, encryption: null, end_ms: end, frame_count: chunk.length, height: 720, kind: 'chunk', objects: { frames: info(fKey, frames), video: info(vKey, VIDEO) }, privacy: { mode: 'off', redact_pii: false }, schema: 2, start_ms: start, video_id: id, video_name: `${start}.mp4`, width: 1280 };
+    const manifest = { app_version: '0.1.0', created_at_ms: end + 2_000, device_id: deviceId, encryption: null, end_ms: end, frame_count: chunk.length, height: VIDEO_HEIGHT, kind: 'chunk', objects: { frames: info(fKey, frames), video: info(vKey, VIDEO) }, privacy: { mode: 'off', redact_pii: false }, schema: 2, start_ms: start, video_id: id, video_name: `${start}.mp4`, width: VIDEO_WIDTH };
     check('manifest-chunk', manifest);
     manifests.push({ key: `${prefix}/${base}.manifest.json`, body: enc(JSON.stringify(manifest)), contentType: 'application/json' });
     addIndex({ op: 'put', kind: 'chunk', base, start_ms: start, end_ms: end, manifest: true, at_ms: end + 3_000, frames: chunk.length, video_id: id }, start);

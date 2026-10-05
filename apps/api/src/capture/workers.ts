@@ -45,7 +45,8 @@ registerJobHandler(INGEST_QUEUE, async (job) => {
 // A range pipeline makes many model calls; give it a long claim.
 registerJobHandler(PROCESS_QUEUE, async (job) => processRange(String(job.payload.rangeId)), 30 * 60_000);
 
-// Episodes: one model call per chunk of a range; 8 at once per replica.
+// Episodes: one model call per chunk of a range; 8 at once per replica. 6 attempts
+// (10 s … 160 s backoff): the managed model answers 429 "at capacity" in bursts.
 registerJobHandler(
   EPISODES_QUEUE,
   async (job) => {
@@ -80,13 +81,13 @@ const nextUtcDay = () => new Date(Math.floor(Date.now() / 86_400_000 + 1) * 86_4
 
 /** Queue tracing of one closed detected range. A new end time is a new run. */
 export function enqueueEpisodes(range: { rangeId: string; accountId: string; endAt: Date }, suffix = ''): Promise<boolean> {
-  return enqueueJob(EPISODES_QUEUE, `${range.rangeId}:${range.endAt.getTime()}${suffix}`, { rangeId: range.rangeId, accountId: range.accountId }, { maxAttempts: 3 });
+  return enqueueJob(EPISODES_QUEUE, `${range.rangeId}:${range.endAt.getTime()}${suffix}`, { rangeId: range.rangeId, accountId: range.accountId }, { maxAttempts: 6 });
 }
 
 /** Queue mining of an account, debounced: one run per 10-minute slot, at its end. */
 export function enqueueMining(accountId: string, slotMs = 10 * 60_000): Promise<boolean> {
   const slot = Math.floor(Date.now() / slotMs) + 1;
-  return enqueueJob(MINE_QUEUE, `${accountId}:${slot}`, { accountId }, { runAt: new Date(slot * slotMs), maxAttempts: 3 });
+  return enqueueJob(MINE_QUEUE, `${accountId}:${slot}`, { accountId }, { runAt: new Date(slot * slotMs), maxAttempts: 6 });
 }
 
 export function enqueueManifest(key: string): Promise<boolean> {
