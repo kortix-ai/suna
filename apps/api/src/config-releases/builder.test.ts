@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, chmodSync, existsSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -24,7 +24,8 @@ import {
   storeConfigArchive,
   toDescriptor,
 } from './builder';
-import { MemoryConfigArchiveStore, configArchiveKey } from './store';
+import { configArchiveKey } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 let root = '';
 let work = '';
@@ -216,6 +217,37 @@ describe('buildConfigRelease on the root project layout', () => {
     expect(second.config_tree_id).toBe(first.config_tree_id);
     expect(second.release_id).toBe(first.release_id);
     expect(again.objects.get(configArchiveKey(project.projectId, second.config_tree_id!))!.equals(firstBytes)).toBe(true);
+  });
+
+  test('a composed release whose archive bytes are already cached does not build the archive again', async () => {
+    const sha = seedRootLayout();
+    const first = await buildConfigRelease(project, sha, 'project', { store });
+    expect(first.archive?.bytes).toBeGreaterThan(0);
+
+    // Count gzip runs: the archive pipeline is `git archive` piped through
+    // `gzip -n`, so a gzip run under a PATH shim means the archive was built.
+    const shimDir = join(root, 'gzip-shim');
+    mkdirSync(shimDir, { recursive: true });
+    const counter = join(root, 'gzip-runs');
+    const gzips = () => (existsSync(counter) ? readFileSync(counter, 'utf8').trim().split('\n').filter(Boolean).length : 0);
+    const realGzip = run('which', ['gzip'], root);
+    writeFileSync(join(shimDir, 'gzip'), `#!/bin/sh\necho run >> '${counter}'\nexec '${realGzip}' "$@"\n`);
+    chmodSync(join(shimDir, 'gzip'), 0o755);
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${shimDir}:${previousPath}`;
+    try {
+      const again = new MemoryConfigArchiveStore();
+      const second = await buildConfigRelease(project, sha, 'project', { store: again, noCache: true });
+      expect(second.release_id).toBe(first.release_id);
+      expect(second.archive?.bytes).toBe(first.archive?.bytes);
+      // The size cache already held the tree's key: the second build runs no
+      // archive pipeline (the first build ran before the shim, so 0 is the
+      // count of shims-era gzip runs), and nothing is published again.
+      expect(gzips()).toBe(0);
+      expect(again.puts).toBe(0);
+    } finally {
+      process.env.PATH = previousPath;
+    }
   });
 
   test('a root skill replaces the config dir skill of the same name; the others stay', async () => {

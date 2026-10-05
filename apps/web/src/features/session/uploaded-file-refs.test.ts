@@ -139,6 +139,26 @@ describe('uploaded file references', () => {
     ]);
   });
 
+  test('a resent saved copy draws that copy at once, but is not an upload identity', () => {
+    // The inline editor resends a kept attachment as its `kortix-attachment://` ref.
+    const id = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
+    const ref = `kortix-attachment://${id(1)}/${id(2)}/${id(3)}`;
+    const saved: AttachedFile = {
+      kind: 'remote',
+      url: ref,
+      filename: 'shot.png',
+      mime: 'image/png',
+      isImage: true,
+    };
+    expect(optimisticUploadedFileRef(saved)).toEqual({
+      path: 'shot.png',
+      mime: 'image/png',
+      filename: 'shot.png',
+      attachment: ref,
+    });
+    expect(sentAttachmentsOf([saved])).toEqual([{ filename: 'shot.png', mime: 'image/png' }]);
+  });
+
   test('a remote attachment needs no upload, so it keeps its path', () => {
     expect(optimisticUploadedFileRef(remoteFile('remote.pdf'))).toEqual({
       path: 'remote.pdf',

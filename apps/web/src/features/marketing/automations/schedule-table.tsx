@@ -1,5 +1,5 @@
-import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { getLocalizedAutomationsContent } from './content';
 
@@ -16,7 +16,7 @@ export function ScheduleTable(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { schedule } = getLocalizedAutomationsContent(tI18nComplete);
   return (
-    <div className="border-border bg-card overflow-x-auto rounded-xl border">
+    <div className="border-border bg-card overflow-x-auto rounded-sm border">
       <table className="w-full min-w-max border-collapse text-left">
         <thead>
           <tr className="border-border border-b">

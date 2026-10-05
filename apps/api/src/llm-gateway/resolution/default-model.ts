@@ -218,7 +218,11 @@ export async function isModelServableForAccount(params: {
     );
     return candidates.length > 0;
   } catch (err) {
-    if (err instanceof GatewayResolutionError) return false;
+    // A pool that is cooling down after a rate or usage limit is configured
+    // and pauses only for a while. Calling it unservable degraded the default
+    // off `project:default` (so the project's chain never ran) and refused new
+    // sessions and channel turns; the request path handles the pause itself.
+    if (err instanceof GatewayResolutionError) return err.code === 'provider_pool_rate_limited';
     throw err;
   }
 }

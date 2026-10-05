@@ -534,6 +534,15 @@ describe('computer setup (the macOS grants the approved access needs)', () => {
     expect(computer.computerSetupMissing(home, { accessibility: true, screenRecording: true, files: true })).toEqual([]);
     expect(computer.computerSetupMissing(home, null)).toEqual([]); // not macOS
   });
+
+  test('Allow all always attempts a capture, so Kortix is listed under Screen Recording', () => {
+    const tray = fs.readFileSync(path.join(__dirname, 'computer-tray.js'), 'utf8');
+    const request = tray.slice(tray.indexOf("before.missing.includes('screenRecording')"), tray.indexOf('const needsRestart'));
+    // macOS 11+ never reports 'not-determined' for the screen, so no branch may gate the capture on it.
+    expect(request).not.toContain("'not-determined'");
+    expect(request.indexOf('desktopCapturer.getSources')).toBeGreaterThan(-1);
+    expect(request.indexOf('desktopCapturer.getSources')).toBeLessThan(request.indexOf('Privacy_ScreenCapture'));
+  });
 });
 
 describe('machineId (the computer agent formula)', () => {
