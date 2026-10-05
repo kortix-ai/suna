@@ -1,0 +1,24 @@
+{
+  "source_hash": "ee42b442f4f09d2a74be32d5dc0844cc456950469f3cf0112738a27ebfa9f1f8",
+  "diff_files": [
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/git-proxy/index.ts",
+    "apps/api/src/projects/git.ts",
+    "apps/api/src/projects/git/commits.test.ts",
+    "apps/api/src/projects/git/commits.ts",
+    "apps/api/src/projects/git/fast-boot-bundle.test.ts",
+    "apps/api/src/projects/git/fast-boot-bundle.ts",
+    "apps/api/src/projects/git/merge.ts",
+    "apps/api/src/projects/lib/fast-boot-git-hint.test.ts",
+    "apps/api/src/projects/lib/fast-boot-git-hint.ts"
+  ],
+  "diff_hash": "3cab54e6a0c538247974628722f9be8d0c8ea64bfff68240e39fe2f6f33d3557",
+  "head": "5077885bb23aba0ed2237e8cf1258e72ad2ca726",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-05T20:46:20.868Z"
+}
