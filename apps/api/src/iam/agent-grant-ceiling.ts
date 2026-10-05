@@ -22,9 +22,9 @@ import { buildDenialError } from './denial-message';
 import type { Actor } from './actor';
 
 // The request readers `isGovernedAgentWriter` and `assertNoGrantEscalation`
-// read the Hono context, so they live in `middleware/agent-scope.ts`.
+// read the Hono context, so they live in `middleware/agent-grant-ceiling.ts`.
 // Re-exported here so every importer keeps working.
-export { isGovernedAgentWriter, assertNoGrantEscalation } from '../middleware/agent-scope';
+export { isGovernedAgentWriter, assertNoGrantEscalation } from '../middleware/agent-grant-ceiling';
 
 export type GrantDimension = 'permissions' | 'connectors' | 'secrets' | 'apps';
 export interface GrantEscalation {
