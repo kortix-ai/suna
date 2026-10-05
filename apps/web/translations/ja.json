@@ -20988,7 +20988,9 @@
         "screen": "画面収録",
         "screenDescription": "画面に表示されているものを見て記録する",
         "accessibility": "アクセシビリティ",
-        "accessibilityDescription": "クリックとキー入力を記録する",
+        "accessibilityDescription": "作業中のアプリとウインドウを読み取る",
+        "inputMonitoring": "入力監視",
+        "inputMonitoringDescription": "クリックとキー入力を記録する（操作がオンのときのみ）",
         "microphone": "マイク",
         "microphoneDescription": "話された内容を記録する（音声がオンのときのみ）"
       },

@@ -173,7 +173,10 @@ async function runService({ library, engineDir, env = process.env, execPath = pr
     const pending = signInPending(library);
     // macOS applies a new grant only to a process started after it.
     const granted = capture.grantedPermissions(permissions);
-    if (lastGranted && granted.some((key) => !lastGranted.includes(key)) && recorder.state().running) recorder.stop();
+    if (lastGranted && granted.some((key) => !lastGranted.includes(key))) {
+      recorder.restart();
+      actions.restart();
+    }
     lastGranted = granted;
     if (want.recorder && !pending) recorder.run();
     else recorder.stop();

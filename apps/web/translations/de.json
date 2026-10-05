@@ -20988,7 +20988,9 @@
         "screen": "Bildschirmaufnahme",
         "screenDescription": "Sehen und aufnehmen, was auf dem Bildschirm ist",
         "accessibility": "Bedienungshilfen",
-        "accessibilityDescription": "Deine Klicks und Tasten aufnehmen",
+        "accessibilityDescription": "Die App und das Fenster lesen, in dem du arbeitest",
+        "inputMonitoring": "Eingabeüberwachung",
+        "inputMonitoringDescription": "Deine Klicks und Tasten aufnehmen, nur wenn Aktionen an ist",
         "microphone": "Mikrofon",
         "microphoneDescription": "Aufnehmen, was gesagt wird, nur wenn Audio an ist"
       },

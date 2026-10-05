@@ -32,11 +32,13 @@ describe('capturePhase', () => {
     expect(phase({ ...recording, signedIn: false })).toBe('off');
     expect(phase({ ...recording, on: false })).toBe('off');
     expect(phase({ ...recording, projectId: 'another' })).toBe('off');
+    expect(phase({ ...recording, state: 'stopped' })).toBe('off');
     expect(phase({ ...recording, state: 'paused' })).toBe('paused');
     expect(phase({ ...recording, pausedUntilMs: 2_000 })).toBe('paused');
     expect(phase({ ...recording, pausedUntilMs: 500 })).toBe('recording');
     expect(phase({ ...recording, policy: { ...recording.policy!, paused: true } })).toBe('paused');
     expect(phase({ ...recording, permissions: { screen: false, accessibility: true, microphone: false } })).toBe('needsPermission');
+    expect(phase({ ...recording, state: 'permission_needed' })).toBe('needsPermission');
     expect(phase({ ...recording, state: 'not_recording' })).toBe('starting');
     expect(phase(recording)).toBe('recording');
   });
@@ -51,6 +53,17 @@ test('missingGrants: Screen Recording and Accessibility always, the Microphone o
   expect(missingGrants({ ...recording, permissions: { screen: false, accessibility: false, microphone: false } })).toEqual(['screen', 'accessibility']);
   expect(missingGrants({ ...recording, layers: { screen: true, actions: true, audio: true } })).toEqual(['microphone']);
   expect(missingGrants({ ...recording, permissions: null })).toEqual([]);
+});
+
+test('missingGrants: Input Monitoring only with Actions on, allowed by the policy, and reported by the engine', () => {
+  const actionsOn = { ...recording, policy: { ...recording.policy!, layers: { screen: true, actions: true, audio: true } } };
+  const noListener = { screen: true, accessibility: true, microphone: false, inputMonitoring: false };
+  expect(missingGrants({ ...actionsOn, permissions: noListener })).toEqual(['inputMonitoring']);
+  expect(missingGrants({ ...actionsOn, permissions: { ...noListener, inputMonitoring: true } })).toEqual([]);
+  // An engine that does not report it, Actions off here, or Actions off by policy: not asked.
+  expect(missingGrants({ ...actionsOn, permissions: { screen: true, accessibility: true, microphone: false } })).toEqual([]);
+  expect(missingGrants({ ...actionsOn, layers: { screen: true, actions: false, audio: false }, permissions: noListener })).toEqual([]);
+  expect(missingGrants({ ...recording, permissions: noListener })).toEqual([]);
 });
 
 test('activeLayers: on here and allowed by the policy', () => {

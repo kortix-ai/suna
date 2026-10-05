@@ -255,6 +255,8 @@ function supervise({ name, start, onChange = () => {}, now = Date.now, timers = 
   let timer = null;
   let lastExit = null;
 
+  let restarting = false;
+
   function launch() {
     timer = null;
     if (!wanted || child) return;
@@ -275,11 +277,24 @@ function supervise({ name, start, onChange = () => {}, now = Date.now, timers = 
       child = null;
       lastExit = { code, signal, error: lastExit?.error };
       if (!wanted) return onChange();
+      if (restarting) {
+        restarting = false;
+        return launch();
+      }
       crashes = now() - startedAt >= HEALTHY_AFTER_MS ? 1 : crashes + 1;
       console.warn(`[kortix] capture ${name} exited (code ${code}, signal ${signal}); restart #${crashes}`);
       scheduleRestart();
     });
     onChange();
+  }
+
+  /** SIGTERM, then SIGKILL after `killAfterMs` if it is still there. */
+  function terminate(current) {
+    current.kill('SIGTERM');
+    const force = timers.setTimeout(() => {
+      if (current.exitCode === null && current.signalCode === null) current.kill('SIGKILL');
+    }, killAfterMs);
+    current.once('exit', () => timers.clearTimeout(force));
   }
 
   function scheduleRestart() {
@@ -294,17 +309,19 @@ function supervise({ name, start, onChange = () => {}, now = Date.now, timers = 
       crashes = 0;
       launch();
     },
+    /** Replace a running child now (macOS applies a new grant only to a new process). */
+    restart() {
+      if (!wanted || !child || restarting) return;
+      restarting = true;
+      terminate(child);
+    },
     stop() {
       wanted = false;
+      restarting = false;
       if (timer) timers.clearTimeout(timer);
       timer = null;
-      const current = child;
-      if (!current) return onChange();
-      current.kill('SIGTERM');
-      const force = timers.setTimeout(() => {
-        if (current.exitCode === null && current.signalCode === null) current.kill('SIGKILL');
-      }, killAfterMs);
-      current.once('exit', () => timers.clearTimeout(force));
+      if (!child) return onChange();
+      terminate(child);
     },
     state: () => ({
       wanted,
@@ -325,12 +342,18 @@ function supervise({ name, start, onChange = () => {}, now = Date.now, timers = 
  * unit points at an old app path: an update or a move), `resume` (disabled),
  * `repair` (installed and enabled, but not running: reinstall, throttled),
  * `pause` (Capture off: disabled, so login does not start it), `uninstall`
- * (signed out), or null.
+ * (signed out), or null. `explicit` is a person's action (the switch, a
+ * sign-in, Record); without it only `install` after an update, `pause` and
+ * `uninstall` happen.
  */
-function serviceAction({ desktopOn, signedIn, signInRequired, service }) {
+function serviceAction({ desktopOn, signedIn, signInRequired, service, explicit = false }) {
   const installed = service?.installed === true;
   if (!signedIn && !signInRequired) return installed ? 'uninstall' : null;
   if (!desktopOn) return installed && service.enabled !== false ? 'pause' : null;
+  // A launch or a poll never starts what someone stopped (launchctl disable,
+  // a removed unit, a killed service): it only rewrites an enabled unit
+  // after an app update or move. Starting it again takes a person's action.
+  if (!explicit) return installed && service.enabled !== false && service.upToDate === false ? 'install' : null;
   if (!installed || service.upToDate === false) return 'install';
   if (service.enabled === false) return 'resume';
   if (!service.heartbeat?.running && service.active !== true) return 'repair';
@@ -339,11 +362,22 @@ function serviceAction({ desktopOn, signedIn, signInRequired, service }) {
 
 /* ─── Status ───────────────────────────────────────────────────────────── */
 
-const PERMISSION_KEYS = ['screen', 'accessibility', 'microphone'];
+const PERMISSION_KEYS = ['screen', 'accessibility', 'microphone', 'input_monitoring'];
 
 /** The permission keys macOS granted, from `kortix-capture --json permissions`. */
 function grantedPermissions(permissions) {
   return permissions ? PERMISSION_KEYS.filter((key) => permissions[key] === true || permissions[key] === 'granted') : [];
+}
+
+/** The page's view of them; `inputMonitoring` only when the engine reports it. */
+function permissionView(permissions) {
+  const granted = grantedPermissions(permissions);
+  return {
+    screen: granted.includes('screen'),
+    accessibility: granted.includes('accessibility'),
+    microphone: granted.includes('microphone'),
+    ...('input_monitoring' in permissions ? { inputMonitoring: granted.includes('input_monitoring') } : {}),
+  };
 }
 
 /** The operator policy in force, from `sync status` (`{ source, fetched_at_ms, policy }`). */
@@ -355,7 +389,7 @@ function policyOf(sync) {
  * The `capture_status` answer, from the engine's `status`, `sync status` and
  * `permissions` JSON plus this app's choices and its children.
  */
-function captureStatusFrom({ available, error, desktop, status, sync, permissions, children }) {
+function captureStatusFrom({ available, error, desktop, status, sync, permissions, children, serviceStopped = false }) {
   if (!available) return { available: false, error: error || 'Kortix Capture is not part of this build.' };
   const kortix = sync?.kortix || {};
   const signedIn = kortix.signed_in === true;
@@ -366,6 +400,7 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
   if (signInRequired) state = 'signInRequired';
   else if (!signedIn) state = 'signedOut';
   else if (!desktop.on) state = 'off';
+  else if (serviceStopped) state = 'stopped';
   else if (recorder.crashLoop) state = 'crashed';
   // Running but no heartbeat yet: the engine still reports `not_running`.
   else if (!recorder.running || !status?.recorder_running) state = 'starting';
@@ -393,7 +428,7 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
         }
       : null,
     pausedUntilMs: status?.paused_until_ms ?? null,
-    permissions: permissions ? Object.fromEntries(PERMISSION_KEYS.map((key) => [key, grantedPermissions(permissions).includes(key)])) : null,
+    permissions: permissions ? permissionView(permissions) : null,
     sync: {
       state: sync?.state?.state || 'off',
       pending: sync?.state?.pending ?? 0,
@@ -408,10 +443,12 @@ const STATE_WORDS = {
   recording: 'Recording',
   paused: 'Paused',
   permission_missing: 'Needs permission',
+  permission_needed: 'Needs permission',
   not_recording: 'Not recording',
   starting: 'Starting…',
   crashed: 'Stopped after repeated crashes',
   off: 'Off',
+  stopped: 'Stopped',
   signInRequired: 'Sign in again',
   signedOut: 'Not set up',
 };

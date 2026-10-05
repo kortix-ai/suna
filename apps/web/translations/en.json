@@ -20988,7 +20988,9 @@
         "screen": "Screen Recording",
         "screenDescription": "See and record what is on the screen",
         "accessibility": "Accessibility",
-        "accessibilityDescription": "Record your clicks and keys",
+        "accessibilityDescription": "Read the app and window you are working in",
+        "inputMonitoring": "Input Monitoring",
+        "inputMonitoringDescription": "Record your clicks and keys, only while Actions is on",
         "microphone": "Microphone",
         "microphoneDescription": "Record what is said, only while Audio is on"
       },

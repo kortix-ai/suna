@@ -20988,7 +20988,9 @@
         "screen": "Снимање екрана",
         "screenDescription": "Види и снимај шта је на екрану",
         "accessibility": "Приступачност",
-        "accessibilityDescription": "Снимај кликове и тастере",
+        "accessibilityDescription": "Читај апликацију и прозор у којем радиш",
+        "inputMonitoring": "Праћење уноса",
+        "inputMonitoringDescription": "Снимај кликове и тастере, само када су радње укључене",
         "microphone": "Микрофон",
         "microphoneDescription": "Снимај оно што се говори, само када је звук укључен"
       },

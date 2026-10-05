@@ -89,7 +89,7 @@ export function useDesktopCaptureActions(projectId: string, { onWaitingOnPage }:
   const set = useMutation({ ...options, mutationFn: desktopCaptureSet });
   const pause = useMutation({ ...options, mutationFn: () => desktopCapturePause(60) });
   const resume = useMutation({ ...options, mutationFn: desktopCaptureResume });
-  const grants = useMutation({ ...options, mutationFn: (audio: boolean) => desktopCaptureRequestGrants({ audio }) });
+  const grants = useMutation({ ...options, mutationFn: desktopCaptureRequestGrants });
   const signOut = useMutation({
     ...options,
     // Kortix first (the device loses access), then this computer forgets it and the service goes.

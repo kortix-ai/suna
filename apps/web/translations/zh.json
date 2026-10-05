@@ -20988,7 +20988,9 @@
         "screen": "屏幕录制",
         "screenDescription": "查看并记录屏幕上的内容",
         "accessibility": "辅助功能",
-        "accessibilityDescription": "记录你的点击和按键",
+        "accessibilityDescription": "读取你正在使用的应用和窗口",
+        "inputMonitoring": "输入监控",
+        "inputMonitoringDescription": "记录你的点击和按键，仅在开启操作时",
         "microphone": "麦克风",
         "microphoneDescription": "记录说话内容，仅在开启音频时"
       },

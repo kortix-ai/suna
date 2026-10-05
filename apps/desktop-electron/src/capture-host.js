@@ -16,8 +16,6 @@ const { machineId } = require('./computer');
 const REFRESH_EVERY_MS = 30_000;
 /** The page polls capture_status; within this age the cached answer is reused. */
 const FRESH_MS = 2_000;
-/** A service that is installed but not running is reinstalled at most this often. */
-const REPAIR_EVERY_MS = 5 * 60_000;
 const SIGN_IN_MARKER = 'sign-in.pending';
 
 /** Dev only: the service bundle from src (bun), like the computer agent's. */
@@ -97,30 +95,32 @@ function setupCapture(deps) {
   let view = capture.captureStatusFrom({ available: false, error: 'Kortix Capture is starting.' });
   let viewAt = 0;
   let refreshing = null;
-  let lastRepairAt = 0;
   /** @type {string | null | undefined} */
   let thisMachine;
 
-  /** Brings the service in line with the person's switch and the sign-in. */
-  async function reconcile(desktop, sync, current, { force = false } = {}) {
+  /**
+   * Brings the service in line with the person's switch and the sign-in.
+   * `explicit`: a person just acted (switch, sign-in, Record, Resume). A
+   * launch or a poll is passive and never starts a stopped service.
+   */
+  async function reconcile(desktop, sync, current, { explicit = false } = {}) {
     const action = capture.serviceAction({
       desktopOn: desktop.on,
       signedIn: sync?.kortix?.signed_in === true,
       signInRequired: sync?.kortix?.sign_in_required === true,
       service: current,
+      explicit,
     });
     if (!action) return current;
     if ((action === 'install' || action === 'repair') && runsFromTemporaryLocation()) {
       console.log('[kortix] not installing the Capture service: Kortix is not running from the Applications folder');
       return current;
     }
-    if (action === 'repair' && !force && Date.now() - lastRepairAt < REPAIR_EVERY_MS) return current;
-    if (action === 'repair') lastRepairAt = Date.now();
     console.log(`[kortix] capture service: ${action}`);
     return service(action === 'repair' ? 'install' : action);
   }
 
-  async function readView({ force = false } = {}) {
+  async function readView({ explicit = false } = {}) {
     const engineState = await engineAvailable();
     if (!engineState.ok) return capture.captureStatusFrom({ available: false, error: engineState.error });
     const { library } = await context();
@@ -131,7 +131,7 @@ function setupCapture(deps) {
       process.platform === 'darwin' ? engineJson(['permissions']).catch(() => null) : null,
       service('status').catch((error) => ({ installed: false, error: error.message })),
     ]);
-    const after = pending ? current : await reconcile(desktop, sync, current, { force }).catch((error) => ({ ...current, error: error.message }));
+    const after = pending ? current : await reconcile(desktop, sync, current, { explicit }).catch((error) => ({ ...current, error: error.message }));
     const heartbeat = after.heartbeat?.running ? after.heartbeat : null;
     return {
       ...capture.captureStatusFrom({
@@ -141,6 +141,8 @@ function setupCapture(deps) {
         sync,
         permissions,
         children: { recorder: heartbeat?.recorder ?? { running: false }, actions: heartbeat?.actions ?? { running: false } },
+        // Removed or disabled outside the app, and not running: it waits for a person.
+        serviceStopped: !heartbeat && !pending && (after.installed !== true || after.enabled === false),
       }),
       version: engineState.version,
       // The computer agent's id for this machine: the page sends it on approval.
@@ -156,6 +158,8 @@ function setupCapture(deps) {
   }
 
   function refresh(options) {
+    // A person's action must reconcile: it waits for a passive read in flight, then runs its own.
+    if (refreshing && options?.explicit) return refreshing.then(() => refresh(options));
     refreshing ??= readView(options)
       .catch((error) => capture.captureStatusFrom({ available: false, error: error instanceof Error ? error.message : String(error) }))
       .then((next) => {
@@ -207,7 +211,7 @@ function setupCapture(deps) {
           fs.rmSync(marker, { force: true });
           pending = null;
         })
-        .then(async (result) => ({ ...result, status: await refresh({ force: true }) }));
+        .then(async (result) => ({ ...result, status: await refresh({ explicit: true }) }));
       pending = { controller, challenge, done };
     }
     const challenge = await pending.challenge;
@@ -225,13 +229,13 @@ function setupCapture(deps) {
       const result = await engine(['settings', setting, String(args[key])]);
       if (result.code !== 0) throw new Error(capture.lastError(result.stderr, `Could not change ${key}.`));
     }
-    return refresh({ force: true });
+    return refresh({ explicit: true });
   }
 
   async function verb(args, what) {
     const result = await engine(args);
     if (result.code !== 0) throw new Error(capture.lastError(result.stderr, `Could not ${what}.`));
-    return refresh();
+    return refresh({ explicit: true });
   }
 
   /** The service goes first (its engine stops), then the device token. */
@@ -245,12 +249,14 @@ function setupCapture(deps) {
   }
 
   /**
-   * "Allow all" in the Your-computer setup: asks macOS for each missing grant
-   * Capture needs, for Kortix (the service runs this app's binary, so the
-   * grants hold for it): Screen Recording, Accessibility, and the Microphone
-   * only when Audio is on. Answers the fresh status.
+   * The Capture dialog's "Allow access", the one place Capture asks macOS:
+   * each missing grant once per click, for Kortix (the service runs this
+   * app's binary, so the grants hold for it). Screen Recording,
+   * Accessibility, Input Monitoring while Actions is on (through the engine:
+   * Electron has no API for it), and the Microphone while Audio is on.
+   * Nothing at start or in the service ever asks. Answers the fresh status.
    */
-  async function requestGrants({ audio = false } = {}) {
+  async function requestGrants({ audio = false, actions = false } = {}) {
     if (process.platform !== 'darwin') return refresh();
     if (!systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
     if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
@@ -259,6 +265,13 @@ function setupCapture(deps) {
       // denied, so always try it, then open System Settings if still not granted.
       await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
       if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') void shell.openExternal(capture.PERMISSION_PANES.screen);
+    }
+    if (actions && (await engineJson(['permissions']).catch(() => null))?.input_monitoring === false) {
+      // macOS shows this prompt once; after a "Deny" only System Settings grants it.
+      await engine(['permissions', '--request', '--only', 'input_monitoring'], 60_000);
+      if ((await engineJson(['permissions']).catch(() => null))?.input_monitoring === false) {
+        void shell.openExternal(capture.PERMISSION_PANES.inputMonitoring);
+      }
     }
     if (audio && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
       await systemPreferences.askForMediaAccess('microphone').catch(() => false);
@@ -320,9 +333,9 @@ function setupCapture(deps) {
   };
 
   function start() {
-    // At launch: a service missing, disabled by mistake, or pointing at the
-    // previous app version is installed again (app updates and moves).
-    void refresh({ force: true });
+    // At launch: only a unit that points at the previous app version is
+    // rewritten (updates, moves). A stopped or removed service stays stopped.
+    void refresh();
     setInterval(() => void refresh(), REFRESH_EVERY_MS);
   }
 

@@ -209,7 +209,7 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
 
         {/* Stays once shown, so each row turns "Allowed" in place as macOS answers. */}
         {on && view ? (
-          <CapturePermissions view={view} requesting={actions.grants.isPending} onAllow={() => actions.grants.mutate(Boolean(view.layers?.audio))} />
+          <CapturePermissions view={view} requesting={actions.grants.isPending} onAllow={() => actions.grants.mutate({ audio: Boolean(view.layers?.audio), actions: Boolean(view.layers?.actions) })} />
         ) : null}
 
         {view ? (

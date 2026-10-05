@@ -447,7 +447,8 @@ export interface DesktopCaptureStatus {
   policy?: { layers: Record<DesktopCaptureLayer, boolean>; notice: string; paused: boolean } | null;
   pausedUntilMs?: number | null;
   /** macOS grants Kortix holds for Capture; null elsewhere. */
-  permissions?: Record<'screen' | 'accessibility' | 'microphone', boolean> | null;
+  /** `inputMonitoring` only from engines that report it (the action recorder's listener). */
+  permissions?: (Record<'screen' | 'accessibility' | 'microphone', boolean> & { inputMonitoring?: boolean }) | null;
   sync?: { state: string; pending: number; lastUploadMs: number | null; error: string | null };
   /** This computer's id as the computer agent reports it; sent on approval to join the device to it. */
   machineId?: string | null;
@@ -478,7 +479,7 @@ export const desktopCaptureSet = (input: { on?: boolean } & Partial<Record<Deskt
 export const desktopCapturePause = (minutes = 60) => desktopAction<DesktopCaptureStatus>('capture_pause', { minutes });
 export const desktopCaptureResume = () => desktopAction<DesktopCaptureStatus>('capture_resume');
 /** "Allow all": asks macOS for Screen Recording, Accessibility, and the Microphone when `audio`, for Kortix. */
-export const desktopCaptureRequestGrants = (input: { audio: boolean }) =>
+export const desktopCaptureRequestGrants = (input: { audio: boolean; actions: boolean }) =>
   desktopAction<DesktopCaptureStatus>('capture_grants_request', input);
 export const desktopCaptureOpenTimeline = () => desktopAction<null>('capture_open_timeline');
 export const desktopCaptureOpenLogs = () => desktopAction<null>('capture_open_logs');

@@ -20988,7 +20988,9 @@
         "screen": "Gravação de Tela",
         "screenDescription": "Ver e gravar o que está na tela",
         "accessibility": "Acessibilidade",
-        "accessibilityDescription": "Gravar seus cliques e teclas",
+        "accessibilityDescription": "Ler o app e a janela em que você trabalha",
+        "inputMonitoring": "Monitoramento de Entrada",
+        "inputMonitoringDescription": "Gravar seus cliques e teclas, só com Ações ativado",
         "microphone": "Microfone",
         "microphoneDescription": "Gravar o que é dito, só com o Áudio ativado"
       },

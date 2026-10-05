@@ -92,16 +92,34 @@ describe('unit files (the agent tunnel drivers, Capture label and logs)', () => 
 describe('serviceAction (the desktop app as controller)', () => {
   const ok = { installed: true, enabled: true, upToDate: true, active: true, heartbeat: { running: true } };
   const on = { desktopOn: true, signedIn: true, signInRequired: false };
-  test('Capture on: install when missing or out of date, resume when disabled, repair when it is not running', () => {
-    expect(capture.serviceAction({ ...on, service: { installed: false } })).toBe('install');
-    expect(capture.serviceAction({ ...on, service: { ...ok, upToDate: false } })).toBe('install');
-    expect(capture.serviceAction({ ...on, service: { ...ok, enabled: false } })).toBe('resume');
-    expect(capture.serviceAction({ ...on, service: { ...ok, active: false, heartbeat: { running: false } } })).toBe('repair');
-    expect(capture.serviceAction({ ...on, service: ok })).toBeNull();
+  test('an explicit action with Capture on: install when missing or out of date, resume when disabled, repair when not running', () => {
+    const user = { ...on, explicit: true };
+    expect(capture.serviceAction({ ...user, service: { installed: false } })).toBe('install');
+    expect(capture.serviceAction({ ...user, service: { ...ok, upToDate: false } })).toBe('install');
+    expect(capture.serviceAction({ ...user, service: { ...ok, enabled: false } })).toBe('resume');
+    expect(capture.serviceAction({ ...user, service: { ...ok, active: false, heartbeat: { running: false } } })).toBe('repair');
+    expect(capture.serviceAction({ ...user, service: ok })).toBeNull();
   });
   test('Capture off: the service is disabled (paused), not removed', () => {
     expect(capture.serviceAction({ ...on, desktopOn: false, service: ok })).toBe('pause');
     expect(capture.serviceAction({ ...on, desktopOn: false, service: { ...ok, enabled: false } })).toBeNull();
+  });
+  test('a passive check (launch, poll) never starts, resumes or reinstalls a service someone stopped', () => {
+    const passive = { ...on, explicit: false };
+    // Removed, disabled (launchctl disable / Pause), or not running: left alone.
+    expect(capture.serviceAction({ ...passive, service: { installed: false } })).toBeNull();
+    expect(capture.serviceAction({ ...passive, service: { ...ok, enabled: false } })).toBeNull();
+    expect(capture.serviceAction({ ...passive, service: { ...ok, enabled: false, upToDate: false } })).toBeNull();
+    expect(capture.serviceAction({ ...passive, service: { ...ok, active: false, heartbeat: { running: false } } })).toBeNull();
+    // An app update or move rewrites an enabled service's unit.
+    expect(capture.serviceAction({ ...passive, service: { ...ok, upToDate: false } })).toBe('install');
+    // Stopping is always safe.
+    expect(capture.serviceAction({ ...passive, desktopOn: false, service: ok })).toBe('pause');
+    expect(capture.serviceAction({ ...passive, signedIn: false, service: ok })).toBe('uninstall');
+  });
+  test('the default is passive: only an explicit action resumes or repairs', () => {
+    expect(capture.serviceAction({ ...on, service: { ...ok, enabled: false } })).toBeNull();
+    expect(capture.serviceAction({ ...on, explicit: true, service: { ...ok, enabled: false } })).toBe('resume');
   });
   test('signed out: removed; refused (revoked, flag off): kept, so a new sign-in resumes', () => {
     expect(capture.serviceAction({ desktopOn: true, signedIn: false, signInRequired: false, service: ok })).toBe('uninstall');

@@ -123,6 +123,33 @@ describe('supervise', () => {
     expect(attempts).toBe(2);
   });
 
+  test('restart (a new macOS grant) replaces the child once: no crash count, no backoff, no crash log', () => {
+    const t = fakeTimers();
+    const children = [];
+    const warnings = [];
+    const warn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+      const sup = capture.supervise({ name: 'recorder', start: () => children[children.push(fakeChild()) - 1], now: t.now, timers: t.timers });
+      sup.run();
+      sup.restart();
+      sup.restart(); // a second request while the first is in flight changes nothing
+      expect(children[0].signals).toEqual(['SIGTERM']);
+      children[0].exit(0);
+      expect(children).toHaveLength(2);
+      expect(t.pending()).toEqual([]);
+      expect(sup.state()).toMatchObject({ wanted: true, running: true, crashLoop: false });
+      expect(warnings).toEqual([]);
+      // A restart of a stopped supervisor starts nothing.
+      sup.stop();
+      children[1].exit(0);
+      sup.restart();
+      expect(children).toHaveLength(2);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   test('run twice starts one child', () => {
     let starts = 0;
     const sup = capture.supervise({ name: 'r', start: () => (starts++, fakeChild()) });
@@ -324,6 +351,21 @@ describe('status and tray', () => {
     expect(at({ children: { recorder: { running: false, crashLoop: true } } })).toBe('crashed');
     expect(at({ children: { recorder: { running: false, crashLoop: false } } })).toBe('starting');
     expect(at({ status: { ...status, recorder_running: false, effective_state: 'not_running' } })).toBe('starting');
+    // On, but the service was stopped outside the app (launchctl disable, unit removed): it says so and waits for a person.
+    expect(at({ children: { recorder: { running: false } }, serviceStopped: true })).toBe('stopped');
+    expect(at({ desktop: { on: false, actions: true }, serviceStopped: true })).toBe('off');
+  });
+
+  test('Input Monitoring reaches the page only from an engine that reports it', () => {
+    const at = (permissions) => capture.captureStatusFrom({ available: true, desktop: { on: true, actions: true }, status, sync, permissions, children: running }).permissions;
+    expect(at({ screen: true, accessibility: true, microphone: 'not_determined' })).toEqual({ screen: true, accessibility: true, microphone: false });
+    expect(at({ screen: true, accessibility: true, microphone: 'granted', input_monitoring: false })).toEqual({
+      screen: true,
+      accessibility: true,
+      microphone: true,
+      inputMonitoring: false,
+    });
+    expect(capture.grantedPermissions({ input_monitoring: true, screen: false })).toEqual(['input_monitoring']);
   });
 
   test('no engine in this build: available false with the reason', () => {

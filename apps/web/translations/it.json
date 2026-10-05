@@ -20988,7 +20988,9 @@
         "screen": "Registrazione schermo",
         "screenDescription": "Vedere e registrare ciò che è sullo schermo",
         "accessibility": "Accessibilità",
-        "accessibilityDescription": "Registrare clic e tasti",
+        "accessibilityDescription": "Leggere l’app e la finestra in cui lavori",
+        "inputMonitoring": "Monitoraggio dell’input",
+        "inputMonitoringDescription": "Registrare clic e tasti, solo con Azioni attivo",
         "microphone": "Microfono",
         "microphoneDescription": "Registrare ciò che viene detto, solo con Audio attivo"
       },

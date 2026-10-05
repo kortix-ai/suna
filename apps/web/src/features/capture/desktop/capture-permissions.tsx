@@ -1,6 +1,6 @@
 'use client';
 
-import { CursorClickIcon, MicrophoneIcon, MonitorIcon, type Icon } from '@phosphor-icons/react';
+import { CursorClickIcon, KeyboardIcon, MicrophoneIcon, MonitorIcon, type Icon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -12,11 +12,17 @@ import { cn } from '@/lib/utils';
 
 import { missingGrants, type CaptureGrant } from './capture-state';
 
-const ICONS: Record<CaptureGrant, Icon> = { screen: MonitorIcon, accessibility: CursorClickIcon, microphone: MicrophoneIcon };
+const ICONS: Record<CaptureGrant, Icon> = {
+  screen: MonitorIcon,
+  accessibility: CursorClickIcon,
+  inputMonitoring: KeyboardIcon,
+  microphone: MicrophoneIcon,
+};
 
 /**
  * Capture's macOS permissions, granted to Kortix: Screen Recording,
- * Accessibility, and the Microphone only while Audio is on. One "Allow access"
+ * Accessibility, Input Monitoring while Actions is on, and the Microphone
+ * while Audio is on. One "Allow access"
  * path; each row turns to "Allowed" as macOS answers (the status polls), and a
  * row that was missing while the dialog was open stays in view.
  */

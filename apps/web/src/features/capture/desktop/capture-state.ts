@@ -17,14 +17,25 @@ export type CapturePhase =
   | 'starting' // on, the recorder has not reported yet
   | 'recording';
 
-export type CaptureGrant = 'screen' | 'accessibility' | 'microphone';
+export type CaptureGrant = 'screen' | 'accessibility' | 'inputMonitoring' | 'microphone';
 export const CAPTURE_LAYERS: readonly DesktopCaptureLayer[] = ['screen', 'actions', 'audio'];
 
-/** The macOS grants the switched-on layers need and macOS has not given (Microphone only with Audio). */
+/**
+ * The macOS grants the switched-on layers need and macOS has not given:
+ * Screen Recording and Accessibility always, Input Monitoring with Actions
+ * (when the engine reports it), the Microphone with Audio.
+ */
 export function missingGrants(view: DesktopCaptureStatus): CaptureGrant[] {
-  if (!view.permissions) return [];
-  const needed: CaptureGrant[] = ['screen', 'accessibility', ...(view.layers?.audio ? (['microphone'] as const) : [])];
-  return needed.filter((grant) => !view.permissions?.[grant]);
+  const permissions = view.permissions;
+  if (!permissions) return [];
+  const actions = view.layers?.actions && view.policy?.layers.actions !== false;
+  const needed: CaptureGrant[] = [
+    'screen',
+    'accessibility',
+    ...(actions && permissions.inputMonitoring !== undefined ? (['inputMonitoring'] as const) : []),
+    ...(view.layers?.audio ? (['microphone'] as const) : []),
+  ];
+  return needed.filter((grant) => !permissions[grant]);
 }
 
 /** Layers that record now: switched on here and allowed by the project policy. */
@@ -48,10 +59,11 @@ export function capturePhase(
   const here = view.projectId === projectId;
   if (view.signInRequired && here) return 'signInRequired';
   if (failed) return 'error';
-  if (!view.signedIn || !here || !view.on) return 'off';
+  // `stopped`: the service was stopped outside the app; Record starts it again.
+  if (!view.signedIn || !here || !view.on || view.state === 'stopped') return 'off';
   if (view.state === 'crashed') return 'error';
   if (view.state === 'paused' || view.policy?.paused || (view.pausedUntilMs ?? 0) > now) return 'paused';
-  if (view.state === 'permission_missing' || missingGrants(view).length > 0) return 'needsPermission';
+  if (view.state === 'permission_missing' || view.state === 'permission_needed' || missingGrants(view).length > 0) return 'needsPermission';
   if (view.state === 'recording') return 'recording';
   return 'starting';
 }
