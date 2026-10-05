@@ -352,7 +352,7 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
   });
 });
 
-describe('SessionTurn segments: trailing is structural, loop motion follows the viewport', () => {
+describe('SessionTurn segments: every burst loops while on screen, trailing is structural', () => {
   const tool = (id: string) => ({
     id, type: 'tool', tool: 'bash', callID: `call-${id}`, sessionID: 's-1', messageID: 'a-1',
     state: { status: 'running', input: { command: 'ls' }, time: { start: 2_000 } },
@@ -370,14 +370,14 @@ describe('SessionTurn segments: trailing is structural, loop motion follows the 
   const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never)).map((node) => node.props);
 
   for (const onScreen of [true, false]) {
-    test(`onScreen=${onScreen}: only the last burst is trailing; it loops only on screen`, async () => {
+    test(`onScreen=${onScreen}: only the last burst is trailing; every burst loops only on screen`, async () => {
       await act(async () => {
         tree = create(
           <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy onScreen={onScreen} />,
         );
       });
       expect(bursts()).toEqual([
-        { isTrailing: false, loop: false },
+        { isTrailing: false, loop: onScreen },
         { isTrailing: true, loop: onScreen },
       ]);
     });

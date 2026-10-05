@@ -70,11 +70,11 @@ describe('ActivityBurst running summary', () => {
     act(() => tree!.unmount());
   });
 
-  test('renders the summary line static while it owns the open sheet', () => {
+  test('keeps shimmering "Working · N steps" while it owns the open sheet', () => {
     owned = true;
     let tree: ReturnType<typeof create>;
     act(() => { tree = summary(); });
-    expect(tree!.root.findAllByType('shimmer' as never)).toHaveLength(0);
+    expect(tree!.root.findAllByType('shimmer' as never)).toHaveLength(1);
     act(() => tree!.unmount());
   });
 });

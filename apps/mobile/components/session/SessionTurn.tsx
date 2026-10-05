@@ -5,8 +5,9 @@
  * `SessionTurnImpl` (turn root `space-y-2.5`):
  *
  *   1. user message
- *   (One text shimmer per turn: only the LAST segment, or the inline content when
- *   there is no segments block, may sweep; see `LoopMotionContext`. While the working
+ *   (Text shimmer: a running burst's "Working · N steps" always sweeps; any other
+ *   segment sweeps only when it is the LAST one, and the inline content only when
+ *   there is no segments block; see `LoopMotionContext`. While the working
  *   turn is off screen (`onScreen` false) nothing sweeps and the dot matrix holds.)
  *   2. segments (`space-y-3`) — bursts (`ActivityBurst`: thinking, tool rows,
  *      file chips), standalone tools (`ToolPartRenderer`: deliverables,
@@ -345,11 +346,13 @@ function SessionTurnImpl({
           {segments.map((segment, index) => {
             // Trailing is structural (`burstIsRunning` keeps the trailing burst
             // running between calls); only loop motion follows the viewport.
+            // A running burst's "Working · N steps" always sweeps on screen
+            // (Jay); any other segment sweeps only when it is the trailing one.
             const trailing = index === segments.length - 1;
             const shimmerSegment = onScreen && trailing;
             if (segment.kind === 'burst') {
               return (
-                <LoopMotionContext.Provider key={`burst-${segment.parts[0]?.id ?? 'empty'}`} value={shimmerSegment}>
+                <LoopMotionContext.Provider key={`burst-${segment.parts[0]?.id ?? 'empty'}`} value={onScreen}>
                   <ActivityBurst
                     segment={segment}
                     turnLive={working}

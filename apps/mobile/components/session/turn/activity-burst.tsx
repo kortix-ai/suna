@@ -111,7 +111,7 @@ function ActivityBurstImpl({
       onPress={openSheet}
       style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}
     >
-      {view.running && !ownsSheet ? (
+      {view.running ? (
         <TextShimmer variant="muted" tone="muted" style={[TURN_TYPE.sm, TABULAR]} numberOfLines={1}>
           {view.title}
         </TextShimmer>
