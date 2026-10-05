@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   InputGroupSearch,
@@ -286,32 +285,32 @@ function WorkflowTable({
                     })}
                   </span>
                 </span>
-                <span className="text-right font-mono text-sm tabular-nums">
+                <span className="text-right text-sm tabular-nums">
                   {Math.round(w.runs_per_week)}
                 </span>
-                <span className="text-right font-mono text-sm tabular-nums">
+                <span className="text-right text-sm tabular-nums">
                   {duration(w.duration_p50_s)}
                 </span>
                 <span className="text-muted-foreground text-xs">
                   {t('people', { count: w.people_count })}
                 </span>
-                <span className="flex flex-wrap gap-1">
-                  {w.apps.slice(0, 4).map((name) => (
-                    <Badge key={name} variant="muted" size="sm" className="normal-case">
-                      {name}
-                    </Badge>
-                  ))}
+                <span className="text-muted-foreground line-clamp-2 text-xs">
+                  {w.apps.join(', ')}
                 </span>
                 <span className="flex flex-col gap-1">
                   <span className="flex justify-between gap-2 text-xs">
-                    <span className="text-foreground font-mono font-medium tabular-nums">
+                    <span className="text-foreground font-medium tabular-nums">
                       {t('perWeekShort', { hours: hours(w.automation_hours_per_week) })}
                     </span>
-                    <span className="text-muted-foreground font-mono tabular-nums">
+                    <span className="text-muted-foreground tabular-nums">
                       {t('determinismShort', { value: percent(w.determinism) })}
                     </span>
                   </span>
-                  <ShareBar value={w.automation_hours_per_week} max={max} />
+                  <ShareBar
+                    value={w.automation_hours_per_week}
+                    max={max}
+                    className="w-full flex-none"
+                  />
                 </span>
                 <span>
                   <WorkflowStatusBadge status={w.status} />

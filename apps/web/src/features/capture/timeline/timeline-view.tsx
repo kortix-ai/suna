@@ -673,7 +673,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 seconds={display.seconds}
                 label={t('frame.label', { app: metaApp ?? t('unknownApp') })}
                 dimmed={offFrame}
-                failedLabel={t('frame.failed')}
+                failedLabel={offFrame || noData ? null : t('frame.failed')}
               >
                 {noData ? (
                   <StageNotice

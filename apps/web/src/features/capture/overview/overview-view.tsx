@@ -196,7 +196,7 @@ function Overview({ accountId }: { accountId: string }) {
                       >
                         <span className="flex justify-between gap-3">
                           <span className="text-foreground text-sm font-medium">{w.name}</span>
-                          <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
+                          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                             {t('perWeekShort', { hours: hours(w.automation_hours_per_week) })}
                           </span>
                         </span>
@@ -232,7 +232,7 @@ function Overview({ accountId }: { accountId: string }) {
                   <p className="text-muted-foreground text-xs">{t('trendHint')}</p>
                 </div>
                 {data ? (
-                  <span className="text-foreground font-mono text-xs font-medium tabular-nums">
+                  <span className="text-foreground text-xs font-medium tabular-nums">
                     {t('trendNow', { hours: hours(data.automation_hours_per_week) })}
                   </span>
                 ) : null}
@@ -410,24 +410,22 @@ function OpportunityTable({
                 href={captureHref(accountId, 'workflows', `/${w.workflow_id}`)}
                 className={`${grid} hover:bg-hover px-4 py-3 transition-colors`}
               >
-                <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                  {i + 1}
-                </span>
+                <span className="text-muted-foreground text-xs tabular-nums">{i + 1}</span>
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-foreground truncate text-sm font-medium">{w.name}</span>
                   <span className="text-muted-foreground truncate text-xs">
                     {tw('appsPeople', { apps: w.apps.join(', '), count: w.people_count })}
                   </span>
                 </span>
-                <span className="text-right font-mono text-sm tabular-nums">
+                <span className="text-right text-sm tabular-nums">
                   {Math.round(w.runs_per_week)}
                 </span>
-                <span className="text-right font-mono text-sm tabular-nums">
+                <span className="text-right text-sm tabular-nums">
                   {duration(w.duration_p50_s)}
                 </span>
                 <span className="flex items-center gap-2">
                   <ShareBar value={w.automation_hours_per_week} max={max} />
-                  <span className="w-8 text-right font-mono text-sm font-medium tabular-nums">
+                  <span className="w-8 text-right text-sm font-medium tabular-nums">
                     {hours(w.automation_hours_per_week)}
                   </span>
                 </span>
@@ -469,7 +467,7 @@ function Trend({
       >
         {points.map((p, i) => (
           <div key={p.week_start} className="flex h-full flex-1 flex-col justify-end gap-1">
-            <span className="text-muted-foreground text-center font-mono text-xs tabular-nums max-md:hidden">
+            <span className="text-muted-foreground text-center text-xs tabular-nums max-md:hidden">
               {hours(p.automation_hours_per_week)}
             </span>
             <span

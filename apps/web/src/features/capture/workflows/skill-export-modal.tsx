@@ -147,7 +147,9 @@ export function SkillExportModal({
                     </SelectContent>
                   </Select>
                   <FieldDescription>
-                    {active.length === 0 && projects.isSuccess ? t('noProjects') : t('projectHint')}
+                    {active.length === 0 && projects.isSuccess
+                      ? t('noProjects')
+                      : t('projectHint', { path: `skills/${edit.name || 'name'}/SKILL.md` })}
                   </FieldDescription>
                 </Field>
               </div>
