@@ -19124,7 +19124,7 @@
       "servedModelRow": "Model",
       "servedModelInPlaceOf": "In place of",
       "servedModelBadge": "Running on {model}",
-      "servedModelHint": "{requested} did not answer the last request. {model} answered from this project's fallback chain.",
+      "servedModelBarDescription": "{requested} did not answer the last request",
       "text414cc580557b": "Edited a queued session prompt",
       "text52867b778586": "One kortix.yaml.",
       "textd0dfd435b2f4": "Your AI workforce, as code.",

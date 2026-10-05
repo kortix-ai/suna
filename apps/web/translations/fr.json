@@ -19113,7 +19113,7 @@
       "servedModelRow": "Modèle",
       "servedModelInPlaceOf": "À la place de",
       "servedModelBadge": "Exécuté sur {model}",
-      "servedModelHint": "{requested} n’a pas répondu à la dernière requête. {model} a répondu depuis la chaîne de secours de ce projet.",
+      "servedModelBarDescription": "{requested} n’a pas répondu à la dernière requête",
       "text414cc580557b": "Invite de session en file d’attente modifiée",
       "text52867b778586": "Un seul kortix.yaml.",
       "textd0dfd435b2f4": "Vos équipes IA, sous forme de code.",

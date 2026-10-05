@@ -19113,7 +19113,7 @@
       "servedModelRow": "モデル",
       "servedModelInPlaceOf": "代替元",
       "servedModelBadge": "{model} で実行中",
-      "servedModelHint": "{requested} は直前のリクエストに応答しませんでした。このプロジェクトのフォールバックチェーンから {model} が応答しました。",
+      "servedModelBarDescription": "{requested} は直前のリクエストに応答しませんでした",
       "text414cc580557b": "キューに入ったセッションプロンプトを編集しました",
       "text52867b778586": "kortix.yaml ひとつ。",
       "textd0dfd435b2f4": "AI の労働力を、コードとして。",

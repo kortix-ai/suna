@@ -19113,7 +19113,7 @@
       "servedModelRow": "Modelo",
       "servedModelInPlaceOf": "En lugar de",
       "servedModelBadge": "Ejecutándose en {model}",
-      "servedModelHint": "{requested} no respondió a la última solicitud. {model} respondió desde la cadena alternativa de este proyecto.",
+      "servedModelBarDescription": "{requested} no respondió a la última solicitud",
       "text414cc580557b": "Solicitud de sesión en cola editada",
       "text52867b778586": "Un kortix.yaml.",
       "textd0dfd435b2f4": "Tu plantilla de IA, como código.",

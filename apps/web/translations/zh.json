@@ -19113,7 +19113,7 @@
       "servedModelRow": "模型",
       "servedModelInPlaceOf": "替代",
       "servedModelBadge": "正在使用 {model}",
-      "servedModelHint": "{requested} 未响应上一个请求。{model} 已通过此项目的备用链作出响应。",
+      "servedModelBarDescription": "{requested} 未响应上一个请求",
       "text414cc580557b": "已编辑排队中的会话提示",
       "text52867b778586": "一个 kortix.yaml。",
       "textd0dfd435b2f4": "你的 AI 团队，以代码定义。",

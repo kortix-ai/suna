@@ -19113,7 +19113,7 @@
       "servedModelRow": "Модел",
       "servedModelInPlaceOf": "Уместо",
       "servedModelBadge": "Ради на моделу {model}",
-      "servedModelHint": "{requested} није одговорио на последњи захтев. {model} је одговорио из резервног ланца овог пројекта.",
+      "servedModelBarDescription": "{requested} није одговорио на последњи захтев",
       "text414cc580557b": "Упит сесије у реду измењен",
       "text52867b778586": "Један kortix.yaml.",
       "textd0dfd435b2f4": "Ваша AI радна снага, као код.",

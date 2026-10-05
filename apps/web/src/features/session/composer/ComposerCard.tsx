@@ -15,6 +15,7 @@ import type {
 import { lazy, Suspense, useRef } from 'react';
 
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
+import { ServedModelBar } from './served-model-bar';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import { AttachmentTiles } from './attachment-tiles';
 import {
@@ -187,6 +188,12 @@ export function ComposerCard({
 
   return (
     <>
+    {/*
+      Above the card, as its previous sibling: the strip hangs behind the
+      card's top edge the way `ModelConnectionBar` hangs behind its bottom.
+      Only where a model selector exists, since it explains that selector.
+    */}
+    <ServedModelBar notice={onModelChange ? (servedModel ?? null) : null} />
     <div
       ref={cardRef}
       onDragEnter={handleDragEnter}
@@ -372,7 +379,6 @@ export function ComposerCard({
             // the 'below' placement the ComposerUnderbar further down renders
             // it — passing it here as well would show the gear twice.
             toolbarSlot={inlineUnderbar ? toolbarSlot : undefined}
-            servedModel={servedModel}
             rewind={rewind}
             isSending={isSending}
             isBusy={isBusy}

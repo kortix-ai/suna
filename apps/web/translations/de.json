@@ -19113,7 +19113,7 @@
       "servedModelRow": "Modell",
       "servedModelInPlaceOf": "Anstelle von",
       "servedModelBadge": "Läuft auf {model}",
-      "servedModelHint": "{requested} hat die letzte Anfrage nicht beantwortet. {model} hat aus der Fallback-Kette dieses Projekts geantwortet.",
+      "servedModelBarDescription": "{requested} hat die letzte Anfrage nicht beantwortet",
       "text414cc580557b": "Sitzungsaufforderung in der Warteschlange bearbeitet",
       "text52867b778586": "Eine kortix.yaml.",
       "textd0dfd435b2f4": "Deine KI-Belegschaft als Code.",

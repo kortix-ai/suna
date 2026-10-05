@@ -19113,7 +19113,7 @@
       "servedModelRow": "Modello",
       "servedModelInPlaceOf": "Al posto di",
       "servedModelBadge": "In esecuzione su {model}",
-      "servedModelHint": "{requested} non ha risposto all’ultima richiesta. {model} ha risposto dalla catena di fallback di questo progetto.",
+      "servedModelBarDescription": "{requested} non ha risposto all’ultima richiesta",
       "text414cc580557b": "Prompt della sessione in coda modificato",
       "text52867b778586": "Un solo kortix.yaml.",
       "textd0dfd435b2f4": "La tua forza lavoro IA, come codice.",
