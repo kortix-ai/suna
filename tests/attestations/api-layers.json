@@ -1,11 +1,9 @@
 {
-  "source_hash": "54f8a01a4769ee6e0704b5061e56679fd0587672129e3a7083b04878c253a5e1",
+  "source_hash": "be000fd71b529a4270715fc1356f931cc53b5b9eb0e76ff0d14c97111b449e32",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
-    ".agents/skills/learnings/entries/2026-08-26T130600Z-a-stamped-failure-is-a-cooldown-never-a-gravestone-and-a-neg.md",
-    ".agents/skills/learnings/entries/2026-09-28T040940Z-admission-refusal-must-replace-the-runtime-never-route-throu.md",
-    ".agents/skills/learnings/entries/2026-09-28T090254Z-converge-continuously-boot-time-only-logic-never-re-runs-on.md",
     ".agents/skills/learnings/entries/2026-10-05T214855Z-run-pnpm-test-on-the-ci-toolchain-bun-1-3-14-and-bash-5-not.md",
+    ".agents/skills/learnings/entries/2026-10-05T230411Z-find-the-session-open-enforcers-in-projects-session-open-sin.md",
     "AGENTS.md",
     "apps/api/eslint-suppressions.json",
     "apps/api/eslint.config.mjs",
@@ -542,13 +540,13 @@
     "tests/src/flows/session-scope.flow.ts",
     "tests/unit/latency-budget.test.ts"
   ],
-  "diff_hash": "b95aaa9be221c30d8728e0be2cddd75f332ad0541f46ab19dbaeaac9c14e899a",
-  "head": "397d6e196a2055b475e2457d1d59a33265f184b0",
+  "diff_hash": "ba535007b01f5835f947db6bff8609aa522beab71f817a8f456e2aadb5e2c435",
+  "head": "ddd894808eaf19b0b3eac39d8ace42813fb44a74",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-05T22:42:50.205Z"
+  "at": "2026-10-05T23:27:47.263Z"
 }
