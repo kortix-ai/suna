@@ -43,7 +43,7 @@ export function manifestFromDescriptor(descriptor: ConfigReleaseDescriptor, rele
   return {
     release_id: releaseId,
     source_commit: descriptor.source_commit!,
-    config_dir: descriptor.config_dir!,
+    config_dir: descriptor.config_dir,
     config_tree_id: descriptor.config_tree_id!,
     archive_url: descriptor.archive!.url,
     archive_bytes: descriptor.archive!.bytes,

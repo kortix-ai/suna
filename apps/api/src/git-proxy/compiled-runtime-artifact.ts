@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
-import { readComposedRelease, resolveReleaseTreeSource } from "../config-releases/builder";
+import { archiveConfigDirWithRootSkills } from "../config-releases/release-tree";
 import { validateRef, validateSha } from "../projects/git-ref";
-import { refreshMirror, runGit, spawn } from "../projects/git/mirror";
+import { refreshMirror, runGit } from "../projects/git/mirror";
 import { resolveOpencodeConfigDirAtSha } from "../projects/git/opencode-config-dir";
 import type { GitBackedProject } from "../projects/git/types";
 import {
@@ -106,38 +106,6 @@ async function assertExactSource(
   return mirror;
 }
 
-async function archiveOpencodeConfig(
-  mirror: string,
-  sourceSha: string,
-  configDir: string,
-): Promise<Buffer> {
-  const child = spawn("git", ["archive", "--format=tar.gz", `${sourceSha}:${configDir}`], {
-    cwd: mirror,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const stdout: Buffer[] = [];
-  const stderr: Buffer[] = [];
-  let size = 0;
-  child.stdout.on("data", (chunk: Buffer) => {
-    size += chunk.length;
-    if (size > MAX_OPENCODE_CONFIG_ARCHIVE_BYTES) child.kill("SIGKILL");
-    else stdout.push(chunk);
-  });
-  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-  const exitCode = await new Promise<number | null>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", resolve);
-  });
-  if (size > MAX_OPENCODE_CONFIG_ARCHIVE_BYTES) {
-    throw new Error(`OpenCode config archive exceeds ${MAX_OPENCODE_CONFIG_ARCHIVE_BYTES} bytes`);
-  }
-  if (exitCode !== 0) {
-    throw new Error(`OpenCode config archive failed: ${Buffer.concat(stderr).toString("utf8").trim()}`);
-  }
-  return Buffer.concat(stdout);
-}
-
 async function readCachedArtifact(
   runtimePath: string,
   metadataPath: string,
@@ -194,18 +162,11 @@ async function compileArtifact(
     sourceSha,
   );
   const opencodeConfigDir = await resolveOpencodeConfigDirAtSha(mirror, project, sourceSha);
-  // The root `skills/` ride along exactly as in a config release: composed
-  // into the config dir's `skills/` (see config-releases/builder.ts). The pi
-  // config dir does not: this artifact boots OpenCode only.
-  const release = opencodeConfigDir ? await resolveReleaseTreeSource(mirror, project, sourceSha) : null;
-  const opencodeConfigArchive = !opencodeConfigDir
-    ? null
-    : release && 'source' in release && release.source.rootSkills.length > 0
-      ? (await readComposedRelease(mirror, { ...release.source, piTree: null }, {
-          archive: true,
-          limit: MAX_OPENCODE_CONFIG_ARCHIVE_BYTES,
-        })).archive
-      : await archiveOpencodeConfig(mirror, sourceSha, opencodeConfigDir);
+  // The root `skills/` ride along, merged into the config dir's `skills/`. The
+  // pi config dir does not: this artifact boots OpenCode only.
+  const opencodeConfigArchive = opencodeConfigDir
+    ? await archiveConfigDirWithRootSkills(mirror, sourceSha, opencodeConfigDir, MAX_OPENCODE_CONFIG_ARCHIVE_BYTES)
+    : null;
   const artifact = compileOpenCodeRuntime({
     projectId: project.projectId,
     ref,

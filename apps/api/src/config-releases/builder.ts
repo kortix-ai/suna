@@ -14,7 +14,6 @@
 
 import { createHash } from 'node:crypto';
 import { config } from '../config';
-import { SKILLS_DIR } from '@kortix/manifest-schema';
 import { refreshMirror, runGitCapture } from '../projects/git/mirror';
 import {
   agentConfigEtag,
@@ -50,7 +49,7 @@ export {
 } from './release-tree';
 export type { ConfigReleaseFile, ConfigReleaseVariant } from './release-tree';
 
-const CONFIG_RELEASE_FORMAT = 'config-release-v1';
+const CONFIG_RELEASE_FORMAT = 'config-release-v2';
 
 /**
  * Always `follow-base`: a session runs the base branch's CURRENT config
@@ -267,8 +266,8 @@ async function build(
     compiled_governance_etag: etag,
   };
 
-  // No config dir: a governance-only release. The daemon runs the image
-  // default config dir with this governance.
+  // The meta coordinator gets a governance-only release: its box holds no
+  // project checkout.
   const governanceOnly = configReleaseId(null, etag);
   if (variant === 'meta') return { ...withGovernance, release_id: governanceOnly };
   let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
@@ -284,7 +283,7 @@ async function build(
   const configDir = source.configDir;
   const composed = isComposedSource(source);
 
-  let treeId = source.configTree;
+  let treeId = source.rootTree;
   let files: ConfigReleaseFile[] | null = null;
   let freshArchive: Buffer | null = null;
   try {
@@ -306,7 +305,7 @@ async function build(
         ...withGovernance,
         config_dir: configDir,
         config_tree_id: composed ? null : treeId,
-        reason: `config dir ${configDir}${composed ? ` with ${SKILLS_DIR}/ and the pi config dir` : ''} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`,
+        reason: `the repository at ${commit.slice(0, 12)} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit`,
       });
     }
     throw error;

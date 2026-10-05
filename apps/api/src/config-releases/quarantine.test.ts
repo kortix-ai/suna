@@ -42,7 +42,7 @@ function releaseAt(commit: string): ConfigRelease {
   const tree = n.repeat(40).replace(/^./, 'a');
   const etag = n.repeat(16);
   return {
-    format: 'config-release-v1',
+    format: 'config-release-v2',
     release_id: configReleaseId(tree, etag),
     source_commit: commit,
     config_dir: '.kortix/opencode',

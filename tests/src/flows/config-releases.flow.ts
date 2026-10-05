@@ -520,7 +520,7 @@ flow(
       await ctx.step("the session's own sandbox token receives a descriptor (200)", async () => {
         const r = await fixture.descriptor(own.secret, own.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if (r.body.format !== 'config-release-v1') throw new Error(`unexpected format ${r.body.format}`);
+        if (r.body.format !== 'config-release-v2') throw new Error(`unexpected format ${r.body.format}`);
       });
       await ctx.step("a sibling session's token in the same project is refused (403) for this session", async () => {
         const r = await fixture.descriptor(sibling.secret, own.sessionId);
@@ -638,11 +638,11 @@ flow(
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${r.bytes.toString().slice(0, 200)}`);
         firstBytes = r.bytes;
         const files = await assertArchiveMatches(descriptor, r.bytes);
-        for (const path of ['opencode.json', 'agents/kortix.md', 'skills/demo/SKILL.md', 'tools/hello.ts']) {
+        for (const path of ['opencode.json', 'agents/kortix.md', 'skills/demo/SKILL.md', 'tools/hello.ts'].map((p) => `.kortix/opencode/${p}`)) {
           if (!files.has(path)) throw new Error(`archive lacks ${path}`);
         }
-        if (files.get('notes.md')?.toString() !== 'kept verbatim\n') throw new Error('export-ignore dropped notes.md');
-        if (files.get('version.txt')?.toString() !== 'commit $Format:%H$\n') {
+        if (files.get('.kortix/opencode/notes.md')?.toString() !== 'kept verbatim\n') throw new Error('export-ignore dropped notes.md');
+        if (files.get('.kortix/opencode/version.txt')?.toString() !== 'commit $Format:%H$\n') {
           throw new Error('export-subst rewrote version.txt');
         }
       });
@@ -708,31 +708,34 @@ flow(
         if (download.status !== 403) throw new Error(`restricted download: expected 403, got ${download.status}`);
       });
 
-      await ctx.step('a root skills/ folder joins the release, its archive URL names the commit, and the stored archive serves with or without it', async () => {
+      await ctx.step('the release is the base commit\'s whole tree: a root skills/ folder and a file outside every config dir ship at their repository paths', async () => {
         const tip = await fixture.commit(
-          { 'skills/root-demo/SKILL.md': '---\nname: root-demo\ndescription: root layout\n---\nRoot skill.\n' },
+          {
+            'skills/root-demo/SKILL.md': '---\nname: root-demo\ndescription: root layout\n---\nRoot skill.\n',
+            'shared/notes.md': 'Outside every config dir.\n',
+          },
           'root layout skill',
         );
         const r = await fixture.descriptor(own.secret, own.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-        const composed = r.body as Descriptor;
-        if (composed.source_commit !== tip) throw new Error(`source_commit ${composed.source_commit} is not the tip ${tip}`);
-        const query = `?commit=${tip}`;
-        if (composed.archive?.url !== `/v1/projects/${fixture.projectId}/config-archives/${composed.config_tree_id}${query}`) {
-          throw new Error(`archive url ${composed.archive?.url}`);
+        const release = r.body as Descriptor;
+        if (release.source_commit !== tip) throw new Error(`source_commit ${release.source_commit} is not the tip ${tip}`);
+        if (release.config_dir !== '.kortix/opencode') throw new Error(`config_dir ${release.config_dir}`);
+        if (release.archive?.url !== `/v1/projects/${fixture.projectId}/config-archives/${release.config_tree_id}`) {
+          throw new Error(`archive url ${release.archive?.url}`);
         }
-        const download = await fixture.download(own.secret, composed.config_tree_id!, query);
+        const download = await fixture.download(own.secret, release.config_tree_id!);
         if (download.status !== 200) throw new Error(`expected 200, got ${download.status}`);
-        const files = await assertArchiveMatches(composed, download.bytes);
-        for (const path of ['skills/root-demo/SKILL.md', 'skills/demo/SKILL.md', 'agents/kortix.md', 'opencode.json']) {
+        const files = await assertArchiveMatches(release, download.bytes);
+        for (const path of [
+          'skills/root-demo/SKILL.md',
+          'shared/notes.md',
+          '.kortix/opencode/skills/demo/SKILL.md',
+          '.kortix/opencode/agents/kortix.md',
+          '.kortix/opencode/opencode.json',
+        ]) {
           if (!files.has(path)) throw new Error(`archive lacks ${path}`);
         }
-        // The composed tree is in no mirror. The release stored its archive, so
-        // the project-scoped store key serves it without the commit too (CFG-7);
-        // the commit only lets the API rebuild an archive the store lacks.
-        const bare = await fixture.download(own.secret, composed.config_tree_id!);
-        if (bare.status !== 200) throw new Error(`download without the commit: expected 200, got ${bare.status}`);
-        if (!bare.bytes.equals(download.bytes)) throw new Error('download without the commit returned different bytes');
       });
     } finally {
       await fixture.cleanup();
@@ -1080,7 +1083,7 @@ flow(
         const download = await fixture.download(old.secret, newDescriptor.config_tree_id!);
         if (download.status !== 200) throw new Error(`archive: expected 200, got ${download.status}`);
         const files = await assertArchiveMatches(newDescriptor, download.bytes);
-        if (!files.get('agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) {
+        if (!files.get('.kortix/opencode/agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) {
           throw new Error('the archive is not from the new repository');
         }
       });
@@ -1122,7 +1125,7 @@ flow(
         const download = await fixture.download(fresh.secret, d.config_tree_id!);
         if (download.status !== 200) throw new Error(`new archive: ${download.status}`);
         const files = await assertArchiveMatches(d, download.bytes);
-        if (!files.get('agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) throw new Error('archive is not from the new repository');
+        if (!files.get('.kortix/opencode/agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) throw new Error('archive is not from the new repository');
       });
     } finally {
       const restore = original as { repo_url: string; default_branch: string; metadata: unknown; connection: unknown } | null;
@@ -1915,7 +1918,7 @@ harnessFlow(
       await ctx.step('a skill merged to the base branch reaches the running session', async () => {
         const before = String((await releaseOf())?.running_release_id ?? '');
         const skill = (name: string) => `---\nname: ${name}\ndescription: merged while the session ran\n---\nUse it when asked.\n`;
-        // pi also reads its own config dir (`.kortix/pi` here), which a release carries as `pi/`.
+        // pi also reads its own config dir (`.kortix/pi` here), at the same path inside the release.
         const expected = harness === 'pi' ? ['cfg-merged-skill', 'cfg-pi-native-skill'] : ['cfg-merged-skill'];
         await fixture.commit(
           {
