@@ -299,52 +299,6 @@ export async function readComposedRelease(
   });
 }
 
-/** The root `skills/` entries of `commit` that hold a SKILL.md, sorted by name. */
-async function rootSkillRecords(mirror: string, commit: string): Promise<string[]> {
-  const tree = await resolveConfigTreeId(mirror, commit, 'skills');
-  if (!tree) return [];
-  const listed = await runGitCapture(['ls-tree', '-r', '-z', '--name-only', tree], mirror);
-  if (listed.exitCode !== 0) throw new Error(`git ls-tree ${tree} failed: ${listed.stderr.trim()}`);
-  const withSkill = new Set(
-    listed.stdout
-      .split('\0')
-      .filter((path) => path.endsWith('/SKILL.md'))
-      .map((path) => path.slice(0, path.indexOf('/'))),
-  );
-  return [...(await treeRecords(mirror, tree)).entries()]
-    .filter(([name, record]) => withSkill.has(name) && record.split(' ')[1] === 'tree')
-    .map(([, record]) => record);
-}
-
-/**
- * The compiled OpenCode runtime's config archive (git-proxy/compiled-runtime-artifact.ts):
- * the config dir alone, with the root skills merged into its `skills/`. That
- * artifact unpacks one OpenCode config dir; a config release ships the whole tree.
- */
-export async function archiveConfigDirWithRootSkills(
-  mirror: string,
-  commit: string,
-  configDir: string,
-  limit: number,
-): Promise<Buffer | null> {
-  const configTree = await resolveConfigTreeId(mirror, commit, configDir);
-  if (!configTree) return null;
-  const rootSkills = await rootSkillRecords(mirror, commit);
-  return withScratchRepo(mirror, async (repo, env) => {
-    let tree = configTree;
-    if (rootSkills.length) {
-      const top = await treeRecords(repo, configTree, env);
-      const skills = new Map<string, string>();
-      const own = top.get('skills');
-      if (own && own.split(' ')[1] === 'tree') for (const [name, record] of await treeRecords(repo, recordObject(own), env)) skills.set(name, record);
-      for (const record of rootSkills) skills.set(record.slice(record.indexOf('\t') + 1), record);
-      top.set('skills', `040000 tree ${await mktree(repo, env, [...skills.values()])}\tskills`);
-      tree = await mktree(repo, env, [...top.values()]);
-    }
-    return archiveTree(repo, env, tree, limit);
-  });
-}
-
 /** Filename references only. The plugin implementation stays in the repository. */
 export function selectedOpenCodePlugins(manifest: Record<string, unknown> | null, agent: string): string[] | null {
   if (manifest?.kortix_version !== 2) return null;
