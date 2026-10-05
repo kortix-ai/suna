@@ -130,7 +130,7 @@ request. The store is a cache; the Git mirror is always the source of truth.
   older than the 32 MiB cap refuses a descriptor over 4 MiB and keeps its
   running config until it updates.
 - A release holds only those three trees. A config file that points OUTSIDE
-  them — an `instructions` entry such as `../../docs/RULES.md`, or a tool that
+  them — an `instructions` entry such as `../../rules/RULES.md`, or a tool that
   imports `../../../shared/x` — resolves with the flag off (the checkout has
   the file) and does not with the flag on. A missing instruction is skipped
   silently by OpenCode. A missing import fails every tool, so the release
