@@ -3,7 +3,7 @@
  * the timeline, items, search, media, ranges, the people summary. Every query
  * is bound to (account, person); the route decides who may ask.
  */
-import { captureDevices, projectSessions, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
+import { captureDevices, captureEpisodes, projectSessions, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
 import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { PolicySchema, accountPrefix, isEncrypted, liveState, objectKey, type Manifest } from './format';
@@ -302,11 +302,24 @@ export async function saveRange(input: {
   startAt: Date;
   endAt: Date;
 }): Promise<Range> {
-  const [range] = await db
-    .insert(timelineRanges)
-    .values({ ...input, source: 'saved', status: 'closed', createdBy: input.userId })
-    .returning();
-  return range!;
+  return db.transaction(async (tx) => {
+    const [range] = await tx
+      .insert(timelineRanges)
+      .values({ ...input, source: 'saved', status: 'closed', createdBy: input.userId })
+      .returning();
+    // A saved range is also a pinned episode: the person said "this is one task".
+    await tx.insert(captureEpisodes).values({
+      accountId: input.accountId,
+      userId: input.userId,
+      deviceId: input.deviceId,
+      source: 'saved',
+      startAt: input.startAt,
+      endAt: input.endAt,
+      label: input.title,
+      status: 'closed',
+    });
+    return range!;
+  });
 }
 
 export async function rangeInAccount(accountId: string, rangeId: string): Promise<Range | null> {

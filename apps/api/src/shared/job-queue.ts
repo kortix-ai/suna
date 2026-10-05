@@ -24,11 +24,15 @@ export type Job = typeof jobQueue.$inferSelect;
 export type JobHandler = (job: Job) => Promise<void>;
 
 // replica-local: the handler registry is code, registered at import; every replica registers the same handlers.
-const handlers = new Map<string, { run: JobHandler; visibilityMs: number }>();
+const handlers = new Map<string, { run: JobHandler; visibilityMs: number; batch?: number }>();
 
-/** Register the handler of one queue. `visibilityMs` must exceed the handler's worst run time. */
-export function registerJobHandler(queue: string, run: JobHandler, visibilityMs = 5 * 60_000): void {
-  handlers.set(queue, { run, visibilityMs });
+/**
+ * Register the handler of one queue. `visibilityMs` must exceed the handler's
+ * worst run time. `batch`: jobs of this queue claimed and run at once per tick
+ * (default: the tick's limit).
+ */
+export function registerJobHandler(queue: string, run: JobHandler, visibilityMs = 5 * 60_000, batch?: number): void {
+  handlers.set(queue, { run, visibilityMs, batch });
 }
 
 /** Insert a job unless `(queue, key)` exists. True when this call inserted it. */
@@ -131,7 +135,7 @@ export async function pruneFinishedJobs(days = 7): Promise<void> {
 export async function runJobBatch(limit = 4): Promise<number> {
   let ran = 0;
   for (const [queue, handler] of handlers) {
-    const jobs = await claimJobs([queue], limit, handler.visibilityMs);
+    const jobs = await claimJobs([queue], handler.batch ?? limit, handler.visibilityMs);
     await Promise.all(
       jobs.map(async (job) => {
         try {
