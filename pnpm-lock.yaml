@@ -259,6 +259,9 @@ importers:
       hono:
         specifier: ^4.13.7
         version: 4.13.7
+      hyparquet-writer:
+        specifier: 0.16.10
+        version: 0.16.10
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -22309,6 +22312,16 @@ packages:
     dependencies:
       ms: 2.1.3
     dev: true
+
+  /hyparquet-writer@0.16.10:
+    resolution: {integrity: sha512-53fpiA57kdJ2V7X97/VSAzHr8rb8Z2cr126T1pTL9TapZNOP/wNJqFh+jc7dRwwg9TpVMYeRNDMb+r5oiLqwjg==}
+    dependencies:
+      hyparquet: 1.31.1
+    dev: false
+
+  /hyparquet@1.31.1:
+    resolution: {integrity: sha512-tF9580Xb+41+Eb+mH0av1k7m1PWl+PSKrX66Yd7UOZ760cwEXP9/enwHRMSCeVncaubRI8XPb3v580/ujYKK5w==}
+    dev: false
 
   /hyphenate-style-name@1.1.0:
     resolution: {integrity: sha512-WDC/ui2VVRrz3jOVi+XtjqkDjiVjTtFaAGiW37k6b+ohyQ5wYDOGkvCZa8+H0nx3gyvv0+BST9xuOgIyGQ00gw==}

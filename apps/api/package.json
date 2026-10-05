@@ -50,6 +50,7 @@
     "drizzle-orm": "^0.45.2",
     "e2b": "2.37.0",
     "hono": "^4.13.7",
+    "hyparquet-writer": "0.16.10",
     "jose": "^5.9.6",
     "nodemailer": "^10.0.13",
     "oauth4webapi": "^3.8.7",

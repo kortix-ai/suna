@@ -22,6 +22,27 @@ export function enqueueExport(exportId: string): Promise<boolean> {
   return enqueueJob(EXPORT_QUEUE, exportId, { exportId }, { maxAttempts: 3 });
 }
 
+/**
+ * Build a Parquet body: one table per file (`include` names it: episodes, steps or workflows;
+ * episodes by default), one column per field of the JSONL line. Numbers become DOUBLE, booleans
+ * BOOLEAN, text STRING, lists and objects JSON.
+ */
+export async function exportParquet(accountId: string, params: { from?: string; to?: string; include?: string[] }) {
+  const table = params.include?.[0] ?? 'episodes';
+  const { body } = await exportJsonl(accountId, { ...params, include: [table] });
+  const rows = body ? body.trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>) : [];
+  const names = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((n) => n !== 'type');
+  const columnData = names.map((name) => {
+    const values = rows.map((r) => r[name] ?? null);
+    const present = values.filter((v) => v !== null);
+    const type = present.length && present.every((v) => typeof v === 'number') ? 'DOUBLE' : present.length && present.every((v) => typeof v === 'boolean') ? 'BOOLEAN' : present.some((v) => typeof v === 'object') ? 'JSON' : 'STRING';
+    return { name, type, data: type === 'STRING' ? values.map((v) => (v === null ? null : String(v))) : values } as const;
+  });
+  const { parquetWriteBuffer } = await import('hyparquet-writer');
+  const buffer = rows.length ? new Uint8Array(parquetWriteBuffer({ columnData: columnData as never })) : new Uint8Array(parquetWriteBuffer({ columnData: [{ name: 'empty', data: [], type: 'STRING' }] }));
+  return { body: buffer, rows: rows.length, table };
+}
+
 /** Build the JSONL body. ponytail: built in memory; stream to multipart when one account's L1–L3 outgrows ~100 MB. */
 export async function exportJsonl(accountId: string, params: { from?: string; to?: string; include?: string[] }) {
   const include = new Set(params.include?.length ? params.include : ['episodes', 'steps', 'workflows']);
@@ -59,12 +80,15 @@ registerJobHandler(EXPORT_QUEUE, async (job) => {
   if (!row || row.status === 'done') return;
   await db.update(captureExports).set({ status: 'running', updatedAt: sql`now()` }).where(eq(captureExports.exportId, exportId));
   try {
-    const { body, rows } = await exportJsonl(row.accountId, row.params as { from?: string; to?: string; include?: string[] });
-    const key = exportKey(row.accountId, exportId, 'jsonl');
-    await putCaptureObject(key, body, 'application/x-ndjson');
+    const params = row.params as { from?: string; to?: string; include?: string[] };
+    const format = row.format === 'parquet' ? 'parquet' : 'jsonl';
+    const built = format === 'parquet' ? await exportParquet(row.accountId, params) : await exportJsonl(row.accountId, params);
+    const bytes = typeof built.body === 'string' ? new TextEncoder().encode(built.body) : built.body;
+    const key = exportKey(row.accountId, exportId, format);
+    await putCaptureObject(key, bytes, format === 'parquet' ? 'application/vnd.apache.parquet' : 'application/x-ndjson');
     await db
       .update(captureExports)
-      .set({ status: 'done', objectKey: key, rows, bytes: new TextEncoder().encode(body).byteLength, updatedAt: sql`now()` })
+      .set({ status: 'done', objectKey: key, rows: built.rows, bytes: bytes.byteLength, updatedAt: sql`now()` })
       .where(eq(captureExports.exportId, exportId));
   } catch (error) {
     await db.update(captureExports).set({ status: 'failed', error: String(error).slice(0, 2000), updatedAt: sql`now()` }).where(eq(captureExports.exportId, exportId));

@@ -33,7 +33,7 @@ export function deviceEndpoint(): string {
 }
 
 /** Write (or overwrite) one object. Server-side encryption is the bucket default. */
-export async function putCaptureObject(key: string, body: string, contentType: string): Promise<void> {
+export async function putCaptureObject(key: string, body: string | Uint8Array, contentType: string): Promise<void> {
   await captureStore
     .client()
     .send(new PutObjectCommand({ Bucket: captureStore.bucket, Key: key, Body: body, ContentType: contentType }));

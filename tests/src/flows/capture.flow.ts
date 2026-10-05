@@ -626,8 +626,16 @@ flow(
       (await owner.get(path(R.workflow), { params: { ...params, workflowId } })).status(200).body().has('$.status', 'exported');
     });
 
-    await ctx.step('bulk export: parquet → 400 capture_export_format_unavailable; the member → 403; the owner exports JSONL, polls it to done, and the signed download holds the workflow and the pinned episode', async () => {
-      (await owner.post(path(R.exportsCreate), { format: 'parquet' }, { params })).status(400).body().has('$.code', 'capture_export_format_unavailable');
+    await ctx.step('bulk export: Parquet of two tables → 400 capture_export_one_table; Parquet of workflows → a PAR1 file; the member → 403; the owner exports JSONL, polls it to done, and the signed download holds the workflow and the pinned episode', async () => {
+      (await owner.post(path(R.exportsCreate), { format: 'parquet', include: ['episodes', 'workflows'] }, { params })).status(400).body().has('$.code', 'capture_export_one_table');
+      const pq = (await owner.post(path(R.exportsCreate), { format: 'parquet', include: ['workflows'] }, { params })).status(202).json<{ export_id: string }>();
+      const pqDone = await waitFor(
+        async () => (await owner.get(path(R.exportGet), { params: { ...params, exportId: pq.export_id } })).json<{ status: string; rows: number; download: { url: string } | null }>(),
+        { until: (e) => e.status === 'done' || e.status === 'failed', timeoutMs: 60_000, intervalMs: 1_000, description: 'the parquet export job' },
+      );
+      if (pqDone.status !== 'done' || pqDone.rows !== 1 || !pqDone.download?.url) throw new Error(`parquet export: ${JSON.stringify(pqDone)}`);
+      const head = new TextDecoder().decode(new Uint8Array(await (await fetch(pqDone.download.url)).arrayBuffer()).slice(0, 4));
+      if (head !== 'PAR1') throw new Error(`parquet magic: ${head}`);
       (await asMember.post(path(R.exportsCreate), { format: 'jsonl' }, { params })).status(403);
       const created = (await owner.post(path(R.exportsCreate), { format: 'jsonl' }, { params })).status(202).json<{ export_id: string }>();
       const done = await waitFor(

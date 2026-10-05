@@ -381,6 +381,23 @@ describe('intelligence: episodes (L1/L2) and mining (L3)', () => {
     await db.update(timelineRanges).set({ status: 'processed' }).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
   });
 
+  test('a Parquet export is one table, one column per field, that reads back row for row', async () => {
+    const { exportParquet } = await import('../capture/exports');
+    const { captureWorkflows } = await import('@kortix/db');
+    const hyparquet = await import(Bun.resolveSync('hyparquet', Bun.resolveSync('hyparquet-writer', import.meta.dir)));
+    const built = await exportParquet(ACCOUNT, { include: ['workflows'] });
+    expect(new TextDecoder().decode(built.body.slice(0, 4))).toBe('PAR1');
+    const rows = (await hyparquet.parquetReadObjects({ file: built.body.buffer.slice(built.body.byteOffset, built.body.byteOffset + built.body.byteLength) })) as Array<Record<string, unknown>>;
+    const workflows = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT));
+    expect(built.table).toBe('workflows');
+    expect(rows.map((r) => r.name).sort()).toEqual(workflows.map((w) => w.name).sort());
+    expect(typeof rows[0]!.runs_total).toBe('number');
+    expect(Array.isArray(rows[0]!.steps)).toBe(true);
+    const episodes = await exportParquet(ACCOUNT, {});
+    expect(episodes.table).toBe('episodes');
+    expect(episodes.rows).toBeGreaterThan(0);
+  });
+
   test('Ask is a tool-calling agent: it calls a tool in the asker\'s scope, gets numbered sources, and answers with citations; a member\'s tools see only the member', async () => {
     const { ask, runTool } = await import('../capture/ask');
     const bodies: Array<Record<string, any>> = [];

@@ -378,7 +378,7 @@ export function registerCaptureIntelligenceRoutes() {
       method: 'post',
       path: '/{accountId}/capture/exports',
       tags,
-      summary: 'Start a bulk export of episodes, steps and workflows (Capture admins); poll it, then download by signed URL',
+      summary: 'Start a bulk export of episodes, steps and workflows (Capture admins): JSONL (any tables) or Parquet (one table); poll it, then download by signed URL',
       ...auth,
       request: {
         params,
@@ -404,7 +404,9 @@ export function registerCaptureIntelligenceRoutes() {
       if (denied) return denied as never;
       if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
       const body = c.req.valid('json');
-      if (body.format === 'parquet') return refuse(c, 400, 'capture_export_format_unavailable', 'Parquet export is not available yet; use jsonl');
+      if (body.format === 'parquet' && (body.include?.length ?? 0) > 1) {
+        return refuse(c, 400, 'capture_export_one_table', 'A Parquet export holds one table: include one of episodes, steps or workflows');
+      }
       const row = await createExport({
         accountId: access.accountId,
         requestedBy: access.viewer,
