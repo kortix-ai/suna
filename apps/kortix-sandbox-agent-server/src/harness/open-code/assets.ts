@@ -13,7 +13,7 @@ import type {
 } from '@/services/runtime-assets/port'
 import { requireOpenCodeConfig } from './config'
 import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
-import { isInReleaseStore, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
 import { managedOverlayRoot } from './project-layout'
 import {
   captureProcessOutput,
@@ -506,7 +506,7 @@ export function createOpenCodeAssetsService(
     // or the project root for a root-layout working tree (`managedOverlayRoot`).
     resolveConfigDir: async (cfg) => {
       const target = await readBootLinkTarget()
-      if (target && existsSync(target)) return managedOverlayRoot(target, cfg.projectTarget)
+      if (target && existsSync(target)) return managedOverlayRoot(target, releaseRootOf(target) ?? cfg.projectTarget)
       return requireOpenCodeConfig(cfg).defaultOpencodeConfigDir
     },
     // A release is the platform's own sealed copy; a working tree is not.
