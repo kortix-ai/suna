@@ -1,6 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { isUuid } from '../../shared/validate';
+import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { listSignedInDevices, signOutDevice } from '../../repositories/auth-devices';
 import { accountsRouter, OkSchema } from './app';
 
@@ -62,8 +63,15 @@ export function registerDeviceRoutes(): void {
       if (sessionId === c.get('sessionId')) {
         return c.json({ error: 'This is the current device. Sign out instead.' }, 400);
       }
-      const ok = await signOutDevice(c.get('userId') as string, sessionId);
-      return ok ? c.json({ ok: true }) : c.json({ error: 'Device not found.' }, 404);
+      const userId = c.get('userId') as string;
+      const ok = await signOutDevice(userId, sessionId);
+      if (!ok) return c.json({ error: 'Device not found.' }, 404);
+      // The liveness cache keys tokens, not sessions, so it cannot drop only the
+      // signed-out device: drop the user's entries and let the next request of
+      // every device ask GoTrue again. Without this a cached bearer of the
+      // signed-out device keeps working until SUPABASE_JWT_LIVENESS_TTL_MS.
+      forgetUserJwtLiveness(userId);
+      return c.json({ ok: true });
     },
   );
 }
