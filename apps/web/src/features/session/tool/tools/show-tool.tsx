@@ -178,6 +178,13 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       <SessionDotMatrix sessionId={preview.matrixSeed} size={14} className="shrink-0" />
     ) : null;
 
+  // While the card's preview loads, every port tab shows its own glyph,
+  // seeded by that tab's title or URL.
+  const portTabIcon = (item: ShowCarouselItem) =>
+    parseLocalhostUrl(item.url || '') ? (
+      <SessionDotMatrix sessionId={item.title || item.url} size={14} className="shrink-0" />
+    ) : null;
+
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
 
   // Inline card header owns the toolbar. Panel keeps the actions inside the
@@ -355,7 +362,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
             activeIndex={activeIndex}
             onSelect={setCarouselIndex}
             label={title}
-            activeIcon={startingIcon}
+            tabIcon={startingIcon ? portTabIcon : undefined}
           />
         ) : (
           <ShowHoverCard target={hoverTarget}>

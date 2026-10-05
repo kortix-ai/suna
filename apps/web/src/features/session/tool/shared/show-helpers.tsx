@@ -461,13 +461,14 @@ export function ShowCarouselTabs({
   activeIndex,
   onSelect,
   label,
-  activeIcon,
+  tabIcon,
 }: {
   items: ShowCarouselItem[];
   activeIndex: number;
   onSelect: (index: number) => void;
-  /** Replaces the active tab's type icon (the dot matrix while its app starts). */
-  activeIcon?: ReactNode;
+  /** Replaces a tab's type icon (the dot matrix while the previews load).
+   *  Return null to keep the type icon. */
+  tabIcon?: (item: ShowCarouselItem) => ReactNode;
   /** The call's own title. The tabs replace the visible header title, so it
    *  names the tablist for assistive tech instead. */
   label?: string;
@@ -536,10 +537,9 @@ export function ShowCarouselTabs({
             >
               {item.status === 'pending' ? (
                 <Loading className="size-3.5 shrink-0" />
-              ) : active && activeIcon ? (
-                activeIcon
               ) : (
-                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url)
+                (tabIcon?.(item) ??
+                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url))
               )}
               <span className={cn(label.startsWith(':') && 'tabular-nums')}>{label}</span>
             </button>
