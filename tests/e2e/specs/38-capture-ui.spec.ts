@@ -260,7 +260,7 @@ test.describe("38 — Capture UI", () => {
         await expect(page.getByRole("tab", { name: tab })).toBeVisible();
 
       // Back to the timeline, then More → Settings: turning audio off writes the policy and reads back.
-      await page.getByRole("link", { name: "Timeline" }).click();
+      await page.getByRole("link", { name: "Timeline", exact: true }).click();
       await expect(track).toBeVisible({ timeout: 30_000 });
       await page.getByRole("button", { name: "More", exact: true }).click();
       await page.getByRole("menuitem", { name: "Settings" }).click();
