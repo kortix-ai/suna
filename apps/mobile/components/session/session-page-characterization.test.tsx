@@ -1207,6 +1207,35 @@ describe('SessionPage prompt-options assembly', () => {
     expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
   });
 
+  test('an edit resends the kept attachments: a saved copy as a URL part, a path-only upload as its ref (KRTX-962)', async () => {
+    const [user, assistant] = makeTurn('original');
+    seedRows([user, assistant]);
+    await renderPage();
+    await act(async () => {
+      turnProps[0].onEditStart(user.info.id, 'edited');
+      await sleep(15);
+    });
+    const savedCopy =
+      'kortix-attachment://00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000002/00000000-0000-4000-8000-000000000003';
+    // The editor removed a third tile; only these two are kept.
+    const kept = [
+      { key: 'u0', filename: 'a.png', mime: 'image/png', src: '/w/a.png', path: '/w/a.png', attachment: savedCopy },
+      { key: 'u1', filename: 'b.pdf', mime: 'application/pdf', src: '/w/b.pdf', path: '/w/b.pdf' },
+    ];
+    await act(async () => {
+      turnProps.at(-1).onEditSend(user.info.id, 'edited', kept);
+      await sleep(15);
+    });
+    const post = fetchCalls.find((c) => c.method === 'POST' && c.url.endsWith('/prompts'));
+    expect(post?.body.parts).toEqual([
+      {
+        type: 'text',
+        text: 'edited\n\n<file path="/w/b.pdf" mime="application/pdf" filename="b.pdf">\nThis file has been uploaded and is available at the path above.\n</file>',
+      },
+      { type: 'file', mime: 'image/png', url: savedCopy, filename: 'a.png' },
+    ]);
+  });
+
   test('a slash command posts the command with the resolved agent, model string and variant', async () => {
     await renderPage();
     await act(async () => {
