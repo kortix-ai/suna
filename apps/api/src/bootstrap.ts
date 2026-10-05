@@ -44,7 +44,7 @@ import { startSlackTurnGc, stopSlackTurnGc } from './channels/slack/turn';
 import { startTeamsTurnGc, stopTeamsTurnGc } from './channels/teams/turn';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './channels/teams-auth';
 import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
-import { maintenanceSetting } from './routes/platform-endpoints';
+import { maintenanceSetting } from './platform/services/maintenance-setting';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './lib/event-loop-lag';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
