@@ -635,6 +635,13 @@ another member writes `capture.member_view`; an account-wide read
 | `frame(frameId)` · `media(chunkId)` | one frame with its on-screen text and a 5-minute signed URL of its video chunk (`offset_ms` = `frame_index` × 1000; the chunk video is 1 fps) · signed URLs of an item's video or audio |
 | `ranges.list(query)` · `ranges.save({ start_at, end_at, title?, device_id? })` · `ranges.get(rangeId)` · `ranges.process(rangeId)` | detected activity sessions and saved spans · save your own span (at most 24 h) · a range with its outputs (`segmentation`, `transcript`, `annotation`, each with `model` and `usage.cost_usd`) · run its pipelines again |
 | `people({ day?, from?, to? })` | admins and viewers: per member, active seconds, seconds per app, ranges and devices |
+| `overview({ from?, to? })` | admins and viewers: hours recorded (and the span before), people recording, devices, workflows by status, automatable hours a week, top opportunities, new this week, a 12-week trend |
+| `workflows.list({ status?, q?, app?, userId?, sort?, limit?, offset? })` · `workflows.get(workflowId)` | admins and viewers: mined workflows with runs/week, p50/p90 duration, people, success rate, determinism and `automation_hours_per_week` (counts per status) · one with its standard path, variants (each with `name`, `note`, `question` = its condition) and people |
+| `workflows.review(workflowId, { name?, goal?, outcome?, steps? })` · `workflows.draftSkill(workflowId, { name? })` · `workflows.exportSkill(workflowId, { project_id, name, markdown })` | admins: edit and mark reviewed · a `SKILL.md` draft with `inputs`, `checks` and `workflow_updated_at` (re-draft when the workflow's `updated_at` moves past it) · commit it to `skills/<name>/SKILL.md` in a project of the account; the workflow reads `exported` |
+| `episodes.list({ scope?, userId?, deviceId?, workflowId?, from?, to?, before?, limit? })` · `episodes.get(episodeId)` | your episodes, or a member's or the account's for admins and viewers (audited), newest first, paged by `next_before` · one with its ordered steps |
+| `ask({ question, history?, scope? }, onEvent?)` | a cited answer from a tool-calling agent; `onEvent` receives `sources` (the numbered sources so far), `tool` (each tool call), `delta` (answer text) and `done`; the promise resolves to `{ answer, citations, model, cost_usd }` |
+| `exports.create({ format, from?, to?, include? })` · `exports.list()` · `exports.get(exportId)` | admins: a background export; JSONL holds any of `episodes`, `steps`, `workflows`, Parquet exactly one (`400 capture_export_one_table` otherwise) · poll it; when `done`, `download.url` is valid for 1 hour |
+| `runIntelligence({ mining_only? })` | admins: queue the pipelines now; `{ episodes_queued, mining_queued }` |
 
 Beside it, not bound to an account:
 
@@ -653,14 +660,21 @@ React: `useCaptureWorkspace`, `useSetCaptureEnabled`, `useCaptureMembers`,
 account id first), and `useCaptureDeviceGrant`, `useApproveCaptureDevice`,
 `useDenyCaptureDevice`.
 
-React hooks for the project surface (`@kortix/sdk/react`), one per read and
+Intelligence hooks: `useCaptureOverview`, `useCaptureWorkflows`,
+`useCaptureWorkflow`, `useReviewCaptureWorkflow`, `useDraftCaptureSkill`,
+`useExportCaptureSkill`, `useCaptureEpisodes`, `useCaptureEpisode`,
+`useCreateCaptureExport`, `useCaptureExport` (polls until the export is done or
+failed) and `useCaptureAsk` (a conversation: each turn holds the question, the
+streamed answer, its sources, the tools the agent called, and its citations).
+
+React hooks for the account surface (`@kortix/sdk/react`), one per read and
 write above: `useCaptureDevices` (polls every 10 s for live status),
 `useRevokeCaptureDevice`, `useSyncCaptureDevice`, `useCaptureDays`,
 `useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`,
 `useCaptureFrame`, `useCaptureChunkMedia` (an item's signed media URLs, read again every 4 min), `useCaptureRanges`, `useCaptureRange` (polls every 5 s while
 the range's pipelines are queued or running), `useSaveCaptureRange`,
 `useProcessCaptureRange`, `useCapturePolicy`, `useSetCapturePolicy` and
-`useCapturePeople`. A `null` project, query or id sends no request. A saved
+`useCapturePeople`. A `null` account, query or id sends no request. A saved
 range, a reprocess, a sync or a revoke refreshes the timeline reads.
 
 ### Escape hatch

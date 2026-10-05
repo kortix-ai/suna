@@ -1,6 +1,6 @@
 ---
 title: Capture
-description: A searchable timeline of each member's screen, actions and audio, owned by the Kortix account.
+description: A searchable timeline of each member's screen, actions and audio, and the workflows Kortix learns from it, owned by the Kortix account.
 ---
 
 Kortix Capture records a member's own computer: the screen (app, window title,
@@ -31,9 +31,9 @@ Capture admin can set a different one per person.
 
 | Capture role | Default for | Reads | Writes |
 |---|---|---|---|
-| `admin` | account owners and admins | every member's devices and timeline, **People** | the policy, device overrides, Capture roles |
-| `viewer` | nobody (set it per person) | every member's devices and timeline, **People** | nothing |
-| `member` | account members | their own devices and timeline | their own ranges |
+| `admin` | account owners and admins | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, Ask over the account | the policy, device overrides, Capture roles, workflow review, skill export, bulk export, run now |
+| `viewer` | nobody (set it per person) | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, Ask over the account | nothing |
+| `member` | account members | their own devices, timeline and episodes; Ask over their own recordings | their own ranges |
 | an agent | — | only the timeline of the person its private session acts for | nothing |
 
 Every read of another member's data writes a `capture.member_view` entry to the
@@ -68,6 +68,82 @@ The device receives a revocable device token and, from it, short-lived storage
 credentials for its own folder (`orgs/<account_id>/<device_id>/`) and read
 access to the policy. Signing in again on the same computer reuses the device.
 Forgetting a time range on the device removes it from Kortix too.
+
+## Capture Intelligence
+
+Kortix turns the timeline into the work it shows, in four layers.
+
+| Layer | What it is | When it runs |
+|---|---|---|
+| **Episodes** | One task by one person: a label, goal, outcome (`succeeded`, `failed`, `abandoned`) and its apps. | When a detected activity session goes quiet for 15 minutes. |
+| **Steps** | The ordered steps of an episode: a verb (`Open`, `Search`, `Create`, `Send`, …), the app, what it acts on, and the names of the values that change from run to run (`order_id`, `refund_amount`), never the values. | With the episode, in the same model call. |
+| **Workflows** | A procedure people repeat, mined across people and weeks: the standard path, its variants with the decision that leads to each, and its stats. | 10 minutes after new episodes, and nightly. |
+| **Skills** | A `SKILL.md` drafted from a workflow, reviewed by a person and published into a project. | When an admin chooses **Export as skill**. |
+
+A saved range is a pinned episode: you said "this was one task".
+
+**Workflow stats.** Runs per week (over the last 4 weeks), typical (p50) and
+slow (p90) duration, people, success rate, and **determinism**: the share of
+finished runs that follow a named path. The **automation score** is
+`runs per week × p50 duration × determinism`, in hours a week. Workflows sort
+by it.
+
+**Review and export.** A workflow is `detected` until an admin reviews it
+(edits its name, goal and steps) and `exported` once its skill is published.
+The draft reads the stored workflow: its steps, its variants with their
+conditions, the apps it needs, and its run count. Checks run before publishing:
+every variant covered and named, no literal customer values. Publishing commits
+`skills/<name>/SKILL.md` to the project's default branch. This is the only
+place Capture touches a project.
+
+**Ask.** Ask a question in plain words. An agent looks things up with tools
+(search the timeline, list and open episodes, and for admins and viewers also
+workflows and account stats), then answers with every claim cited. A member
+asks about their own recordings only; an admin or viewer about a member or the
+whole account, audited as `capture.member_view` or `capture.account_view`.
+
+**Bulk export.** Admins export episodes, steps and workflows as JSONL (any
+tables in one file) or Parquet (one table per file). The export runs in the
+background; the download is a signed URL valid for 1 hour.
+
+**Run now.** Admins can queue the pipelines at once
+(`POST /v1/accounts/<account_id>/capture/intelligence/run`) instead of waiting
+for the next quiet session or the nightly run.
+
+### Privacy and cost
+
+- Only masked text reaches the model: emails, phone numbers, IBANs and long
+  digit runs are replaced before the call, and labels, goals, outcomes and
+  steps are cleaned of ids and numbers after it.
+- The model is Kortix's managed open-weight model through the Kortix LLM
+  gateway, billed to the account. Every episode and workflow stores the model
+  and its cost. Spend is capped per account per UTC day
+  (`KORTIX_CAPTURE_DAILY_COST_CAP_USD`, default 5 USD). Work over the cap waits
+  for the next day.
+- **Forget reaches everything derived.** When a person forgets a time span on
+  the device, Kortix deletes the episodes and steps over it, rebuilds the
+  workflows they fed from their remaining runs, expires every finished export
+  of the account, and traces the span again without the forgotten item. A
+  skill already published into a project is a commit in that project's history
+  and stays there; it holds variable names, never values.
+- Raw recordings expire with the policy's `remote_days`. Episodes, steps,
+  workflows and skills stay.
+
+### How well it works
+
+Measured on a synthetic dataset with ground truth: 6 people, 15 workdays, 7
+recurring workflows with 1 or 2 variants each, interruptions and abandoned
+runs, 657 runs, ingested through the real device path and processed with the
+real gateway (`apps/api/scripts/capture-intelligence/`):
+
+| Measure | Result |
+|---|---|
+| Runs found as episodes | 99.5% (mean overlap 0.96) |
+| Workflows recovered | 7 of 7, no extra workflows |
+| Runs put in the right workflow (pairwise F1) | 0.98 |
+| Variants recovered | 92% |
+| Step sequence vs. truth (verb@app) | 0.89 |
+| Model cost | 0.0015 USD per person-day |
 
 ## Agents
 
