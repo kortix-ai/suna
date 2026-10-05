@@ -9,8 +9,6 @@ import { MonitorPlayIcon } from '@phosphor-icons/react';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
-import { CaptureDialogHost } from '@/features/capture/desktop/capture-dialog';
-import { isDesktop } from '@/lib/desktop';
 
 /**
  * The Capture entry: Kortix Capture's timeline, ranges and devices. Present
@@ -44,8 +42,6 @@ export function ProjectCaptureNavItem() {
           {t('capture')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
-      {/* The desktop tray's "Capture…" opens the Capture dialog here. */}
-      {isDesktop() ? <CaptureDialogHost projectId={projectId} /> : null}
     </SidebarMenuItem>
   );
 }

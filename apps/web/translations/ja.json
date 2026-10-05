@@ -20567,8 +20567,6 @@
       "notAllowed": "許可なし",
       "needsSetup": "設定が必要"
     },
-    "runInBackground": "バックグラウンドで実行",
-    "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
     "manageInProject": "プロジェクトで管理",
     "disconnectEllipsis": "接続を解除…",
     "yourComputersTitle": "あなたのコンピューター",
@@ -20591,7 +20589,6 @@
       "screenRecordingDescription": "画面の内容を表示",
       "needed": "未許可",
       "waiting": "操作を待っています",
-      "allowAll": "すべて許可",
       "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。この画面は自動で更新されます。",
       "doneTitle": "コンピューターの準備ができました",
       "doneHint": "Kortix に必要な権限がすべてそろいました。エージェントがこのコンピューターを使えます。"
@@ -20604,6 +20601,18 @@
       "removeAll": "すべて削除",
       "confirmTitle": "以前の接続をすべて削除しますか？",
       "confirmDescription": "Kortix はそれらとそのアカウントをすべてのプロジェクトから削除します。まだ使用しているコンピューターは再接続できます。"
+    },
+    "hub": {
+      "agents": "エージェント",
+      "capture": "Capture",
+      "tabAgents": "エージェントのアクセス",
+      "tabCapture": "マイ Capture",
+      "thisComputer": "このコンピュータ",
+      "more": "その他の操作",
+      "allowAccess": "アクセスを許可",
+      "pauseAccess": "アクセスを一時停止",
+      "resumeAccess": "アクセスを再開",
+      "pausedHint": "一時停止中です。再開するまで、再起動後もエージェントはこのコンピュータを使えません。"
     }
   },
   "messageFrom": {
@@ -20934,7 +20943,6 @@
       "instructions": "私の Kortix Capture タイムラインから回答してください。`kortix capture search` で検索し、`kortix capture timeline` で 1 日分を読み、`kortix capture frame` で画面を開いてください。使ったすべての瞬間を Markdown リンクで引用してください: [14:32]({timelineUrl}?at=ISO-8601-TIME)。区間は [そのタイトル]({timelineUrl}/ranges/RANGE_ID) の形式で引用してください。私のタイムゾーンは {tz} です。質問と同じ言語で回答してください。"
     },
     "dialog": {
-      "title": "このコンピューターを記録",
       "status": {
         "off": "オフ",
         "turningOn": "起動中",
@@ -20995,7 +21003,6 @@
         "microphoneDescription": "話された内容を記録する（音声がオンのときのみ）"
       },
       "actions": {
-        "close": "閉じる",
         "cancel": "キャンセル",
         "start": "記録を開始",
         "starting": "起動中…",

@@ -20567,8 +20567,6 @@
       "notAllowed": "Não permitido",
       "needsSetup": "Requer configuração"
     },
-    "runInBackground": "Executar em segundo plano",
-    "runInBackgroundDescription": "Desligado pausa a conexão, mesmo depois de reiniciar.",
     "manageInProject": "Gerenciar no projeto",
     "disconnectEllipsis": "Desconectar…",
     "yourComputersTitle": "Seus computadores",
@@ -20591,7 +20589,6 @@
       "screenRecordingDescription": "Ver o que está na tela",
       "needed": "Ainda não permitido",
       "waiting": "Aguardando você",
-      "allowAll": "Permitir tudo",
       "settingsHint": "Se os Ajustes do Sistema abrirem, ative o Kortix na lista. Isto se atualiza sozinho.",
       "doneTitle": "Seu computador está pronto",
       "doneHint": "O Kortix tem todas as permissões necessárias. Agentes já podem usar este computador."
@@ -20604,6 +20601,18 @@
       "removeAll": "Remover todas",
       "confirmTitle": "Remover todas as conexões antigas?",
       "confirmDescription": "O Kortix as remove com suas contas de todos os projetos. Um computador que ainda use uma pode se conectar de novo."
+    },
+    "hub": {
+      "agents": "Agentes",
+      "capture": "Capture",
+      "tabAgents": "Acesso dos agentes",
+      "tabCapture": "Meu Capture",
+      "thisComputer": "Este computador",
+      "more": "Mais ações",
+      "allowAccess": "Permitir acesso",
+      "pauseAccess": "Pausar acesso",
+      "resumeAccess": "Retomar acesso",
+      "pausedHint": "Pausado. Os agentes não podem usar este computador até você retomar, mesmo após reiniciar."
     }
   },
   "messageFrom": {
@@ -20934,7 +20943,6 @@
       "instructions": "Responda a partir da minha linha do tempo do Kortix Capture. Pesquise nela com `kortix capture search`, leia um dia com `kortix capture timeline` e abra uma tela com `kortix capture frame`. Cite cada momento que usar como link Markdown: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cite um intervalo como [seu título]({timelineUrl}/ranges/RANGE_ID). Meu fuso horário é {tz}. Responda no idioma da minha pergunta."
     },
     "dialog": {
-      "title": "Gravar este computador",
       "status": {
         "off": "Desativado",
         "turningOn": "Iniciando",
@@ -20995,7 +21003,6 @@
         "microphoneDescription": "Gravar o que é dito, só com o Áudio ativado"
       },
       "actions": {
-        "close": "Fechar",
         "cancel": "Cancelar",
         "start": "Começar a gravar",
         "starting": "Iniciando…",

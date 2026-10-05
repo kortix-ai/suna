@@ -20567,8 +20567,6 @@
       "notAllowed": "Nicht erlaubt",
       "needsSetup": "Einrichtung nötig"
     },
-    "runInBackground": "Im Hintergrund ausführen",
-    "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
     "manageInProject": "Im Projekt verwalten",
     "disconnectEllipsis": "Trennen…",
     "yourComputersTitle": "Deine Computer",
@@ -20591,7 +20589,6 @@
       "screenRecordingDescription": "Sehen, was auf dem Bildschirm ist",
       "needed": "Noch nicht erlaubt",
       "waiting": "Wartet auf dich",
-      "allowAll": "Alle erlauben",
       "settingsHint": "Wenn sich die Systemeinstellungen öffnen, aktiviere Kortix in der Liste. Diese Ansicht aktualisiert sich selbst.",
       "doneTitle": "Dein Computer ist bereit",
       "doneHint": "Kortix hat alle nötigen Berechtigungen. Agenten können diesen Computer jetzt nutzen."
@@ -20604,6 +20601,18 @@
       "removeAll": "Alle entfernen",
       "confirmTitle": "Alle älteren Verbindungen entfernen?",
       "confirmDescription": "Kortix entfernt sie und ihre Konten aus allen Projekten. Ein Computer, der noch eine davon nutzt, kann sich erneut verbinden."
+    },
+    "hub": {
+      "agents": "Agenten",
+      "capture": "Capture",
+      "tabAgents": "Agentenzugriff",
+      "tabCapture": "Mein Capture",
+      "thisComputer": "Dieser Computer",
+      "more": "Weitere Aktionen",
+      "allowAccess": "Zugriff erlauben",
+      "pauseAccess": "Zugriff pausieren",
+      "resumeAccess": "Zugriff fortsetzen",
+      "pausedHint": "Pausiert. Agenten können diesen Computer erst wieder nutzen, wenn du fortsetzt, auch nach einem Neustart."
     }
   },
   "messageFrom": {
@@ -20934,7 +20943,6 @@
       "instructions": "Antworte anhand meiner Kortix-Capture-Zeitleiste. Durchsuche sie mit `kortix capture search`, lies einen Tag mit `kortix capture timeline` und öffne einen Bildschirm mit `kortix capture frame`. Belege jeden verwendeten Moment als Markdown-Link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Belege einen Zeitraum als [sein Titel]({timelineUrl}/ranges/RANGE_ID). Meine Zeitzone ist {tz}. Antworte in der Sprache meiner Frage."
     },
     "dialog": {
-      "title": "Diesen Computer aufnehmen",
       "status": {
         "off": "Aus",
         "turningOn": "Startet",
@@ -20995,7 +21003,6 @@
         "microphoneDescription": "Aufnehmen, was gesagt wird, nur wenn Audio an ist"
       },
       "actions": {
-        "close": "Schließen",
         "cancel": "Abbrechen",
         "start": "Aufnahme starten",
         "starting": "Startet…",

@@ -20567,8 +20567,6 @@
       "notAllowed": "Није дозвољено",
       "needsSetup": "Потребно подешавање"
     },
-    "runInBackground": "Ради у позадини",
-    "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
     "manageInProject": "Управљај у пројекту",
     "disconnectEllipsis": "Прекини везу…",
     "yourComputersTitle": "Твоји рачунари",
@@ -20591,7 +20589,6 @@
       "screenRecordingDescription": "Приказ онога што је на екрану",
       "needed": "Још није дозвољено",
       "waiting": "Чека на тебе",
-      "allowAll": "Дозволи све",
       "settingsHint": "Ако се отворе Системска подешавања, укључи Kortix на листи. Ово се само ажурира.",
       "doneTitle": "Рачунар је спреман",
       "doneHint": "Kortix има све потребне дозволе. Агенти сада могу да користе овај рачунар."
@@ -20604,6 +20601,18 @@
       "removeAll": "Уклони све",
       "confirmTitle": "Уклонити све старије везе?",
       "confirmDescription": "Kortix их уклања заједно са налозима из свих пројеката. Рачунар који још користи неку може поново да се повеже."
+    },
+    "hub": {
+      "agents": "Агенти",
+      "capture": "Capture",
+      "tabAgents": "Приступ агената",
+      "tabCapture": "Мој Capture",
+      "thisComputer": "Овај рачунар",
+      "more": "Још радњи",
+      "allowAccess": "Дозволи приступ",
+      "pauseAccess": "Паузирај приступ",
+      "resumeAccess": "Настави приступ",
+      "pausedHint": "Паузирано. Агенти не могу да користе овај рачунар док не наставиш, ни после поновног покретања."
     }
   },
   "messageFrom": {
@@ -20934,7 +20943,6 @@
       "instructions": "Одговори на основу моје Kortix Capture временске линије. Претражи је помоћу `kortix capture search`, прочитај дан помоћу `kortix capture timeline` и отвори екран помоћу `kortix capture frame`. Наведи сваки тренутак који користиш као Markdown линк: [14:32]({timelineUrl}?at=ISO-8601-TIME). Наведи распон као [његов наслов]({timelineUrl}/ranges/RANGE_ID). Моја временска зона је {tz}. Одговори на језику мог питања."
     },
     "dialog": {
-      "title": "Снимај овај рачунар",
       "status": {
         "off": "Искључено",
         "turningOn": "Покреће се",
@@ -20995,7 +21003,6 @@
         "microphoneDescription": "Снимај оно што се говори, само када је звук укључен"
       },
       "actions": {
-        "close": "Затвори",
         "cancel": "Откажи",
         "start": "Почни снимање",
         "starting": "Покреће се…",
