@@ -16,12 +16,13 @@ import {
   type projects,
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
-import { requestClientIp } from '../../middleware/client-ip';
+// The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
+// Re-exported here so every importer and mock keeps working.
+export { requestAuditContext } from '../../middleware/request-audit';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -387,15 +388,6 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
     ssh_url: repo.ssh_url,
     default_branch: repo.default_branch,
     description: repo.description,
-  };
-}
-
-export function requestAuditContext(c: Context): RequestAuditContext {
-  return {
-    method: c.req.method,
-    path: c.req.path,
-    ip: requestClientIp(c),
-    userAgent: c.req.header('user-agent') || null,
   };
 }
 
