@@ -45,7 +45,7 @@ import { startTeamsTurnGc, stopTeamsTurnGc } from './channels/teams/turn';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './channels/teams-auth';
 import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
 import { maintenanceSetting } from './routes/platform-endpoints';
-import { startEventLoopLagSampler, stopEventLoopLagSampler } from './routes/system';
+import { startEventLoopLagSampler, stopEventLoopLagSampler } from './lib/event-loop-lag';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the

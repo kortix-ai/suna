@@ -951,6 +951,11 @@
       "count": 4
     }
   },
+  "src/lib/event-loop-lag.ts": {
+    "no-restricted-properties": {
+      "count": 1
+    }
+  },
   "src/lib/logger.ts": {
     "no-console": {
       "count": 5
@@ -2527,7 +2532,7 @@
       "count": 1
     },
     "no-restricted-properties": {
-      "count": 4
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 4
