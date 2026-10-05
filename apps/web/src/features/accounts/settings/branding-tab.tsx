@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Organization branding — the `?tab=branding` pane of `/accounts/[id]`.
  *
@@ -29,9 +31,9 @@ import {
   type AccountBrandingState,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
-import { type FormEvent, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef, useState, type FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -87,6 +89,8 @@ const SLOTS: MarkSlot[] = [
 ];
 
 export function BrandingTab({ accountId, canManage }: { accountId: string; canManage: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const slots = useLocalizedUiCatalog(SLOTS);
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: brandingQueryKey(accountId),
@@ -118,10 +122,8 @@ export function BrandingTab({ accountId, canManage }: { accountId: string; canMa
     <div className="space-y-10">
       <section className="space-y-4">
         <div className="space-y-1">
-          <Label>Product name</Label>
-          <p className="text-muted-foreground text-xs">
-            Replaces “Kortix” in the browser tab title.
-          </p>
+          <Label>{tI18nComplete.raw('textbfa93eb4d4fe')}</Label>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texte10dac2ace09')}</p>
         </div>
         <AppNameCard
           // Keyed on the saved value: a save (or a reset) remounts the form
@@ -136,14 +138,11 @@ export function BrandingTab({ accountId, canManage }: { accountId: string; canMa
 
       <section className="space-y-4">
         <div className="space-y-1">
-          <Label>Marks</Label>
-          <p className="text-muted-foreground text-xs">
-            Uploaded images replace the Kortix marks for every member of this account. The dark
-            variant is optional — without one, the light image is used in both themes.
-          </p>
+          <Label>{tI18nComplete.raw('text65479e3e408a')}</Label>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text8cc5134a8213')}</p>
         </div>
         <div className="bg-popover rounded-md border">
-          {SLOTS.map((slot, i) => (
+          {slots.map((slot, i) => (
             <MarkRow
               key={slot.title}
               accountId={accountId}
@@ -158,7 +157,7 @@ export function BrandingTab({ accountId, canManage }: { accountId: string; canMa
       </section>
 
       <section className="space-y-4">
-        <Label>Reset</Label>
+        <Label>{tI18nComplete.raw('textdaee7606b339')}</Label>
         <ResetRow accountId={accountId} disabled={!canManage || isDefault} onSettled={settle} />
       </section>
     </div>
@@ -178,20 +177,24 @@ function AppNameCard({
   canManage: boolean;
   onSaved: (state: AccountBrandingState) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [name, setName] = useState(value ?? '');
 
   const mutation = useMutation({
     mutationFn: (next: string | null) => updateAccountBranding(accountId, { app_name: next }),
     onSuccess: (state) => {
-      successToast(state.branding.app_name ? 'Product name saved' : 'Product name cleared');
+      successToast(
+        state.branding.app_name
+          ? tI18nComplete.raw('text2c1c62f284fb')
+          : tI18nComplete.raw('text2e5532bea639'),
+      );
       onSaved(state);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to save the product name'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text2fdab8aecd1d')),
   });
 
   const trimmed = name.trim();
-  const canSubmit =
-    canManage && trimmed !== (value ?? '') && trimmed.length <= MAX_APP_NAME_LENGTH;
+  const canSubmit = canManage && trimmed !== (value ?? '') && trimmed.length <= MAX_APP_NAME_LENGTH;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -202,25 +205,26 @@ function AppNameCard({
   return (
     <form onSubmit={handleSubmit} className="bg-popover rounded-md border">
       <div className="space-y-1.5 px-4 py-5">
-        <Label htmlFor="branding-app-name">Name</Label>
+        <Label htmlFor="branding-app-name">{tI18nComplete.raw('textdcd1d5223f73')}</Label>
         <Input
           id="branding-app-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Kortix"
+          placeholder={tI18nComplete.raw('textab54cf5e1d9d')}
           disabled={!canManage || mutation.isPending}
           maxLength={MAX_APP_NAME_LENGTH}
           className="max-w-md"
           autoComplete="off"
         />
         <p className="text-muted-foreground text-xs">
-          Leave empty to keep “Kortix”. Up to {MAX_APP_NAME_LENGTH} characters.
+          {tI18nComplete.raw('text65da77724d4b')} {MAX_APP_NAME_LENGTH}{' '}
+          {tI18nComplete.raw('text58213fd0f931')}
         </p>
       </div>
       <div className="border-border flex items-center justify-end border-t px-4 py-3">
         <Button type="submit" size="sm" disabled={!canSubmit || mutation.isPending}>
           {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-          Save
+          {tI18nComplete.raw('text1509f561f241')}
         </Button>
       </div>
     </form>
@@ -286,6 +290,7 @@ function VariantCell({
   canManage: boolean;
   onSettled: (state: AccountBrandingState) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const inputRef = useRef<HTMLInputElement>(null);
   const kind = slot.kinds[scheme];
   const label = `${slot.title.toLowerCase()} (${scheme})`;
@@ -293,18 +298,20 @@ function VariantCell({
   const upload = useMutation({
     mutationFn: (file: File) => uploadAccountBrandingAsset(accountId, kind, file, file.name),
     onSuccess: (state) => {
-      successToast(`${slot.title} (${scheme}) updated`);
+      successToast(tI18nComplete('text3c9fe204b484', { value0: slot.title, value1: scheme }));
       onSettled(state);
     },
-    onError: (err: Error) => errorToast(err.message || `Failed to upload the ${label}`),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nComplete('text7d1ee3ce7f33', { value0: label })),
   });
   const remove = useMutation({
     mutationFn: () => removeAccountBrandingAsset(accountId, kind),
     onSuccess: (state) => {
-      successToast(`${slot.title} (${scheme}) removed`);
+      successToast(tI18nComplete('text5f07277a31fa', { value0: slot.title, value1: scheme }));
       onSettled(state);
     },
-    onError: (err: Error) => errorToast(err.message || `Failed to remove the ${label}`),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nComplete('textf38b3206f543', { value0: label })),
   });
   const pending = upload.isPending || remove.isPending;
 
@@ -314,7 +321,7 @@ function VariantCell({
     event.target.value = '';
     if (!file) return;
     if (file.size > MAX_ASSET_BYTES) {
-      errorToast('Image is too large (max 1 MB)');
+      errorToast(tI18nComplete.raw('text97b17ccaf172'));
       return;
     }
     upload.mutate(file);
@@ -322,11 +329,20 @@ function VariantCell({
 
   return (
     <div className="border-border flex items-center gap-3 rounded-md border px-3 py-2.5">
-      <Preview slot={slot} scheme={scheme} url={url ?? fallbackUrl} inherited={!url && !!fallbackUrl} />
+      <Preview
+        slot={slot}
+        scheme={scheme}
+        url={url ?? fallbackUrl}
+        inherited={!url && !!fallbackUrl}
+      />
       <div className="min-w-0 flex-1">
         <p className="text-foreground text-xs font-medium capitalize">{scheme}</p>
         <p className="text-muted-foreground text-xs">
-          {url ? 'Uploaded' : fallbackUrl ? 'Uses the light image' : 'Kortix default'}
+          {url
+            ? 'Uploaded'
+            : fallbackUrl
+              ? tI18nComplete.raw('textb64e5a98df62')
+              : tI18nComplete.raw('text3cbe01436470')}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -400,7 +416,9 @@ function Preview({
       className={cn(
         'flex shrink-0 items-center justify-center rounded-sm border',
         wide ? 'h-10 w-24' : 'size-10',
-        dark ? 'border-zinc-700 bg-zinc-950 text-zinc-50' : 'border-zinc-200 bg-white text-zinc-950',
+        dark
+          ? 'border-zinc-700 bg-zinc-950 text-zinc-50'
+          : 'border-zinc-200 bg-white text-zinc-950',
       )}
     >
       {url ? (
@@ -410,7 +428,7 @@ function Preview({
           alt={`${slot.title} ${scheme}`}
           draggable={false}
           className={cn(
-            'select-none object-contain',
+            'object-contain select-none',
             wide ? 'h-5 max-w-20' : 'size-6',
             inherited && 'opacity-50',
           )}
@@ -433,15 +451,16 @@ function ResetRow({
   disabled: boolean;
   onSettled: (state: AccountBrandingState) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [confirming, setConfirming] = useState(false);
   const mutation = useMutation({
     mutationFn: () => resetAccountBranding(accountId),
     onSuccess: (state) => {
-      successToast('Branding reset to Kortix defaults');
+      successToast(tI18nComplete.raw('text7529200232f5'));
       setConfirming(false);
       onSettled(state);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to reset branding'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text18cf674c5f32')),
   });
 
   return (
@@ -449,8 +468,10 @@ function ResetRow({
       <div className="bg-popover rounded-md border px-4 py-3">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-foreground text-sm font-medium">Reset to Kortix</p>
-            <p className="text-muted-foreground text-xs">Removes every uploaded mark and the product name.</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('textb81c6e280de1')}
+            </p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textec8676c7cf83')}</p>
           </div>
           <Button
             type="button"
@@ -459,16 +480,16 @@ function ResetRow({
             disabled={disabled || mutation.isPending}
             onClick={() => setConfirming(true)}
           >
-            Reset
+            {tI18nComplete.raw('textdaee7606b339')}
           </Button>
         </div>
       </div>
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title="Reset branding?"
-        description="Every member of this account will see the Kortix logo, icon, favicon, and name again. Uploaded images are deleted."
-        confirmLabel="Reset"
+        title={tI18nComplete.raw('text3aa694f6f4b0')}
+        description={tI18nComplete.raw('text1829231e85b1')}
+        confirmLabel={tI18nComplete.raw('textdaee7606b339')}
         confirmVariant="destructive"
         isPending={mutation.isPending}
         onConfirm={() => mutation.mutate()}

@@ -7,6 +7,10 @@
  * and response knowledge inside the SDK.
  */
 
+import { retiredEndpointError } from '../../http/api/errors';
+import { auditFilterQuery } from '../projects-client/audit-filter';
+import { platformApiBase } from './shared';
+
 export interface HostRequestOptions {
   /** Kortix API base URL. Both `https://host` and `https://host/v1` are valid. */
   backendUrl: string;
@@ -27,12 +31,6 @@ export class HostBoundaryError extends Error {
     super(message);
     this.name = 'HostBoundaryError';
   }
-}
-
-function apiBase(backendUrl: string): string {
-  let trimmed = backendUrl;
-  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
-  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
 function requestHeaders(options: HostRequestOptions, json: boolean): Headers {
@@ -72,7 +70,7 @@ async function requestJson<T>(
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
   const json = init?.body !== undefined;
-  const response = await fetch(`${apiBase(options.backendUrl)}${path}`, {
+  const response = await fetch(`${platformApiBase(options.backendUrl)}${path}`, {
     method: init?.method ?? 'GET',
     headers: requestHeaders(options, json),
     ...(json ? { body: JSON.stringify(init.body) } : {}),
@@ -181,6 +179,10 @@ export interface OAuthConsentRequest {
   scope?: string;
   /** True when this user already approved this client for every requested scope — approve without asking. */
   remembered?: boolean;
+  /** True when the client registered itself (RFC 7591, e.g. an MCP client) — no account vouches for it. */
+  self_registered?: boolean;
+  /** Where approval sends the browser: the redirect host, or a native app's scheme (`cursor:`). */
+  redirect_to?: string;
 }
 
 export function getOAuthConsentRequest(
@@ -201,9 +203,29 @@ export function submitOAuthConsent(
 }
 
 export interface ConnectorSetupLinkInfo {
+  /** The project the link belongs to. Absent on older servers. */
+  project_id?: string;
   project_name: string;
+  /** The name the agent suggested for the new account, or `null`. Absent on older servers. */
+  label?: string | null;
+  /** Whose account the agent meant the link to create. Absent on older servers. */
+  owner?: 'me' | 'project';
   slug: string;
   app: string | null;
+  /**
+   * The connector's display name ("Google Calendar"), so a card can name the
+   * app before it is opened. Optional: servers older than this field omit it.
+   */
+  name?: string | null;
+  /** The app's logo. `null` when the catalog has none; absent on older servers. */
+  icon_url?: string | null;
+  /**
+   * An account landed on this connector after the link was minted: the ask is
+   * settled, and a card that reloads shows it as done. `false` for a link
+   * nobody has completed, even when the connector already had an account.
+   * Absent on older servers and for links minted before they recorded when.
+   */
+  connected?: boolean;
   expires_at: string;
 }
 
@@ -214,10 +236,43 @@ export function getConnectorSetupLink(
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}`, options);
 }
 
+/**
+ * What `POST /setup-links/connectors/:token/start` answers.
+ *
+ * `connect_url` is `null` when there is nothing to authorize: the toolkit
+ * needs no auth, or the slot already holds an active account, which the
+ * provider reuses rather than re-authorizing. `connected` is then `true`, and
+ * `already_connected` tells the two apart. Neither case is an error.
+ */
+export interface ConnectorSetupLinkStart {
+  connect_url: string | null;
+  connected?: boolean;
+  already_connected?: boolean;
+}
+
+/** What `POST /setup-links/connectors/:token/finalize` answers. */
+export interface ConnectorSetupLinkFinalize {
+  connected: boolean;
+  /**
+   * Who the account was authorized as: an email, a login, or a display name.
+   * `null` (or absent, on older servers) when the provider exposes none.
+   */
+  connected_as?: string | null;
+  /** The account finalized, when the call named one (`connectionId`). */
+  connection_id?: string;
+  /** That account's name, when the call named one. */
+  label?: string;
+}
+
+/** Name ONE account the link's dialog created, so the session is told about it. */
+export interface FinalizeConnectorSetupLinkInput {
+  connectionId?: string;
+}
+
 export function startConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
-): Promise<{ connect_url: string }> {
+): Promise<ConnectorSetupLinkStart> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/start`, options, {
     method: 'POST',
     body: {},
@@ -234,10 +289,11 @@ export function startConnectorSetupLink(
 export function finalizeConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
-): Promise<{ connected: boolean }> {
+  input: FinalizeConnectorSetupLinkInput = {},
+): Promise<ConnectorSetupLinkFinalize> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/finalize`, options, {
     method: 'POST',
-    body: {},
+    body: input.connectionId ? { connection_id: input.connectionId } : {},
   });
 }
 
@@ -249,6 +305,10 @@ export interface SecretSetupLinkInfo {
     description: string | null;
   }>;
   expires_at: string;
+  /** The person whose session asked for the values, when that is a member of
+   *  the project's account; the form may keep the values to them. Absent on
+   *  older servers and for links an automation minted. */
+  requester?: { label: string | null } | null;
 }
 
 export function getSecretSetupLink(
@@ -258,14 +318,47 @@ export function getSecretSetupLink(
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options);
 }
 
+/**
+ * Why a saved secret never reaches the session that requested it:
+ * `agent_grant` — outside the session agent's `secrets` grant (a person with
+ * project access can widen it); `session_allowlist` — outside the session's
+ * create-time allowlist (fixed; start a new session).
+ */
+export type SecretWithheldReason = 'agent_grant' | 'session_allowlist';
+
+export interface SecretSetupLinkWithheld {
+  name: string;
+  reason: SecretWithheldReason;
+}
+
+/** What `POST /setup-links/secret/:token` answers. */
+export interface SecretSetupLinkSubmitResult {
+  ok: boolean;
+  /** Names whose values were saved. */
+  saved: string[];
+  /**
+   * The requesting session's agent. Present only with `withheld`, and absent
+   * on servers older than this field.
+   */
+  agent?: string;
+  /**
+   * Saved names the requesting session will not receive. The value IS saved;
+   * a person must widen the grant before the agent can read it.
+   */
+  withheld?: SecretSetupLinkWithheld[];
+}
+
 export function submitSecretSetupLink(
   token: string,
   values: Record<string, string>,
   options: HostRequestOptions,
-): Promise<unknown> {
+  /** `only_requester`: only the person who asked may use the values (see
+   *  `SecretSetupLinkInfo.requester`). Omitted = everyone in the project. */
+  audience?: { only_requester?: boolean },
+): Promise<SecretSetupLinkSubmitResult> {
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options, {
     method: 'POST',
-    body: { values },
+    body: { values, ...(audience?.only_requester ? { only_requester: true } : {}) },
   });
 }
 
@@ -326,46 +419,11 @@ export interface AccountAuditExport {
 
 export async function downloadAccountAudit(
   accountId: string,
-  query: {
-    format: 'csv' | 'jsonl';
-    action?: string;
-    actor?: string;
-    project_id?: string;
-    session_id?: string;
-    actor_type?: 'human' | 'agent' | 'service_account' | 'system';
-    source?: string;
-    phase?: string;
-    outcome?: 'success' | 'failure' | 'denied' | 'pending';
-    request_id?: string;
-    correlation_id?: string;
-    resource_type?: string;
-    since?: string;
-    until?: string;
-    q?: string;
-    cursor?: string;
-    limit?: number;
-  },
+  query: Parameters<typeof auditFilterQuery>[0] & { format: 'csv' | 'jsonl' },
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
-  const params = new URLSearchParams({ format: query.format });
-  if (query.action) params.set('action', query.action);
-  if (query.actor) params.set('actor', query.actor);
-  if (query.project_id) params.set('project_id', query.project_id);
-  if (query.session_id) params.set('session_id', query.session_id);
-  if (query.actor_type) params.set('actor_type', query.actor_type);
-  if (query.source) params.set('source', query.source);
-  if (query.phase) params.set('phase', query.phase);
-  if (query.outcome) params.set('outcome', query.outcome);
-  if (query.request_id) params.set('request_id', query.request_id);
-  if (query.correlation_id) params.set('correlation_id', query.correlation_id);
-  if (query.resource_type) params.set('resource_type', query.resource_type);
-  if (query.since) params.set('since', query.since);
-  if (query.until) params.set('until', query.until);
-  if (query.q) params.set('q', query.q);
-  if (query.cursor) params.set('cursor', query.cursor);
-  if (query.limit != null) params.set('limit', String(query.limit));
   const response = await fetch(
-    `${apiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${params}`,
+    `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
     {
       headers: requestHeaders(options, false),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -385,44 +443,33 @@ export async function downloadAccountAudit(
   };
 }
 
+/**
+ * @deprecated The API deleted `POST /v1/admin/stress-test/run` with the ops
+ * console. Always rejects with `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export async function openStressTestStream(
-  input: Record<string, unknown>,
-  options: HostRequestOptions,
+  _input: Record<string, unknown>,
+  _options: HostRequestOptions,
 ): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(`${apiBase(options.backendUrl)}/admin/stress-test/run`, {
-    method: 'POST',
-    headers: requestHeaders(options, true),
-    body: JSON.stringify(input),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
-  if (!response.ok) {
-    const body = await parseResponseBody(response);
-    throw new HostBoundaryError(errorMessage(response, body), response.status, body);
-  }
-  if (!response.body) {
-    throw new HostBoundaryError('No response body', response.status, null);
-  }
-  return response.body;
+  throw retiredEndpointError('openStressTestStream');
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function buildPublicTemplateUrl(backendUrl: string, shareId: string): URL | null {
-  if (!UUID_PATTERN.test(shareId)) return null;
-  return new URL(`templates/public/${shareId.toLowerCase()}`, `${apiBase(backendUrl)}/`);
+/**
+ * @deprecated The API serves no public template route (`/v1/templates/public/:id`).
+ * Always throws `ENDPOINT_RETIRED`. Removed in the next major.
+ */
+export function buildPublicTemplateUrl(_backendUrl: string, _shareId: string): URL | null {
+  throw retiredEndpointError('buildPublicTemplateUrl');
 }
 
+/**
+ * @deprecated The API serves no public template route (`/v1/templates/public/:id`).
+ * Always rejects with `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export async function getPublicTemplate<T>(
-  backendUrl: string,
-  shareId: string,
-  signal?: AbortSignal,
+  _backendUrl: string,
+  _shareId: string,
+  _signal?: AbortSignal,
 ): Promise<T> {
-  const url = buildPublicTemplateUrl(backendUrl, shareId);
-  if (!url) throw new HostBoundaryError('Invalid shareId parameter', 400, null);
-  const response = await fetch(url, { signal });
-  const body = await parseResponseBody(response);
-  if (!response.ok) {
-    throw new HostBoundaryError(errorMessage(response, body), response.status, body);
-  }
-  return body as T;
+  throw retiredEndpointError('getPublicTemplate');
 }

@@ -21,7 +21,9 @@
  *    clicks wherever it lands. Every use in this app wants the same thing:
  *    particles over the page, pointer events straight through.
  *
- * `ConfettiButton` is kept as upstream ships it, on this repo's `Button`.
+ * Upstream's `useConfetti`/`ConfettiContext` and `ConfettiButton` had no
+ * consumer here and are deleted (KRTX-1012); the imperative `ConfettiRef` is
+ * the surface this app drives.
  */
 
 import type {
@@ -31,10 +33,8 @@ import type {
 } from 'canvas-confetti';
 import confetti from 'canvas-confetti';
 import React, {
-  createContext,
   forwardRef,
   useCallback,
-  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -42,7 +42,6 @@ import React, {
   type ReactNode,
 } from 'react';
 
-import { Button, type ButtonProps } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface ConfettiApi {
@@ -59,8 +58,6 @@ type ConfettiProps = React.ComponentPropsWithoutRef<'canvas'> & {
   manualstart?: boolean;
   children?: ReactNode;
 };
-
-const ConfettiContext = createContext<ConfettiApi | null>(null);
 
 /**
  * `useWorker` keeps the particle loop off the main thread — the burst survives
@@ -118,7 +115,7 @@ const ConfettiComponent = forwardRef<ConfettiRef, ConfettiProps>(function Confet
   }, [manualstart, fire]);
 
   return (
-    <ConfettiContext.Provider value={api}>
+    <>
       <canvas
         ref={canvasRef}
         aria-hidden
@@ -130,47 +127,8 @@ const ConfettiComponent = forwardRef<ConfettiRef, ConfettiProps>(function Confet
         className={cn('pointer-events-none fixed inset-0 z-50 size-full', rest.className)}
       />
       {children}
-    </ConfettiContext.Provider>
+    </>
   );
 });
 
 export const Confetti = ConfettiComponent;
-
-/** Fire the nearest ancestor `<Confetti>` from anywhere inside it. */
-export function useConfetti(): ConfettiApi {
-  const api = useContext(ConfettiContext);
-  if (!api) throw new Error('useConfetti must be used inside <Confetti>');
-  return api;
-}
-
-interface ConfettiButtonProps extends ButtonProps {
-  options?: ConfettiOptions;
-  children?: ReactNode;
-}
-
-/**
- * Upstream's demo trigger: fires the DEFAULT global cannon from the button's
- * own centre. It does not use the `<Confetti>` canvas above — the global
- * instance owns its own full-screen canvas — so the two are independent.
- */
-export function ConfettiButton({ options, children, ...props }: ConfettiButtonProps) {
-  return (
-    <Button
-      {...props}
-      onClick={(event) => {
-        props.onClick?.(event);
-        const rect = event.currentTarget.getBoundingClientRect();
-        void confetti({
-          disableForReducedMotion: true,
-          ...options,
-          origin: {
-            x: (rect.left + rect.width / 2) / window.innerWidth,
-            y: (rect.top + rect.height / 2) / window.innerHeight,
-          },
-        })?.catch(() => {});
-      }}
-    >
-      {children}
-    </Button>
-  );
-}

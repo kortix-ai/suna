@@ -1,4 +1,7 @@
 import type { Agent, Session } from '@kortix/sdk/react';
+import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 
 import type { MentionKind } from '../types';
 
@@ -35,6 +38,7 @@ export interface BuildMentionSectionsInput {
   currentSessionId: string | undefined;
   /** Injected so the test is deterministic. */
   now?: number;
+  tI18nComplete?: UiTranslator;
 }
 
 const SESSION_LIMIT = 5;
@@ -65,7 +69,12 @@ export function buildMentionSections({
   query,
   currentSessionId,
   now = 0,
+  tI18nComplete,
 }: BuildMentionSectionsInput): MentionSection[] {
+  const heading = (value: string) =>
+    tI18nComplete
+      ? translateUiCatalogText(value, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)
+      : value;
   const q = query.toLowerCase();
   let index = 0;
   const sections: MentionSection[] = [];
@@ -84,7 +93,7 @@ export function buildMentionSections({
     if (!(a.name || '').toLowerCase().includes(q)) continue;
     agentRows.push({ index: index++, kind: 'agent', label: a.name || '', value: a.name || '' });
   }
-  if (agentRows.length) sections.push({ kind: 'agent', heading: 'Agents', items: agentRows });
+  if (agentRows.length) sections.push({ kind: 'agent', heading: heading('Agents'), items: agentRows });
 
   const sessionRows: MenuRow[] = [];
   for (const s of sessions) {
@@ -101,13 +110,14 @@ export function buildMentionSections({
       description: count ? `${ago} · ${count} file${count === 1 ? '' : 's'} changed` : ago,
     });
   }
-  if (sessionRows.length) sections.push({ kind: 'session', heading: 'Sessions', items: sessionRows });
+  if (sessionRows.length)
+    sections.push({ kind: 'session', heading: heading('Sessions'), items: sessionRows });
 
   const fileRows: MenuRow[] = files
     .filter((f) => q.length === 0 || f.toLowerCase().includes(q))
     .slice(0, FILE_LIMIT)
     .map((f) => ({ index: index++, kind: 'file' as const, label: f, value: f }));
-  if (fileRows.length) sections.push({ kind: 'file', heading: 'Files', items: fileRows });
+  if (fileRows.length) sections.push({ kind: 'file', heading: heading('Files'), items: fileRows });
 
   return sections;
 }

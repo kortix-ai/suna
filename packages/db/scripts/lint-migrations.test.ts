@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { lintMigration, lintMigrationSet, parseLockTimeoutMs } from './lint-migrations';
+import { lintMigration, lintMigrationSequence, lintMigrationSet, parseLockTimeoutMs } from './lint-migrations';
 
 const GOOD_NAME = '20260101000000000_add_widget.sql';
 
@@ -61,7 +61,7 @@ describe('backfill-DML guard (centralized_audit_v2 outage class)', () => {
   test('rejects a top-level UPDATE without a backfill-safe sign-off', () => {
     const { errors } = lintMigration(
       GOOD_NAME,
-      "ALTER TABLE kortix.widgets ADD COLUMN kind text;\nUPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;\n",
+      'ALTER TABLE kortix.widgets ADD COLUMN kind text;\nUPDATE kortix.widgets SET kind = \'x\' WHERE kind IS NULL;\n',
     );
     expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
   });
@@ -128,6 +128,25 @@ describe('lintMigrationSet', () => {
   });
 });
 
+describe('lintMigrationSequence (the #8846 dev-deploy halt)', () => {
+  const merged = ['20261003002832969_a.concurrent.ts', '20261003010107485_b.sql'];
+
+  test('a new migration dated before main\'s newest is out of sequence', () => {
+    const errors = lintMigrationSequence([...merged, '20261002233600044_mine.sql'], merged);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('20261002233600044_mine.sql');
+    expect(errors[0]).toContain('20261003010107485');
+  });
+
+  test('a new migration dated after main\'s newest passes; merged files are never flagged', () => {
+    expect(lintMigrationSequence([...merged, '20261003101559803_mine.sql'], merged)).toEqual([]);
+  });
+
+  test('no merged list (origin/main unavailable) checks nothing', () => {
+    expect(lintMigrationSequence(['20200101000000000_x.sql'], [])).toEqual([]);
+  });
+});
+
 describe('CONCURRENTLY in a plain .sql migration', () => {
   test('rejects CREATE INDEX CONCURRENTLY in a plain .sql file', () => {
     const { errors } = lintMigration(
@@ -150,7 +169,10 @@ describe('CONCURRENTLY in a plain .sql migration', () => {
 
 describe('mixed-version guard (the 20260713220001000 class)', () => {
   test('rejects an unannotated unique index drop', () => {
-    const { errors } = lintMigration(GOOD_NAME, 'DROP INDEX kortix.idx_projects_account_repo;\n');
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      'DROP INDEX kortix.idx_projects_account_repo;\n',
+    );
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(true);
   });
 
@@ -184,10 +206,7 @@ describe('mixed-version guard (the 20260713220001000 class)', () => {
   });
 
   test('does not fire on an unrelated additive migration', () => {
-    const { errors } = lintMigration(
-      GOOD_NAME,
-      'ALTER TABLE kortix.accounts ADD COLUMN note text;\n',
-    );
+    const { errors } = lintMigration(GOOD_NAME, 'ALTER TABLE kortix.accounts ADD COLUMN note text;\n');
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(false);
   });
 
@@ -283,9 +302,7 @@ describe('.concurrent.ts escape hatch', () => {
         '};',
       ].join('\n'),
     );
-    expect(errors.some((e) => e.includes('IMPLICIT transaction') || e.includes('statements'))).toBe(
-      true,
-    );
+    expect(errors.some((e) => e.includes('IMPLICIT transaction') || e.includes('statements'))).toBe(true);
   });
 
   test('accepts separate pgm.sql() calls for each statement', () => {
@@ -295,7 +312,7 @@ describe('.concurrent.ts escape hatch', () => {
         'export const up = (pgm) => {',
         '  pgm.noTransaction();',
         "  pgm.sql(`set lock_timeout = '180s'`);",
-        '  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);',
+        "  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);",
         '};',
       ].join('\n'),
     );
@@ -335,7 +352,7 @@ describe('.concurrent.ts escape hatch', () => {
         'export const up = (pgm) => {',
         '  pgm.noTransaction();',
         "  pgm.sql(`set lock_timeout = '180s'`);",
-        '  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);',
+        "  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);",
         '};',
       ].join('\n'),
     );
@@ -354,59 +371,6 @@ describe('.concurrent.ts escape hatch', () => {
       ].join('\n'),
     );
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(false);
-  });
-});
-
-describe('.nontransaction.ts constraint transition', () => {
-  const NAME = '20260101000000000_expand_widget_check.nontransaction.ts';
-
-  test('accepts an explicitly justified constraint transition', () => {
-    const { errors } = lintMigration(
-      NAME,
-      [
-        '// constraint-transition: validate the replacement before dropping the old check',
-        '// mixed-version-safe: old writers use values accepted by both constraints',
-        'export const up = (pgm) => {',
-        '  pgm.noTransaction();',
-        "  pgm.sql(`alter table kortix.widgets add constraint widgets_kind_check_v2 check (kind in ('a', 'b')) not valid`);",
-        '  pgm.sql(`alter table kortix.widgets validate constraint widgets_kind_check_v2`);',
-        '  pgm.sql(`alter table kortix.widgets drop constraint widgets_kind_check`);',
-        '};',
-        'export const down = false;',
-      ].join('\n'),
-    );
-    expect(errors).toEqual([]);
-  });
-
-  test('rejects an unclassified non-transactional migration', () => {
-    const { errors } = lintMigration(
-      NAME,
-      [
-        'export const up = (pgm) => {',
-        '  pgm.noTransaction();',
-        '  pgm.sql(`select 1`);',
-        '};',
-      ].join('\n'),
-    );
-    expect(errors.some((error) => error.includes('constraint-transition'))).toBe(true);
-  });
-
-  test('rejects an unfilled constraint-transition scaffold', () => {
-    const { errors } = lintMigration(
-      NAME,
-      [
-        '// constraint-transition: TODO explain the lock boundary',
-        '// mixed-version-safe: TODO explain old-code compatibility',
-        'export const up = (pgm) => {',
-        '  pgm.noTransaction();',
-        '  pgm.sql(`alter table kortix.TODO_TABLE add constraint TODO_V2 check (true) not valid`);',
-        '  pgm.sql(`alter table kortix.TODO_TABLE validate constraint TODO_V2`);',
-        '  pgm.sql(`alter table kortix.TODO_TABLE drop constraint TODO_OLD`);',
-        '};',
-        'export const down = false;',
-      ].join('\n'),
-    );
-    expect(errors.some((error) => error.includes('TODO'))).toBe(true);
   });
 });
 
@@ -437,7 +401,7 @@ describe('CONCURRENTLY lock_timeout floor', () => {
     );
   }
 
-  test('rejects the 5s value that failed prod', () => {
+  test("rejects the 5s value that failed prod", () => {
     const errors = lockTimeoutErrors(concurrentFile('5s'));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("lock_timeout = '5s'");

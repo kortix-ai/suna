@@ -1,9 +1,10 @@
 # @kortix/sdk
 
-The **single, opinionated data layer** for the Kortix agent platform. One typed
+The **single, opinionated data layer** for the Kortix API. One typed
 client wraps both the **Kortix REST API** and the **agent runtime** so a
-host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
-`@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
+host app — web, mobile, reference — imports **only `@kortix/sdk`**. The SDK
+owns its types: the transcript is Kortix's own format (`kortix.transcript.v1`),
+and the package depends on no harness SDK. (The no-raw-`backendApi`/`authenticatedFetch` rule
 below is the target state, not yet fully true of apps/web — see Rules of the
 road.)
 
@@ -35,7 +36,7 @@ await kortix.projects.list();
 
 ### Call external systems through Connectors
 
-Use one six-method data plane for every Connector provider. A user token binds
+Use one data plane for every Connector provider. A user token binds
 the project explicitly. An agent-minted session token already carries its
 project scope, so it can use the top-level fallback.
 
@@ -49,14 +50,162 @@ await connectors.tools();
 await connectors.search('send email');
 await connectors.describe('gmail.send_email');
 await connectors.call('gmail.send_email', { to, subject, body });
-await connectors.uploadAttachment(bytes, {
+await connectors.accounts('gmail');
+const { ref } = await connectors.uploadAttachment(bytes, {
   filename: 'invoice.pdf',
   contentType: 'application/pdf',
+  connector: 'microsoft-graph', // the connector the file is for
+});
+// `ref` is { $kortix_attachment: '<id>' }. The gateway swaps in the file:
+// as an attachments[] element it becomes the provider's attachment item,
+// in a string field it becomes the base64. The bytes never enter call args.
+await connectors.call('microsoft-graph.sendmail', {
+  user: 'sender@example.com',
+  body: { message: { subject: 'Invoice', attachments: [ref] } },
 });
 ```
 
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
+
+#### Choose which account a call runs as
+
+One Connector can hold the project's shared account and each member's own. List
+the accounts a caller may use, then name one on the call:
+
+```ts
+const accounts = await connectors.accounts('gmail');
+// [{ connection_id, label, owner_type: 'project' | 'member', is_default }]
+
+const result = await connectors.call('gmail.send_email', { to, subject, body }, {
+  account: 'Support inbox',   // a label, a connection id, `me`, or `project`
+});
+result.account; // { connection_id, label, owner_type } — the identity that ran
+```
+
+`account` takes a connection label (case-insensitive), a connection id, or one
+of two selector words: `me` (the caller's own default private account) and
+`project` (the default account shared with the whole project). Omit it and
+resolution takes the caller's own default first, then the project's.
+
+A named account is never silently substituted. If it does not match one this
+caller is entitled to, the call is denied with `connector_not_connected` and the
+denial lists the accounts that were available. Every successful call echoes
+`account`, so a transcript can always show which identity acted.
+
+Nothing connected yet? Start a hosted authorization and say who the new account
+belongs to:
+
+```ts
+await project.connectors.pipedream.connect('gmail', { owner: 'me' });      // my own
+await project.connectors.pipedream.connect('gmail', { owner: 'project' }); // shared
+
+// Or hand a human a link instead of authorizing inline:
+await project.setupLinks.requestConnector({ slug: 'gmail', owner: 'project' });
+```
+
+`owner` defaults to `me`. Creating a `project`-owned account requires
+`project.connector.write`.
+
+### Upload prompt attachments before Send
+
+Create one controller per composer. `add(file)` starts a private project upload
+without waiting for a session runtime. Subscribe to `getSnapshot()` for tile state.
+
+```ts
+const attachments = kortix.project(projectId).attachments.createController();
+const localId = attachments.add(file);
+const unsubscribe = attachments.subscribe(() => render(attachments.getSnapshot()));
+
+// Inside the submit handler. Send never waits for uploads.
+const ids = attachments.getSnapshot().attachments.map((item) => item.id);
+attachments.submit(ids); // hand-off: the composer clears, the uploads continue
+paintMessage(text, ids);
+try {
+  const parts = await attachments.whenReady(ids); // handle-only parts, in `ids` order
+  await kortix.session(projectId, sessionId).prompts.create({
+    clientMessageId,
+    messageId,
+    parts: [{ type: 'text', text }, ...parts],
+  });
+  attachments.forget(ids); // release; does not delete storage objects
+} catch (error) {
+  attachments.reclaim(ids); // back to the composer, with the failed file's state
+}
+```
+
+React consumers use `usePromptAttachments(projectId)` from `@kortix/sdk/react`.
+It returns the controller methods plus the reactive `attachments` list. It omits
+`dispose`, `subscribe`, and `getSnapshot`, and keeps its identity until the list
+changes.
+
+Files move through `pending`, `uploading`, `processing`, `ready`, `error`, or
+`aborted`. Progress counts bytes sent. Progress snapshots are throttled: one per
+whole-percent change, at most ten per second per upload. The default concurrency
+is two files.
+Limits are 50 MiB per file, 100 MiB per message, and 20 files. Empty files are
+rejected. Refuse Send only while a selected file is `error` or `aborted`.
+
+`whenReady(ids, { signal })` resolves once every upload is `ready`. It rejects
+when one fails, is aborted or removed, or `signal` aborts. A rejected wait does
+not stop the upload.
+
+Ownership: `submit(ids)` hands entries to one send. They leave `attachments` and
+stop counting toward the limits. `dispose()` aborts and deletes only listed
+work, so a composer that unmounts after Send (a navigation, a remount) does not
+cancel its held uploads. The controller object lives as long as the send's `whenReady`
+promise references it. Call `forget(ids)` after the prompt POST succeeds, or
+`reclaim(ids)` when a failed send restores its draft. `forget()` with no argument
+releases only the listed selection. A host that keeps a failed send on screen
+keeps its entries: `retry(id)` reaches a handed-off entry after `dispose()`.
+
+`retry(localId)` resumes the same upload and preserves the original File. After
+`attachment_size_mismatch` or `attachment_failed` the server keeps no usable
+handle, so `retry` uploads the File again as a new attachment. An expired upload
+cannot retry: `retry` throws, and the item error carries code
+`attachment_expired`. `remove(localId)` removes the entry, aborts its upload, and
+resolves at once. It deletes unbound storage best-effort and never rejects; a
+failed or refused DELETE leaves the object to the 24-hour expiry.
+`abort(localId)` cancels unfinished work. `dispose()` aborts listed work and
+deletes its uploads best-effort: no send holds them, and drafts keep no handle.
+Call it on non-React cleanup; the hook handles unmount and project changes.
+Unused uploads expire after 24 hours.
+
+Selections live in memory only. Never persist a File, blob URL, signed URL, or
+upload handle in a draft.
+
+For non-composer uploads, call `kortix.project(projectId).attachments.upload(file,
+{ signal, onProgress, onUpload, resume })`. The server selects the transport in the
+handle's `upload` field:
+
+- `kind: 'direct'` (default): one `PUT` of the whole file to `upload.url` with
+  `upload.headers` and no Authorization header. Hosts with `XMLHttpRequest`
+  (browsers, React Native) report sent bytes; other hosts use `fetch` and report
+  0, then the full size. An expired URL, or one Storage refuses with 400/401/403,
+  is re-signed once for the same `attachment_id`; the server creates no second
+  upload. A `409` from Storage means an earlier attempt already stored the file.
+- `kind: 'chunked'`: sequential authenticated `PUT`s of `upload.chunk_size` bytes.
+  The SDK accepts any positive `chunk_size`. Only a deployment whose edge drops
+  large request bodies selects it.
+
+Completion then verifies the stored bytes. Retain the `onUpload` handle for manual
+same-ID recovery. If completion answers `409 attachment_not_uploaded`, `onUpload`
+reports the direct handle with `received_bytes: 0`, so a resume sends the file
+again. Initiation, the upload, and completion retry timeouts, network errors,
+429, and 5xx with jittered exponential backoff. The budget is 60 seconds from the
+first failure, so a long upload that fails late still retries. Completion also
+retries `attachment_processing`, with a five-minute budget. Initiation never
+retries 402 (a `BillingError`: the account cannot run) or 429
+`attachment_budget_exceeded` (40 unfinished uploads or 500 MiB of unsent uploads
+for the user; unused uploads expire within 24 hours). The server answers or
+refuses one completion within 105 seconds; each completion request allows 120
+seconds. Caller aborts never retry.
+
+A sent attachment's reference is released 1 hour after its prompt is delivered,
+and when its session or project is deleted. The next maintenance sweep then
+removes the file, and its `attachment_id` can no longer be sent.
+Completed `attachment_id` parts use platform prompt routes. Runtime `sendParts`
+continues to accept runtime URL parts. Legacy platform URL parts remain supported.
 
 ## No bundler, no framework
 
@@ -79,13 +228,14 @@ no build step required:
 ## Entry points
 
 `@kortix/sdk` is the canonical entry — everything framework-free lives there.
-Three others exist, each for a reason that fits in one sentence:
+Four others exist, each for a reason that fits in one sentence:
 
-| Entry                    | Why it can't live at root   |
-| ------------------------ | --------------------------- |
-| `@kortix/sdk/react`      | React is a peer dependency  |
-| `@kortix/sdk/server`     | imports `node:async_hooks`  |
-| `@kortix/sdk/internal/*` | unsupported, outside semver |
+| Entry                         | Why it is separate                                         |
+| ----------------------------- | ---------------------------------------------------------- |
+| `@kortix/sdk/react`           | React is a peer dependency                                 |
+| `@kortix/sdk/server`          | imports `node:async_hooks`                                 |
+| `@kortix/sdk/wire-message-id` | the wire-id clock alone, one file with no imports (also at root) |
+| `@kortix/sdk/internal/*`      | unsupported, outside semver                                |
 
 Install the optional peers before you use the React entry:
 
@@ -95,12 +245,14 @@ npm install @kortix/sdk react @tanstack/react-query
 
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 `@deprecated`. Import from the root instead — see **Entry points** below for
-the three that are real, and **API-MAP.md**'s Stability table for the full
+the four that are real, and **API-MAP.md**'s Stability table for the full
 list of aliases (20 of them).
 
-> **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
-> no `response.body`. Use `createHttpSessionSyncController` for bounded history
-> synchronization. Keep the platform-specific event transport for live events.
+> **React Native / Expo:** REST works. Live streaming works with a host
+> transport: pass `configureKortix({ eventStreamTransport })` (one connection's
+> messages over the wire your runtime has, e.g. `react-native-sse`), and report
+> foreground and network changes with `notifyHostSignal`. `apps/mobile` runs
+> `useSession` from `@kortix/sdk/react` this way.
 
 ## Quick start
 
@@ -124,6 +276,16 @@ await kortix.project(pid).secrets.upsert({
   strategy: "runtime",
   consumer: "sandbox",
 });
+// Who can use a value: [] = everyone (default), or people and groups. A
+// narrowed value reaches only them — directly, or in their own private
+// sessions; never a shared session or a trigger.
+await kortix.project(pid).secrets.upsert({
+  name: "DEEL_API_TOKEN",
+  value: deelToken,
+  strategy: "broker",
+  consumer: "connector",
+  shared_with: [{ principal_type: "user", principal_id: userId }],
+});
 await kortix.project(pid).secrets.upsert({
   identifier: "anthropic-primary",
   name: "ANTHROPIC_API_KEY",
@@ -131,40 +293,61 @@ await kortix.project(pid).secrets.upsert({
   strategy: "broker",
   consumer: "llm_gateway",
 });
+// When pooled_provider_secrets and llm_gateway are enabled for the project,
+// a new account secret is available to this project's members by default.
+const shared = await kortix.accounts.secretResources.create(accountId, {
+  project_id: pid,
+  label: "Anthropic backup",
+  provider_id: "anthropic",
+  name: "ANTHROPIC_API_KEY",
+  value: providerKey,
+  consumer: "llm_gateway",
+  strategy: "broker",
+});
+// Restrict it to selected members when needed. The creator keeps access.
+await kortix.accounts.secretResources.setAccess(accountId, shared.secret_id, "members", [memberUserId]);
+await kortix.session(pid, sid).providerSecretPool.set("anthropic", [shared.secret_id]);
+const { pools, can_edit } = await kortix.session(pid, sid).providerSecretPool.list();
+// Passing null to set() resets the session to the project default.
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
   .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
+// Top-level sessions the caller started; spawned sessions load under their parent.
+const mine = await kortix.project(pid).sessions.list({ parent: "root", startedBy: "me" });
+const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nightly" }); // searches every visible session
+const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
+// React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
 const cost = await s.cost(); // reads finalized LLM + compute cost; no runtime start
 await s.send("Build me a widget"); // provisions/resumes if needed, then prompts
-const workspace = await s.ensureWorkspaceReady(); // lazily resolves files, PTYs, and ports
-await s.files.read("/workspace/package.json"); // uses the workspace runtime
 await s.rewind(userMessageId); // stages a reversible rollback on this session
 await s.restoreRewind(); // restores the removed path before the next prompt
 await s.previews();
+await s.participants(); // who can open the session
 await s.reloadConfig({ refresh_repo: false });
 await s.reloadConfigStream(
   { refresh_repo: false },
   (event) => event.type === "phase" && console.log(event.phase),
 );
 
-// Lower level: the typed OpenCode REST compatibility client for THIS sandbox.
-// `.runtime` throws until the runtime is resolved, and the runtime is keyed by
-// the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { opencodeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
+// The session verbs, bound to THIS session's own runtime (each provisions it first).
+const { messages, hasMore } = await s.messages({ limit: 50 }); // { info, parts }[], oldest first
+const { statuses, permissions, questions } = await s.pending();
+await s.answerPermission(permissions[0].id, "once"); // "once" | "always" | "reject"
+await s.answerQuestion(questions[0].id, [["Yes"]]); // null dismisses it
+await s.compact(); // only when health() lists `session.compact`
 ```
 
-`ensureReady()` resolves the control runtime that owns the model loop, messages,
-and event stream. A Pi session has a second, lazily-created workspace runtime
-that owns its repository, files, PTYs, and user ports. `ensureWorkspaceReady()`
-resolves that runtime. The `.files` methods call it automatically. Call it
-before `previewUrl()` or `proxyUrl()` when a Pi session has not used a workspace
-operation yet.
+React consumers use `useAccountSecretResources(accountId)` and
+`useSessionProviderSecretPools(projectId, sessionId)` from `@kortix/sdk/react`.
+The latter exposes `setPool.mutate({ providerId, secretIds })`. `null` restores
+inheritance; `[]` disables that provider for the session. Empty configured pools
+remain listed after their last resource is deleted. Successful writes refresh
+both the pool list and the session's provider-specific query cache.
 
 ### Apps
 
@@ -188,32 +371,103 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
-For OpenCode REST sessions, `send()` reads the persisted session model and
+`send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
-OpenCode session from reusing stale snapshot defaults. A per-call choice
+runtime session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
+### Saved session attachments
+
+`session.attachments.upload(file)` stores up to 50 MiB in private object storage. It
+returns `{ attachment_id, filename, mime, size, url }`. Use `url` in a file part sent to
+the prompt inbox. The API copies those bytes into the sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
+sandbox. Reads return a `Blob` and require access to the session. Retries of the same `File`
+reuse the successful upload; an explicit `attachmentId` supports caller-managed retries.
+
+### Session labels and metadata
+
+Every session carries `labels: string[]` and a free-form `metadata` object. Set both
+at `project.sessions.create({ labels, metadata })`. `session.update({ labels })`
+replaces the labels; `session.update({ metadata })` merges keys, and a `null` value
+removes a key. `project.sessions.listPage({ labels })` returns only sessions that carry
+every given label, and `useProjectSessions(projectId, { labels })` does the same in
+React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
+most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
+
+### Who wrote each message
+
+`kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns
+`{ authors, initial_author }`: `authors` maps a runtime message id to a `SessionMessageAuthor`,
+`{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name, agent? }`.
+In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
+
 ### React runtime
 
-`useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
-`POST /start`. The hook owns messages, rewind and restore, cancellation,
-commands, permissions, and questions. Hosts do not construct runtime routes.
+`useSession(projectId, sessionId)` opens the session runtime returned by
+`POST /start`. The runtime is OpenCode or pi; the hook reads the same routes,
+transcript and events from both. The hook owns messages, rewind and restore,
+cancellation, commands, permissions, and questions. Hosts do not construct
+runtime routes. A feature one harness lacks is a capability: gate its control
+with `runtimeSupports(health?.capabilities, 'session.rewind')`. pi lists
+`session.subagents` only, so rewind, compaction, slash commands, the todo list
+and the runtime config document stay hidden or empty on a pi session.
 
-A server-rendered host can seed a known OpenCode pin while `/start` runs:
+Every session saves its transcript at the end of each turn. `useSession` reads saved
+messages from the platform database while `/start` continues. It uses the
+server-validated runtime session id and lets the live read reconcile the saved messages by ID.
+Missing or rejected history falls back to the existing runtime path.
+
+`useSession().savedTranscript` says whether that saved conversation can show before the
+computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
+`messages`, and `none` when nothing can show until the runtime answers. A host renders
+placeholder rows on `loading` and its boot screen only on `none`.
+`useSession().conversationEmpty` is true when the saved copy proves the conversation empty
+(a complete read of the runtime found no messages), no turn ended since, and nothing is open
+or queued. A host renders the composer then, not a boot screen.
+
+A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
+userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
+into it by message ID. `createPersistedQueryCache` does the same for accounts, projects and
+the paged session list. Both are per user and bounded; clear both on sign-out. Session
+states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
+`sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
+
+A server-rendered host can seed a known runtime session pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
 Use only a pin that the host authorized for the same `(projectId, sessionId)`.
 The seed hydrates cached content. It does not choose the runtime identity.
 The pin returned by `/start` always replaces a stale seed. The SDK also scopes
-OpenCode query and synchronization controllers to the sandbox runtime. Two
+runtime query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
-OpenCode id during adoption.
+runtime session id during adoption. `opencode_session_id` is the older name
+of `runtime_session_id`; read it only as the fallback above.
+
+After a project replaces its repository, a session created before the
+replacement still starts. It runs the project's CURRENT config release and
+converges like any other session. What stays true of it is physical: its
+`/workspace` clone came from the old repository while `origin` now resolves to
+the new one. The two histories are unrelated, so a push from that clone needs a
+rebase first.
+
+`repositoryMode: 'previous'` is accepted and changes nothing:
+
+```tsx
+useSession(projectId, sessionId, { repositoryMode: 'previous' });
+```
+
+The server reads it as telemetry. Keep it only for callers built against the
+older behaviour.
+
+Message retries keep the originating sandbox URL after navigation. A `404` or
+`410` message read stops automatic retries and preserves the cached transcript.
+An explicit reconciliation can recover the controller when the session returns.
 
 ## The facade surface
 
@@ -223,14 +477,16 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
+| `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
+| `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
+| `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`/`ensureWorkspaceReady`) · Pi `.environment` lifecycle · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
-| `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
+| `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -299,14 +555,15 @@ await project.sessions.create({
 ```
 
 Member connections are owner-only even for project managers, and sessions using
-one must remain private. Project defaults remain shared; external/agent/subject
-connections remain operator-managed. Every connection is project/connector scoped
+one must remain private. A service account — an agent or a trigger — never
+reaches a member connection, only the shared project one. Project defaults
+remain shared; external/agent/subject connections remain operator-managed. Every connection is project/connector scoped
 and resolved on every Connector request, so revocation takes effect without a
 restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
 and MCP configuration are not session-create inputs.
 
-For OpenCode REST sessions, `session.stream()` is a thin facade over the
+`session.stream()` is a thin facade over the
 framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client
 themselves): it resolves THIS handle's own runtime (`ensureReady()`), connects
@@ -323,9 +580,16 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
+`session.stream()` emits the runtime's events (`message.updated`,
+`message.part.updated`, `session.status`, `permission.*`, `question.*`, …),
+the same from OpenCode and pi. Use `useSession()` in React.
 
-`@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
+Events arrive in batches, 16 ms apart. Consecutive `message.part.delta` events
+for one part field in a batch arrive as one event: `properties.delta` is their
+text joined in order, `id` is the last event's id, and `coalesced` lists the
+events it replaced.
+
+`@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
 
 ## Kortix as a Backend (server-side)
@@ -384,7 +648,8 @@ mode — see its README.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
-normalize all twelve opencode part types (text, reasoning, tool, file,
+normalize all twelve part types of the Kortix transcript format
+(`kortix.transcript.v1`; both harnesses emit it) (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
 turn's `info.error` into a `{ name, message }` `TurnError` — so "assistant
@@ -434,11 +699,36 @@ for a no-React plain-text version of the same classification see
 `openEventStream` down to the curated `KortixChatEvent` union (~14 members) a
 chat UI actually dispatches on.
 
+## Composer agent and model lists (no React)
+
+The session composer's pickers are built from pure functions on the root
+entry, so every host — the web app through its hooks, React Native through
+the root import — offers the same agents and models and sends the same pick.
+`@kortix/sdk/react`'s `useRuntimeAgents`, `useRuntimeProviders`,
+`useRuntimeLocal`, and `useModelStore` call these.
+
+| Function | Input → output |
+|---|---|
+| `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
+| `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
+| `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
+| `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
+| `flattenModels(providers, { providerMode })` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores) |
+| `modelRefToKey(ref, gatewayEnabled)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model |
+| `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
+| `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
+| `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
+| `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
+
+The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
+never includes the ~7.6 MB models.dev snapshot, so a bundler that does not
+tree-shake (Metro) stays small.
+
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
-platform client's `platformFetch`, `authenticatedFetch`, the files client, the
-opencode client, and `ensureReady()` all throw/return the same classes (from
+`authenticatedFetch`, the files client, the runtime REST client, and
+`ensureReady()` all throw/return the same classes (from
 the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
 
@@ -447,9 +737,10 @@ the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes:
   `.url` / `.endpoint` / `.timeout`.
 - `HeadlessAuthError extends ApiError` — `getToken()` returned null; the request was
   never sent (`code: 'NO_SESSION'`).
-- `BillingError` — HTTP 402, with the backend's payload on `.detail`.
-- `RequestTooLargeError` — HTTP 431 (usually a too-large upload batch), with a
-  `.detail.suggestion`.
+- `BillingError extends ApiError` — HTTP 402, with the backend's payload on
+  `.detail` and its machine code on `.code`.
+- `RequestTooLargeError extends ApiError` — HTTP 431 (usually a too-large
+  upload batch), with a `.detail.suggestion`.
 - `SessionNotReadyError` (root barrel) — a session handle's runtime-scoped
   member (`.runtime`, `.previewUrl()`, `.proxyUrl()`) was touched before
   `ensureReady()` resolved this session's own sandbox.
@@ -489,22 +780,24 @@ LLM session retries can carry the gateway's structured failure chain. Use
 `provider`, gateway `code`, `requestId`, and ordered `attemptFailures`. Each
 failure identifies the provider, route model, resolved model, stage, upstream
 status when available, concrete code, and bounded message. Plain legacy retry
-messages remain supported and return `details: undefined`. When OpenCode keeps
+messages remain supported and return `details: undefined`. When the runtime keeps
 only the HTTP error message, `getRetryMessage(status)` still returns the full
 gateway composite. That message includes the request ID and each candidate's
 provider, resolved model, HTTP status, code, and bounded message.
 
 ## Entry points
 
-**There are three, plus one internal.** Everything framework-free lives at the
-root; the other two exist because each carries a dependency the root cannot.
+**There are four, plus one internal.** Everything framework-free lives at the
+root. `react` and `server` exist because each carries a dependency the root
+cannot; `wire-message-id` exists so a server can load one module, not the barrel.
 That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` (each pre-W4 `useOpenCode*` name is a deprecated alias), `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:
@@ -540,7 +833,9 @@ code imports the root.
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
-  clientSource?: 'api' | 'cli' | 'mobile' | 'web';
+  /** @deprecated Inert: the SDK sends no client label. */
+  clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  clientVersion?: string; // '<surface>/<version>', sent as X-Kortix-Client-Version
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -551,9 +846,16 @@ interface KortixPlatformConfig {
 }
 ```
 
-Set `clientSource` when a non-web host needs its requests separated in the
-centralized audit log. The SDK sends the validated value as request metadata.
-Actor identity and permissions still come from the bearer token.
+`clientSource` is deprecated and inert. The audit log records what the API
+authenticated (`credential_kind`: browser session, personal access token,
+connected app, agent session, API key, service account), never a label the
+client reports about itself.
+
+Set `clientVersion` to the host's surface and release version, for example
+`cli/0.13.42`. The SDK sends it as `X-Kortix-Client-Version` on every request.
+The API writes it to its request log only, so a route is retired only when no
+supported client version still calls it. It is telemetry: it never reaches the
+audit log and grants nothing. A blank value sends nothing.
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
@@ -563,16 +865,17 @@ The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM
 dependency and is usable from any JS host, all of it from the root entry;
 `apps/mobile` imports `classifyTurn` from `@kortix/sdk` this way.
-React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
-`createHttpSessionSyncController` for message history, status recovery, and older
-pagination. Mobile keeps its platform-specific event transport because React
-Native cannot consume the SDK's fetch-based SSE stream.
+`apps/mobile` (React Native) also runs `useSession` from `@kortix/sdk/react`.
+Its only platform code for the session runtime is the event transport
+(`eventStreamTransport`, `react-native-sse`) and the lifecycle signals
+(`notifyHostSignal` from `AppState` and its network listener).
 
 ## Rules of the road
 
-- **No `@opencode-ai/sdk` in host code.** Import opencode types/client from
-  `@kortix/sdk`. The SDK is the sole owner of that dependency.
-  (Holds today — no host imports it.)
+- **No harness SDK in host code.** Import transcript and runtime types from
+  `@kortix/sdk`, and reach the runtime through the session verbs. `session.runtime`
+  (the raw REST compatibility client) is deprecated.
+  (Holds today — no host imports `@opencode-ai/sdk`, and neither does the SDK.)
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
   `@/lib/api-client` re-export in ~30 files and keeps a parallel
@@ -585,6 +888,8 @@ Native cannot consume the SDK's fetch-based SSE stream.
 `Authorization: Bearer <token>` — a Supabase JWT (user sessions), a Kortix PAT
 (`kortix_pat_…`) for server-side / automation use, or an OAuth access token
 (`kortix_oat_…`) minted by "Sign in with Kortix" — supplied via `getToken`.
+
+To use Kortix from an MCP client (Claude, ChatGPT, Cursor, Codex) instead of code, see the hosted MCP server: <https://kortix.com/docs/connect/mcp>.
 
 ### Sign in with Kortix (your app, their Kortix account)
 
@@ -626,8 +931,10 @@ const asViewer = await createAppViewerKortix(request, { backendUrl });          
 
 The Apps gate authenticated the visitor before your App was served and signs
 their identity into every request; `viewer_token_scope` on the App's access
-policy decides whether the App also gets a token to act with. Guide:
-`/docs/sdk/apps`.
+policy decides whether the App also gets a token to act with. On the server,
+read it per request; in the browser, `kortixAppViewerToken()` replaces a token
+the API refused (after an access-policy change) and replays the call once.
+Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)
 
@@ -650,5 +957,128 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 ```
 
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
-REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
+REST API and the session runtime's REST routes. See **`CHANGELOG.md`** for
 per-release changes.
+
+
+### Agent repository access
+
+Agent configuration accepts `repository_access?: boolean` (default `true`).
+Set `false` to run new sessions without the project repository or repository API access.
+Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
+`AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.
+A legacy `read` write requires an explicit `repository_access` choice; it does not enable read-only repository access.
+
+
+### Project provider and model access
+
+```ts
+const policy = await kortix.projects.modelAccess(projectId);
+await kortix.projects.setModelAccess(projectId, {
+  target: 'provider', id: 'kortix', enabled: false,
+});
+await kortix.projects.setModelAccess(projectId, {
+  target: 'model', id: 'openai/gpt-5.5', enabled: false,
+});
+```
+
+`kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
+
+`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. Native runtimes that bypass the gateway return `enforced: false`.
+
+### Pooled ChatGPT connections
+
+With the `pooled_provider_secrets` and `llm_gateway` project flags enabled, a
+member can create a named ChatGPT OAuth account resource:
+
+```ts
+const challenge = await kortix.project(projectId).secrets.startProviderOAuth('openai', {
+  resourceLabel: 'My ChatGPT account',
+});
+// Show challenge.verification_url and challenge.user_code, then poll the flow.
+const result = await kortix.project(projectId).secrets.pollProviderOAuth('openai', challenge.flow_id);
+```
+
+Poll until `result.status` is `success`, `failed`, or `expired`. A successful
+named flow returns `credential.secret_id`. It creates a separate project-scoped
+account resource; reconnecting does not replace another account. Every project
+member can use it by default. The owner can restrict access to selected members.
+A session can select one or more available
+ChatGPT resources through its provider secret pool (`providerId: 'codex'`).
+Without an explicit session selection, the caller's newest personal ChatGPT
+resource is used. The legacy project login remains the fallback when that
+caller has no personal resource.
+
+### ChatGPT subscription usage
+
+`getSessionCost` and `getTurnCost` report zero LLM cost for ChatGPT/Codex
+subscription messages. This also corrects historical runtime costs. Token
+counts remain available. Mixed sessions retain paid API costs; OpenAI API
+models remain billable. Subscription coverage does not include sandbox compute.
+
+### Durable prompt placement
+
+`createSessionPrompt` and `useSessionPrompts().enqueue` accept an optional
+`placement: 'transcript' | 'composer'`. `transcript` (Quick Queue) runs before
+every `composer` (Queue List) entry and ends the active response after its
+current tool call. `composer` waits for the active response to finish. Each
+placement keeps submission order. A row without placement keeps its submission
+order ahead of `composer` entries and is presented as `composer`.
+
+`SessionPrompt.full_text` preserves complete text for rendering after reload;
+`text` remains the bounded preview. List responses expose attachment names and
+MIME types without attachment bytes. Removal responses retain the complete
+parts and captured model options for undo.
+
+Queued work keeps `useSessionWorking().state` at `working` so it can be stopped.
+`pendingDelivery: true` distinguishes a send waiting for runtime delivery from an
+active agent response. The web app still shows one working indicator whenever the
+session is `working`, so Stop is never the only sign of work.
+A timed-out or skipped cancel does not acknowledge an abort receipt.
+
+A worker claim only checks admission and keeps the prompt waiting. Delivery starts
+after admission succeeds. A confirmed active turn clears the pending presentation
+even if the previous inbox snapshot still lists that prompt. Runtime activity
+preserves the active turn's message ID during this handoff.
+
+Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
+advance automatically; Quick Queue entries run first. Queue List entries stay editable
+until delivery begins. Stop pauses pending entries; Resume releases that hold.
+
+Pass the inbox IDs, in queue order, as `pendingMessageIds` to
+`groupMessagesIntoTurns(messages, { pendingMessageIds })`. Client-minted wire
+IDs still represent waiting prompts. The renderer keeps them after delivered
+turns until the inbox releases them.
+
+Queue acceptance and runtime execution are separate states. Each distinct submission
+appears immediately, including while a previous POST is pending. The working hook
+updates `pendingDelivery` when the same turn becomes active, without waiting for
+a different turn ID or timestamp.
+
+
+### Why a turn ended
+
+The transcript of an interrupted turn only carries `MessageAbortedError`. The
+control plane records the cause the sandbox reported, for example
+`SandboxMemoryGuard` when box memory passed its guard threshold, in
+`session_turns.end_error`. A stop somebody asked for is recorded there too, as a
+request (`UserStop` for a client abort, `QueueInterrupt` for a prompt sent into a
+busy session), and a request is never reported as a failure.
+
+`GET .../turn` returns the cause in `last_ended.error` and lists the turns that
+died in `recent_failures`, keyed by `message_id`, whether or not a turn is
+running: named causes, and failures with `error: null` when nobody named one.
+`useSessionTurnOutcome(projectId, sessionId)` reads both, plus the read time
+`atMs`, from the cache `useSessionWorking()` keeps fresh and makes no request of
+its own. `turnEndNotice(outcome, messageId, transcript)` turns that into one
+typed notice per turn — `sandbox-memory`, `cause`, `unexplained`, or `null` — so
+a host maps a kind to copy and never parses the sandbox's message.
+`turnEndCause(outcome, messageId)` returns the raw recorded cause.
+
+### External directory freshness
+
+`contract('directory')` from `@kortix/sdk/react` refreshes mounted group and
+member queries every 10 seconds while the tab is visible. It also refreshes on
+focus and reconnect, including data still inside the stale-time window. It does
+not poll background tabs or change the identity provider's provisioning schedule.
+Other freshness tiers keep their existing behavior.

@@ -7,12 +7,6 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
-  CLAUDE_CODE_SHA256_AMD64,
-  CLAUDE_CODE_SHA256_ARM64,
-  CLAUDE_CODE_VERSION,
-  CODEX_CLI_SHA256_AMD64,
-  CODEX_CLI_SHA256_ARM64,
-  CODEX_CLI_VERSION,
   OPENCODE_SDK_VERSION,
   OPENCODE_USER_AGENT,
   OPENCODE_VERSION,
@@ -35,11 +29,18 @@ function readRepoFile(path: string): string {
 }
 
 describe('runtime version drift guards', () => {
-  test('SDK package and lockfile use the canonical OpenCode SDK pin', () => {
+  test('the OpenCode SDK types are pinned to the canonical version, for the transcript conformance check only', () => {
+    // @kortix/sdk owns its types (kortix.transcript.v1) and must not depend on OpenCode's SDK.
     const sdkPackage = JSON.parse(readRepoFile('packages/sdk/package.json')) as {
       dependencies?: Record<string, string>;
     };
-    expect(sdkPackage.dependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
+    expect(sdkPackage.dependencies?.['@opencode-ai/sdk']).toBeUndefined();
+    // apps/api type-checks OpenCode's frames against the Kortix transcript
+    // (unit-transcript-contract-drift.test.ts), at the OpenCode release the sandbox runs.
+    const apiPackage = JSON.parse(readRepoFile('apps/api/package.json')) as {
+      devDependencies?: Record<string, string>;
+    };
+    expect(apiPackage.devDependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
 
     const lockfile = readRepoFile('pnpm-lock.yaml');
     expect(lockfile).toContain(`'@opencode-ai/sdk':`);
@@ -55,26 +56,6 @@ describe('runtime version drift guards', () => {
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').playwright");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').bun");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').anydoc");
-    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').codexCli");
-    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').claudeCode");
-    expect(dockerfile).toContain(
-      'codex-${CODEX_CLI_VERSION}-linux-${cli_arch}.tgz',
-    );
-    expect(dockerfile).toContain(
-      'claude-code-linux-${cli_arch}-${CLAUDE_CODE_VERSION}.tgz',
-    );
-    expect(dockerfile).toContain('codexCliSha256Amd64');
-    expect(dockerfile).toContain('codexCliSha256Arm64');
-    expect(dockerfile).toContain('claudeCodeSha256Amd64');
-    expect(dockerfile).toContain('claudeCodeSha256Arm64');
-    expect(dockerfile).toContain(`test "$(codex --version)" = "codex-cli \${CODEX_CLI_VERSION}"`);
-    expect(dockerfile).toContain(
-      `test "$(claude --version)" = "\${CLAUDE_CODE_VERSION} (Claude Code)"`,
-    );
-    expect(dockerfile).toContain('DISABLE_UPDATES=1');
-    expect(dockerfile.indexOf('codex-${CODEX_CLI_VERSION}')).toBeLessThan(
-      dockerfile.indexOf('opencode-ai@${OPENCODE_VERSION}'),
-    );
     expect(dockerfile).toContain('pnpmSha256Amd64');
     expect(dockerfile).toContain('pnpmSha256Arm64');
     expect(dockerfile).toContain('uvSha256Amd64');
@@ -105,19 +86,12 @@ describe('runtime version drift guards', () => {
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
+      managedSkillsPath: 'managed-skills',
     });
 
     expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
     expect(merged).toContain(`@firecrawl/anydoc@${ANYDOC_VERSION}`);
-    expect(merged).toContain(`codex-${CODEX_CLI_VERSION}-linux-\${cli_arch}.tgz`);
-    expect(merged).toContain(
-      `claude-code-linux-\${cli_arch}-${CLAUDE_CODE_VERSION}.tgz`,
-    );
-    expect(merged).toContain(`test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"`);
-    expect(merged).toContain(
-      `test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"`,
-    );
     expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
     expect(merged).toContain(BUN_VERSION);
     for (const digest of [
@@ -127,10 +101,6 @@ describe('runtime version drift guards', () => {
       UV_SHA256_ARM64,
       BUN_SHA256_AMD64,
       BUN_SHA256_ARM64,
-      CODEX_CLI_SHA256_AMD64,
-      CODEX_CLI_SHA256_ARM64,
-      CLAUDE_CODE_SHA256_AMD64,
-      CLAUDE_CODE_SHA256_ARM64,
     ]) {
       expect(merged).toContain(digest);
     }

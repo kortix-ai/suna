@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * The Connectors tab: sync, the add form, and the connector list. The form
+ * owns its create; each row owns its presentation; remove stays here so its
+ * pending state spans every row, as before.
+ */
+
 import Loading from '@/components/ui/loading';
 
 import { Badge } from '@/components/ui/badge';
@@ -25,14 +31,14 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
-import { cn } from '@/lib/utils';
+import { qk } from '@/lib/query-keys';
 import type { AdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-type Provider =
+export type ConnectorProvider =
   | 'pipedream'
   | 'mcp'
   | 'openapi'
@@ -42,7 +48,7 @@ type Provider =
   | 'channel'
   | 'computer';
 
-const PROVIDERS: Provider[] = [
+const CONNECTOR_PROVIDERS: ConnectorProvider[] = [
   'pipedream',
   'mcp',
   'openapi',
@@ -52,35 +58,14 @@ const PROVIDERS: Provider[] = [
   'computer',
 ];
 
-function statusVariant(status?: string) {
-  if (status === 'active') return 'default' as const;
-  if (status === 'error') return 'destructive' as const;
-  return 'secondary' as const;
-}
-
-export function ConnectorsTab({ projectId }: { projectId: string }) {
+function AddConnectorForm({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
-  const key = ['project-connectors', projectId] as const;
-  const refresh = () => qc.invalidateQueries({ queryKey: key });
-
-  const connectors = useQuery({
-    queryKey: key,
-    queryFn: () => kortix.project(projectId).connectors.list(),
-  });
+  const refresh = () => qc.invalidateQueries({ queryKey: qk.connectors(projectId) });
 
   const [slug, setSlug] = useState('');
   const [name, setName] = useState('');
-  const [provider, setProvider] = useState<Provider>('mcp');
+  const [provider, setProvider] = useState<ConnectorProvider>('mcp');
   const [url, setUrl] = useState('');
-
-  const sync = useMutation({
-    mutationFn: () => kortix.project(projectId).connectors.sync(),
-    onSuccess: (res) => {
-      refresh();
-      toast.success(`Synced ${res.synced} connector(s)`);
-    },
-    onError: () => toast.error('Sync failed'),
-  });
 
   const create = useMutation({
     mutationFn: () =>
@@ -100,146 +85,131 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Could not add connector'),
   });
 
-  const remove = useMutation({
-    mutationFn: (s: string) => kortix.project(projectId).connectors.remove(s),
-    onSuccess: () => {
-      refresh();
-      toast.success('Connector removed');
-    },
-    onError: () => toast.error('Could not remove connector'),
-  });
-
-  const items: AdminConnector[] = connectors.data?.connectors ?? [];
-
   return (
-    <div className="space-y-4">
-      <Card className="p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Plug className="size-4 text-muted-foreground" /> Connectors
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Tools and connectors the agent can call at runtime.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={sync.isPending}
-            onClick={() => sync.mutate()}
-          >
-            {sync.isPending ? <Loading className="size-4" /> : <RefreshCw className="size-4" />}
-            Sync
+    <Card className="p-5">
+      <div className="text-sm font-medium">Add a connector</div>
+      <form
+        className="mt-3 grid gap-2 sm:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (slug.trim()) create.mutate();
+        }}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="c-slug">Slug</Label>
+          <Input
+            id="c-slug"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            placeholder="my-tool"
+            className="font-mono"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="c-name">Name</Label>
+          <Input
+            id="c-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Tool"
+          />
+        </div>
+        <ConnectorProviderSelect value={provider} onValueChange={setProvider} />
+        <div className="space-y-1.5">
+          <Label htmlFor="c-url">URL (optional)</Label>
+          <Input
+            id="c-url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…"
+          />
+        </div>
+        <div className="sm:col-span-2 flex justify-end">
+          <Button type="submit" disabled={!slug.trim() || create.isPending}>
+            {create.isPending && <Loading className="size-4" />}
+            Add connector
           </Button>
         </div>
-      </Card>
+      </form>
+    </Card>
+  );
+}
 
-      <Card className="p-5">
-        <div className="text-sm font-medium">Add a connector</div>
-        <form
-          className="mt-3 grid gap-2 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (slug.trim()) create.mutate();
-          }}
+function ConnectorProviderSelect({
+  value,
+  onValueChange,
+}: {
+  value: ConnectorProvider;
+  onValueChange: (value: ConnectorProvider) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Provider</Label>
+      <Select value={value} onValueChange={(v) => onValueChange(v as ConnectorProvider)}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CONNECTOR_PROVIDERS.map((p) => (
+            <SelectItem key={p} value={p}>
+              {p}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function statusVariant(status?: string) {
+  if (status === 'active') return 'default' as const;
+  if (status === 'error') return 'destructive' as const;
+  return 'secondary' as const;
+}
+
+export function ConnectorRow({
+  projectId,
+  connector,
+  index,
+  removing,
+  onRemove,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  index: number;
+  removing: boolean;
+  onRemove: () => void;
+}) {
+  const cSlug = String(connector.slug ?? connector.name ?? index);
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">
+            {connector.name ?? connector.slug ?? 'Connector'}
+          </span>
+          <Badge variant={statusVariant(connector.status)} className="capitalize">
+            {connector.status ?? 'unknown'}
+          </Badge>
+        </div>
+        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="font-mono">{connector.slug}</span>
+          {connector.provider && <span>· {connector.provider}</span>}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <ConnectorConfigDialog projectId={projectId} slug={cSlug} />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground hover:text-destructive"
+          disabled={removing}
+          onClick={onRemove}
+          aria-label={`Remove ${cSlug}`}
         >
-          <div className="space-y-1.5">
-            <Label htmlFor="c-slug">Slug</Label>
-            <Input
-              id="c-slug"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              placeholder="my-tool"
-              className="font-mono"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="c-name">Name</Label>
-            <Input
-              id="c-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Tool"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Provider</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as Provider)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROVIDERS.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="c-url">URL (optional)</Label>
-            <Input
-              id="c-url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://…"
-            />
-          </div>
-          <div className="sm:col-span-2 flex justify-end">
-            <Button type="submit" disabled={!slug.trim() || create.isPending}>
-              {create.isPending && <Loading className="size-4" />}
-              Add connector
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card className="divide-y divide-border p-0">
-        {connectors.isLoading && (
-          <div className="p-4">
-            <Skeleton className="h-5 w-40" />
-          </div>
-        )}
-        {connectors.isSuccess && items.length === 0 && (
-          <div className="p-6 text-center text-sm text-muted-foreground">No connectors yet.</div>
-        )}
-        {items.map((c, i) => {
-          const cSlug = String(c.slug ?? c.name ?? i);
-          return (
-            <div key={cSlug} className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">
-                    {c.name ?? c.slug ?? 'Connector'}
-                  </span>
-                  <Badge variant={statusVariant(c.status)} className="capitalize">
-                    {c.status ?? 'unknown'}
-                  </Badge>
-                </div>
-                <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-mono">{c.slug}</span>
-                  {c.provider && <span>· {c.provider}</span>}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <ConnectorConfigDialog projectId={projectId} slug={cSlug} />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 text-muted-foreground hover:text-destructive"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(cSlug)}
-                  aria-label={`Remove ${cSlug}`}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-      </Card>
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -286,7 +256,7 @@ function ConnectorConfigDialog({
           <div className="space-y-2 text-sm">
             {rows.length === 0 && <p className="text-muted-foreground">No configurable fields.</p>}
             {rows.map(([k, v]) => (
-              <div key={k} className={cn('flex items-start justify-between gap-4')}>
+              <div key={k} className="flex items-start justify-between gap-4">
                 <span className="text-muted-foreground">{k}</span>
                 <span className="truncate font-mono text-xs">{String(v)}</span>
               </div>
@@ -304,5 +274,86 @@ function ConnectorConfigDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function ConnectorsTab({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: qk.connectors(projectId) });
+
+  const connectors = useQuery({
+    queryKey: qk.connectors(projectId),
+    queryFn: () => kortix.project(projectId).connectors.list(),
+  });
+
+  const sync = useMutation({
+    mutationFn: () => kortix.project(projectId).connectors.sync(),
+    onSuccess: (res) => {
+      refresh();
+      toast.success(`Synced ${res.synced} connector(s)`);
+    },
+    onError: () => toast.error('Sync failed'),
+  });
+  const remove = useMutation({
+    mutationFn: (s: string) => kortix.project(projectId).connectors.remove(s),
+    onSuccess: () => {
+      refresh();
+      toast.success('Connector removed');
+    },
+    onError: () => toast.error('Could not remove connector'),
+  });
+
+  const items: AdminConnector[] = connectors.data?.connectors ?? [];
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Plug className="size-4 text-muted-foreground" /> Connectors
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tools and connectors the agent can call at runtime.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={sync.isPending}
+            onClick={() => sync.mutate()}
+          >
+            {sync.isPending ? <Loading className="size-4" /> : <RefreshCw className="size-4" />}
+            Sync
+          </Button>
+        </div>
+      </Card>
+
+      <AddConnectorForm projectId={projectId} />
+
+      <Card className="divide-y divide-border p-0">
+        {connectors.isLoading && (
+          <div className="p-4">
+            <Skeleton className="h-5 w-40" />
+          </div>
+        )}
+        {connectors.isSuccess && items.length === 0 && (
+          <div className="p-6 text-center text-sm text-muted-foreground">No connectors yet.</div>
+        )}
+        {items.map((c, i) => {
+          const cSlug = String(c.slug ?? c.name ?? i);
+          return (
+            <ConnectorRow
+              key={cSlug}
+              projectId={projectId}
+              connector={c}
+              index={i}
+              removing={remove.isPending}
+              onRemove={() => remove.mutate(cSlug)}
+            />
+          );
+        })}
+      </Card>
+    </div>
   );
 }

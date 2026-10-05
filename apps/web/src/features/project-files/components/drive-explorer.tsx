@@ -26,9 +26,10 @@ import {
   FilePlusIcon as FilePlus,
   FolderOpenIcon as FolderOpen,
   FolderPlusIcon as FolderPlus,
+  MoonIcon,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   useCallback,
   useEffect,
@@ -116,7 +117,12 @@ export function DriveExplorer({
   // Plain <div> unless a tabbed host claims the listing as its panel.
   const ListingRegion = listingAs ?? 'div';
   const source = useFileExplorerSource();
-  const { capabilities } = source;
+  // Asleep: the listing comes from the git mirror instead. Writing and search
+  // both run INSIDE the box, so they are withheld rather than left to fail.
+  const parked = source.useReadinessParked();
+  const capabilities = parked
+    ? { ...source.capabilities, write: false, search: false }
+    : source.capabilities;
   const canWrite = capabilities.write;
 
   const currentPath = useFilesStore((s) => s.currentPath);
@@ -144,9 +150,9 @@ export function DriveExplorer({
     refetch: refetchFiles,
   } = source.useFileList(currentPath);
 
-  // A readiness 503 means the sandbox is parked or booting — a pending state,
-  // never a failure. Keep polling until the box is up so the listing appears
-  // on its own.
+  // A readiness 503 means the sandbox is BOOTING — it becomes healthy on its
+  // own, so keep polling. A parked box never reaches here: `parked` switches
+  // the source to the git mirror, whose errors are never readiness 503s.
   const sandboxWaking = !!error && isSandboxNotReadyError(error);
   useEffect(() => {
     if (!sandboxWaking) return;
@@ -318,12 +324,12 @@ export function DriveExplorer({
     async (node: FileNode) => {
       try {
         await downloadFile(node.path, node.name);
-        successToast(`Downloaded ${node.name}`);
+        successToast(tHardcodedUi('i18nComplete.text7eca5e05f915', { value0: node.name }));
       } catch {
-        errorToast(`Failed to download ${node.name}`);
+        errorToast(tHardcodedUi('i18nComplete.textc85c359673e0', { value0: node.name }));
       }
     },
-    [downloadFile],
+    [downloadFile, tHardcodedUi],
   );
 
   const handleDownloadDir = useCallback(
@@ -340,12 +346,19 @@ export function DriveExplorer({
       const newPath = parentPath ? `${parentPath}/${newName}` : newName;
       try {
         await renameMutation.mutateAsync({ from: node.path, to: newPath });
-        successToast(`Renamed to ${newName}`);
+        successToast(tHardcodedUi('i18nComplete.text3c6bd1e4217c', { value0: newName }));
       } catch (err) {
-        errorToast(`Failed to rename: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(
+          tHardcodedUi('i18nComplete.textd6f8c9c8e719', {
+            value0:
+              err instanceof Error
+                ? err.message
+                : tHardcodedUi.raw('i18nComplete.textada37a724fca'),
+          }),
+        );
       }
     },
-    [renameMutation],
+    [renameMutation, tHardcodedUi],
   );
 
   const handleDelete = useCallback((node: FileNode) => {
@@ -356,13 +369,18 @@ export function DriveExplorer({
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync({ filePath: deleteTarget.path });
-      successToast(`Deleted ${deleteTarget.name}`);
+      successToast(tHardcodedUi('i18nComplete.text37bad7de9098', { value0: deleteTarget.name }));
     } catch (err) {
-      errorToast(`Failed to delete: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.text5d4ff119f3d4', {
+          value0:
+            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.textada37a724fca'),
+        }),
+      );
     } finally {
       setDeleteTarget(null);
     }
-  }, [deleteTarget, deleteMutation]);
+  }, [deleteTarget, deleteMutation, tHardcodedUi]);
 
   const handleHistory = useCallback((node: FileNode) => {
     setHistoryPopoverPath(node.path);
@@ -371,17 +389,17 @@ export function DriveExplorer({
   const handleCopy = useCallback(
     (node: FileNode) => {
       copyToClipboard(node.path, node.name, node.type);
-      successToast(`Copied "${node.name}" to clipboard`);
+      successToast(tHardcodedUi('i18nComplete.textd46dc6f5e3e3', { value0: node.name }));
     },
-    [copyToClipboard],
+    [copyToClipboard, tHardcodedUi],
   );
 
   const handleCut = useCallback(
     (node: FileNode) => {
       cutToClipboard(node.path, node.name, node.type);
-      successToast(`Cut "${node.name}" to clipboard`);
+      successToast(tHardcodedUi('i18nComplete.text80565873fe1e', { value0: node.name }));
     },
-    [cutToClipboard],
+    [cutToClipboard, tHardcodedUi],
   );
 
   const handleDropMove = useCallback(
@@ -391,12 +409,19 @@ export function DriveExplorer({
       if (sourcePath === destPath) return;
       try {
         await renameMutation.mutateAsync({ from: sourcePath, to: destPath });
-        successToast(`Moved "${sourceName}"`);
+        successToast(tHardcodedUi('i18nComplete.text854362dd1a76', { value0: sourceName }));
       } catch (err) {
-        errorToast(`Failed to move: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(
+          tHardcodedUi('i18nComplete.text66d6798adfa9', {
+            value0:
+              err instanceof Error
+                ? err.message
+                : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+          }),
+        );
       }
     },
-    [renameMutation],
+    [renameMutation, tHardcodedUi],
   );
 
   // Upload
@@ -436,7 +461,13 @@ export function DriveExplorer({
           uploaded.push(file.name);
         } catch (err) {
           errorToast(
-            `Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+            tHardcodedUi('i18nComplete.text427754ced1a7', {
+              value0: file.name,
+              value1:
+                err instanceof Error
+                  ? err.message
+                  : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+            }),
           );
         } finally {
           setUploadProgress(settleUploadUnit);
@@ -446,7 +477,7 @@ export function DriveExplorer({
       const summary = describeUploadSuccess(uploaded);
       if (summary) successToast(summary);
     },
-    [uploadMutation, isRootPath, currentPath],
+    [currentPath, isRootPath, uploadMutation, tHardcodedUi],
   );
 
   /**
@@ -484,16 +515,19 @@ export function DriveExplorer({
       : newFolderName.trim();
     try {
       await mkdirMutation.mutateAsync({ dirPath: folderPath });
-      successToast(`Created folder: ${newFolderName.trim()}`);
+      successToast(tHardcodedUi('i18nComplete.text0597374d9d22', { value0: newFolderName.trim() }));
     } catch (err) {
       errorToast(
-        `Failed to create folder: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        tHardcodedUi('i18nComplete.text5334297c9387', {
+          value0:
+            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+        }),
       );
     } finally {
       setIsCreatingFolder(false);
       setNewFolderName('');
     }
-  }, [mkdirMutation, normalizedCurrentPath, newFolderName]);
+  }, [newFolderName, normalizedCurrentPath, mkdirMutation, tHardcodedUi]);
 
   // Create file
   const handleCreateFile = useCallback(async () => {
@@ -506,14 +540,19 @@ export function DriveExplorer({
       : newFileName.trim();
     try {
       await createMutation.mutateAsync({ filePath });
-      successToast(`Created file: ${newFileName.trim()}`);
+      successToast(tHardcodedUi('i18nComplete.textf8a7fef9482a', { value0: newFileName.trim() }));
     } catch (err) {
-      errorToast(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.text6658eaceba2a', {
+          value0:
+            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+        }),
+      );
     } finally {
       setIsCreatingFile(false);
       setNewFileName('');
     }
-  }, [createMutation, normalizedCurrentPath, newFileName]);
+  }, [newFileName, normalizedCurrentPath, createMutation, tHardcodedUi]);
 
   // Paste
   const handlePaste = useCallback(async () => {
@@ -539,7 +578,7 @@ export function DriveExplorer({
           const normalizedSourceDir = sourceDir === '' ? '.' : sourceDir;
           const normalizedDestDir = destDir === '' ? '.' : destDir;
           if (normalizedSourceDir === normalizedDestDir) {
-            errorToast('Item is already in this directory');
+            errorToast(tHardcodedUi.raw('i18nComplete.text7a1bdceb4943'));
             return;
           }
         }
@@ -552,18 +591,23 @@ export function DriveExplorer({
       if (clipboard.operation === 'copy') {
         if (clipboard.type === 'file') {
           await copyMutation.mutateAsync({ sourcePath: clipboard.path, destPath });
-          successToast(`Copied "${clipboard.name}" here`);
+          successToast(tHardcodedUi('i18nComplete.textbb45167cfb4d', { value0: clipboard.name }));
         } else {
           await mkdirMutation.mutateAsync({ dirPath: destPath });
-          successToast(`Created copy of folder "${clipboard.name}" here (empty)`);
+          successToast(tHardcodedUi('i18nComplete.textd6318e7ae71a', { value0: clipboard.name }));
         }
       } else {
         await renameMutation.mutateAsync({ from: clipboard.path, to: destPath });
-        successToast(`Moved "${clipboard.name}" here`);
+        successToast(tHardcodedUi('i18nComplete.text59004552be50', { value0: clipboard.name }));
         clearClipboard();
       }
     } catch (err) {
-      errorToast(`Failed to paste: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.texta619e901f9c0', {
+          value0:
+            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+        }),
+      );
     }
   }, [
     clipboard,
@@ -573,6 +617,7 @@ export function DriveExplorer({
     renameMutation,
     mkdirMutation,
     clearClipboard,
+    tHardcodedUi,
   ]);
 
   // Keyboard: Ctrl+V paste
@@ -719,7 +764,8 @@ export function DriveExplorer({
         <div className="border-border/40 bg-background flex shrink-0 items-center gap-3 border-b px-4 py-2">
           <Loading className="size-3.5 shrink-0" />
           <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-            Uploading {uploadProgressLabel(uploadProgress)}
+            {tHardcodedUi.raw('i18nComplete.text8b898ca34ce7')}{' '}
+            {uploadProgressLabel(uploadProgress)}
           </span>
           <Progress
             value={uploadProgressPercent(uploadProgress)}
@@ -792,7 +838,9 @@ export function DriveExplorer({
                     <Skeleton className="mb-3 h-4 w-16" />
                     <div
                       className="grid gap-2"
-                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                      }}
                     >
                       {Array.from({ length: 6 }).map((_, i) => (
                         <Skeleton key={`f${i}`} className="h-10 rounded-lg" />
@@ -803,7 +851,9 @@ export function DriveExplorer({
                     <Skeleton className="mb-3 h-4 w-12" />
                     <div
                       className="grid gap-2.5"
-                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                      }}
                     >
                       {Array.from({ length: 8 }).map((_, i) => (
                         <Skeleton key={`fi${i}`} className="h-[138px] rounded-lg" />
@@ -827,10 +877,10 @@ export function DriveExplorer({
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <Loading className="text-muted-foreground/40 h-4 w-4" />
                 <p className="text-muted-foreground text-sm font-medium">
-                  Waking up the workspace…
+                  {tHardcodedUi.raw('i18nComplete.text5e3de76869f3')}
                 </p>
                 <p className="text-muted-foreground/40 max-w-xs text-xs">
-                  The sandbox is starting. Files will appear automatically.
+                  {tHardcodedUi.raw('i18nComplete.textc1b1dc22e207')}
                 </p>
               </div>
             ) : (
@@ -838,16 +888,27 @@ export function DriveExplorer({
                 title={tHardcodedUi.raw(
                   'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
                 )}
-                description={error instanceof Error ? error.message : 'Unknown error'}
+                description={
+                  error instanceof Error
+                    ? error.message
+                    : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2')
+                }
                 action={
                   <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
-                    Retry
+                    {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
                   </Button>
                 }
               />
             ))}
 
-          {isEmpty && (
+          {/* The mirror had nothing, but the branch push is best-effort, so the
+              files may exist and simply be unreachable. "Empty folder" is the one
+              thing this cannot state as fact. Same words as the Terminal panel. */}
+          {isEmpty && parked && (
+            <EmptyState icon={MoonIcon} title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')} />
+          )}
+
+          {isEmpty && !parked && (
             <EmptyState
               icon={FolderOpen}
               title={tHardcodedUi.raw(
@@ -855,7 +916,7 @@ export function DriveExplorer({
               )}
               description={
                 canWrite
-                  ? 'Upload a file or create one — you can also drop files anywhere on this page.'
+                  ? tHardcodedUi.raw('i18nComplete.text9720774edbde')
                   : tHardcodedUi.raw(
                       'featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn',
                     )
@@ -867,7 +928,7 @@ export function DriveExplorer({
                 canWrite ? (
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={handleUpload}>
                     <Upload className="size-3.5 shrink-0" />
-                    Upload files
+                    {tHardcodedUi.raw('i18nComplete.text4118deee6e13')}
                   </Button>
                 ) : undefined
               }
@@ -880,7 +941,7 @@ export function DriveExplorer({
                     onClick={() => setIsCreatingFolder(true)}
                   >
                     <FolderPlus className="size-3.5 shrink-0" />
-                    New folder
+                    {tHardcodedUi.raw('i18nComplete.textcf28f49ec597')}
                   </Button>
                 ) : undefined
               }
@@ -990,7 +1051,7 @@ export function DriveExplorer({
               onClick={clearClipboard}
               className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
             >
-              Cancel
+              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
             </button>
           </div>
         </div>
@@ -1020,7 +1081,8 @@ export function DriveExplorer({
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
+              {tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}{' '}
+              {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {tHardcodedUi.raw(
@@ -1041,7 +1103,9 @@ export function DriveExplorer({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>
+              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
+            </AlertDialogCancel>
             <AlertDialogAction
               ref={deleteButtonRef}
               onClick={(e) => {

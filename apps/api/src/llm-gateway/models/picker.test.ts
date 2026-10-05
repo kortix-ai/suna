@@ -9,6 +9,7 @@ import {
   projectPickerCatalog,
   providerFlagship,
 } from './picker-catalog';
+import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 const catalogHas = (providerId: string, modelId: string): boolean =>
   CATALOG.providers.some((p) => p.id === providerId && p.models.some((m) => m.id === modelId));
@@ -29,7 +30,7 @@ describe('providerFlagship', () => {
   // Bedrock refuses the bare in-region id for its current families
   // ("Invocation of model ID xai.grok-4.6 with on-demand throughput isn't
   // supported. Retry your request with the ID or ARN of an inference
-  // profile") — verified live on the Essentia self-host 2026-08-26, where a
+  // profile") — verified live on the SampleCo self-host 2026-08-26, where a
   // fresh workspace auto-selected `xai.grok-4.6` and looped "Retrying in Ns"
   // forever. `xai.grok-4.6` is the NEWEST Bedrock model in the catalog AND
   // has no `global.`/`us.` twin, so a release-date tie-break cannot save it:
@@ -64,14 +65,17 @@ describe('labelForModelRef', () => {
 });
 
 describe('managedPickerModels', () => {
-  test('every managed model is offered as a kortix/<id> opencode ref', () => {
-    const models = managedPickerModels();
-    expect(models.length).toBe(RUNTIME_MANAGED_MODELS.length);
-    for (const m of models) {
-      expect(m.id.startsWith('kortix/')).toBe(true);
-      expect(m.managed).toBe(true);
-      expect(m.provider).toBe('kortix');
-    }
+  test('every served managed model is offered as a kortix/<id> opencode ref with its tier hint', () => {
+    const hint = { flagship: 'Most capable', fast: 'Fastest', balanced: 'Balanced, fast' };
+    expect(managedPickerModels()).toEqual(
+      SERVED_MANAGED_MODELS.map((m) => ({
+        id: `kortix/${m.id}`,
+        label: m.name,
+        provider: 'kortix',
+        managed: true,
+        hint: hint[m.tier],
+      })),
+    );
   });
 });
 

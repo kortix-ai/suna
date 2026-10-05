@@ -146,6 +146,7 @@ export interface BuildSlashSectionsInput {
    * and therefore no files.
    */
   files?: SlashFile[];
+  actionsHeading?: string;
   query: string;
 }
 
@@ -161,6 +162,7 @@ export function buildSlashSections({
   commands,
   actions = SLASH_ACTIONS,
   files = [],
+  actionsHeading = 'Actions',
   query,
 }: BuildSlashSectionsInput): SlashSection[] {
   const q = query.toLowerCase().trim();
@@ -188,7 +190,7 @@ export function buildSlashSections({
 
   if (filteredActions.length) {
     sections.push({
-      heading: 'Actions',
+      heading: actionsHeading,
       hideHeading: true,
       rows: filteredActions.map((action) => ({
         index: index++,

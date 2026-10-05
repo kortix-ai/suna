@@ -1,6 +1,7 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -59,29 +60,20 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // PROJECT_MEMBER_BASELINE (apps/api/src/iam/role-perms.ts), so every project
   // role that could open these panes in the Settings overlay still can here.
   { key: 'triggers', action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ },
-  // Review — the inbox, on the bar since 2026-09-02 (it was a section of the
-  // retired `/config` page). Same read leaf `CUSTOMIZE_SECTION_ACCESS.review`
-  // gated the section on; the `review_center` flag is applied by the bar
-  // (`visibleCapabilityTabs`), not by this permission list.
-  { key: 'review', action: PROJECT_ACTIONS.PROJECT_REVIEW_READ },
   // Models and Secrets graduated out of the Settings overlay's sub-nav onto
   // their own top-level tabs. Their read leaves are carried over unchanged
   // from `lib/project-actions.ts`'s `CUSTOMIZE_SECTION_ACCESS` map
   // (`llm-management` -> project.read, `secrets` -> secret.read) — moving
-  // where a section is reachable FROM never changed who can reach it.
-  { key: 'models', action: PROJECT_ACTIONS.PROJECT_READ },
+  // The Models tab is model routing: project.model.read.
+  { key: 'models', action: PROJECT_ACTIONS.PROJECT_MODEL_READ },
   // Channels is NOT a row here any more. It is a scope of the Connectors page
   // (`channelsHref`), and it always gated on `project.connector.read` — the
   // same leaf the Connectors row above already probes, so folding it in
   // removed a duplicate probe rather than a gate.
   { key: 'secrets', action: PROJECT_ACTIONS.PROJECT_SECRET_READ },
   // Settings (`/projects/<id>/config`) holds the project configuration that
-  // did not earn its own top-level tab. It reuses `project.customize.write`,
-  // the SAME leaf the row itself gates on above, rather than inventing a
-  // narrower one: anyone who can see the Customize row at all can open this
-  // tab, so a second, stricter probe here could only ever produce a row that
-  // leads nowhere. Retired 2026-09-02, back 2026-09-03 (Marko).
-  { key: 'config', action: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
+  // did not earn its own top-level tab: project.settings.write.
+  { key: 'config', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
 ];
 
 /**
@@ -116,31 +108,13 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
  * resolves — it redirects here through the same `TAB_PREFERENCE` — so every
  * bookmark, palette entry and shortcut that names it keeps working.
  *
- * Gated TWICE, on two different questions:
- *
- *  1. Can this caller reach the Customize surface at all?
- *     `project.customize.read` — the one leaf that answers "may this person
- *     open Customize", and the surface gate every other Customize entry point
- *     now shares: this row, the project-home setup tiles
- *     (`project-layout/project-home.tsx`), and the capability tab bar itself
- *     (`capabilities/shared/capability-tabs.tsx`).
- *
- *     It is `.read`, not `.write`: `.write` conflated "may see the surface"
- *     with "may change things on it", so a role that can browse a tab was
- *     denied the only discovery path to it. `.write` still gates every
- *     individual mutation on every page beneath this row (each tab, and the
- *     Settings/config tab's own sections, already probe their own write leaf).
- *
- *     It lives in `MANAGER_EXTRAS`, not `PROJECT_MEMBER_BASELINE`
- *     (`apps/api/src/iam/role-perms.ts`, moved there by #6522 along with
- *     connector/skill/file/secret read): a plain project `member` is a read +
- *     RUN role and reaches NO part of Customize by default, so this row is
- *     absent for them — which is the whole point, since every page under it
- *     403s on load.
- *  2. Does at least one tab exist for them to land on once there?
- *     `useCapabilityTab()` still probes each tab's own read leaf — a caller
- *     denied every single one gets no row at all, rather than a link to an
- *     index with nothing on it.
+ * Gated on ONE question: does at least one tab exist for this caller to land
+ * on? `useCapabilityTab()` probes each tab's own read leaf (`TAB_PREFERENCE`)
+ * — a caller denied every one gets no row at all rather than a link to an
+ * index with nothing on it. There is no separate surface leaf: permissions
+ * decide, so a project member who holds `project.agent.read` and
+ * `project.trigger.read` gets the row and lands on Agents, read-only. Every
+ * mutation beneath it still probes its own write leaf.
  *
  * A real `<Link prefetch>`, not `router.push` — same reason as
  * ProjectFilesNavItem: the button form cannot be prefetched, so every click
@@ -153,13 +127,13 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
  * Settings row, and one shortcut advertised on two rows is a lie on one of them.
  */
 export function ProjectCustomizeNavItem() {
+  const t = useTranslations('sidebar');
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const caps = useProjectPageCans(projectId);
-  const canCustomize = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ];
   const tab = useCapabilityTab(projectId);
   // Active on the legacy index (`/customize`, for the instant before it
   // redirects) AND on any capability tab — the row stays lit while browsing
@@ -172,10 +146,8 @@ export function ProjectCustomizeNavItem() {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
 
-  // Hide only on an explicit deny we actually received — same optimistic
-  // rule as every other probe-gated row, so a slow permission check never
-  // flashes the row away for someone who does have access.
-  if (canCustomize.allowed === false) return null;
+  // The row exists when the caller may open at least one tab: each tab is
+  // gated on its own read leaf (`useCapabilityTab`), there is no surface gate.
   if (!tab) return null;
   // No project id means no valid href, so there is nothing to render.
   if (!projectId) return null;
@@ -185,7 +157,7 @@ export function ProjectCustomizeNavItem() {
       <SidebarMenuButton
         asChild
         isActive={isActive}
-        tooltip="Customize"
+        tooltip={t('customize')}
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink href={capabilityTabHref(projectId, tab)} prefetch onClick={handleClick}>
@@ -207,7 +179,7 @@ export function ProjectCustomizeNavItem() {
               <path d="M14 14H10V22H14C15.4 22 16.1 22 16.64 21.73C17.11 21.49 17.49 21.11 17.73 20.64C18 20.1 18 19.4 18 18C18 16.6 18 15.9 17.73 15.37C17.49 14.89 17.11 14.51 16.64 14.27C16.1 14 15.4 14 14 14Z" />
             </svg>
           </span>
-          Customize
+          {t('customize')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

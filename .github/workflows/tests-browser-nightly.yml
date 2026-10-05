@@ -39,27 +39,17 @@ env:
   KE2E_GATEWAY_URL: ${{ vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
   KE2E_TARGET: staging
   KE2E_LIVE_CONFIRM: ci
-  KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
-  KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-  KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-  KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-  KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-  KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-  KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
-  KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
-  KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
-  E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
   KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
-  WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
-  # Staging sits behind Vercel SSO deployment protection; without this header
-  # every authenticated page 302s to vercel.com/sso-api. See playwright.config.
-  VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-  KE2E_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
+  # Credentials come from the "Read staging credentials" step (the same key
+  # list as tests-release.yml, through .github/actions/aws-env).
 
 jobs:
   quarantine:
     name: quarantined browser journeys
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     timeout-minutes: 45
     env:
       # `playwright.config.ts` turns this into `grep`, so the run loads ONLY the
@@ -67,6 +57,30 @@ jobs:
       E2E_INCLUDE_TAGS: ${{ github.event.inputs.tags || '@quarantine' }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read staging credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            KE2E_OWNER_EMAIL?
+            KE2E_OWNER_PASSWORD?
+            KE2E_SUPABASE_URL=kortix-staging-env:SUPABASE_URL
+            KE2E_SUPABASE_ANON_KEY=kortix-staging-env:SUPABASE_ANON_KEY
+            KE2E_SUPABASE_SERVICE_ROLE_KEY=kortix-staging-env:SUPABASE_SERVICE_ROLE_KEY
+            KE2E_DATABASE_URL=kortix-staging-env:DATABASE_URL
+            KE2E_INTERNAL_SERVICE_KEY=kortix-staging-env:INTERNAL_SERVICE_KEY
+            KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
+            KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
+            E2E_AGENTMAIL_API_KEY
+            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            VERCEL_AUTOMATION_BYPASS_SECRET
+            KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14

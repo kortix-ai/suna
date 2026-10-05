@@ -2,17 +2,15 @@
 // group-detail page, project Members page so the precedence + sort logic
 // can be unit-tested without spinning up React or a query client.
 //
-// Three small problems, one file:
+// Two small problems, one file:
 //
 //   1. Sorting + counting group members whose ACCOUNT role overrides
 //      the group's project grant (super-admin > owner > admin > member).
 //      Used by the Group detail → Group members warning banner.
 //
-//   2. Floating the current user to the top of the "Add members" picker
-//      so self-add is a one-click action.
-//
-//   3. Labelling a project Members row that has access only via a group
-//      ("Inherited Manager via Engineering + 1 more").
+//   2. Deciding whether a project Members row has access only via a group
+//      (no implicit Manager, no direct project_members row) — the callers
+//      render their own "Inherited …" copy on top of it.
 
 // ONE role model. These are re-exports of the SDK's unions, not local copies —
 // this file used to declare its own `AccountRole` / `ProjectRole`, shadowing
@@ -21,7 +19,6 @@
 export type { AccountRole, ProjectRole } from '@kortix/sdk';
 
 import type { AccountRole, ProjectRole } from '@kortix/sdk';
-import { builtinRoleDescriptor } from '@/features/workspace/shared/access/role-select';
 
 export interface AccountMeta {
   email: string | null;
@@ -34,11 +31,7 @@ export interface AccountMeta {
  * every project regardless of the group's role.
  */
 export function isOverridingAccountRole(meta: AccountMeta): boolean {
-  return (
-    meta.isSuperAdmin ||
-    meta.accountRole === 'owner' ||
-    meta.accountRole === 'admin'
-  );
+  return meta.isSuperAdmin || meta.accountRole === 'owner' || meta.accountRole === 'admin';
 }
 
 /**
@@ -77,9 +70,10 @@ function overrideRank(meta: AccountMeta | undefined): number {
  * want those N rows to be the first N in the list. Tie-break: ascending
  * addedAt so older members stay near the top within each tier.
  */
-export function sortGroupMembersByOverride<
-  T extends { user_id: string; added_at: string },
->(members: T[], metaByUserId: Map<string, AccountMeta>): T[] {
+export function sortGroupMembersByOverride<T extends { user_id: string; added_at: string }>(
+  members: T[],
+  metaByUserId: Map<string, AccountMeta>,
+): T[] {
   return [...members].sort((a, b) => {
     const ra = overrideRank(metaByUserId.get(a.user_id));
     const rb = overrideRank(metaByUserId.get(b.user_id));
@@ -88,23 +82,7 @@ export function sortGroupMembersByOverride<
   });
 }
 
-/**
- * Return the eligible list with the current user pinned to position 0
- * if they're still eligible. No-op when the user is absent or already
- * first.
- */
-export function floatCurrentUserFirst<T extends { user_id: string }>(
-  eligible: T[],
-  currentUserId: string | null,
-): T[] {
-  if (!currentUserId) return eligible;
-  const idx = eligible.findIndex((m) => m.user_id === currentUserId);
-  if (idx <= 0) return eligible;
-  const me = eligible[idx];
-  return [me, ...eligible.slice(0, idx), ...eligible.slice(idx + 1)];
-}
-
-// ─── Project Members → inherited-via-group label ─────────────────────────
+// ─── Project Members → inherited-via-group row ──────────────────────────
 
 export interface ProjectAccessRowInput {
   has_implicit_access: boolean;
@@ -124,26 +102,4 @@ export function isInheritedFromGroupOnly(row: ProjectAccessRowInput): boolean {
     row.effective_project_role !== null &&
     (row.group_sources?.length ?? 0) > 0
   );
-}
-
-// `formatExpiry` used to live here too — a second implementation with a
-// different signature and different output from `shared/access/access-shared.ts`,
-// which the barrel's own policy forbids. Deleted; use that one.
-
-/**
- * Render the "Inherited X via Y" subtitle. Returns null when the row
- * isn't group-inherited (caller falls back to the "No access" / "Granted
- * {date}" / "Implicit account access" copy).
- */
-export function inheritedFromGroupSummary(row: ProjectAccessRowInput): string | null {
-  if (!isInheritedFromGroupOnly(row)) return null;
-  const sources = row.group_sources!;
-  const head = sources[0];
-  const rest = sources.length - 1;
-  // ONE source for the words: `role-select.tsx`'s descriptors, the same copy the
-  // role picker and the help page render. This file used to keep a third copy.
-  const label = builtinRoleDescriptor('project', row.effective_project_role!)?.label ?? 'Member';
-  return rest > 0
-    ? `Inherited ${label} via ${head.group_name} + ${rest} more`
-    : `Inherited ${label} via ${head.group_name}`;
 }

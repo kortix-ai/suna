@@ -26,8 +26,11 @@
  * `routes/preview.ts` re-exports the public names, so every existing import
  * path keeps working.
  */
+import { isTurnStartRequest } from '../projects/turn-start-request';
+import { classifyRuntimeRequest } from './runtime-request';
 import type { ProviderName } from '../platform/providers';
-import type { syncSessionRuntimesEnvForPrompt } from '../projects/lib/sandbox-env-sync';
+import type { bindSessionTurnIdentity } from '../projects/lib/on-behalf-of';
+import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
 import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
 import {
   SessionGrantRemintError,
@@ -38,16 +41,6 @@ import {
   extractPromptInfo,
   type generateSessionTitleFromFirstPrompt,
 } from '../projects/session-title-generate';
-
-import {
-  ENV_SYNCED_FOR_HEADER,
-  envSyncedForValue,
-  needsPrePromptEnvSync,
-} from './env-synced-header';
-
-// Re-exported so every existing import path keeps working, exactly as this
-// module already re-exports through routes/preview.ts.
-export { ENV_SYNCED_FOR_HEADER, envSyncedForValue, needsPrePromptEnvSync };
 
 /** One JSON error body with the proxy's CORS pair applied. Lives here rather
  *  than in the route because every refusal below builds one, and the route must
@@ -81,21 +74,38 @@ export function errorMessage(error: unknown, fallback: string): string {
 // can never use it to escalate into another agent's connector / Kortix-CLI grant.
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
-const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
-  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
+// A fetch that timed out or never connected (Bun and Node spellings).
+const RETRYABLE_ENV_SYNC_ERROR_NAMES = new Set(['TimeoutError', 'AbortError']);
+const RETRYABLE_ENV_SYNC_ERROR_CODES = new Set([
+  'ConnectionRefused',
+  'ConnectionClosed',
+  'FailedToOpenSocket',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+]);
 
-function isRetryableEnvSyncFailure(message: string): boolean {
-  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
-  // Fetch rejections are bare network errors. HTTP failures include the daemon
-  // response body, so don't classify a non-retryable status as transient just
-  // because its JSON/body happens to mention a connection failure.
-  if (/^env sync failed:/i.test(message)) return false;
-  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
+export function isRetryableEnvSyncFailure(err: unknown): boolean {
+  const e = err as { name?: unknown; code?: unknown; status?: unknown } | null | undefined;
+  // `EnvSyncHttpError` (projects/lib/sandbox-env-push.ts), matched by name so
+  // this module does not import the push module's DB graph.
+  if (e?.name === 'EnvSyncHttpError') return e.status === 502 || e.status === 503 || e.status === 504;
+  return RETRYABLE_ENV_SYNC_ERROR_NAMES.has(String(e?.name)) || RETRYABLE_ENV_SYNC_ERROR_CODES.has(String(e?.code));
 }
 
 /**
  * Should this request get the PRE-PROMPT project-env sync (and the small set of
  * turn-start side effects that hang off it)?
+ *
+ * ONE PREDICATE, because three turn-start preparations used to disagree inside a
+ * single request. `shouldSyncProjectEnvBeforeProxy` — which this replaces —
+ * answered `port !== 8000 ⇒ false` and never stripped the in-box `/proxy/<n>/`
+ * prefix, while the config-convergence gate and the connector gate both keyed on
+ * `isTurnStartRequest`, which covers 4096/4097 AND strips the prefix. Platinum
+ * rewrites 4096→8000 and Daytona does not, so on Daytona a prompt addressed
+ * straight at :4096 got the config check and the undeclared-agent drop but NOT
+ * the secret refresh or the connector-grant re-mint. Same request, two answers,
+ * provider-dependent. Built on `isTurnStartRequest` so that can never recur.
  *
  * THREE endpoints. `/command` is one of them, and it was missing until
  * 2026-08-12. `POST /session/:id/command` is opencode's blocking slash-command
@@ -122,20 +132,22 @@ function isRetryableEnvSyncFailure(message: string): boolean {
  * `/summarize` stays OUT even though `isTurnStartRequest` counts it. Compaction
  * carries no user prompt and no `agent` to re-scope for, and the sync is
  * fail-closed on a grant error — refusing to compact a conversation because a
- * manifest read failed would wedge a session instead of protecting it. Same
- * reasoning as `isConnectorGatedTurn`, which excludes it for the same reason.
+ * manifest read failed would wedge a session instead of protecting it. That is
+ * the ONLY difference from `isTurnStartRequest`, and it is why the connector
+ * gate (`isConnectorGatedTurn`, which excluded `/summarize` for the identical
+ * reason) is now this same function rather than a second copy of it.
+ *
+ * CALL IT WITH THE UPSTREAM PORT and the remaining path — the values the request
+ * actually reaches the box on. Passing the client-addressed port is what created
+ * the divergence above.
  *
  * Pure + exported so the gate is unit-tested without provisioning a box — the
  * same reason `shouldAutoResumeStoppedSandbox` and `isProxiedBaseReset` are.
  */
-export function shouldSyncProjectEnvBeforeProxy(
-  port: number,
-  method: string,
-  path: string,
-): boolean {
-  if (port !== 8000) return false;
-  if (method.toUpperCase() !== 'POST') return false;
-  return /^\/session\/[^/]+\/(?:prompt_async|message|command)(?:$|[/?#])/.test(path);
+export function isTurnStartEnvSync(port: number, method: string, path: string): boolean {
+  if (!isTurnStartRequest(port, method, path)) return false;
+  const request = classifyRuntimeRequest(method, path);
+  return request.kind === 'turn-start' && request.verb !== 'summarize';
 }
 
 /** The body's `agent` field, or null. Pure + exported so it is unit-tested
@@ -152,6 +164,75 @@ export function requestedPromptAgent(
       agent?: unknown;
     };
     return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function stripKortixPrefix(id: string): string {
+  return id.startsWith('kortix/') ? id.slice('kortix/'.length) : id;
+}
+
+/**
+ * The bare managed-model id a turn-start body asks for, or null.
+ *
+ * NOT ONE WIRE SHAPE — OpenCode's own contract differs by endpoint (verified
+ * against `@opencode-ai/sdk`'s generated `types.gen.d.ts`, the real client
+ * this proxy's traffic is generated by):
+ *
+ *  - `POST /kortix/runtime/sessions/:id/prompt` — a flat STRING ref
+ *    (`"kortix/<id>"`). Every server-relayed delivery arrives as this
+ *    (`session-lifecycle/runtime-client.ts`'s `postPrompt`), so it is the
+ *    turn-start body the overwhelming majority of prompts have.
+ *  - `POST /session/:id/message` and `/prompt_async` (`SessionPromptData`) —
+ *    a NESTED `model: {providerID, modelID}`. A daemon without
+ *    `runtime.turns.v1` gets the relay in this shape.
+ *  - `POST /session/:id/summarize` (`SessionSummarizeData`) — FLAT top-level
+ *    `{providerID, modelID}`, no `model` wrapper. `prompt-dedupe.ts` documents
+ *    the identical shape for its own reasons.
+ *  - `POST /session/:id/command` (`SessionCommandData`) — `model` is a flat
+ *    STRING ref (`"kortix/<id>"` or a native `provider/model`), not an object.
+ *
+ * Only a `kortix`-provider request is in scope: BYOK/other-provider ids are
+ * not part of the managed lineup `turn-start-convergence.ts`'s model-catalog
+ * lane self-heals, and returning null for them is what makes that lane a
+ * no-op (no memo read, no network call) for the overwhelming majority of
+ * turns. The result is always the BARE id (the `kortix/` prefix stripped),
+ * matching what the control plane's managed lineup and the daemon's own
+ * provider map both key on.
+ */
+export function requestedPromptManagedModelId(
+  body: ArrayBuffer | undefined,
+  incomingHeaders: Headers,
+): string | null {
+  if (!body) return null;
+  const contentType = incomingHeaders.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/json')) return null;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+      providerID?: unknown;
+      modelID?: unknown;
+      model?: unknown;
+    };
+    // `/message` + `/prompt_async`: nested {providerID, modelID}.
+    if (parsed.model && typeof parsed.model === 'object' && !Array.isArray(parsed.model)) {
+      const nested = parsed.model as { providerID?: unknown; modelID?: unknown };
+      if (nested.providerID !== 'kortix') return null;
+      const modelID = typeof nested.modelID === 'string' ? nested.modelID.trim() : '';
+      return modelID ? stripKortixPrefix(modelID) : null;
+    }
+    // The Kortix prompt route and `/command`: a flat "kortix/<id>" (or native
+    // "provider/model") string.
+    if (typeof parsed.model === 'string') {
+      const ref = parsed.model.trim();
+      return ref.startsWith('kortix/') ? stripKortixPrefix(ref) : null;
+    }
+    // `/summarize`: flat top-level providerID/modelID, no `model` wrapper.
+    if (parsed.providerID === 'kortix') {
+      const modelID = typeof parsed.modelID === 'string' ? parsed.modelID.trim() : '';
+      return modelID ? stripKortixPrefix(modelID) : null;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -245,8 +326,9 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
  * none — and injecting it would test the fake instead of the rule.
  */
 export interface PrePromptEnvSyncDeps {
-  syncEnv: typeof syncSessionRuntimesEnvForPrompt;
+  syncEnv: typeof syncSandboxEnvForPrompt;
   remintGrant: typeof remintGrantForAgentSwitch;
+  bindTurnIdentity: typeof bindSessionTurnIdentity;
   scheduleSnapshot: typeof scheduleOpencodeSnapshotSync;
   generateTitle: typeof generateSessionTitleFromFirstPrompt;
 }
@@ -260,7 +342,7 @@ export interface PrePromptEnvSyncDeps {
  * — that control flow is load-bearing and unchanged by this extraction.
  *
  * Runs for `/prompt_async`, `/message` AND `/command` (see
- * `shouldSyncProjectEnvBeforeProxy`). The caller has already applied the
+ * `isTurnStartEnvSync`). The caller has already applied the
  * 'default'-sentinel body rewrite, so `body` here is what will be forwarded.
  */
 export async function runPrePromptEnvSync(
@@ -282,6 +364,10 @@ export async function runPrePromptEnvSync(
     serviceKey: string | null;
     /** The body's `agent`, read BEFORE the sentinel rewrite. */
     requestedAgent: string | null;
+    /** `userId` is the person who started this turn directly through the proxy
+     *  (not the queue, which binds in `continueSession`, and not the sandbox's
+     *  own token): the session token acts as them from this turn on. */
+    bindTurnIdentity: boolean;
     body: ArrayBuffer | undefined;
     incomingHeaders: Headers;
   },
@@ -314,34 +400,32 @@ export async function runPrePromptEnvSync(
       modelHint: prompt.model ?? undefined,
     });
   }
-  // `userId` is load-bearing, not decorative: without it the snapshot's daemon
-  // call carries no X-Kortix-User-Context header and the daemon answers 401,
-  // so the refresh silently never lands. See scheduleOpencodeSnapshotSync.
+  // `userId` is load-bearing, not decorative: without it the snapshot cannot
+  // pull the projection from the box, so a child spawned this turn never
+  // lands. See scheduleOpencodeSnapshotSync.
   deps.scheduleSnapshot({
     sessionId: record.sessionId,
     projectId: record.projectId,
-    externalId: record.externalId,
+    accountId: record.accountId,
     userId,
   });
-  // The delivery loop syncs before it forwards, for this box and this agent.
-  // Doing it again costs the prompt ~555 ms and changes nothing.
-  // See ENV_SYNCED_FOR_HEADER — and note remintGrant below still runs.
-  const alreadySynced = !needsPrePromptEnvSync(
-    input.incomingHeaders,
-    record.externalId,
-    requestedAgent,
-  );
-  // NAMED PARTS. The proxy times this whole function as `env-sync` and it came
-  // back 613 ms for a one-character reply, while the [env-sync] line inside it
-  // only accounts for ~91 ms. A number with 520 unexplained milliseconds in it
-  // is not a measurement.
-  const ppT0 = Date.now();
-  const ppLap: Record<string, number | boolean> = { skipped: alreadySynced };
-  let ppAt = ppT0;
-  const ppMark = (k: string) => { const now = Date.now(); ppLap[k] = now - ppAt; ppAt = now; };
   try {
-    if (!alreadySynced) {
-      await deps.syncEnv({
+    // NOT R2 material, on purpose — `command-env-sync.test.ts` ("Refused
+    // BEFORE the grant re-mint — one switch never half-applies") pins this:
+    // `remintGrant` re-points the session token's connector/CLI grant, a real
+    // DB mutation, and it must never even START when `syncEnv` (which pushes
+    // THIS agent's secret grant to the box) has failed — applying the grant
+    // re-mint for an agent whose env was never actually established on the
+    // sandbox is exactly the half-applied switch this ordering exists to
+    // prevent. A first pass at this file ran the two concurrently as a
+    // latency win; the invariant test caught it (`remintGrant` fired even
+    // though `syncEnv` threw) and it was reverted. Sequential is correct
+    // here, not merely unoptimized.
+    // The turn-identity bind is one DB statement with no dependency on the env
+    // push, so it runs alongside it instead of after it. A failed bind refuses
+    // the turn like a failed grant re-mint: no turn runs as the previous prompter.
+    await Promise.all([
+      deps.syncEnv({
         projectId: record.projectId,
         sessionId: record.sessionId,
         externalId: record.externalId,
@@ -352,8 +436,17 @@ export async function runPrePromptEnvSync(
         // The secret grant is resolved from the agent this prompt actually runs,
         // not the session's create-time column — see projects/lib/secret-grant.ts.
         requestedAgent,
-      });
-    }
+      }),
+      input.bindTurnIdentity && userId
+        ? deps
+            .bindTurnIdentity({ accountId: record.accountId, sessionId: record.sessionId, prompterUserId: userId })
+            .catch((err) => {
+              // The cause stays in the log; the client gets no SQL text.
+              console.warn(`[PREVIEW] Turn identity bind failed for ${sandboxId}: ${errorMessage(err, 'bind failed')}`);
+              throw new Error('could not bind the session to the person starting this turn');
+            })
+        : null,
+    ]);
     // The env sync above applied the running agent's secret grant, or refused it
     // when the optional strict lock is enabled. Re-point the token's
     // connector/CLI grant at the agent that will actually run — it was frozen at
@@ -361,28 +454,12 @@ export async function runPrePromptEnvSync(
     // the token row at call time. Synchronous, same-agent case included: a
     // manifest that narrowed the grant in the previous turn must be enforced
     // from the first call of this one (see `remintGrantForAgentSwitch`).
-    // NOT CONCURRENT, AND THAT IS LOAD-BEARING. `remintGrant` is 512 ms of the
-    // 695 ms this function costs a prompt (measured on dev 2026-09-09,
-    // `{"syncEnv":183,"remintGrant":512}` for a one-character reply), and both
-    // calls read the same project mirror, so running them together looked like
-    // ~175 ms of free latency.
-    //
-    // It is not free. `command-env-sync.test.ts` pins "refused BEFORE the grant
-    // re-mint — one switch never half-applies": when the env sync fails, the
-    // token's connector/CLI grant must NOT be re-pointed, or a refused agent
-    // switch leaves the box on the old env and the token on the new grant. The
-    // test caught the parallel version immediately. The order is the invariant.
-    ppMark('syncEnv');
     await deps.remintGrant({
       projectId: record.projectId,
       sessionId: record.sessionId,
       sessionAgent,
       requestedAgent,
     });
-    ppMark('remintGrant');
-    console.log(
-      `[pre-prompt] timing sandbox=${record.externalId} total=${Date.now() - ppT0}ms ${JSON.stringify(ppLap)}`,
-    );
   } catch (err) {
     // Fail closed on anything to do with the secret grant: refuse the prompt
     // rather than forwarding it against an env we can't vouch for.
@@ -394,7 +471,7 @@ export async function runPrePromptEnvSync(
       return grantResponse;
     }
     const message = errorMessage(err, 'project env sync failed');
-    if (isRetryableEnvSyncFailure(message)) {
+    if (isRetryableEnvSyncFailure(err)) {
       // Treat daemon/preview-transient env-sync failures like any other
       // sandbox-port reachability miss: retry/wake in the outer loop, then
       // return the friendly port-unreachable response if the sandbox never

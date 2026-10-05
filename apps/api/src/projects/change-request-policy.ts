@@ -9,6 +9,7 @@
  * sanctioned way to move commits onto another branch and the merge writes that
  * branch SERVER-side, never passing through the proxy at all.
  */
+import { parseManifestText, type ManifestFormat } from '@kortix/manifest-schema';
 
 /** Which branch does a change request opened from a session target? */
 export type CrBaseDecision =
@@ -52,21 +53,122 @@ export function resolveChangeRequestBase(input: {
 /**
  * May this caller merge this change request?
  *
- * A session may not merge the change request it opened. Without this an agent
- * refused a direct push to `main` could open a change request onto `main` and
- * merge it a second later, landing exactly the same commits with no human in
- * the loop — the ref policy defeated by one extra HTTP call.
+ * A session may merge its own change request only when its agent has an
+ * explicit merge grant. Without this, an ungoverned agent (null grant) could
+ * open and merge a change request to bypass the direct-push ref policy.
  *
- * Structural, not configured: it holds on ungoverned projects too, where the
- * per-agent grant is null and `assertAgentScope` is a no-op. An agent merging a
- * change request a PERSON opened stays allowed — that is a reviewed merge
- * someone asked for.
+ * A session merging a change request another actor opened still follows the
+ * ordinary role and agent-scope gates on the route.
  */
 export function refusesSelfMerge(input: {
   /** Session id of the acting token, or null for a person. */
   actingSessionId: string | null;
   /** The session the change request was opened from, if any. */
   originSessionId: string | null;
+  /** Whether the agent's manifest explicitly grants project.gitops.merge. */
+  hasExplicitMergeGrant: boolean;
 }): boolean {
-  return Boolean(input.actingSessionId) && input.actingSessionId === input.originSessionId;
+  return Boolean(input.actingSessionId)
+    && input.actingSessionId === input.originSessionId
+    && !input.hasExplicitMergeGrant;
+}
+
+/** Bind a session-opened CR to the authenticated session, not a body field. */
+export function resolveChangeRequestOrigin(input: {
+  actorIsSession: boolean;
+  actingSessionId: string | null;
+  requestedSessionId: string | null;
+}): { ok: true; originSessionId: string | null } | { ok: false; code: string; error: string } {
+  if (!input.actorIsSession) return { ok: true, originSessionId: input.requestedSessionId };
+  if (!input.actingSessionId) {
+    return { ok: false, code: 'CR_SESSION_ID_REQUIRED', error: 'Session identity is required.' };
+  }
+  if (input.requestedSessionId && input.requestedSessionId !== input.actingSessionId) {
+    return {
+      ok: false,
+      code: 'CR_SESSION_ID_MISMATCH',
+      error: 'session_id must match the authenticated session.',
+    };
+  }
+  return { ok: true, originSessionId: input.actingSessionId };
+}
+
+/**
+ * The permissions that writing these manifest sections takes on the direct
+ * routes: agent blocks and the default agent (`PUT /agents/:name/config|scope`,
+ * `PUT /default-agent`) and triggers (`POST|PATCH|DELETE /triggers`). A merge
+ * that lands such a change needs the same permission, for an agent as for a
+ * person. The Manager role lists them, and the role editor adds them to any
+ * role that gets `project.gitops.merge` (its catalog `implies`); an agent's
+ * `kortix_permissions` list is flat, so it must name them (or `all`).
+ */
+export const MANIFEST_WRITE_ACTIONS = [
+  'project.agent.write',
+  'project.trigger.create',
+  'project.trigger.update',
+  'project.trigger.delete',
+] as const;
+
+/**
+ * Which of `MANIFEST_WRITE_ACTIONS` moving the manifest from `baseText` to
+ * `headText` needs. Compared on parsed values, so formatting and key order do
+ * not count. `null` = no manifest on that side. A side that does not parse
+ * needs every one of them: the check fails closed.
+ */
+export function requiredManifestActions(
+  baseText: string | null,
+  headText: string | null,
+  format: ManifestFormat,
+  headFormat: ManifestFormat = format,
+): string[] {
+  const read = (text: string | null, fmt: ManifestFormat): Record<string, unknown> | null => {
+    if (text === null || !text.trim()) return {};
+    try {
+      return parseManifestText(text, fmt);
+    } catch {
+      return null;
+    }
+  };
+  const before = read(baseText, format);
+  const after = read(headText, headFormat);
+  if (before === null || after === null) return [...MANIFEST_WRITE_ACTIONS];
+  const required = new Set<string>();
+  if (
+    canonicalJson(before.agents) !== canonicalJson(after.agents) ||
+    canonicalJson(before.default_agent) !== canonicalJson(after.default_agent)
+  ) {
+    required.add('project.agent.write');
+  }
+  const was = triggersByKey(before.triggers);
+  const now = triggersByKey(after.triggers);
+  for (const [key, value] of now) {
+    if (!was.has(key)) required.add('project.trigger.create');
+    else if (was.get(key) !== value) required.add('project.trigger.update');
+  }
+  for (const key of was.keys()) if (!now.has(key)) required.add('project.trigger.delete');
+  return MANIFEST_WRITE_ACTIONS.filter((action) => required.has(action));
+}
+
+/** Triggers keyed by slug (a list of `{slug}` or a slug-keyed map), each as canonical JSON. */
+function triggersByKey(value: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      const slug = item && typeof item === 'object' ? (item as Record<string, unknown>).slug : undefined;
+      out.set(typeof slug === 'string' ? slug : `#${index}`, canonicalJson(item));
+    });
+  } else if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) out.set(key, canonicalJson(item));
+  }
+  return out;
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
 }

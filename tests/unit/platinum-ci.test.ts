@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { PREVIEW_HOST_RAM_MB } from '../src/core/preview-session-reaper';
 import {
   CI_DOCKER_COMPOSE_AMD64_SHA256,
   CI_DOCKER_COMPOSE_VERSION,
@@ -19,6 +20,7 @@ import {
   observePlatinumSandboxStart,
   observePlatinumWorker,
   platinumBaseTemplateName,
+  platinumTemplateCreateIdempotencyKey,
   platinumWorkerLaunchCommand,
   retryPlatinumOperation,
   selectReusablePlatinumTemplate,
@@ -42,10 +44,20 @@ describe('Platinum CI worker plan', () => {
     expect(platinumWarmReadinessTimeoutMs(undefined)).toBe(120_000);
   });
 
+  // Platinum refuses to start a sandbox with less RAM than its template was
+  // captured with: `ram_mb=8192 is below the template minimum (16384)`. #7955
+  // cut preview hosts to 8 GB and left the templates at 16 GB, so every NEW
+  // preview host failed on 2026-09-28 (a running host is reused and hid it).
+  test('the templates never ask for more RAM than a preview host gets', () => {
+    expect(buildPlatinumTemplateSpec({ lockHash, repository: 'kortix-ai/suna', cacheSha: sha }).default_ram_mb)
+      .toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
+    expect(buildPlatinumWarmTemplateRequest(lockHash).default_ram_mb).toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
+  });
+
   test('uses one content-addressed template for one lockfile', () => {
-    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v14');
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v14-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v11-bbbbbbbbbbbbbbbb-base');
+    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v15');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v15-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v13-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -55,7 +67,7 @@ describe('Platinum CI worker plan', () => {
     expect(spec.name).toBe(platinumBaseTemplateName(lockHash));
     expect(spec.base_image).toBe(PLATINUM_CI_NODE_IMAGE);
     expect(spec.default_cpu).toBe(8);
-    expect(spec.default_ram_mb).toBe(16_384);
+    expect(spec.default_ram_mb).toBe(PREVIEW_HOST_RAM_MB);
     expect(spec.default_disk_gb).toBe(50);
     expect(spec.steps[0]).toEqual({ op: 'kernel_modules', profile: 'container' });
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
@@ -84,7 +96,7 @@ describe('Platinum CI worker plan', () => {
         timeoutSec: 2_700,
       },
       default_cpu: 8,
-      default_ram_mb: 16_384,
+      default_ram_mb: PREVIEW_HOST_RAM_MB,
       default_disk_gb: 50,
     });
     for (const step of spec.steps) {
@@ -129,13 +141,15 @@ describe('Platinum CI worker plan', () => {
   });
 
   test('uses Platinum persistent restore but still treats every worker as disposable', () => {
-    expect(buildPlatinumWorkerRequest({
-      templateId: 'tpl_warm',
-      repository: 'kortix-ai/suna',
-      sha,
-      runId: '31295265205',
-      runAttempt: '4',
-    })).toEqual({
+    expect(
+      buildPlatinumWorkerRequest({
+        templateId: 'tpl_warm',
+        repository: 'kortix-ai/suna',
+        sha,
+        runId: '31295265205',
+        runAttempt: '4',
+      }),
+    ).toEqual({
       name: 'kortix-ci-31295265205-4',
       template: 'tpl_warm',
       type: 'persistent',
@@ -168,11 +182,13 @@ describe('Platinum CI worker plan', () => {
       }
       if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&offset=100')) {
         return Response.json({
-          rows: [{
-            id: 'exact',
-            name: 'kortix-ci-31289428402-1',
-            metadata: { owner: 'kortix-ci', run_id: '31289428402' },
-          }],
+          rows: [
+            {
+              id: 'exact',
+              name: 'kortix-ci-31289428402-1',
+              metadata: { owner: 'kortix-ci', run_id: '31289428402' },
+            },
+          ],
           total: 2,
           has_more: false,
         });
@@ -183,12 +199,14 @@ describe('Platinum CI worker plan', () => {
       return Response.json({ error: 'unexpected request' }, { status: 500 });
     });
 
-    await expect(cleanupPlatinumCiSandboxes({
-      apiUrl: 'https://api.platinum.dev',
-      apiKey: 'test',
-      runId: '31289428402',
-      runAttempt: '1',
-    })).resolves.toBe(1);
+    await expect(
+      cleanupPlatinumCiSandboxes({
+        apiUrl: 'https://api.platinum.dev',
+        apiKey: 'test',
+        runId: '31289428402',
+        runAttempt: '1',
+      }),
+    ).resolves.toBe(1);
     expect(requests).toEqual([
       'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=0',
       'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=100',
@@ -276,13 +294,41 @@ describe('Platinum CI worker plan', () => {
   });
 
   test('reuses the exact ready or building content-addressed template', () => {
-    expect(selectReusablePlatinumTemplate([
-      { id: 'failed', name: 'kortix-ci-v2-other', state: 'failed' },
-      { id: 'ready', name: 'kortix-ci-v2-target', state: 'ready' },
-    ], 'kortix-ci-v2-target')?.id).toBe('ready');
-    expect(selectReusablePlatinumTemplate([
-      { id: 'failed', name: 'kortix-ci-v2-target', state: 'failed' },
-    ], 'kortix-ci-v2-target')).toBeNull();
+    expect(
+      selectReusablePlatinumTemplate(
+        [
+          { id: 'failed', name: 'kortix-ci-v2-other', state: 'failed' },
+          { id: 'ready', name: 'kortix-ci-v2-target', state: 'ready' },
+        ],
+        'kortix-ci-v2-target',
+      )?.id,
+    ).toBe('ready');
+    expect(
+      selectReusablePlatinumTemplate(
+        [{ id: 'failed', name: 'kortix-ci-v2-target', state: 'failed' }],
+        'kortix-ci-v2-target',
+      ),
+    ).toBeNull();
+  });
+
+  test('changes the create idempotency key after a cached template fails', () => {
+    const name = 'kortix-ci-v11-lock-base';
+    expect(platinumTemplateCreateIdempotencyKey(name, [])).toBe(`kortix-ci-template-${name}`);
+
+    const firstFailure = platinumTemplateCreateIdempotencyKey(name, [
+      { id: 'tpl-failed-a', name, state: 'failed' },
+    ]);
+    const sameFailure = platinumTemplateCreateIdempotencyKey(name, [
+      { id: 'tpl-failed-a', name, state: 'FAILED' },
+    ]);
+    const nextFailure = platinumTemplateCreateIdempotencyKey(name, [
+      { id: 'tpl-failed-a', name, state: 'failed' },
+      { id: 'tpl-failed-b', name, state: 'failed' },
+    ]);
+
+    expect(firstFailure).toBe(sameFailure);
+    expect(firstFailure).toMatch(new RegExp(`^kortix-ci-template-${name}-retry-[0-9a-f]{12}$`));
+    expect(nextFailure).not.toBe(firstFailure);
   });
 
   test('retries only transient provider failures with bounded attempts', async () => {
@@ -291,7 +337,9 @@ describe('Platinum CI worker plan', () => {
     const result = await retryPlatinumOperation({
       label: 'test',
       attempts: 4,
-      sleep: async (delay) => { delays.push(delay); },
+      sleep: async (delay) => {
+        delays.push(delay);
+      },
       operation: async () => {
         calls += 1;
         if (calls < 3) throw new PlatinumHttpError('gateway timeout', 504);
@@ -304,9 +352,11 @@ describe('Platinum CI worker plan', () => {
     expect(isRetryablePlatinumError(new PlatinumHttpError('bad request', 400))).toBe(false);
     expect(isRetryablePlatinumError(new PlatinumHttpError('gateway timeout', 504))).toBe(true);
     expect(isRetryablePlatinumError(new SyntaxError('truncated JSON response'))).toBe(true);
-    expect(isRetryablePlatinumError(
-      new PlatinumHttpError('500: {"error":"The operation was aborted."}', 500),
-    )).toBe(true);
+    expect(
+      isRetryablePlatinumError(
+        new PlatinumHttpError('500: {"error":"The operation was aborted."}', 500),
+      ),
+    ).toBe(true);
     expect(isRetryablePlatinumError(new PlatinumHttpError('internal bug', 500))).toBe(false);
   });
 
@@ -321,7 +371,9 @@ describe('Platinum CI worker plan', () => {
       timeoutMs: 100,
       pollMs: 1,
       now: () => now,
-      sleep: async (delay) => { now += delay; },
+      sleep: async (delay) => {
+        now += delay;
+      },
       checkExitCode: async () => {
         statusChecks += 1;
         return statusChecks === 3 ? 0 : null;
@@ -334,8 +386,12 @@ describe('Platinum CI worker plan', () => {
         return { size: 4 };
       },
       readLog: async () => new TextEncoder().encode('done'),
-      write: (chunk) => { output.push(chunk); },
-      warn: (message) => { warnings.push(message); },
+      write: (chunk) => {
+        output.push(chunk);
+      },
+      warn: (message) => {
+        warnings.push(message);
+      },
     });
 
     expect(result).toBe(0);
@@ -356,14 +412,18 @@ describe('Platinum CI worker plan', () => {
       timeoutMs: 100,
       pollMs: 10,
       now: () => now,
-      sleep: async (delay) => { now += delay; },
+      sleep: async (delay) => {
+        now += delay;
+      },
       readSandbox: async () => {
         checks += 1;
         return checks === 1
           ? { id: 'worker', state: 'starting' }
           : { id: 'worker', state: 'running', via: 'restore' };
       },
-      write: (state) => { states.push(state); },
+      write: (state) => {
+        states.push(state);
+      },
     });
 
     expect(sandbox).toMatchObject({ id: 'worker', state: 'running', via: 'restore' });
@@ -372,28 +432,34 @@ describe('Platinum CI worker plan', () => {
   });
 
   test('allows 45 minutes for a capacity-blocked Platinum worker to start', async () => {
-    await expect(observePlatinumSandboxStart({
-      sandbox: { id: 'worker', state: 'provisioning' },
-      startedAt: 0,
-      now: () => 2_700_001,
-      sleep: async () => {},
-      readSandbox: async () => ({ id: 'worker', state: 'running' }),
-    })).rejects.toThrow('within 2700000ms');
+    await expect(
+      observePlatinumSandboxStart({
+        sandbox: { id: 'worker', state: 'provisioning' },
+        startedAt: 0,
+        now: () => 2_700_001,
+        sleep: async () => {},
+        readSandbox: async () => ({ id: 'worker', state: 'running' }),
+      }),
+    ).rejects.toThrow('within 2700000ms');
   });
 
   test('fails immediately when Platinum deletes a provisioning worker', async () => {
     let now = 0;
-    await expect(observePlatinumSandboxStart({
-      sandbox: { id: 'worker', state: 'provisioning' },
-      startedAt: 0,
-      timeoutMs: 100,
-      pollMs: 10,
-      now: () => now,
-      sleep: async (delay) => { now += delay; },
-      readSandbox: async () => {
-        throw new PlatinumHttpError('sandbox not found', 404);
-      },
-    })).rejects.toThrow('sandbox not found');
+    await expect(
+      observePlatinumSandboxStart({
+        sandbox: { id: 'worker', state: 'provisioning' },
+        startedAt: 0,
+        timeoutMs: 100,
+        pollMs: 10,
+        now: () => now,
+        sleep: async (delay) => {
+          now += delay;
+        },
+        readSandbox: async () => {
+          throw new PlatinumHttpError('sandbox not found', 404);
+        },
+      }),
+    ).rejects.toThrow('sandbox not found');
     expect(now).toBe(10);
   });
 

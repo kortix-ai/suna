@@ -113,6 +113,31 @@ const optFallbackPolicies = z
 //   - CONDITIONAL: required when a related feature is enabled
 //   - OPTIONAL:    graceful degradation or sane default if missing
 
+/**
+ * Morph direct is OFF by default (2026-09-27). Its deepseek-v4.1-flash endpoint
+ * ran at 78.9% uptime over 30 min on OpenRouter's public stats while our users
+ * waited 18-75 s per call: the gateway fails over only on errors and a 90 s
+ * header timeout, never on a slow first byte. Managed models are served by
+ * their OpenRouter pool instead. Re-enable per environment by setting
+ * MORPH_MANAGED_MODELS to a comma-separated list of managed model ids.
+ */
+export const MORPH_MANAGED_MODELS_DEFAULT = '';
+
+/**
+ * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention) is
+ * the FIRST candidate for these managed models; the OpenRouter pool is the
+ * fallback. At the prod request shape (~160k-token prompts, cached follow-up
+ * turns) Zen served 60 concurrent sessions (239/240, 404 req/min) while the
+ * OpenRouter GLM pool timed out or 429'd on 73/240 (2026-09-29). Zen serves
+ * the same model ids. Without OPENCODE_ZEN_API_KEY the list has no effect;
+ * an empty list is the kill switch.
+ */
+export const OPENCODE_ZEN_MANAGED_MODELS_DEFAULT = 'glm-5.3-flash';
+
+export function parseMorphManagedModels(value: string): string[] {
+  return value.split(',').map((id) => id.trim()).filter(Boolean);
+}
+
 const envSchema = z.object({
   // ── Core (required) ──────────────────────────────────────────────────────
   PORT: optInt(8008),
@@ -128,7 +153,7 @@ const envSchema = z.object({
   // Public origin for CLIENT-facing Supabase Storage URLs. On a self-host box
   // SUPABASE_URL is an internal Docker hostname (http://supabase-kong:8000) that
   // no browser/CLI/remote-sandbox can resolve; this is the box's public origin
-  // (e.g. https://essentia.kortix.cloud) used to rewrite signed URLs on the way
+  // (e.g. https://sampleco.kortix.cloud) used to rewrite signed URLs on the way
   // out (see toPublicStorageUrl). Optional: unset on managed cloud, where
   // SUPABASE_URL is already public and no rewrite is needed.
   SUPABASE_PUBLIC_URL: z
@@ -136,6 +161,36 @@ const envSchema = z.object({
     .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  // The Supabase anon key. PUBLIC by design (every browser gets it from the
+  // web runtime config); the API only hands it to clients through
+  // GET /v1/auth/client-config so a native app can sign in from the API URL.
+  SUPABASE_ANON_KEY: optStr,
+  // Sign-in options the web auth page renders (apps/web/src/lib/env-config.ts
+  // reads the same names). Unset = not reported (client-config returns null);
+  // set to '' = none.
+  KORTIX_PUBLIC_AUTH_METHODS: z.string().optional(),
+  KORTIX_PUBLIC_AUTH_PROVIDERS: z.string().optional(),
+  // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
+  // API checks an HS256 access token's signature and expiry locally instead of
+  // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
+  // HS256 tokens keep the per-request GoTrue round trip.
+  SUPABASE_JWT_SECRET: optStr,
+  // How long a GoTrue confirmation that an HS256 token's session is still live
+  // is reused, per token, per replica. This is the upper bound on how long a
+  // signed-out or deleted user's still-unexpired HS256 token keeps working on a
+  // replica that already confirmed it. 0 = confirm with GoTrue on every request
+  // (the pre-2026-09-23 behavior).
+  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(0),
+
+  // ── Prompt attachment uploads (optional, non-secret) ────────────────────
+  // `direct` (default): the client PUTs each file once to a signed Storage URL.
+  // `chunked`: the client PUTs bounded chunks through the API. Only for a
+  // deployment whose public edge drops large request bodies (the PR preview).
+  PROMPT_ATTACHMENT_UPLOAD_MODE: z.enum(['direct', 'chunked']).optional().default('direct'),
+  // Bytes per chunk. Read only in `chunked` mode.
+  PROMPT_ATTACHMENT_CHUNK_BYTES: optInt(65536).refine((bytes) => bytes > 0, {
+    message: 'PROMPT_ATTACHMENT_CHUNK_BYTES must be a positive integer',
+  }),
 
   // ── API Key Hashing (REQUIRED) ───────────────────────────────────────────
   API_KEY_SECRET: z.string().min(1, 'API_KEY_SECRET is required — API key hashing will fail'),
@@ -178,6 +233,14 @@ const envSchema = z.object({
    * off-sandbox token use`.
    */
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
+  /**
+   * Hosts a connector may call even though they resolve to a private address.
+   * Comma-separated hostnames or IP literals, matched exactly. Empty (the
+   * default) means every connector endpoint must be a public address. Set it
+   * on a self-hosted deployment whose connectors call internal APIs; the local
+   * test stack sets `127.0.0.1` for its loopback upstream.
+   */
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: optStr,
 
   // ── Streaming secret relay (POST /v1/projects/:id/secrets/:id/relay) ──────
   //
@@ -310,8 +373,7 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
-  // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
+  // Mandatory declared agents. GATED OFF platform-wide by default — flipping it on would
   // immediately reject every session/trigger on a pre-existing, agent-less project.
   // The intent is ON for NEW projects: since there's no per-project flag store yet,
   // a project is "subject" to enforcement when EITHER this is true OR its own
@@ -375,10 +437,18 @@ const envSchema = z.object({
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL: optUrl('https://openrouter.ai/api/v1'),
-  // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
-  // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
-  // — consolidated onto this one var.
+  // OpenRouter remains available for the router and project BYOK connections.
   OPENROUTER_API_KEY: optStr,
+  MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
+  MORPH_API_KEY: optStr,
+  // Managed model IDs that use Morph direct as their first candidate.
+  // An empty value disables Morph for every managed model — the default since
+  // 2026-09-27 (see MORPH_MANAGED_MODELS_DEFAULT).
+  MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
+  OPENCODE_ZEN_API_URL: optUrl('https://opencode.ai/zen/v1'),
+  OPENCODE_ZEN_API_KEY: optStr,
+  // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
+  OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -421,7 +491,7 @@ const envSchema = z.object({
   // fully supported first-class path (native OpenCode provider management:
   // provider keys injected into the sandbox env, native `provider/model`
   // refs, no gateway URL in the box) — the deliberate lever for deployments
-  // like Essentia that want their own keys end to end. The master switch
+  // like SampleCo that want their own keys end to end. The master switch
   // still wins — LLM_GATEWAY_ENABLED=false forces native OpenCode for
   // everyone regardless of this value — and an operator can set
   // LLM_GATEWAY_DEFAULT_ENABLED=false to opt a whole environment back to
@@ -434,14 +504,8 @@ const envSchema = z.object({
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  // Target when a DEFAULT-model request carries image input and the default
-  // model lacks vision. Empty = no reroute (the request goes to the default
-  // model as-is). gpt-5.6-luna ($0.20/$1.20) is the vision reroute target —
-  // the default platform model (deepseek-v4-flash) is text-only. Since
-  // 2026-08-27 glm-5.3-flash ($0.075/$0.25) is the cheaper vision-capable
-  // managed model; switching the reroute target is a quality decision that
-  // has not been made yet, so the default stays on Luna.
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('gpt-5.6-luna'),
+  // Image-capable managed model used when the default receives an image.
+  LLM_GATEWAY_VISION_MODEL: optStrDefault('deepseek-v4.1-flash'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,
   // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
@@ -453,7 +517,7 @@ const envSchema = z.object({
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4-flash'),
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4.1-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),
@@ -462,11 +526,6 @@ const envSchema = z.object({
   // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
   // gateway stays internal and sandboxes reach it via the API's public origin.
   LLM_GATEWAY_PROXY_TARGET: optStr,
-  // AWS Bedrock — the managed ("Kortix") models route here via a Bedrock API key
-  // (bearer). Region selects the bedrock-runtime endpoint; the key is an IAM
-  // service-specific credential for bedrock.amazonaws.com.
-  AWS_BEDROCK_REGION: optStr,
-  AWS_BEDROCK_API_KEY: optStr,
   OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
   // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
@@ -519,70 +578,10 @@ const envSchema = z.object({
   // on dev 2026-08-27). 0 = off. Pure accelerator: claim failure falls back to
   // an ordinary cold create.
   KORTIX_PI_WORKER_POOL_TARGET: optInt(0),
-
-  // Shared filesystems (docs: the "Google Drive between agents"). S3 is used
-  // only when bucket+region+key+secret are ALL set; anything less falls back to
-  // PostgreSQL, which every environment has — including self-host, which has no
-  // S3 at all. KORTIX_FS_S3_ENDPOINT points at R2/MinIO/any S3-compatible host.
-  KORTIX_FS_S3_BUCKET: optStr,
-  KORTIX_FS_S3_REGION: optStr,
-  KORTIX_FS_S3_ENDPOINT: optStr,
-  KORTIX_FS_S3_PREFIX: optStr,
-  KORTIX_FS_S3_ACCESS_KEY_ID: optStr,
-  KORTIX_FS_S3_SECRET_ACCESS_KEY: optStr,
   // Parked boxes older than this are reaped and replaced; also the Daytona
   // auto-stop backstop a parked box is created with, so an orphaned box
   // reclaims itself even if every API instance dies.
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
-  // Additive cold-boot accelerators that keep the standard runtime image and
-  // every tool: Platinum rootfs materialization and the native OpenCode binary
-  // prefetch. It never keeps a sandbox or an OpenCode process running.
-  //
-  // NOT gated here: the fresh-session Git fast path has its own switch,
-  // KORTIX_FAST_GIT_BOOT_ENABLED below (deploy-dev injects an explicit `false`
-  // for THIS flag on every push, so it can never double as that path's kill
-  // switch: deploy-dev.yml injects an explicit `false` for THIS flag on every
-  // push). The per-project warm-image system it also used to gate is gone.
-  KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
-
-  // ONE CELL SANDBOX PER PROJECT INSTEAD OF ONE PER SESSION.
-  //
-  // Measured on dev 2026-09-07: a cell sandbox costs 2443 ms before it can
-  // answer, while a session on one that already exists costs 194 ms cold and
-  // 2 ms warm. celld holds many named isolates in one node, each with its own
-  // SQLite, so the sandbox is the expensive part and not the isolation.
-  //
-  // OFF by default because a shared box changes what ending one session may do
-  // to another: the reaper stops a box when its session is finished and nothing
-  // yet teaches it that a host is shared. See cell-host-platinum.ts.
-  //
-  // AND BECAUSE THE WEB CLIENT CANNOT NAME ITS SESSION. It reaches the agent
-  // through the in-box path — `/v1/p/<box>/8000/global/event`, `/session`,
-  // `/agent`, `/command` — and those URLs carry no session. A cell resolves an
-  // unaddressed request from the node's KORTIX_SESSION_ID, which on a shared
-  // host is whoever CREATED the box. So the second session on a host is served
-  // the first one's event stream and conversation, or refused.
-  //
-  // Measured on dev 2026-09-09 against a real user session: the box declared
-  // CELLD_VAR_KORTIX_SESSION_ID=8e211e7c while 8f95b623 also lived on it, every
-  // in-box call answered 503, and the proxy read that as "port not ready" and
-  // retried four times per call. The browser fell back to polling `/turn`,
-  // `/prompts` and `/audit` every 7-15 s — 57, 39 and 39 requests in half an
-  // hour — which is what a user reports as the session being unusably slow.
-  //
-  // Turning it on again needs the client to name its session on those calls (a
-  // `?c=` the proxy already forwards), or those routes moved onto the API's own
-  // session-scoped equivalents, which exist and work:
-  // GET /v1/projects/:p/sessions/:s/events and .../open-bundle.
-  KORTIX_CELL_SHARED_HOST_ENABLED: optBoolUnset,
-  // THIS DEPLOYMENT RUNS PI. On an environment that exists to run the pi
-  // worker — pi-js.kortix.com is one — the per-project `pi_worker` flag is
-  // noise: every project there wants the cell. With this on, the flag defaults
-  // ON and a manifest that declares no `runtime:` resolves to pi instead of to
-  // its schema default. A manifest that says `runtime: opencode` out loud is
-  // still honoured, so a project can opt out; nothing here overrides an
-  // explicit choice. Default off, so kortix.com is untouched.
-  KORTIX_PI_WORKER_DEFAULT_ENABLED: optBoolUnset,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -597,6 +596,91 @@ const envSchema = z.object({
     .enum(['off', 'shadow', 'prefer', 'required'])
     .optional()
     .default('off'),
+  // ── Project snapshot archives (S3 config provider) ─────────────────────
+  // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
+  // instead of a Git clone. `git` (default) never attempts S3 and is the
+  // rollback mode. `prefer-s3` tries a prepared archive and falls back to the
+  // legacy Git path on any acquisition failure. `require-s3` fails closed —
+  // acceptance runs and controlled validation only. A project can override
+  // the platform mode with `projects.metadata.project_snapshot_mode` (canary).
+  // The producer worker runs on the leader whenever the bucket is configured,
+  // independent of the consumption mode, so archives can be prepared ahead of
+  // a rollout. Credentials: the explicit pair below, else the AWS SDK default
+  // chain (env, shared config, ECS/EKS task role). Endpoint + path style are
+  // the MinIO/S3-compatible overrides; leave them unset on AWS.
+  KORTIX_PROJECT_SNAPSHOT_MODE: z
+    .enum(['git', 'prefer-s3', 'require-s3'])
+    .optional()
+    .default('git'),
+  KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_REGION: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: optUrl(''),
+  /**
+   * Endpoint the SANDBOX reaches the store through, when it differs from the
+   * API's (MinIO behind a proxy/tunnel; self-host). Presigned download URLs
+   * are signed for this host. Unset = same as the endpoint above / AWS.
+   */
+  KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: optUrl(''),
+  KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: optBoolFalse,
+  // S3 Transfer Acceleration for the SANDBOX downloads only: presigned URLs
+  // target <bucket>.s3-accelerate.amazonaws.com, so a box's connection ends at
+  // the nearest AWS edge and the distance to the bucket rides AWS's backbone.
+  // Needs `transfer_acceleration = true` on the bucket (Terraform module).
+  // Ignored when a custom public endpoint (MinIO) is set. The API's own calls
+  // stay on the regional endpoint.
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: optBoolFalse,
+  /** Optional key prefix inside the bucket (e.g. `dev/`), namespacing environments that share one bucket. */
+  KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: optStr,
+  KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: optStr,
+  /** Lifetime of the presigned download URL handed to a sandbox. */
+  KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: optInt(900),
+  KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
+
+  // ── Audit archive (optional) ────────────────────────────────────────────
+  // Weeks of kortix.audit_events older than 90 days are exported to this S3 bucket (Object Lock,
+  // retained until the week's end + 365 days) and their PostgreSQL partition is dropped. Off
+  // unless AUDIT_ARCHIVE_ENABLED is true AND the bucket is set AND the bucket has Object Lock.
+  // Credentials: the AWS SDK default chain (the ECS task role). Endpoint + path style: MinIO.
+  AUDIT_ARCHIVE_ENABLED: optBoolFalse,
+  AUDIT_ARCHIVE_BUCKET: optStr,
+  AUDIT_ARCHIVE_REGION: optStr,
+  AUDIT_ARCHIVE_ENDPOINT: optUrl(''),
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: optBoolFalse,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: optStr,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: optStr,
+  /** Export read rate cap (rows per second): the job must not compete with ingest for IO. */
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: optInt(5_000),
+
+  // ── Config releases (optional) ──────────────────────────────────────────
+  // Config archives go through the API's ONE object store
+  // (src/object-store/s3.ts), same as project snapshots above, with their own
+  // bucket/prefix so that naming a config bucket never starts the snapshot
+  // producer (which the snapshot bucket setting gates).
+  //   dev/staging/prod: the environment's S3 bucket, credentials from the AWS
+  //     SDK default chain (the ECS task role). Point the prefix somewhere
+  //     distinct when the bucket is shared with project snapshots.
+  //   local/preview/self-host: Supabase Storage's S3 PROTOCOL endpoint
+  //     (`<supabase>/storage/v1/s3`) with the S3 protocol key pair, bucket
+  //     `kortix-config-releases` (created by database migration).
+  // Unset ⇒ validateEnv() warns and every archive request rebuilds from the
+  // Git mirror.
+  KORTIX_CONFIG_ARCHIVE_S3_BUCKET: optStr,
+  KORTIX_CONFIG_ARCHIVE_S3_REGION: optStr,
+  /** S3-compatible endpoint. Empty = the AWS regional endpoint. */
+  KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: optUrl(''),
+  KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: optBoolFalse,
+  KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: optStr,
+  KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: optStr,
+  /** Key prefix inside the bucket. Keeps config archives apart from snapshots. */
+  KORTIX_CONFIG_ARCHIVE_S3_PREFIX: optStr.transform((v) => (v.trim() ? v.trim() : 'config-releases')),
+  /** Archives kept per project. Older ones are deleted after a publish. */
+  KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT: optInt(20),
+  // The endpoint the SANDBOX reaches the store through, when it differs from
+  // the API's. Download URLs are presigned for this host and the archive route
+  // answers 302 to them. Unset = presign for the API's own endpoint, and the
+  // route streams the bytes when that host is loopback or private.
+  KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: optUrl(''),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -709,7 +793,20 @@ const envSchema = z.object({
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: optInt(120),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
+  // Per-credential bound on the LLM gateway mount (/v1/llm and its
+  // /v1/llm-gateway alias). Defence-in-depth at the boundary, not a quota:
+  // 600/min is ~10/s per credential, far above any real inference pattern.
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
+  // Proxies in front of the API that APPEND to X-Forwarded-For. The client is
+  // the entry this many places from the right; everything to its left was
+  // written by the client. Cloud: Cloudflare + ALB = 2. Self-host Caddy
+  // replaces an untrusted header with one entry, which the rule also reads
+  // correctly. See shared/client-ip.ts.
+  KORTIX_TRUSTED_PROXY_HOPS: optInt(2),
+  // Per client IP: Kortix bearer tokens that need a fresh hash (not seen by
+  // this process recently). A token already validated here is not counted.
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: optInt(300),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
@@ -761,6 +858,17 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Mobile push notifications through the Expo Push API
+  // (notifications/expo-push.ts). The access token is optional: Expo accepts
+  // unauthenticated sends unless the project enables enhanced push security.
+  EXPO_ACCESS_TOKEN: optStr,
+  // Kill switch for session push notifications. On by default; `0` or `false`
+  // stops every send. Device-token registration keeps working.
+  PUSH_NOTIFICATIONS_ENABLED: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -932,6 +1040,36 @@ function validateEnv(): z.infer<typeof envSchema> {
       });
   }
 
+  // ── Config archives → the ONE object store ──────────────────────────────
+  // A project that turns on `config_releases` publishes config archives
+  // through the API's one object store (src/object-store/s3.ts); there is no
+  // second store and no fallback path that quietly writes somewhere else.
+  // Unset ⇒ every archive request rebuilds from the Git mirror, every time,
+  // for every box. A warning, not an error: the store is a cache, and a
+  // container with a stale env block must still boot.
+  {
+    const bucket = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_BUCKET ?? '').trim();
+    const endpoint = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT ?? '').trim();
+    const keyId = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID ?? '').trim();
+    const keySecret = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY ?? '').trim();
+    if (!bucket) {
+      issues.push({
+        var: 'KORTIX_CONFIG_ARCHIVE_S3_BUCKET',
+        message:
+          'Not set — config archives are not cached; every box rebuilds them from the Git mirror (set the KORTIX_CONFIG_ARCHIVE_S3_* block)',
+        level: 'warn',
+      });
+    } else if (endpoint && !(keyId && keySecret)) {
+      // A custom S3 endpoint (Supabase Storage, MinIO) never has a task role.
+      issues.push({
+        var: 'KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID',
+        message:
+          'Required with KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT — an S3-compatible endpoint has no AWS task role to fall back to',
+        level: 'error',
+      });
+    }
+  }
+
   // ── Conditional: GitHub App configured → need its OAuth client too ─────
   // The App's own OAuth client is what proves "this GitHub user is you" when
   // linking an installation to an account (POST /projects/github/installations/
@@ -1008,17 +1146,16 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (!raw.OPENROUTER_API_KEY) {
     issues.push({
       var: 'OPENROUTER_API_KEY',
-      message: 'Not set — primary LLM route will fail with silent 401 errors',
+      message: 'Not set — the optional OpenRouter router is unavailable',
       level: 'warn',
     });
-    if (raw.LLM_GATEWAY_ENABLED === 'true') {
-      issues.push({
-        var: 'LLM_GATEWAY_ENABLED',
-        message:
-          'Gateway is on but OPENROUTER_API_KEY is unset — /v1/llm will 500 "openrouterApiKey missing"',
-        level: 'warn',
-      });
-    }
+  }
+  if (raw.LLM_GATEWAY_ENABLED === 'true' && raw.KORTIX_MANAGED_PROVIDER_ENABLED === 'true' && !raw.OPENROUTER_API_KEY) {
+    issues.push({
+      var: 'OPENROUTER_API_KEY',
+      message: 'Gateway is on but OPENROUTER_API_KEY is unset — Kortix managed models are unavailable',
+      level: 'warn',
+    });
   }
 
   // ── Print results ─────────────────────────────────────────────────────
@@ -1089,6 +1226,10 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean),
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
   KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
@@ -1108,6 +1249,13 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY,
+  KORTIX_PUBLIC_AUTH_METHODS: env.KORTIX_PUBLIC_AUTH_METHODS,
+  KORTIX_PUBLIC_AUTH_PROVIDERS: env.KORTIX_PUBLIC_AUTH_PROVIDERS,
+  SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
+  SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
+  PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
+  PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
@@ -1176,6 +1324,12 @@ export const config = {
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
+  MORPH_API_URL: env.MORPH_API_URL,
+  MORPH_API_KEY: env.MORPH_API_KEY,
+  MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
+  OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
+  OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
+  OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
@@ -1192,8 +1346,6 @@ export const config = {
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
-  AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
-  AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,
   OPENAI_API_KEY: env.OPENAI_API_KEY,
   XAI_API_URL: env.XAI_API_URL,
@@ -1219,18 +1371,38 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
-  KORTIX_FS_S3_BUCKET: env.KORTIX_FS_S3_BUCKET,
-  KORTIX_FS_S3_REGION: env.KORTIX_FS_S3_REGION,
-  KORTIX_FS_S3_ENDPOINT: env.KORTIX_FS_S3_ENDPOINT,
-  KORTIX_FS_S3_PREFIX: env.KORTIX_FS_S3_PREFIX,
-  KORTIX_FS_S3_ACCESS_KEY_ID: env.KORTIX_FS_S3_ACCESS_KEY_ID,
-  KORTIX_FS_S3_SECRET_ACCESS_KEY: env.KORTIX_FS_S3_SECRET_ACCESS_KEY,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
-  KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
-  KORTIX_CELL_SHARED_HOST_ENABLED: env.KORTIX_CELL_SHARED_HOST_ENABLED ?? false,
-  KORTIX_PI_WORKER_DEFAULT_ENABLED: env.KORTIX_PI_WORKER_DEFAULT_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
+  KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
+  KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
+  KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
+  KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,
+  KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT,
+  KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: env.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE,
+  KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: env.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX,
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
+  KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
+  KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  AUDIT_ARCHIVE_ENABLED: env.AUDIT_ARCHIVE_ENABLED,
+  AUDIT_ARCHIVE_BUCKET: env.AUDIT_ARCHIVE_BUCKET,
+  AUDIT_ARCHIVE_REGION: env.AUDIT_ARCHIVE_REGION,
+  AUDIT_ARCHIVE_ENDPOINT: env.AUDIT_ARCHIVE_ENDPOINT,
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: env.AUDIT_ARCHIVE_FORCE_PATH_STYLE,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: env.AUDIT_ARCHIVE_ACCESS_KEY_ID,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: env.AUDIT_ARCHIVE_SECRET_ACCESS_KEY,
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: env.AUDIT_ARCHIVE_ROWS_PER_SECOND,
+  KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
+  KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
+  KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,
+  KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: env.KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE,
+  KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: env.KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID,
+  KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: env.KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY,
+  KORTIX_CONFIG_ARCHIVE_S3_PREFIX: env.KORTIX_CONFIG_ARCHIVE_S3_PREFIX,
+  KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT: env.KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT,
+  KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: env.KORTIX_CONFIG_ARCHIVE_PUBLIC_URL,
+  KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: env.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
@@ -1327,7 +1499,10 @@ export const config = {
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: env.KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: env.KORTIX_LLM_GATEWAY_REQS_PER_MIN,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
+  KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
+  KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT:
     env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
@@ -1352,6 +1527,8 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
@@ -1413,15 +1590,11 @@ export const config = {
 
 // ─── Billing Markup Constants ────────────────────────────────────────────────
 //
-// Two pricing modes based on whose API key is used:
-//   * Kortix keys (user uses our keys):  1.2x provider cost (20% markup)
-//   * User's own keys (passthrough):     0.1x provider cost (10% platform fee)
+// Kortix-managed inference uses 1.2x provider cost (20% markup).
+// BYOK inference always has a zero Kortix charge.
 
 /** Markup when Kortix provides the API key. */
 export const KORTIX_MARKUP = 1.2;
-
-/** Platform fee when user provides their own API key. */
-export const PLATFORM_FEE_MARKUP = 0.1;
 
 // ─── Tool Pricing (Router) ──────────────────────────────────────────────────
 

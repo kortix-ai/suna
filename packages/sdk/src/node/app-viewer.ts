@@ -25,7 +25,7 @@
  * does not sign. With no secret configured it returns `null` — an App never
  * trusts an unverified identity.
  */
-import { createScopedKortix } from './server';
+import { createScopedKortix } from './scoped-client';
 import type { Kortix } from '../core/client/kortix';
 
 export const APP_VIEWER_HEADER = 'x-kortix-app-viewer';
@@ -131,7 +131,7 @@ export async function readAppViewer(
    * their group memberships silently missing — which reads to the App as "this
    * person is in no groups" and quietly removes whatever group grants gave
    * them. No viewer at all is the honest answer, and the one an App is already
-   * written to handle. (Found from the consumer side: essentia-dashboards
+   * written to handle. (Found from the consumer side: sampleco-dashboards
    * asserts that a signed payload which is not a statement about a person is
    * refused.)
    */
@@ -190,6 +190,5 @@ export async function createAppViewerKortix(
   return createScopedKortix({
     backendUrl: options.backendUrl,
     getToken: async () => token,
-    clientSource: 'web',
   });
 }

@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   isProductServerError,
   isTransientStatus,
   pollApiStatus,
+  requestWithTransientRetry,
   transientRetryBudgetMs,
   transientRetryDelayMs,
 } from '../e2e/helpers/http';
@@ -92,5 +93,48 @@ describe('polling a revoke past the IAM cache window', () => {
     // A genuine authz regression must still fail — only later.
     const result = await pollApiStatus(async () => 200, 403, { timeoutMs: 10, intervalMs: 1 });
     expect(result).toBe(200);
+  });
+});
+
+describe('GitHub rate limit on managed repository creation', () => {
+  // The API answers `503 GITHUB_RATE_LIMITED` + `Retry-After` when GitHub's
+  // secondary rate limit refuses repository creation. It returns BEFORE the
+  // project row exists, so repeating the POST cannot duplicate a write.
+  it('treats a GITHUB_RATE_LIMITED POST as transient', () => {
+    expect(isTransientStatus('POST', 503, '{"code":"GITHUB_RATE_LIMITED"}')).toBe(true);
+    // A plain 503 POST that reached the origin is still never repeated.
+    expect(isTransientStatus('POST', 503, '{"error":"boom"}')).toBe(false);
+  });
+
+  it('waits the server Retry-After, then succeeds, within the rate-limit budget', async () => {
+    vi.useFakeTimers();
+    const calls: number[] = [];
+    const responses = [
+      new Response('{"error":"secondary rate limit","code":"GITHUB_RATE_LIMITED"}', {
+        status: 503,
+        headers: { 'retry-after': '90' },
+      }),
+      new Response('{"project_id":"p"}', { status: 201 }),
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls.push(Date.now());
+      return responses.shift()!;
+    }));
+    // The ordinary transient budget is 60 s; a GitHub block outlasts it.
+    const pending = requestWithTransientRetry('https://x.test/v1/projects/provision', { method: 'POST' }, [], 60_000);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(result.status).toBe(201);
+    expect(calls[1]! - calls[0]!).toBeGreaterThanOrEqual(90_000);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('never waits on a rate limit locally (budget 0)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response('{"code":"GITHUB_RATE_LIMITED"}', { status: 503, headers: { 'retry-after': '90' } })));
+    const result = await requestWithTransientRetry('https://x.test/v1/projects/provision', { method: 'POST' }, [], 0);
+    expect(result.status).toBe(503);
+    vi.unstubAllGlobals();
   });
 });

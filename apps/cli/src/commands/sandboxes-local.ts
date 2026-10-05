@@ -32,6 +32,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
 import {
   DEFAULT_SANDBOX_SLUG,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
@@ -41,13 +42,12 @@ import {
   kortixToolchainLayer,
   normalizeUserDockerfileForSnapshot,
 } from '@kortix/shared/sandbox';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
-import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, fail, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { dockerAvailable, hostPlatform } from '../docker.ts';
 import { loadLocalManifest, resolveLocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
 
-export interface LocalBuildFlags {
+interface LocalBuildFlags {
   slug?: string;
   platform?: string;
   tag?: string;
@@ -83,7 +83,9 @@ export function resolveLocalTemplate(
 
   if (slugArg) {
     if (slugArg === DEFAULT_SANDBOX_SLUG) {
-      return { template: { slug: DEFAULT_SANDBOX_SLUG, name: 'Default', spec: {}, isDefault: true } };
+      return {
+        template: { slug: DEFAULT_SANDBOX_SLUG, name: 'Default', spec: {}, isDefault: true },
+      };
     }
     const hit = templates.find((t) => t.slug === slugArg);
     if (!hit) return { error: `No sandbox template "${slugArg}". ${listSlugs()}` };
@@ -114,7 +116,7 @@ export function resolveLocalTemplate(
  * template supplies its file's bytes, an `image:` template a one-line `FROM`
  * shim, and the platform default its own canned base.
  */
-export function userDockerfileForTemplate(
+function userDockerfileForTemplate(
   template: SandboxTemplate,
   projectRoot: string,
 ): { text: string; source: string } | { error: string } {
@@ -124,7 +126,9 @@ export function userDockerfileForTemplate(
   if (template.dockerfile) {
     const abs = resolve(projectRoot, template.dockerfile);
     if (!existsSync(abs)) {
-      return { error: `Template "${template.slug}" points at ${template.dockerfile}, which doesn't exist.` };
+      return {
+        error: `Template "${template.slug}" points at ${template.dockerfile}, which doesn't exist.`,
+      };
     }
     try {
       return { text: readFileSync(abs, 'utf8'), source: template.dockerfile };
@@ -132,7 +136,8 @@ export function userDockerfileForTemplate(
       return { error: `Can't read ${template.dockerfile}: ${(err as Error).message}` };
     }
   }
-  if (template.image) return { text: `FROM ${template.image}\n`, source: `(image: ${template.image})` };
+  if (template.image)
+    return { text: `FROM ${template.image}\n`, source: `(image: ${template.image})` };
   return { error: `Template "${template.slug}" declares neither a dockerfile nor an image.` };
 }
 
@@ -156,7 +161,11 @@ export function composeSandboxDockerfile(userDockerfile: string, opts: { layer: 
 }
 
 /** The exact `docker build` argv. Pure, so a test can assert the shape. */
-export function dockerBuildArgs(opts: { platform: string; tag: string; noCache: boolean }): string[] {
+export function dockerBuildArgs(opts: {
+  platform: string;
+  tag: string;
+  noCache: boolean;
+}): string[] {
   return [
     'build',
     '--platform',
@@ -207,8 +216,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
       json: opts.json,
     };
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   const manifest = resolveLocalManifest(process.cwd());
@@ -222,8 +230,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
   try {
     parsed = loadLocalManifest(process.cwd())?.data ?? null;
   } catch (err) {
-    process.stderr.write(`${status.err(`kortix.yaml doesn't parse: ${(err as Error).message}`)}\n`);
-    return 2;
+    return fail(`kortix.yaml doesn't parse: ${(err as Error).message}`);
   }
 
   const resolved = resolveLocalTemplate(
@@ -231,18 +238,12 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
     extractSandboxTemplates(parsed),
     extractSandboxDefault(parsed),
   );
-  if ('error' in resolved) {
-    process.stderr.write(`${status.err(resolved.error)}\n`);
-    return 2;
-  }
+  if ('error' in resolved) return fail(resolved.error);
   const template = resolved.template;
 
   const projectRoot = dirname(manifest.path);
   const user = userDockerfileForTemplate(template, projectRoot);
-  if ('error' in user) {
-    process.stderr.write(`${status.err(user.error)}\n`);
-    return 2;
-  }
+  if ('error' in user) return fail(user.error);
 
   const composed = composeSandboxDockerfile(user.text, { layer: flags.layer });
 
@@ -303,7 +304,9 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
         ? `  ${C.dim}Kortix toolchain layer ${C.reset}on${C.dim} (apt + pip floor + opencode + chromium) — expect ${C.reset}10–25 min${C.dim} cold, minutes warm.${C.reset}\n`
         : `  ${C.dim}Kortix toolchain layer ${C.reset}off${C.dim} (--no-layer) — your Dockerfile alone; this skips the floor most build failures come from.${C.reset}\n`,
     );
-    process.stdout.write(`  ${C.dim}Empty build context — your repo is not in it (same as the cloud).${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}Empty build context — your repo is not in it (same as the cloud).${C.reset}\n`,
+    );
     process.stdout.write(`  ${C.dim}Tag ${C.reset}${tag}\n\n`);
   }
 
@@ -311,12 +314,11 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
   // display, and the CLI has no spinner primitive to wrap it in.
   const args = dockerBuildArgs({ platform, tag, noCache: flags.noCache });
   const res = spawnSync('docker', args, { input: composed, stdio: ['pipe', 'inherit', 'inherit'] });
-  if (res.error) {
-    process.stderr.write(`${status.err(`Couldn't run docker: ${res.error.message}`)}\n`);
-    return 2;
-  }
+  if (res.error) return fail(`Couldn't run docker: ${res.error.message}`);
   if (res.status !== 0) {
-    process.stderr.write(`\n${status.err(`Build failed (docker exited ${res.status}) — see the output above.`)}\n`);
+    process.stderr.write(
+      `\n${status.err(`Build failed (docker exited ${res.status}) — see the output above.`)}\n`,
+    );
     process.stderr.write(
       `  ${C.dim}Read the composed Dockerfile:${C.reset} ${C.cyan}kortix sandboxes build --local ${template.slug} --print${C.reset}\n`,
     );
@@ -327,6 +329,8 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
   process.stdout.write(
     `  ${C.yellow}Not a guarantee the cloud build passes.${C.reset}${C.dim} The cloud stages Kortix's own artifacts and appends a layer this build skips${platform !== 'linux/amd64' ? `, and it builds linux/amd64` : ''}.${C.reset}\n`,
   );
-  process.stdout.write(`  ${C.dim}Run it: ${C.reset}${C.cyan}docker run --rm -it ${tag} bash${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}Run it: ${C.reset}${C.cyan}docker run --rm -it ${tag} bash${C.reset}\n`,
+  );
   return 0;
 }

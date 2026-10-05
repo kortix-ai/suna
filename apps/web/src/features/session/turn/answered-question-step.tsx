@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * An answered question as a row inside a burst.
  *
@@ -18,12 +19,13 @@
  */
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { cn } from '@/lib/utils';
+import { DisclosureContent } from '@/components/ui/disclosure';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
-import { CaretRightIcon, ChatTeardropTextIcon } from '@phosphor-icons/react';
+import { toToolView } from '@kortix/sdk';
+import { ChatTeardropTextIcon } from '@phosphor-icons/react';
 import { memo } from 'react';
-import { normalizeActivityToolName } from '../session-activity-groups';
+import { isQuestionTool } from '../session-activity-groups';
+import { ChainStepTrigger } from './chain-step-trigger';
 
 interface QuestionInput {
   question: string;
@@ -36,8 +38,7 @@ function readQuestions(part: ToolPart): QuestionInput[] {
 }
 
 function readAnswers(part: ToolPart): string[][] {
-  const metadata = (part.state as { metadata?: { answers?: unknown } } | undefined)?.metadata;
-  return Array.isArray(metadata?.answers) ? (metadata.answers as string[][]) : [];
+  return toToolView(part).answers ?? [];
 }
 
 /**
@@ -47,11 +48,12 @@ function readAnswers(part: ToolPart): string[][] {
  */
 export function isAnsweredQuestionPart(part: Part): part is ToolPart {
   if (!isToolPart(part)) return false;
-  if (normalizeActivityToolName(part.tool) !== 'question') return false;
+  if (!isQuestionTool(part.tool)) return false;
   return readQuestions(part).length > 0 && readAnswers(part).length > 0;
 }
 
 function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const questions = readQuestions(part);
   const answers = readAnswers(part);
   const answeredCount = answers.filter((a) => a.length > 0).length;
@@ -60,34 +62,24 @@ function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boole
     <>
       {/* One child only — DisclosureTrigger clones each child into its own
           clickable node, so a sibling caret would stack as a separate row. */}
-      <DisclosureTrigger>
-        <div
-          className={cn(
-            'text-foreground/80 hover:text-foreground',
-            'flex w-full cursor-pointer items-center gap-3',
-            'text-left text-sm leading-[1.5] transition-colors',
-          )}
-        >
-          <ChatTeardropTextIcon className="text-muted-foreground size-4 flex-none" />
-          <span className="font-medium">Questions</span>
-          <span className="text-muted-foreground tabular-nums">{answeredCount} answered</span>
-          <CaretRightIcon
-            className={cn(
-              'text-muted-foreground/40 size-3.5 flex-none',
-              'transition-transform group-data-[state=open]/step:rotate-90',
-            )}
-          />
-        </div>
-      </DisclosureTrigger>
+      <ChainStepTrigger
+        icon={<ChatTeardropTextIcon className="text-muted-foreground size-4 flex-none" />}
+        label={<span className="font-medium">{tI18nComplete.raw('text9a72221a2747')}</span>}
+        trailing={
+          <span className="text-muted-foreground tabular-nums">
+            {answeredCount} {tI18nComplete.raw('text68c780cd132a')}
+          </span>
+        }
+      />
       <DisclosureContent>
         <div className="mt-3 space-y-2 pl-7">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
-            const answerText = answer.join(', ') || 'No answer';
+            const answerText = answer.join(', ') || tI18nComplete.raw('text7e49c68db30e');
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
-                  <UnifiedMarkdown content={q.question} />
+                  <UnifiedMarkdown content={q.question} trust="agent" />
                 </div>
                 <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
               </div>

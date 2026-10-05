@@ -1,6 +1,7 @@
 export type RuntimeSnapshotBuildSource =
   | 'session-start'
   | 'project-create'
+  | 'project-repository-replacement'
   | 'cr-merge'
   | 'manual'
   | 'background'

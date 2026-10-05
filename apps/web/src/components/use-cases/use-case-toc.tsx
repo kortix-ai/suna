@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 
@@ -10,6 +11,7 @@ export type TocItem = { title: ReactNode; url: string; depth: number };
 /** "On this page" — the article's headings, with the current section highlighted
  * as you scroll. Ids come from the MDX headings (fumadocs slugs). */
 export function UseCaseToc({ items }: { items: TocItem[] }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [active, setActive] = useState('');
 
   useEffect(() => {
@@ -38,9 +40,11 @@ export function UseCaseToc({ items }: { items: TocItem[] }) {
   if (!items || items.length === 0) return null;
 
   return (
-    <nav aria-label="On this page">
-      <p className="text-foreground mb-3 text-sm font-medium">On this page</p>
-      <ul className="space-y-1 border-l border-border">
+    <nav aria-label={tI18nComplete.raw('textb5658fc8edda')}>
+      <p className="text-foreground mb-3 text-sm font-medium">
+        {tI18nComplete.raw('textb5658fc8edda')}
+      </p>
+      <ul className="border-border space-y-1 border-l">
         {items.map((item) => {
           const id = item.url.replace(/^#/, '');
           const isActive = active === id;
@@ -53,7 +57,7 @@ export function UseCaseToc({ items }: { items: TocItem[] }) {
                   '-ml-px block border-l py-1 text-sm leading-snug transition-colors',
                   isActive
                     ? 'border-foreground text-foreground font-medium'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                    : 'text-muted-foreground hover:text-foreground border-transparent',
                 )}
               >
                 {item.title}

@@ -1,7 +1,8 @@
+import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   type AgentGrantConfig,
   agentGrantActionLabel,
@@ -41,7 +42,7 @@ describe('SecretsView asks ONE question and writes the three pairs the model nam
     // Three values, one question. The five-mechanism list, its two-axis
     // confusion, and the SelectGroup headings it needed are all gone.
     expect(code).toContain(
-      'const exposureOptions = secretExposureOptions(egressEnabled || rowIsEnforced);',
+      'const exposureOptions = secretExposureOptions(egressEnabled || rowIsEnforced, tI18nComplete);',
     );
     expect(code).toContain('Can your code read this value?');
     expect(code).not.toContain('SelectGroup');
@@ -103,7 +104,7 @@ describe('SecretsView asks ONE question and writes the three pairs the model nam
     expect(code).not.toContain('available_sandbox_providers');
     expect(code).not.toContain('disabledReason');
     expect(code).toContain("useFeatureFlag(projectId, 'secrets_egress').enabled");
-    expect(code).toContain('secretExposureOptions(egressEnabled || rowIsEnforced)');
+    expect(code).toContain('secretExposureOptions(egressEnabled || rowIsEnforced, tI18nComplete)');
   });
 });
 
@@ -113,11 +114,15 @@ describe('SecretsView lets the system classify a new secret', () => {
     expect(code).toContain(
       'const classification = useMemo(() => classifyNewSecret({ key, value }), [key, value]);',
     );
-    expect(code).toContain('const exposure = pickedExposure ?? defaultSecretExposure(row, classification);');
+    expect(code).toContain(
+      'const exposure = pickedExposure ?? defaultSecretExposure(row, classification);',
+    );
   });
 
   test('an explicit pick latches and is never overwritten by the next keystroke', () => {
-    expect(code).toContain('const [pickedExposure, setPickedExposure] = useState<SecretExposure | null>(null);');
+    expect(code).toContain(
+      'const [pickedExposure, setPickedExposure] = useState<SecretExposure | null>(null);',
+    );
     expect(code).toContain('onValueChange={(next) => setPickedExposure(next as SecretExposure)}');
   });
 
@@ -129,7 +134,8 @@ describe('SecretsView lets the system classify a new secret', () => {
 
   test('both recognitions are stated on screen, not silently applied', () => {
     expect(code).toContain('{classification.signingNote}');
-    expect(code).toContain('{`Recognized: ${classification.modelProvider.label} key`}');
+    expect(code).toContain("tI18nComplete('text04b204d5535c'");
+    expect(code).toContain('value0: classification.modelProvider.label');
   });
 });
 
@@ -145,12 +151,12 @@ describe('SecretsView warns when no agent can receive the secret', () => {
     expect(code).toContain(
       'shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy, row.consumer) && (',
     );
-    expect(code).toContain('>No agent grant</span>');
+    expect(code).toContain("raw('text6404e0b5d78d')");
   });
 
   test('the dialog renders the notice and the kortix.yaml fix', () => {
     expect(code).toMatch(
-      /const grantNotice =\s*row &&\s*shouldWarnMissingAgentGrant\(row\.deliveryBlockedReason, strategy, nextConsumer\) &&\s*!grant\.isSuccess\s*\?\s*missingAgentGrantNotice\(row\.identifier\)\s*:\s*null;/,
+      /const grantNotice =\s*row &&\s*shouldWarnMissingAgentGrant\(row\.deliveryBlockedReason, strategy, nextConsumer\) &&\s*!grant\.isSuccess\s*\?\s*missingAgentGrantNotice\(row\.identifier, tI18nComplete\)\s*:\s*null;/,
     );
     expect(code).toContain('{grantNotice.body}');
     expect(code).toContain('{grantManifest}');
@@ -195,7 +201,7 @@ describe('SecretsView turns the missing-grant warning into a grant action', () =
   });
 
   test('the toast reports what the server did, not what was asked', () => {
-    expect(grantMutation).toContain('const outcome = agentGrantOutcome(result);');
+    expect(grantMutation).toContain('const outcome = agentGrantOutcome(result, tI18nComplete);');
     expect(grantMutation).toContain('infoToast(outcome.message, options)');
     expect(grantMutation).toContain('successToast(outcome.message, options)');
   });
@@ -236,10 +242,10 @@ describe('SecretsView reports a save that did not reach the running sessions', (
 
   test('a failed delivery sync warns instead of reporting a plain success', () => {
     expect(onSuccess).toContain(
-      'const syncWarning = secretDeliverySyncWarning(plan.finalIdentifier, result);',
+      'const syncWarning = secretDeliverySyncWarning(plan.finalIdentifier, result, tI18nComplete);',
     );
     expect(onSuccess).toMatch(
-      /if \(syncWarning\) \{\s*warningToast\(syncWarning\.message, \{ description: syncWarning\.description \}\);\s*\} else \{\s*successToast\(`Saved \$\{plan\.finalIdentifier\}`\);\s*\}/,
+      /if \(syncWarning\) \{\s*warningToast\(syncWarning\.message, \{ description: syncWarning\.description \}\);\s*\} else \{\s*successToast\(tI18nComplete\('textaf6b8a4894f0', \{ value0: plan\.finalIdentifier \}\)\);\s*\}/,
     );
   });
 
@@ -265,7 +271,7 @@ describe('SecretsView states the echo caveat in the enforced panel', () => {
     // One symptom now: the relay returns 200 with `[REDACTED]` in place of the
     // value, on every provider. A literal here would drift from the host the
     // user typed and stop naming one they can actually probe.
-    expect(code).toContain('const echoNotice = enforcedEchoNotice(hosts);');
+    expect(code).toContain('const echoNotice = enforcedEchoNotice(hosts, tI18nComplete);');
     expect(panel).toContain('title={echoNotice.title}');
     expect(panel).toContain('{echoNotice.body}');
     expect(panel).toContain('{echoNotice.probe}');
@@ -469,7 +475,7 @@ describe('agentGrantCandidateHint', () => {
 });
 
 describe('agentGrantConfirmation', () => {
-  const confirmation = agentGrantConfirmation('BOUNDARY_TEST', 'support');
+  const confirmation = agentGrantConfirmation('BOUNDARY_TEST', 'support', testUiTranslator);
 
   test('it names the agent and the secret', () => {
     expect(confirmation.title).toBe('Start governing agents in kortix.yaml');
@@ -488,36 +494,45 @@ describe('agentGrantConfirmation', () => {
 
 describe('agentGrantOutcome', () => {
   test('an unchanged manifest reports no change', () => {
-    const outcome = agentGrantOutcome({
-      identifier: 'BOUNDARY_TEST',
-      agent: 'support',
-      already_granted: true,
-      adopted_governance: false,
-    });
+    const outcome = agentGrantOutcome(
+      {
+        identifier: 'BOUNDARY_TEST',
+        agent: 'support',
+        already_granted: true,
+        adopted_governance: false,
+      },
+      testUiTranslator,
+    );
     expect(outcome.tone).toBe('info');
     expect(outcome.message).toBe('support already receives BOUNDARY_TEST');
     expect(outcome.description).toBe('kortix.yaml was not changed.');
   });
 
   test('a plain grant reports the commit', () => {
-    const outcome = agentGrantOutcome({
-      identifier: 'BOUNDARY_TEST',
-      agent: 'support',
-      already_granted: false,
-      adopted_governance: false,
-    });
+    const outcome = agentGrantOutcome(
+      {
+        identifier: 'BOUNDARY_TEST',
+        agent: 'support',
+        already_granted: false,
+        adopted_governance: false,
+      },
+      testUiTranslator,
+    );
     expect(outcome.tone).toBe('success');
     expect(outcome.message).toBe('Granted BOUNDARY_TEST to support');
     expect(outcome.description).toBeUndefined();
   });
 
   test('a grant that adopted governance says what changed for every other agent', () => {
-    const outcome = agentGrantOutcome({
-      identifier: 'BOUNDARY_TEST',
-      agent: 'support',
-      already_granted: false,
-      adopted_governance: true,
-    });
+    const outcome = agentGrantOutcome(
+      {
+        identifier: 'BOUNDARY_TEST',
+        agent: 'support',
+        already_granted: false,
+        adopted_governance: true,
+      },
+      testUiTranslator,
+    );
     expect(outcome.tone).toBe('success');
     expect(outcome.description).toContain('no project secrets');
   });

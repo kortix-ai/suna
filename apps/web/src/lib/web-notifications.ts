@@ -1,3 +1,5 @@
+import type { UiTranslator } from '@/i18n/translator';
+import { createElement } from 'react';
 /**
  * Web Notification utility module.
  *
@@ -13,15 +15,16 @@
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
  */
 
-import { useWebNotificationStore } from '@/stores/web-notification-store';
-import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import { toast } from '@/lib/toast';
+import { Button } from '@/components/ui/button';
+import { dismissToast, errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
-import { normalizeAppPathname } from '@kortix/sdk';
+import { projectSessionHref } from '@/lib/navigation/session-href';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
-import { projectSessionHref } from '@/lib/navigation/session-href';
+import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { useWebNotificationStore } from '@/stores/web-notification-store';
+import { normalizeAppPathname } from '@kortix/sdk';
 
 // ============================================================================
 // Types
@@ -43,6 +46,8 @@ export interface WebNotificationPayload {
   /** Project the session belongs to, captured when the notification is raised.
    *  Without it there is no routable URL — see `navigateToSession`. */
   projectId?: string | null;
+  /** Localized label for the in-app session action. */
+  actionLabel?: string;
   /** Optional click handler — by default focuses the window and navigates to session */
   onClick?: () => void;
 }
@@ -51,7 +56,10 @@ export interface WebNotificationPayload {
 // Preference key mapping
 // ============================================================================
 
-const TYPE_TO_PREF: Record<WebNotificationType, 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'> = {
+const TYPE_TO_PREF: Record<
+  WebNotificationType,
+  'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'
+> = {
   completion: 'onCompletion',
   error: 'onError',
   question: 'onQuestion',
@@ -65,48 +73,6 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   question: 'notification',
   permission: 'notification',
 };
-
-// ============================================================================
-// Sound
-// ============================================================================
-
-/**
- * Play a subtle notification sound.
- *
- * Uses the Web Audio API to generate a short ping tone.
- * Falls back silently if audio is not available.
- */
-function playNotificationPing() {
-  try {
-    if (typeof AudioContext === 'undefined' && typeof (window as any).webkitAudioContext === 'undefined') {
-      return;
-    }
-    const AudioCtx = AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.3);
-
-    // Clean up
-    osc.onended = () => {
-      osc.disconnect();
-      gain.disconnect();
-      ctx.close().catch(() => {});
-    };
-  } catch {
-    // Silently ignore — audio not critical
-  }
-}
 
 // ============================================================================
 // Core
@@ -299,36 +265,40 @@ export function sendWebNotification(
 // In-app toast fallback
 // ============================================================================
 
-const TOAST_TYPE_MAP: Record<WebNotificationType, 'info' | 'warning' | 'error' | 'success'> = {
-  completion: 'success',
-  error: 'error',
-  question: 'warning',
-  permission: 'warning',
+const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
+  completion: successToast,
+  error: errorToast,
+  question: warningToast,
+  permission: warningToast,
 };
 
 /**
- * Show an in-app toast notification via sonner.
+ * Show an in-app toast notification.
  * This always works regardless of OS notification settings.
  */
 function showInAppToast(payload: WebNotificationPayload) {
   try {
-    const variant = TOAST_TYPE_MAP[payload.type];
-    const toastFn = toast[variant] || toast;
-    toastFn(payload.title, {
+    const id = `web-notification-${payload.tag ?? Date.now()}`;
+    const { sessionId, actionLabel } = payload;
+    TOAST_BY_TYPE[payload.type](payload.title, {
+      id,
       description: payload.body,
       duration: 8000,
-      ...(payload.sessionId
-        ? {
-            action: {
-              label: 'Open',
-              onClick: () => {
-                navigateToSession(payload.sessionId!, payload.body, {
-                  projectId: payload.projectId,
-                });
+      button:
+        sessionId && actionLabel
+          ? createElement(
+              Button,
+              {
+                size: 'sm',
+                variant: 'outline',
+                onClick: () => {
+                  dismissToast(id);
+                  navigateToSession(sessionId, payload.body, { projectId: payload.projectId });
+                },
               },
-            },
-          }
-        : {}),
+              actionLabel,
+            )
+          : undefined,
     });
   } catch {
     // Silently ignore — toast not critical
@@ -342,17 +312,22 @@ function showInAppToast(payload: WebNotificationPayload) {
 /**
  * Notify that a session task has completed.
  */
-export function notifyTaskComplete(sessionId: string, sessionTitle?: string) {
+export function notifyTaskComplete(
+  sessionId: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
+) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 60)}"`
     : `Session ${sessionId.slice(0, 8)}`;
 
   sendWebNotification({
     type: 'completion',
-    title: 'Task Complete',
-    body: `${label} has finished.`,
+    title: tI18nComplete.raw('text107f1806b5d7'),
+    body: tI18nComplete('text27d628c8b427', { label }),
     tag: `completion:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });
@@ -364,7 +339,8 @@ export function notifyTaskComplete(sessionId: string, sessionTitle?: string) {
 export function notifySessionError(
   sessionId: string,
   errorTitle: string,
-  sessionTitle?: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 50)}"`
@@ -372,10 +348,11 @@ export function notifySessionError(
 
   sendWebNotification({
     type: 'error',
-    title: 'Session Error',
+    title: tI18nComplete.raw('textee584829f9e9'),
     body: `${label}: ${errorTitle}`,
     tag: `error:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });
@@ -387,7 +364,8 @@ export function notifySessionError(
 export function notifyQuestion(
   sessionId: string,
   questionText: string,
-  sessionTitle?: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 40)}"`
@@ -395,10 +373,11 @@ export function notifyQuestion(
 
   sendWebNotification({
     type: 'question',
-    title: 'Input Needed',
+    title: tI18nComplete.raw('text6e8c98a8560e'),
     body: `${label}: ${questionText.slice(0, 100)}`,
     tag: `question:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });
@@ -410,7 +389,8 @@ export function notifyQuestion(
 export function notifyPermissionRequest(
   sessionId: string,
   toolName: string,
-  sessionTitle?: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 40)}"`
@@ -418,10 +398,11 @@ export function notifyPermissionRequest(
 
   sendWebNotification({
     type: 'permission',
-    title: 'Permission Requested',
-    body: `${label} needs permission for: ${toolName}`,
+    title: tI18nComplete.raw('text7e497182c7ed'),
+    body: tI18nComplete('textbe9a4d2a34e1', { label, toolName }),
     tag: `permission:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });

@@ -10,6 +10,21 @@ interface InboxOrderRow {
 /**
  * The durable inbox's one FIFO key.
  *
+ * The lane comes first. Quick Queue ends the active response at its next tool
+ * boundary, so it runs before every Queue List entry, whatever their send
+ * order. Only an explicit `placement: 'composer'` joins the later lane: a first
+ * prompt, an automation row, or an older producer has no placement and keeps
+ * its send-order place ahead of Queue List.
+ *
+ * A row released from a Stop hold (`payload.releasedBatchId`) joins the later
+ * lane too, whatever its placement (KRTX-683). The batch is answered in ONE
+ * turn by its last row, and its re-minted ids ascend in delivery order, so it
+ * must be delivered in typing order: lane-first order sent a Quick Queue row
+ * typed LAST ahead of the Queue List rows typed before it, and the answer
+ * rendered under the wrong message. `placement` itself is left alone — the web
+ * draws each row (transcript bubble or Queue List strip) from it. The SQL
+ * `inboxLaneSql` and the JS `inboxLane` must stay in lockstep.
+ *
  * `created_at` is the order in which concurrent HTTP requests reached
  * PostgreSQL. `clientSentAtMs` is the order in which the user pressed Enter.
  * The API accepts that value only inside a ten-minute server-clock window, so
@@ -23,6 +38,17 @@ interface InboxOrderRow {
  * this tuple with `created_at` caused a prompt to render in one order, execute
  * in another, and reverse after transcript hydration.
  */
+export const inboxLaneSql = sql<number>`CASE
+  WHEN ${sessionLifecycleCommands.payload}->>'placement' = 'composer' THEN 1
+  WHEN ${sessionLifecycleCommands.payload} ? 'releasedBatchId' THEN 1
+  ELSE 0
+END`;
+
+export function inboxLane(row: Pick<InboxOrderRow, 'payload'>): 0 | 1 {
+  const payload = row.payload as { placement?: unknown; releasedBatchId?: unknown } | null;
+  return payload?.placement === 'composer' || payload?.releasedBatchId !== undefined ? 1 : 0;
+}
+
 export const inboxSentAtSql = sql<bigint>`CASE
   WHEN ${sessionLifecycleCommands.payload}->>'clientSentAtMs' ~ '^[0-9]{1,16}$'
     THEN (${sessionLifecycleCommands.payload}->>'clientSentAtMs')::bigint
@@ -42,6 +68,8 @@ export function inboxSendOrderMs(row: Pick<InboxOrderRow, 'payload' | 'createdAt
 }
 
 export function compareInboxSendOrder(left: InboxOrderRow, right: InboxOrderRow): number {
+  const lane = inboxLane(left) - inboxLane(right);
+  if (lane !== 0) return lane;
   const sent = inboxSendOrderMs(left) - inboxSendOrderMs(right);
   if (sent !== 0) return sent;
   const leftWire = (left.payload as { wireMessageId?: unknown } | null)?.wireMessageId;
@@ -57,6 +85,7 @@ export function compareInboxSendOrder(left: InboxOrderRow, right: InboxOrderRow)
 
 export function inboxOrderBy() {
   return [
+    asc(inboxLaneSql),
     asc(inboxSentAtSql),
     asc(inboxWireIdSql),
     asc(sessionLifecycleCommands.commandId),
@@ -66,13 +95,13 @@ export function inboxOrderBy() {
 /** Rows that precede `row` in the exact tuple used by {@link inboxOrderBy}. */
 export function inboxPrecedesRow(row: InboxOrderRow) {
   const wireMessageId = (row.payload as { wireMessageId?: unknown } | null)?.wireMessageId;
-  return sql`(${inboxSentAtSql}, ${inboxWireIdSql}, ${sessionLifecycleCommands.commandId})
-    < (${inboxSendOrderMs(row)}::bigint, ${typeof wireMessageId === 'string' ? wireMessageId : ''}::text COLLATE "C", ${row.commandId}::uuid)`;
+  return sql`(${inboxLaneSql}, ${inboxSentAtSql}, ${inboxWireIdSql}, ${sessionLifecycleCommands.commandId})
+    < (${inboxLane(row)}::int, ${inboxSendOrderMs(row)}::bigint, ${typeof wireMessageId === 'string' ? wireMessageId : ''}::text COLLATE "C", ${row.commandId}::uuid)`;
 }
 
 /** Rows that follow `row` in the exact tuple used by {@link inboxOrderBy}. */
 export function inboxFollowsRow(row: InboxOrderRow) {
   const wireMessageId = (row.payload as { wireMessageId?: unknown } | null)?.wireMessageId;
-  return sql`(${inboxSentAtSql}, ${inboxWireIdSql}, ${sessionLifecycleCommands.commandId})
-    > (${inboxSendOrderMs(row)}::bigint, ${typeof wireMessageId === 'string' ? wireMessageId : ''}::text COLLATE "C", ${row.commandId}::uuid)`;
+  return sql`(${inboxLaneSql}, ${inboxSentAtSql}, ${inboxWireIdSql}, ${sessionLifecycleCommands.commandId})
+    > (${inboxLane(row)}::int, ${inboxSendOrderMs(row)}::bigint, ${typeof wireMessageId === 'string' ? wireMessageId : ''}::text COLLATE "C", ${row.commandId}::uuid)`;
 }

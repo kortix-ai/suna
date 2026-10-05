@@ -1,18 +1,19 @@
 import { backendApi } from '../../http/api-client';
+import { canonicalizeRequiredConnectors } from './agent-connectors';
 import { unwrap } from './shared';
 
 // ── Full v2 agent-config editor (the "agent builder", agent-first spec §2.2,
 // redirected 2026-07-05 — "one home per concern") ──
 // Round-trips the agent's TWO homes as one wire shape: `block` (governance —
-// connectors/secrets/skills/kortix_cli/workspace/enabled, written to
+// connectors/secrets/skills/kortix_permissions/repository_access/enabled, written to
 // kortix.yaml) and `block.opencode` (OpenCode BEHAVIOR — mode/model/
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
-// the agent's own native `.kortix/opencode/agents/<name>.md` frontmatter +
+// the agent's own `.md` (`block.file`, e.g. `agents/<name>.md`) frontmatter +
 // body). The backend route is what merges the two files into this one
 // response/request shape — see apps/api/src/projects/routes/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
 // secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
-// server-side (project.customize.write). v2-only: `editable:false` on the GET
+// server-side (project.agent.write). v2-only: `editable:false` on the GET
 // means a v1 project — the UI degrades to the limited scope editor.
 
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
@@ -27,9 +28,9 @@ export type PermissionRule = PermissionAction | Record<string, PermissionAction>
 /** The OpenCode `permission` tree — a bare action, or a per-capability object. */
 export type PermissionConfig = PermissionAction | Record<string, PermissionRule | PermissionAction>;
 
-/** The OpenCode BEHAVIOR half — everything that lives in the agent's own
+/** The agent's BEHAVIOR half — everything that lives in the agent's own
  *  `.md` frontmatter (+ `prompt`, the file's BODY text, not a path). */
-export interface OpencodeAgentConfig {
+export interface RuntimeAgentConfig {
   description?: string;
   mode?: 'primary' | 'subagent' | 'all';
   model?: string;
@@ -46,11 +47,18 @@ export interface OpencodeAgentConfig {
   permission?: PermissionConfig;
 }
 
+/** @deprecated Renamed to `RuntimeAgentConfig`. Removed in the next major. */
+export type OpencodeAgentConfig = RuntimeAgentConfig;
+
 /** The full agent block on the wire — mirrors `AgentBlockV2` in
- *  @kortix/manifest-schema PLUS the merged `opencode` behavior half (a wire-
- *  only convenience; kortix.yaml itself never nests `opencode` — see the
- *  module doc above). */
+ *  @kortix/manifest-schema PLUS the merged `behavior` half (a wire-only
+ *  convenience; kortix.yaml itself never nests it — see the module doc
+ *  above). */
 export interface AgentConfigBlock {
+  /** Repo-relative path of the agent's `.md` (e.g. `agents/support.md`). The
+   *  server owns it: it records the path it read or wrote. Send back the value
+   *  a read returned; a different value is refused. */
+  file?: string;
   enabled?: boolean;
   sandbox?: string;
   connectors?: AgentGrantSetV2;
@@ -61,9 +69,28 @@ export interface AgentConfigBlock {
   connectors_personal?: string[];
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
+  /** Kortix Apps (by App slug) this agent may open when the App is
+   *  `restricted` or `private`. Deny by default. A `project`-mode App needs
+   *  only `project.app.read` in `kortix_permissions`. */
+  apps?: AgentGrantSetV2;
+  /** Kortix permissions: the `project.*` actions this agent may exercise. */
+  kortix_permissions?: AgentGrantSetV2;
+  /** @deprecated Renamed to `kortix_permissions`. Servers accept it as an input
+   *  alias and answer with `kortix_permissions`. Removed in the next major. */
   kortix_cli?: AgentGrantSetV2;
+  /** Whether new sessions can access the project repository. Defaults to true. */
+  repository_access?: boolean;
+  /** @deprecated Use repository_access. Legacy read requires an explicit choice. */
   workspace?: 'runtime' | 'read' | 'branch';
-  opencode?: OpencodeAgentConfig;
+  /** The agent's behavior half: its `.md` frontmatter, plus the body as `prompt`. */
+  behavior?: RuntimeAgentConfig;
+  /**
+   * @deprecated The pre-W4 name of `behavior`; servers answer both with one
+   * value. Send the behavior once, as `behavior`: a body that carries both
+   * with different values keeps the one that differs from the stored
+   * behavior, and two different edits are refused. Removed in the next major.
+   */
+  opencode?: RuntimeAgentConfig;
 }
 
 export interface AgentConfigResponse {
@@ -76,6 +103,10 @@ export interface AgentConfigResponse {
   default_agent: string | null;
   /** The declared block, or null for a v1 manifest / an agent not declared yet. */
   block: AgentConfigBlock | null;
+  /** The harness a new session of this project runs (`opencode` or `pi`). Absent from an older API. */
+  harness?: string;
+  /** The `behavior` settings that harness ignores (pi: `options`, `color`). Absent from an older API. */
+  ignored_settings?: string[];
 }
 
 export async function getAgentConfig(projectId: string, agentName: string) {
@@ -86,7 +117,7 @@ export async function getAgentConfig(projectId: string, agentName: string) {
   );
   return {
     ...response,
-    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+    block: response.block ? canonicalizeAgentBlock(response.block) : null,
   };
 }
 
@@ -95,7 +126,7 @@ export async function updateAgentConfig(
   agentName: string,
   block: AgentConfigBlock,
 ) {
-  const canonicalBlock = canonicalizeRequiredConnectors(block);
+  const canonicalBlock = canonicalizeAgentBlock(block, true);
   const response = unwrap(
     await backendApi.put<{
       ok: boolean;
@@ -106,40 +137,22 @@ export async function updateAgentConfig(
   );
   return {
     ...response,
-    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+    block: response.block ? canonicalizeAgentBlock(response.block) : null,
   };
 }
 
-function normalizeConnectorList(values: string[]): string[] {
-  const normalized: string[] = [];
-  for (const value of values) {
-    const slug = value.trim();
-    if (slug && !normalized.includes(slug)) normalized.push(slug);
+function canonicalizeAgentBlock(block: AgentConfigBlock, writing = false): AgentConfigBlock {
+  const next = canonicalizeRequiredConnectors(block);
+  if (next.workspace === undefined) return next;
+  const legacyAccess = next.workspace === 'branch';
+  if (next.repository_access !== undefined && next.repository_access !== legacyAccess) {
+    throw new Error('repository_access conflicts with workspace');
   }
-  return normalized;
-}
-
-function equalConnectorSets(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) return false;
-  const rightSet = new Set(right);
-  return left.every((slug) => rightSet.has(slug));
-}
-
-function canonicalizeRequiredConnectors(block: AgentConfigBlock): AgentConfigBlock {
-  const canonical = block.connectors_required
-    ? normalizeConnectorList(block.connectors_required)
-    : undefined;
-  const legacy = block.connectors_personal
-    ? normalizeConnectorList(block.connectors_personal)
-    : undefined;
-  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
-    throw new Error('connectors_personal must match connectors_required when both fields are present');
+  if (writing && next.workspace === 'read' && next.repository_access === undefined) {
+    throw new Error('Legacy read is unavailable. Set repository_access explicitly.');
   }
-  const next = { ...block };
-  delete next.connectors_personal;
-  if (canonical !== undefined || legacy !== undefined) {
-    next.connectors_required = canonical ?? legacy;
-  }
+  next.repository_access ??= legacyAccess;
+  delete next.workspace;
   return next;
 }
 

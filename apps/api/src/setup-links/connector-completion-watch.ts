@@ -25,6 +25,7 @@
  * cannot produce two prompts.
  */
 import { notifyConnectorSession } from '../connectors/notify-session';
+import type { ConnectorConnectOwner } from '../projects/lib/connection-access';
 
 const POLL_INTERVAL_MS = 5_000;
 const WINDOW_MS = 5 * 60_000;
@@ -39,6 +40,8 @@ export interface ConnectorCompletionWatch {
   /** Session that minted the link, or null when nobody is waiting on it. */
   sid: string | null;
   uid: string | null;
+  /** Whose account the link authorizes — must match /start so finalize resolves the same row. */
+  owner: ConnectorConnectOwner;
   /** Injected in tests. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -73,6 +76,7 @@ async function runWatch(input: ConnectorCompletionWatch, key: string): Promise<v
           input.slug,
           input.uid ?? '',
           undefined,
+          input.owner,
         );
         connected = result?.connected === true;
       } catch {

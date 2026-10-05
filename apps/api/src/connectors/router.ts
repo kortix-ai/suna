@@ -14,7 +14,7 @@
  *
  * Built against an injected `ConnectorRouterDeps` so the e2e drives the real HTTP
  * layer + real gateway logic with in-memory fakes (db + upstream) at the
- * boundary; production wires DB-backed deps (db-deps.ts). See docs/specs/connector.md.
+ * boundary; production wires DB-backed deps (db-deps.ts).
  */
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import {
@@ -26,15 +26,26 @@ import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
 import { featureDisabledBody } from '../feature-flags/gate';
 import type { FeatureFlagKey } from '../feature-flags/registry';
-import { agentMayUseConnector } from '../iam/agent-scope';
+import {
+  type ConnectorDenialReason,
+  connectorDenialBody,
+  principalMayUseConnector,
+} from './principal-access';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
-import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { auth, errors, json, makeOpenApiApp, lenientBody } from '../openapi';
+import { INVALID_SOURCE_ADDRESS_CODE } from '../marketplace/catalog';
+import { UnsafeEgressError } from '../shared/ssrf-guard';
+import {
+  type ConnectorConnectOwner,
+  parseConnectorConnectOwner,
+} from '../projects/lib/connection-access';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import {
   type ConnectorAttachmentStore,
   MAX_CONNECTOR_ATTACHMENT_BYTES,
   type StageConnectorAttachmentInput,
 } from './attachments';
+import { ATTACHMENT_REF_KEY } from './attachment-inline';
 import type { ConnectorAuthDiscovery } from './auth-discovery';
 import type { ConnectorAuth } from './call';
 import { type GatewayDeps, handleCall } from './gateway';
@@ -57,6 +68,14 @@ const CatalogActionSchema = z
     inputSchema: z.any().nullable(),
   })
   .openapi('ConnectorCatalogAction');
+const CatalogAccountSchema = z
+  .object({
+    connection_id: z.string(),
+    label: z.string(),
+    owner_type: z.string(),
+    is_default: z.boolean(),
+  })
+  .openapi('ConnectorCatalogAccount');
 const CatalogConnectorSchema = z
   .object({
     slug: z.string(),
@@ -66,6 +85,15 @@ const CatalogConnectorSchema = z
     iconUrl: z.string().nullable().optional(),
     status: z.string(),
     actions: z.array(CatalogActionSchema),
+    /**
+     * The accounts THIS principal may run this connector as, default first.
+     * One connector can hold the project's shared account and each member's
+     * own — this is what tells a caller (human or agent) that more than one
+     * exists, without a separate accounts call.
+     */
+    accounts: z.array(CatalogAccountSchema).optional(),
+    /** Label of the account an unnamed call resolves to, or null if none. */
+    default_account: z.string().nullable().optional(),
   })
   .openapi('ConnectorCatalogConnector');
 const ConnectorsResponseSchema = z
@@ -104,6 +132,16 @@ const CallResponseSchema = z
     risk: z.any().optional(),
     status: z.string().optional(),
     reason: z.any().optional(),
+    // Which connection ran the call, so the transcript can always answer
+    // "whose account sent that". Absent when the connector resolved no
+    // connection (a public/no-auth connector).
+    account: z
+      .object({
+        connection_id: z.string(),
+        label: z.string(),
+        owner_type: z.string(),
+      })
+      .optional(),
   })
   .passthrough()
   .openapi('ConnectorCallResult');
@@ -128,6 +166,8 @@ const AttachmentUploadResponseSchema = z
     content_id: z.string().optional(),
     size: z.number().int().positive(),
     expires_at: z.string(),
+    /** Paste into call args; the gateway swaps in the file server-side. */
+    ref: z.object({ $kortix_attachment: z.string().uuid() }),
   })
   .openapi('ConnectorAttachmentUpload');
 
@@ -136,11 +176,35 @@ export interface ConnectorPrincipal {
   accountId: string;
   projectId: string;
   sessionId: string | null;
+  /** The presented account token's id, when the caller used one. With
+   *  `sessionId`, identifies the agent session a Kortix App assertion names. */
+  tokenId?: string | null;
   /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
   /** Per-agent grant from the session token — restricts which connectors this
    *  agent may call. Null = no restriction (non-agent token). */
   agentGrant?: AgentGrant | null;
+  /** Canonical slugs of the channel connector(s) that CREATED this session
+   *  (Slack/Teams/email). Always reachable, whatever the grant says — see
+   *  `principalMayUseConnector`. Empty for a session no channel created. */
+  channelConnectorSlugs?: string[];
+  /**
+   * The account THIS call asked to run as (`account` in the call body), by
+   * connection label or id. A per-request value, carried on the principal
+   * because `makeGatewayDeps(p)` is the only seam between the route and
+   * connection resolution.
+   *
+   * Absent means "the default account", which is how every call behaved before
+   * a connector could hold more than one reachable account.
+   */
+  requestedConnectorAccount?: string | null;
+  /**
+   * Present when the caller is an agent session under the agent-principal
+   * model (a governed grant). Personal resources
+   * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
+   * a private session, never on `userId` (the launcher). Absent = legacy.
+   */
+  agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
 }
 
 interface CatalogAction {
@@ -149,6 +213,13 @@ interface CatalogAction {
   description: string;
   risk: string;
   inputSchema: Record<string, unknown> | null;
+}
+/** One account a connector can run as, as surfaced in the catalog. See {@link CatalogConnector.accounts}. */
+export interface CatalogAccount {
+  connection_id: string;
+  label: string;
+  owner_type: string;
+  is_default: boolean;
 }
 export interface CatalogConnector {
   slug: string;
@@ -159,6 +230,17 @@ export interface CatalogConnector {
   iconUrl?: string | null;
   status: string;
   actions: CatalogAction[];
+  /**
+   * The accounts THIS principal may run this connector as, default first.
+   *
+   * One connector can hold the project's shared account and each member's own
+   * — this is the signal that tells a caller (human or agent) more than one
+   * account exists, without a separate round trip. Undefined only for a fake
+   * `ConnectorRouterDeps.listCatalog` that predates this field.
+   */
+  accounts?: CatalogAccount[];
+  /** Label of the account an unnamed call resolves to, or null if none. */
+  default_account?: string | null;
 }
 
 export interface AdminConnectorView extends CatalogConnector {
@@ -170,6 +252,11 @@ export interface AdminConnectorView extends CatalogConnector {
   /** Credential storage mode. Always `shared` — `per_user` (each member's
    *  own) was removed 2026-07-05. */
   credentialMode: 'shared';
+  /**
+   * @deprecated A DERIVED SUMMARY, not a setting: `user` when this connector's
+   * live accounts are member-owned only, `project` otherwise. The PUT that used
+   * to set it is an inert no-op. Kept on the wire for older clients.
+   */
   authorizationStrategy: 'project' | 'user';
   /** Authentication shape required when a member adds a private credential. */
   requestAuthType: ConnectorAuth['type'];
@@ -214,6 +301,19 @@ export interface ProjectPoliciesViewResponse {
   errors: Array<{ path: string; error: string }>;
 }
 
+export interface ListCatalogOptions {
+  /** Restrict to one connector (by slug, canonicalized). */
+  slug?: string;
+  /**
+   * Include the full per-action JSON Schema. Default false — the dominant
+   * contributor to this route's payload (measured on prod: 439KB body,
+   * n=97 db queries for a bulk listing) and no bulk-listing caller reads it.
+   * `describeConnectorTool` (the one caller that needs a schema) passes
+   * `slug` + `true` together instead of fetching the whole catalog.
+   */
+  includeSchemas?: boolean;
+}
+
 export interface ConnectorRouterDeps {
   /** Gateway auth: resolve the connector token → principal, or null for 401. */
   resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null>;
@@ -226,7 +326,7 @@ export interface ConnectorRouterDeps {
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ConnectorPrincipal): GatewayDeps;
   /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
-  listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]>;
+  listCatalog(p: ConnectorPrincipal, options?: ListCatalogOptions): Promise<CatalogConnector[]>;
   /** Private raw-byte staging used by the MCP attachment transport. */
   attachmentStore?: ConnectorAttachmentStore;
   /**
@@ -254,7 +354,17 @@ export interface ConnectorRouterDeps {
     c: Context,
     projectId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
-  listConnectors(projectId: string): Promise<AdminConnectorView[]>;
+  /**
+   * `actingUserId`: whose own credentialed accounts count toward "connected"
+   * for a connector with no project-wide shared credential (connection-access.ts
+   * — reachability is per-row, not per-connector). Omit only when there is no
+   * human caller to ask.
+   */
+  listConnectors(
+    projectId: string,
+    actingUserId?: string | null,
+    options?: { includeSchemas?: boolean },
+  ): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
@@ -298,7 +408,7 @@ export interface ConnectorRouterDeps {
     slug: string,
     mode: 'shared',
   ): Promise<CrudOutcome>;
-  /** Set the exclusive connection owner model for this connector. */
+  /** @deprecated Retired. Its route is an inert 200 no-op and never calls this. */
   setAuthorizationStrategy?(
     projectId: string,
     accountId: string,
@@ -342,7 +452,6 @@ export interface ConnectorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
-    tunnelIds?: string[];
     auth: {
       type:
         | 'none'
@@ -382,6 +491,44 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
   ): Promise<{ connected: boolean; accountId?: string } | null>;
+  /**
+   * The accounts this principal may run a connector as, default first.
+   *
+   * One connector can hold the project's shared account and each member's own.
+   * The CLI prints this so a human can see what exists and name one; the call
+   * denial uses it to say which names WERE available when a named account did
+   * not match.
+   */
+  listConnectorAccounts?(input: {
+    projectId: string;
+    slug: string;
+    userId: string;
+    sessionId: string | null;
+    agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
+  }): Promise<
+    Array<{
+      connection_id: string;
+      label: string;
+      owner_type: string;
+      is_default: boolean;
+      /** Who the account was authorized as. `null` when unknown. */
+      connected_as?: string | null;
+    }>
+  >;
+  /**
+   * A hosted authorization link for a connector with no connected account, or
+   * null when this connector has no hosted page (a raw HTTP/MCP connector whose
+   * credential someone has to paste, or a deployment with no link provider).
+   *
+   * Used by the call denial so `connector_not_connected` carries its own
+   * remedy. Never throws: a link we cannot mint degrades to the plain hint.
+   */
+  mintConnectorConnectLink?(input: {
+    projectId: string;
+    slug: string;
+    userId: string;
+    sessionId: string | null;
+  }): Promise<string | null>;
   /** Provider-neutral connect routes. Prefer Composio when wired; keep Pipedream path intact. */
   connectorConnect?(
     projectId: string,
@@ -392,6 +539,8 @@ export interface ConnectorRouterDeps {
      *  the call. Persisted on the connection so finalize can tell that agent the
      *  account landed instead of it re-minting a link on its next run. */
     requestingSessionId?: string | null,
+    /** Whose account this authorization lands on. Defaults to `me`. */
+    owner?: ConnectorConnectOwner,
   ): Promise<{
     provider: string;
     token?: string;
@@ -408,7 +557,28 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
     selector?: { connectionId?: string; requestId?: string },
-  ): Promise<{ provider: string; connected: boolean; accountId?: string; connectionId?: string; isNoAuth?: boolean } | null>;
+    /** Whose account the matching connect started on. Defaults to `me`. */
+    owner?: ConnectorConnectOwner,
+  ): Promise<{
+    provider: string;
+    connected: boolean;
+    accountId?: string;
+    connectionId?: string;
+    isNoAuth?: boolean;
+    /** The authorized identity (an email, login, or name). `null` when unknown. */
+    connectedAs?: string | null;
+    /** The connection's label after finalize. A generic default becomes `connectedAs`. */
+    label?: string;
+  } | null>;
+  /**
+   * Does this caller hold the connections-manage capability on the project?
+   * The same gate the project-owned connection create (routes/connections.ts) asserts — connecting an
+   * account the WHOLE project can then use is administration, not self-service.
+   */
+  resolveConnectionsManager?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
   /** Connectors this session's agent asked a human to authorize, and whether
    *  each is connected yet. Drives the in-session Connect button. */
   listSessionConnectRequests?(
@@ -417,6 +587,12 @@ export interface ConnectorRouterDeps {
   ): Promise<Array<{ slug: string; app: string; provider: string; connected: boolean }>>;
   connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
   listConnectToolkits?(projectId: string, input: { q?: string; category?: string; cursor?: string; limit?: number }): Promise<unknown | null>;
+  /** The easy-connect browse page: a fixed top slice of each of the largest
+   *  categories, each with the category's true total. `null` = no provider. */
+  listConnectSections?(
+    projectId: string,
+    input: { perCategory?: number; maxCategories?: number },
+  ): Promise<unknown | null>;
   /**
    * Pipedream webhook: verify sig + finalize. `ok:false` = the signature (or the
    * connector/authorization binding the id names) did not check out → 401.
@@ -471,7 +647,13 @@ export interface ConnectorRouterDeps {
   listDiscoverConnectors?(input: {
     q?: string;
     cursor?: string;
+    /** A browse-section key from `listDiscoverSections`. */
+    category?: string;
+    limit?: number;
   }): Promise<unknown>;
+  /** The Discover browse page: Popular plus a fixed top slice of each
+   *  section, each with the section's true total across the whole catalogue. */
+  listDiscoverSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
   getDiscoverConnector?(id: string): Promise<unknown>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
@@ -605,15 +787,71 @@ async function readAttachmentBytes(c: Context): Promise<Uint8Array> {
  * falls through to the generic handler for a genuine server failure.
  */
 function allowedSourceValidationResponse(c: Context, err: unknown): Response | null {
-  if (!isAllowedSourceValidationError(err)) return null;
-  return c.json(
-    {
-      error: err.code,
-      code: err.code,
-      message: err.message,
-    },
-    400,
-  );
+  if (isAllowedSourceValidationError(err)) {
+    return c.json(
+      {
+        error: err.code,
+        code: err.code,
+        message: err.message,
+      },
+      400,
+    );
+  }
+  // Defense in depth: the DNS-resolving egress guard (`safeEgressFetch`) is
+  // the last check before a connector endpoint is fetched. Whatever it
+  // rejects — a non-https scheme the source guard admitted as shorthand, a
+  // public hostname that resolves to a private address — is still a property
+  // of the URL the user typed, never a server defect. Same 400 envelope.
+  if (err instanceof UnsafeEgressError) {
+    return c.json(
+      {
+        error: INVALID_SOURCE_ADDRESS_CODE,
+        code: INVALID_SOURCE_ADDRESS_CODE,
+        message: `Connector endpoint rejected: ${err.message}`,
+      },
+      400,
+    );
+  }
+  return null;
+}
+
+const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialReason>([
+  'connector_not_assigned',
+  'connector_not_found',
+  'connector_not_connected',
+  'connector_disabled',
+  'action_not_found',
+  'account_required',
+]);
+
+// GET .../catalog query params, shared by all three catalog-listing routes
+// below (token-scoped, legacy /connectors, and project-explicit).
+const CatalogQuerySchema = z.object({
+  /** Restrict the catalog to one connector by slug. */
+  slug: z.string().optional(),
+  /** `false` omits the full per-action JSON Schema. Absent means INCLUDE:
+   *  sandboxes run a baked CLI that reads schemas from these routes, so the
+   *  default must match what those clients were built against. */
+  include_schemas: z.enum(['true', 'false']).optional(),
+});
+
+const COMPUTER_REFUSALS = ['computer_access_pending', 'computer_access_denied', 'computer_access_off', 'computer_capability_not_approved'];
+const COMPUTER_STATES = ['computer_offline', 'computer_unpaired'];
+
+/**
+ * HTTP status for a gateway `error`. Computer states the owner controls are
+ * expected outcomes, not server faults: a 5xx invites a retry, and each retry
+ * re-prompts the owner. 500, not 502, for the rest (Cloudflare eats 502 bodies).
+ */
+export function connectorErrorHttpStatus(reason: string): 403 | 409 | 500 {
+  const kind = reason.split(':', 1)[0];
+  if (COMPUTER_REFUSALS.includes(kind)) return 403;
+  if (COMPUTER_STATES.includes(kind)) return 409;
+  return 500;
+}
+
+function isConnectorDenialReason(reason: string): reason is ConnectorDenialReason {
+  return CONNECTOR_DENIAL_REASONS.has(reason);
 }
 
 export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
@@ -623,7 +861,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   // from a scoped session token) and the project-EXPLICIT routes
   // (project from the path, any valid principal). One implementation, two faces.
   const catalogResponse = async (c: any, p: ConnectorPrincipal) => {
-    const connectors = await deps.listCatalog(p);
+    const query = c.req.valid('query') as { slug?: string; include_schemas?: 'true' | 'false' };
+    const slug = query.slug?.trim() || undefined;
+    const connectors = await deps.listCatalog(p, {
+      slug,
+      includeSchemas: query.include_schemas !== 'false',
+    });
     return c.json({ connectors });
   };
   const callResponse = async (c: any, p: ConnectorPrincipal) => {
@@ -669,10 +912,19 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         400,
       );
     }
-    // Per-agent connector assignment: a scoped agent may call only the connector
-    // connectors its kortix.yaml overlay lists. Default-deny otherwise.
-    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias(connectorSlug))) {
-      return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
+    // Per-agent connector assignment: a scoped agent may call only the
+    // connectors its kortix.yaml overlay lists — plus the channel that created
+    // the session (`principalMayUseConnector`). Default-deny otherwise, with a
+    // body that says WHICH agent, WHAT it holds and WHERE that came from.
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(connectorSlug))) {
+      return c.json(
+        connectorDenialBody('connector_not_assigned', {
+          principal: p,
+          connector: connectorSlug,
+          action: actionPath,
+        }),
+        403,
+      );
     }
     const args =
       body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
@@ -680,19 +932,39 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     // pending row, but it returns immediately and never polls that execution.
     const approvalExecutionId =
       typeof body?.approval_execution_id === 'string' ? body.approval_execution_id : null;
-    const result = await handleCall(deps.makeGatewayDeps(p), {
+    // WHICH account to run as. Accepted as `account` (label or connection id);
+    // `connection_id` is taken too because that is what the connections API
+    // calls the same value. Unset keeps the default account.
+    const requestedAccount =
+      typeof body?.account === 'string' && body.account.trim()
+        ? body.account.trim()
+        : typeof body?.connection_id === 'string' && body.connection_id.trim()
+          ? body.connection_id.trim()
+          : null;
+    const callPrincipal: ConnectorPrincipal = {
+      ...p,
+      requestedConnectorAccount: requestedAccount,
+    };
+    const result = await handleCall(deps.makeGatewayDeps(callPrincipal), {
       projectId: p.projectId,
       accountId: p.accountId,
       subject: p.subject,
       sessionId: p.sessionId,
+      actingTokenId: p.tokenId ?? null,
       connectorSlug,
       actionPath,
       args,
       approvalExecutionId,
+      approvalContext: typeof body?.approval_context === 'string' ? body.approval_context : null,
     });
     switch (result.status) {
       case 'ok':
-        return c.json({ ok: true, data: result.data, risk: result.risk });
+        return c.json({
+          ok: true,
+          data: result.data,
+          risk: result.risk,
+          ...(result.account ? { account: result.account } : {}),
+        });
       case 'pending_approval':
         return c.json(
           {
@@ -707,23 +979,84 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
           },
           202,
         );
-      case 'denied':
+      case 'denied': {
+        // The one denial with a remedy attached. Minting is best-effort: a
+        // connector with no hosted page still denies, just without a link.
+        const notConnected = result.reason === 'connector_not_connected';
+        const connectUrl =
+          notConnected && deps.mintConnectorConnectLink
+            ? await deps
+                .mintConnectorConnectLink({
+                  projectId: p.projectId,
+                  slug: connectorSlug,
+                  userId: p.userId,
+                  sessionId: p.sessionId,
+                })
+                .catch(() => null)
+            : null;
+        // Two cases want the account list: the caller NAMED one that didn't
+        // match (a plain unconnected call is a connect problem, not a
+        // wrong-name problem, and listing an empty set would just be noise),
+        // or the call is `account_required` — several accounts exist and the
+        // retry needs to know what to name.
+        const accountRequired = result.reason === 'account_required';
+        const availableAccounts =
+          ((notConnected && requestedAccount) || accountRequired) && deps.listConnectorAccounts
+            ? await deps
+                .listConnectorAccounts({
+                  projectId: p.projectId,
+                  slug: connectorSlug,
+                  userId: p.userId,
+                  sessionId: p.sessionId,
+                  agentPrincipal: p.agentPrincipal ?? null,
+                })
+                .then((rows) => rows.map((row) => row.label))
+                .catch(() => [])
+            : [];
         return c.json(
-          { ok: false, status: 'denied', reason: result.reason },
+          isConnectorDenialReason(result.reason)
+            ? connectorDenialBody(result.reason, {
+                principal: p,
+                connector: connectorSlug,
+                action: actionPath,
+                connectUrl,
+                requestedAccount,
+                availableAccounts,
+              })
+            : {
+                ok: false,
+                status: 'denied',
+                reason: result.reason,
+                ...(result.message ? { message: result.message } : {}),
+              },
           result.reason === 'connector_not_found' || result.reason === 'action_not_found'
             ? 404
             : 403,
         );
+      }
       default:
-        // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
-        return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
+        return c.json({ ok: false, status: 'error', reason: result.reason }, connectorErrorHttpStatus(result.reason));
     }
   };
 
   const attachmentResponse = async (c: Context, p: ConnectorPrincipal) => {
     if (!deps.attachmentStore) return featureNotSupportedResponse(c, 'connector_attachments');
-    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias('kortix_email'))) {
-      return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
+    // The connector the file is staged for. Clients published before this header
+    // existed send none; those uploads are for the native Email channel.
+    let target: string;
+    try {
+      target = decodedAttachmentHeader(c, 'X-Kortix-Attachment-Connector') || 'kortix_email';
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    if (target.length > 128) {
+      return c.json({ error: 'X-Kortix-Attachment-Connector must not exceed 128 characters' }, 400);
+    }
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(target))) {
+      return c.json(
+        connectorDenialBody('connector_not_assigned', { principal: p, connector: target }),
+        403,
+      );
     }
     let metadata: Omit<StageConnectorAttachmentInput, 'bytes'>;
     try {
@@ -745,18 +1078,16 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       throw error;
     }
     try {
-      return c.json(
-        await deps.attachmentStore.stage(
-          {
-            accountId: p.accountId,
-            projectId: p.projectId,
-            sessionId: p.sessionId,
-            userId: p.userId,
-          },
-          { ...metadata, bytes },
-        ),
-        201,
+      const staged = await deps.attachmentStore.stage(
+        {
+          accountId: p.accountId,
+          projectId: p.projectId,
+          sessionId: p.sessionId,
+          userId: p.userId,
+        },
+        { ...metadata, bytes },
       );
+      return c.json({ ...staged, ref: { [ATTACHMENT_REF_KEY]: staged.attachment_id } }, 201);
     } catch (error) {
       const message = (error as Error).message || 'attachment_upload_failed';
       if (message.includes('25 MiB')) return c.json({ error: message }, 413);
@@ -780,6 +1111,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'List the connectors the connector principal can use',
       ...auth,
+      request: { query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
@@ -802,6 +1134,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       summary: 'List usable connectors through the legacy route',
       deprecated: true,
       ...auth,
+      request: { query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
@@ -820,6 +1153,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       path: '/attachments',
       tags: ['connector'],
       summary: 'Stage a private attachment from raw bytes',
+      description:
+        'Send the raw file bytes as the body with `Content-Type`, `X-Kortix-Attachment-Filename`, and optional `X-Kortix-Attachment-Disposition` / `X-Kortix-Attachment-Content-Id`. `X-Kortix-Attachment-Connector` names the connector the file is for; the caller must be able to use it. Without it, the file is for the native Email channel.',
       ...auth,
       responses: {
         201: json(AttachmentUploadResponseSchema, 'Opaque attachment handle'),
@@ -848,7 +1183,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       ...auth,
       request: {
         params: ProjectParam,
-        query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
+        query: z.object({
+          q: z.string().optional(),
+          cursor: z.string().optional(),
+          /** A browse-section key from `/discover/sections`. */
+          category: z.string().optional(),
+          limit: z.coerce.number().int().positive().max(96).optional(),
+        }),
       },
       responses: {
         200: json(OpaqueSchema, 'Direct connector catalogue page'),
@@ -864,11 +1205,60 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         return c.json(featureDisabledBody('connectors_api_discover'), 403);
       }
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
+      const limit = Number(c.req.query('limit'));
       try {
         return c.json(
           await deps.listDiscoverConnectors({
             q: c.req.query('q') || undefined,
             cursor: c.req.query('cursor') || undefined,
+            category: c.req.query('category') || undefined,
+            ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+          }),
+        );
+      } catch (error) {
+        return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
+      }
+    },
+  );
+
+  // ── Admin: the Discover browse page, one request ─────────────────────────
+  // Sections grouped from the complete integrations.sh index, so each heading
+  // states its section's real size instead of how many cards one page held.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/discover/sections',
+      tags: ['connector'],
+      summary: 'Browse the integrations.sh catalogue by category',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          perCategory: z.coerce.number().int().positive().max(24).optional(),
+          maxCategories: z.coerce.number().int().positive().max(40).optional(),
+        }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Direct connector catalogue sections'),
+        ...errors(403, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      // Flag gate AFTER authz: a non-admin still learns nothing.
+      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+        return c.json(featureDisabledBody('connectors_api_discover'), 403);
+      }
+      if (!deps.listDiscoverSections) return c.json({ error: 'catalogue unavailable' }, 502);
+      const perCategory = Number(c.req.query('perCategory'));
+      const maxCategories = Number(c.req.query('maxCategories'));
+      try {
+        return c.json(
+          await deps.listDiscoverSections({
+            ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
+            ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
           }),
         );
       } catch (error) {
@@ -883,6 +1273,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       path: '/projects/{projectId}/attachments',
       tags: ['connector'],
       summary: 'Stage a private attachment in a project from raw bytes',
+      description:
+        'Send the raw file bytes as the body with `Content-Type`, `X-Kortix-Attachment-Filename`, and optional `X-Kortix-Attachment-Disposition` / `X-Kortix-Attachment-Content-Id`. `X-Kortix-Attachment-Connector` names the connector the file is for; the caller must be able to use it. Without it, the file is for the native Email channel.',
       ...auth,
       request: { params: ProjectParam },
       responses: {
@@ -957,6 +1349,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 connector: z.string().optional(),
                 action: z.string().optional(),
                 args: z.record(z.string(), z.any()).optional(),
+                /** Which account to run as — a connection label or id. Omit for
+                 *  the default. See GET .../connectors/{slug}/accounts. */
+                account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },
@@ -998,7 +1397,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'List the connectors usable in a project (any valid principal)',
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: ProjectParam, query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(403),
@@ -1029,6 +1428,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 connector: z.string().optional(),
                 action: z.string().optional(),
                 args: z.record(z.string(), z.any()).optional(),
+                /** Which account to run as — a connection label or id. Omit for
+                 *  the default. See GET .../connectors/{slug}/accounts. */
+                account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },
@@ -1051,6 +1457,62 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     },
   );
 
+  // ── The accounts a call may run as ───────────────────────────────────────
+  //
+  // One connector can hold the project's shared account and each member's own.
+  // Resolution picks the first entitled one unless a call names another, so this
+  // is how a human (or an agent) finds out WHICH names `--account` accepts.
+  // Same principal as `/call`, so what it lists is exactly what a call can use —
+  // never an account the gateway would then refuse.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/accounts',
+      tags: ['connector'],
+      summary: 'Accounts this principal may run a connector as',
+      ...auth,
+      request: {
+        params: ProjectParam.extend({ slug: z.string().min(1) }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Accounts, default first'),
+        ...errors(403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const p = await deps.resolveProjectPrincipal(c, projectId);
+      if (!p) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listConnectorAccounts) {
+        return featureNotSupportedResponse(c, 'connector_accounts');
+      }
+      if (!principalMayUseConnector(p, canonicalConnectorAlias(slug))) {
+        return c.json(
+          connectorDenialBody('connector_not_assigned', { principal: p, connector: slug }),
+          403,
+        );
+      }
+      const accounts = await deps.listConnectorAccounts({
+        projectId,
+        slug,
+        userId: p.userId,
+        sessionId: p.sessionId,
+        agentPrincipal: p.agentPrincipal ?? null,
+      });
+      // The pinned account, when exactly one is pinned — the SAME "is a
+      // default reachable" question an unnamed `/call` answers. Two or more
+      // pinned accounts (a member's own pin + the project's, both entitled)
+      // is not reported as a single default here either.
+      const pinned = accounts.filter((account) => account.is_default);
+      return c.json({
+        connector: slug,
+        default_account: pinned.length === 1 ? pinned[0]!.label : null,
+        accounts,
+      });
+    },
+  );
+
   // ── Admin: list connectors for the dashboard ─────────────────────────────
   app.openapi(
     createRoute({
@@ -1059,7 +1521,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: "List a project's connectors with status (dashboard)",
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: ProjectParam, query: CatalogQuerySchema.pick({ include_schemas: true }) },
       responses: {
         200: json(AdminConnectorsResponseSchema, 'Connectors with admin status'),
         ...errors(403),
@@ -1077,7 +1539,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const canReadSecretIdentifiers = deps.resolveSecretReader
         ? Boolean(await deps.resolveSecretReader(c, projectId))
         : false;
-      const connectors = await deps.listConnectors(projectId);
+      const query = c.req.valid('query') as { include_schemas?: 'true' | 'false' };
+      // Whose own credentialed accounts count as "connected" for a connector
+      // with no project-wide shared credential — see listConnectors' doc.
+      const connectors = await deps.listConnectors(projectId, reader.userId, {
+        includeSchemas: query.include_schemas !== 'false',
+      });
       return c.json({
         connectors: canReadSecretIdentifiers
           ? connectors
@@ -1138,10 +1605,26 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       path: '/projects/{projectId}/connectors',
       tags: ['connector'],
       summary: 'Create or update a connector in kortix.yaml',
+      description:
+        'Add or update a connector. It is committed to kortix.yaml. Fields depend on provider.',
       ...auth,
       request: {
         params: ProjectParam,
-        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            slug: z.string().openapi({ description: 'Connector slug (its name in kortix.yaml).' }),
+            provider: z.enum(['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel']).openapi({ description: 'Connector provider. Use composio for managed SaaS apps.' }),
+            name: z.string().optional().openapi({ description: 'Display name.' }),
+            app: z.string().optional().openapi({ description: 'Composio app slug, e.g. gmail (composio providers).' }),
+            url: z.string().optional().openapi({ description: 'MCP server URL (provider mcp).' }),
+            transport: z.enum(['http', 'sse']).optional().openapi({ description: 'MCP transport (provider mcp).' }),
+            endpoint: z.string().optional().openapi({ description: 'GraphQL endpoint (provider graphql).' }),
+            baseUrl: z.string().optional().openapi({ description: 'Base URL (provider http or openapi).' }),
+            spec: z.string().optional().openapi({ description: 'OpenAPI or Postman spec URL.' }),
+            authorization_strategy: z.string().optional().openapi({ description: 'Who owns connections: project or user.' }),
+            auth: z.record(z.string(), z.any()).optional().openapi({ description: 'Auth scheme: { type: none|bearer|basic|custom|api_key|..., in, name, prefix }. Discovered when omitted.' }),
+            headers: z.record(z.string(), z.any()).optional().openapi({ description: 'Static request headers (plaintext, committed to kortix.yaml).' }),
+            create_only: z.boolean().optional().openapi({ description: 'Refuse to update an existing slug.' }),
+          }) } } },
       },
       responses: {
         200: json(CrudOkSchema, 'Created/updated'),
@@ -1406,6 +1889,44 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     },
   );
 
+  // ── Admin: the easy-connect browse page, one request ─────────────────────
+  // The Composio counterpart of `/pipedream/sections`. Sections are grouped from
+  // the complete catalogue, so each heading states its category's real size
+  // instead of how many toolkits one loaded page happened to hold.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connect/sections',
+      tags: ['connector'],
+      summary: 'Browse the easy-connect toolkit catalogue by category',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          perCategory: z.coerce.number().int().positive().max(24).optional(),
+          maxCategories: z.coerce.number().int().positive().max(40).optional(),
+        }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Easy-connect catalogue sections'),
+        ...errors(403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listConnectSections) return featureNotSupportedResponse(c, 'connect_toolkits');
+      const perCategory = Number(c.req.query('perCategory'));
+      const maxCategories = Number(c.req.query('maxCategories'));
+      const result = await deps.listConnectSections(projectId, {
+        ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
+        ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
+      });
+      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+    },
+  );
+
   // ── Admin: legacy Pipedream app catalogue (rollback only) ────────────────
   app.openapi(
     createRoute({
@@ -1536,9 +2057,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   );
 
   // ── Admin: connector credential mode — restricted to a `shared`-only no-op.
-  // `per_user` (each member brings their own) was removed 2026-07-05
-  // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5). The route
-  // stays for back-compat callers but only ever accepts `shared` now.
+  // `per_user` (each member brings their own) was removed 2026-07-05.
+  // The route stays for back-compat callers but only ever accepts `shared` now.
   app.openapi(
     createRoute({
       method: 'put',
@@ -1609,28 +2129,20 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setAuthorizationStrategy) {
-        return featureNotSupportedResponse(c, 'connector_authorization_strategy');
-      }
-      let body: any;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: 'invalid_json' }, 400);
-      }
-      const authorizationStrategy = body?.authorization_strategy;
-      if (authorizationStrategy !== 'project' && authorizationStrategy !== 'user') {
-        return c.json({ error: 'authorization_strategy must be "project" or "user"' }, 400);
-      }
-      const result = await deps.setAuthorizationStrategy(
-        projectId,
-        admin.accountId,
-        slug,
-        authorizationStrategy,
-      );
-      return result.ok
-        ? c.json({ ok: true, sync: result.sync })
-        : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      // DEPRECATED NO-OP. The connector-level authorization strategy is retired:
+      // an account is shared or private per CONNECTION (`owner_type`), and both
+      // kinds can exist on one connector. The route stays, and stays a 200, so
+      // an older CLI or web build that still calls it is not broken by a 404 or
+      // a 501 — it simply changes nothing. The body is not even read: there is
+      // no value it could carry that would mean anything.
+      void slug;
+      return c.json({
+        ok: true,
+        deprecated: true,
+        note:
+          'Connector authorization strategy is retired. An account is shared or private ' +
+          'per connection — connect one with owner "project" or "me" instead.',
+      });
     },
   );
 
@@ -1811,7 +2323,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'Start an easy-connect authorization',
       ...auth,
-      request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: OpaqueSchema } } } },
+      request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: lenientBody({
+          owner: z.enum(['me', 'project']).optional().openapi({ description: 'Whose account is connected: me or project.' }),
+          success_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after success.' }),
+          error_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after failure.' }),
+        }) } } } },
       responses: {
         200: json(OpaqueSchema, 'Connect token / overlay info'),
         ...errors(403, 404, 501),
@@ -1832,20 +2348,38 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       // Native clients pass app deep-link redirect URIs so the in-app browser
       // auto-dismisses back to the app instead of landing on a web page.
       let redirects: { success?: string; error?: string } | undefined;
+      let rawOwner: unknown;
       try {
         const body = await c.req.json();
         if (body?.success_redirect_uri || body?.error_redirect_uri) {
           redirects = { success: body.success_redirect_uri, error: body.error_redirect_uri };
         }
+        rawOwner = body?.owner;
       } catch {
         /* no body */
+      }
+      const owner = parseConnectorConnectOwner(rawOwner);
+      if (!owner) return c.json({ error: 'owner must be "me" or "project"' }, 400);
+      // Connecting an account the whole project can then use is administration.
+      // `me` — the default — is self-service and needs nothing beyond the
+      // connector-write gate already asserted above.
+      if (owner === 'project' && deps.resolveConnectionsManager) {
+        const manager = await deps.resolveConnectionsManager(c, projectId);
+        if (!manager) return c.json({ error: 'forbidden' }, 403);
       }
       // Set by the auth middleware from a scoped session token, so this is
       // populated exactly when the agent in a sandbox made the call — and null
       // when a human clicked Connect in project settings, which has no session
       // waiting on the answer.
       const requestingSessionId = (c.get('sessionId') as string | undefined) ?? null;
-      const result = await connect(projectId, slug, admin.userId, redirects, requestingSessionId);
+      const result = await connect(
+        projectId,
+        slug,
+        admin.userId,
+        redirects,
+        requestingSessionId,
+        owner,
+      );
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
     },
@@ -1880,11 +2414,27 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         : undefined);
       if (!finalize) return featureNotSupportedResponse(c, 'connector_finalize');
       let selector: { connectionId?: string; requestId?: string } | undefined;
+      let rawOwner: unknown;
       try {
         const body = await c.req.json();
         if (body?.connection_id || body?.request_id) selector = { connectionId: body.connection_id, requestId: body.request_id };
+        rawOwner = body?.owner;
       } catch { /* no body */ }
-      const result = await finalize(projectId, slug, admin.userId, selector);
+      const owner = parseConnectorConnectOwner(rawOwner);
+      if (!owner) return c.json({ error: 'owner must be "me" or "project"' }, 400);
+      // Same gate the `/connect` START route asserts above: landing an account
+      // the WHOLE project can then use is administration, not self-service, and
+      // finalize is what actually persists `connected_account_id` on the shared
+      // connection. Without this a principal holding `project.connector.write`
+      // but NOT `project.connector.connections.manage` was refused when
+      // STARTING a project-owned connection and still allowed to FINISH one —
+      // sibling routes on one resource disagreeing about who may act (CWE-862).
+      // `me` stays self-service on both routes.
+      if (owner === 'project' && deps.resolveConnectionsManager) {
+        const manager = await deps.resolveConnectionsManager(c, projectId);
+        if (!manager) return c.json({ error: 'forbidden' }, 403);
+      }
+      const result = await finalize(projectId, slug, admin.userId, selector, owner);
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
     },

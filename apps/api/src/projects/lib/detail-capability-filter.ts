@@ -17,8 +17,6 @@ export interface DetailCaps {
   canSkills: boolean;
   /** project.command.read — the slash-commands summary. */
   canCommands: boolean;
-  /** project.customize.read — the raw project config (kortix.toml / opencode). */
-  canCustomize: boolean;
 }
 
 /**
@@ -37,17 +35,24 @@ export function applyDetailCapabilityFilter<C extends object, F>(
 ): { config: C; files: F[]; file_count: number } {
   const gatedConfig = {
     ...config,
-    ...(caps.canAgents ? {} : { agents: [], agent_discovery: null }),
+    // The default agent is a NAME from that same roster, so agent.read governs
+    // it, not file.read. A member may hold agent.read without file.read;
+    // blanking it for them made the composer fall back to the first agent
+    // alphabetically and run it instead of the project default.
+    ...(caps.canAgents
+      ? {}
+      : { agents: [], agent_discovery: null, default_agent: null, open_code_default_agent: null }),
     ...(caps.canSkills ? {} : { skills: [] }),
     ...(caps.canCommands ? {} : { commands: [] }),
-    ...(caps.canCustomize
+    // The raw manifest and OpenCode config are repository files, so
+    // project.file.read governs them like every other file.
+    ...(caps.canFiles
       ? {}
       : {
           manifest_raw: null,
           manifest: {},
           env: [],
           open_code_raw: null,
-          open_code_default_agent: null,
           // The verdict is derived FROM the raw manifest, so it has to be
           // blanked with it — otherwise a caller who cannot read the config
           // still learns its version, and worse, is shown an upgrade prompt

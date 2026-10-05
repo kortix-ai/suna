@@ -27,7 +27,7 @@
  * saying what is going on.
  */
 
-import type { SessionConnection } from '@kortix/sdk';
+import { SESSION_NOTICE, type SessionConnection } from '@kortix/sdk';
 
 export interface SessionComposerReadiness {
   /** The runtime is up. False means a submit becomes a queued inbox row rather
@@ -105,11 +105,13 @@ export function serverHoldsOpenTurn(working: { serverOpenTurnToken: string | nul
  * and what a send does, for the same reason the waking notice does — the send
  * button stays live.
  */
-const RUNTIME_UNREACHABLE_NOTICE =
-  'Lost contact with this session’s runtime while a turn is still open. Messages you send stay queued until it answers.';
+const RUNTIME_UNREACHABLE_NOTICE = SESSION_NOTICE.unreachableMidTurn;
 
 export function sessionComposerReadiness(input: {
   runtimeReady: boolean;
+  pendingPrompt?: boolean;
+  /** A queued status already describes this send; do not ask for another. */
+  pendingDelivery?: boolean;
   /**
    * The CONTROL PLANE holds an open turn for this session right now — pass
    * `serverHoldsOpenTurn(working)`, never `working.source === 'server'`.
@@ -134,6 +136,13 @@ export function sessionComposerReadiness(input: {
    * "indistinguishable from stuck" failure this module exists to prevent.
    */
   stalled?: boolean;
+  /**
+   * This page's own `/start` is bringing the computer up: its stage is
+   * `provisioning` or `starting`, or it has not answered yet. A stopped
+   * computer is then WAKING, not idle — the boot pill above the thread says
+   * so, and the composer must not claim the next message is what wakes it.
+   */
+  starting?: boolean;
   /**
    * The shared connection projection (`projectSessionConnection`).
    *
@@ -182,17 +191,22 @@ export function sessionComposerReadiness(input: {
   if (input.unreachable) {
     return {
       ready: false,
-      notice:
-        "Lost contact with this session's sandbox. Messages you send will be queued until it reconnects.",
+      notice: SESSION_NOTICE.unreachable,
       retryable: true,
     };
   }
   if (input.stalled) {
     return {
       ready: false,
-      notice:
-        'Still waking this session up — taking longer than usual. Messages you send will be queued.',
+      notice: SESSION_NOTICE.stalled,
       retryable: true,
+    };
+  }
+  if (input.pendingPrompt) {
+    return {
+      ready: false,
+      notice: SESSION_NOTICE.starting,
+      retryable: false,
     };
   }
   if (input.connection === 'waking') {
@@ -205,7 +219,7 @@ export function sessionComposerReadiness(input: {
     // session that is merely asleep (RC-3).
     return {
       ready: false,
-      notice: 'This session is idle — your next message starts it automatically and is delivered.',
+      notice: input.pendingDelivery ? null : input.starting ? SESSION_NOTICE.waking : SESSION_NOTICE.idle,
       retryable: false,
     };
   }
@@ -214,7 +228,11 @@ export function sessionComposerReadiness(input: {
   // reached us. Neither is the state this notice describes, and asserting it
   // from them is what put "Waking this session up…" over a live, streaming
   // session on every reload.
-  if (input.connection === 'unknown' || input.connection === 'connecting' || input.connection === 'live') {
+  if (
+    input.connection === 'unknown' ||
+    input.connection === 'connecting' ||
+    input.connection === 'live'
+  ) {
     return { ready: false, notice: null, retryable: false };
   }
   if (input.settling) {
@@ -228,7 +246,7 @@ export function sessionComposerReadiness(input: {
     // stays live — without the second half, pressing it looks like nothing
     // happened. True for an unreachable box with no open turn too: that box is
     // parked, and the first send resumes it.
-    notice: 'Waking this session up… messages you send will be queued and go out automatically.',
+    notice: SESSION_NOTICE.waking,
     retryable: false,
   };
 }

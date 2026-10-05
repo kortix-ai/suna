@@ -5,8 +5,9 @@
 // `AnimatePresence`).
 //
 // This is the app-wide feature bundle — not `domAnimation`. Multiple `layout`
-// sites exist across the app (general-tab.tsx,
-// step-connectors.tsx, projects-page.tsx, review-center.tsx), and
+// sites exist across the app (card.tsx, setup-checklist.tsx, and the
+// `layoutId` indicators in how-it-works.tsx, step-models.tsx,
+// credit-topup-section.tsx), and
 // framer-motion's feature loading is a global registry
 // (`setFeatureDefinitions`), not scoped per `LazyMotion` boundary — so a
 // smaller `domAnimation` provider plus a narrower local `domMax` boundary

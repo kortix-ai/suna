@@ -1892,9 +1892,92 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
   },
 ];
 
-export function getProviderGuide(id: string | null | undefined): ProviderGuide | null {
+function translateGuideText<T extends string | undefined>(
+  value: T,
+  tI18nComplete: UiTranslator,
+): T {
+  if (value === undefined) return undefined as T;
+  const key = GUIDE_TRANSLATION_KEYS[value];
+  return (key ? tI18nComplete.raw(key as Parameters<UiTranslator['raw']>[0]) : value) as T;
+}
+
+function localizeSchematic(schematic: StepSchematic, tI18nComplete: UiTranslator): StepSchematic {
+  return {
+    ...schematic,
+    title: translateGuideText(schematic.title, tI18nComplete),
+    rows: schematic.rows.map((row) => ({
+      ...row,
+      label: translateGuideText(row.label, tI18nComplete),
+    })),
+  };
+}
+
+function localizeStepBlock(block: StepBlock, tI18nComplete: UiTranslator): StepBlock {
+  if (block.kind === 'text') {
+    return { ...block, text: translateGuideText(block.text, tI18nComplete) };
+  }
+  if (block.kind === 'image') {
+    return {
+      ...block,
+      alt: translateGuideText(block.alt, tI18nComplete),
+      schematic: block.schematic ? localizeSchematic(block.schematic, tI18nComplete) : undefined,
+    };
+  }
+  if (block.kind === 'schematic') {
+    return { ...block, schematic: localizeSchematic(block.schematic, tI18nComplete) };
+  }
+  if (block.kind === 'sp-values') {
+    return {
+      ...block,
+      entityIdLabel: translateGuideText(block.entityIdLabel, tI18nComplete),
+      acsLabel: translateGuideText(block.acsLabel, tI18nComplete),
+    };
+  }
+  return block;
+}
+
+function localizeProviderGuide(guide: ProviderGuide, tI18nComplete: UiTranslator): ProviderGuide {
+  return {
+    ...guide,
+    blurb: translateGuideText(guide.blurb, tI18nComplete),
+    config: {
+      ...guide.config,
+      groupValueHint: translateGuideText(guide.config.groupValueHint, tI18nComplete),
+      metadataSource: translateGuideText(guide.config.metadataSource, tI18nComplete),
+      syncCadenceHint: translateGuideText(guide.config.syncCadenceHint, tI18nComplete),
+      startSyncHint: translateGuideText(guide.config.startSyncHint, tI18nComplete),
+    },
+    steps: guide.steps.map((step) => ({
+      ...step,
+      title: translateGuideText(step.title, tI18nComplete),
+      intro: translateGuideText(step.intro, tI18nComplete),
+      warning: translateGuideText(step.warning, tI18nComplete),
+      note: translateGuideText(step.note, tI18nComplete),
+      doneLabel: translateGuideText(step.doneLabel, tI18nComplete),
+      menuPath: translateGuideText(step.menuPath, tI18nComplete),
+      success: translateGuideText(step.success, tI18nComplete),
+      bullets: step.bullets?.map((bullet) => translateGuideText(bullet, tI18nComplete)),
+      content: step.content?.map((block) => localizeStepBlock(block, tI18nComplete)),
+      image: step.image
+        ? {
+            ...step.image,
+            alt: translateGuideText(step.image.alt, tI18nComplete),
+            schematic: step.image.schematic
+              ? localizeSchematic(step.image.schematic, tI18nComplete)
+              : undefined,
+          }
+        : undefined,
+    })),
+  };
+}
+
+export function getProviderGuide(
+  id: string | null | undefined,
+  tI18nComplete: UiTranslator,
+): ProviderGuide | null {
   if (!id) return null;
-  return PROVIDER_GUIDES.find((g) => g.id === id) ?? null;
+  const guide = PROVIDER_GUIDES.find((candidate) => candidate.id === id);
+  return guide ? localizeProviderGuide(guide, tI18nComplete) : null;
 }
 
 // ─── Directory Sync (SCIM) guides ────────────────────────────────────────────
@@ -2564,7 +2647,14 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
   },
 ];
 
-export function getScimGuide(id: string | null | undefined): ProviderGuide | null {
+export function getScimGuide(
+  id: string | null | undefined,
+  tI18nComplete: UiTranslator,
+): ProviderGuide | null {
   if (!id) return null;
-  return SCIM_PROVIDER_GUIDES.find((g) => g.id === id) ?? null;
+  const guide = SCIM_PROVIDER_GUIDES.find((candidate) => candidate.id === id);
+  return guide ? localizeProviderGuide(guide, tI18nComplete) : null;
 }
+import type { UiTranslator } from '@/i18n/translator';
+
+import { GUIDE_TRANSLATION_KEYS } from './guide-translation-keys.generated';

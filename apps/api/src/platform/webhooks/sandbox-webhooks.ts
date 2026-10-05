@@ -25,10 +25,8 @@ import {
   reconcileSandboxStoppedByExternalId,
   reconcileSandboxRemovedByExternalId,
 } from '../../projects/sandbox-reaper';
-import {
-  reconcileEnvironmentRemovedByExternalId,
-  reconcileEnvironmentStoppedByExternalId,
-} from '../services/session-environment-state-sync';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { readStandardWebhookHeaders, verifyStandardWebhook } from '../../lib/webhooks/standard-webhooks';
 
 export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
 
@@ -37,10 +35,7 @@ export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
  * directions matter for correctness — a `started`/`created`/transitional event
  * is acked as a no-op (our own resume/provision paths own the active direction).
  */
-export function classifyLifecycle(
-  state: string | undefined | null,
-  eventType: string,
-): SandboxLifecycleOutcome {
+export function classifyLifecycle(state: string | undefined | null, eventType: string): SandboxLifecycleOutcome {
   const s = (state ?? '').toLowerCase();
   const e = (eventType ?? '').toLowerCase();
   if (e.includes('delet') || e.includes('destroy')) return 'removed';
@@ -61,11 +56,7 @@ function safeEqual(a: string, b: string): boolean {
  * Plain HMAC-SHA-256 over the raw body (Platinum). Accepts the signature header
  * with or without a `sha256=` / `v1=` prefix, in hex.
  */
-export function verifyHmacSha256(
-  rawBody: string,
-  secret: string,
-  headerValue: string | undefined,
-): boolean {
+export function verifyHmacSha256(rawBody: string, secret: string, headerValue: string | undefined): boolean {
   if (!headerValue) return false;
   const expected = createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
   // A header may carry multiple comma/space-separated candidates (`v1=…,…`).
@@ -74,28 +65,6 @@ export function verifyHmacSha256(
     .map((p) => p.replace(/^(sha256=|v1=)/i, '').trim())
     .filter(Boolean);
   return candidates.some((c) => safeEqual(c.toLowerCase(), expected.toLowerCase()));
-}
-
-/**
- * Svix-style verification (Daytona). signedContent = `${id}.${timestamp}.${body}`;
- * secret is base64 after the `whsec_` prefix; signature header is one or more
- * space-separated `v1,<base64>` entries.
- */
-export function verifySvix(
-  rawBody: string,
-  secret: string,
-  parts: { id: string | undefined; timestamp: string | undefined; signature: string | undefined },
-): boolean {
-  const { id, timestamp, signature } = parts;
-  if (!id || !timestamp || !signature) return false;
-  const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
-  const signedContent = `${id}.${timestamp}.${rawBody}`;
-  const expected = createHmac('sha256', key).update(signedContent, 'utf8').digest('base64');
-  const candidates = signature
-    .split(' ')
-    .map((p) => (p.includes(',') ? p.split(',')[1] : p))
-    .filter(Boolean);
-  return candidates.some((c) => safeEqual(c, expected));
 }
 
 /** Apply the terminal outcome to billing + DB (idempotent, shared with the reaper). */
@@ -108,18 +77,16 @@ export async function applySandboxLifecycle(
     // An unsolicited observation, and `classifyLifecycle` folds the
     // TRANSITIONAL `stopping` / `archiving` into it — so while a turn is open
     // this must be confirmed by a second observation before it parks the box
-    // (incident 2026-08-17T20:40:03Z, session 0fc6897a). The reaper's poll
+    // (incident 2026-08-17T20:40:03Z, a prod session). The reaper's poll
     // supplies that second observation within one pass.
-    const workerChanged = await reconcileSandboxStoppedByExternalId(externalId, new Date(), {
+    const changed = await reconcileSandboxStoppedByExternalId(externalId, new Date(), {
       confirmMidTurnStop: true,
     });
-    const environmentChanged = await reconcileEnvironmentStoppedByExternalId(externalId);
-    return { action: 'stopped', changed: workerChanged || environmentChanged };
+    return { action: 'stopped', changed };
   }
   if (outcome === 'removed') {
-    const workerChanged = await reconcileSandboxRemovedByExternalId(externalId);
-    const environmentChanged = await reconcileEnvironmentRemovedByExternalId(externalId);
-    return { action: 'removed', changed: workerChanged || environmentChanged };
+    const changed = await reconcileSandboxRemovedByExternalId(externalId);
+    return { action: 'removed', changed };
   }
   return { action: 'noop', changed: false };
 }
@@ -137,12 +104,13 @@ export async function handleDaytonaWebhook(
   const secret = config.DAYTONA_WEBHOOK_SECRET;
   if (!secret) return { status: 503, body: { error: 'daytona webhook not configured' } };
 
-  const ok = verifySvix(rawBody, secret, {
-    id: getHeader('webhook-id') ?? getHeader('svix-id'),
-    timestamp: getHeader('webhook-timestamp') ?? getHeader('svix-timestamp'),
-    signature: getHeader('webhook-signature') ?? getHeader('svix-signature'),
-  });
-  if (!ok) return { status: 401, body: { error: 'invalid signature' } };
+  // Daytona signs with Svix (Standard Webhooks). The helper also rejects a
+  // timestamp more than 5 minutes off, so a captured delivery cannot be replayed.
+  const headers = readStandardWebhookHeaders(getHeader);
+  if (!verifyStandardWebhook({ rawBody, secret, headers })) {
+    return { status: 401, body: { error: 'invalid signature' } };
+  }
+  bindIntegrationPrincipal('daytona');
 
   let event: any;
   try {
@@ -181,6 +149,7 @@ export async function handlePlatinumWebhook(
   if (!verifyHmacSha256(rawBody, secret, sig)) {
     return { status: 401, body: { error: 'invalid signature' } };
   }
+  bindIntegrationPrincipal('platinum');
 
   let event: any;
   try {
@@ -189,11 +158,9 @@ export async function handlePlatinumWebhook(
     return { status: 400, body: { error: 'invalid json' } };
   }
 
-  const externalId: string | undefined =
-    event?.id ?? event?.sandbox_id ?? event?.data?.id ?? event?.sandboxId;
+  const externalId: string | undefined = event?.id ?? event?.sandbox_id ?? event?.data?.id ?? event?.sandboxId;
   const eventType: string = event?.event ?? event?.type ?? '';
-  const newState: string | undefined =
-    event?.state ?? event?.new_state ?? event?.newState ?? event?.data?.state;
+  const newState: string | undefined = event?.state ?? event?.new_state ?? event?.newState ?? event?.data?.state;
   if (!externalId) return { status: 200, body: { ok: true, ignored: 'no sandbox id' } };
 
   const dedupId = `platinum:${event?.id ?? `${externalId}:${eventType}:${event?.timestamp ?? ''}`}`;

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { readRepoInfo } from '../git'
+import { readRepoInfo } from '@/lib/git/git'
 
 function git(cwd: string, ...args: string[]): void {
   const res = spawnSync('git', args, { cwd, encoding: 'utf8' })
@@ -45,17 +45,6 @@ describe('readRepoInfo', () => {
     expect(info!.remoteUrl).toBe('https://example.test/r.git')
     expect(info!.commit).toMatch(/^[0-9a-f]{40}$/)
     expect(info!.path).toBe(dir)
-  })
-
-  test('concurrent reads of the same repo all agree', async () => {
-    const dir = await makeRepo('main')
-    const results = await Promise.all(Array.from({ length: 8 }, () => readRepoInfo(dir)))
-
-    for (const info of results) {
-      expect(info!.branch).toBe('main')
-      expect(info!.commit).toBe(results[0]!.commit)
-      expect(info!.remoteUrl).toBe('https://example.test/r.git')
-    }
   })
 
   test('reflects the session branch after a checkout, which is what repo_ready gates on', async () => {

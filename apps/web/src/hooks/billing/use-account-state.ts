@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Unified Account State Hook
  *
@@ -17,6 +18,7 @@ import { shouldQueryAccountState } from '@/hooks/billing/account-state-gating';
 import { useBillingAccountId, useBillingAccountResolved } from '@/stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { SEAT_GRANT_USD } from '@/features/billing/compute-pricing';
 import {
   cancelScheduledChange,
   cancelSubscription,
@@ -25,7 +27,6 @@ import {
   createPerSeatCheckout,
   createPortalSession,
   getAccountState,
-  getBillingUsageHistory,
   purchaseCredits,
   reactivateSubscription,
   scheduleDowngrade,
@@ -33,7 +34,6 @@ import {
   type AccountState,
 } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
-import { SEAT_GRANT_USD } from '@/features/billing/compute-pricing';
 
 export type { AccountState };
 
@@ -78,7 +78,6 @@ export const accountStateKeys = {
   // multi-account users don't see the same wallet/limits across all pages.
   state: (accountId?: string) =>
     [...accountStateKeys.all, 'state', { accountId: accountId ?? null }] as const,
-  usageHistory: (days?: number) => [...accountStateKeys.all, 'usage-history', { days }] as const,
   transactions: (limit?: number, offset?: number) =>
     [...accountStateKeys.all, 'transactions', { limit, offset }] as const,
 };
@@ -226,38 +225,6 @@ export function useAccountState(options?: UseAccountStateOptions) {
 }
 
 // =============================================================================
-// STREAMING VARIANT - For use during agent runs
-// =============================================================================
-
-/**
- * Account state with periodic refresh during streaming.
- * Use this in components that display credits during agent runs.
- */
-export function useAccountStateWithStreaming(isStreaming: boolean = false) {
-  // Inherit the BillingAccountProvider if one is wrapping us — keeps the
-  // streaming variant aligned with the static one on /accounts/[id].
-  const accountId = useBillingAccountId();
-  const contextResolved = useBillingAccountResolved();
-  return useQuery<AccountState>({
-    queryKey: accountStateKeys.state(accountId),
-    queryFn: () => getAccountState({ accountId }),
-    // Same wait as useAccountState — never fetch under a provisional account.
-    enabled: shouldQueryAccountState({
-      enabled: true,
-      hasExplicitAccountId: false,
-      contextResolved,
-    }),
-    staleTime: 1000 * 60 * 5, // 5 minutes during streaming
-    gcTime: 1000 * 60 * 15,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    // Slower refresh during streaming - credits update via backend cache invalidation
-    refetchInterval: isStreaming ? 2 * 60 * 1000 : false, // 2 minutes if streaming
-    refetchIntervalInBackground: false,
-  });
-}
-
-// =============================================================================
 // MUTATION HOOKS - All invalidate account state after success
 // =============================================================================
 
@@ -293,6 +260,7 @@ export function useCreateCheckoutSession() {
 // the API creates the subscription directly and returns { status: 'subscription_created' };
 // otherwise it returns { status: 'checkout_created', checkout_url } and we redirect.
 export function useCreatePerSeatCheckout() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
@@ -314,8 +282,11 @@ export function useCreatePerSeatCheckout() {
         const { useUpgradeDialogStore } = await import('@/stores/upgrade-dialog-store');
         useUpgradeDialogStore.getState().closeUpgradeDialog();
         await invalidateAccountState(queryClient, true, true, accountId);
-        successToast('Subscription activated', {
-          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $${SEAT_GRANT_USD * data.seat_count} of usage credit deposited.`,
+        successToast(tI18nComplete.raw('textd83849820d67'), {
+          description: tI18nComplete('text8559d8fd97d1', {
+            count: data.seat_count,
+            credit: SEAT_GRANT_USD * data.seat_count,
+          }),
         });
         return;
       }
@@ -325,13 +296,13 @@ export function useCreatePerSeatCheckout() {
       }
       // Shouldn't happen — API always returns one of the two shapes. Fail loud
       // instead of silently leaving the dialog spinning.
-      errorToast('Checkout did not start', {
-        description: 'No checkout URL was returned. Try again or contact support.',
+      errorToast(tI18nComplete.raw('text415dcc179975'), {
+        description: tI18nComplete.raw('text2a45a1c6797d'),
       });
     },
     onError: (err: any) => {
-      errorToast('Checkout failed to start', {
-        description: err?.message || 'Try again, or contact support if this keeps happening.',
+      errorToast(tI18nComplete.raw('textaf6d91f7d902'), {
+        description: err?.message || tI18nComplete.raw('textee34153806cb'),
       });
     },
   });
@@ -342,6 +313,7 @@ export function useCreatePerSeatCheckout() {
 // no way to switch), then refreshes account state so the new plan + wallet credit
 // show immediately.
 export function useClaimPerSeat() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
   return useMutation({
@@ -354,32 +326,33 @@ export function useClaimPerSeat() {
           parts.push(`$${data.first_seat_covered_usd.toFixed(2)} covered your first seat`);
         if (data.credited_usd > 0)
           parts.push(`$${data.credited_usd.toFixed(2)} added as non-expiring credit`);
-        successToast("You're on seat-based pricing", {
+        successToast(tI18nComplete.raw('texte0478c3e271b'), {
           description: parts.join(' · ') || undefined,
         });
       } else if (data.status === 'skipped:already_per_seat' || data.status === 'skipped:no_subs') {
         // no_subs flips the flag with no Stripe work — they're now on per-seat.
-        successToast("You're on seat-based pricing");
+        successToast(tI18nComplete.raw('texte0478c3e271b'));
       } else if (data.status === 'skipped:yearly_commitment') {
-        infoToast('Still on a yearly commitment', {
-          description: data.reason || 'You can switch once your committed term ends.',
+        infoToast(tI18nComplete.raw('text214466a0fee4'), {
+          description: data.reason || tI18nComplete.raw('text37abd3a24009'),
         });
       } else {
         // skipped:no_legacy_machine — nothing to move off of.
-        infoToast('Nothing to switch', {
-          description: 'No active machine subscription to move to seat-based pricing.',
+        infoToast(tI18nComplete.raw('textecdf558f080d'), {
+          description: tI18nComplete.raw('textbf5d8eb5292b'),
         });
       }
     },
     onError: (err: any) => {
-      errorToast('Could not switch plans', {
-        description: err?.message || 'Try again, or contact support if this keeps happening.',
+      errorToast(tI18nComplete.raw('text465814995485'), {
+        description: err?.message || tI18nComplete.raw('textee34153806cb'),
       });
     },
   });
 }
 
 export function useCreatePortalSession() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const accountId = useBillingAccountId();
   return useMutation({
     mutationFn: (params: CreatePortalSessionRequest) =>
@@ -389,54 +362,48 @@ export function useCreatePortalSession() {
       if (portalUrl) {
         window.location.href = portalUrl;
       } else {
-        errorToast('Failed to create portal session. Please try again.');
+        errorToast(tI18nComplete.raw('text6a4c0b695fe4'));
       }
     },
     onError: (error: any) => {
-      errorToast(error?.message || 'Failed to open subscription portal. Please try again.');
+      errorToast(error?.message || tI18nComplete.raw('text7a098b3b9a9d'));
+    },
+  });
+}
+
+function useBillingAction<TRequest, TResponse extends { success: boolean; message: string }>(
+  mutationFn: (accountId: string | undefined, request: TRequest) => Promise<TResponse>,
+  errorKey: string,
+  options: { successKey?: string; refetch?: boolean } = {},
+) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const queryClient = useQueryClient();
+  const accountId = useBillingAccountId();
+
+  return useMutation({
+    mutationFn: (request: TRequest) => mutationFn(accountId, request),
+    onSuccess: (response) => {
+      invalidateAccountState(queryClient, options.refetch ?? true, false, accountId); // Refetch to show updated state
+      if (options.successKey) {
+        successToast(tI18nComplete.raw(options.successKey));
+      } else if (response.success) {
+        successToast(response.message);
+      } else {
+        errorToast(response.message);
+      }
+    },
+    onError: (error: any) => {
+      errorToast(error.message || tI18nComplete.raw(errorKey));
     },
   });
 }
 
 export function useCancelSubscription() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request?: CancelSubscriptionRequest) =>
-      cancelSubscription(request?.feedback, accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        successToast(response.message);
-      } else {
-        errorToast(response.message);
-      }
-    },
-    onError: (error: any) => {
-      errorToast(error.message || 'Failed to cancel subscription');
-    },
-  });
+  return useBillingAction((accountId, request?: CancelSubscriptionRequest) => cancelSubscription(request?.feedback, accountId), 'text2b41749fceaa');
 }
 
 export function useReactivateSubscription() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => reactivateSubscription(accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        successToast(response.message);
-      } else {
-        errorToast(response.message);
-      }
-    },
-    onError: (error: any) => {
-      errorToast(error.message || 'Failed to reactivate subscription');
-    },
-  });
+  return useBillingAction((accountId) => reactivateSubscription(accountId), 'text5051e9e23edf');
 }
 
 export function usePurchaseCredits() {
@@ -461,72 +428,15 @@ export function usePurchaseCredits() {
 }
 
 export function useScheduleDowngrade() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request: ScheduleDowngradeRequest) =>
-      scheduleDowngrade(request.target_tier_key, request.commitment_type, accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show scheduled change
-      if (response.success) {
-        successToast(response.message);
-      } else {
-        errorToast(response.message);
-      }
-    },
-    onError: (error: any) => {
-      errorToast(error.message || 'Failed to schedule downgrade');
-    },
-  });
+  return useBillingAction((accountId, request: ScheduleDowngradeRequest) => scheduleDowngrade(request.target_tier_key, request.commitment_type, accountId), 'text645418722dbb');
 }
 
 export function useCancelScheduledChange() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => cancelScheduledChange(accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        successToast(response.message);
-      } else {
-        errorToast(response.message);
-      }
-    },
-    onError: (error: any) => {
-      errorToast(error.message || 'Failed to cancel scheduled change');
-    },
-  });
+  return useBillingAction((accountId) => cancelScheduledChange(accountId), 'text9118f944fba6');
 }
 
 export function useSyncSubscription() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => syncSubscription(accountId),
-    onSuccess: () => {
-      invalidateAccountState(queryClient, false, false, accountId);
-      successToast('Subscription synced successfully');
-    },
-    onError: (error: any) => {
-      errorToast(error.message || 'Failed to sync subscription');
-    },
-  });
-}
-
-// =============================================================================
-// USAGE HISTORY & TRANSACTIONS - Separate queries for analytics
-// =============================================================================
-
-export function useUsageHistory(days = 30) {
-  return useQuery({
-    queryKey: accountStateKeys.usageHistory(days),
-    queryFn: () => getBillingUsageHistory(days),
-    staleTime: 1000 * 60 * 10, // 10 minutes
-  });
+  return useBillingAction((accountId) => syncSubscription(accountId), 'textf3d331b82d30', { successKey: 'text24db9f4eb779', refetch: false });
 }
 
 // `useTransactions` (rich variant with typeFilter) lives in `./use-transactions`
@@ -540,63 +450,10 @@ export function useUsageHistory(days = 30) {
 // =============================================================================
 
 export const accountStateSelectors = {
-  /** Check if user can run agents (has credits) */
-  canRun: (state: AccountState | undefined) => state?.credits?.can_run ?? false,
-
   /** Get total credits (converted from dollars to credits using 1$ = 100 credits) */
   totalCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.total ?? 0),
-
-  /** Get daily credits (converted from dollars to credits using 1$ = 100 credits) */
-  dailyCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.daily ?? 0),
-
-  /** Get monthly credits (converted from dollars to credits using 1$ = 100 credits) */
-  monthlyCredits: (state: AccountState | undefined) =>
-    dollarsToCredits(state?.credits?.monthly ?? 0),
-
-  /** Get extra/non-expiring credits (converted from dollars to credits using 1$ = 100 credits) */
-  extraCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.extra ?? 0),
-
-  /** Get tier monthly credits limit (converted from dollars to credits using 1$ = 100 credits) */
-  tierMonthlyCredits: (state: AccountState | undefined) =>
-    dollarsToCredits(state?.tier?.monthly_credits ?? 0),
 
   /** Get tier key */
   tierKey: (state: AccountState | undefined) => state?.subscription?.tier_key ?? 'none',
 
-  /** Get tier display name */
-  tierDisplayName: (state: AccountState | undefined) =>
-    state?.subscription?.tier_display_name ?? 'No Plan',
-
-  // REMOVED: `planName`. It was a third frontend tier catalog — a hand-written
-  // tier_key -> display-name map that only knew 'pro' and called every other
-  // paid plan 'Basic', so a per-seat Team account read as Basic. It had no
-  // callers. Use `resolvedPlan(state).label` (@kortix/sdk), which reads the
-  // server's plan block.
-
-  /** Check if subscription is cancelled */
-  isCancelled: (state: AccountState | undefined) => state?.subscription?.is_cancelled ?? false,
-
-  /** Get scheduled change info */
-  scheduledChange: (state: AccountState | undefined) => state?.subscription?.scheduled_change,
-
-  /** Check if has scheduled change */
-  hasScheduledChange: (state: AccountState | undefined) =>
-    state?.subscription?.has_scheduled_change ?? false,
-
-  /** Get commitment info */
-  commitment: (state: AccountState | undefined) => state?.subscription?.commitment,
-
-  /** Check if can purchase credits */
-  canPurchaseCredits: (state: AccountState | undefined) =>
-    state?.subscription?.can_purchase_credits ?? false,
-
-  /** Get daily credits info (with converted daily_amount) */
-  dailyCreditsInfo: (state: AccountState | undefined) => {
-    const dailyRefresh = state?.credits?.daily_refresh;
-    if (!dailyRefresh) return null;
-    return {
-      ...dailyRefresh,
-      daily_amount: dollarsToCredits(dailyRefresh.daily_amount),
-    };
-  },
 };

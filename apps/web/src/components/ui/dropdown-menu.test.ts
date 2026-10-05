@@ -51,7 +51,8 @@ describe('DropdownMenuRadioItem label column', () => {
 
 describe('no consumer re-implements the label column', () => {
   // The exact shape both files used to carry, immediately inside a radio row.
-  const WORKAROUND = /<DropdownMenuRadioItem[^>]*>\s*(\{\/\*[\s\S]*?\*\/\}\s*)?<span className="flex items-center gap-2">/;
+  const WORKAROUND =
+    /<DropdownMenuRadioItem[^>]*>\s*(\{\/\*[\s\S]*?\*\/\}\s*)?<span className="flex items-center gap-2">/;
 
   // A plain loop, not `test.each`: `@types/bun` does not declare `each`, and
   // the three files that use it are the whole of this app's known tsc noise.

@@ -9,7 +9,7 @@ import {
   CaretRightIcon as ChevronRight,
   WarningIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 function sectionContent(section: OutputSection): string {
@@ -89,16 +89,13 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                   className="text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/30 flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors"
                 >
                   <ChevronRight
-                    className={cn(
-                      'size-3 shrink-0 transition-transform',
-                      showTrace && 'rotate-90',
-                    )}
+                    className={cn('size-3 shrink-0 transition-transform', showTrace && 'rotate-90')}
                   />
                   <span className="text-xs font-medium">
                     {tHardcodedUi.raw('componentsSessionToolRenderers.line1597JsxTextStackTrace')}
                   </span>
                   <span className="text-muted-foreground/40 ml-1 font-mono text-xs">
-                    {section.lines.length} lines
+                    {section.lines.length} {tHardcodedUi.raw('i18nComplete.text5ea44c3961f1')}
                   </span>
                 </button>
                 {showTrace && (

@@ -2,14 +2,36 @@ import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
-import { resolveConversationProject } from './binding';
-import { buildWelcomeCard } from './cards';
+import { listTenantProjects, resolveConversationProjectDetailed } from './binding';
+import { buildProjectPickerCard, buildWelcomeCard } from './cards';
+import { createPendingTeamsPickerMessage } from './auth-resume';
+import { sendCard as sendTeamsCard } from '../teams-api';
 import { handleTeamsCommand, parseTeamsCommand } from './commands';
-import { createOrJoinTeamsConversationSession } from './session';
+import { buildTeamsHomeCard } from './home';
+import { createOrJoinTeamsConversationSession, hasConversationSession } from './session';
+import { MANAGED_TEAMS_INBOUND, conversationProjectFor, type TeamsInbound } from './inbound';
 import type { TeamsActivity } from './types';
+import { conversationScope, isBotMentioned, isPersonalChat } from './util';
+
+/** Commands that act on no project, so they run before a project is picked. */
+const PROJECTLESS_COMMANDS: ReadonlySet<string> = new Set([
+  'login',
+  'connect',
+  'logout',
+  'disconnect',
+  'whoami',
+  'who',
+  'help',
+  'home',
+  'sessions',
+  'stop',
+  'cancel',
+  'unbind',
+  'use',
+  'switch',
+]);
 
 export function tenantOf(activity: TeamsActivity): string | null {
   return activity.conversation?.tenantId ?? activity.channelData?.tenant?.id ?? null;
@@ -45,16 +67,25 @@ function botWasAdded(activity: TeamsActivity): boolean {
   return false;
 }
 
-export async function handleTeamsConversationUpdate(activity: TeamsActivity): Promise<void> {
+export async function handleTeamsConversationUpdate(
+  activity: TeamsActivity,
+  inbound: TeamsInbound = MANAGED_TEAMS_INBOUND,
+): Promise<void> {
   if (!botWasAdded(activity)) return;
   const tenantId = tenantOf(activity);
   const conversationId = activity.conversation?.id;
   if (!tenantId || !conversationId || !activity.serviceUrl) return;
   if (await alreadyHandled(`welcome:${conversationId}`)) return;
 
-  const projectId = await resolveConversationProject(tenantId, conversationId);
+  // A 1:1 chat in an organization with several projects has no project until
+  // the first message picks one; the home card lists them all, so any
+  // installed project's bot and service URL can send it.
+  const projectId =
+    (await conversationProjectFor(inbound, tenantId, conversationId)) ??
+    (isPersonalChat(activity) && inbound.kind === 'managed'
+      ? ((await listTenantProjects(tenantId).catch(() => []))[0]?.projectId ?? null)
+      : null);
   if (!projectId) return;
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
 
   const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
   await sendCard(
@@ -66,13 +97,20 @@ export async function handleTeamsConversationUpdate(activity: TeamsActivity): Pr
       tenantId,
       projectId,
     },
-    buildWelcomeCard({ projectUrl }),
+    // Someone who added the app for themselves gets Slack's App Home as a card:
+    // the organization's projects and what to try. A team or chat gets the intro.
+    isPersonalChat(activity)
+      ? await buildTeamsHomeCard(tenantId, inbound.kind === 'project' ? inbound.projectId : undefined)
+      : buildWelcomeCard({ projectUrl }),
   );
 }
 
-export async function handleTeamsActivity(activity: TeamsActivity): Promise<void> {
+export async function handleTeamsActivity(
+  activity: TeamsActivity,
+  inbound: TeamsInbound = MANAGED_TEAMS_INBOUND,
+): Promise<void> {
   if (activity.type === 'conversationUpdate' || activity.type === 'installationUpdate') {
-    await handleTeamsConversationUpdate(activity);
+    await handleTeamsConversationUpdate(activity, inbound);
     return;
   }
   if (!isActionableMessage(activity)) return;
@@ -86,27 +124,76 @@ export async function handleTeamsActivity(activity: TeamsActivity): Promise<void
   if (await alreadyHandled(activity.id!)) return;
 
   const conversationId = activity.conversation!.id!;
-  const projectId = await resolveConversationProject(tenantId, conversationId);
-  if (!projectId) {
+  // A per-project (BYO) bot never resolves through the tenant's other installs:
+  // it runs its own project, or nothing.
+  const scopedProjectId =
+    inbound.kind === 'project' ? await conversationProjectFor(inbound, tenantId, conversationId) : null;
+  if (inbound.kind === 'project' && !scopedProjectId) {
+    console.warn('[teams-webhook] conversation is bound to another project — ignoring', {
+      projectId: inbound.projectId,
+    });
+    return;
+  }
+  const resolution = scopedProjectId
+    ? ({ kind: 'project', projectId: scopedProjectId } as const)
+    : await resolveConversationProjectDetailed(tenantId, conversationId);
+  if (resolution.kind === 'none') {
     console.warn('[teams-webhook] no project installed for tenant', { tenantId });
     return;
   }
-  // Per-project gate — the `teams` feature flag. This is the only
-  // enforcement point for the shared multi-tenant webhook, which cannot know
-  // the project before this line.
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) {
-    console.warn('[teams-webhook] teams feature is off for project — ignoring', { projectId });
+  if (resolution.kind === 'ambiguous') {
+    // Several projects, nothing bound: ask rather than silently pick the first
+    // install (the Slack behaviour). With RSC Teams delivers every channel
+    // line, and only a mention is for us: without this check each line got a
+    // picker. A command that needs no project runs now. Any other command
+    // would act on a project nobody picked (and `/models` bound the first
+    // one), so it gets the picker; a task is parked and replayed on the pick.
+    if (conversationScope(activity) !== 'personal' && !isBotMentioned(activity)) return;
+    const command = parseTeamsCommand(activity.text);
+    if (command && PROJECTLESS_COMMANDS.has(command.verb)) {
+      await handleTeamsCommand({ command, activity, tenantId, projectId: resolution.projects[0].projectId });
+      return;
+    }
+    if (activity.serviceUrl) {
+      const pendingId = command
+        ? null
+        : await createPendingTeamsPickerMessage({ tenantId, teamsUserId: activity.from?.id ?? '', activity });
+      await sendTeamsCard(
+        {
+          serviceUrl: activity.serviceUrl,
+          conversationId,
+          botId: activity.recipient?.id,
+          fromId: activity.from?.id,
+          tenantId,
+        },
+        buildProjectPickerCard(resolution.projects, pendingId),
+      ).catch((err) => console.warn('[teams-webhook] project picker failed', err));
+    }
+    return;
+  }
+  const projectId = resolution.projectId;
+
+  // With `ChannelMessage.Read.Group` (RSC) Teams delivers every channel
+  // message, not only @-mentions. An un-mentioned message is a follow-up in a
+  // thread the bot already owns — or nothing to us. It never starts a session
+  // and never runs a command: that would make the bot answer to every line
+  // typed in a channel it was added to.
+  const ownThreadsOnly = inbound.kind === 'project';
+  if (conversationScope(activity) !== 'personal' && !isBotMentioned(activity)) {
+    if (!(await hasConversationSession(tenantId, conversationId, ownThreadsOnly ? projectId : undefined))) return;
+    await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity, ownThreadsOnly });
+    await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
     return;
   }
 
   const command = parseTeamsCommand(activity.text);
   if (command) {
-    await handleTeamsCommand({ command, activity, tenantId, projectId });
+    await handleTeamsCommand({ command, activity, tenantId, projectId, projectScoped: ownThreadsOnly });
     await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
     return;
   }
 
-  await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity });
+  await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity, ownThreadsOnly });
 
   await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
 }

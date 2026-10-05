@@ -38,13 +38,21 @@ Then write `$OUT/index.html`:
 
 ```html
 <!doctype html>
-<html><head><meta charset="utf-8">
-<link rel="stylesheet" href="./tailwind.css">
-<!-- Required: the SDK reads a bare `process.env` on a non-Next host, which is a
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="./tailwind.css" />
+    <!-- Required: the SDK reads a bare `process.env` on a non-Next host, which is a
      ReferenceError in the browser, not `undefined`. -->
-<script>window.process={env:{NODE_ENV:'development'}};</script>
-</head><body class="bg-background text-foreground">
-<div id="root"></div><script type="module" src="./entry.js"></script></body></html>
+    <script>
+      window.process = { env: { NODE_ENV: 'development' } };
+    </script>
+  </head>
+  <body class="bg-background text-foreground">
+    <div id="root"></div>
+    <script type="module" src="./entry.js"></script>
+  </body>
+</html>
 ```
 
 Serve it (`python3 -m http.server 8791`) and drive it with Playwright.

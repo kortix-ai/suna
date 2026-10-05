@@ -1,10 +1,20 @@
 import { writeFileSync } from 'node:fs';
 import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
-import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { activeAccount } from '../api/config.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
-import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { splitHelp } from '../command-argv.ts';
+import {
+  emitJson,
+  fail,
+  missing,
+  resolveAccountContext,
+  resolveSpanInstant,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+  type AccountContext,
+} from '../command-helpers.ts';
+import { trim, C, help, pad, status } from '../style.ts';
+import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
+import { printEvents } from './audit-render.ts';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
 // dashboard already reads. Reads are gated server-side on `audit.read` plus the
@@ -28,8 +38,10 @@ Every authenticated API request is recorded, plus semantic session, connector,
 and approval events. The account trail requires the Enterprise plan.
 
 Subcommands:
-  ls [filters] [--json]           List audit events, newest first.
-  export [filters] [--out <f>]    Export matching events as CSV or JSONL.
+  ls [filters] [--json]           List audit events of the last 90 days, newest first.
+  export [filters] [--out <f>]    Export matching events as CSV or JSONL. Reaches back
+                                  365 days: events older than 90 days come from the
+                                  archive.
   project <project-id> [--json]   One project's canonical audit log.
   session <session-id> --project <project-id> [--json]
                                    One session's canonical ordered timeline.
@@ -50,12 +62,15 @@ Filters (ls, export, project):
   --until <when>       Only events at or before this point.
   --action <prefix>    Action prefix, e.g. "iam.policy." or "session.".
   --actor <user-id>    Only this actor.
-  --actor-type <t>     human | agent | service_account | system
+  --actor-type <t>     human | agent | service_account | system | anonymous
   --outcome <o>        success | failure | denied | pending
   --project <id>       Only this project.
   --session <id>       Only this session.
-  --source <s>         Trusted execution source or reported client surface,
-                       e.g. "agent", "opencode", "cli", "web".
+  --source <s>         Trusted execution source, e.g. "human", "agent",
+                       "api_key", "opencode".
+  --credential-kind <k>  What the API authenticated: browser_session,
+                       personal_access_token, oauth_app, session_token,
+                       api_key, service_account, scim_token.
   --phase <p>          Lifecycle phase, e.g. pending, completed, failed.
   --resource-type <t>  Only this resource type.
   --request-id <id>    One request.
@@ -101,14 +116,6 @@ interface AuditWebhook {
   test?: { ok: boolean; status?: number; error?: string };
 }
 
-const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w)$/i;
-const SPAN_MS: Record<string, number> = {
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-};
-
 /**
  * Accept `24h` / `7d` as well as ISO-8601.
  *
@@ -117,17 +124,7 @@ const SPAN_MS: Record<string, number> = {
  * is unambiguous and shows up in `--json` output as the instant it really used.
  */
 export function resolveInstant(input: string, now: Date = new Date()): string | null {
-  const value = input.trim();
-  if (!value) return null;
-  const relative = RELATIVE_SPAN.exec(value);
-  if (relative) {
-    const amount = Number(relative[1]);
-    const unit = relative[2]!.toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return new Date(now.getTime() - amount * SPAN_MS[unit]!).toISOString();
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return resolveSpanInstant(input, now, -1);
 }
 
 /** Query string shared by `ls` and `export`, so the two can never drift. */
@@ -143,6 +140,7 @@ export function buildAuditQuery(
     ['project_id', flags.project],
     ['session_id', flags.session],
     ['source', flags.source],
+    ['credential_kind', flags.credentialKind],
     ['phase', flags.phase],
     ['outcome', flags.outcome],
     ['resource_type', flags.resourceType],
@@ -163,34 +161,6 @@ export function buildAuditQuery(
     search.set(key, iso);
   }
   return { search };
-}
-
-interface AuditContext {
-  client: ApiClient;
-  accountId: string;
-  auth: NonNullable<ReturnType<typeof loadAuth>>;
-}
-
-function resolveAccountContext(accountArg?: string, hostArg?: string): AuditContext | null {
-  // --host names a logged-in host other than the active one; its own stored
-  // account is the default scope there (never the global active account).
-  const auth = hostArg ? loadAuthForHost(hostArg) : loadAuth();
-  if (!auth?.token) {
-    process.stderr.write(
-      hostArg
-        ? `${status.err(`Host "${hostArg}" is not logged in.`)} Run \`kortix login --host ${hostArg}\`.\n`
-        : `${status.err('Not logged in. Run `kortix login`.')}\n`,
-    );
-    return null;
-  }
-  const accountId = accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
-  if (!accountId) {
-    process.stderr.write(
-      `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
-    );
-    return null;
-  }
-  return { client: clientFromAuth(auth, { accountId }), accountId, auth };
 }
 
 /**
@@ -219,114 +189,91 @@ function surfaceAuditError(err: unknown): number {
   return surfaceApiError(err);
 }
 
-function shortTime(iso: string): string {
-  // `2026-08-05T11:14:20.123Z` → `08-05 11:14:20`. The year is noise in a log
-  // you are scanning; the seconds are not.
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 19).replace('T', ' ');
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
-}
-
-/** Longest ACTION cell before the table starts pushing RESOURCE off-screen.
- *  Audit actions are raw HTTP lines carrying UUIDs, so most rows would otherwise
- *  be ~70 chars of mostly-identical path. Full values are always in `--json`. */
-const ACTION_MAX = 52;
-
-export function truncate(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
-}
-
-function outcomeCell(outcome: AuditEvent['outcome']): string {
-  const label = outcome ?? '—';
-  if (outcome === 'failure' || outcome === 'denied') return `${C.red}${pad(label, 8)}${C.reset}`;
-  if (outcome === 'pending') return `${C.yellow}${pad(label, 8)}${C.reset}`;
-  return `${C.faded}${pad(label, 8)}${C.reset}`;
-}
-
-function actorCell(event: AuditEvent): string {
-  if (event.actor_type && event.actor_type !== 'human') return event.actor_type;
-  return event.actor_user_id ? event.actor_user_id.slice(0, 8) : '—';
-}
-
-function printEvents(events: AuditEvent[]): void {
-  if (events.length === 0) {
-    process.stdout.write(`\n  ${C.dim}No audit events match.${C.reset}\n\n`);
-    return;
-  }
-  const actionW = Math.min(Math.max(...events.map((e) => e.action.length), 6), ACTION_MAX);
-  const actorW = Math.max(...events.map((e) => actorCell(e).length), 5);
-  process.stdout.write('\n');
-  process.stdout.write(
-    `  ${C.dim}${pad('WHEN (UTC)', 15)}   ${pad('ACTOR', actorW)}   ${pad('ACTION', actionW)}   ${pad('OUTCOME', 8)}   RESOURCE${C.reset}\n`,
-  );
-  for (const e of events) {
-    const resource = e.resource_type
-      ? `${e.resource_type}${e.resource_id ? ` ${C.faded}${e.resource_id.slice(0, 8)}${C.reset}` : ''}`
-      : `${C.faded}—${C.reset}`;
-    process.stdout.write(
-      `  ${pad(shortTime(e.occurred_at), 15)}   ${pad(actorCell(e), actorW)}   ${pad(truncate(e.action, ACTION_MAX), actionW)}   ${outcomeCell(e.outcome)}   ${resource}\n`,
-    );
-  }
-}
-
 /**
- * Read an export response body as text.
+ * One paged audit read, shared by `ls`, `project` and `session`: the query
+ * build and its refusal of an unparseable time bound, the --limit/--cursor
+ * flags, the pagination loop (a repeated continuation cursor aborts), the
+ * `--json` shape, and the table + footer.
  *
- * The shared HTTP client parses `application/json`, passes `text/*` through,
- * and returns a **Blob** for everything else. The CSV export is `text/csv` so
- * it arrives as a string; the JSONL export is `application/x-ndjson`, which
- * matches neither branch and arrives as a Blob. `JSON.stringify` on a Blob
- * yields `"{}"` — which is exactly what `--format jsonl` printed before this:
- * an empty object where the export should be.
- *
- * Handled here rather than in the SDK because widening that content-type check
- * changes what every other caller receives. The SDK bug is real and worth
- * fixing separately.
+ * `url` turns the (cursor-mutated) query into the request URL, so each
+ * subcommand owns only its route — `session` appends the query string only
+ * when there is one. The footer differs per subcommand, and `session`'s route
+ * takes no filters, so it also skips the shared query build: that build REFUSES
+ * an unparseable --since, which the session route silently ignores.
  */
-export async function exportBodyText(body: unknown): Promise<string> {
-  if (typeof body === 'string') return body;
-  if (body instanceof Blob) return await body.text();
-  return JSON.stringify(body);
-}
+async function listAuditEvents(
+  ctx: AccountContext,
+  url: (search: URLSearchParams) => string,
+  f: Record<string, string | undefined>,
+  all: boolean,
+  json: boolean,
+  footer: 'ls' | 'project' | 'session',
+): Promise<number> {
+  let search: URLSearchParams;
+  if (footer === 'session') {
+    search = new URLSearchParams();
+  } else {
+    const built = buildAuditQuery(f);
+    if ('error' in built) return fail(built.error);
+    search = built.search;
+  }
+  if (f.limit) search.set('limit', f.limit);
+  if (f.cursor) search.set('cursor', f.cursor);
 
-async function collectAuditPages(
-  fetchPage: (cursor: string | null) => Promise<AuditPage>,
-  initialCursor: string | null,
-  followAll: boolean,
-): Promise<{ events: AuditEvent[]; nextCursor: string | null }> {
   const events: AuditEvent[] = [];
-  let cursor = initialCursor;
+  let cursor = f.cursor ?? null;
   const seen = new Set<string>();
   if (cursor) seen.add(cursor);
+  let nextCursor: string | null = null;
   for (;;) {
-    const page = await fetchPage(cursor);
+    if (cursor) search.set('cursor', cursor);
+    else search.delete('cursor');
+    const page = await ctx.client.get<AuditPage>(url(search));
     events.push(...page.events);
-    const nextCursor = page.next_cursor;
-    if (!followAll || !nextCursor) return { events, nextCursor };
+    nextCursor = page.next_cursor;
+    if (!all || !nextCursor) break;
     if (seen.has(nextCursor)) {
       throw new Error('audit pagination returned a repeated continuation cursor');
     }
     seen.add(nextCursor);
     cursor = nextCursor;
   }
+
+  if (json) {
+    emitJson({ events, next_cursor: all ? null : nextCursor });
+    return 0;
+  }
+  printEvents(events);
+  if (footer === 'session') {
+    // An empty session timeline ends at the table's own closing blank line.
+    if (events.length === 0) return 0;
+    if (nextCursor && !all) {
+      process.stdout.write(
+        `\n  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
+      );
+    }
+    process.stdout.write('\n');
+    return 0;
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${events.length} event${events.length === 1 ? '' : 's'}${C.reset}`,
+  );
+  if (nextCursor && !all) {
+    process.stdout.write(
+      footer === 'project'
+        ? `  ${C.dim}more available — use --all${C.reset}`
+        : `  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
+    );
+  }
+  process.stdout.write('\n\n');
+  return 0;
 }
 
 export async function runAudit(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let all = false;
@@ -339,6 +286,7 @@ export async function runAudit(argv: string[]): Promise<number> {
     f.project = takeFlagValue(rest, ['--project']);
     f.session = takeFlagValue(rest, ['--session']);
     f.source = takeFlagValue(rest, ['--source']);
+    f.credentialKind = takeFlagValue(rest, ['--credential-kind']);
     f.phase = takeFlagValue(rest, ['--phase']);
     f.outcome = takeFlagValue(rest, ['--outcome']);
     f.resourceType = takeFlagValue(rest, ['--resource-type']);
@@ -357,110 +305,38 @@ export async function runAudit(argv: string[]): Promise<number> {
     json = takeFlagBool(rest, ['--json']);
     all = takeFlagBool(rest, ['--all']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext(f.account, f.host);
+  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/accounts/${ctx.accountId}/audit`;
 
   try {
     switch (sub) {
       case 'ls':
-      case 'list': {
-        const built = buildAuditQuery(f);
-        if ('error' in built) {
-          process.stderr.write(`${status.err(built.error)}\n`);
-          return 2;
-        }
-        const { search } = built;
-        if (f.limit) search.set('limit', f.limit);
-        if (f.cursor) search.set('cursor', f.cursor);
-
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) search.set('cursor', cursor);
-            else search.delete('cursor');
-            return ctx.client.get<AuditPage>(`${base}?${search.toString()}`);
-          },
-          f.cursor ?? null,
-          all,
-        );
-
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        printEvents(collected.events);
-        const count = `${collected.events.length} event${collected.events.length === 1 ? '' : 's'}`;
-        process.stdout.write(`\n  ${C.dim}${count}${C.reset}`);
-        if (collected.nextCursor && !all) {
-          process.stdout.write(
-            `  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
-          );
-        }
-        process.stdout.write('\n\n');
-        return 0;
-      }
+      case 'list':
+        return await listAuditEvents(ctx, (search) => `${base}?${search}`, f, all, json, 'ls');
 
       case 'project': {
         const projectId = positional[0] ?? f.project;
-        if (!projectId) {
-          process.stderr.write(`${status.err('Missing a project id.')}` + '\n');
-          return 2;
-        }
-        const built = buildAuditQuery({ ...f, project: undefined });
-        if ('error' in built) {
-          process.stderr.write(`${status.err(built.error)}\n`);
-          return 2;
-        }
-        const { search } = built;
-        if (f.limit) search.set('limit', f.limit);
-        if (f.cursor) search.set('cursor', f.cursor);
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) search.set('cursor', cursor);
-            else search.delete('cursor');
-            return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/audit?${search.toString()}`,
-            );
-          },
-          f.cursor ?? null,
+        if (!projectId) return fail('Missing a project id.');
+        return await listAuditEvents(
+          ctx,
+          (search) => `/projects/${encodeURIComponent(projectId)}/audit?${search}`,
+          { ...f, project: undefined },
           all,
+          json,
+          'project',
         );
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        printEvents(collected.events);
-        process.stdout.write(
-          `\n  ${C.dim}${collected.events.length} event${collected.events.length === 1 ? '' : 's'}${C.reset}`,
-        );
-        if (collected.nextCursor && !all)
-          process.stdout.write(`  ${C.dim}more available — use --all${C.reset}`);
-        process.stdout.write('\n\n');
-        return 0;
       }
 
       case 'export': {
         const built = buildAuditQuery(f);
-        if ('error' in built) {
-          process.stderr.write(`${status.err(built.error)}\n`);
-          return 2;
-        }
+        if ('error' in built) return fail(built.error);
         const format = (f.format || 'csv').toLowerCase();
-        if (format !== 'csv' && format !== 'jsonl') {
-          process.stderr.write(`${status.err('--format must be csv or jsonl.')}\n`);
-          return 2;
-        }
+        if (format !== 'csv' && format !== 'jsonl') return fail('--format must be csv or jsonl.');
         const { search } = built;
         let cursor = f.cursor ?? undefined;
         const chunks: string[] = [];
@@ -479,8 +355,10 @@ export async function runAudit(argv: string[]): Promise<number> {
                 | 'agent'
                 | 'service_account'
                 | 'system'
+                | 'anonymous'
                 | undefined,
               source: search.get('source') ?? undefined,
+              credential_kind: search.get('credential_kind') ?? undefined,
               phase: search.get('phase') ?? undefined,
               outcome: search.get('outcome') as
                 | 'success'
@@ -524,52 +402,19 @@ export async function runAudit(argv: string[]): Promise<number> {
 
       case 'session': {
         const sessionId = positional[0];
-        if (!sessionId) {
-          process.stderr.write(`${status.err('Missing a session id.')}\n`);
-          return 2;
-        }
+        if (!sessionId) return fail('Missing a session id.');
         const projectId = f.project;
-        if (!projectId) {
-          process.stderr.write(
-            `${status.err('Pass --project <id> — the session audit route is project-scoped.')}\n`,
-          );
-          return 2;
-        }
-        const sessionSearch = new URLSearchParams();
-        if (f.limit) sessionSearch.set('limit', f.limit);
-        if (f.cursor) sessionSearch.set('cursor', f.cursor);
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) sessionSearch.set('cursor', cursor);
-            else sessionSearch.delete('cursor');
-            const query = sessionSearch.size ? `?${sessionSearch.toString()}` : '';
-            return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${query}`,
-            );
-          },
-          f.cursor ?? null,
+        if (!projectId)
+          return missing('--project <id> — the session audit route is project-scoped');
+        return await listAuditEvents(
+          ctx,
+          (search) =>
+            `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${search.size ? `?${search}` : ''}`,
+          f,
           all,
+          json,
+          'session',
         );
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        const events = collected.events;
-        if (events.length === 0) {
-          printEvents(events);
-          return 0;
-        }
-        printEvents(events);
-        if (collected.nextCursor && !all) {
-          process.stdout.write(
-            `\n  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
-          );
-        }
-        process.stdout.write('\n');
-        return 0;
       }
 
       case 'webhooks': {
@@ -602,12 +447,12 @@ export async function runAudit(argv: string[]): Promise<number> {
             for (const w of webhooks) {
               const state = w.enabled ? 'enabled' : `${C.yellow}disabled${C.reset}`;
               process.stdout.write(
-                `  ${pad(w.name, nameW)}   ${pad(truncate(w.url, urlW), urlW)}   ${pad(state, 8)}   ` +
+                `  ${pad(w.name, nameW)}   ${pad(trim(w.url, urlW), urlW)}   ${pad(state, 8)}   ` +
                   `${pad(w.action_prefix ?? 'all', 12)}   ${C.faded}${w.webhook_id}${C.reset}\n`,
               );
               if (w.last_error) {
                 process.stdout.write(
-                  `  ${C.red}└ last error${C.reset} ${C.dim}${w.last_error_at?.slice(0, 19).replace('T', ' ') ?? ''}${C.reset} ${truncate(w.last_error, 80)}\n`,
+                  `  ${C.red}└ last error${C.reset} ${C.dim}${w.last_error_at?.slice(0, 19).replace('T', ' ') ?? ''}${C.reset} ${trim(w.last_error, 80)}\n`,
                 );
               }
             }
@@ -619,14 +464,8 @@ export async function runAudit(argv: string[]): Promise<number> {
 
           case 'add':
           case 'create': {
-            if (!f.name) {
-              process.stderr.write(`${status.err('Pass --name <label>.')}\n`);
-              return 2;
-            }
-            if (!f.url) {
-              process.stderr.write(`${status.err('Pass --url <https endpoint>.')}\n`);
-              return 2;
-            }
+            if (!f.name) return missing('--name <label>');
+            if (!f.url) return missing('--url <https endpoint>');
             const created = await ctx.client.post<AuditWebhook>(`${base}/webhooks`, {
               name: f.name,
               url: f.url,
@@ -658,12 +497,7 @@ export async function runAudit(argv: string[]): Promise<number> {
 
           case 'enable':
           case 'disable': {
-            if (!webhookId) {
-              process.stderr.write(
-                `${status.err('Pass a webhook id (see `kortix audit webhooks ls`).')}\n`,
-              );
-              return 2;
-            }
+            if (!webhookId) return missing('a webhook id (see `kortix audit webhooks ls`)');
             const updated = await ctx.client.patch<AuditWebhook>(
               `${base}/webhooks/${encodeURIComponent(webhookId)}`,
               { enabled: verb === 'enable' },
@@ -680,12 +514,7 @@ export async function runAudit(argv: string[]): Promise<number> {
 
           case 'rm':
           case 'delete': {
-            if (!webhookId) {
-              process.stderr.write(
-                `${status.err('Pass a webhook id (see `kortix audit webhooks ls`).')}\n`,
-              );
-              return 2;
-            }
+            if (!webhookId) return missing('a webhook id (see `kortix audit webhooks ls`)');
             await ctx.client.delete(`${base}/webhooks/${encodeURIComponent(webhookId)}`);
             process.stdout.write(
               `${status.ok(`Deleted webhook ${C.bold}${webhookId}${C.reset}`)}\n`,
@@ -694,10 +523,7 @@ export async function runAudit(argv: string[]): Promise<number> {
           }
 
           default:
-            process.stderr.write(
-              `${status.err(`unknown webhooks verb "${verb}" — use ls|add|enable|disable|rm`)}\n`,
-            );
-            return 2;
+            return fail(`unknown webhooks verb "${verb}" — use ls|add|enable|disable|rm`);
         }
       }
 

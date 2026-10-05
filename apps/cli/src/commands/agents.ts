@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs';
+import type {
+  AgentConfigBlock,
+  AgentConfigResponse,
+  AgentGrantSetV2,
+  ModelDefaultsResponse,
+  ProjectDetail,
+} from '@kortix/sdk';
+import { splitHelp } from '../command-argv.ts';
 
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -10,59 +19,6 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// Mirrors GET /projects/:id/model-defaults (apps/api/src/projects/routes/r4.ts:3187).
-interface ModelDefaults {
-  platformDefault: string | null;
-  accountDefault: string | null;
-  projectDefault: string | null;
-  agentDefaults: Record<string, string>;
-  resolvedForCaller: string | null;
-}
-
-/** One entry of `GET /projects/:id/detail` → `config.agents`. */
-interface DeclaredAgent {
-  name: string;
-  path: string;
-  description: string | null;
-  mode: string | null;
-  enabled?: boolean;
-  sandbox?: string | null;
-  scope?: { env: string[] | 'all'; connectors: string[] | 'all'; kortix_cli: string[] | 'all' };
-}
-
-interface ProjectDetail {
-  project_id: string;
-  config: { agents?: DeclaredAgent[]; default_agent?: string | null };
-}
-
-/** `'all'` | `'none'` | an explicit list — AgentGrantSetV2 in the SDK. */
-type GrantSet = 'all' | 'none' | string[];
-
-/**
- * The full agent block on the wire — `AgentConfigBlock`
- * (the SDK agent-config module). `opencode`
- * is the behavior half, merged in from the agent's `.md` by the API.
- */
-interface AgentConfigBlock {
-  enabled?: boolean;
-  sandbox?: string;
-  connectors?: GrantSet;
-  connectors_required?: string[];
-  secrets?: GrantSet;
-  skills?: GrantSet;
-  kortix_cli?: GrantSet;
-  workspace?: 'runtime' | 'read' | 'branch';
-  opencode?: Record<string, unknown>;
-}
-
-interface AgentConfigResponse {
-  agent: string;
-  schema_version: number;
-  editable?: boolean;
-  default_agent: string | null;
-  block: AgentConfigBlock | null;
-}
-
 /** PUT /projects/:id/agents/:name/scope response (agent-scope.ts:166). */
 interface AgentScopeResponse {
   ok: boolean;
@@ -70,6 +26,8 @@ interface AgentScopeResponse {
   env: string[] | 'all';
   connectors: string[] | 'all';
   connectors_required: string[];
+  /** Absent from a server that predates the Apps grant on this route. */
+  apps?: string[] | 'all';
 }
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
@@ -85,11 +43,11 @@ kortix.yaml on the project's default branch.
 Subcommands:
   ls [--json]                     Show every agent's pinned model + the fallback
                                   default. (Alias: \`models\`.)
-  model <agent> <model-id>        Pin an agent to a plain model id (e.g. glm-5.3-flash).
+  model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
   default --show [--json]         Print the current default agent.
-  scope <agent> [options]         Which secrets/connectors the agent may use.
+  scope <agent> [options]         Which secrets/connectors/Apps the agent may use.
   scope <agent> --show [--json]   Print the agent's current scope.
   config <agent> [--json]         Print the full agent config block.
   config <agent> --file <path>    Replace the block with a JSON file's contents.
@@ -98,12 +56,19 @@ Subcommands:
 Scope options (all replace, none merge):
   --secrets all|none|A,B          Which project secrets reach the agent's env.
   --connectors all|none|a,b       Which connectors it may call as tools.
-  --require-connector <slug>      Repeatable. Must resolve before a session starts.
+  --apps all|none|a,b             Which Kortix Apps it may open by slug, when
+                                  the App is restricted or private. The agent
+                                  also needs project.app.read in its Kortix
+                                  permissions. Needs a v2 kortix.yaml manifest.
+  --require-connector <slug>      Repeatable. Deprecated and no longer enforced:
+                                  a session is never refused for an unconnected
+                                  connector. A call picks its account instead —
+                                  see \`kortix connectors accounts <slug>\`.
 
 Config options:
   --file <path>                   A JSON file holding the WHOLE block. \`-\` = stdin.
   --set <key>=<value>             Repeatable. Dotted path, e.g.
-                                  \`opencode.model=glm-5.3-flash\`, \`enabled=false\`,
+                                  \`behavior.model=glm-5.3-flash\`, \`enabled=false\`,
                                   \`connectors=["slack"]\`. The value is parsed as
                                   JSON when it parses, else kept as a string.
 
@@ -113,27 +78,16 @@ Global:
   --json             Machine-readable output.
   -h, --help         Show this help.
 
-\`scope\` needs \`project.agent.write\`; \`default\` and \`config\` need
-\`project.customize.write\`. Model pins live in the gateway, not in the repo —
+\`scope\`, \`default\` and \`config\` need \`project.agent.write\`; model pins
+need \`project.model.write\`. Model pins live in the gateway, not in the repo —
 the declarative one is kortix.yaml's \`[[agents]].model\`.
 `;
 
 export async function runAgents(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
-
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let json = false;
   let clear = false;
   let show = false;
@@ -141,6 +95,7 @@ export async function runAgents(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   let secretsFlag: string | undefined;
   let connectorsFlag: string | undefined;
+  let appsFlag: string | undefined;
   let requiredFlags: string[] = [];
   let fileFlag: string | undefined;
   let setFlags: string[] = [];
@@ -154,6 +109,7 @@ export async function runAgents(argv: string[]): Promise<number> {
     hostFlag = takeFlagValue(rest, ['--host']);
     secretsFlag = takeFlagValue(rest, ['--secrets', '--env']);
     connectorsFlag = takeFlagValue(rest, ['--connectors']);
+    appsFlag = takeFlagValue(rest, ['--apps']);
     fileFlag = takeFlagValue(rest, ['--file']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -163,67 +119,22 @@ export async function runAgents(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/model-defaults`;
 
   try {
     switch (sub) {
       case 'models':
       case 'ls':
-      case 'list': {
-        const d = await ctx.client.get<ModelDefaults>(base);
-        if (json) {
-          emitJson(d);
-          return 0;
-        }
-        const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
-        const entries = Object.entries(d.agentDefaults ?? {});
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
-        );
-        if (entries.length === 0) {
-          process.stdout.write(
-            `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
-              `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
-          );
-          return 0;
-        }
-        const w = Math.max(...entries.map(([n]) => n.length), 5);
-        for (const [name, model] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
-          process.stdout.write(`  ${pad(name, w)}   ${C.cyan}${model}${C.reset}\n`);
-        }
-        process.stdout.write(
-          `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
-        );
-        return 0;
-      }
-      case 'model': {
-        const agent = positional[0];
-        if (!agent) return missing('an agent name');
-        if (clear) {
-          await ctx.client.delete(
-            `${base}?scope=agent&agentName=${encodeURIComponent(agent)}`,
-          );
-          process.stdout.write(
-            `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
-          );
-          return 0;
-        }
-        const model = positional[1];
-        if (!model) return missing('a plain model id (e.g. glm-5.3-flash) — or --clear');
-        await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
-        process.stdout.write(
-          `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
-        );
-        return 0;
-      }
+      case 'list':
+        return await agentsLs(ctx, json);
+      case 'model':
+        return await agentsModel(ctx, positional[0], positional[1], clear);
       case 'default':
         return await agentsDefault(ctx, positional[0], { show, json });
       case 'scope':
         return await agentsScope(ctx, positional[0], {
           secrets: secretsFlag,
           connectors: connectorsFlag,
+          apps: appsFlag,
           required: requiredFlags,
           show,
           json,
@@ -239,6 +150,62 @@ export async function runAgents(argv: string[]): Promise<number> {
   }
 }
 
+// ── model defaults ──────────────────────────────────────────────────────────
+
+async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
+  const d = await ctx.client.get<ModelDefaultsResponse>(
+    `/projects/${ctx.projectId}/model-defaults`,
+  );
+  if (json) {
+    emitJson(d);
+    return 0;
+  }
+  const fallback = d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
+  const entries = Object.entries(d.agentDefaults ?? {});
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
+  );
+  if (entries.length === 0) {
+    process.stdout.write(
+      `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
+        `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
+    );
+    return 0;
+  }
+  const w = Math.max(...entries.map(([n]) => n.length), 5);
+  for (const [name, model] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
+    process.stdout.write(`  ${pad(name, w)}   ${C.cyan}${model}${C.reset}\n`);
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+async function agentsModel(
+  ctx: ProjectCtx,
+  agent: string | undefined,
+  model: string | undefined,
+  clear: boolean,
+): Promise<number> {
+  if (!agent) return missing('an agent name');
+  const base = `/projects/${ctx.projectId}/model-defaults`;
+  if (clear) {
+    await ctx.client.delete(`${base}?scope=agent&agentName=${encodeURIComponent(agent)}`);
+    process.stdout.write(
+      `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
+    );
+    return 0;
+  }
+  if (!model) return missing('a plain model id (e.g. glm-5.3-flash) — or --clear');
+  await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
+  process.stdout.write(
+    `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
+  );
+  return 0;
+}
+
 // ── default agent ───────────────────────────────────────────────────────────
 
 async function agentsDefault(
@@ -250,7 +217,10 @@ async function agentsDefault(
     const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
     const current = detail.config?.default_agent ?? null;
     if (opts.json) {
-      emitJson({ default_agent: current, agents: (detail.config?.agents ?? []).map((a) => a.name) });
+      emitJson({
+        default_agent: current,
+        agents: (detail.config?.agents ?? []).map((a) => a.name),
+      });
       return 0;
     }
     if (!agent && !opts.show) {
@@ -300,7 +270,7 @@ function parseGrantSet(raw: string): 'all' | string[] {
     .filter(Boolean);
 }
 
-function renderGrantSet(value: GrantSet | undefined, fallback: string): string {
+function renderGrantSet(value: AgentGrantSetV2 | undefined, fallback: string): string {
   if (value === undefined) return fallback;
   if (value === 'all') return 'all';
   if (value === 'none') return 'none';
@@ -313,6 +283,7 @@ async function agentsScope(
   opts: {
     secrets?: string;
     connectors?: string;
+    apps?: string;
     required: string[];
     show: boolean;
     json: boolean;
@@ -321,20 +292,27 @@ async function agentsScope(
   if (!agent) return missing('an agent name');
 
   const wantsWrite =
-    opts.secrets !== undefined || opts.connectors !== undefined || opts.required.length > 0;
+    opts.secrets !== undefined ||
+    opts.connectors !== undefined ||
+    opts.apps !== undefined ||
+    opts.required.length > 0;
   if (opts.show || !wantsWrite) {
     const cfg = await ctx.client.get<AgentConfigResponse>(
       `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`,
     );
     const block = cfg.block ?? {};
+    const permissions = block.kortix_permissions ?? block.kortix_cli;
     if (opts.json) {
       emitJson({
         agent: cfg.agent,
         secrets: block.secrets ?? 'all',
         connectors: block.connectors ?? [],
         connectors_required: block.connectors_required ?? [],
+        apps: block.apps ?? 'none',
         skills: block.skills ?? 'all',
-        kortix_cli: block.kortix_cli ?? 'all',
+        kortix_permissions: permissions ?? 'all',
+        /** @deprecated Same value as kortix_permissions; kept for scripts written before the rename. */
+        kortix_cli: permissions ?? 'all',
       });
       return 0;
     }
@@ -343,8 +321,9 @@ async function agentsScope(
         `  ${C.dim}${pad('secrets', 20)}${C.reset} ${renderGrantSet(block.secrets, 'all (default)')}\n` +
         `  ${C.dim}${pad('connectors', 20)}${C.reset} ${renderGrantSet(block.connectors, 'none (default)')}\n` +
         `  ${C.dim}${pad('required connectors', 20)}${C.reset} ${block.connectors_required?.join(', ') || 'none'}\n` +
+        `  ${C.dim}${pad('apps', 20)}${C.reset} ${renderGrantSet(block.apps, 'none (default)')}\n` +
         `  ${C.dim}${pad('skills', 20)}${C.reset} ${renderGrantSet(block.skills, 'all (default)')}\n` +
-        `  ${C.dim}${pad('kortix_cli', 20)}${C.reset} ${renderGrantSet(block.kortix_cli, 'all (default)')}\n\n`,
+        `  ${C.dim}${pad('kortix permissions', 20)}${C.reset} ${renderGrantSet(permissions, 'all (default)')}\n\n`,
     );
     if (!opts.show) {
       process.stdout.write(
@@ -355,13 +334,17 @@ async function agentsScope(
   }
 
   // Each field the caller names is REPLACED; a field left out is untouched
-  // (the route rejects a body with all three missing — guarded above).
+  // (the route rejects a body with every field missing — guarded above).
   const body: Record<string, unknown> = {};
   if (opts.secrets !== undefined) body.env = parseGrantSet(opts.secrets);
   if (opts.connectors !== undefined) body.connectors = parseGrantSet(opts.connectors);
+  if (opts.apps !== undefined) body.apps = parseGrantSet(opts.apps);
   if (opts.required.length > 0) {
     body.connectors_required = opts.required.flatMap((v) =>
-      v.split(',').map((s) => s.trim()).filter(Boolean),
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
     );
   }
 
@@ -377,7 +360,8 @@ async function agentsScope(
     `${status.ok(`${C.bold}${resp.agent}${C.reset} scope updated`)}\n` +
       `  ${C.dim}${pad('secrets', 20)}${C.reset} ${renderGrantSet(resp.env, 'all')}\n` +
       `  ${C.dim}${pad('connectors', 20)}${C.reset} ${renderGrantSet(resp.connectors, 'none')}\n` +
-      `  ${C.dim}${pad('required connectors', 20)}${C.reset} ${resp.connectors_required.join(', ') || 'none'}\n`,
+      `  ${C.dim}${pad('required connectors', 20)}${C.reset} ${resp.connectors_required.join(', ') || 'none'}\n` +
+      `  ${C.dim}${pad('apps', 20)}${C.reset} ${renderGrantSet(resp.apps, 'none')}\n`,
   );
   return 0;
 }
@@ -469,12 +453,7 @@ async function agentsConfig(
     return 0;
   }
   process.stdout.write(
-    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${block.opencode ? ' + the agent .md' : ''})${C.reset}\n`,
+    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${(block.behavior ?? block.opencode) ? ' + the agent .md' : ''})${C.reset}\n`,
   );
   return 0;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }

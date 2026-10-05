@@ -10,7 +10,6 @@ import {
 } from '@/components/connector-bindings';
 import { ProjectShell } from '@/components/project-shell';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -18,9 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
-import { invalidateSessions } from '@/lib/query-keys';
-import { generateSessionId, type SandboxTemplate } from '@kortix/sdk';
+import { NO_OVERRIDES } from '@/lib/session-overrides';
+import { useCreateSession } from '@/lib/use-create-session';
+import type { SandboxTemplate } from '@kortix/sdk';
 import {
   type ModelKey,
   useProjectConfig,
@@ -28,18 +29,10 @@ import {
   useVisibleAgents,
   writeStartStash,
 } from '@kortix/sdk/react';
-import { ConnectRequiredCard } from '@/components/connect-required-card';
-import {
-  type ConnectorRequirement,
-  connectorRequirement,
-} from '@/lib/connector-required';
-import { sessionCreateFailure } from '@/lib/session-create-failure';
-import { NO_OVERRIDES, buildSessionCreateInput } from '@/lib/session-overrides';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowUp, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
-import { toast } from 'sonner';
 
 const STARTERS = [
   {
@@ -72,17 +65,9 @@ export default function ProjectPage() {
 function ProjectHome() {
   const projectId = String(useParams().id);
   const router = useRouter();
-  const qc = useQueryClient();
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const [prompt, setPrompt] = useState('');
-  // The connector PRE-FLIGHT refusal: the session declares a connector with no
-  // usable connection, so the platform refused it before a sandbox booted.
-  // Shown as a call to action rather than an error, because it is one — and
-  // shown HERE rather than as a toast, because the alternative the user would
-  // otherwise get is a streamed agent apology they paid tokens for.
-  const [connectPrompt, setConnectPrompt] =
-    useState<ConnectorRequirement | null>(null);
   // Which shared connection each connector should run as. An alias absent from
   // this map keeps the connector's default, which is what an unbound alias
   // resolves to server-side anyway.
@@ -111,22 +96,16 @@ function ProjectHome() {
   // multi-template picker below never actually rendered any options.
   const templateList: SandboxTemplate[] = templates.data?.items ?? [];
 
-  const start = useMutation({
-    mutationFn: async (text: string) => {
-      const sessionId = generateSessionId();
-      // Template + agent + bindings are create-time; the prompt + model + agent
-      // flow into the first message (stashed) so the chosen model applies at
-      // start. Unset overrides are omitted by the builder rather than guessed.
-      await kortix.project(projectId).sessions.create(
-        buildSessionCreateInput(
-          { ...NO_OVERRIDES, agent, bindings },
-          {
-            sessionId,
-            name: text.slice(0, 60),
-            sandboxSlug: template,
-          },
-        ),
-      );
+  const start = useCreateSession(projectId, {
+    // Template + agent + bindings are create-time; the prompt + model + agent
+    // flow into the first message (stashed) so the chosen model applies at
+    // start. Unset overrides are omitted by the builder rather than guessed.
+    input: (text: string) => ({
+      overrides: { ...NO_OVERRIDES, agent, bindings },
+      name: text.slice(0, 60),
+      sandboxSlug: template,
+    }),
+    onCreated: (sessionId, text) => {
       // DELIBERATELY the full stash, prompt included. This app is the golden
       // reference for an SDK consumer with no inbox client of its own: the
       // SDK's `useSession` replay delivers `stash.prompt` once the runtime is
@@ -138,23 +117,7 @@ function ProjectHome() {
         .project(projectId)
         .onboardingComplete(true)
         .catch(() => {});
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
-    },
-    onError: (err: unknown) => {
-      // A missing connector is the one create refusal with a real remedy, so it
-      // gets the card instead of a toast. Everything else keeps the shared
-      // classifier, which names the person who can fix each refusal.
-      const requirement = connectorRequirement(err);
-      if (requirement) {
-        setConnectPrompt(requirement);
-        return;
-      }
-      const failure = sessionCreateFailure(err);
-      toast.error(failure.title, { description: failure.detail });
     },
   });
 
@@ -168,9 +131,7 @@ function ProjectHome() {
           <div className="mx-auto mb-4 grid size-11 place-items-center rounded-2xl bg-brand/10">
             <Sparkles className="size-5 text-brand" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            What would you like to build?
-          </h1>
+          <h1 className="text-xl font-semibold tracking-tight">What would you like to build?</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pick your template, agent, and model, then describe the task.
           </p>
@@ -184,30 +145,7 @@ function ProjectHome() {
             <ConnectorBindingFields
               choices={connectors.data?.connectors ?? []}
               value={bindings}
-              onChange={(next) => {
-                setBindings(next);
-                // The card describes the bindings that were sent. Once those
-                // change it is a verdict on a request that no longer exists.
-                setConnectPrompt(null);
-              }}
-            />
-          </div>
-        )}
-
-        {/* Kortix-as-a-Backend: the session declares a connector with no usable
-            connection. A call to action, not a failure — and the card is honest
-            about which remedies actually exist for THIS connector, rather than
-            offering everyone a button that only works for shared ones. */}
-        {connectPrompt && (
-          <div className="mb-4">
-            <ConnectRequiredCard
-              projectId={projectId}
-              requirement={connectPrompt}
-              onRetry={() => {
-                setConnectPrompt(null);
-                if (prompt.trim()) start.mutate(prompt.trim());
-              }}
-              onDismiss={() => setConnectPrompt(null)}
+              onChange={setBindings}
             />
           </div>
         )}
@@ -261,11 +199,7 @@ function ProjectHome() {
               onClick={submit}
               aria-label="Start session"
             >
-              {launching ? (
-                <Loading className="size-4" />
-              ) : (
-                <ArrowUp className="size-4" />
-              )}
+              {launching ? <Loading className="size-4" /> : <ArrowUp className="size-4" />}
             </Button>
           </div>
         </div>

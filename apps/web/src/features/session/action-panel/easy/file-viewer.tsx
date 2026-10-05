@@ -1,35 +1,35 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `FileViewer` — one file, shown the way that file wants to be read.
  *
  * The view toggle is not a universal control, because "source" only means
  * something for a file whose rendered form differs from its text:
  *
- *   - **HTML and SVG** render to something you can look at AND are code you
+ *   - **HTML, SVG and Mermaid** render to something you can look at AND are code you
  *     might want to read. They are the file types that earn a Preview/Source
- *     toggle, so that toggle lives at the far left of their toolbar.
+ *     toggle, so that toggle sits before the address pill.
  *   - **Markdown** is meant to be read as a document. A non-technical user has
  *     no reason to see `##` and `**`, so there is no toggle — just the document.
  *   - **Everything else** is source. Showing it is the whole job; a toggle
  *     would have one meaningful position.
  *
- * So the toolbar is: what you're looking at (left) and what you can do with it
- * (right). The right side is one split button — `Copy`, with a caret holding
- * `Copy link` and `Download file` — then full screen and close. Every file gets
- * the same right side, built by `ViewerActions`, so the actions never move and
- * this toolbar cannot drift from `PreviewShell`'s.
+ * So the toolbar is one address pill — the file's folders and name, with
+ * Refresh, Copy and Copy link at its trailing edge — then Download, full screen
+ * and close outside it. Every file gets the same pill and actions, built by
+ * `ViewerPathPill` and `ViewerActions`, so the actions never move and this
+ * toolbar cannot drift from `PreviewShell`'s.
  */
 
 import { HighlightedCode } from '@/components/markdown/code';
-import { DocMarkdown } from '@/components/markdown/doc-markdown';
-import {
-  MarkdownFrontmatterCard,
-  parseFrontmatter,
-} from '@/components/markdown/markdown-frontmatter';
+import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
-import { HtmlPreview } from '@/features/file-viewer';
+import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
+import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
+import { HtmlPreview, SaveAsPdfButton } from '@/features/file-viewer';
+import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
@@ -38,39 +38,15 @@ import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PanelWidthButton,
+  RefreshButton,
   type ShareContext,
   ViewerActions,
+  ViewerDownloadAction,
+  ViewerPathPill,
   fileShareInput,
 } from './viewer-actions';
 
 type View = 'preview' | 'source';
-
-/** Extension → the language Shiki should highlight the source with. */
-const LANGUAGE_BY_EXT: Record<string, string> = {
-  md: 'markdown',
-  mdx: 'markdown',
-  ts: 'typescript',
-  tsx: 'tsx',
-  js: 'javascript',
-  jsx: 'jsx',
-  json: 'json',
-  py: 'python',
-  rb: 'ruby',
-  go: 'go',
-  rs: 'rust',
-  sh: 'bash',
-  bash: 'bash',
-  yml: 'yaml',
-  yaml: 'yaml',
-  toml: 'toml',
-  css: 'css',
-  html: 'html',
-  htm: 'html',
-  // An SVG is an XML document. Shiki has no `svg` grammar of its own, and `xml`
-  // is what it would alias to anyway.
-  svg: 'xml',
-  sql: 'sql',
-};
 
 function extensionOf(fileName: string): string {
   const dot = fileName.lastIndexOf('.');
@@ -78,18 +54,17 @@ function extensionOf(fileName: string): string {
 }
 
 export function languageFor(fileName: string): string {
-  return LANGUAGE_BY_EXT[extensionOf(fileName)] ?? 'text';
+  const language = getLanguageFromExt(fileName);
+  return extensionOf(fileName) === 'svg' ? 'xml' : extensionOf(fileName) === 'htm' ? 'html' : language === 'plaintext' ? 'text' : language;
 }
 
 export function isMarkdown(fileName: string): boolean {
-  const ext = extensionOf(fileName);
-  return ext === 'md' || ext === 'mdx';
+  return getLanguageFromExt(fileName) === 'markdown';
 }
 
 /** HTML has a rendered form and a source, and both are worth seeing. */
 export function isHtml(fileName: string): boolean {
-  const ext = extensionOf(fileName);
-  return ext === 'html' || ext === 'htm';
+  return getFileCategory(fileName) === 'html';
 }
 
 /**
@@ -111,6 +86,8 @@ export function FileViewer({
   path,
   shareContext,
   onClose,
+  refresh,
+  reloadKey,
   className,
 }: {
   content: string;
@@ -123,8 +100,14 @@ export function FileViewer({
    *  text and markdown file with no way to produce a public link. */
   shareContext?: ShareContext;
   onClose?: () => void;
+  /** Re-reads the file on demand. Omitted where there is no file on disk to
+   *  re-read, in which case the control is omitted too. */
+  refresh?: { onRefresh: () => void; refreshing: boolean };
+  /** Reloads the HTML preview in place when it changes. See `HtmlPreview`. */
+  reloadKey?: string | number;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Previewable only WITH a path. The preview is the file served by the
   // sandbox's static file server (see `HtmlPreview`), so with nothing on disk
   // to serve there is no rendered form — and therefore no second view to
@@ -132,59 +115,77 @@ export function FileViewer({
   const html = isHtml(fileName) && !!path;
   const svg = isSvg(fileName);
   const markdown = isMarkdown(fileName);
+  const mermaid = isMermaidFile(fileName);
   // The files whose rendered form and source are both worth seeing — the ones
   // that earn the toggle, and the ones whose preview owns the pane's scrolling
   // instead of the pane owning theirs.
-  const renders = html || svg;
+  const renders = html || svg || mermaid;
   const [view, setView] = useState<View>('preview');
 
   const isMobile = useIsMobile();
 
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2.5 py-2.5">
-        <span className="flex min-w-0 items-center gap-2.5">
-          <DetailSidebarToggle className="size-7" />
-          {renders ? (
-            // Only a file with both a rendered form and a source earns the
-            // toggle — and it sits at the far left, before the name, because it
-            // changes what the name is showing you.
-            <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-              <TabsList type="default" size="sm" className="h-7 border-b-0 p-0">
-                <TabsTrigger
-                  size="xs"
-                  value="preview"
-                  aria-label="Preview"
-                  className="h-7 w-7 px-0"
-                >
-                  <Eye className="size-3.5" />
-                </TabsTrigger>
-                <TabsTrigger size="xs" value="source" aria-label="Source" className="h-7 w-7 px-0">
-                  <Code2 className="size-3.5" />
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          ) : (
-            <span className="flex size-5 shrink-0 items-center justify-center">
-              {getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
-            </span>
-          )}
-          <span className="text-foreground truncate text-sm font-medium">{fileName}</span>
-        </span>
+      <div className="flex shrink-0 items-center gap-1 border-b px-2.5 py-2">
+        <DetailSidebarToggle className="size-7" />
+        {renders && (
+          // Only a file with both a rendered form and a source earns the
+          // toggle — and it sits before the pill, because it changes what the
+          // pill's name is showing you.
+          <Tabs value={view} onValueChange={(next) => setView(next as View)}>
+            <TabsList size="sm" className="h-7">
+              <TabsTrigger
+                size="xs"
+                value="preview"
+                aria-label={tI18nComplete.raw('text324b134f57c7')}
+                className="w-6 px-0"
+              >
+                <Eye className="size-3.5" />
+              </TabsTrigger>
+              <TabsTrigger
+                size="xs"
+                value="source"
+                aria-label={tI18nComplete.raw('text0e570ca6fabe')}
+                className="w-6 px-0"
+              >
+                <Code2 className="size-3.5" />
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
 
         {/* Same actions in the same place for every file — they never move.
             Text is the one kind whose content a clipboard can hold, so `Copy`
-            here copies the file itself and `Copy link` drops into the menu. */}
-        <span className="flex shrink-0 items-center gap-1">
+            here copies the file itself. */}
+        <ViewerPathPill
+          icon={getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
+          path={path}
+          fileName={fileName}
+        >
+          {refresh && (
+            <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
+          )}
           <ViewerActions
             copy={{
               run: () => navigator.clipboard.writeText(content),
-              ariaLabel: 'Copy file contents',
+              ariaLabel: tI18nComplete.raw('textb3278e5f53cc'),
             }}
             shareContext={shareContext}
             shareInput={fileShareInput(path, fileName)}
-            download={path ? { path, fileName } : undefined}
           />
+        </ViewerPathPill>
+
+        <span className="flex shrink-0 items-center gap-1">
+          {/* Download stays the raw `.md`; Save as PDF is the rendered page. */}
+          {markdown && (
+            <SaveAsPdfButton
+              fileName={fileName}
+              content={content}
+              className="size-7"
+              iconClassName="size-3.5"
+            />
+          )}
+          <ViewerDownloadAction download={path ? { path, fileName } : undefined} />
           <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
         </span>
@@ -207,8 +208,11 @@ export function FileViewer({
           path={path}
           html={html}
           svg={svg}
+          mermaid={mermaid}
           markdown={markdown}
           view={view}
+          reloadKey={reloadKey}
+          onShowSource={() => setView('source')}
         />
       </div>
     </div>
@@ -248,16 +252,22 @@ function FileBody({
   path,
   html,
   svg,
+  mermaid,
   markdown,
   view,
+  reloadKey,
+  onShowSource,
 }: {
   content: string;
   fileName: string;
   path?: string;
   html: boolean;
   svg: boolean;
+  mermaid: boolean;
   markdown: boolean;
   view: View;
+  reloadKey?: string | number;
+  onShowSource: () => void;
 }) {
   const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
 
@@ -272,7 +282,7 @@ function FileBody({
   // `HtmlPreview` owns the whole exchange, and is the same component the files
   // viewer uses — one answer to "what does an HTML file look like".
   if (html && path && view === 'preview') {
-    return <HtmlPreview path={path} fileName={fileName} />;
+    return <HtmlPreview path={path} fileName={fileName} reloadKey={reloadKey} />;
   }
 
   // SVG stays inline, and stays inert: loaded through `<img>` it renders in the
@@ -292,23 +302,21 @@ function FileBody({
     return <ImageRenderer url={svgUrl} fileName={fileName} controls="always" backdrop />;
   }
 
+  // A Mermaid file previews as its diagram. Same component as the Files viewer
+  // and the `show` card, so the three agree on what a `.mmd` looks like.
+  if (mermaid && view === 'preview') {
+    return <MermaidDiagram source={content} fileName={fileName} onShowSource={onShowSource} />;
+  }
+
   if (markdown) {
     // Frontmatter has to come off BEFORE the markdown parser sees it. Handed
     // the raw file, markdown reads the block as prose: the opening `---` is a
     // thematic break and the closing `---` is a setext underline, so an agent
     // definition rendered as a stray horizontal rule followed by its entire
-    // metadata as one giant bold heading. Same split, same card as the chat's
-    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
-    // an agent file looks like.
-    const { frontmatter, body } = parseFrontmatter(content);
-    return (
-      <div className="p-6">
-        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-        {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
-            escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={body} allowHtml={false} />
-      </div>
-    );
+    // metadata as one giant bold heading. `MarkdownWithFrontmatter` splits it
+    // off and renders the body as a document (embedded markup stays text), the
+    // same component the chat's inline preview uses.
+    return <MarkdownWithFrontmatter content={content} className="p-6" />;
   }
 
   // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a
@@ -324,11 +332,18 @@ function FileBody({
   // CodeMirror editor still carries its own Pierre-derived theme and does NOT
   // match — a known, accepted gap, not an oversight.
   //
-  // Only the horizontal padding is dropped, not the vertical: the pane's own
-  // background should run edge to edge, so the code is inset from the bottom
-  // but flush to the sides.
+  // Inset on every side: the detail layer opens a file with `padded: false`
+  // (the viewer owns its toolbar), so this view supplies its own frame, the
+  // same 4-step the toolbar and the rest of the panel use. Markdown gets its
+  // `p-6` above; without this the code sat flush against the panel's left
+  // edge under a padded toolbar.
+  //
+  // `w-fit min-w-full`: the scroller is the parent. Padding on a block child
+  // ends where the viewport ends, so a long line scrolled to its end would
+  // touch the right edge. Sized to its content, the wrapper carries its own
+  // right inset to the end of the scroll.
   return (
-    <div className="pb-4 [&_code]:text-[13px]">
+    <div className="w-fit min-w-full p-4 [&_code]:text-[13px]">
       <HighlightedCode code={content} language={languageFor(fileName)} />
     </div>
   );

@@ -5,87 +5,13 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
+import { applyBootstrap, databaseConnectionUrl, migrationOptions, migrationsDir } from './upgrade-test-helpers';
 
-const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
-const migrationsDir = join(import.meta.dir, '..', 'migrations');
-const bootstrapPath = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
-
-function databaseConnectionUrl(baseUrl: string, databaseName: string): string {
-  const url = new URL(baseUrl);
-  url.pathname = `/${databaseName}`;
-  return url.toString();
-}
-
-async function applyBootstrap(client: pg.Client): Promise<void> {
-  await client.query(`
-    CREATE SCHEMA IF NOT EXISTS extensions;
-    CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
-    CREATE SCHEMA IF NOT EXISTS auth;
-    CREATE TABLE IF NOT EXISTS auth.users (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      email text,
-      raw_user_meta_data jsonb DEFAULT '{}'::jsonb
-    );
-    CREATE OR REPLACE FUNCTION auth.role() RETURNS text
-      LANGUAGE sql STABLE AS $$
-        SELECT nullif(current_setting('request.jwt.claim.role', true), '')
-      $$;
-    CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
-      LANGUAGE sql STABLE AS $$
-        SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
-      $$;
-    CREATE SCHEMA IF NOT EXISTS storage;
-    CREATE TABLE IF NOT EXISTS storage.buckets (
-      id text PRIMARY KEY,
-      name text NOT NULL,
-      public boolean DEFAULT false NOT NULL,
-      file_size_limit bigint,
-      allowed_mime_types text[]
-    );
-    CREATE TABLE IF NOT EXISTS storage.objects (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      bucket_id text NOT NULL,
-      name text NOT NULL
-    );
-    ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-    CREATE OR REPLACE FUNCTION storage.foldername(name text) RETURNS text[]
-      LANGUAGE sql IMMUTABLE AS $$
-        SELECT string_to_array(name, '/')
-      $$;
-  `);
-  const bootstrap = readFileSync(bootstrapPath, 'utf8');
-  for (const chunk of bootstrap.split('--> statement-breakpoint')) {
-    const statement = chunk.trim();
-    // A vanilla PostgreSQL image does not ship pg_net. Supabase pins pg_cron to
-    // its main `postgres` database. The audit upgrade does not use either
-    // extension, so the temporary upgrade database skips both platform pieces.
-    if (/create extension if not exists (pg_net|pg_cron)/i.test(statement)) continue;
-    if (statement) await client.query(statement);
-  }
-}
-
-function migrationOptions(url: string, directory: string) {
-  return {
-    databaseUrl: url,
-    dir: directory,
-    migrationsTable: 'pgmigrations',
-    migrationsSchema: 'kortix_migrations',
-    createMigrationsSchema: true,
-    checkOrder: true,
-    singleTransaction: true,
-    verbose: false,
-    logger: {
-      log: () => {},
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-    },
-  } as const;
-}
+const databaseUrl = process.env.TEST_DATABASE_ADMIN_URL;
 
 describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledger', () => {
   test(
-    'backfills legacy session cursors and begins the integrity chain after legacy history',
+    'backfills legacy session cursors; rows written after the upgrade carry no sequence or hash',
     async () => {
       const databaseName = `audit_v2_upgrade_${randomUUID().replaceAll('-', '')}`;
       const runtimeMigrations = materializeMigrationRuntimeDirectory(migrationsDir);
@@ -166,7 +92,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
             integrity_hash: string | null;
           }>(`
             SELECT action, session_sequence, integrity_hash
-            FROM kortix.audit_events
+            FROM kortix.audit_events_all
             WHERE session_id = 'legacy-session'
             ORDER BY session_sequence
           `);
@@ -175,43 +101,30 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
             { action: 'legacy.second', session_sequence: '2', integrity_hash: null },
           ]);
 
-          const firstV2 = await verified.query<{
-            session_sequence: string;
+          // Since the lock-free prepare trigger (20261001223552613) a new row gets no
+          // sequence and no chain hash. The legacy rows above keep theirs.
+          const later = await verified.query<{
+            action: string;
+            session_sequence: string | null;
             integrity_previous_hash: string | null;
-            integrity_hash: string;
+            integrity_hash: string | null;
           }>(`
             INSERT INTO kortix.audit_events(
               account_id, action, resource_type, project_id, session_id,
               actor_type, authoritative_source, outcome
-            ) VALUES (
-              'd7100000-0000-4000-a000-000000000001', 'v2.first', 'test',
-              'd7200000-0000-4000-a000-000000000001', 'legacy-session',
-              'system', 'system', 'success'
-            )
-            RETURNING session_sequence, integrity_previous_hash, integrity_hash
+            ) VALUES
+              ('d7100000-0000-4000-a000-000000000001', 'v2.first', 'test',
+               'd7200000-0000-4000-a000-000000000001', 'legacy-session',
+               'system', 'system', 'success'),
+              ('d7100000-0000-4000-a000-000000000001', 'v2.second', 'test',
+               'd7200000-0000-4000-a000-000000000001', 'legacy-session',
+               'system', 'system', 'success')
+            RETURNING action, session_sequence, integrity_previous_hash, integrity_hash
           `);
-          expect(firstV2.rows[0]?.session_sequence).toBe('3');
-          expect(firstV2.rows[0]?.integrity_previous_hash).toBeNull();
-          expect(firstV2.rows[0]?.integrity_hash).toHaveLength(64);
-
-          const secondV2 = await verified.query<{
-            session_sequence: string;
-            integrity_previous_hash: string | null;
-          }>(`
-            INSERT INTO kortix.audit_events(
-              account_id, action, resource_type, project_id, session_id,
-              actor_type, authoritative_source, outcome
-            ) VALUES (
-              'd7100000-0000-4000-a000-000000000001', 'v2.second', 'test',
-              'd7200000-0000-4000-a000-000000000001', 'legacy-session',
-              'system', 'system', 'success'
-            )
-            RETURNING session_sequence, integrity_previous_hash
-          `);
-          expect(secondV2.rows[0]).toEqual({
-            session_sequence: '4',
-            integrity_previous_hash: firstV2.rows[0]?.integrity_hash,
-          });
+          expect(later.rows).toEqual([
+            { action: 'v2.first', session_sequence: null, integrity_previous_hash: null, integrity_hash: null },
+            { action: 'v2.second', session_sequence: null, integrity_previous_hash: null, integrity_hash: null },
+          ]);
         } finally {
           await verified.end();
         }

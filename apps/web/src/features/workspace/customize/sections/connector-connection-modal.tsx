@@ -1,9 +1,8 @@
 'use client';
 
-import type { ConnectorAuthorizationStrategy } from '@kortix/sdk';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
@@ -17,15 +16,8 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { CaretDownIcon, PlusIcon, User, UsersThree } from '@phosphor-icons/react';
+import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 import {
@@ -37,129 +29,18 @@ import {
 } from './connector-connection-form';
 import { ConnectorConnectionHeader } from './connector-connection-header';
 
-export function AuthorizationStrategyField({
-  idPrefix,
-  value,
-  onChange,
-  disabled = false,
-  pending = false,
-  lockedReason,
-  hideLabel = false,
-}: {
-  idPrefix: string;
-  value: ConnectorAuthorizationStrategy;
-  onChange: (value: ConnectorAuthorizationStrategy) => void;
-  disabled?: boolean;
-  pending?: boolean;
-  /**
-   * Set on a connector that already exists, where the choice is settled.
-   *
-   * Forces the control off AND replaces the description, because a disabled
-   * select with unchanged help text reads as a bug: the user tries it, nothing
-   * happens, and nothing says why. The reason belongs where the control is.
-   */
-  lockedReason?: string;
-  /**
-   * Skips this field's own "Authorization owner" label. For a caller that
-   * already prints its own plain-language label for this exact control
-   * directly above it (the connector Settings tab's "Connects as") —
-   * so the two do not stack and repeat the same fact in two vocabularies.
-   * Defaults to `false`; every other caller is unaffected.
-   *
-   * It never leaves the control unnamed. In the interactive branch the
-   * suppressed `FieldLabel htmlFor` was the select's ONLY name source, so
-   * `hideLabel` alone would have shipped a form control with no accessible
-   * name (WCAG 4.1.2) — invisible to `tsc`, to eslint and to every test here.
-   * That combination is one line away: `connector-settings.tsx` today passes both
-   * `hideLabel` and a `lockedReason`, and its own comment says re-enabling
-   * editing means deleting `lockedReason`. So the two props are coupled below
-   * rather than documented apart — documenting it was tried, twice, and this
-   * still surprised a reviewer.
-   */
-  hideLabel?: boolean;
-}) {
-  const id = `${idPrefix}-authorization-strategy`;
-  /** The name the `<FieldLabel>` would have carried, moved onto the control
-   *  itself whenever that label is suppressed. */
-  const suppressedLabel = hideLabel ? 'Authorization owner' : undefined;
-
-  // Settled connectors get a STATEMENT, not a dead input. A disabled select
-  // still looks operable — it keeps the chevron, the focus ring and the hover —
-  // so it invites a click that does nothing. Reading the value out plainly is
-  // both calmer and more honest about the fact that there is no decision left.
-  if (lockedReason) {
-    const isProject = value === 'project';
-    return (
-      <Field>
-        {hideLabel ? null : <FieldLabel>Authorization owner</FieldLabel>}
-        <div className="bg-popover flex items-start gap-3 rounded-md border px-4 py-3">
-          <span
-            className={cn(
-              'flex size-9 shrink-0 items-center justify-center rounded-sm',
-              isProject ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
-            )}
-          >
-            {isProject ? (
-              <UsersThree className="text-kortix-blue size-5" weight="duotone" />
-            ) : (
-              <User className="text-kortix-purple size-5" weight="duotone" />
-            )}
-          </span>
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{isProject ? 'Project' : 'User'}</span>
-              <Badge variant="outline" size="xs">
-                Fixed
-              </Badge>
-            </div>
-            <p className="text-muted-foreground text-xs text-pretty">
-              {isProject
-                ? 'Everyone in this project shares one connection.'
-                : 'Everyone connects their own account.'}
-            </p>
-          </div>
-        </div>
-        <FieldDescription className="text-pretty">{lockedReason}</FieldDescription>
-      </Field>
-    );
-  }
-  return (
-    <Field>
-      <div className="flex items-center justify-between gap-2">
-        {hideLabel ? null : <FieldLabel htmlFor={id}>Authorization owner</FieldLabel>}
-        {pending ? <Loading className="size-4 shrink-0" /> : null}
-      </div>
-      <Select
-        value={value}
-        disabled={disabled || pending}
-        onValueChange={(next) => onChange(next as ConnectorAuthorizationStrategy)}
-      >
-        <SelectTrigger id={id} aria-label={suppressedLabel}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="project">Project</SelectItem>
-          <SelectItem value="user">User</SelectItem>
-        </SelectContent>
-      </Select>
-      <FieldDescription className="text-pretty">
-        {value === 'project'
-          ? 'Everyone in this project shares one connection.'
-          : 'Everyone connects their own account.'}
-      </FieldDescription>
-    </Field>
-  );
-}
-
 /**
  * The "Add connector" dialog: connection header + one primary button.
  *
- * Defaults (app name, proposed slug, project authorization) are always valid,
- * so a non-technical user reads the header and presses "+ Add connector"
- * without meeting "slug" or "authorization owner". Those fields stay behind a
- * collapsed disclosure for the rare rename / ownership case. The disclosure
- * force-opens when the slug inside it becomes invalid, so a submit that
- * would silently refuse never hides its reason.
+ * Defaults (app name, proposed slug) are always valid, so a non-technical user
+ * reads the header and presses "+ Add connector" without meeting "slug". That
+ * field stays behind a collapsed disclosure for the rare rename case. The
+ * disclosure force-opens when the slug inside it becomes invalid, so a submit
+ * that would silently refuse never hides its reason.
+ *
+ * There is no owner choice here any more. A connector is a capability with no
+ * identity; WHO it runs as is a property of each account on its Accounts tab,
+ * where both a shared and a private account can exist at the same time.
  */
 export function ConnectorConnectionModal({
   open,
@@ -169,7 +50,6 @@ export function ConnectorConnectionModal({
   initialSlug,
   existingSlugs,
   pending,
-  authorizationStrategyDisabled = false,
   icon,
   byline,
   summary,
@@ -185,7 +65,6 @@ export function ConnectorConnectionModal({
   initialSlug: string;
   existingSlugs: readonly string[];
   pending: boolean;
-  authorizationStrategyDisabled?: boolean;
   /** The app tile — `ConnectorConnectionIcon` over the catalogue record. */
   icon?: React.ReactNode;
   /** e.g. "by Pipedream". */
@@ -197,6 +76,7 @@ export function ConnectorConnectionModal({
   onOpenChange: (open: boolean) => void;
   onSubmit: (connection: EasyConnectConnectionInput) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // The proposed name counts the project's existing connections to this app,
   // so the second Sentry is "Sentry 2" — see `proposeConnectorConnectionName`.
   const proposedName = proposeConnectorConnectionName(initialName, existingSlugs);
@@ -204,8 +84,6 @@ export function ConnectorConnectionModal({
   const [slug, setSlug] = useState(initialSlug);
   const [slugEdited, setSlugEdited] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const [authorizationStrategy, setAuthorizationStrategy] =
-    useState<ConnectorAuthorizationStrategy>('project');
 
   useEffect(() => {
     if (!open) return;
@@ -213,7 +91,6 @@ export function ConnectorConnectionModal({
     setSlug(initialSlug);
     setSlugEdited(false);
     setOptionsOpen(false);
-    setAuthorizationStrategy('project');
   }, [proposedName, initialSlug, open]);
 
   const slugAvailable = isConnectorConnectionSlugAvailable(slug, existingSlugs);
@@ -239,12 +116,13 @@ export function ConnectorConnectionModal({
           onSubmit={(event) => {
             event.preventDefault();
             if (!name.trim() || !slugAvailable || pending) return;
-            onSubmit({ name, slug, authorizationStrategy });
+            onSubmit({ name, slug });
           }}
         >
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <p className="text-muted-foreground text-sm text-pretty">
-              Adds {displayName} to this project. You connect an account right after.
+              {tI18nComplete.raw('text17e9f72b9ba8')} {displayName}{' '}
+              {tI18nComplete.raw('texte99baf469ca8')}
             </p>
             <Disclosure
               variant="outline"
@@ -259,7 +137,7 @@ export function ConnectorConnectionModal({
                   className="flex w-full items-center justify-between rounded-none"
                 >
                   <span className="text-muted-foreground truncate text-sm font-medium">
-                    Advanced options
+                    {tI18nComplete.raw('text9443ff69463e')}
                   </span>
                   <CaretDownIcon className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
                 </Button>
@@ -268,7 +146,9 @@ export function ConnectorConnectionModal({
                 <div className="px-4 py-5">
                   <FieldGroup className="gap-4">
                     <Field>
-                      <FieldLabel htmlFor={`${idPrefix}-name`}>Display name</FieldLabel>
+                      <FieldLabel htmlFor={`${idPrefix}-name`}>
+                        {tI18nComplete.raw('text2b7f6a84de91')}
+                      </FieldLabel>
                       <Input
                         id={`${idPrefix}-name`}
                         value={name}
@@ -292,7 +172,9 @@ export function ConnectorConnectionModal({
                       />
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor={`${idPrefix}-slug`}>Slug</FieldLabel>
+                      <FieldLabel htmlFor={`${idPrefix}-slug`}>
+                        {tI18nComplete.raw('textd15387ecc6c5')}
+                      </FieldLabel>
                       <Input
                         id={`${idPrefix}-slug`}
                         value={slug}
@@ -315,17 +197,10 @@ export function ConnectorConnectionModal({
                         className={cn(slug.length > 0 && !slugAvailable && 'text-destructive')}
                       >
                         {slug.length > 0 && !slugAvailable
-                          ? 'This slug already exists in this project.'
-                          : 'Unique within this project. You can change the proposed value.'}
+                          ? tI18nComplete.raw('text1b07037029d3')
+                          : tI18nComplete.raw('text48026cbaf423')}
                       </FieldDescription>
                     </Field>
-                    <AuthorizationStrategyField
-                      idPrefix={idPrefix}
-                      value={authorizationStrategy}
-                      onChange={setAuthorizationStrategy}
-                      disabled={authorizationStrategyDisabled}
-                      pending={pending}
-                    />
                   </FieldGroup>
                 </div>
               </DisclosureContent>
@@ -338,7 +213,7 @@ export function ConnectorConnectionModal({
               onClick={() => onOpenChange(false)}
               disabled={pending}
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button
               type="submit"
@@ -350,7 +225,7 @@ export function ConnectorConnectionModal({
               ) : (
                 <PlusIcon className="size-4 shrink-0" weight="bold" />
               )}
-              {submitLabel ?? 'Add connector'}
+              {submitLabel ?? tI18nComplete.raw('texta6ef2483d6fb')}
             </Button>
           </ModalFooter>
         </form>

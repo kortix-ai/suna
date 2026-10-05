@@ -5,7 +5,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AccountOverviewTab } from '@/features/billing/account-overview';
+import { AccountOverviewTab, AccountOverviewView } from '@/features/billing/account-overview';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { ClaimPerSeatCard } from '@/features/billing/claim-per-seat-card';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
@@ -16,16 +16,19 @@ import {
   accountStateKeys,
   accountStateSelectors,
   invalidateAccountState,
+  useCancelSubscription,
   useCreatePortalSession,
+  useReactivateSubscription,
 } from '@/hooks/billing';
-import { getAccountState, type AccountState } from '@kortix/sdk';
 import { isBillingEnabled } from '@/lib/config';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { useEffect, useRef } from 'react';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * `showWallet` — whether this pane leads with the WALLET or with the PLAN.
@@ -55,7 +58,12 @@ export function BillingTab({
   isActive: boolean;
   showWallet?: boolean;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const t = useTranslations('billing.plan');
+  // The cancel dialog's dismiss label. `settings.billing.keepSubscription`
+  // is the existing, fully translated string for exactly this dialog — reuse
+  // it rather than adding a second copy of the same sentence.
+  const tBillingDialog = useTranslations('settings.billing');
+  const locale = useLocale();
   const { session, isLoading: authLoading } = useAuth();
   const highlight = useUserSettingsModalStore((s) => s.highlight);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -85,6 +93,9 @@ export function BillingTab({
   });
 
   const createPortalSessionMutation = useCreatePortalSession();
+  const cancelSubscriptionMutation = useCancelSubscription();
+  const reactivateSubscriptionMutation = useReactivateSubscription();
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const totalCredits = accountStateSelectors.totalCredits(accountState);
 
   const prevIsActiveRef = useRef(false);
@@ -104,7 +115,7 @@ export function BillingTab({
   const error = subscriptionError
     ? subscriptionError instanceof Error
       ? subscriptionError.message
-      : 'Failed to load subscription data'
+      : t('loadFailed')
     : null;
 
   if (isLoading) {
@@ -126,18 +137,28 @@ export function BillingTab({
   const hasActiveSubscription = Boolean(subscription?.subscription_id);
   const subscribedToTeam = isPerSeat && hasActiveSubscription;
   const showTeamCheckout = isBillingEnabled() && !hasActiveSubscription;
+  const subscriptionCancelling = subscription?.cancel_at_period_end === true;
+  // The cancel control lives on the pane a paying customer manages their
+  // subscription from. A pending cancellation renders Reactivate instead of a
+  // second Cancel; an active commitment disables Cancel with the date it
+  // unlocks — the route (subscriptions.ts) enforces the same rule, this only
+  // says it before the click. Older API responses omit `commitment`:
+  // undefined still means "allowed".
+  const canCancelSubscription = subscription?.commitment?.can_cancel !== false;
+  const commitmentEnd = subscription?.commitment?.commitment_end_date
+    ? new Date(subscription.commitment.commitment_end_date)
+    : null;
 
   return (
     <div className="space-y-8">
+      {!hasActiveSubscription && (!showWallet || showTeamCheckout) && accountState ? (
+        <AccountOverviewView state={accountState} />
+      ) : null}
       {showTeamCheckout ? (
         <section className="space-y-4">
           <div className="space-y-1">
-            <Label>Kortix Team</Label>
-            <p className="text-muted-foreground text-xs">
-              {tI18nHardcoded.raw(
-                'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571',
-              )}
-            </p>
+            <Label>{t('teamTitle')}</Label>
+            <p className="text-muted-foreground text-xs">{t('teamDescription')}</p>
           </div>
           <div className="bg-popover rounded-md border px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -151,7 +172,7 @@ export function BillingTab({
                 }
                 className="shrink-0"
               >
-                Subscribe to Team
+                {t('subscribe')}
               </Button>
               <Button
                 variant="ghost"
@@ -163,7 +184,7 @@ export function BillingTab({
                 {createPortalSessionMutation.isPending ? (
                   <Loading className="size-4 shrink-0" />
                 ) : null}
-                Manage billing
+                {t('manageBilling')}
               </Button>
             </div>
           </div>
@@ -175,15 +196,8 @@ export function BillingTab({
               the Credits pane, which shows the shortfall in the number itself
               rather than in a banner over a pane about subscriptions. */}
           {showWallet && highlight === 'credits' && totalCredits <= 0 && (
-            <InfoBanner
-              tone="warning"
-              title={tI18nHardcoded.raw(
-                'autoFeaturesAccountsSettingsBillingTabJsxAttrTitleYouRanefc3b00e',
-              )}
-            >
-              {canPurchaseCredits
-                ? 'Buy credits below or turn on auto top-up so it never happens again.'
-                : 'Top up your wallet to keep your agents running.'}
+            <InfoBanner tone="warning" title={t('outOfCredits')}>
+              {canPurchaseCredits ? t('buyCreditsHint') : t('topupWalletHint')}
             </InfoBanner>
           )}
 
@@ -210,7 +224,7 @@ export function BillingTab({
           {showWallet && canPurchaseCredits && (
             <div className="bg-popover rounded-md border">
               <section className="space-y-3 px-4 py-4">
-                <h3 className="text-foreground text-sm font-medium">Add credits</h3>
+                <h3 className="text-foreground text-sm font-medium">{t('addCredits')}</h3>
                 <CreditTopupSection />
               </section>
               <div className="border-t px-4 py-4">
@@ -224,26 +238,77 @@ export function BillingTab({
               button rather than let it 404/error on click. */}
           {isBillingEnabled() ? (
             <section className="space-y-4">
-              <Label>Billing portal</Label>
+              <Label>{t('billingPortal')}</Label>
               <div className="bg-popover rounded-md border px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
-                  <p className="text-muted-foreground min-w-0 text-xs">
-                    Manage your subscription, payment methods, and invoices.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 gap-1.5"
-                    onClick={handleManageSubscription}
-                    disabled={createPortalSessionMutation.isPending}
-                  >
-                    {createPortalSessionMutation.isPending ? (
-                      <Loading className="size-4 shrink-0" />
+                  <p className="text-muted-foreground min-w-0 text-xs">{t('portalDescription')}</p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {subscriptionCancelling ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0 gap-1.5"
+                        onClick={() => reactivateSubscriptionMutation.mutate()}
+                        disabled={reactivateSubscriptionMutation.isPending}
+                      >
+                        {reactivateSubscriptionMutation.isPending ? (
+                          <Loading className="size-4 shrink-0" />
+                        ) : null}
+                        {t('reactivateSubscription')}
+                      </Button>
+                    ) : hasActiveSubscription ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => setConfirmingCancel(true)}
+                        disabled={!canCancelSubscription}
+                      >
+                        {t('cancelSubscription')}
+                      </Button>
                     ) : null}
-                    Manage billing
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 gap-1.5"
+                      onClick={handleManageSubscription}
+                      disabled={createPortalSessionMutation.isPending}
+                    >
+                      {createPortalSessionMutation.isPending ? (
+                        <Loading className="size-4 shrink-0" />
+                      ) : null}
+                      {t('manageBilling')}
+                    </Button>
+                  </div>
                 </div>
+                {hasActiveSubscription && !canCancelSubscription && commitmentEnd ? (
+                  <p className="text-muted-foreground mt-3 text-xs">
+                    {t('commitmentCancelHint', {
+                      date: commitmentEnd.toLocaleDateString(locale, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      }),
+                    })}
+                  </p>
+                ) : null}
               </div>
+              {hasActiveSubscription ? (
+                <ConfirmDialog
+                  open={confirmingCancel}
+                  onOpenChange={setConfirmingCancel}
+                  title={t('cancelSubscription')}
+                  description={t('cancelSubscriptionDescription')}
+                  confirmLabel={t('cancelSubscription')}
+                  cancelLabel={tBillingDialog('keepSubscription')}
+                  confirmVariant="destructive"
+                  isPending={cancelSubscriptionMutation.isPending}
+                  onConfirm={() => {
+                    setConfirmingCancel(false);
+                    cancelSubscriptionMutation.mutate();
+                  }}
+                />
+              ) : null}
             </section>
           ) : null}
         </>

@@ -1,4 +1,4 @@
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
@@ -6,12 +6,26 @@ import { logger } from '../lib/logger';
 import { captureException } from '../lib/sentry';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
-import { settleOpenSandboxTurns } from './sandbox-turn-lifecycle';
+import { settleOpenSandboxTurns } from './session-turn-ledger';
 import type { StopReason } from './stop-reason';
 import {
   STAMPED_RUNTIME_FAILURE_STOP_REASONS,
   runtimeStartFailurePatch,
 } from './session-lifecycle/runtime-wake-fence';
+import {
+  STOPPED_SANDBOX_CLEARED_KEYS,
+  patchedSandboxMetadata,
+  transitionRuntime,
+} from './session-lifecycle/status-transitions';
+import {
+  STOP_CLAIM_KEY,
+  holdsStopClaim,
+  noLiveStopClaim,
+  stopClaimMetadata,
+} from './session-lifecycle/stop-claim';
+import { PROVIDER_REMOVAL_PENDING_KEY } from './reaping/archived-box-removal';
+import { isAlreadyNotRunning } from './reaping/policy';
+import { sessionHoldsTurnAuthority } from './session-lifecycle/inbox-admission';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
 /** Stable alert key. Better Stack / Sentry rules match on this, not on prose. */
@@ -22,17 +36,36 @@ export const RUNTIME_IDENTITY_ERROR =
 type RuntimeIdentityRow = Pick<
   typeof sessionSandboxes.$inferSelect,
   'sandboxId' | 'sessionId' | 'externalId' | 'metadata'
->;
+> & { status?: string | null };
+
+/**
+ * Stamped on a row BEFORE Kortix asks the provider to stop/remove its box
+ * (account deletion). The provider's `removed` webhook can land before the
+ * deleting request settles the row; this stamp tells the classifier the removal
+ * is ours, not a lost runtime.
+ */
+export const KORTIX_REMOVAL_INTENT_KEY = 'kortixRemovalIntentAt';
+
+/** A removal Kortix itself started: deleted/archived session or account teardown. */
+export function isKortixInitiatedRemoval(row: Pick<RuntimeIdentityRow, 'status' | 'metadata'>): boolean {
+  const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+  return (
+    row.status === 'archived' ||
+    metadata[KORTIX_REMOVAL_INTENT_KEY] != null ||
+    metadata[PROVIDER_REMOVAL_PENDING_KEY] != null
+  );
+}
 
 type RecoverableRuntimeIdentityRow = typeof sessionSandboxes.$inferSelect;
 
 const RECOVERY_LEASE_MS = 10 * 60 * 1000;
 
-class RuntimeIdentityCasLostError extends Error {}
-
-function sessionIsNotDeleted() {
-  return sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
-}
+/** The recovery lease keys. Every write that ends a recovery drops them. */
+const RECOVERY_LEASE_KEYS = [
+  'runtimeRecoveryLeaseId',
+  'runtimeRecoveryLeaseAt',
+  'runtimeRecoveryLeaseExpiresAtMs',
+] as const;
 
 export type RuntimeRecoveryClaim = {
   row: RecoverableRuntimeIdentityRow & { externalId: string };
@@ -51,43 +84,28 @@ export async function claimInPlaceRuntimeRecovery(
   if (Number.isFinite(currentExpiry) && currentExpiry > now.getTime()) return null;
 
   const leaseId = crypto.randomUUID();
-  const metadata = {
-    ...currentMetadata,
-    runtimeIdentityState: 'recovery_claimed',
-    runtimeRecoveryLeaseId: leaseId,
-    runtimeRecoveryLeaseAt: now.toISOString(),
-    runtimeRecoveryLeaseExpiresAtMs: now.getTime() + RECOVERY_LEASE_MS,
-    preservedExternalId: externalId,
-  };
-
-  try {
-    const claimed = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({ status: 'provisioning', error: null, updatedAt: now })
-        .where(and(eq(projectSessions.sessionId, row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-
-      const [claimedRow] = await tx
-        .update(sessionSandboxes)
-        .set({ status: 'provisioning', metadata, updatedAt: now })
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, row.sandboxId),
-            eq(sessionSandboxes.externalId, externalId),
-            sql`CASE WHEN jsonb_typeof(${sessionSandboxes.metadata}->'runtimeRecoveryLeaseExpiresAtMs') = 'number' THEN (${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseExpiresAtMs')::numeric ELSE 0 END < ${now.getTime()}`,
-          ),
-        )
-        .returning();
-      if (!claimedRow) throw new RuntimeIdentityCasLostError();
-      return claimedRow;
-    });
-    return claimed ? { row: { ...claimed, externalId }, leaseId } : null;
-  } catch (err) {
-    if (err instanceof RuntimeIdentityCasLostError) return null;
-    throw err;
-  }
+  const claimed = await transitionRuntime({
+    sessionId: row.sessionId,
+    sandboxId: row.sandboxId,
+    session: 'provision',
+    sandbox: 'provision',
+    at: now,
+    error: null,
+    metadata: {
+      merge: {
+        runtimeIdentityState: 'recovery_claimed',
+        runtimeRecoveryLeaseId: leaseId,
+        runtimeRecoveryLeaseAt: now.toISOString(),
+        runtimeRecoveryLeaseExpiresAtMs: now.getTime() + RECOVERY_LEASE_MS,
+        preservedExternalId: externalId,
+      },
+    },
+    guard: and(
+      eq(sessionSandboxes.externalId, externalId),
+      sql`CASE WHEN jsonb_typeof(${sessionSandboxes.metadata}->'runtimeRecoveryLeaseExpiresAtMs') = 'number' THEN (${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseExpiresAtMs')::numeric ELSE 0 END < ${now.getTime()}`,
+    ),
+  });
+  return claimed ? { row: { ...claimed, externalId }, leaseId } : null;
 }
 
 /** Persist provider acceptance only if this request still owns the recovery fence. */
@@ -96,62 +114,38 @@ export async function markInPlaceRuntimeRecoveryAccepted(
   recovery: 'running' | 'recovering',
   now = new Date(),
 ): Promise<RecoverableRuntimeIdentityRow | null> {
-  const metadata: Record<string, unknown> = {
-    ...((claim.row.metadata as Record<string, unknown> | null) ?? {}),
-    runtimeIdentityState: recovery === 'running' ? 'recovered' : 'recovering',
-    runtimeRecoveryStartedAt: now.toISOString(),
-    preservedExternalId: claim.row.externalId,
-  };
-  delete metadata.runtimeUnavailableReason;
-  delete metadata.runtimeUnavailableAt;
-  if (recovery === 'running') {
-    delete metadata.runtimeRecoveryLeaseId;
-    delete metadata.runtimeRecoveryLeaseAt;
-    delete metadata.runtimeRecoveryLeaseExpiresAtMs;
+  const running = recovery === 'running';
+  const updated = await transitionRuntime({
+    sessionId: claim.row.sessionId,
+    sandboxId: claim.row.sandboxId,
+    session: running ? 'resume' : 'provision',
+    sandbox: running ? 'activate' : 'provision',
+    at: now,
+    error: null,
+    metadata: {
+      strip: [
+        'runtimeUnavailableReason',
+        'runtimeUnavailableAt',
+        ...(running ? RECOVERY_LEASE_KEYS : []),
+      ],
+      merge: {
+        runtimeIdentityState: running ? 'recovered' : 'recovering',
+        runtimeRecoveryStartedAt: now.toISOString(),
+        preservedExternalId: claim.row.externalId,
+      },
+    },
+    guard: and(
+      eq(sessionSandboxes.externalId, claim.row.externalId),
+      sql`${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseId' = ${claim.leaseId}`,
+    ),
+  });
+  if (updated && running) {
+    void reopenComputeForSandbox(updated.sandboxId, updated.accountId, updated.sessionId, null, updated.provider as ProviderName).catch(
+      (err) =>
+        console.warn(`[runtime-identity] compute reopen failed for ${updated.sandboxId}:`, err),
+    );
   }
-
-  try {
-    const updated = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({
-          status: recovery === 'running' ? 'running' : 'provisioning',
-          error: null,
-          updatedAt: now,
-        })
-        .where(and(eq(projectSessions.sessionId, claim.row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-
-      const [updatedRow] = await tx
-        .update(sessionSandboxes)
-        .set({
-          status: recovery === 'running' ? 'active' : 'provisioning',
-          metadata,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, claim.row.sandboxId),
-            eq(sessionSandboxes.externalId, claim.row.externalId),
-            sql`${sessionSandboxes.metadata}->>'runtimeRecoveryLeaseId' = ${claim.leaseId}`,
-          ),
-        )
-        .returning();
-      if (!updatedRow) throw new RuntimeIdentityCasLostError();
-      return updatedRow;
-    });
-    if (updated && recovery === 'running') {
-      void reopenComputeForSandbox(updated.sandboxId, updated.accountId, updated.sessionId, null, updated.provider as ProviderName).catch(
-        (err) =>
-          console.warn(`[runtime-identity] compute reopen failed for ${updated.sandboxId}:`, err),
-      );
-    }
-    return updated;
-  } catch (err) {
-    if (err instanceof RuntimeIdentityCasLostError) return null;
-    throw err;
-  }
+  return updated;
 }
 
 export async function finalizeRecoveredRuntimeIfRunning(
@@ -206,65 +200,61 @@ export async function preserveEstablishedRuntime(
     ),
   );
 
-  const metadata = {
-    ...((row.metadata as Record<string, unknown> | null) ?? {}),
-  };
-  delete metadata.needsReprovision;
-  delete metadata.runtimeRecoveryLeaseId;
-  delete metadata.runtimeRecoveryLeaseAt;
-  delete metadata.runtimeRecoveryLeaseExpiresAtMs;
-  Object.assign(metadata, {
-    runtimeIdentityState: 'unavailable',
-    runtimeUnavailableReason: reason,
-    runtimeUnavailableAt: now.toISOString(),
-    preservedExternalId: externalId,
-    // NOT resumable in place — /start must branch on runtimeIdentityState, not
-    // on the bare `stopped` status (see Task 7). WHICH park this is comes from
-    // the caller; see the note on the parameter above.
-    stopReason,
-    stoppedAt: now.toISOString(),
+  const preserved = await transitionRuntime({
+    sessionId: row.sessionId,
+    sandboxId: row.sandboxId,
+    session: 'park',
+    sandbox: 'stop',
+    at: now,
+    error: RUNTIME_IDENTITY_ERROR,
+    metadata: {
+      strip: ['needsReprovision', ...RECOVERY_LEASE_KEYS],
+      merge: {
+        runtimeIdentityState: 'unavailable',
+        runtimeUnavailableReason: reason,
+        runtimeUnavailableAt: now.toISOString(),
+        preservedExternalId: externalId,
+        // NOT resumable in place — /start must branch on runtimeIdentityState, not
+        // on the bare `stopped` status (see Task 7). WHICH park this is comes from
+        // the caller; see the note on the parameter above.
+        stopReason,
+        stoppedAt: now.toISOString(),
+      },
+    },
+    guard: eq(sessionSandboxes.externalId, externalId),
+    // The box is GONE at the provider, so any turn still open ended because
+    // the runtime went away. Once the row reads `stopped`, every token-scoped
+    // ledger settle refuses it — they all require an active/provisioning row
+    // — so this transaction is the last moment the history can be closed.
+    // Savepoint-bounded: the park must not become abortable by an
+    // observation table (see settleOpenSandboxTurns).
+    then: (tx) => settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone'),
   });
-
-  let preserved: typeof sessionSandboxes.$inferSelect | null = null;
-  try {
-    preserved = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({
-          status: 'stopped',
-          error: RUNTIME_IDENTITY_ERROR,
-          updatedAt: now,
-        })
-        .where(and(eq(projectSessions.sessionId, row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-      const [preservedRow] = await tx
-    .update(sessionSandboxes)
-    .set({ status: 'stopped', metadata, updatedAt: now })
-    .where(
-      and(
-        eq(sessionSandboxes.sandboxId, row.sandboxId),
-            eq(sessionSandboxes.externalId, externalId),
-      ),
-    )
-    .returning();
-      if (!preservedRow) throw new RuntimeIdentityCasLostError();
-      // The box is GONE at the provider, so any turn still open ended because
-      // the runtime went away. Once the row reads `stopped`, every token-scoped
-      // ledger settle refuses it — they all require an active/provisioning row
-      // — so this transaction is the last moment the history can be closed.
-      // Savepoint-bounded: the park must not become abortable by an
-      // observation table (see settleOpenSandboxTurns).
-      await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
-      return preservedRow;
-    });
-  } catch (err) {
-    if (!(err instanceof RuntimeIdentityCasLostError)) throw err;
-  }
 
   if (!preserved) return null;
 
-  reportLostRuntime(preserved, reason, stopReason, now);
+  // Once per identity. Every open of a lost session runs the removed path and
+  // lands here again (the client polls /start every second), and each pass
+  // used to report the same loss as a new one.
+  const before = (row.metadata as Record<string, unknown> | null) ?? {};
+  const alreadyReported =
+    before.runtimeIdentityState === 'unavailable' && before.preservedExternalId === externalId;
+  if (!alreadyReported) {
+    // A removal Kortix started is an expected teardown, not lost user work.
+    if (isKortixInitiatedRemoval(row)) {
+      logger.info('Session runtime removed by Kortix-initiated teardown', {
+        event: 'runtime.removed_expected',
+        provider: preserved.provider,
+        externalId,
+        sandboxId: row.sandboxId,
+        sessionId: row.sessionId,
+        reason,
+        stopReason,
+      });
+    } else {
+      reportLostRuntime(preserved, reason, stopReason, now);
+    }
+  }
   return preserved;
 }
 
@@ -277,7 +267,7 @@ export async function preserveEstablishedRuntime(
  * that a later `/start` can wake. Incident 2026-08-14: a dead local tunnel kept
  * two healthy sandboxes from booting, the on-open path preserved both as lost
  * without asking the provider, and both control planes showed the boxes running
- * the whole time (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+ * the whole time.
  */
 export type RuntimeLossVerdict = 'preserve' | 'park';
 
@@ -308,7 +298,7 @@ export function parkMetadataPatch(
     // A park for a FAILED start is a cooldown, not a gravestone. Without this
     // clock `stoppedWakeResult` had nothing to expire, so a `runtime_boot_failed`
     // stamp replayed `stage:"failed"` on every open for as long as the row
-    // lived — 10+ hours on Essentia session 9c8749ac, 2026-08-26, without one
+    // lived — 10+ hours on a SampleCo session, 2026-08-26, without one
     // provider call. The counter is what escalates the cooldown and eventually
     // earns a terminal card that NAMES the attempts.
     ...((STAMPED_RUNTIME_FAILURE_STOP_REASONS as readonly string[]).includes(stopReason)
@@ -323,13 +313,25 @@ type ParkableRuntimeRow = Pick<
 >;
 
 /**
- * Park an established runtime that FAILED without being lost: close its
- * compute window, stop the provider box, and record an ordinary stopped row.
+ * Park an established runtime that FAILED without being lost: stop the
+ * provider box, record an ordinary stopped row, and close its compute window.
  * Unlike {@link preserveEstablishedRuntime} it writes no loss flags, so the
  * session stays wakeable and the UI shows the honest "restart it" card. The
  * provider stop is load-bearing, not defensive: the incident's boot-failed
  * boxes stayed RUNNING on both providers after their rows were marked stopped
  * and their metering closed — unmetered compute until a backstop fired.
+ *
+ * Three steps, and no transaction is open across the provider call:
+ *   1. Claim: one UPDATE installs a stop claim on the exact row the caller
+ *      read (CAS on `updated_at`). The row stays `active`. A new prompt and an
+ *      in-place restart refuse the row while the claim is live.
+ *   2. `provider.stop()`.
+ *   3. On success, park both rows in one transaction under the same claim,
+ *      then close the compute window. On failure, release the claim: the row
+ *      is `active` again, exactly as the caller found it, and its metering
+ *      stays open because the box may still run.
+ *
+ * Returns the parked row, or null when the claim was lost or the stop failed.
  */
 export async function parkEstablishedRuntime(
   row: ParkableRuntimeRow,
@@ -341,77 +343,188 @@ export async function parkEstablishedRuntime(
     throw new Error(`Cannot park sandbox ${row.sandboxId} as established without an external_id`);
   }
   const externalId = row.externalId;
+  const token = crypto.randomUUID();
 
-  const metadata = {
-    ...((row.metadata as Record<string, unknown> | null) ?? {}),
-  };
-  delete metadata.needsReprovision;
-  delete metadata.runtimeRecoveryLeaseId;
-  delete metadata.runtimeRecoveryLeaseAt;
-  delete metadata.runtimeRecoveryLeaseExpiresAtMs;
-  Object.assign(
-    metadata,
-    parkMetadataPatch(reason, stopReason, now, (row.metadata as Record<string, unknown>) ?? null),
-  );
+  // A readiness request can outlive the wake it inspected. The wake rewrites
+  // this row before starting the provider. No provider or billing side effect
+  // is allowed unless this exact snapshot wins.
+  const [claimed] = await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: patchedSandboxMetadata({ merge: stopClaimMetadata(token, now) }),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, row.sandboxId),
+        eq(sessionSandboxes.status, 'active'),
+        eq(sessionSandboxes.externalId, externalId),
+        eq(sessionSandboxes.updatedAt, row.updatedAt),
+        noLiveStopClaim(now),
+      ),
+    )
+    .returning({ sandboxId: sessionSandboxes.sandboxId });
+  if (!claimed) return null;
 
-  let parked: typeof sessionSandboxes.$inferSelect | null = null;
   try {
-    parked = await db.transaction(async (tx) => {
-      const [liveSession] = await tx
-        .update(projectSessions)
-        .set({ status: 'stopped', error: null, updatedAt: now })
-        .where(and(eq(projectSessions.sessionId, row.sessionId), sessionIsNotDeleted()))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (!liveSession) return null;
-      const [parkedRow] = await tx
-        .update(sessionSandboxes)
-        .set({ status: 'stopped', metadata, updatedAt: now })
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, row.sandboxId),
-            eq(sessionSandboxes.externalId, externalId),
-            eq(sessionSandboxes.status, 'active'),
-            // A readiness request can outlive the wake it inspected. The wake
-            // rewrites this row before starting the provider. No provider or
-            // billing side effect is allowed unless this exact snapshot wins.
-            eq(sessionSandboxes.updatedAt, row.updatedAt),
-          ),
-        )
-        .returning();
-      if (!parkedRow) throw new RuntimeIdentityCasLostError();
-      // A turn that was open ended with this runtime. The settle remains
-      // savepoint-bounded so an observation-table failure cannot abort the
-      // lifecycle claim this transaction now owns.
-      await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
-
-      // Keep the row lock through the provider pause. A concurrent restart
-      // cannot start the same runtime between our CAS and this stop.
-      let providerStopped = false;
-      try {
-        await getProvider(row.provider as ProviderName).stop(externalId);
-        providerStopped = true;
-      } catch (err) {
-        console.warn(
-          `[runtime-identity] provider stop failed while parking ${externalId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-      if (providerStopped) {
-        await endComputeSession(row.sandboxId).catch((err) =>
-          console.warn(
-            `[runtime-identity] failed to close compute for ${row.sandboxId} while parking ${externalId}:`,
-            err,
-          ),
-        );
-      }
-      return parkedRow;
-    });
+    await getProvider(row.provider as ProviderName).stop(externalId);
   } catch (err) {
-    if (err instanceof RuntimeIdentityCasLostError) return null;
-    throw err;
+    if (!isAlreadyNotRunning(err)) {
+      console.warn(
+        `[runtime-identity] provider stop failed while parking ${externalId}; the row stays active:`,
+        err instanceof Error ? err.message : err,
+      );
+      await releaseParkClaim(row.sandboxId, token);
+      return null;
+    }
   }
 
+  const parked = await transitionRuntime({
+    sessionId: row.sessionId,
+    sandboxId: row.sandboxId,
+    session: 'park',
+    sandbox: 'park',
+    at: now,
+    error: null,
+    metadata: {
+      // A stopped row keeps no wake fence, turn authority or stop claim.
+      strip: ['needsReprovision', ...RECOVERY_LEASE_KEYS, ...STOPPED_SANDBOX_CLEARED_KEYS],
+      merge: parkMetadataPatch(
+        reason,
+        stopReason,
+        now,
+        (row.metadata as Record<string, unknown>) ?? null,
+      ),
+    },
+    guard: and(eq(sessionSandboxes.externalId, externalId), holdsStopClaim(token)),
+    then: async (tx) => {
+      // A turn that was open ended with this runtime. The settle remains
+      // savepoint-bounded so an observation-table failure cannot abort the
+      // park this transaction commits.
+      await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
+    },
+  });
+  if (!parked) {
+    // A deleted session refuses the park. Leave its row to the delete.
+    await releaseParkClaim(row.sandboxId, token);
+    return null;
+  }
+  await endComputeSession(row.sandboxId).catch((err) =>
+    console.warn(
+      `[runtime-identity] failed to close compute for ${row.sandboxId} while parking ${externalId}:`,
+      err,
+    ),
+  );
   return parked;
+}
+
+async function releaseParkClaim(sandboxId: string, token: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({ metadata: patchedSandboxMetadata({ strip: [STOP_CLAIM_KEY] }) })
+    .where(and(eq(sessionSandboxes.sandboxId, sandboxId), holdsStopClaim(token)))
+    .catch((err) =>
+      console.warn(`[runtime-identity] failed to release the park claim on ${sandboxId}:`, err),
+    );
+}
+
+type RefusableRuntimeRow = ParkableRuntimeRow & { status: string };
+
+/**
+ * Retire an ESTABLISHED runtime that FAILED Rule 4 admission, so the caller can
+ * allocate a fresh box on the SAME session — the contract's own words: "a box
+ * that fails admission is replaced, not used." `preserveEstablishedRuntimeOnOpen`
+ * (routes/shared.ts) used to route admission refusals here through
+ * {@link preserveEstablishedRuntime} / {@link parkEstablishedRuntime}, both of
+ * which stop the session (`stage:'failed'`) — the opposite of the contract for
+ * a box that is merely unserviceable, not lost. Admission refusal is a FIFTH,
+ * different population from the four `preserveEstablishedRuntimeOnOpen` already
+ * serves, so it gets its own function instead of a flag on that one.
+ *
+ * Safe to delete the row: the session's durable identity — git branch, commits,
+ * server-side transcript — lives outside the box, which materializes from the
+ * branch. Nothing durable is lost; the caller re-provisions immediately.
+ *
+ * Never pulls a box out from under a live turn (Rule 5): refuses up front if
+ * turn authority is held (`sessionHoldsTurnAuthority`, the same predicate
+ * admission and `GET .../turn` already share), then reuses
+ * `parkEstablishedRuntime`'s own claim/stop/settle machinery so a turn that
+ * starts in the gap is fenced off by the identical stop claim.
+ *
+ * Returns false — no claim, no stop, no delete — for: a live turn, a lost CAS
+ * race on the claim, a provider stop that genuinely failed (the box may still
+ * be running unmetered; leave the row alone rather than delete a row for a box
+ * nobody confirmed is off), or a lost race on the delete itself.
+ */
+export async function retireRefusedRuntime(
+  row: RefusableRuntimeRow,
+  reason: string,
+  now = new Date(),
+): Promise<boolean> {
+  if (!row.externalId) {
+    throw new Error(
+      `Cannot retire sandbox ${row.sandboxId} for replacement without an external_id`,
+    );
+  }
+  if (sessionHoldsTurnAuthority({ status: row.status, metadata: row.metadata })) return false;
+  const externalId = row.externalId;
+  const token = crypto.randomUUID();
+
+  const [claimed] = await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: patchedSandboxMetadata({ merge: stopClaimMetadata(token, now) }),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, row.sandboxId),
+        eq(sessionSandboxes.status, 'active'),
+        eq(sessionSandboxes.externalId, externalId),
+        eq(sessionSandboxes.updatedAt, row.updatedAt),
+        noLiveStopClaim(now),
+      ),
+    )
+    .returning({ sandboxId: sessionSandboxes.sandboxId });
+  if (!claimed) return false;
+
+  try {
+    await getProvider(row.provider as ProviderName).stop(externalId);
+  } catch (err) {
+    if (!isAlreadyNotRunning(err)) {
+      console.warn(
+        `[runtime-identity] provider stop failed while retiring refused ${externalId} (${reason}); the row stays active:`,
+        err instanceof Error ? err.message : err,
+      );
+      await releaseParkClaim(row.sandboxId, token);
+      return false;
+    }
+  }
+
+  // DELETE first, settle only if it actually won the claim: unlike an UPDATE
+  // guarded by `transitionRuntime`, a DELETE that matches zero rows is not an
+  // error, so settling before checking the row count would durably close
+  // turns for a delete that never happened.
+  const deleted = await db.transaction(async (tx) => {
+    const rows = await tx
+      .delete(sessionSandboxes)
+      .where(and(eq(sessionSandboxes.sandboxId, row.sandboxId), holdsStopClaim(token)))
+      .returning({ sandboxId: sessionSandboxes.sandboxId });
+    if (rows.length === 0) return rows;
+    // Savepoint-bounded inside settleOpenSandboxTurns itself: a ledger failure
+    // must not undo a delete whose provider box is already stopped.
+    await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
+    return rows;
+  });
+  if (deleted.length === 0) return false;
+
+  await endComputeSession(row.sandboxId).catch((err) =>
+    console.warn(
+      `[runtime-identity] failed to close compute for ${row.sandboxId} while retiring refused ${externalId}:`,
+      err,
+    ),
+  );
+  return true;
 }
 
 /**

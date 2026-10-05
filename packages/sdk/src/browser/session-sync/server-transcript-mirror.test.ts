@@ -298,6 +298,35 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 		expect(urls.some((u) => u.includes("/transcript"))).toBe(true);
 	});
 
+	test("a bundle that answered 'no saved copy' is final: no second read", async () => {
+		resetSessionOpenBundles();
+		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
+		const urls = mockFetch({
+			observed_at: "2026-09-25T12:00:00.000Z",
+			session: { session_id: "S1" },
+			turn: { known: true, turns: [] },
+			queue: { known: true, prompts: [], held: false },
+			transcript: {
+				known: true,
+				requested: true,
+				available: false,
+				reason: "no server-side transcript has been captured for this session yet",
+				source: "none",
+				complete: false,
+				captured_at: null,
+				opencode_session_id: null,
+				message_count: 0,
+				messages: [],
+			},
+			config: { known: true },
+			models: { known: false, reason: "x" },
+		});
+		openSessionBundle("P1", "S1");
+		const painted = await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		expect(painted).toBeNull();
+		expect(urls.filter((u) => u.includes("/transcript"))).toHaveLength(0);
+	});
+
 	test("reads the transcript route when no bundle stashed one", async () => {
 		resetSessionOpenBundles();
 		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
@@ -306,4 +335,19 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 		expect(urls[0]).toContain("/sessions/S1/transcript?shape=sync");
 		expect(painted?.opencode_session_id).toBe(ROOT);
 	});
+});
+
+test('an authoritative empty live read cannot be overwritten by late saved history', () => {
+  expect(shouldHydrateFromMirror({
+    envelope: envelope(), runtimeSessionId: ROOT, hasMessages: false, hasLoadedTranscript: true,
+  })).toBe(false);
+});
+
+test('an empty live transcript removes every provisional saved message', async () => {
+  const { useSyncStore } = await import('../stores/sync-store');
+  useSyncStore.getState().clearSession(ROOT);
+  useSyncStore.getState().hydrate(ROOT, mirrorMessagesForHydrate(envelope()), { source: 'cache' });
+  useSyncStore.getState().hydrate(ROOT, [], { source: 'runtime' });
+  expect(useSyncStore.getState().messages[ROOT]).toEqual([]);
+  useSyncStore.getState().clearSession(ROOT);
 });

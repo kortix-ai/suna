@@ -621,3 +621,119 @@ describe.if(hasDatabase)('GET /v1/accounts/:accountId/iam/permissions', () => {
     expect(res.status).toBe(403);
   });
 });
+
+// The owner ceiling. `PATCH /accounts/:id/members/:userId` refuses a non-owner
+// who assigns or changes `owner` (it asserts `member.super_admin.grant`), but
+// this route reached the same `assignRole` write with only `member.update`, so
+// an account ADMIN could POST `role_key: owner` for themselves (201) and become
+// an owner. Reproduced 2026-09-21 against a local API. The ceiling now lives in
+// `assertWriterMayAssign`, which the grant, update and revoke paths all share.
+//
+// A second hole: an account-scope SYSTEM role granted to a GROUP. The engine
+// (`resolvePrincipal`) reads group rows and hands every member that tier, but
+// `accountRoleFor` reads only user rows, so the member list, badges and
+// membership checks still say "member" while the member acts as an owner.
+describe.if(hasDatabase)('POST/DELETE /iam/assignments — the account-role ceiling', () => {
+  const admin = uid();
+  const secondOwner = uid();
+  const groupId = uid();
+  let adminToken = '';
+
+  beforeAll(async () => {
+    for (const [userId, role] of [
+      [admin, 'admin'],
+      [secondOwner, 'owner'],
+    ] as const) {
+      await raw(
+        `insert into kortix.account_members (user_id, account_id, account_role, is_super_admin)
+         values ('${userId}','${ACCOUNT}','${role}', false)`,
+      );
+    }
+    await raw(
+      `insert into kortix.account_groups (group_id, account_id, name) values ('${groupId}','${ACCOUNT}','ceiling')`,
+    );
+    adminToken = await mint(admin);
+    clearAuthorizeCaches();
+  });
+
+  async function ownerRowsFor(principalId: string): Promise<number> {
+    const rows = await db.execute(
+      sql.raw(`select 1 from kortix.role_assignments ra
+               join kortix.iam_roles r on r.role_id = ra.role_id
+               where ra.account_id = '${ACCOUNT}' and ra.principal_id = '${principalId}'
+                 and ra.scope_type = 'account' and r.key = 'owner'`),
+    );
+    return (rows as unknown as unknown[]).length;
+  }
+
+  test('an admin cannot grant themselves owner', async () => {
+    const res = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, adminToken, {
+      principal_type: 'user',
+      principal_id: admin,
+      scope_type: 'account',
+      role_key: 'owner',
+    });
+    expect(res.status).toBe(403);
+    expect(await ownerRowsFor(admin)).toBe(0);
+  });
+
+  test('an admin cannot grant owner to another member', async () => {
+    const res = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, adminToken, {
+      principal_type: 'user',
+      principal_id: straggler,
+      scope_type: 'account',
+      role_key: 'owner',
+    });
+    expect(res.status).toBe(403);
+    expect(await ownerRowsFor(straggler)).toBe(0);
+  });
+
+  test('an admin cannot revoke an owner assignment', async () => {
+    const list = await req(
+      'GET',
+      `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=${secondOwner}&scope_type=account`,
+      ownerToken,
+    );
+    const { assignments } = (await list.json()) as {
+      assignments: Array<{ assignment_id: string; role_key: string }>;
+    };
+    const row = assignments.find((a) => a.role_key === 'owner');
+    expect(row).toBeDefined();
+    const res = await req(
+      'DELETE',
+      `/v1/accounts/${ACCOUNT}/iam/assignments/${row!.assignment_id}`,
+      adminToken,
+    );
+    expect(res.status).toBe(403);
+    expect(await ownerRowsFor(secondOwner)).toBe(1);
+  });
+
+  test('an account-scope system role cannot be granted to a group', async () => {
+    for (const roleKey of ['owner', 'admin', 'member']) {
+      const res = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+        principal_type: 'group',
+        principal_id: groupId,
+        scope_type: 'account',
+        role_key: roleKey,
+      });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(await res.json())).toContain('account role');
+    }
+    const rows = await db.execute(
+      sql.raw(`select 1 from kortix.role_assignments
+               where account_id = '${ACCOUNT}' and principal_id = '${groupId}' and scope_type = 'account'`),
+    );
+    expect((rows as unknown as unknown[]).length).toBe(0);
+  });
+
+  test('an owner can still grant owner through the route', async () => {
+    const res = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'user',
+      principal_id: straggler,
+      scope_type: 'account',
+      role_key: 'owner',
+    });
+    expect(res.status).toBe(201);
+    expect(await ownerRowsFor(straggler)).toBe(1);
+  });
+});

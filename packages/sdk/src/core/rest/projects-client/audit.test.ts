@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import { auditFilterQuery } from './audit-filter';
 import { exportAccountAudit, listAccountAudit, listProjectAudit } from './audit';
 import { listAuditEvents } from './iam';
 
@@ -72,12 +73,30 @@ test('exportAccountAudit sends the same reconstruction filters', async () => {
   });
 });
 
+test('audit querystrings preserve fully-populated filters', async () => {
+  const full = { action: 'a', actor: 'b', actorType: 'agent', projectId: 'p', sessionId: 's',
+    source: 'api_key', credentialKind: 'oauth_app', phase: 'completed', outcome: 'success',
+    resourceType: 'session', requestId: 'r', correlationId: 'c', since: '2026-01-01',
+    until: '2026-01-02', q: 'gmail + inbox', cursor: 'cursor|1', limit: 200 } as const;
+  await listAccountAudit('a', full);
+  await exportAccountAudit('a', { format: 'csv', ...full });
+  const expected = 'action=a&actor=b&actor_type=agent&project_id=p&session_id=s&source=api_key&credential_kind=oauth_app&phase=completed&outcome=success&resource_type=session&request_id=r&correlation_id=c&since=2026-01-01&until=2026-01-02&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200';
+  expect(new URL(calls[0]!.url).search.slice(1)).toBe(expected);
+  expect(new URL(calls[1]!.url).search.slice(1)).toBe(`format=csv&${expected}`);
+});
+
+test('audit filter rejects unknown runtime keys', () => {
+  expect(auditFilterQuery({ format: 'csv', action: 'iam.policy', ...{ unexpected: 'secret' } }).toString())
+    .toBe('format=csv&action=iam.policy');
+});
+
 test('listAuditEvents sends project and session reconstruction filters', async () => {
   await listAuditEvents('account-1', {
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
     source: 'connector',
+    credential_kind: 'oauth_app',
     outcome: 'success',
   });
 
@@ -87,6 +106,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     session_id: 'session-1',
     actor_type: 'agent',
     source: 'connector',
+    credential_kind: 'oauth_app',
     outcome: 'success',
   });
 });
@@ -121,6 +141,9 @@ test('AuditEvent exposes the canonical reconstruction envelope', () => {
     event.agent_id,
     event.authoritative_source,
     event.client_reported_source,
+    event.credential_kind,
+    event.credential_id,
+    event.credential_name,
     event.phase,
     event.causation_id,
     event.source_ledger,
@@ -128,5 +151,41 @@ test('AuditEvent exposes the canonical reconstruction envelope', () => {
     event.input_sha256,
     event.integrity_hash,
   ];
-  expect(fields).toHaveLength(16);
+  expect(fields).toHaveLength(19);
+});
+
+test('AuditEvent carries on_behalf_of_user_id (agents as principals, spec 2026-09-22 §2)', () => {
+  const event: import('./audit').AuditEvent = {
+    event_id: 'e1', occurred_at: '2026-09-22T00:00:00.000Z', project_id: null, session_id: 's1',
+    actor_user_id: 'u1', actor_type: 'agent', agent_name: 'reader', on_behalf_of_user_id: 'u1',
+    initiator_actor_type: 'human', initiator_actor_id: 'u1', source: 'agent', outcome: 'success',
+    action: 'GET /v1/projects/:projectId/files', resource_type: 'project', resource_id: null,
+    http_status: 200, duration_ms: 1, request_id: null, trace_id: null, correlation_id: null,
+    before: null, after: null, ip: null, user_agent: null, metadata: {},
+  };
+  expect(event.on_behalf_of_user_id).toBe('u1');
+});
+
+// The API writes a request no authenticator identified as `anonymous` instead
+// of skipping it. Every read and every filter must be able to name that value.
+test('an anonymous audit row is typed and filterable on every audit surface', async () => {
+  const event: import('./audit').AuditEvent = {
+    event_id: 'e2', occurred_at: '2026-09-23T00:00:00.000Z', project_id: 'project-1',
+    session_id: null, actor_user_id: null, actor_type: 'anonymous', agent_name: null,
+    initiator_actor_type: null, initiator_actor_id: null, source: 'api', outcome: 'denied',
+    action: 'GET /v1/projects/:projectId', resource_type: 'project', resource_id: 'project-1',
+    http_status: 401, duration_ms: 1, request_id: null, trace_id: null, correlation_id: null,
+    before: null, after: null, ip: null, user_agent: null, metadata: {},
+  };
+  const iamActor: import('./iam').IamAuditEvent['actor_type'] = 'anonymous';
+  expect([event.actor_type, iamActor]).toEqual(['anonymous', 'anonymous']);
+
+  await listAccountAudit('account-1', { actorType: 'anonymous' });
+  await exportAccountAudit('account-1', { format: 'csv', actorType: 'anonymous' });
+  await listAuditEvents('account-1', { actor_type: 'anonymous' });
+  expect(calls.map((call) => new URL(call.url).searchParams.get('actor_type'))).toEqual([
+    'anonymous',
+    'anonymous',
+    'anonymous',
+  ]);
 });

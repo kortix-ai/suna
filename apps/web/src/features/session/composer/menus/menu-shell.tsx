@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 /**
  * The floating card both the `@` and `/` menus render into.
  *
- * Design-system compliance (`.claude/skills/kortix-design-system/SKILL.md`):
+ * Design-system compliance (`.agents/skills/kortix-design-system/SKILL.md`):
  *  - `rounded-md`, not `rounded-xl` — "Never: rounded-xl / rounded-2xl on app
  *    containers". The previous menus used `rounded-xl` with `rounded-lg` rows,
  *    which is also nested rounding, banned by the same rule.
@@ -18,7 +18,13 @@ import { useEffect, useRef } from 'react';
  * look like it was doing something while changing nothing. The z-index belongs
  * on the mounted element itself and is set in `mount.ts`.
  */
-export function MenuCard({ className, children }: { className?: string; children: React.ReactNode }) {
+export function MenuCard({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className={cn(
@@ -33,9 +39,7 @@ export function MenuCard({ className, children }: { className?: string; children
 
 /** Section label above a group of rows ("Skills", "Agents", "Connectors"). */
 export function MenuSectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground px-2 pb-1 text-sm font-medium">{children}</div>
-  );
+  return <div className="text-muted-foreground px-2 pb-1 text-sm font-medium">{children}</div>;
 }
 
 export interface MenuRowProps {

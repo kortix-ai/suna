@@ -1,11 +1,13 @@
 'use client';
 
 /**
- * The composer's attachment preview — the same tiles the sent message uses
- * (`FileTileBody` / `TILE_SURFACE` / `FILE_TILE_SURFACE` in
- * `../attachment-tile`), plus the two things a not-yet-sent file needs that a
- * sent one never does: a corner remove button, and — since there is no server
- * thumbnail yet — a client-side peek at what the file actually contains.
+ * The composer's attachment preview — the SAME `AttachmentTile` the sent
+ * message uses (`../attachment-tile`), plus what a not-yet-sent file needs
+ * that a sent one never does: a corner remove button and its upload state.
+ *
+ * Upload state stays inside the tile box: a progress ring in the corner, or a
+ * scrim with the failure reason on failure. There is no text row, so the
+ * composer height never changes while a file uploads.
  *
  * Replaces `attachment-preview.tsx`'s 120px name-bar card, which looked
  * nothing like how the same file rendered a moment later once the message
@@ -14,23 +16,149 @@
  * old shape moves in one change.
  */
 
-import { useEffect, useState } from 'react';
+import type { PromptAttachmentItem } from '@kortix/sdk';
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
+import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
+import { IconRefresh } from '@/components/ui/kortix-icons';
+import { ProgressRing } from '@/components/ui/progress-ring';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { convertHeicBlobToJpeg, isHeicFile } from '@/lib/utils/heic-convert';
+import { holdConvertedPreview } from '../sent-attachment-previews';
 
-import { FILE_TILE_SURFACE, FileTileBody, TILE_SURFACE } from '../attachment-tile';
+import { AttachmentRemoveButton, AttachmentTile, isPreviewableImage } from '../attachment-tile';
 import {
-  fileExtension,
-  isPreviewableTextExtension,
-  truncateTextPreview,
-} from './attachment-tiles-logic';
+  attachmentFailureReason,
+  attachmentFailureRetryable,
+  type AttachmentFailureReason,
+} from './attachment-submission';
 import type { AttachedFile } from './types';
 
+type AttachmentTileCopyKey =
+  | 'uploadFailed'
+  | 'retryNamed'
+  | 'didNotUpload'
+  | 'billingRequired'
+  | 'budgetExceeded'
+  | 'tooLarge'
+  | 'expired';
+
+type AttachmentTileTranslator = (key: AttachmentTileCopyKey, values?: { name?: string }) => string;
+
+const REASON_COPY: Record<AttachmentFailureReason, AttachmentTileCopyKey> = {
+  billing: 'billingRequired',
+  budget: 'budgetExceeded',
+  tooLarge: 'tooLarge',
+  expired: 'expired',
+  connection: 'uploadFailed',
+};
+
+/** Resolve the failure reasons, the Retry label, and the failure announcement from the active locale. */
+export function attachmentTileCopy(t: AttachmentTileTranslator) {
+  return {
+    uploadFailed: t('uploadFailed'),
+    failureReason: (reason: AttachmentFailureReason) => t(REASON_COPY[reason]),
+    retryNamed: (name: string) => t('retryNamed', { name }),
+    didNotUpload: (name: string) => t('didNotUpload', { name }),
+  };
+}
+
 /** The two shapes of `AttachedFile` disagree on where the name lives. */
-import { Close } from '@/features/icon/icons/close';
 function attachmentName(af: AttachedFile): string {
   return af.kind === 'local' ? af.file.name : af.filename;
+}
+function attachmentMime(af: AttachedFile): string {
+  return af.kind === 'local' ? af.file.type : af.mime;
+}
+
+/** The ring waits this long after attach, so a small file never flashes upload chrome. */
+const RING_DELAY_MS = 400;
+
+export interface DueTimers {
+  now(): number;
+  set(callback: () => void, delayMs: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const browserTimers: DueTimers = {
+  now: () => Date.now(),
+  set: (callback, delayMs) => setTimeout(callback, delayMs),
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/**
+ * A `useSyncExternalStore` subscription that notifies once `due` has passed.
+ * A timer can fire a little before `due` against `Date.now()`; it then re-arms
+ * for the remainder, so the render at `due` is never skipped.
+ */
+export function subscribeWhenDue(due: number, timers: DueTimers = browserTimers) {
+  return (notify: () => void): (() => void) => {
+    let handle: unknown;
+    const check = () => {
+      const remaining = due - timers.now();
+      if (remaining > 0) handle = timers.set(check, remaining);
+      else notify();
+    };
+    handle = timers.set(check, Math.max(0, due - timers.now()));
+    return () => timers.clear(handle);
+  };
+}
+
+/**
+ * Whether `due` has passed. Time is an external source, so it is read through
+ * `useSyncExternalStore`. While `waiting`, one timer re-renders at `due`.
+ */
+function useTimePassed(due: number, waiting: boolean): boolean {
+  const subscribe = useCallback(
+    (notify: () => void) => (waiting ? subscribeWhenDue(due)(notify) : () => {}),
+    [due, waiting],
+  );
+  const passed = () => Date.now() >= due;
+  return useSyncExternalStore(subscribe, passed, passed);
+}
+
+/**
+ * The upload's corner mark: a determinate ring, shown only when the upload
+ * still runs 400 ms after attach. On ready it fades out in place.
+ */
+function UploadRing({
+  upload,
+  attachedAt,
+  name,
+}: {
+  upload: PromptAttachmentItem;
+  attachedAt: number;
+  name: string;
+}) {
+  const running =
+    upload.status === 'pending' || upload.status === 'uploading' || upload.status === 'processing';
+  const shown = useTimePassed(attachedAt + RING_DELAY_MS, running);
+  if (!shown) return null;
+  const percent =
+    upload.status === 'pending'
+      ? 0
+      : upload.status === 'uploading'
+        ? Math.min(100, Math.floor((upload.receivedBytes / upload.size) * 100))
+        : 100;
+  return (
+    <span
+      data-slot="upload-ring"
+      role={running ? 'progressbar' : undefined}
+      aria-label={running ? name : undefined}
+      aria-valuemin={running ? 0 : undefined}
+      aria-valuemax={running ? 100 : undefined}
+      aria-valuenow={running ? percent : undefined}
+      aria-hidden={running ? undefined : true}
+      className={cn(
+        'flex transition-opacity duration-(--duration-moderate) ease-out',
+        running ? 'opacity-100' : 'opacity-0',
+      )}
+    >
+      <ProgressRing value={percent} />
+    </span>
+  );
 }
 
 /**
@@ -38,11 +166,21 @@ function attachmentName(af: AttachedFile): string {
  *
  * HEIC is decoded to JPEG first — browsers cannot render HEIC natively —
  * carried over verbatim from the old `attachment-preview.tsx`. The decode is
- * async, so until it resolves the tile falls back to the named treatment with
- * a spinner, matching how the sent message's own `AttachmentImage` handles a
- * src that has not resolved yet (`turn/user-message.tsx`).
+ * async, so until it resolves the tile falls back to the named treatment,
+ * matching how the sent message's own `AttachmentImage` handles a src that
+ * has not resolved yet (`turn/user-message.tsx`).
  */
-function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
+function AttachmentImageTile({
+  af,
+  name,
+  corner,
+  overlay,
+}: {
+  af: AttachedFile;
+  name: string;
+  corner?: ReactNode;
+  overlay?: ReactNode;
+}) {
   const isHeic = isHeicFile(name);
   const [heicUrl, setHeicUrl] = useState<string | null>(null);
   // WHICH file failed, not merely "something failed". Storing the attachment
@@ -59,11 +197,15 @@ function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
   useEffect(() => {
     if (!isHeic || af.kind !== 'local') return;
     let cancelled = false;
-    let objectUrl: string | null = null;
+    let letGo: (() => void) | null = null;
     convertHeicBlobToJpeg(af.file)
       .then((jpeg) => {
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(jpeg);
+        const objectUrl = URL.createObjectURL(jpeg);
+        // A Send takes this JPEG as the sent message's picture.
+        letGo = af.uploadId
+          ? holdConvertedPreview(af.uploadId, objectUrl)
+          : () => URL.revokeObjectURL(objectUrl);
         setHeicUrl(objectUrl);
       })
       .catch(() => {
@@ -71,7 +213,7 @@ function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
       });
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      letGo?.();
     };
     // `af` (not `af.file`) matches the dependency the original
     // `attachment-preview.tsx` HEIC effect tracked.
@@ -81,105 +223,91 @@ function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
 
   // Fall back to the named tile — the file is still attached and still sends;
   // only the thumbnail is unavailable.
-  if (failed) return <FileTileBody filename={name} />;
-  if (!src) return <FileTileBody filename={name} pending />;
-
+  if (failed || !src)
+    return (
+      <AttachmentTile filename={name} mime={attachmentMime(af)} corner={corner} overlay={overlay} />
+    );
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={name}
-      className="size-full object-cover"
-      draggable={false}
-      onError={() => setFailedFor(af)}
+    <AttachmentTile
+      filename={name}
+      mime={attachmentMime(af)}
+      imageSrc={src}
+      corner={corner}
+      overlay={overlay}
     />
   );
 }
 
-/**
- * Icon + filename in front, a faint peek at the file's own text behind —
- * split out from `AttachmentFileTile` below so the stacking order is
- * testable by passing `preview` directly, with no `FileReader` effect
- * needed to exercise it.
- *
- * Both children get an explicit, differing `z-index` (`z-0` / `z-10`) rather
- * than relying on source order. Without that: `FileTileBody`'s content is
- * in-flow and non-positioned, while the preview is `absolute` — and CSS
- * paints positioned content after in-flow content regardless of which comes
- * first in the markup, so the preview would land ON TOP of the icon and
- * filename, not behind them. Two siblings with different non-auto z-index
- * values stack by that value alone, independent of DOM order, so stating
- * `z-10` on `FileTileBody`'s wrapper makes "this one wins" a fact of the
- * markup instead of an accident of paint-order rules.
- */
-export function FileTileWithPreview({
-  filename,
-  preview,
-}: {
-  filename: string;
-  preview: string | null;
-}) {
-  return (
-    <>
-      {preview && (
-        <div className="text-muted-foreground/60 pointer-events-none absolute inset-0 z-0 overflow-hidden p-2 select-none">
-          <pre className="m-0 overflow-hidden p-0 font-mono text-[7px] leading-[1.35] whitespace-pre">
-            {preview}
-          </pre>
-        </div>
-      )}
-      <div className="relative z-10 size-full">
-        <FileTileBody filename={filename} />
-      </div>
-    </>
-  );
-}
-
-/**
- * A locally attached non-image file: the named tile, with a faint peek at the
- * file's own first ~12 lines behind the icon when it is source/text (carried
- * over verbatim from the old `attachment-preview.tsx` — the sent message never
- * shows this, but before sending it is the difference between guessing which
- * `untitled.txt` is which and knowing).
- */
-function AttachmentFileTile({ af, name }: { af: AttachedFile; name: string }) {
-  const [textPreview, setTextPreview] = useState<string | null>(null);
-  const ext = fileExtension(name);
-
-  useEffect(() => {
-    if (af.kind !== 'local' || !isPreviewableTextExtension(ext)) return;
-    const reader = new FileReader();
-    reader.onload = () => setTextPreview(truncateTextPreview(reader.result as string));
-    // An unreadable file (revoked handle, permissions) rejected silently and
-    // left the read hanging; the tile just never showed a peek. Clear it
-    // explicitly so the state is a decision, not a leftover.
-    reader.onerror = () => setTextPreview(null);
-    reader.readAsText(af.file.slice(0, 2048));
-    // Aborting on unmount: without it the read completes into a component that
-    // is gone, and `onload` fires a `setState` on it.
-    return () => {
-      reader.onload = null;
-      reader.onerror = null;
-      if (reader.readyState === FileReader.LOADING) reader.abort();
-    };
-  }, [af, ext]);
-
-  return <FileTileWithPreview filename={name} preview={textPreview} />;
-}
-
 export function AttachmentTiles({
   files,
+  uploads = [],
   onRemove,
+  onRetry,
 }: {
   files: AttachedFile[];
+  uploads?: readonly PromptAttachmentItem[];
   onRemove: (index: number) => void;
+  onRetry?: (id: string) => void;
 }) {
+  const t = useTranslations('hardcodedUi.composerAttachments');
+  const copy = attachmentTileCopy(t);
   if (files.length === 0) return null;
 
   return (
     <ul className="flex flex-wrap gap-2 px-3">
       {files.map((af, i) => {
         const name = attachmentName(af);
+        const uploadId = af.kind === 'remote' ? undefined : af.uploadId;
+        const upload = uploadId ? uploads.find((item) => item.id === uploadId) : undefined;
+        // `submit` unlists an id: a send holds it now, so this tray cannot remove it.
+        const held = uploadId !== undefined && !upload;
+        const failed = upload?.status === 'error' || upload?.status === 'aborted';
+        const running =
+          upload?.status === 'pending' ||
+          upload?.status === 'uploading' ||
+          upload?.status === 'processing';
+        const corner =
+          upload && !failed ? (
+            <UploadRing
+              upload={upload}
+              attachedAt={af.kind === 'local' ? (af.attachedAt ?? 0) : 0}
+              name={name}
+            />
+          ) : undefined;
+        // A refusal (billing, budget, size, expiry) answers Retry the same way, so it
+        // offers only Remove. The reason is a tooltip on the whole tile and a line for
+        // screen readers.
+        const reason = failed ? attachmentFailureReason(upload?.error) : undefined;
+        const overlay =
+          upload && reason ? (
+            <Hint label={copy.failureReason(reason)} side="top">
+              <span className="bg-background/70 absolute inset-0 flex items-center justify-center">
+                <span className="sr-only">{copy.failureReason(reason)}</span>
+                {onRetry && upload.file && attachmentFailureRetryable(reason) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label={copy.retryNamed(name)}
+                    onClick={() => onRetry(upload.id)}
+                  >
+                    <IconRefresh />
+                  </Button>
+                )}
+              </span>
+            </Hint>
+          ) : undefined;
+        const tile =
+          af.isImage && isPreviewableImage(name, attachmentMime(af)) ? (
+            <AttachmentImageTile af={af} name={name} corner={corner} overlay={overlay} />
+          ) : (
+            <AttachmentTile
+              filename={name}
+              mime={attachmentMime(af)}
+              corner={corner}
+              overlay={overlay}
+            />
+          );
         return (
           // `li` stays `display: contents` (no box of its own — matches the
           // pattern `turn/user-message.tsx` uses for its own `<li>`s), so it
@@ -192,38 +320,17 @@ export function AttachmentTiles({
           // (an outer plain `relative` wrapper, an inner `overflow-hidden`
           // thumbnail box) — `relative` on a `contents` element is inert, so
           // that split has to live one level in from the `<li>`, not on it.
-          <li key={af.kind === 'local' ? af.localUrl : af.url} className="contents">
-            <div className="group relative">
-              <div title={name} className={af.isImage ? TILE_SURFACE : FILE_TILE_SURFACE}>
-                {af.isImage ? (
-                  <AttachmentImageTile af={af} name={name} />
-                ) : (
-                  <AttachmentFileTile af={af} name={name} />
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemove(i)}
-                aria-label={`Remove ${name}`}
-                className={cn(
-                  // `bg-foreground text-background` — the semantic pair that
-                  // already flips with the theme. The old `bg-black text-white
-                  // dark:bg-white dark:text-black` was the same idea written as
-                  // four raw colours that no token change can follow.
-                  'border-card absolute -top-1.5 -right-1.5 z-10 flex size-5 items-center justify-center',
-                  'bg-foreground text-background rounded-full border-2',
-                  // `hit-area-1` extends the pressable box past the 20px glyph
-                  // without moving it — the visible dot stays a dot.
-                  'hit-area-1',
-                  // Not fully hidden at rest. `opacity-0` meant the only way to
-                  // discover the remove control was to hope it was there; at
-                  // 60% it reads as available and firms up on hover.
-                  'opacity-60 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
-                  '[@media(pointer:coarse)]:opacity-100',
-                )}
-              >
-                <Close className="size-3" />
-              </button>
+          <li
+            key={uploadId ? `attachment:${uploadId}` : af.kind === 'local' ? af.localUrl : af.url}
+            className="contents"
+          >
+            <div className="group relative" aria-busy={running || undefined}>
+              {tile}
+              {!held && <AttachmentRemoveButton filename={name} onRemove={() => onRemove(i)} />}
+              {/* Mounted from attach, so the one change at failure is announced. */}
+              <span className="sr-only" aria-live="polite">
+                {failed ? copy.didNotUpload(name) : ''}
+              </span>
             </div>
           </li>
         );

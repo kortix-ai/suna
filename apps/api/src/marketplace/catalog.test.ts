@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  createMarketplaceFetch,
   clampMarketplaceItemsLimit,
   getCatalogItemDetail,
   pageCatalogItems,
-  selectTemplateItems,
   type CatalogItem,
 } from './catalog';
 
@@ -60,22 +60,6 @@ describe('template + agent resolution (decoupled from browse)', () => {
     const agent = await getCatalogItemDetail('kortix-starter:support-agent');
     expect(agent).not.toBeNull();
     expect(agent!.type).toBe('registry:agent');
-  });
-});
-
-describe('selectTemplateItems', () => {
-  test('keeps registry:template items only, and drops hidden ones', () => {
-    const items = [
-      item({ id: 'kortix:ar-chaser', name: 'ar-chaser', type: 'registry:template' }),
-      item({ id: 'kortix:a-skill', name: 'a-skill', type: 'registry:skill' }),
-      item({ id: 'kortix:a-bundle', name: 'a-bundle', type: 'registry:bundle' }),
-      item({ id: 'kortix:hidden', name: 'hidden', type: 'registry:template', hidden: true }),
-    ];
-    expect(selectTemplateItems(items).map((i) => i.name)).toEqual(['ar-chaser']);
-  });
-
-  test('returns an empty list when there are no templates', () => {
-    expect(selectTemplateItems([item({ type: 'registry:skill' })])).toEqual([]);
   });
 });
 
@@ -208,5 +192,42 @@ describe('clampMarketplaceItemsLimit', () => {
   test('clamps a non-positive limit up to 1', () => {
     expect(clampMarketplaceItemsLimit(0)).toBe(1);
     expect(clampMarketplaceItemsLimit(-3)).toBe(1);
+  });
+});
+
+describe('marketplace fetch', () => {
+  function harness() {
+    const direct: Array<{ url: string; auth: string | null }> = [];
+    const guarded: string[] = [];
+    const deps = {
+      fetch: (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        direct.push({ url: String(input), auth: new Headers(init?.headers).get('authorization') });
+        return new Response('ok');
+      }) as typeof fetch,
+      safeFetch: (async (url: string) => {
+        guarded.push(url);
+        return new Response('ok');
+      }) as never,
+    };
+    return { direct, guarded, deps };
+  }
+
+  test('without a GitHub token, a non-GitHub host still goes through the egress guard', async () => {
+    const { direct, guarded, deps } = harness();
+    const fetchImpl = createMarketplaceFetch('', deps);
+    await fetchImpl('https://registry.example.com/registry.json');
+    await fetchImpl('https://raw.githubusercontent.com/o/r/main/registry.json');
+    expect(guarded).toEqual(['https://registry.example.com/registry.json']);
+    expect(direct).toEqual([{ url: 'https://raw.githubusercontent.com/o/r/main/registry.json', auth: null }]);
+  });
+
+  test('with a token, only exact GitHub hosts get it; look-alikes go through the guard', async () => {
+    const { direct, guarded, deps } = harness();
+    const fetchImpl = createMarketplaceFetch('gh-token', deps);
+    await fetchImpl('https://api.github.com/repos/o/r');
+    await fetchImpl('https://api.github.com.example.com/repos/o/r');
+    await fetchImpl('http://api.github.com/repos/o/r');
+    expect(direct).toEqual([{ url: 'https://api.github.com/repos/o/r', auth: 'Bearer gh-token' }]);
+    expect(guarded).toEqual(['https://api.github.com.example.com/repos/o/r', 'http://api.github.com/repos/o/r']);
   });
 });

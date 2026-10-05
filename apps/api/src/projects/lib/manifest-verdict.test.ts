@@ -22,12 +22,12 @@ name = "dev"
 `;
 
 describe('LATEST_MANIFEST_VERSION', () => {
-  test('is 3 — the Pi-native manifest schema this platform ships', () => {
+  test('is 3 — the latest manifest schema this platform ships', () => {
     expect(LATEST_MANIFEST_VERSION).toBe(3);
   });
 });
 
-describe('resolveManifestVerdict — a v2 manifest is up to date', () => {
+describe('resolveManifestVerdict — v2 stays supported without an automatic v3 migration', () => {
   test('reports version 2 and offers no migration', () => {
     const verdict = resolveManifestVerdict({
       raw: V2_YAML,
@@ -80,7 +80,7 @@ describe('resolveManifestVerdict — a real v1 kortix.toml is offered a migratio
 });
 
 describe('resolveManifestVerdict — v2 has no implemented upgrade path', () => {
-  test('reports version 3 as latest but offers no automatic runtime conversion', () => {
+  test('reports version 2 as supported and offers nothing', () => {
     const verdict = resolveManifestVerdict({
       raw: V2_YAML,
       format: 'yaml',

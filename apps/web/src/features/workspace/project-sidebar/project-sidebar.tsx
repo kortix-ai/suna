@@ -18,7 +18,10 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
+import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
+import { ProjectComputerNavItem } from '@/features/workspace/project-sidebar/footer/project-computer-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
+import { ProjectRemindersNavItem } from './footer/project-reminders-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
@@ -26,28 +29,32 @@ import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/pr
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
+import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
-  SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 import { WorkspaceSwitcher } from './workspace-switcher';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state, setOpenMobile, toggleSidebar } = useSidebar();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
+  const { state, setOpenMobile, toggleSidebar, peek } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
+  // Mounted outside <Sidebar>: the mobile sheet unmounts its content on close.
+  const [computerConnectOpen, setComputerConnectOpen] = useState(false);
 
   const accountId = useBillingAccountId();
 
@@ -68,16 +75,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   // real <button> so `disabled` still holds.
   const newSessionRowBody = (
     <>
-      <span className="shrink-0">
-        <NavigationArrowIcon className="rotate-90" />
-      </span>
-      <span>
-        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491')}
-      </span>
-      <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/menu-button:opacity-100">
-        <Kbd>{modSymbol}</Kbd>
-        <Kbd>J</Kbd>
-      </KbdGroup>
+        <span className="shrink-0">
+          <NavigationArrowIcon className="rotate-90" />
+        </span>
+        <span>{t('newSession')}</span>
+        <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/menu-button:opacity-100">
+          <Kbd>{modSymbol}</Kbd>
+          <Kbd>J</Kbd>
+        </KbdGroup>
     </>
   );
 
@@ -106,6 +111,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   }, [handleNewSession]);
 
   return (
+    <>
     <Sidebar
       collapsible="offcanvas"
       variant="inset"
@@ -115,7 +121,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       // square fill behind the flyout card and it showed at all four corners.
       className="[scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
-      <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
+      <SidebarHeader
+        className="kx-project-sidebar-header space-y-2"
+        data-peek={peek ? '' : undefined}
+      >
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
             single layout. Three controls on one 240px row, all 32px tall: the
             merged brand/switcher control, search, and the panel's own collapse
@@ -132,7 +141,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             pointing at. The workspace directory is now a second VIEW of this
             menu, behind "Switch Workspace", which is why there is no footer
             control below any more. */}
-        <div className="flex w-full items-center gap-1">
+        <div
+          className={cn(
+            'flex w-full items-center gap-1',
+            !peek && 'kx-titlebar-row kx-titlebar-band-height kx-project-sidebar-titlebar',
+          )}
+        >
           <div className="min-w-0">
             <WorkspaceSwitcher projectId={projectId} />
           </div>
@@ -144,7 +158,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               side="bottom"
               label={
                 <span className="flex items-center gap-1.5">
-                  Search
+                  {t('search')}
                   <KbdGroup>
                     <Kbd className="font-mono">{modSymbol}</Kbd>
                     <Kbd className="font-mono">K</Kbd>
@@ -154,7 +168,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             >
               <Button
                 type="button"
-                aria-label="Search"
+                aria-label={t('search')}
                 variant="ghost"
                 size="icon"
                 onClick={handleOpenSearch}
@@ -167,13 +181,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 state to collapse (`state` there still reads the desktop cookie),
                 and it already dismisses by backdrop/swipe. Clicking while the
                 panel is a hover flyout docks it open, hence the "Pin" label. */}
-            {!isMobile && (
+            {!isMobile && !peek && (
               <Hint
                 side="bottom"
 
                 label={
                   <span className="flex items-center gap-1.5">
-                    {isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                    {isExpanded ? t('collapse') : t('pin')}
                     <KbdGroup>
                       <Kbd className="font-mono">{modSymbol}</Kbd>
                       <Kbd className="font-mono">B</Kbd>
@@ -183,7 +197,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               >
                 <Button
                   type="button"
-                  aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}
+                  aria-label={isExpanded ? t('collapse') : t('pin')}
                   variant="ghost"
                   size="icon"
                   onClick={toggleSidebar}
@@ -236,8 +250,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
+              <ProjectRemindersNavItem />
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              <ProjectComputerNavItem
+                projectId={projectId}
+                onOpenConnect={() => setComputerConnectOpen(true)}
+              />
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in
                   this group, and above the nav rows it put a sell between the
                   user and the links they actually use. */}
@@ -247,7 +266,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
       </SidebarContent>
 
-      <SidebarRail />
+      <SidebarRail aria-label={t('resize')} title={t('resizeHelp')} />
     </Sidebar>
+    <ComputerConnectModal
+      projectId={projectId}
+      open={computerConnectOpen}
+      onOpenChange={setComputerConnectOpen}
+    />
+    </>
   );
 }

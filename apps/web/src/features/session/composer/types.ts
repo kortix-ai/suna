@@ -10,6 +10,10 @@
 export type AttachedFile =
   | {
       kind: 'local';
+      /** SDK controller identity. Absent only for legacy non-composer callers. */
+      uploadId?: string;
+      /** `Date.now()` when the file entered the composer. The upload ring waits 400 ms from it. */
+      attachedAt?: number;
       file: File;
       localUrl: string;
       isImage: boolean;

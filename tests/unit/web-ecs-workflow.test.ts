@@ -160,12 +160,20 @@ describe('web ECS migration', () => {
     expect(buildJobs.match(/push: false/g)).toHaveLength(3);
     expect(buildJobs.match(/platforms: linux\/amd64/g)).toHaveLength(3);
     expect(workflow).toContain("github.event.action == 'labeled'");
-    expect(workflow).toContain("github.event.action == 'synchronize'");
+    // A push never deploys: adding the label is the one explicit trigger.
+    expect(workflow).not.toContain('synchronize');
     // The label used to be STRIPPED on every push; a labelled preview now stays
     // online until the label is removed or the pull request closes, so nothing
     // in this workflow may delete it any more.
     expect(workflow).not.toContain('labels/preview');
     expect(workflow).toContain('PREVIEW_BRANCH_ENV');
+    // Previews run on Platinum only, so every run owns the branch's persistent identity.
+    expect(workflow).toContain('persistent_branch="$branch"');
+    expect(workflow).toContain('case "$provider" in auto|platinum) ;; *)');
+    expect(workflow).not.toMatch(/-\s+daytona\n/);
+    expect(workflow).toContain(
+      'PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.persistent_branch }}',
+    );
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');
@@ -173,25 +181,18 @@ describe('web ECS migration', () => {
     expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(4);
     expect(workflow).toContain('pnpm test -- --target-full');
     expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
-    expect(workflow).toContain('Test report:');
+    expect(read('scripts/ci/preview-sticky-comment.sh')).toContain('Test report:');
     expect(workflow).toContain('deployments: write');
     expect(workflow).toContain('type: choice');
     expect(workflow).toContain('- platinum');
-    expect(workflow).toContain('- daytona');
+    // Previews run on Platinum only: Daytona is not a dispatch option.
+    expect(workflow).not.toContain('- daytona');
     expect(workflow).not.toContain('infra/scripts/ecs-preview.sh');
     expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
-    expect(workflow).toContain('**Preview:**');
-  });
-
-  it('does not report target-full as passed when a preview push skips the suite', () => {
-    const workflow = read('.github/workflows/deploy-preview.yml');
-
-    expect(workflow.match(/RUN_TESTS: \$\{\{ env\.PREVIEW_RUN_TESTS \}\}/g)).toHaveLength(2);
-    expect(workflow).toContain('Full self-host preview deployed; target-full was not run');
-    expect(workflow).toContain('## Preview environment - live; tests not run');
-    expect(workflow).toContain('`pnpm test -- --target-full` was skipped for this push.');
+    expect(read('scripts/ci/preview-sticky-comment.sh')).toContain('**Preview:**');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts suite');
   });
 
   /**
@@ -240,7 +241,7 @@ describe('web ECS migration', () => {
     };
 
     // `closed` reaches neither the trigger nor any job condition.
-    expect(workflow).toContain('types: [labeled, unlabeled, synchronize]');
+    expect(workflow).toContain('types: [labeled, unlabeled]');
     expect(workflow).not.toContain("github.event.action == 'closed'");
 
     // Removing the label is still the explicit off switch.
@@ -384,5 +385,56 @@ describe('web ECS migration', () => {
     expect(read('tests/e2e/specs/01-account-auth.spec.ts')).toContain(
       'clearCookiesPreservingBypass',
     );
+  });
+
+  /**
+   * The release gate hard-fails when the staging frontend's `/api/health`
+   * reports a commit other than RELEASE_SOURCE_SHA, so the staging Vercel build
+   * MUST receive that SHA. It previously arrived only through
+   * `apps/web/next.config.ts`'s VERCEL_GIT_COMMIT_SHA fallback, which depends on
+   * Vercel inferring git metadata from a `--archive=tgz` CLI deploy. Measured
+   * 2026-09-18, that inference worked (`staging.kortix.com/api/health` returned a
+   * real 40-char SHA, not 'unknown') — but it is not a documented contract, and
+   * a gate that blocks production must not rest on one.
+   */
+  it('passes the source SHA into the staging Vercel frontend build', () => {
+    const workflow = read('.github/workflows/deploy-staging.yml');
+    const start = workflow.indexOf('  deploy-web-vercel:');
+    const end = workflow.indexOf('  verify:', start);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const vercelJob = workflow.slice(start, end);
+
+    // `-b` is a BUILD env var: next.config.ts reads the commit at build time and
+    // inlines it, so `-e` (runtime) would not reach the health route's bundle.
+    expect(vercelJob).toContain('-b NEXT_PUBLIC_KORTIX_COMMIT="$SOURCE_SHA"');
+    expect(vercelJob).toContain('SOURCE_SHA: ${{ needs.preflight.outputs.sha }}');
+    // The same job aliases the host the browser shards drive, so the SHA it
+    // stamps is the SHA the gate reads back.
+    expect(vercelJob).toContain('vercel alias set "$url" "$WEB_HOST"');
+  });
+
+  /**
+   * The gate asserts THREE surfaces, not two. `tests/src/core/target-smoke.ts`
+   * read only the API and the gateway until 2026-09-18, so a staging frontend
+   * whose Vercel deployment had not finished (or whose alias still pointed at
+   * the previous release) passed preflight and then failed browser shards for a
+   * reason unrelated to the code under test.
+   */
+  it('asserts the frontend SHA in the deployed-target preflight', () => {
+    const smoke = read('tests/src/core/target-smoke.ts');
+
+    expect(smoke).toContain('frontendHealthJson');
+    expect(smoke).toContain(`${'$'}{config.webUrl}/api/health`);
+    // All three actual values in one message, so a human sees which is stale.
+    expect(smoke).toContain('frontend=${frontend.commit ?? \'missing\'}');
+    // An unstamped build must not be reported as a stale deploy.
+    expect(smoke).toContain('did not stamp a commit');
+    // The bypass secret comes from the one canonical helper, never a second
+    // hand-rolled header. See deployment-bypass.ts for the incident.
+    expect(smoke).toContain('deploymentBypassRequestHeaders');
+    expect(smoke).toContain('deploymentBypassSecret');
+    expect(smoke).not.toContain("'x-vercel-protection-bypass'");
   });
 });

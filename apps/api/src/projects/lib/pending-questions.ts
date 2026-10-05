@@ -23,6 +23,7 @@
  * two prompts in the UI.
  */
 
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -32,7 +33,7 @@ export interface PendingQuestion {
   session_id: string;
   request_id: string;
   opencode_session_id: string | null;
-  questions: unknown;
+  questions: RuntimeQuestion[];
   asked_at: string;
 }
 
@@ -40,7 +41,8 @@ export interface PendingQuestion {
  * Record a question the agent is blocked on.
  *
  * Returns the stored row. Idempotent: a replayed relay updates the payload in
- * place rather than inserting a second prompt.
+ * place rather than inserting a second prompt. `inserted` is true only for the
+ * first record of a (session_id, request_id) pair.
  */
 export async function recordPendingQuestion(input: {
   accountId: string;
@@ -48,8 +50,8 @@ export async function recordPendingQuestion(input: {
   sessionId: string;
   requestId: string;
   opencodeSessionId?: string | null;
-  questions: unknown;
-}): Promise<PendingQuestion | null> {
+  questions: RuntimeQuestion[];
+}): Promise<(PendingQuestion & { inserted: boolean }) | null> {
   const [row] = await db
     .insert(sessionPendingQuestions)
     .values({
@@ -57,14 +59,14 @@ export async function recordPendingQuestion(input: {
       projectId: input.projectId,
       sessionId: input.sessionId,
       requestId: input.requestId,
-      opencodeSessionId: input.opencodeSessionId ?? null,
+      runtimeSessionId: input.opencodeSessionId ?? null,
       questions: input.questions as never,
     })
     .onConflictDoUpdate({
       target: [sessionPendingQuestions.sessionId, sessionPendingQuestions.requestId],
       set: {
         questions: input.questions as never,
-        opencodeSessionId: input.opencodeSessionId ?? null,
+        runtimeSessionId: input.opencodeSessionId ?? null,
         updatedAt: new Date().toISOString(),
       },
     })
@@ -72,9 +74,13 @@ export async function recordPendingQuestion(input: {
       id: sessionPendingQuestions.id,
       sessionId: sessionPendingQuestions.sessionId,
       requestId: sessionPendingQuestions.requestId,
-      opencodeSessionId: sessionPendingQuestions.opencodeSessionId,
+      opencodeSessionId: sessionPendingQuestions.runtimeSessionId,
       questions: sessionPendingQuestions.questions,
       askedAt: sessionPendingQuestions.askedAt,
+      // PostgreSQL leaves xmax at 0 on a freshly inserted row version and sets
+      // it on the ON CONFLICT DO UPDATE path, so this separates a first ask
+      // from a replayed relay without a second query.
+      inserted: sql<boolean>`(xmax = 0)`,
     });
   if (!row) return null;
   return {
@@ -82,8 +88,10 @@ export async function recordPendingQuestion(input: {
     session_id: row.sessionId,
     request_id: row.requestId,
     opencode_session_id: row.opencodeSessionId,
-    questions: row.questions,
+    // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
+    questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,
+    inserted: row.inserted === true,
   };
 }
 
@@ -99,7 +107,7 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
       id: sessionPendingQuestions.id,
       sessionId: sessionPendingQuestions.sessionId,
       requestId: sessionPendingQuestions.requestId,
-      opencodeSessionId: sessionPendingQuestions.opencodeSessionId,
+      opencodeSessionId: sessionPendingQuestions.runtimeSessionId,
       questions: sessionPendingQuestions.questions,
       askedAt: sessionPendingQuestions.askedAt,
     })
@@ -118,7 +126,8 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
     session_id: row.sessionId,
     request_id: row.requestId,
     opencode_session_id: row.opencodeSessionId,
-    questions: row.questions,
+    // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
+    questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,
   };
 }
@@ -181,7 +190,7 @@ export async function clearOpenQuestions(sessionId: string): Promise<number> {
  * lived in an opencode process which has since been parked and restarted cold —
  * its request id no longer exists, and nothing is waiting on it. This is also
  * how the channel path has always worked: "the user's in-thread reply arrives
- * as a follow-up turn" (routes/r4.ts).
+ * as a follow-up turn" (routes/turn-questions.ts).
  *
  * So the answer arrives as a new turn, and it has to carry its own context: the
  * fresh opencode has no memory of asking. Quoting the question is what makes

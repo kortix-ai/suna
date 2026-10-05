@@ -1,15 +1,11 @@
 /**
  * File search utilities — searches workspace files via the sandbox API.
  *
- * Extracted from useMentions.ts so it can be shared with the CommandPalette.
+ * Extracted from useMentions.ts, its only consumer.
  * Now delegates to workspace-search-service for robust deep-path matching.
  */
 
-import {
-  type WorkspaceSearchEntry,
-  rankWorkspaceSearchEntry,
-  normalizeSearchQuery,
-} from './workspace-search-core';
+import type { WorkspaceSearchEntry } from '@kortix/sdk/workspace-search';
 import { searchWorkspaceFilePaths } from './workspace-search-service';
 
 // Re-export core types for consumers

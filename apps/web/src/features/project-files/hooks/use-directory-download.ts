@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast, loadingToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useRef, useState } from 'react';
 import { downloadDirectory } from '../api/runtime-files';
 import { useProjectContext } from '../context';
@@ -11,6 +12,7 @@ import { useProjectContext } from '../context';
  * and saves it. Concurrent downloads for distinct paths are allowed.
  */
 export function useDirectoryDownload() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const ref = ctx?.ref ?? '';
@@ -22,7 +24,7 @@ export function useDirectoryDownload() {
   const downloadDir = useCallback(
     async (dirPath: string, dirName: string) => {
       if (!projectId || !ref) {
-        errorToast('Project not ready');
+        errorToast(tI18nComplete.raw('text5294a47839ac'));
         return;
       }
       if (activeRef.current.has(dirPath)) return;
@@ -31,7 +33,7 @@ export function useDirectoryDownload() {
 
       try {
         await loadingToast(
-          `Downloading ${dirName}…`,
+          tI18nComplete('texta6879661926e', { value0: dirName }),
           () => downloadDirectory(projectId, ref, dirPath, dirName),
           {
             success: `Downloaded ${dirName}.zip`,
@@ -47,7 +49,7 @@ export function useDirectoryDownload() {
         rerender();
       }
     },
-    [projectId, ref, rerender],
+    [projectId, ref, rerender, tI18nComplete],
   );
 
   const isDownloading = useCallback((path: string) => activeRef.current.has(path), []);

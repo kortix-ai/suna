@@ -12,6 +12,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
+  TEAMS_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
   channelAuth,
   channelCatalog,
@@ -50,8 +51,8 @@ describe('channelCatalog(slack)', () => {
   const action = (path: string) => expectDefined(byPath.get(path));
 
   test('exposes the full native Slack surface as http bindings', () => {
-    // 14 native Web API methods (relay/typing/download/manifest/file-upload are CLI-side).
-    expect(actions.length).toBe(14);
+    // 15 native Web API methods (relay/typing/download/manifest/file-upload are CLI-side).
+    expect(actions.length).toBe(15);
     for (const a of actions) {
       expect(a.binding.kind).toBe('http');
       if (a.binding.kind === 'http') expect(a.binding.path.startsWith('/')).toBe(true);
@@ -76,6 +77,13 @@ describe('channelCatalog(slack)', () => {
     const react = action('add_reaction');
     const props = Object.keys(objectSchema(react.inputSchema).properties);
     expect(props).toEqual(['channel', 'timestamp', 'name']); // not ts/emoji — Slack's own names
+  });
+
+  test('remove_reaction → POST /reactions.remove with the same params as add_reaction', () => {
+    const a = action('remove_reaction');
+    expect(a.binding).toEqual({ kind: 'http', method: 'POST', path: '/reactions.remove' });
+    expect(a.risk).toBe('write');
+    expect(objectSchema(a.inputSchema).required).toEqual(['channel', 'timestamp', 'name']);
   });
 
   test('auth_test has no inputs; unknown platform → empty', () => {
@@ -432,6 +440,139 @@ describe('handleCall — channel (slack)', () => {
   });
 });
 
+/**
+ * Teams refuses a read with 403 "… Resource specific consent grants on the
+ * request ''" when the Kortix app installed in that team holds no permission
+ * to read its messages. On dev (2026-10-01) the agent relayed "a Teams admin
+ * needs to grant that permission", which names nobody's next step. The
+ * refusal now names the fix; Graph's text stays after it.
+ */
+describe('handleCall — channel (teams): a read the installed app may not make', () => {
+  const TEAMS: GatewayConnector = {
+    connectorId: 'conn-teams',
+    slug: TEAMS_CHANNEL_CONNECTOR_SLUG,
+    provider: 'channel',
+    platform: 'teams',
+    baseUrl: 'https://graph.microsoft.com/v1.0',
+    auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+    hasAuth: true,
+    credentialMode: 'shared',
+    enabled: true,
+  };
+  const LIST_REPLIES: GatewayAction = {
+    path: 'teams.list_replies',
+    relPath: 'list_replies',
+    inputSchema: {
+      type: 'object',
+      properties: { 'team-id': { 'x-in': 'path' }, 'channel-id': { 'x-in': 'path' }, 'message-id': { 'x-in': 'path' } },
+      required: ['team-id', 'channel-id', 'message-id'],
+    },
+    risk: 'read',
+    binding: { kind: 'http', method: 'GET', path: '/teams/{team-id}/channels/{channel-id}/messages/{message-id}/replies' },
+  };
+  const refusal = (permissions: string) =>
+    JSON.stringify({
+      error: {
+        code: 'Forbidden',
+        message: `Missing role permissions on the request. API requires one of '${permissions}'. Roles on the request ''. Resource specific consent grants on the request ''.`,
+      },
+    });
+  const read = async (body: string, status = 403) => {
+    const { deps } = makeDeps(body, status);
+    deps.loadConnectorBySlug = async () => TEAMS;
+    deps.loadAction = async () => LIST_REPLIES;
+    return handleCall(deps, {
+      ...input,
+      connectorSlug: TEAMS_CHANNEL_CONNECTOR_SLUG,
+      actionPath: 'list_replies',
+      args: { 'team-id': 'team-1', 'channel-id': 'channel-1', 'message-id': 'message-1' },
+    });
+  };
+
+  test('a team: the reason says who updates the app, where, and what to do when no update shows', async () => {
+    const res = await read(refusal('ChannelMessage.Read.All, ChannelMessage.Read.Group'));
+    expect(res.status).toBe('error');
+    if (res.status !== 'error') return;
+    expect(res.reason).toStartWith('Kortix cannot read messages in this team yet');
+    expect(res.reason).toContain('A team owner updates the app in Teams (the team → ⋯ → Manage team → Apps → Update)');
+    expect(res.reason).toContain('Connectors → Channels → Microsoft Teams');
+    // The Graph cause stays, for whoever debugs it.
+    expect(res.reason).toContain('ChannelMessage.Read.Group');
+  });
+
+  test('any other refusal keeps the plain upstream reason', async () => {
+    const res = await read(JSON.stringify({ error: { code: 'Forbidden', message: 'Insufficient privileges.' } }));
+    if (res.status !== 'error') throw new Error('expected an error');
+    expect(res.reason).toStartWith('upstream_403');
+  });
+});
+
+describe('handleCall — slack thread auto-bind', () => {
+  const SLACK_WITH_PLATFORM: GatewayConnector = { ...SLACK, platform: 'slack' };
+
+  function bindingDeps(body: string, bind?: GatewayDeps['bindSlackThread']) {
+    const { deps } = makeDeps(body);
+    const binds: Array<Parameters<NonNullable<GatewayDeps['bindSlackThread']>>[0]> = [];
+    deps.loadConnectorBySlug = async () => SLACK_WITH_PLATFORM;
+    deps.bindSlackThread = async (i) => {
+      binds.push(i);
+      return bind ? bind(i) : { bound: true, thread_ts: i.threadTs, session_id: i.sessionId };
+    };
+    return { deps, binds };
+  }
+
+  test('a top-level post binds the new message ts to the calling session, on the resolved DM channel', async () => {
+    const { deps, binds } = bindingDeps('{"ok":true,"ts":"1700000000.000100","channel":"D0DM"}');
+    const res = await handleCall(deps, { ...input, args: { channel: 'U0USER', text: 'hi' } });
+    expect(binds).toEqual([{ projectId: 'proj-1', sessionId: 'sess-1', channel: 'D0DM', threadTs: '1700000000.000100' }]);
+    expect(res).toMatchObject({
+      status: 'ok',
+      data: { ts: '1700000000.000100', thread_binding: { bound: true, thread_ts: '1700000000.000100', session_id: 'sess-1' } },
+    });
+  });
+
+  test('a threaded reply binds the thread root, not the reply ts', async () => {
+    const { deps, binds } = bindingDeps('{"ok":true,"ts":"200.2","channel":"C123"}');
+    await handleCall(deps, { ...input, args: { channel: 'C123', text: 'hi', thread_ts: '100.1' } });
+    expect(binds[0]?.threadTs).toBe('100.1');
+  });
+
+  test('a thread owned by another session is reported, not stolen', async () => {
+    const { deps } = bindingDeps('{"ok":true,"ts":"200.2","channel":"C123"}', async (i) => ({
+      bound: false,
+      thread_ts: i.threadTs,
+      reason: 'thread_bound_to_another_session',
+    }));
+    const res = await handleCall(deps, { ...input, args: { channel: 'C123', text: 'hi', thread_ts: '100.1' } });
+    expect(res).toMatchObject({
+      status: 'ok',
+      data: { thread_binding: { bound: false, reason: 'thread_bound_to_another_session' } },
+    });
+  });
+
+  test('a bind error keeps the delivered post ok and reports bind_failed', async () => {
+    const { deps } = bindingDeps('{"ok":true,"ts":"300.3","channel":"C123"}', async () => {
+      throw new Error('db down');
+    });
+    const res = await handleCall(deps, input);
+    expect(res).toMatchObject({ status: 'ok', data: { ts: '300.3', thread_binding: { bound: false, reason: 'bind_failed' } } });
+  });
+
+  test('no session on the token → no bind', async () => {
+    const { deps, binds } = bindingDeps('{"ok":true,"ts":"300.3","channel":"C123"}');
+    const res = await handleCall(deps, { ...input, sessionId: null });
+    expect(binds).toHaveLength(0);
+    expect((res as { data?: Record<string, unknown> }).data?.thread_binding).toBeUndefined();
+  });
+
+  test('a failed post → no bind', async () => {
+    const { deps, binds } = bindingDeps('{"ok":false,"error":"channel_not_found"}');
+    const res = await handleCall(deps, input);
+    expect(res.status).toBe('error');
+    expect(binds).toHaveLength(0);
+  });
+});
+
 describe('handleCall — channel (email)', () => {
   test('resolves opaque handles to signed URLs only at provider execution and consumes on success', async () => {
     const lifecycle: string[] = [];
@@ -745,5 +886,93 @@ describe('handleCall — channel (email)', () => {
       'https://api.agentmail.to/v0/inboxes/email-inbox%40agentmail.to/messages?limit=1',
     );
     expect(call.headers.Authorization).toBe('Bearer am_connection_token');
+  });
+});
+
+// The agent read `slack history` and `slack thread` as raw Slack messages
+// (2026-10-02): `user: "U0…"` and no name, so its answers named people by id.
+// After the read-scope gate, the gateway names each message's author as
+// `user_name`; the `user` id stays for operations.
+describe('handleCall — Slack history and thread name each author', () => {
+  const SLACK_WITH_PLATFORM: GatewayConnector = { ...SLACK, platform: 'slack' };
+  const HISTORY: GatewayAction = {
+    path: 'slack.get_history',
+    relPath: 'get_history',
+    inputSchema: { type: 'object', properties: { channel: {}, limit: {} }, required: ['channel'] },
+    risk: 'read',
+    binding: { kind: 'http', method: 'GET', path: '/conversations.history' },
+  };
+  const THREAD: GatewayAction = {
+    path: 'slack.get_thread',
+    relPath: 'get_thread',
+    inputSchema: { type: 'object', properties: { channel: {}, ts: {} }, required: ['channel', 'ts'] },
+    risk: 'read',
+    binding: { kind: 'http', method: 'GET', path: '/conversations.replies' },
+  };
+  const BODY = JSON.stringify({
+    ok: true,
+    messages: [
+      { ts: '3.0', user: 'U0TEST1', text: 'ship it' },
+      { ts: '2.0', user: 'U0TEST2', text: 'which one?' },
+      { ts: '1.0', bot_id: 'B0TEST1', text: 'deploy 42 done' },
+      { ts: '0.5', user: 'U0TEST1', text: 'first' },
+    ],
+  });
+
+  function namingDeps(action: GatewayAction, names: Record<string, string> | Error = { U0TEST1: 'Sam Rivera' }) {
+    const { deps } = makeDeps(BODY);
+    const asked: Array<{ projectId: string; token: string; userIds: string[] }> = [];
+    deps.loadConnectorBySlug = async () => SLACK_WITH_PLATFORM;
+    deps.loadAction = async () => action;
+    deps.nameSlackUsers = async (i) => {
+      asked.push(i);
+      if (names instanceof Error) throw names;
+      return new Map(Object.entries(names));
+    };
+    return { deps, asked };
+  }
+
+  const authors = (res: Awaited<ReturnType<typeof handleCall>>) =>
+    ((res as { data?: { messages?: Array<Record<string, unknown>> } }).data?.messages ?? []).map((m) => [
+      m.user ?? null,
+      m.user_name ?? null,
+    ]);
+
+  test('history: each author Slack can name gains user_name, once per person; the id stays', async () => {
+    const { deps, asked } = namingDeps(HISTORY);
+    const res = await handleCall(deps, { ...input, actionPath: 'get_history', args: { channel: 'C123' } });
+
+    expect(res.status).toBe('ok');
+    expect(asked).toEqual([{ projectId: 'proj-1', token: 'xoxb-install-token', userIds: ['U0TEST1', 'U0TEST2'] }]);
+    expect(authors(res)).toEqual([
+      ['U0TEST1', 'Sam Rivera'],
+      ['U0TEST2', null],
+      [null, null],
+      ['U0TEST1', 'Sam Rivera'],
+    ]);
+  });
+
+  test('thread: replies are named the same way', async () => {
+    const { deps } = namingDeps(THREAD, { U0TEST1: 'Sam Rivera', U0TEST2: 'Alex Kim' });
+    const res = await handleCall(deps, { ...input, actionPath: 'get_thread', args: { channel: 'C123', ts: '0.5' } });
+    expect(authors(res)).toEqual([
+      ['U0TEST1', 'Sam Rivera'],
+      ['U0TEST2', 'Alex Kim'],
+      [null, null],
+      ['U0TEST1', 'Sam Rivera'],
+    ]);
+  });
+
+  test('a naming failure keeps the read ok and unchanged', async () => {
+    const { deps } = namingDeps(HISTORY, new Error('slack down'));
+    const res = await handleCall(deps, { ...input, actionPath: 'get_history', args: { channel: 'C123' } });
+    expect(res.status).toBe('ok');
+    expect(authors(res).every(([, name]) => name === null)).toBe(true);
+  });
+
+  test('a post is never named, even when its answer carries messages', async () => {
+    const { deps, asked } = namingDeps(SEND);
+    await handleCall(deps, input);
+    expect(asked).toHaveLength(0);
   });
 });

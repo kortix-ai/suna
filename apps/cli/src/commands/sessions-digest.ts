@@ -1,26 +1,31 @@
+import { formatRelative } from '@kortix/shared';
+
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import {
   emitJson,
   resolveProjectContext,
+  shortId,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad } from '../style.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 const DIGEST_HELP = help`Usage: kortix sessions digest [options]
 
 Compact review of recent sessions for reflection / handoff. It lists sessions
-in a time window and, for running sessions, reads the live OpenCode transcript
-through the project sessions API. Tool calls are compressed to name/status only;
-tool inputs and outputs are intentionally stripped so the digest stays readable.
+in a time window and reads each one's transcript through the project sessions
+API — live from the sandbox while a session runs, and from the server's saved
+copy once it stops. Tool calls are compressed to name/status only; tool inputs
+and outputs are intentionally stripped so the digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
                        2026-06-20, 2026-06-20T03:00:00Z.
-  --messages, -n <N>   Recent OpenCode messages per running session (default 40).
+  --messages, -n <N>   Recent messages per session (default 40).
   --chars <N>          Max text chars per message after whitespace compaction
                        (default 700).
   --all                Ignore --since and include every listable session.
@@ -32,9 +37,12 @@ tool inputs and outputs are intentionally stripped so the digest stays readable.
 Aliases: review, summary.
 
 Notes:
-- Running sessions include a compact transcript when the sandbox is reachable.
-- Stopped/failed sessions include metadata and any mirrored OpenCode titles, but
-  their transcript is unavailable unless the sandbox is running/resumed.
+- A running session's transcript is read live from its sandbox.
+- A stopped or failed session is served from the server's saved copy, written at
+  every turn end. Such a transcript is marked "saved", and "partial" when the
+  saved copy does not reach the session's first message.
+- A session whose sandbox never wrote a saved copy reports its transcript as
+  unavailable, with the reason.
 `;
 
 interface CompactToolCall {
@@ -66,12 +74,26 @@ interface SessionDigest {
     created_at: string;
     updated_at: string;
     error: string | null;
+    /** The session's root conversation in its runtime (OpenCode or pi). */
+    runtime_session_id: string | null;
+    /** Titles of the runtime's conversations. */
+    runtime_titles: string[];
+    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
     opencode_session_id: string | null;
+    /** @deprecated The pre-W4 name of `runtime_titles`. Same value. */
     opencode_titles: string[];
   };
   transcript: {
     available: boolean;
     reason: string | null;
+    /** Where the messages came from: the running sandbox, the durable
+     *  server-side mirror, or nowhere. */
+    source: 'live' | 'mirror' | 'none';
+    /** The mirror proved it holds the session's first message AND returned
+     *  every row it holds. Never a guess — see `mirrorIsComplete`. */
+    complete: boolean;
+    runtime_session_id: string | null;
+    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
     opencode_session_id: string | null;
     message_count: number;
     messages: CompactMessage[];
@@ -101,30 +123,21 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
     json = takeFlagBool(rest, ['--json']);
     all = takeFlagBool(rest, ['--all']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  if (positional.length > 0) {
-    process.stderr.write(`${status.err('sessions digest does not take positional arguments.')}\n`);
-    return 2;
-  }
+  if (positional.length > 0) return fail('sessions digest does not take positional arguments.');
 
   const messageLimit = messageLimitRaw === undefined ? 40 : Number(messageLimitRaw);
   if (!Number.isInteger(messageLimit) || messageLimit <= 0 || messageLimit > 500) {
-    process.stderr.write(`${status.err(`Invalid --messages "${messageLimitRaw}" (use 1-500).`)}\n`);
-    return 2;
+    return fail(`Invalid --messages "${messageLimitRaw}" (use 1-500).`);
   }
   const maxChars = charsRaw === undefined ? 700 : Number(charsRaw);
   if (!Number.isInteger(maxChars) || maxChars < 80 || maxChars > 5000) {
-    process.stderr.write(`${status.err(`Invalid --chars "${charsRaw}" (use 80-5000).`)}\n`);
-    return 2;
+    return fail(`Invalid --chars "${charsRaw}" (use 80-5000).`);
   }
   const since = all ? null : parseSince(sinceRaw ?? '7d');
-  if (!all && !since) {
-    process.stderr.write(`${status.err(`Could not parse --since "${sinceRaw}".`)}\n`);
-    return 2;
-  }
+  if (!all && !since) return fail(`Could not parse --since "${sinceRaw}".`);
 
   const opts: CtxOpts = { projectArg, hostArg };
   const ctx = await resolveProjectContext(opts);
@@ -180,15 +193,24 @@ async function buildDigest(
   maxChars: number,
 ): Promise<SessionDigest> {
   const base = baseDigest(s);
-  if (s.status !== 'running') {
-    base.transcript.reason = `session is ${s.status}; live transcript requires a running sandbox`;
-    return base;
-  }
+  /*
+    ASK, WHATEVER THE STATUS SAYS.
+
+    This used to return here for any session that was not `running`, with the
+    reason hard-coded. That reason is the API's own string — and the API
+    stopped using it as a refusal: `buildSessionTranscriptDigest` passes it to
+    `degrade()`, which serves the durable mirror and answers `available: true,
+    source: 'mirror'` whenever rows exist. Serving a stopped session is the
+    whole point of the mirror.
+
+    So the guard was answering a question it never asked. The route reports
+    `source` and `complete` for itself; let it.
+  */
   try {
     const transcript = await client.get<unknown>(
       `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
     );
-    base.transcript = sanitizeTranscript(transcript, s.opencode_session_id);
+    base.transcript = sanitizeTranscript(transcript, runtimeSessionIdOf(s));
     return base;
   } catch (err) {
     base.transcript.reason = `could not read session transcript: ${(err as Error).message}`;
@@ -196,7 +218,7 @@ async function buildDigest(
   }
 }
 
-function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | null): SessionDigest['transcript'] {
+export function sanitizeTranscript(raw: unknown, fallbackRuntimeSessionId: string | null): SessionDigest['transcript'] {
   const obj = typeof raw === 'object' && raw ? raw as Record<string, unknown> : {};
   const messages = Array.isArray(obj.messages)
     ? obj.messages.map(sanitizeCompactMessage)
@@ -204,12 +226,21 @@ function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | nu
   const count = typeof obj.message_count === 'number' && Number.isFinite(obj.message_count)
     ? obj.message_count
     : messages.length;
+  // A W4 API names it `runtime_session_id`; an older one only `opencode_session_id`.
+  const served = [obj.runtime_session_id, obj.opencode_session_id].find((id) => typeof id === 'string');
+  const runtimeSessionId = typeof served === 'string' ? served : fallbackRuntimeSessionId;
   return {
     available: obj.available === true,
     reason: typeof obj.reason === 'string' ? obj.reason : null,
-    opencode_session_id: typeof obj.opencode_session_id === 'string'
-      ? obj.opencode_session_id
-      : fallbackOpencodeSessionId,
+    // An older API answers neither field. Default to the shape that claims
+    // nothing: a transcript it served is at least live, and completeness is
+    // never assumed.
+    source: obj.source === 'live' || obj.source === 'mirror' || obj.source === 'none'
+      ? obj.source
+      : obj.available === true ? 'live' : 'none',
+    complete: obj.complete === true,
+    runtime_session_id: runtimeSessionId,
+    opencode_session_id: runtimeSessionId,
     message_count: count,
     messages,
   };
@@ -264,13 +295,18 @@ function baseDigest(s: ProjectSession): SessionDigest {
       created_at: s.created_at,
       updated_at: s.updated_at,
       error: s.error,
-      opencode_session_id: s.opencode_session_id,
-      opencode_titles: opencodeTitles(s),
+      runtime_session_id: runtimeSessionIdOf(s),
+      runtime_titles: runtimeTitles(s),
+      opencode_session_id: runtimeSessionIdOf(s),
+      opencode_titles: runtimeTitles(s),
     },
     transcript: {
       available: false,
       reason: null,
-      opencode_session_id: s.opencode_session_id,
+      source: 'none',
+      complete: false,
+      runtime_session_id: runtimeSessionIdOf(s),
+      opencode_session_id: runtimeSessionIdOf(s),
       message_count: 0,
       messages: [],
     },
@@ -298,12 +334,12 @@ function printHumanDigest(
   for (const d of digests) {
     const s = d.session;
     const label = s.name ?? shortId(s.session_id);
-    process.stdout.write(`\n${C.bold}${pad(label, labelW)}${C.reset} ${statusLabel(s.status)} ${C.faded}${shortId(s.session_id)} · agent ${s.agent} · updated ${relAge(s.updated_at)}${C.reset}\n`);
+    process.stdout.write(`\n${C.bold}${pad(label, labelW)}${C.reset} ${statusLabel(s.status)} ${C.faded}${shortId(s.session_id)} · agent ${s.agent} · updated ${formatRelative(s.updated_at, { maxRelativeDays: null })}${C.reset}\n`);
     process.stdout.write(`  ${C.dim}branch${C.reset} ${s.branch}  ${C.dim}base${C.reset} ${s.base_ref}  ${C.dim}provider${C.reset} ${s.provider}\n`);
     process.stdout.write(`  ${C.dim}created${C.reset} ${s.created_at}  ${C.dim}updated${C.reset} ${s.updated_at}\n`);
     if (s.error) process.stdout.write(`  ${C.red}error${C.reset} ${s.error}\n`);
-    if (s.opencode_titles.length > 0) {
-      process.stdout.write(`  ${C.dim}opencode titles${C.reset} ${s.opencode_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
+    if (s.runtime_titles.length > 0) {
+      process.stdout.write(`  ${C.dim}runtime titles${C.reset} ${s.runtime_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
     }
 
     if (!d.transcript.available) {
@@ -314,7 +350,12 @@ function printHumanDigest(
       process.stdout.write(`  ${C.dim}transcript${C.reset} no messages\n`);
       continue;
     }
-    process.stdout.write(`  ${C.dim}transcript${C.reset} ${d.transcript.message_count} compact message${d.transcript.message_count === 1 ? '' : 's'}\n`);
+    // Say where it came from and whether it is the whole thing. A saved
+    // transcript that stops short must not read like a complete one.
+    const origin = d.transcript.source === 'mirror'
+      ? `${C.faded} · saved${d.transcript.complete ? '' : ', partial'}${C.reset}`
+      : '';
+    process.stdout.write(`  ${C.dim}transcript${C.reset} ${d.transcript.message_count} compact message${d.transcript.message_count === 1 ? '' : 's'}${origin}\n`);
     for (const m of d.transcript.messages) {
       const who = m.role === 'assistant' ? C.cyan : C.green;
       const at = m.created ? ` ${C.faded}${new Date(m.created).toISOString()}${C.reset}` : '';
@@ -344,8 +385,13 @@ function summarizeTools(tools: CompactToolCall[]): string {
   return parts.length > 12 ? `${parts.slice(0, 12).join(', ')}, … +${parts.length - 12}` : parts.join(', ');
 }
 
-function opencodeTitles(s: ProjectSession): string[] {
-  const raw = s.metadata?.opencode_sessions;
+/** The runtime root id: a W4 API serves `runtime_session_id`, an older one `opencode_session_id`. */
+function runtimeSessionIdOf(s: ProjectSession): string | null {
+  return s.runtime_session_id ?? s.opencode_session_id ?? null;
+}
+
+function runtimeTitles(s: ProjectSession): string[] {
+  const raw = s.runtime_sessions ?? s.metadata?.opencode_sessions;
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry) => {
@@ -387,19 +433,6 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
-}
-
-function shortId(id: string): string {
-  return id.split('-')[0] ?? id;
-}
-
-function relAge(iso: string): string {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 function statusLabel(s: string): string {

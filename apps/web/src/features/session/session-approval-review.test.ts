@@ -1,4 +1,5 @@
 import { approvalReviewable } from '@/components/approvals/approval-request';
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { SessionAuditAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
@@ -19,11 +20,11 @@ function action(overrides: Partial<SessionAuditAction> = {}): SessionAuditAction
     status: 'pending_approval',
     risk: 'write',
     acted_by: 'user-1',
-    acted_by_email: 'marko@kortix.ai',
+    acted_by_email: 'sam@example.test',
     resolved_by: null,
     resolved_by_email: null,
     result_summary: {
-      args_preview: { subject: 'Weekly report', to: ['marko@kortix.ai'] },
+      args_preview: { subject: 'Weekly report', to: ['sam@example.test'] },
       args_preview_complete: true,
     },
     at: '2026-08-09T10:00:00.000Z',
@@ -37,7 +38,7 @@ describe('approvalArgsPreview', () => {
   test('returns the redacted preview object', () => {
     expect(approvalArgsPreview(action())).toEqual({
       subject: 'Weekly report',
-      to: ['marko@kortix.ai'],
+      to: ['sam@example.test'],
     });
   });
 
@@ -49,7 +50,7 @@ describe('approvalArgsPreview', () => {
 
 describe('approvalArgsSummary', () => {
   test('puts the target fields first', () => {
-    expect(approvalArgsSummary(action())).toBe('to: marko@kortix.ai · subject: Weekly report');
+    expect(approvalArgsSummary(action())).toBe('to: sam@example.test · subject: Weekly report');
   });
 
   test('stops after two fields', () => {
@@ -87,13 +88,25 @@ describe('approvalRequestFromAction', () => {
       action: 'gmail.send_email',
       risk: 'write',
       requestedAt: '2026-08-09T10:00:00.000Z',
-      argsPreview: { subject: 'Weekly report', to: ['marko@kortix.ai'] },
+      argsPreview: { subject: 'Weekly report', to: ['sam@example.test'] },
+      approvalContext: null,
       reviewComplete: true,
       resolution: null,
       pending: true,
       status: 'pending_approval',
       resolvedAt: null,
     });
+  });
+
+  test("carries the agent's description of an id-only call", () => {
+    const row = action({
+      result_summary: {
+        args_preview: { draft_id: 'r-1' },
+        args_preview_complete: true,
+        approval_context: 'Sends draft r-1 to a@example.test',
+      },
+    });
+    expect(approvalRequestFromAction(row).approvalContext).toBe('Sends draft r-1 to a@example.test');
   });
 
   test('reports a shortened preview as incomplete — which no longer blocks it', () => {
@@ -174,21 +187,24 @@ describe('approvalNoticeRows', () => {
 
 describe('approvalNoticeHeadline', () => {
   test('names the single decision', () => {
-    expect(approvalNoticeHeadline(1)).toEqual({
+    expect(approvalNoticeHeadline(1, testUiTranslator)).toEqual({
       title: 'The agent needs your approval',
       hint: 'waiting for one decision',
     });
   });
 
   test('counts multiple decisions', () => {
-    expect(approvalNoticeHeadline(3)).toEqual({
+    expect(approvalNoticeHeadline(3, testUiTranslator)).toEqual({
       title: '3 actions need your approval',
       hint: 'waiting for 3 decisions',
     });
   });
 
   test('drops the waiting hint once nothing is pending', () => {
-    expect(approvalNoticeHeadline(0)).toEqual({ title: 'Decision recorded', hint: null });
+    expect(approvalNoticeHeadline(0, testUiTranslator)).toEqual({
+      title: 'Decision recorded',
+      hint: null,
+    });
   });
 });
 
@@ -200,5 +216,19 @@ describe('nextExpandedApproval', () => {
 
   test('collapses the row that is already open', () => {
     expect(nextExpandedApproval('exec-1', 'exec-1')).toBeNull();
+  });
+});
+
+// A Slack connector call needing approval showed `channel: C0…` in the session
+// (2026-10-02). The session passes the project's bound channel names: the
+// summary reads the name, and the parameters keep the exact id beside it.
+describe('approvalArgsSummary with Slack channel names', () => {
+  test('the summary reads a bound channel by its name', () => {
+    const slackAction = {
+      ...action(),
+      result_summary: { args_preview: { channel: 'C0TEST1', text: 'Deploy done' }, args_preview_complete: true },
+    };
+    expect(approvalArgsSummary(slackAction, new Map([['C0TEST1', '#general']]))).toBe('channel: #general · text: Deploy done');
+    expect(approvalArgsSummary(slackAction)).toBe('channel: C0TEST1 · text: Deploy done');
   });
 });

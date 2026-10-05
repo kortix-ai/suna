@@ -29,6 +29,8 @@ import {
   pushVerifiedSeed,
 } from './managed-repo-seed';
 import { normalizeStarterTemplateId } from './starter';
+import { GitHubApiError } from './github';
+import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,
@@ -38,6 +40,7 @@ import {
 import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
 import { config } from '../config';
+import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -70,7 +73,8 @@ import {
 } from './lib/provision-idempotency';
 import { normalizeProjectGlyph } from './lib/project-glyph';
 import { normalizeProjectIcon } from './lib/project-icon';
-import { PROJECT_NAME_MAX_LENGTH, normalizeString, readBody, serializeProject } from './lib/serializers';
+import { PROJECT_NAME_MAX_LENGTH, normalizeString, serializeProject } from './lib/serializers';
+import { readJsonObject } from '../shared/http-body';
 import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
@@ -102,6 +106,35 @@ export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
 export interface ProvisionResult {
   status: ProvisionResultStatus;
   body: unknown;
+  /** Response headers the route must send, e.g. `Retry-After`. */
+  headers?: Record<string, string>;
+}
+
+/**
+ * Map a managed repository create failure to the provision answer.
+ *
+ * A GitHub rate limit (secondary limits block repository creation for minutes)
+ * is `503` + `Retry-After` + `code: GITHUB_RATE_LIMITED`, so a caller can back
+ * off for the time GitHub asked. Every other failure stays `502` with the
+ * provider's reason, as before.
+ */
+export function createRepoFailureResult(error: unknown): ProvisionResult {
+  const message = (error as Error)?.message || 'Failed to provision managed repo';
+  // The instance backend is an App installed on a personal account, which can
+  // never create a repository (`GitHubPersonalAccountCreateUnsupportedError`).
+  // Deterministic for that owner, so it is a 409 with the typed code — a 502
+  // reaches the browser as a 503 and reads as "managed git isn't set up".
+  if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
+    return { status: 409, body: { error: message, code: error.code } };
+  }
+  if (error instanceof GitHubApiError && error.retryAfterSeconds !== undefined) {
+    return {
+      status: 503,
+      body: { error: message, code: 'GITHUB_RATE_LIMITED', retry_after_seconds: error.retryAfterSeconds },
+      headers: { 'Retry-After': String(error.retryAfterSeconds) },
+    };
+  }
+  return { status: 502, body: { error: message } };
 }
 
 export interface ProvisionContext {
@@ -123,7 +156,7 @@ export interface ProvisionContext {
  * a caller (either route) can still 403 before any provisioning work starts.
  */
 export async function buildProvisionContext(c: any): Promise<ProvisionContext> {
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   return { c, body, scope };
 }
@@ -326,7 +359,26 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       isPrivate: true,
     });
   } catch (error) {
-    return { status: 502, body: { error: (error as Error).message || 'Failed to provision managed repo' } };
+    // Loud, structured, and BEFORE the 502: this was silent from 2026-08-30 to
+    // 2026-09-07 while every prod provision died here (a rotated managed-git
+    // PAT without Administration:write → GitHub 403). Only the response body
+    // carried the reason, and the edge worker of the day replaced that body
+    // with a maintenance page. The log line is what Better Stack alerts on.
+    const message = (error as Error).message || 'Failed to provision managed repo';
+    appLogger.error('[projects] provision create_repo failed', {
+      stage: 'create_repo',
+      provider,
+      projectId,
+      accountId: scope.accountId,
+      slug: repoSlug,
+      // NOT `message`: that key is the log line's own text, so the provider's
+      // reason was overwritten and never reached Better Stack (2026-09-16).
+      error: message,
+      ...(error instanceof GitHubApiError && error.retryAfterSeconds !== undefined
+        ? { retry_after_seconds: error.retryAfterSeconds }
+        : {}),
+    });
+    return createRepoFailureResult(error);
   }
 
   const authMethod = provider === 'github' ? 'github_app' : 'managed';
@@ -403,8 +455,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
           // skills, and session start 500s on refs/heads/main".
           seed: initialSeedState,
         },
-        // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
-        // unification.md §2.1/§3 Phase 2): every project created through this
+        // MANDATORY DECLARED AGENTS (Phase 2): every project created through this
         // route is "new" in the spec's sense — subject to declared-agent
         // enforcement from birth, regardless of the platform-wide
         // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
@@ -708,8 +759,25 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
           `repo=${connRef.repoName ?? connRef.upstreamUrl} stage=${stage}:`,
         error instanceof Error ? error.message : error,
       );
-      try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
-      await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});
+      const rollbackContext =
+        `project=${row.projectId} account=${scope.accountId} repo=${connRef.repoName ?? connRef.upstreamUrl}`;
+      try {
+        await backend.deleteRepo(connRef);
+      } catch (deleteError) {
+        appLogger.error(
+          `[projects] ORPHANED MANAGED REPO — provision failed to delete the repo it minted ` +
+            `${rollbackContext} stage=seed_rollback`,
+          { error: deleteError instanceof Error ? deleteError.message : String(deleteError) },
+        );
+      }
+      // A surviving row points at a deleted repo, and a retry with the same
+      // idempotency key would replay it as a success.
+      await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch((deleteError) => {
+        appLogger.error(
+          `[projects] provision rollback left the project row ${rollbackContext}:`,
+          { error: deleteError instanceof Error ? deleteError.message : String(deleteError) },
+        );
+      });
       return {
         status: 502,
         body: {

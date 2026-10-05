@@ -1,5 +1,5 @@
+import { existsSync, readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const connectorsSource = readFileSync(join(import.meta.dir, 'connectors-view.tsx'), 'utf8');
@@ -7,16 +7,17 @@ const discoverPath = join(import.meta.dir, 'discover-catalogue.tsx');
 const discoverSource = existsSync(discoverPath) ? readFileSync(discoverPath, 'utf8') : '';
 
 describe('feature-flagged Discover connector marketplace', () => {
+  // `AddAppPanel` takes `discoverEnabled` as a prop; it no longer computes the
+  // flag itself. The legacy `ConnectorsMasterDetail` wrapper that used to wire
+  // `useFeatureFlag(projectId, 'connectors_api_discover')` here was dead code
+  // (0 importers, unreachable from the live route) and was deleted. The live
+  // route computes the flag in
+  // `features/workspace/capabilities/connectors/connectors-page.tsx` instead.
   test('keeps Easy Connect and adds Discover only for explicit project opt-in', () => {
-    expect(connectorsSource).toContain(
-      "const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;",
-    );
     expect(connectorsSource).toContain(
       '<TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>',
     );
-    expect(connectorsSource).toContain(
-      '{discoverEnabled && <TabsTrigger value="discover">Discover</TabsTrigger>}',
-    );
+    expect(connectorsSource).toContain("raw('i18nComplete.textd4a33d5b78bc')");
     expect(connectorsSource).toContain(
       '{discoverEnabled && (\n          <TabsContent value="discover"',
     );
@@ -54,13 +55,15 @@ describe('feature-flagged Discover connector marketplace', () => {
       'proposeConnectorConnectionSlug(connectionDisplayName, existingSlugs)',
     );
     expect(discoverSource).toContain('createOnlyConnectorDraft(draft)');
-    expect(discoverSource).toContain('authorization_strategy: connection.authorizationStrategy');
+    // No `authorization_strategy` on the draft — ownership is an ACCOUNT
+    // property (`owner_type`), not a connector-level mode chosen at creation.
+    expect(discoverSource).not.toContain('authorization_strategy');
   });
 
   test('does not mislabel a domain card as only its feed-provided MCP surface', () => {
-    expect(discoverSource).toContain(
-      "const subtitle = isOAuth ? 'Pipedream OAuth' : 'Direct surfaces';",
-    );
+    expect(discoverSource).toContain('const subtitle = isOAuth');
+    expect(discoverSource).toContain("? tI18nComplete.raw('text87a46ec2620a')");
+    expect(discoverSource).toContain(": tI18nComplete.raw('text678094dc2f3f')");
     expect(discoverSource).not.toContain(
       "const subtitle = isOAuth ? 'Pipedream OAuth' : connectorKindLabel(card.item.kind);",
     );

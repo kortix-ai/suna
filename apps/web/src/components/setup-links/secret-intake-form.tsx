@@ -1,27 +1,102 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import Loading from '@/components/ui/loading';
+import type { OutcomeTone } from '@/features/session/outcomes/outcome-types';
+import { outcomeTint } from '@/features/session/outcomes/outcome-vocabulary';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import {
-  CheckIcon,
-  ClockCountdownIcon,
-  KeyIcon,
-  LinkBreakIcon,
-  ShieldCheckIcon,
-} from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
-import { classifySetupLinkError, describeLinkExpiry, setupLinkApiBase } from './util';
 import {
   getSecretSetupLink,
   submitSecretSetupLink,
   type SecretSetupLinkInfo,
 } from '@kortix/sdk';
+import {
+  ArrowUpRightIcon,
+  CheckIcon,
+  ClockCountdownIcon,
+  LinkBreakIcon,
+  WarningCircleIcon,
+  type Icon,
+} from '@phosphor-icons/react';
+import { Fragment, useEffect, useState, type ReactElement } from 'react';
+import {
+  classifySetupLinkError,
+  describeLinkExpiry,
+  describeWithheldSecrets,
+  setupLinkApiBase,
+  splitTextLinks,
+} from './util';
 
 type Phase = 'loading' | 'error' | 'expired' | 'invalid' | 'ready' | 'submitting' | 'done';
+
+/** Every phase that is not the form: tinted tile, title, one muted line. */
+function StatusNotice({
+  icon: Glyph,
+  tone,
+  title,
+  description,
+}: {
+  icon: Icon;
+  tone: OutcomeTone;
+  title: string;
+  description?: string;
+}): ReactElement {
+  const tint = outcomeTint(tone);
+  return (
+    <div role="status" className="flex flex-col items-center gap-3 py-8 text-center">
+      <span
+        className={cn(
+          'flex size-9 items-center justify-center rounded-sm ring-1',
+          tint.ring,
+          tint.bg,
+        )}
+      >
+        <Glyph weight="fill" className={cn('size-5', tint.fg)} />
+      </span>
+      <div className="max-w-xs space-y-1">
+        <p className="text-foreground text-sm font-medium">{title}</p>
+        {description ? (
+          <p className="text-muted-foreground text-xs text-pretty">{description}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Agent-written hint text with its URLs as real links: brand blue, underlined,
+ * an up-right arrow for "opens elsewhere". A long URL truncates; `title` keeps
+ * the full address.
+ */
+function LinkedText({ text }: { text: string }): ReactElement {
+  return (
+    <>
+      {splitTextLinks(text).map((part, index) =>
+        part.type === 'text' ? (
+          <Fragment key={index}>{part.value}</Fragment>
+        ) : (
+          <a
+            key={index}
+            href={part.href}
+            title={part.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group text-kortix-base focus-visible:ring-ring inline-flex max-w-full items-baseline gap-0.5 rounded-sm font-medium outline-none focus-visible:ring-2"
+          >
+            <span className="decoration-kortix-base/40 group-hover:decoration-kortix-base min-w-0 truncate underline underline-offset-2">
+              {part.label}
+            </span>
+            <ArrowUpRightIcon className="size-3 shrink-0 self-center" />
+          </a>
+        ),
+      )}
+    </>
+  );
+}
 
 /**
  * Renders the fields an agent-minted secret link asks for, and submits the
@@ -35,6 +110,10 @@ export function SecretIntakeForm({
 }: {
   token: string;
   onDone?: () => void;
+  /**
+   * The host already states the encryption promise (the in-chat modal header),
+   * so the footnote keeps only the expiry.
+   */
   compact?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -43,7 +122,13 @@ export function SecretIntakeForm({
   const [info, setInfo] = useState<SecretSetupLinkInfo | null>(null);
   const [expiresIn, setExpiresIn] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  // Who can use the values: everyone (the default) or only the person who asked.
+  const [onlyRequester, setOnlyRequester] = useState(false);
+  const tSharing = useTranslations('accessSharing');
   const [error, setError] = useState<string | null>(null);
+  const [withheldNotice, setWithheldNotice] = useState<ReturnType<
+    typeof describeWithheldSecrets
+  > | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +150,7 @@ export function SecretIntakeForm({
           setError(
             cause instanceof Error
               ? cause.message
-              : 'Could not reach Kortix. Check your connection and try again.',
+              : tI18nHardcoded.raw('i18nComplete.texta8234500531a'),
           );
           setPhase('error');
         }
@@ -74,7 +159,7 @@ export function SecretIntakeForm({
     return () => {
       cancelled = true;
     };
-  }, [base, token]);
+  }, [base, token, tI18nHardcoded]);
 
   async function submit() {
     if (!info) return;
@@ -90,7 +175,13 @@ export function SecretIntakeForm({
     setPhase('submitting');
     setError(null);
     try {
-      await submitSecretSetupLink(token, filled, { backendUrl: base });
+      const result = await submitSecretSetupLink(
+        token,
+        filled,
+        { backendUrl: base },
+        onlyRequester ? { only_requester: true } : undefined,
+      );
+      setWithheldNotice(describeWithheldSecrets(result));
       setPhase('done');
       onDone?.();
     } catch (cause) {
@@ -98,120 +189,191 @@ export function SecretIntakeForm({
         setPhase('expired');
         return;
       }
-      setError(cause instanceof Error ? cause.message : 'Could not save. Check your connection and try again.');
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Could not save. Check your connection and try again.',
+      );
       setPhase('ready');
     }
   }
 
-  if (phase === 'loading') {
-    return (
-      <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
-        <Loading className="size-4" />{' '}
-        {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067')}
-      </div>
-    );
-  }
-
-  if (phase === 'expired') {
-    return (
-      <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
-          <ClockCountdownIcon weight="fill" className="text-kortix-orange size-5" />
-        </span>
-        <p className="text-foreground text-sm font-medium">This link has expired</p>
-        <p className="text-muted-foreground max-w-xs text-xs">
-          Secret links stop working after a set time so an old link cannot be misused. Ask the
-          agent that sent it for a fresh link — it can mint one in seconds — or reply in the
-          thread where you received this one.
-        </p>
-      </div>
-    );
-  }
-
-  if (phase === 'invalid') {
-    return (
-      <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <span className="bg-kortix-red/15 flex size-9 items-center justify-center rounded-sm">
-          <LinkBreakIcon weight="fill" className="text-kortix-red size-5" />
-        </span>
-        <p className="text-foreground text-sm font-medium">This link is not valid</p>
-        <p className="text-muted-foreground max-w-xs text-xs">
-          The link may have been cut off when it was copied. Open the complete URL, or ask the
-          agent that sent it for a new link.
-        </p>
-      </div>
-    );
-  }
-
-  if (phase === 'error') {
-    return (
-      <div className="text-muted-foreground py-6 text-center text-sm">
-        {error || 'Could not reach Kortix. Check your connection and try again.'}
-      </div>
-    );
-  }
-
-  if (phase === 'done') {
-    return (
-      <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <span className="bg-kortix-green/15 flex size-9 items-center justify-center rounded-sm">
-          <CheckIcon weight="fill" className="text-kortix-green size-5" />
-        </span>
-        <p className="text-foreground text-sm font-medium">
-          {tI18nHardcoded.raw(
+  switch (phase) {
+    case 'loading':
+      return (
+        <div
+          role="status"
+          className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm"
+        >
+          <Loading className="size-4 shrink-0" />
+          {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067')}
+        </div>
+      );
+    case 'expired':
+      return (
+        <StatusNotice
+          icon={ClockCountdownIcon}
+          tone="warning"
+          title={tI18nHardcoded.raw('i18nComplete.text7cb87dcb8d50')}
+          description={tI18nHardcoded.raw('i18nComplete.texte7119681d233')}
+        />
+      );
+    case 'invalid':
+      return (
+        <StatusNotice
+          icon={LinkBreakIcon}
+          tone="destructive"
+          title={tI18nHardcoded.raw('i18nComplete.text72c9ce898bf3')}
+          description={tI18nHardcoded.raw('i18nComplete.text8d669b2101c9')}
+        />
+      );
+    case 'error':
+      return (
+        <StatusNotice
+          icon={WarningCircleIcon}
+          tone="destructive"
+          title={error || tI18nHardcoded.raw('i18nComplete.texta8234500531a')}
+        />
+      );
+    case 'done':
+      if (withheldNotice) {
+        const { agent, byGrant, byAllowlist } = withheldNotice;
+        const description = [
+          byGrant.length > 0
+            ? tI18nHardcoded('secretIntakeWithheld.grant', {
+                names: byGrant.join(', '),
+                count: byGrant.length,
+                agent,
+              })
+            : null,
+          byAllowlist.length > 0
+            ? tI18nHardcoded('secretIntakeWithheld.allowlist', {
+                names: byAllowlist.join(', '),
+                count: byAllowlist.length,
+              })
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        return (
+          <StatusNotice
+            icon={WarningCircleIcon}
+            tone="warning"
+            title={tI18nHardcoded('secretIntakeWithheld.title', { agent })}
+            description={description}
+          />
+        );
+      }
+      return (
+        <StatusNotice
+          icon={CheckIcon}
+          tone="success"
+          title={tI18nHardcoded.raw(
             'autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1',
           )}
-        </p>
-        <p className="text-muted-foreground text-xs">
-          {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da')}
-        </p>
-      </div>
-    );
+          description={tI18nHardcoded.raw(
+            'autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da',
+          )}
+        />
+      );
   }
 
   const submitting = phase === 'submitting';
+  const fields = info?.fields ?? [];
+  const footnote = [
+    compact
+      ? null
+      : tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88'),
+    expiresIn ? tI18nHardcoded('i18nComplete.textefb48f76e65a', { value0: expiresIn }) : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <div className={cn('space-y-4', compact ? '' : 'mt-2')}>
-      {info?.fields.map((f) => (
-        <div key={f.name} className="space-y-1.5">
-          <Label htmlFor={`secret-${f.name}`} className="font-mono text-xs">
-            {f.label || f.name}
-          </Label>
-          {f.description ? <p className="text-muted-foreground text-xs">{f.description}</p> : null}
-          <Input
-            id={`secret-${f.name}`}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            className="font-mono"
-            placeholder="••••••••••••"
-            value={values[f.name] ?? ''}
-            disabled={submitting}
-            onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (info?.fields.length ?? 0) === 1) submit();
-            }}
-          />
+    <div className="space-y-5">
+      <FieldGroup className="gap-5">
+        {fields.map((f) => (
+          <Field key={f.name} className="space-y-2">
+            <div className="space-y-1">
+              <FieldLabel htmlFor={`secret-${f.name}`} className="text-foreground">
+                {f.label || <code className="font-mono">{f.name}</code>}
+              </FieldLabel>
+              {f.description ? (
+                <p className="text-muted-foreground text-xs text-pretty">
+                  <LinkedText text={f.description} />
+                </p>
+              ) : null}
+            </div>
+            <Input
+              id={`secret-${f.name}`}
+              name={f.name}
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              // 16px below `sm` so iOS Safari does not zoom the page on focus.
+              className="font-mono max-sm:text-base"
+              placeholder="••••••••••••"
+              value={values[f.name] ?? ''}
+              disabled={submitting}
+              onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && fields.length === 1) void submit();
+              }}
+            />
+          </Field>
+        ))}
+      </FieldGroup>
+
+      {info?.requester ? (
+        <div className="space-y-2">
+          <FieldLabel>{tSharing('whoCanUse')}</FieldLabel>
+          <RadioGroup
+            value={onlyRequester ? 'requester' : 'project'}
+            onValueChange={(next) => setOnlyRequester(next === 'requester')}
+            className="space-y-2"
+          >
+            <RadioGroupItem
+              value="project"
+              id="secret-intake-everyone"
+              label={tSharing('everyone', { project: info.project_name })}
+              description={tSharing('everyoneMeta')}
+              size="lg"
+              variant="outline"
+              disabled={submitting}
+            />
+            <RadioGroupItem
+              value="requester"
+              id="secret-intake-requester"
+              label={
+                info.requester.label
+                  ? tSharing('onlyRequester', { name: info.requester.label })
+                  : tSharing('onlyRequesterUnnamed')
+              }
+              description={tSharing('onlyRequesterDescription')}
+              size="lg"
+              variant="outline"
+              disabled={submitting}
+            />
+          </RadioGroup>
         </div>
-      ))}
+      ) : null}
 
-      {error ? <p className="text-destructive text-xs">{error}</p> : null}
-
-      <Button className="w-full" onClick={submit} disabled={submitting}>
-        {submitting ? (
-          <Loading className="mr-2 size-4 shrink-0" />
-        ) : (
-          <KeyIcon className="mr-2 size-4 shrink-0" />
-        )}
-        {submitting ? 'Saving…' : 'Save securely'}
-      </Button>
-
-      <p className="text-muted-foreground flex items-center justify-center gap-1.5 text-[11px]">
-        <ShieldCheckIcon className="size-3" />
-        {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88')}
-        {expiresIn ? ` Link expires in ${expiresIn}.` : ''}
-      </p>
+      <div className="space-y-3">
+        {error ? (
+          <p role="alert" className="text-destructive text-xs">
+            {error}
+          </p>
+        ) : null}
+        <Button type="button" className="w-full" onClick={submit} disabled={submitting}>
+          {submitting ? <Loading className="size-4 shrink-0" /> : null}
+          {submitting
+            ? tI18nHardcoded.raw('i18nComplete.text23e39291d613')
+            : tI18nHardcoded.raw('i18nComplete.textad3d9699142e')}
+        </Button>
+        {footnote ? (
+          <p className="text-muted-foreground text-center text-xs text-pretty">{footnote}</p>
+        ) : null}
+      </div>
     </div>
   );
 }

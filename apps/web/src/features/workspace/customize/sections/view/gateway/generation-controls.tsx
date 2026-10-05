@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Per-model generation controls (reasoning effort, temperature, top_p, max
  * output tokens) for the Gateway → Routing "Generation defaults" panel.
@@ -31,7 +32,6 @@ import { Slider } from '@/components/ui/slider';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
 import type { GatewayCatalogModel, GatewayModelGenerationConfig } from '@kortix/sdk';
 
-
 const EMPTY_CONFIG: GatewayModelGenerationConfig = {};
 
 /**
@@ -61,6 +61,7 @@ export function GenerationControlsPanel({
   onChange: (next: GatewayModelGenerationConfig) => void;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `GatewayCatalogModel` is keyed by wire id and carries no `id` field of its
   // own; `CatalogModel` wants one — stamp the wire id on.
   const caps = useMemo(
@@ -75,7 +76,7 @@ export function GenerationControlsPanel({
     return (
       <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <AlertTriangle className="size-3 shrink-0" />
-        This model exposes no tunable generation parameters.
+        {tI18nComplete.raw('text3f69b195c276')}
       </p>
     );
   }
@@ -93,7 +94,9 @@ export function GenerationControlsPanel({
     <div className="space-y-4">
       {caps.reasoningEffort ? (
         <div className="flex items-center justify-between gap-3">
-          <Label className="text-muted-foreground text-xs font-normal">Reasoning effort</Label>
+          <Label className="text-muted-foreground text-xs font-normal">
+            {tI18nComplete.raw('text3236aeec43e5')}
+          </Label>
           <Select
             value={config.reasoningEffort ?? '__default'}
             onValueChange={(next) =>
@@ -101,11 +104,15 @@ export function GenerationControlsPanel({
             }
             disabled={disabled}
           >
-            <SelectTrigger className="w-36" size="sm" aria-label="Reasoning effort">
+            <SelectTrigger
+              className="w-36"
+              size="sm"
+              aria-label={tI18nComplete.raw('text3236aeec43e5')}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__default">Model default</SelectItem>
+              <SelectItem value="__default">{tI18nComplete.raw('text09a77587d0c7')}</SelectItem>
               {caps.reasoningEffort.values.map((effort) => (
                 <SelectItem key={effort} value={effort} className="capitalize">
                   {effort}
@@ -120,11 +127,14 @@ export function GenerationControlsPanel({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-3">
             <Label className="text-muted-foreground text-xs font-normal">
-              Temperature
+              {tI18nComplete.raw('textb958ce8b871a')}
               {config.temperature !== undefined ? (
                 <span className="tabular-nums"> — {config.temperature.toFixed(2)}</span>
               ) : (
-                <span className="text-muted-foreground/70"> — default</span>
+                <span className="text-muted-foreground/70">
+                  {' '}
+                  {tI18nComplete.raw('text5a5735e88fae')}
+                </span>
               )}
             </Label>
             {config.temperature !== undefined ? (
@@ -134,7 +144,7 @@ export function GenerationControlsPanel({
                 onClick={() => set('temperature', undefined)}
                 disabled={disabled}
               >
-                Reset
+                {tI18nComplete.raw('textdaee7606b339')}
               </button>
             ) : null}
           </div>
@@ -144,7 +154,7 @@ export function GenerationControlsPanel({
             max={2}
             step={0.05}
             disabled={disabled}
-            thumbLabel="Temperature"
+            thumbLabel={tI18nComplete.raw('textb958ce8b871a')}
             formatValue={(next) => next.toFixed(2)}
             onValueChange={([next]) => set('temperature', next)}
           />
@@ -155,11 +165,14 @@ export function GenerationControlsPanel({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-3">
             <Label className="text-muted-foreground text-xs font-normal">
-              Top-p
+              {tI18nComplete.raw('text714db3dbb0b7')}
               {config.topP !== undefined ? (
                 <span className="tabular-nums"> — {config.topP.toFixed(2)}</span>
               ) : (
-                <span className="text-muted-foreground/70"> — default</span>
+                <span className="text-muted-foreground/70">
+                  {' '}
+                  {tI18nComplete.raw('text5a5735e88fae')}
+                </span>
               )}
             </Label>
             {config.topP !== undefined ? (
@@ -169,7 +182,7 @@ export function GenerationControlsPanel({
                 onClick={() => set('topP', undefined)}
                 disabled={disabled}
               >
-                Reset
+                {tI18nComplete.raw('textdaee7606b339')}
               </button>
             ) : null}
           </div>
@@ -179,7 +192,7 @@ export function GenerationControlsPanel({
             max={1}
             step={0.01}
             disabled={disabled}
-            thumbLabel="Top-p"
+            thumbLabel={tI18nComplete.raw('text714db3dbb0b7')}
             formatValue={(next) => next.toFixed(2)}
             onValueChange={([next]) => set('topP', next)}
           />
@@ -189,10 +202,11 @@ export function GenerationControlsPanel({
       {caps.maxOutputTokens ? (
         <div className="flex items-center justify-between gap-3">
           <Label className="text-muted-foreground text-xs font-normal">
-            Max output tokens
+            {tI18nComplete.raw('text397dda0799ba')}
             <span className="text-muted-foreground/70 tabular-nums">
               {' '}
-              — up to {caps.maxOutputTokens.ceiling.toLocaleString()}
+              {tI18nComplete.raw('text6f3f7befce1e')}{' '}
+              {caps.maxOutputTokens.ceiling.toLocaleString()}
             </span>
           </Label>
           <Input
@@ -200,7 +214,7 @@ export function GenerationControlsPanel({
             min={1}
             max={caps.maxOutputTokens.ceiling}
             value={config.maxOutputTokens ?? ''}
-            placeholder="default"
+            placeholder={tI18nComplete.raw('text37a8eec1ce19')}
             variant="popover"
             className="h-8 w-28 text-xs"
             disabled={disabled}

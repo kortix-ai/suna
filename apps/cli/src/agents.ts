@@ -1,5 +1,11 @@
 import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import {
+  AGENTS_DIR,
+  LEGACY_OPENCODE_CONFIG_DIR,
+  OPENCODE_CONFIG_DIR,
+  SKILLS_DIR,
+} from '@kortix/manifest-schema/layout';
 
 export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'pi' | 'cursor';
 
@@ -22,35 +28,28 @@ export const DEFAULT_PRIMARY: CodingAgent = 'codex';
  * generated AGENTS.md, where a dangling reference just wastes a file read.
  * `kortix-cli` ships in the scaffold and is the front door to the others.
  */
-export const DEFAULT_CONFIG_DIR = '.kortix/opencode';
-
-/** The pi runtime's config dir — a `kortix_version: 3` project's home. */
-export const PI_CONFIG_DIR = '.kortix/pi';
-
-/** Path of the canonical Kortix skill for a project rooted at `configDir`. */
-export function canonicalSkillPath(configDir: string = DEFAULT_CONFIG_DIR): string {
-  return `${configDir}/skills/kortix-cli/SKILL.md`;
-}
-
-/** @deprecated Use {@link canonicalSkillPath} — kept for existing importers. */
-export const CANONICAL_SKILL = canonicalSkillPath();
+export const CANONICAL_SKILL = `${SKILLS_DIR}/kortix-cli/SKILL.md`;
 
 /**
- * Native discovery paths each agent reads:
+ * Native discovery paths each agent reads (the root project layout: `agents/`,
+ * `skills/`, and OpenCode's own files in `harnesses/opencode/`):
  *
- *   .opencode → .kortix/opencode   (OpenCode native; recursive skill discovery)
- *   .claude/skills → ../.kortix/opencode/skills
- *   .claude/agents → ../.kortix/opencode/agents
- *   .claude/commands → ../.kortix/opencode/commands
- *   .agents   → .kortix/opencode   (Codex + the cross-tool AGENTS standard: .agents/skills, recursive)
- *   .pi/skills → ../.kortix/opencode/skills
+ *   .opencode → harnesses/opencode   (OpenCode's config dir: plugins, tools, commands)
+ *   .agents/skills → ../skills       (Codex, and OpenCode natively: the cross-tool
+ *                                     `.agents/skills` location, recursive)
+ *   .claude/skills → ../skills
+ *   .claude/agents → ../agents
+ *   .claude/commands → ../harnesses/opencode/commands
+ *   .pi/skills → ../skills
  *
  * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), and
- * `.agents/skills` is what OpenCode + other agent tools read too — so the codex
- * choice wires `.agents`. Claude Code and Pi keep their local configuration
- * in real `.claude` and `.pi` directories. The CLI links only the native
- * discovery subdirectories into those directories. Pi also reads a root
- * `AGENTS.md`. Cursor has no directory of its own and reads `AGENTS.md`.
+ * OpenCode reads `.agents/skills` too, so both choices wire it. A local OpenCode
+ * does not load the project's `agents/`: OpenCode reads agents only from its
+ * config dirs, and Kortix sessions receive them compiled from `kortix.yaml`.
+ * Claude Code, Codex and Pi keep their local configuration in real `.claude`,
+ * `.agents` and `.pi` directories; the CLI links only the discovery
+ * subdirectories into them. Pi also reads a root `AGENTS.md`. Cursor has no
+ * directory of its own and reads `AGENTS.md`.
  *
  * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
  * under a grouping folder (e.g. `<skill>/SKILL.md`) are
@@ -62,24 +61,42 @@ interface AgentLink {
   target: string;
 }
 
+/** Where this checkout keeps its skills, agents and OpenCode files. */
+interface LocalLayout {
+  skills: string;
+  agents: string;
+  opencode: string;
+}
+
 /**
- * Built from the PROJECT'S config dir, not a constant.
- *
- * A `kortix_version: 3` project keeps its config in `.kortix/pi`, so wiring
- * these links to a hardcoded `.kortix/opencode` produced two DANGLING symlinks
- * (`.opencode`, `.agents`) and an AGENTS.md pointing at a skill file that does
- * not exist — every local tool then silently discovers nothing.
+ * The root layout, unless the checkout is a legacy project: one with
+ * `.kortix/opencode` and none of the root folders, whose links must point at
+ * the legacy paths or they dangle.
  */
-function agentLinks(configDir: string): Partial<Record<CodingAgent, readonly AgentLink[]>> {
+function localLayout(repoRoot: string): LocalLayout {
+  const has = (path: string) => existsSync(resolve(repoRoot, path));
+  const legacy =
+    has(LEGACY_OPENCODE_CONFIG_DIR) && ![SKILLS_DIR, AGENTS_DIR, OPENCODE_CONFIG_DIR].some(has);
+  return legacy
+    ? {
+        skills: `${LEGACY_OPENCODE_CONFIG_DIR}/skills`,
+        agents: `${LEGACY_OPENCODE_CONFIG_DIR}/agents`,
+        opencode: LEGACY_OPENCODE_CONFIG_DIR,
+      }
+    : { skills: SKILLS_DIR, agents: AGENTS_DIR, opencode: OPENCODE_CONFIG_DIR };
+}
+
+function agentLinks(layout: LocalLayout): Partial<Record<CodingAgent, readonly AgentLink[]>> {
+  const sharedSkills: AgentLink = { path: '.agents/skills', target: `../${layout.skills}` };
   return {
-    opencode: [{ path: '.opencode', target: configDir }],
+    opencode: [{ path: '.opencode', target: layout.opencode }, sharedSkills],
     claude: [
-      { path: '.claude/skills', target: `../${configDir}/skills` },
-      { path: '.claude/agents', target: `../${configDir}/agents` },
-      { path: '.claude/commands', target: `../${configDir}/commands` },
+      { path: '.claude/skills', target: `../${layout.skills}` },
+      { path: '.claude/agents', target: `../${layout.agents}` },
+      { path: '.claude/commands', target: `../${layout.opencode}/commands` },
     ],
-    codex: [{ path: '.agents', target: configDir }],
-    pi: [{ path: '.pi/skills', target: `../${configDir}/skills` }],
+    codex: [sharedSkills],
+    pi: [{ path: '.pi/skills', target: `../${layout.skills}` }],
   };
 }
 
@@ -87,8 +104,6 @@ export interface WireAgentsInput {
   repoRoot: string;
   agents: readonly CodingAgent[];
   overwrite: boolean;
-  /** The project's Kortix config dir. Defaults to the OpenCode layout. */
-  configDir?: string;
 }
 
 export interface WireAgentsResult {
@@ -105,29 +120,20 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const written: string[] = [];
   const skipped: string[] = [];
   let wantAgentsMd = false;
-  const configDir = input.configDir ?? DEFAULT_CONFIG_DIR;
-  const links = agentLinks(configDir);
+  const layout = localLayout(input.repoRoot);
+  const links = agentLinks(layout);
+  // `.agents/skills` serves both OpenCode and Codex: wire it once.
+  const seen = new Set<string>();
 
   for (const agent of input.agents) {
     for (const link of links[agent] ?? []) {
+      if (seen.has(link.path)) continue;
+      seen.add(link.path);
       const abs = resolve(input.repoRoot, link.path);
       try {
         mkdirSync(dirname(abs), { recursive: true });
       } catch (err) {
         skipped.push(`${link.path} (parent unavailable: ${(err as Error).message})`);
-        continue;
-      }
-      // Create the TARGET too, or the link dangles. No starter template ships
-      // a `commands/` directory, so `.claude/commands` pointed at nothing in
-      // every project ever initialised; a project whose config dir has no
-      // `skills/` dangled `.claude/skills` and `.pi/skills` the same way. A
-      // broken symlink is worse than a missing one — it looks wired, and the
-      // tool that reads it silently discovers nothing. The link target is
-      // relative to the link's OWN directory, which is what the symlink stores.
-      try {
-        mkdirSync(resolve(dirname(abs), link.target), { recursive: true });
-      } catch (err) {
-        skipped.push(`${link.path} (target unavailable: ${(err as Error).message})`);
         continue;
       }
       if (!handleExisting(abs, input.overwrite)) {
@@ -150,7 +156,7 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   if (wantAgentsMd) {
     const abs = resolve(input.repoRoot, 'AGENTS.md');
     if (handleExisting(abs, input.overwrite)) {
-      writeFileSync(abs, agentsPointer(configDir), 'utf8');
+      writeFileSync(abs, agentsPointer(layout), 'utf8');
       written.push('AGENTS.md');
     } else {
       skipped.push('AGENTS.md');
@@ -178,17 +184,18 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
   return false;
 }
 
-function agentsPointer(configDir: string): string {
+function agentsPointer(layout: LocalLayout): string {
+  const canonicalSkill = `${layout.skills}/kortix-cli/SKILL.md`;
   return `# Kortix project
 
-This repository is a [Kortix](https://kortix.ai) project — its agent runtime
-config lives under \`.kortix/\` and the manifest is \`kortix.yaml\`. The starter's
-canonical system skills are available through each wired tool's native discovery
-location.
+This repository is a [Kortix](https://kortix.ai) project. The manifest is
+\`kortix.yaml\`; agents live in \`${layout.agents}/\`, skills in \`${layout.skills}/\`,
+and OpenCode's own files in \`${layout.opencode}/\`.
+The skills are available through each wired tool's native discovery location.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
 sandbox image, sessions, connectors, or OpenCode,
-Claude Code, Codex, and Pi configuration — read \`${canonicalSkillPath(configDir)}\` first.
+Claude Code, Codex, and Pi configuration — read \`${canonicalSkill}\` first.
 It is the canonical reference.
 
 For any other task, proceed normally.

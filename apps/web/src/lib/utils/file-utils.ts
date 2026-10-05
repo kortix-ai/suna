@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Centralized file utilities
  * Consolidated from file-attachment.tsx for reuse across components
@@ -36,6 +37,7 @@ import {
   FileVueIcon,
   FileXlsIcon,
   FileZipIcon,
+  TreeStructureIcon,
 } from '@phosphor-icons/react';
 
 type PhosphorIcon = typeof FileTextIcon;
@@ -178,6 +180,10 @@ const ICON_BY_EXTENSION: Readonly<Record<string, PhosphorIcon>> = {
   zsh: FileCodeIcon,
   ps1: FileCodeIcon,
   svelte: FileCodeIcon,
+
+  // Diagrams
+  mmd: TreeStructureIcon,
+  mermaid: TreeStructureIcon,
 };
 
 /**
@@ -237,7 +243,11 @@ export function getFileType(filename: string): FileType {
 /**
  * Generate human-readable display name for file type
  */
-export function getTypeLabel(type: FileType, extension?: string): string {
+export function getTypeLabel(
+  type: FileType,
+  extension: string | undefined,
+  tI18nComplete: UiTranslator,
+): string {
   if (type === 'code' && extension) {
     return extension.toUpperCase();
   }
@@ -246,7 +256,7 @@ export function getTypeLabel(type: FileType, extension?: string): string {
     image: 'Image',
     code: 'Code',
     text: 'Text',
-    markdown: 'Markdown',
+    markdown: tI18nComplete.raw('text0e52f6b9d025'),
     pdf: 'PDF',
     audio: 'Audio',
     video: 'Video',

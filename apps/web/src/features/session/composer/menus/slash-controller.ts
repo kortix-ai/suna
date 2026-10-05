@@ -4,15 +4,16 @@ import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 
 import { insertCommandChip, insertMention } from '../editor/mention-node';
-import { baseSuggestion } from '../editor/suggestion';
 import type { MenuController } from '../editor/suggestion';
+import { baseSuggestion } from '../editor/suggestion';
+import { MenuNavState } from './menu-nav-state';
+import { menuNavigation } from './menu-navigation';
 import { mountDockedMenu, mountSuggestionMenu } from './mount';
-import { SlashMenu } from './slash-menu';
 import type { SlashAction } from './slash-actions';
 import type { SlashFile } from './slash-files';
-import { buildSlashSections } from './slash-items';
 import type { SlashRow, SlashSection } from './slash-items';
-import { MenuNavState } from './menu-nav-state';
+import { buildSlashSections } from './slash-items';
+import { SlashMenu } from './slash-menu';
 
 export const SLASH_PLUGIN_KEY = new PluginKey('slashSuggestion');
 
@@ -33,6 +34,7 @@ export interface CreateSlashSuggestionOptions {
    * (the marketing composer, project home), which simply drops both sections.
    */
   getFiles?: () => SlashFile[];
+  actionsHeading?: string;
   /**
    * CSS selector for the element the menu docks into. Omitted → the menu
    * floats at the caret, `document.body`-portalled, same as `@`. See
@@ -127,6 +129,7 @@ export function createSlashSuggestion(
       commands: opts.getCommands(),
       actions: opts.getActions?.(),
       files: opts.getFiles?.(),
+      actionsHeading: opts.actionsHeading,
       query,
     });
     nav.setRows(sections.flatMap((s) => s.rows));
@@ -154,33 +157,18 @@ export function createSlashSuggestion(
       latestCommand = props.command;
       renderer?.updateProps({ sections, selectedIndex: nav.getSelectedIndex(), onSelect, onHover });
     },
-    onKeyDown({ event }) {
-      if (!nav.getRows().length) return false;
-      if (event.key === 'ArrowDown') {
-        nav.move(1);
-        renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
-        return true;
-      }
-      if (event.key === 'ArrowUp') {
-        nav.move(-1);
-        renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
-        return true;
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        const row = nav.getSelectedRow();
-        if (row) latestCommand?.(row);
-        return true;
-      }
-      return false;
-    },
-    onExit() {
-      nav.close();
-      unmount?.();
-      renderer?.destroy();
-      renderer = null;
-      unmount = null;
-      latestCommand = null;
-    },
+    ...menuNavigation(
+      nav,
+      () => renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() }),
+      (row) => latestCommand?.(row),
+      () => {
+        unmount?.();
+        renderer?.destroy();
+        renderer = null;
+        unmount = null;
+        latestCommand = null;
+      },
+    ),
   };
 
   return {

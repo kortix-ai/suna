@@ -26,18 +26,14 @@
  */
 
 export interface SessionRuntimeEntry {
-  /** OpenCode's own session id for this Kortix session (resolved at /start). */
+  /** The runtime's own root session id for this Kortix session (resolved at /start). */
+  runtimeSessionId: string;
+  /** @deprecated Renamed to `runtimeSessionId`. Same value. Removed in the next major. */
   opencodeSessionId: string;
   /** This session's resolved runtime proxy URL (`${backendUrl}/p/{externalId}/8000`). */
   runtimeUrl: string;
   /** The sandbox's provider external id (Daytona id). */
   sandboxId: string;
-  /** Which box owns files, PTYs, and user ports for this session. */
-  dataRuntimeKind?: 'worker' | 'environment';
-  /** Resolved auxiliary-compute proxy URL after a Pi environment is ensured. */
-  workspaceRuntimeUrl?: string;
-  /** Provider id of the resolved auxiliary-compute box. */
-  workspaceSandboxId?: string;
 }
 
 /**

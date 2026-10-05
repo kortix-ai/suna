@@ -2,11 +2,12 @@ import type { Database } from '@kortix/db';
 import { config } from '../config';
 import { DEFAULT_AUDIT_POOL_MAX } from './database-capacity';
 import { db } from './db';
+import { errorSqlstate, isAuditContentionError } from './error-cause';
 
 /**
  * The dedicated audit-write pool.
  *
- * Why a SEPARATE pool (prod incident, Essentia box 2026-08-21): every audit
+ * Why a SEPARATE pool (prod incident, SampleCo box 2026-08-21): every audit
  * insert serializes through a per-session `FOR UPDATE` row lock in the
  * `audit_prepare_event` trigger; under a burst those inserts convoy for 4-24s
  * each. On the SHARED `db` pool that pinned connections the gateway's auth query
@@ -17,7 +18,7 @@ import { db } from './db';
  * The shorter statement_timeout caps how long a blocked audit insert holds its
  * backend, so this pool self-drains every ~10s instead of riding the main 25s.
  *
- * `lock_timeout` (Essentia 2026-08-26): isolation alone did NOT stop the
+ * `lock_timeout` (SampleCo 2026-08-26): isolation alone did NOT stop the
  * convoy. Every audit row takes a per-session row lock in `audit_prepare_event`
  * that is held to COMMIT, so a blocked insert used to sit on one of only
  * DEFAULT_AUDIT_POOL_MAX (2) backends for the full 10s statement_timeout and
@@ -39,7 +40,8 @@ function intFromEnv(name: string, fallback: number): number {
 
 const AUDIT_POOL_MAX = intFromEnv('DB_AUDIT_POOL_MAX', DEFAULT_AUDIT_POOL_MAX);
 export const AUDIT_STATEMENT_TIMEOUT_MS_DEFAULT = 10_000;
-const AUDIT_STATEMENT_TIMEOUT_MS = intFromEnv(
+/** The resolved audit-pool statement timeout (env `DB_AUDIT_STATEMENT_TIMEOUT_MS`). */
+export const AUDIT_STATEMENT_TIMEOUT_MS = intFromEnv(
   'DB_AUDIT_STATEMENT_TIMEOUT_MS',
   AUDIT_STATEMENT_TIMEOUT_MS_DEFAULT,
 );
@@ -83,29 +85,27 @@ export function auditDb(): Database {
 }
 
 /**
- * PostgreSQL SQLSTATEs that mean "another writer holds what this one needs",
- * not "this write is wrong".
- *
- * `audit_prepare_event` serializes every row of a session behind one
- * `audit_session_sequences` row lock held to COMMIT, so a burst on one session
- * turns into a lock queue. On the audit pool that queue surfaces as 57014
- * (statement_timeout, the Essentia signature: 445 x 500 in 3h, each at ~10s)
- * or — since `lock_timeout` was added — 55P03 at ~2.5s. Callers must report
- * these as retryable backpressure, never as a 500: a 500 makes the sandbox
- * relay retry a batch that has already been rejected, which feeds the convoy
- * that caused it.
+ * The contention classifier now lives in `error-cause.ts` (dependency-free),
+ * re-exported here for existing callers: `audit-queue.ts`'s flush path must
+ * stay database-free the same way `errorSqlstate` does, and this module
+ * imports `./db`, which it cannot.
  */
-const AUDIT_CONTENTION_SQLSTATES = new Set([
-  '57014', // query_canceled — statement_timeout fired while queued on a lock
-  '55P03', // lock_not_available — lock_timeout fired
-  '40001', // serialization_failure
-  '40P01', // deadlock_detected
-]);
+export { isAuditContentionError };
 
-export function isAuditContentionError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const code = (error as { code?: unknown }).code;
-  if (typeof code === 'string' && AUDIT_CONTENTION_SQLSTATES.has(code)) return true;
-  const cause = (error as { cause?: unknown }).cause;
-  return cause != null && cause !== error ? isAuditContentionError(cause) : false;
+/**
+ * The SQLSTATE behind a Drizzle write failure, or null.
+ *
+ * `DrizzleQueryError` prints the statement and its parameters and nothing else;
+ * the pg error — where `code` lives — is its `cause`, one or more levels down.
+ * A prod log that says only "Failed query: insert into audit_events …" cannot
+ * be triaged: a unique violation, a statement timeout, a dead connection and a
+ * NUL byte in jsonb all look identical. Mirrors `isAuditContentionError`'s walk
+ * so the two always agree about which error they are describing.
+ *
+ * Kept as the audit-facing name; the walk itself lives in `error-cause` so the
+ * database-free `audit-queue` can use the same rule without importing this
+ * module (it pulls in `./db`, and the queue's tests depend on not doing that).
+ */
+export function auditErrorSqlstate(error: unknown): string | null {
+  return errorSqlstate(error);
 }

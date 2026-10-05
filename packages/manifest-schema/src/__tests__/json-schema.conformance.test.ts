@@ -24,7 +24,7 @@ import { describe, expect, test } from 'bun:test';
 import Ajv2020 from 'ajv/dist/2020';
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseYaml } from 'yaml';
-import { KORTIX_JSON_SCHEMA, KORTIX_V1_JSON_SCHEMA, KORTIX_V2_JSON_SCHEMA } from '../json-schema';
+import { KORTIX_JSON_SCHEMA, KORTIX_V1_JSON_SCHEMA, KORTIX_V2_JSON_SCHEMA, KORTIX_V3_JSON_SCHEMA } from '../json-schema';
 import { validateManifest } from '../index';
 
 // `strict: false` — see json-schema.ts's mutual-exclusion `oneOf` branches
@@ -99,13 +99,13 @@ platform = "slack"
 [[agents]]
 name = "support"
 connectors = ["github"]
-kortix_cli = ["project.read", "project.session.start"]
+kortix_permissions = ["project.read", "project.session.start"]
 env = ["STRIPE_KEY"]
 
 [[agents]]
 name = "pr-bot"
 connectors = "all"
-kortix_cli = ["*"]
+kortix_permissions = ["*"]
 
 [[channels]]
 platform = "slack"
@@ -152,11 +152,11 @@ connectors:
 agents:
   - name: support
     connectors: [github]
-    kortix_cli: [project.read, project.session.start]
+    kortix_permissions: [project.read, project.session.start]
     env: [STRIPE_KEY]
   - name: pr-bot
     connectors: all
-    kortix_cli: ["*"]
+    kortix_permissions: ["*"]
 channels:
   - platform: slack
     enabled: true
@@ -246,10 +246,10 @@ channels:
     input: 'kortix_version = 1\n[[apps]]\nslug = "site"\n',
   },
   {
-    name: 'v1: agent block kortix_cli non-grantable action',
+    name: 'v1: agent block kortix_permissions non-grantable action',
     format: 'toml',
     valid: false,
-    input: 'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["billing.read"]\n',
+    input: 'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["billing.read"]\n',
   },
 
   // ─── shared sections: path traversal ───────────────────────────────────
@@ -468,11 +468,11 @@ agents:
   support:
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
-    kortix_cli: [project.session.start, project.cr.open]
+    kortix_permissions: [project.session.start, project.cr.open]
     workspace: runtime
   pr-bot:
     connectors: [github]
-    kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    kortix_permissions: [project.cr.open, project.cr.merge, project.review.submit]
 
 triggers:
   - slug: nightly-digest
@@ -489,6 +489,24 @@ connectors:
     provider: channel
     platform: slack
 `,
+  },
+  {
+    name: 'v2: `file` names the agent .md',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: agents/a.md\n',
+  },
+  {
+    name: 'v2: `file` rejects a traversal segment',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: ../a.md\n',
+  },
+  {
+    name: 'v2: `file` rejects a non-.md file',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: agents/a.txt\n',
   },
   {
     name: 'v2: flat `mode` on agent block rejected (moved to .md)',
@@ -644,30 +662,54 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  "Not Valid":\n    workspace: runtime\n  w: {}\n',
   },
   {
-    name: 'v2: kortix_cli rejects a non-grantable action',
+    name: 'v2: kortix_permissions rejects a non-grantable action',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_permissions: [billing.read]\n',
+  },
+  {
+    name: 'v2: kortix_permissions accepts the wildcard',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_permissions: ["*"]\n',
+  },
+  {
+    name: "v2: kortix_permissions rejects a legacy-tolerated action outright (clean break, unlike v1's warn-only tolerance)",
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_permissions: [project.schedule.read]\n',
+  },
+  {
+    name: 'v2: deprecated kortix_cli alias is still accepted (warn-only)',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_cli: [project.read]\n',
+  },
+  {
+    name: 'v1: deprecated kortix_cli alias is still accepted (warn-only)',
+    format: 'toml',
+    valid: true,
+    input: 'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["project.read"]\n',
+  },
+  {
+    name: 'v2: deprecated kortix_cli alias still rejects a non-grantable action',
     format: 'yaml',
     valid: false,
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_cli: [billing.read]\n',
   },
   {
-    name: 'v2: kortix_cli accepts the wildcard',
-    format: 'yaml',
-    valid: true,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_cli: ["*"]\n',
-  },
-  {
-    name: "v2: kortix_cli rejects a legacy-tolerated action outright (clean break, unlike v1's warn-only tolerance)",
-    format: 'yaml',
-    valid: false,
-    input:
-      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_cli: [project.schedule.read]\n',
-  },
-  {
-    name: 'v1: kortix_cli accepts a legacy-tolerated action (warn-only, still valid)',
+    name: 'v1: kortix_permissions accepts a legacy-tolerated action (warn-only, still valid)',
     format: 'toml',
     valid: true,
-    input: 'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["project.schedule.read"]\n',
+    input: 'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["project.schedule.read"]\n',
   },
+  { name: "v2: repository access false", format: 'yaml', valid: true, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: false\n" },
+  { name: "v2: repository access true", format: 'yaml', valid: true, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: true\n" },
+  { name: "v2: repository access \"false\"", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: \"false\"\n" },
+  { name: "v2: repository access null", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: null\n" },
+  { name: "v2: repository access true\n    workspace: runtime", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: true\n    workspace: runtime\n" },
+  { name: "v2: repository access false\n    workspace: runtime", format: 'yaml', valid: true, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: false\n    workspace: runtime\n" },
   {
     name: 'v2: workspace accepts the declared enum',
     format: 'yaml',
@@ -679,6 +721,18 @@ connectors:
     format: 'yaml',
     valid: false,
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    workspace: everywhere\n',
+  },
+  {
+    name: 'v2: declarative agent egress policy accepted (not enforced)',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    network_egress:\n      version: 1\n      default: deny\n      rules: []\n',
+  },
+  {
+    name: 'v2: unknown egress policy version rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    network_egress:\n      version: 2\n      default: deny\n      rules: []\n',
   },
   {
     name: 'v2: skills explicit list accepted',
@@ -704,6 +758,30 @@ connectors:
     format: 'yaml',
     valid: false,
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    skills: everything\n',
+  },
+  {
+    name: 'v2: apps explicit slug list accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: [reports-dashboard]\n',
+  },
+  {
+    name: 'v2: apps "none" sentinel accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: none\n',
+  },
+  {
+    name: 'v2: apps non-string entry rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: [42]\n',
+  },
+  {
+    name: 'v2: apps invalid sentinel rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    apps: everything\n',
   },
   {
     name: 'v2: unknown runtime rejected',
@@ -744,6 +822,98 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
   },
   {
+    name: 'v2: OpenCode plugins per agent',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nharnesses:\n  opencode:\n    plugins: [audit.ts]\nagents:\n  w:\n    harnesses:\n      opencode:\n        exclude: [audit.ts]\n        plugins: [other.js]\n',
+  },
+  {
+    name: 'v2: OpenCode plugin path traversal rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      opencode:\n        plugins: [../bad.ts]\n',
+  },
+  {
+    name: 'v2: harnesses.pi.packages with npm pins, a filtered entry and a repo path is accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nruntime: pi\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: npm:@juicesharp/rpiv-todo@1.2.0\n        extensions: ["extensions/*.ts"]\n        skills: []\n      - ./.kortix/pi/audit.ts\n',
+  },
+  {
+    name: 'v2: agent-level harnesses.pi packages and exclude accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nharnesses:\n  pi:\n    packages: [npm:pi-web-access@0.30.0, ./.kortix/pi/audit.ts]\nagents:\n  w:\n    harnesses:\n      pi:\n        packages: [npm:@juicesharp/rpiv-todo@2.11.0]\n        exclude: [pi-web-access, ./.kortix/pi/audit.ts]\n',
+  },
+  {
+    name: 'v2: agent-level exclude with a version rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      pi:\n        exclude: [npm:pi-web-access@0.30.0]\n',
+  },
+  {
+    name: 'v2: exclude at the top level rejected (it removes global packages for one agent)',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    exclude: [pi-web-access]\n',
+  },
+  {
+    name: 'v2: harnesses.pi.packages npm source without an exact version rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@^0.30.0\n',
+  },
+  {
+    name: 'v2: harnesses.pi.packages git source rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - git:github.com/acme/pi-tools@v1\n',
+  },
+  {
+    name: 'v2: harnesses.pi.packages path escaping the repo rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n      - ../outside.ts\n',
+  },
+  {
+    name: 'v2: an unknown harness rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  codex:\n    packages: []\n',
+  },
+  {
+    name: 'v2: an unknown key under harnesses.pi rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    extensions: [npm:pi-web-access@0.30.0]\n',
+  },
+  {
+    name: 'v3: inline YAML agent behavior',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    model: test/model\n    prompt: Be brief.\n    permission:\n      bash: deny\n',
+  },
+  {
+    name: 'v2: v3 prompt_file rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    prompt_file: agents/w.md\n',
+  },
+  {
+    name: 'v3: raw OpenCode configuration rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w: {}\nopencode:\n  config_dir: .opencode\n',
+  },
+  {
+    name: 'v3: invalid prompt',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    prompt: [bad]\n',
+  },
+  {
     name: 'v2: Kortix Apps map is accepted',
     format: 'yaml',
     valid: true,
@@ -776,6 +946,10 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
     expect(() =>
       new Ajv2020({ strict: false }).compile(KORTIX_V2_JSON_SCHEMA as Record<string, unknown>),
     ).not.toThrow();
+  });
+
+  test('kortix.v3.schema.json compiles', () => {
+    expect(() => new Ajv2020({ strict: false }).compile(KORTIX_V3_JSON_SCHEMA as Record<string, unknown>)).not.toThrow();
   });
 
   test('kortix.schema.json (combined) compiles', () => {
@@ -877,6 +1051,13 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
   test('monitor expect_event_within below the 5m floor: imperative rejects, schema accepts the shape', () => {
     const yaml =
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('kortix_permissions and its kortix_cli alias disagreeing: imperative rejects, schema accepts', () => {
+    const yaml =
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_permissions: [project.read]\n    kortix_cli: [project.write]\n';
     expect(validateManifest(yaml, 'yaml').valid).toBe(false);
     expect(validateCombined(parseYaml(yaml))).toBe(true);
   });

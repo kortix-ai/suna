@@ -5,7 +5,7 @@
  * mid-upload (the client sees "Cannot connect to API"). Bun's default is
  * 128 MiB — the same number as DEFAULT_MAX_REQUEST_BYTES — so the pipeline's
  * own 413 (logged with the exact byte counts, digit-free body) could never
- * fire for a 129 MiB body; Bun's did. Essentia 2026-08-25: three image-heavy
+ * fire for a 129 MiB body; Bun's did. SampleCo 2026-08-25: three image-heavy
  * turns died that way with nothing in the gateway log to explain them.
  *
  * Keep Bun's ceiling strictly ABOVE the per-request cap so the pipeline is the

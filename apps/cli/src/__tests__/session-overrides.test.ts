@@ -18,10 +18,6 @@ describe('parseSessionOverrides', () => {
       'STRIPE_KEY',
       '--connector',
       'gmail=prof-1',
-      '--require-connector',
-      'gmail',
-      '--require-connector',
-      'gmail',
       '--context',
       'tier=pro',
       'positional',
@@ -31,7 +27,6 @@ describe('parseSessionOverrides', () => {
       model: 'anthropic/claude-opus-4-8',
       secrets: ['GMAIL_TOKEN', 'STRIPE_KEY'],
       connectors: { gmail: { connection_id: 'prof-1' } },
-      requiredConnectors: ['gmail'],
       runtimeContext: { tier: 'pro' },
     });
     // Only the override flags are consumed; the positional survives.

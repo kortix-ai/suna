@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(
@@ -22,7 +22,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('<SidebarToggle />');
     const toggleAt = source.indexOf('<SidebarToggle />');
     expect(toggleAt).toBeGreaterThan(-1);
-    expect(toggleAt).toBeLessThan(source.indexOf('{headerTitle}'));
+    expect(toggleAt).toBeLessThan(source.indexOf('{titleButton}'));
   });
 
   // `sidebarState` survives for the title-bar indent (`sidebarHidden`), not
@@ -40,8 +40,9 @@ describe('SessionSiteHeader sidebar toggle', () => {
  */
 describe('SessionSiteHeader session title', () => {
   test('renders the session name in the leading cluster, after the home button and before leadingAction', () => {
-    const homeButtonIndex = source.indexOf('<HouseIcon');
-    const titleIndex = source.indexOf('{headerTitle}');
+    const homeButtonIndex = source.indexOf('<Home ');
+    expect(homeButtonIndex).toBeGreaterThan(-1);
+    const titleIndex = source.indexOf('{titleButton}');
     const leadingActionIndex = source.lastIndexOf('{leadingAction}');
     expect(titleIndex).toBeGreaterThan(-1);
     expect(titleIndex).toBeGreaterThan(homeButtonIndex);
@@ -51,7 +52,7 @@ describe('SessionSiteHeader session title', () => {
   // Without these, a long title just grows the leading cluster and pushes
   // the trailing cluster (config/dev-tools/⋯) off-screen instead of eliding.
   test('the title element carries min-w-0 and truncate, so a long value shrinks instead of expanding the row', () => {
-    const titleIndex = source.indexOf('{headerTitle}');
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
     const titleTagStart = source.lastIndexOf('<span', titleIndex);
     const titleTag = source.slice(titleTagStart, titleIndex);
     expect(titleTag).toContain('min-w-0');
@@ -67,33 +68,159 @@ describe('SessionSiteHeader session title', () => {
     expect(precedingChunk.trim().endsWith('>')).toBe(true);
   });
 
-  test('renders the title and down caret as a padded dropdown trigger', () => {
-    const titleIndex = source.indexOf('{headerTitle}');
-    const triggerStart = source.lastIndexOf('<DropdownMenuTrigger', titleIndex);
-    const trigger = source.slice(
-      triggerStart,
-      source.indexOf('</DropdownMenuTrigger>', titleIndex),
-    );
+  // Split control: the name and the caret are two buttons. A click on the
+  // name edits it in place; only the caret opens the session menu.
+  test('the name is a plain button that starts the inline rename, not a menu trigger', () => {
+    const titleIndex = source.indexOf('>{headerTitle}</span>');
+    const nameButton = source.slice(source.lastIndexOf('<Button', titleIndex), titleIndex);
+    expect(nameButton).toContain('onClick={startRename}');
+    expect(nameButton).toContain('rounded-md');
+    expect(nameButton).toContain('px-2.5');
 
-    expect(triggerStart).toBeGreaterThan(-1);
-    expect(trigger).toContain('rounded-md');
-    expect(trigger).toContain('px-2.5');
-    expect(trigger).toContain('py-1');
+    const triggerStart = source.indexOf('<DropdownMenuTrigger asChild>');
+    expect(triggerStart).toBeGreaterThan(titleIndex);
+  });
+
+  test('the caret is its own menu trigger and never rotates', () => {
+    const triggerStart = source.indexOf('<DropdownMenuTrigger asChild>');
+    const trigger = source.slice(triggerStart, source.indexOf('</DropdownMenuTrigger>'));
+    expect(trigger).toContain('size="icon-sm"');
+    expect(trigger).toContain('aria-label=');
     expect(trigger).toContain('data-[state=open]:bg-card');
     expect(trigger).toContain('<CaretDownIcon');
-    expect(trigger).toContain('group-data-[state=open]:rotate-180');
+    expect(trigger).not.toContain('rotate-180');
+    expect(trigger).not.toContain('{headerTitle}');
+  });
+
+  test('renaming swaps the name for the inline field, which saves through the shared hook', () => {
+    expect(source).toContain('<SessionTitleInput');
+    expect(source).toContain('useRenameSession(');
+    expect(source).toContain('renameMutation.mutate(name)');
+    // One rename surface: the modal is gone from the header.
+    expect(source).not.toContain('<RenameSessionModal');
+  });
+
+  test('the menu Rename item keeps focus in the field Radix would steal back', () => {
+    expect(source).toContain('renameFromMenu.current = true;');
+    const content = source.slice(source.indexOf('<DropdownMenuContent\n'));
+    expect(content).toContain('onCloseAutoFocus');
+    expect(content).toContain('e.preventDefault()');
   });
 
   test('uses the complete action list in the title menu', () => {
     expect(source.split('{sessionActionItems}').length - 1).toBe(1);
-    expect(source).toContain('setRenameOpen(true)');
-    expect(source).toContain('setShareOpen(true)');
+    expect(source).toContain('startRename();');
     expect(source).toContain('restartMutation.mutate()');
     expect(source).toContain('reloadConfig.reload()');
     expect(source).toContain('stopMutation.mutate()');
     expect(source).toContain('setExportOpen(true)');
     expect(source).toContain('setCompactOpen(true)');
     expect(source).toContain('setDeleteOpen(true)');
+  });
+
+  // KRTX-801: the desktop shell has no address bar, so the menu copies the
+  // session ID and link. The ID is the project session from the URL, not the
+  // runtime `sessionId` prop; the link is read at click time.
+  test('copies the project session ID and the current link through the shared clipboard helper', () => {
+    expect(source).toContain("copyValue(tPalette('copySessionId'), projectSessionId!)");
+    expect(source).toContain("copyValue(tPalette('copySessionLink'), window.location.href)");
+    expect(source).toContain('copyToClipboard(value)');
+    expect(source.indexOf("tPalette('copySessionId')")).toBeLessThan(
+      source.indexOf('setExportOpen(true)'),
+    );
+  });
+});
+
+/**
+ * A subsession shows its parent as the first breadcrumb: home icon and parent
+ * name, a slash, then the subsession's own name control. The parent link used
+ * to sit above the composer; it lives only here now.
+ */
+const cardSource = readFileSync(
+  fileURLToPath(new URL('./subagent-hover-card.tsx', import.meta.url)),
+  'utf8',
+);
+
+describe('SessionSiteHeader subsession breadcrumb', () => {
+  const composerSource = readFileSync(
+    fileURLToPath(new URL('../composer/composer.tsx', import.meta.url)),
+    'utf8',
+  );
+
+  test('the parent crumb renders after the sidebar toggle and before the session name', () => {
+    const crumbAt = source.indexOf('onClick={parent.onOpen}');
+    expect(crumbAt).toBeGreaterThan(source.indexOf('<SidebarToggle />'));
+    expect(crumbAt).toBeLessThan(source.indexOf('{titleButton}'));
+    const crumb = source.slice(crumbAt, source.indexOf('</Button>', crumbAt));
+    // The custom filled house mark, not the Phosphor outline.
+    expect(crumb).toContain('<Home ');
+    expect(source).toContain("import { Home } from '@/features/icon/icons/home';");
+    // Reads "Home", never the parent session's title.
+    expect(crumb).toContain("'i18nComplete.text3a78695388b3'");
+    expect(source).not.toContain('parent.title');
+  });
+
+  // `projectSession` is the PARENT's row on a subsession route, so its name and
+  // its rename must not leak onto the subsession's crumb.
+  test("a subsession shows its own title, not the project session's, and cannot rename it", () => {
+    expect(source).toContain('const headerTitle = parent');
+    expect(source).toContain('const canRename = isProjectSession && !!projectSession && !parent;');
+    const menuStart = source.indexOf('const sessionActionItems = (');
+    const renameItem = source.indexOf('startRename();', menuStart);
+    expect(source.lastIndexOf('{canRename && (', renameItem)).toBeGreaterThan(menuStart);
+    // Delete removes the whole project session, so it names that session.
+    expect(source).toContain('sessionLabel={projectTitle}');
+  });
+
+  test('the subagent suffix is stripped from the subsession title', () => {
+    expect(source).toContain('? subagentTitle(sessionTitle)');
+    const pattern = cardSource.match(/title\.replace\((\/.*\/), ''\)/)?.[1];
+    expect(pattern).toBeTruthy();
+    const re = new Function(`return ${pattern}`)() as RegExp;
+    expect('Research the topic (@general subagent)'.replace(re, '')).toBe('Research the topic');
+    expect('Plain title'.replace(re, '')).toBe('Plain title');
+  });
+
+  test('the composer no longer carries a back-to-parent control', () => {
+    expect(composerSource).not.toContain('threadContext');
+    expect(composerSource).not.toContain('onBackToParent');
+  });
+});
+
+/**
+ * A parent session's name, on hover, lists the subagents it spawned. Only on a
+ * root session with children: a subsession has its own crumb, and a session
+ * with no children keeps the plain "Rename" hint.
+ */
+describe('SessionSiteHeader subagent hover card', () => {
+  test('wraps the name only on a root session that has subsessions', () => {
+    expect(source).toContain(
+      'const subsessions = projectSession && !parent ? directSubsessions(projectSession) : [];',
+    );
+    const cardAt = source.indexOf('<SubagentHoverCard');
+    expect(source.lastIndexOf('canRename && subsessions.length > 0 ? (', cardAt)).toBeGreaterThan(-1);
+    expect(source.slice(cardAt, source.indexOf('</SubagentHoverCard>'))).toContain('{titleButton}');
+    // The Rename hint still wraps the same button when there are no children.
+    const cardEnd = source.indexOf('</SubagentHoverCard>');
+    const hintAt = source.indexOf('{titleButton}', cardEnd);
+    expect(source.lastIndexOf('<Hint', hintAt)).toBeGreaterThan(cardEnd);
+  });
+
+  test('the card uses the HoverCard primitive and links each row to its child-session route', () => {
+    expect(cardSource).toContain("from '@/components/ui/hover-card'");
+    expect(cardSource).toContain('href={childSessionHref(href, child.id)}');
+    expect(cardSource).toContain('<HoverPrefetchLink');
+    expect(cardSource).toContain("menuRow('sm', 'default'");
+    // A row click closes the card before the route changes under it.
+    expect(cardSource).toContain('onClick={() => setOpen(false)}');
+    expect(cardSource).toContain('animated={false}');
+  });
+
+  test('a long list scrolls inside a capped, edge-faded area', () => {
+    const area = cardSource.slice(cardSource.indexOf('<FadedScrollArea'), cardSource.indexOf('<ul'));
+    expect(area).toContain('max-h-64');
+    expect(area).toContain('overscroll-contain');
+    expect(area).toContain('fadeColor="from-popover"');
   });
 });
 
@@ -120,10 +247,11 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
 
     // Exactly one Hint trigger carries the "Developer tools" label, and it is
     // the below-lg collapse — on lg+ the surfaces are their own buttons.
-    const devToolsMatches = source.split('delayDuration={300} label="Developer tools"').length - 1;
+    const devToolsMatches =
+      source.match(/delayDuration=\{300\}[\s\S]{0,150}text96f0c06bbcb7/g)?.length ?? 0;
     expect(devToolsMatches).toBe(1);
 
-    const devToolsMenuStart = source.indexOf('label="Developer tools"');
+    const devToolsMenuStart = source.indexOf('text96f0c06bbcb7');
     const devToolsMenuEnd = source.indexOf('</DropdownMenu>', devToolsMenuStart);
     const devToolsMenu = source.slice(devToolsMenuStart, devToolsMenuEnd);
     expect(devToolsMenu).toContain('lg:hidden');
@@ -135,7 +263,7 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
     const desktopRow = source.slice(desktopRowStart, devToolsMenuStart);
 
     for (const block of [desktopRow, devToolsMenu]) {
-      expect(block).toContain('DEV_TOOLS.map');
+      expect(block).toContain('devTools.map');
       expect(block).toContain("openSessionQuickView(view, 'header')");
     }
   });
@@ -143,7 +271,7 @@ describe('SessionSiteHeader trailing cluster — non-technical resting state', (
   test('the changes and approvals indicators render before the grouped controls', () => {
     const changesIndex = source.indexOf('<SessionChangesIndicator');
     const approvalsIndex = source.indexOf('<SessionPendingApprovalsIndicator');
-    const devToolsIndex = source.indexOf('label="Developer tools"');
+    const devToolsIndex = source.indexOf('text96f0c06bbcb7');
     expect(changesIndex).toBeGreaterThan(-1);
     expect(approvalsIndex).toBeGreaterThan(changesIndex);
     expect(devToolsIndex).toBeGreaterThan(approvalsIndex);
@@ -206,27 +334,14 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
     expect(exportIndex).toBeGreaterThan(renameIndex);
   });
 
-  test('Export and Summarize items are renamed to plain language and styled as visually subordinate', () => {
+  test('Export and Summarize items are renamed to plain language', () => {
     // "Compact session" / "Export transcript" were the jargon-y labels the
     // brief called out by name — they must not survive under those names.
+    // The items render in the plain menu style (#9169), not muted.
     expect(source).not.toContain('Compact session');
     expect(source).not.toContain('Export transcript');
     expect(source).toContain('Export conversation');
     expect(source).toContain('Summarize conversation');
-
-    const exportItemStart = source.indexOf('Export conversation') - 400;
-    const exportItem = source.slice(
-      Math.max(0, exportItemStart),
-      source.indexOf('Export conversation'),
-    );
-    expect(exportItem).toContain('text-muted-foreground');
-
-    const compactItemStart = source.indexOf('Summarize conversation') - 400;
-    const compactItem = source.slice(
-      Math.max(0, compactItemStart),
-      source.indexOf('Summarize conversation'),
-    );
-    expect(compactItem).toContain('text-muted-foreground');
   });
 });
 
@@ -234,11 +349,12 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
  * The stale-config chip, wired.
  *
  * These are wiring assertions, not rendering ones, and they exist because of a
- * specific near-miss: `ConnectorRequiredNotice` shipped correct, passed every
- * unit test, and rendered nothing for weeks — it was mounted with a value the
- * app never populates. Its unit tests all covered the pure copy helper, which
- * was fine the whole time. The lesson is that for this component family the
- * bug lives at the mount, so the mount is what gets pinned.
+ * specific near-miss: a sibling inline card (`ConnectorRequiredNotice`, since
+ * removed — connector-credentials rework) shipped correct, passed every unit
+ * test, and rendered nothing for weeks — it was mounted with a value the app
+ * never populates. Its unit tests all covered the pure copy helper, which was
+ * fine the whole time. The lesson is that for this component family the bug
+ * lives at the mount, so the mount is what gets pinned.
  */
 describe('SessionConfigIndicator wiring', () => {
   test('the chip gets the Kortix session id, never the OpenCode one', () => {
@@ -279,10 +395,13 @@ describe('SessionConfigIndicator wiring', () => {
     // a future edit that collapses them again reintroduces either a manager
     // rewriting another human's session sharing, or a manager who cannot stop
     // a runaway session they did not start.
-    expect(source).toContain("projectSession.can_manage_sharing !== false");
-    expect(source).toContain("projectSession.can_manage_lifecycle !== false");
-    // Stop is lifecycle. It must not ride on the sharing verdict.
-    expect(source).toContain("projectSession.status === 'running' && canManageLifecycle");
+    expect(source).toContain('projectSession.can_manage_sharing !== false');
+    expect(source).toContain('projectSession.can_manage_lifecycle !== false');
+    // Stop is lifecycle. It must not ride on the sharing verdict. The status
+    // half lives in `sessionCanBeStopped` (a warm shell reported
+    // `provisioning` keeps its Stop control, KRTX-1466); the lifecycle
+    // verdict stays here.
+    expect(source).toContain('sessionCanBeStopped(projectSession) && canManageLifecycle');
   });
 
   test('the ⋯ item and the chip share ONE mutation, so pending state cannot disagree', () => {
@@ -306,5 +425,94 @@ describe('SessionConfigIndicator wiring', () => {
     // config, Reload fetches a new one. Adjacent so the difference is legible.
     expect(source).toContain('Reload config');
     expect(source.indexOf('Restart')).toBeLessThan(source.indexOf('Reload config'));
+  });
+});
+
+describe('SessionSiteHeader Share', () => {
+  const menuStart = source.indexOf('const sessionActionItems = (');
+  const menu = source.slice(menuStart, source.indexOf('\n  );', menuStart));
+
+  test('Share is a visible header button, not a session-menu item', () => {
+    // Anti-vacuity guard: prove the slice is the menu.
+    expect(menu).toContain('startRename();');
+    expect(menu).not.toContain('setShareOpen(true)');
+    expect(source.split('setShareOpen(true)').length - 1).toBe(1);
+    const button = source.slice(
+      source.lastIndexOf('<Button', source.indexOf('setShareOpen(true)')),
+      source.indexOf('</Button>', source.indexOf('setShareOpen(true)')),
+    );
+    expect(button).toContain('<Share ');
+    // The visible label is "Share"; below `sm` the button is icon-only and
+    // keeps its accessible name.
+    expect(button).toContain("'i18nComplete.text29887a5ff984'");
+    expect(button).toContain('aria-label={shareLabel}');
+  });
+
+  test('the participant stack sits directly before Share and opens nothing', () => {
+    const stack = source.indexOf('<SessionParticipantStack');
+    const share = source.indexOf('setShareOpen(true)');
+    expect(stack).toBeGreaterThan(-1);
+    expect(stack).toBeLessThan(share);
+    // Nothing else renders between the stack and the Share button's guard.
+    const between = source.slice(source.indexOf('/>', stack), source.lastIndexOf('<Hint', share));
+    expect(between.replace(/\s/g, '')).toBe('/>)}{isProjectSession&&projectSession&&(');
+    const element = source.slice(stack, source.indexOf('/>', stack));
+    expect(element).toContain('participants={sessionParticipants}');
+    expect(element).not.toContain('Open');
+  });
+
+  test('the button needs a loaded project session, like the dialog it opens', () => {
+    const at = source.indexOf('setShareOpen(true)');
+    const guard = source.lastIndexOf('{isProjectSession && projectSession && (', at);
+    expect(guard).toBeGreaterThan(-1);
+    expect(at - guard).toBeLessThan(800);
+  });
+
+  test('matches the 28px row: xs, square when icon-only, and a Hint only then', () => {
+    const at = source.indexOf('setShareOpen(true)');
+    const hint = source.slice(source.lastIndexOf('<Hint', at), at);
+    expect(hint).toContain('open={isMobileViewport ? undefined : false}');
+    expect(hint).toContain('label={shareLabel}');
+    const button = source.slice(source.lastIndexOf('<Button', at), source.indexOf('</Button>', at));
+    expect(button).toContain('size="xs"');
+    expect(button).toContain('max-md:w-7 max-md:has-[>svg]:px-0');
+    // The label hides at the same breakpoint the Hint turns on.
+    expect(button).toContain('hidden md:inline');
+    expect(button).toContain('<Share />');
+  });
+});
+
+describe('SessionSiteHeader Fork', () => {
+  const menuStart = source.indexOf('const sessionActionItems = (');
+  const menu = source.slice(menuStart, source.indexOf('\n  );', menuStart));
+
+  // `session.fork` is a runtime capability (OpenCode serves it, pi does not),
+  // and the fork belongs to a project session's conversation: a share viewer
+  // or instant shell has no route to open the fork on.
+  test('the Fork item is gated on the runtime capability and the project session', () => {
+    expect(source).toContain("useRuntimeSupports('session.fork') && isProjectSession");
+    const item = menu.slice(menu.indexOf('{canFork && ('));
+    expect(item.slice(0, item.indexOf('</>'))).toContain('i18nComplete.text0e5f7f6732e0');
+  });
+
+  test('Fork is one mutation, disabled while pending, like the other items', () => {
+    expect(source).toContain('const forkSession = useForkSession(');
+    const item = menu.slice(menu.indexOf('{canFork && ('));
+    expect(item).toContain('disabled={forkSession.isPending}');
+    expect(item).toContain('forkSession.mutate(\n                  { sessionId },');
+  });
+
+  test('a forked conversation opens on the same project-session route', () => {
+    expect(source).toContain('childSessionHref(');
+    expect(source).toContain('/projects/${projectId}/sessions/${projectSessionId}`');
+  });
+
+  // Conversation actions group: Fork branches the transcript, so it reads
+  // beside Export/Summarize, not beside the lifecycle verbs above the divider.
+  test('Fork sits in the conversation group, before Export conversation', () => {
+    const forkAt = menu.indexOf('text0e5f7f6732e0');
+    const exportAt = menu.indexOf('text5d974f9e80c3');
+    expect(forkAt).toBeGreaterThan(-1);
+    expect(exportAt).toBeGreaterThan(forkAt);
   });
 });

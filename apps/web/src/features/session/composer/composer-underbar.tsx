@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import type { Agent, MessageWithParts } from '@kortix/sdk/react';
 import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
@@ -12,9 +12,9 @@ import { AgentSelector } from './agent-selector';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 import { TokenProgress } from './token-progress';
 
-/** `AgentSelector.onSelect` is required, but a LOCKED picker never calls it.
- *  Module-level so the memoized selector isn't handed a fresh inline arrow on
- *  every keystroke in the editor above it. */
+/** `AgentSelector.onSelect` is required, but a picker with no host handler
+ *  never calls it. Module-level so the memoized selector isn't handed a fresh
+ *  inline arrow on every keystroke in the editor above it. */
 const NO_AGENT_SELECT = () => {};
 
 /** Stable identity so the empty roster doesn't remount the picker per render. */
@@ -43,7 +43,6 @@ export interface ComposerUnderbarProps {
   agents: Agent[];
   selectedAgent: string | null;
   onAgentChange?: (agentName: string | null) => void;
-  agentSelectorLocked: boolean;
   /**
    * The roster loaded and this user may run NOTHING here (deny-by-default
    * project agents). The picker is rendered anyway — disabled, saying so —
@@ -75,7 +74,6 @@ export function ComposerUnderbar({
   agents,
   selectedAgent,
   onAgentChange,
-  agentSelectorLocked,
   noAccessibleAgents = false,
   messages,
   models,
@@ -84,13 +82,13 @@ export function ComposerUnderbar({
   variant = 'row',
   toolbarSlot,
 }: ComposerUnderbarProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const t = useTranslations('threads');
 
   /*
     The agent picker is UNCONDITIONAL. It used to earn its slot
-    (`agents.length > 0 && (onAgentChange || agentSelectorLocked)`), and that
-    condition is exactly how a prompt went out with no agent on screen: the
-    roster came back empty for a member with no grant, the control vanished,
+    (`agents.length > 0 && onAgentChange`), and that condition is exactly how
+    a prompt went out with no agent on screen: the roster came back empty for a
+    member with no grant, the control vanished,
     the composer looked entirely normal, and the server ran its manifest
     default. Nothing may send until the agent that will run is VISIBLE, so the
     control that shows it cannot be conditional. An empty roster renders it
@@ -128,16 +126,13 @@ export function ComposerUnderbar({
       }
     >
       <div className="flex min-w-0 items-center gap-1">
-        <Hint
-          side="top"
-          label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
-        >
+        <Hint side="top" label={t('attachFiles')}>
           <Button
             type="button"
             variant="ghost"
             size="icon-base"
             onClick={onAttachClick}
-            aria-label="Attach files"
+            aria-label={t('attachFiles')}
             // `hit-area-1` — the same extension the toolbar's send
             // buttons carry. The visible chip stays 32px; the pressable box
             // grows to 40, on a mouse as well as on a finger.
@@ -151,7 +146,6 @@ export function ComposerUnderbar({
           agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
           selectedAgent={selectedAgent}
           onSelect={onAgentChange ?? NO_AGENT_SELECT}
-          disabled={agentSelectorLocked}
           triggerLabelClassName="max-w-[7rem]"
           unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
         />

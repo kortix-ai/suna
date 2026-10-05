@@ -1,6 +1,7 @@
 import { CliError } from './cli';
 
 const TIMEOUT_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 function apiBase(): string {
   const url = process.env.KORTIX_API_URL?.trim();
@@ -68,6 +69,23 @@ export async function kortixDelete<T = unknown>(path: string): Promise<T> {
 }
 
 /**
+ * GET a binary body (a file proxied by apps/api, so provider tokens stay on the
+ * server). A failed response throws the same readable `API_ERROR` as the JSON
+ * helpers, prefixed with `Download failed:`.
+ */
+export async function kortixDownload(
+  path: string,
+  params?: Record<string, string>,
+): Promise<ArrayBuffer> {
+  const res = await fetch(buildUrl(path, params), {
+    headers: authHeaders(),
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+  if (!res.ok) throw apiError(res, await res.text(), 'Download failed: ');
+  return res.arrayBuffer();
+}
+
+/**
  * Run one connector action through the compiled Kortix CLI. The CLI owns the
  * `@kortix/sdk` client and token seam. Runtime shims do not carry SDK source or
  * a second gateway client.
@@ -109,8 +127,35 @@ export async function kortixConnectorCall<T = unknown>(
   return body as T;
 }
 
+/**
+ * The readable reason of a failed apps/api response. The API's structured
+ * denial is `{ error: true, message, code, action }` (apps/api/src/iam/
+ * denial-message.ts): `error` is a boolean flag and the text is in `message`.
+ * Order: string `message`, string `error`, raw body, status text, `HTTP <status>`.
+ */
+export function apiErrorMessage(status: number, statusText: string, text: string): string {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Not JSON: the raw text is the message.
+  }
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  if (typeof record.message === 'string' && record.message) return record.message;
+  if (typeof record.error === 'string' && record.error) return record.error;
+  return text || statusText || `HTTP ${status}`;
+}
+
+function apiError(res: Response, text: string, prefix = ''): CliError {
+  const message = apiErrorMessage(res.status, res.statusText, text);
+  return new CliError(`${prefix}HTTP ${res.status}: ${message}`, 'API_ERROR', 1, {
+    status: res.status,
+  });
+}
+
 async function parseResponse<T>(res: Response): Promise<T> {
   const text = await res.text();
+  if (!res.ok) throw apiError(res, text);
   let body: unknown = undefined;
   if (text) {
     try {
@@ -118,12 +163,6 @@ async function parseResponse<T>(res: Response): Promise<T> {
     } catch {
       body = text;
     }
-  }
-  if (!res.ok) {
-    const message = (body && typeof body === 'object' && 'error' in body
-      ? String((body as { error: unknown }).error)
-      : text || res.statusText) || `HTTP ${res.status}`;
-    throw new CliError(message, 'API_ERROR', 1);
   }
   return body as T;
 }

@@ -4,10 +4,12 @@ import type { ProjectSession } from '@kortix/sdk';
  * JAY-599 / T21 — an adopted warm session must appear in the session list
  * immediately, not seconds later when the sandbox wakes.
  *
- * Root cause: a warm session is hidden from the `visible` list scope by
- * `metadata.warm` (`apps/api/src/projects/lib/session-inventory.ts`). The
+ * Root cause: a warm session used to be hidden from the `visible` list scope by
+ * `metadata.warm` (`apps/api/src/projects/lib/session-inventory.ts`; today the
+ * row lists as soon as its box is live, but the marker still hides a box-less
+ * warm row). The
  * server now drops that marker at adoption time — the first `POST .../start`
- * call, `apps/api/src/projects/routes/r8.ts` — instead of waiting for the
+ * call, `apps/api/src/projects/routes/session-runtime.ts` — instead of waiting for the
  * first accepted TURN, seconds later, behind the whole sandbox boot window.
  * That closes the gap for everyone ELSE reading the list, but the adopting
  * tab itself still has to wait for its own `invalidateQueries` refetch to

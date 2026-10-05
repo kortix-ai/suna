@@ -25,6 +25,7 @@ import { errors, json } from '../../openapi';
 import { authEmailHookApp } from './app';
 import { parseSendEmailHookPayload, type SendEmailHookPayload } from './payload';
 import { renderAuthEmail } from './templates';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 /** Public Supabase origin for the verification link — see buildVerifyUrl(). */
 export function authVerifyBaseUrl(): string {
@@ -60,6 +61,7 @@ authEmailHookApp.openapi(
     if (!verified) {
       return c.json({ error: 'Invalid signature' }, 401);
     }
+    bindIntegrationPrincipal('supabase_auth');
 
     let payload: SendEmailHookPayload;
     try {
@@ -92,6 +94,9 @@ authEmailHookApp.openapi(
     // Surface the failure to GoTrue so the user is told the mail did not go out,
     // rather than being left waiting for a link that will never arrive.
     if ('skipped' in result && result.skipped) {
+      // A reserved test domain has no mailbox: nothing to deliver, so GoTrue
+      // proceeds as if the mail went out.
+      if (result.reason === 'reserved_recipient') return c.json({}, 200);
       console.error('[auth-email-hook] no email provider configured — set EMAIL_URL');
       return c.json({ error: 'Email delivery is not configured' }, 503);
     }

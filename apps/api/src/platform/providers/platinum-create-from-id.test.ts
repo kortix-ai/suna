@@ -3,6 +3,8 @@
 // SandboxTemplateNotFoundError (so the boot path can name-fallback), and leaves a
 // transient 5xx as a normal error (surface/retry, never a silent name-boot).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { platinumHttpError } from '../../__tests__/helpers/platinum-http-error';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
@@ -65,7 +67,7 @@ describe('FIX-A createFromExternalId', () => {
   });
 
   test("a 404 (GC'd pin) throws SandboxTemplateNotFoundError so the boot path can name-fallback", async () => {
-    sandboxesError = new Error('platinum POST /v1/sandboxes?wait_for_state=running -> 404 {"error":"template not found"}');
+    sandboxesError = platinumHttpError('platinum POST /v1/sandboxes?wait_for_state=running -> 404 {"error":"template not found"}');
     const p = new PlatinumProvider();
     await expect(p.createFromExternalId('tpl_gone', { ...baseOpts })).rejects.toBeInstanceOf(
       SandboxTemplateNotFoundError,
@@ -73,7 +75,7 @@ describe('FIX-A createFromExternalId', () => {
   });
 
   test('a transient 5xx is NOT a not-found (surface/retry, never a silent name-boot)', async () => {
-    sandboxesError = new Error('platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"unavailable"}');
+    sandboxesError = platinumHttpError('platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"unavailable"}');
     const p = new PlatinumProvider();
     let caught: unknown;
     await p.createFromExternalId('tpl_x', { ...baseOpts }).catch((e) => {

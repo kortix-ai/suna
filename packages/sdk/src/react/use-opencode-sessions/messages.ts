@@ -1,17 +1,19 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import type { Part } from '../../core/runtime/runtime-types';
 import { getClient } from '../../core/runtime/client';
 import { logger } from '../../core/http/logger';
 import { isAbortError } from '../../core/http/abort-error';
-import { useSyncStore } from '../../browser/stores/sync-store';
+import { useSyncStore, type MessageWithParts } from '../../browser/stores/sync-store';
+import { mintWireMessageId } from '../../core/session/wire-message-id';
 import type { PromptPart, SendMessageOptions } from './keys';
-import { canQueryOpenCodeSession, unwrap } from './shared';
+import { canQueryRuntimeSession, unwrap } from './shared';
 
 // ============================================================================
 // Send retry policy — ported from apps/web's `opencode-send-retry.ts` so every
-// host that sends a prompt through `promptOpenCodeMessage` inherits it, not
+// host that sends a prompt through `promptRuntimeMessage` inherits it, not
 // just apps/web.
 //
 // Two failure shapes flow through here:
@@ -64,7 +66,7 @@ export function extractSendErrorMessage(error: unknown): string {
  * waking from auto-stop and rebinding its port. Match the common "not ready /
  * waking / booting / provisioning" shapes, not just the exact string.
  */
-export function isOpenCodeNotReadyError(error: unknown): boolean {
+export function isRuntimeNotReadyError(error: unknown): boolean {
   return /opencode not ready|not ready|not yet ready|waking|booting|still booting|provision/i.test(
     extractSendErrorMessage(error),
   );
@@ -96,7 +98,7 @@ export function getSendRetryDelayMs(
   // not the short transient one, even when the error body didn't carry a tidy
   // message. Giving up early here is exactly what reverted a prompt that then
   // landed once the box finished waking.
-  const isBoot = status === 503 || isOpenCodeNotReadyError(error);
+  const isBoot = status === 503 || isRuntimeNotReadyError(error);
   const schedule = isBoot
     ? BOOT_BACKOFF_MS
     : isTransientSendStatus(status)
@@ -127,7 +129,21 @@ export function getSendRetryDelayMs(
  * for backward compatibility with consumers (session-layout, tool-renderers,
  * snapshot-dialog, session-diff-viewer).
  */
-export function useOpenCodeMessages(sessionId: string) {
+export function useRuntimeMessages(
+  sessionId: string,
+  options: {
+    /**
+     * Re-render only when a message is added, removed, or replaced, or when a
+     * part that is not `text`/`reasoning` changes. Streamed text alone does not
+     * re-render the caller, and the rows it holds carry the text as of the
+     * last structural change. For consumers that read tool parts and message
+     * info only (a tool panel, a deliverable detector): a streaming turn then
+     * costs them one render per tool event instead of one per ~16 ms batch.
+     */
+    ignoreStreamedText?: boolean;
+  } = {},
+) {
+  const { ignoreStreamedText = false } = options;
   // Hold this session's transcript for as long as this hook is mounted.
   //
   // Not optional bookkeeping: the store frees a session once its last consumer
@@ -144,7 +160,7 @@ export function useOpenCodeMessages(sessionId: string) {
   // would park a permanently empty id in the detach window on unmount, spending
   // a slot and evicting a real transcript one navigation early.
   useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId)) return;
+    if (!canQueryRuntimeSession(sessionId)) return;
     return useSyncStore.getState().retainSession(sessionId);
   }, [sessionId]);
 
@@ -153,9 +169,17 @@ export function useOpenCodeMessages(sessionId: string) {
   // Object.is check → infinite re-render. This hook used to keep its own copy
   // of that memo, which meant an evicted session stayed reachable through it;
   // the store owns the memo now, beside the eviction that invalidates it.
-  const messages = useSyncStore((s) =>
-    s.buildSessionMessages(sessionId, s.messages[sessionId], s.parts),
-  );
+  const structuralRef = useRef<{ sessionId: string; rows: MessageWithParts[] } | null>(null);
+  const messages = useSyncStore((s) => {
+    const rows = s.buildSessionMessages(sessionId, s.messages[sessionId], s.parts);
+    if (!ignoreStreamedText) return rows;
+    const previous = structuralRef.current;
+    if (previous && previous.sessionId === sessionId && sameStructure(previous.rows, rows)) {
+      return previous.rows;
+    }
+    structuralRef.current = { sessionId, rows };
+    return rows;
+  });
   const isLoading = !useSyncStore((s) => sessionId in s.messages);
 
   return {
@@ -165,6 +189,49 @@ export function useOpenCodeMessages(sessionId: string) {
     error: null,
     refetch: async () => ({ data: messages }),
   };
+}
+
+/** Parts whose streamed growth `ignoreStreamedText` does not report. */
+function isStreamedTextPart(part: Part): boolean {
+  return part.type === 'text' || part.type === 'reasoning';
+}
+
+/**
+ * Same messages, same infos, and the same non-text parts in the same order.
+ * Idempotent and allocation-free, so it is safe inside a store selector.
+ */
+function sameStructure(a: MessageWithParts[], b: MessageWithParts[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i];
+    const right = b[i];
+    if (left === right) continue;
+    if (left.info !== right.info) return false;
+    if (left.parts === right.parts) continue;
+    let j = 0;
+    let k = 0;
+    for (;;) {
+      while (j < left.parts.length && isStreamedTextPart(left.parts[j])) j++;
+      while (k < right.parts.length && isStreamedTextPart(right.parts[k])) k++;
+      if (j === left.parts.length || k === right.parts.length) {
+        if (j !== left.parts.length || k !== right.parts.length) return false;
+        break;
+      }
+      if (left.parts[j] !== right.parts[k]) return false;
+      j++;
+      k++;
+    }
+    // A text part appearing or disappearing is structure too.
+    if (countStreamed(left.parts) !== countStreamed(right.parts)) return false;
+  }
+  return true;
+}
+
+function countStreamed(parts: Part[]): number {
+  let count = 0;
+  for (const part of parts) if (isStreamedTextPart(part)) count++;
+  return count;
 }
 
 // ============================================================================
@@ -200,7 +267,12 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   const hex = encoded.toString(16).padStart(12, '0').slice(0, 12);
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
   let rand = '';
-  for (let i = 0; i < 14; i++) rand += chars[Math.floor(Math.random() * 62)];
+  // Rejection sampling keeps the 62 characters uniform (248 = 4 * 62).
+  const bytes = new Uint8Array(32);
+  while (rand.length < 14) {
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) if (b < 248 && rand.length < 14) rand += chars[b % 62];
+  }
   return `${prefix}_${hex}${rand}`;
 }
 
@@ -250,133 +322,45 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
 // turn never runs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// `BigInt(0x…)` rather than the `0x…n` literal, throughout. This package is
-// typechecked by its consumers as well as by itself, and apps/web's tsconfig
-// targets below ES2020, where the literal syntax is `TS2737: BigInt literals
-// are not available`. The call form compiles under every target and is exact —
-// each value below is far inside `Number.MAX_SAFE_INTEGER`.
-/** opencode keeps the low 6 bytes of its id clock, so the field wraps ~every 2.2y. */
-const WIRE_ID_TIME_MASK = BigInt(0xffffffffffff);
-/** Sub-millisecond slots per millisecond in that clock (`Date.now() * 0x1000`). */
-const WIRE_ID_TIME_SCALE = BigInt(0x1000);
-/**
- * Ceiling on the correction taken from the session's own transcript: 1h of
- * clock. Large enough to absorb any realistic browser-vs-sandbox skew, small
- * enough that one wrapped or malformed id cannot drag every later id weeks into
- * the future.
- */
-const MAX_WIRE_ID_CLOCK_CORRECTION = BigInt(60 * 60 * 1000) * WIRE_ID_TIME_SCALE;
-/**
- * How far back to date a mint before the correction below lifts it into place.
- *
- * The two clocks are not the same clock. opencode mints the ASSISTANT reply
- * from the sandbox's clock; this mints the USER message from the browser's. The
- * sync store sorts the transcript by raw id, so a browser running fast puts the
- * prompt ABOVE the reply that answers it — and it is self-sustaining, because
- * the next mint corrects off the user's own future-dated message. Every reply
- * then lands above its prompt, for as long as the clock is wrong.
- *
- * The fix is an asymmetry rather than a skew estimate, because the two error
- * directions do NOT cost the same:
- *
- *   - too EARLY is self-correcting. `newestKnownMessageTime` lifts the mint
- *     above everything already on record, which is exactly where it belongs.
- *   - too LATE is the bug, and nothing downstream can detect it.
- *
- * So never trust the browser clock forward. Backdate it past any ordinary
- * drift, then let the transcript place the id. In a session with history the
- * value barely matters — the lift decides the answer. It only decides anything
- * for the FIRST message of a session, where there is no history to lift above
- * and the reply is the only thing to sort against.
- *
- * 2 minutes: comfortably past unsynced-clock drift (Windows re-syncs weekly and
- * can be tens of seconds out), and far under `MAX_WIRE_ID_CLOCK_CORRECTION` so
- * the lift still engages.
- */
-const CLOCK_SKEW_BACKDATE_MS = 2 * 60 * 1000;
-const WIRE_MESSAGE_ID_TIME = /^msg_([0-9a-f]{12})/;
-const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-
 // Monotonic tie-break for two submissions inside the same millisecond. Scoped
 // to the LAST session deliberately: a skew correction learned from one
 // session's transcript must not follow the user into another session, where it
 // would push a fresh user message past assistant replies that come after it.
 let lastMintedSessionId = '';
-let lastMintedWireId = BigInt(0);
-
-/**
- * The highest id-clock value this session's transcript already shows that a
- * mint may place itself above, or null.
- *
- * `ceiling` is what makes this a bounded scan rather than a plain max, and it
- * is load-bearing. The same store also holds ids that are NOT opencode wire
- * ids: every send inserts an OPTIMISTIC user message keyed by `ascendingId`,
- * which keeps the HIGH hex digits of the id clock (`msg_1a01…`) where opencode
- * keeps the LOW ones (`msg_0141…`) — about 2.8e13 above every real id, and it
- * still matches the 12-hex shape. Taking the max over everything therefore
- * returned that optimistic id, the correction bound then refused it, and the
- * lift never engaged AT ALL in the real app. A prompt sent inside
- * {@link CLOCK_SKEW_BACKDATE_MS} of the previous reply then went out with a
- * wire id BELOW that reply, opencode read it as already answered, and the turn
- * never ran — no error, nothing on screen. (Reproduced in the browser on the
- * worktree stack: reply at T, prompt at T+70s, id 50s below it, no assistant
- * message ever created.)
- *
- * So an id this mint could not possibly have to sort against is skipped, not
- * allowed to veto the correction for the whole session. A wrapped or garbage
- * id is handled by the same rule, which is what the bound was for originally.
- */
-function newestKnownMessageTime(sessionId: string, ceiling: bigint): bigint | null {
-  const messages = useSyncStore.getState().messages[sessionId];
-  if (!messages?.length) return null;
-  let newest: bigint | null = null;
-  for (const message of messages) {
-    const match = WIRE_MESSAGE_ID_TIME.exec(message?.id ?? '');
-    if (!match) continue;
-    const encoded = BigInt(`0x${match[1]}`);
-    if (encoded > ceiling) continue;
-    if (newest === null || encoded > newest) newest = encoded;
-  }
-  return newest;
-}
+let lastMintedWireId = '';
 
 /**
  * Mint the `messageID` for ONE prompt submission, in opencode's own
- * `Identifier.ascending("message")` wire format: `msg_` + the low 48 bits of
- * `Date.now() * 0x1000` as 12 hex chars + 14 random base62 chars.
+ * `Identifier.ascending("message")` wire format — the SDK's one minter,
+ * `mintWireMessageId` (`core/session/wire-message-id.ts`), fed this session's
+ * transcript.
  *
  * Ordering is load-bearing, which is why this does not reuse `ascendingId`
- * (see the warning on it): opencode resolves "has this prompt already been
- * answered?" by id order, so a user message that sorts before the assistant
- * replies already on record is read as answered and the turn never runs — the
- * same silent loss this whole change exists to remove. Two guards keep the
- * minted id above everything already known:
+ * (see the warning on it): opencode ≤ 1.18.14 resolves "has this prompt already
+ * been answered?" by id order, and every host renders placed messages in id
+ * order. Two guards keep the minted id above everything already known:
  *
- *  1. If this session's transcript already holds a HIGHER id — the browser
- *     clock lags the sandbox's — start just above it, bounded by
- *     {@link MAX_WIRE_ID_CLOCK_CORRECTION}.
+ *  1. The browser clock is not trusted forward: the mint is dated two minutes
+ *     back, then lifted just above the newest id this session's transcript
+ *     holds — the browser clock may lag the sandbox's.
  *  2. Never repeat or go below the previous id minted for this same session,
  *     so two submissions inside one millisecond still order.
+ *
+ * The store also holds ids that are NOT placed wire ids: every send inserts an
+ * OPTIMISTIC user message keyed by `ascendingId`, which keeps the HIGH hex
+ * digits of the id clock (`msg_1a01…`) — ~40 days above every real id. The
+ * minter skips any id more than an hour ahead of the clock instead of letting
+ * it veto the lift for the whole session. (Letting it veto once sent a prompt
+ * out 50 s BELOW the previous reply; opencode read it as answered and the turn
+ * never ran.)
  */
 function mintPromptMessageId(sessionId: string): string {
-  let encoded =
-    (BigInt(Date.now() - CLOCK_SKEW_BACKDATE_MS) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
-  // The bound lives in the scan, so one unplaceable id skips itself instead of
-  // cancelling the correction for every id in the transcript.
-  const newest = newestKnownMessageTime(sessionId, encoded + MAX_WIRE_ID_CLOCK_CORRECTION);
-  if (newest !== null && newest >= encoded) {
-    encoded = newest + BigInt(1);
-  }
-  if (sessionId === lastMintedSessionId && encoded <= lastMintedWireId) {
-    encoded = lastMintedWireId + BigInt(1);
-  }
-  encoded &= WIRE_ID_TIME_MASK;
+  const known = (useSyncStore.getState().messages[sessionId] ?? []).map((message) => message?.id);
+  if (sessionId === lastMintedSessionId && lastMintedWireId) known.push(lastMintedWireId);
+  const minted = mintWireMessageId({ after: known });
   lastMintedSessionId = sessionId;
-  lastMintedWireId = encoded;
-
-  let random = '';
-  for (let i = 0; i < 14; i++) random += BASE62[Math.floor(Math.random() * 62)];
-  return `msg_${encoded.toString(16).padStart(12, '0')}${random}`;
+  lastMintedWireId = minted;
+  return minted;
 }
 
 /**
@@ -415,7 +399,7 @@ function submissionWireId(sessionId: string, clientMessageId: string | undefined
 
 /**
  * The wire `messageID` for one submission, for a host that does NOT send
- * through `promptOpenCodeMessage`.
+ * through `promptRuntimeMessage`.
  *
  * The server-side prompt inbox (`createSessionPrompt`) needs the id up front:
  * the control plane cannot mint one, because placing an id correctly means
@@ -438,7 +422,7 @@ export function mintSessionWireMessageId(
 // ============================================================================
 // T9 — cancel() cancels in-flight delivery.
 //
-// Before this, `promptOpenCodeMessage`'s boot/wake retry loop (below) had no
+// Before this, `promptRuntimeMessage`'s boot/wake retry loop (below) had no
 // `AbortSignal` at all: a prompt still retrying its ~30s backoff when the
 // user hit Stop kept going, and — if the sandbox woke up mid-retry — landed
 // AFTER the abort and ran the stale text. This registry lets `cancel()`
@@ -471,7 +455,7 @@ function registerDelivery(sessionId: string, controller: AbortController): () =>
 }
 
 /**
- * Abort every in-flight `promptOpenCodeMessage` delivery for a session — the
+ * Abort every in-flight `promptRuntimeMessage` delivery for a session — the
  * primary effect `cancel()`/`stop()` need before the abort even reaches the
  * server: a delivery that has not yet started its next attempt when this
  * runs never starts one, and a delivery mid-network-call gets its underlying
@@ -490,8 +474,8 @@ export function abortInFlightDeliveries(sessionId: string): number {
 
 /** The shape `isAbortError` (`@kortix/sdk` core) recognizes on identity alone
  *  — matches a real `AbortController`/`fetch` abort's `.name`. */
-function deliveryAbortError(): SendOpenCodeMessageError {
-  const err = new Error('The operation was aborted.') as SendOpenCodeMessageError;
+function deliveryAbortError(): SendRuntimeMessageError {
+  const err = new Error('The operation was aborted.') as SendRuntimeMessageError;
   err.name = 'AbortError';
   return err;
 }
@@ -513,7 +497,7 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export interface SendOpenCodeMessageArgs {
+export interface SendRuntimeMessageArgs {
   sessionId: string;
   parts: PromptPart[];
   options?: SendMessageOptions;
@@ -553,10 +537,10 @@ export interface SendOpenCodeMessageArgs {
   clientMessageId?: string;
 }
 
-/** Error thrown by `promptOpenCodeMessage` on a non-2xx response — carries the
+/** Error thrown by `promptRuntimeMessage` on a non-2xx response — carries the
  * HTTP status (mirroring `response`/`status` so `parseBillingError` can detect
  * a 402) alongside the raw error payload. */
-export interface SendOpenCodeMessageError extends Error {
+export interface SendRuntimeMessageError extends Error {
   status?: number;
   response?: { status: number };
   data?: unknown;
@@ -580,16 +564,16 @@ export interface SendOpenCodeMessageError extends Error {
  * brand-new session's very first prompt can race — gets the same boot-window
  * retry treatment instead of propagating instantly with zero retries.
  *
- * Extracted from `useSendOpenCodeMessage`'s mutationFn so it's a plain async
+ * Extracted from `useSendRuntimeMessage`'s mutationFn so it's a plain async
  * function callable — and unit-testable — without a mutation/hook context.
  */
-export async function promptOpenCodeMessage({
+export async function promptRuntimeMessage({
   sessionId,
   parts,
   options,
   messageID,
   clientMessageId,
-}: SendOpenCodeMessageArgs): Promise<void> {
+}: SendRuntimeMessageArgs): Promise<void> {
   const mappedParts = parts.map((p) => {
     if (p.type === 'file') return { type: 'file' as const, mime: p.mime, url: p.url, filename: p.filename, source: p.source };
     if (p.type === 'agent') return { type: 'agent' as const, name: p.name, source: p.source };
@@ -656,7 +640,7 @@ export async function promptOpenCodeMessage({
         const message = errData?.message || err?.message || 'Failed to send message';
         const wrapped = new Error(
           typeof message === 'string' ? message : 'Failed to send message',
-        ) as SendOpenCodeMessageError;
+        ) as SendRuntimeMessageError;
         if (status) {
           wrapped.status = status;
           wrapped.response = { status };
@@ -664,7 +648,7 @@ export async function promptOpenCodeMessage({
         wrapped.data = err?.data ?? err;
         throw wrapped;
       }
-      logger.warn('promptOpenCodeMessage retrying send', { sessionId, attempt, status });
+      logger.warn('promptRuntimeMessage retrying send', { sessionId, attempt, status });
       // Abortable — a cancel arriving while this delivery is waiting out its
       // backoff must reject IMMEDIATELY, not wait out the remaining delay.
       await abortableDelay(delay, controller.signal);
@@ -674,10 +658,10 @@ export async function promptOpenCodeMessage({
   }
 }
 
-export function useSendOpenCodeMessage() {
+export function useSendRuntimeMessage() {
   return useMutation({
-    mutationFn: promptOpenCodeMessage,
-    // Same rationale as `useExecuteOpenCodeCommand`: this POSTs `prompt_async`,
+    mutationFn: promptRuntimeMessage,
+    // Same rationale as `useExecuteRuntimeCommand`: this POSTs `prompt_async`,
     // which CREATES a user message. Retrying it sends the prompt twice.
     //
     // It is stated here rather than left to the host because a host default
@@ -689,7 +673,7 @@ export function useSendOpenCodeMessage() {
     // absorbing that, which is the same "one layer relying on another's guard"
     // shape that let a `/command` execute four times.
     //
-    // `promptOpenCodeMessage` already runs its own bounded boot-window retry
+    // `promptRuntimeMessage` already runs its own bounded boot-window retry
     // for the states that ARE safe to repeat (`opencode not ready`, sandbox
     // still waking), so nothing is lost by switching the outer one off.
     retry: false,
@@ -701,8 +685,8 @@ export function useSendOpenCodeMessage() {
  * force-update the store if it still reports busy (the SSE `session.idle`
  * event should arrive on its own; this is the fallback for a missed one).
  *
- * Extracted from `useAbortOpenCodeSession`'s mutationFn — same reasoning as
- * `promptOpenCodeMessage`: a plain async function is directly testable
+ * Extracted from `useAbortRuntimeSession`'s mutationFn — same reasoning as
+ * `promptRuntimeMessage`: a plain async function is directly testable
  * without a mutation/hook context, and `awaitAbortSettlement` below calls it
  * (via the mutation's `mutateAsync`, so retry/pending state stay react-query-
  * driven) without needing to render a hook to prove the failure path.
@@ -711,7 +695,7 @@ export function useSendOpenCodeMessage() {
  * then `awaitAbortSettlement`) decides what to do with that; this function
  * itself never swallows it.
  */
-export async function abortOpenCodeSession(sessionId: string): Promise<void> {
+export async function abortRuntimeSession(sessionId: string): Promise<void> {
   const client = getClient();
   const result = await client.session.abort({ sessionID: sessionId });
   unwrap(result);
@@ -734,9 +718,9 @@ export async function abortOpenCodeSession(sessionId: string): Promise<void> {
   }
 }
 
-export function useAbortOpenCodeSession() {
+export function useAbortRuntimeSession() {
   return useMutation({
-    mutationFn: abortOpenCodeSession,
+    mutationFn: abortRuntimeSession,
     retry: 2,
     retryDelay: 300,
     // Kept — apps/web's `session-chat.tsx` calls `.mutate(sessionId)`
@@ -794,3 +778,21 @@ export async function awaitAbortSettlement(
     if (timer !== undefined) clearTimeout(timer);
   }
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `isRuntimeNotReadyError`. Removed in the next major. */
+export const isOpenCodeNotReadyError = isRuntimeNotReadyError;
+/** @deprecated Renamed to `useRuntimeMessages`. Removed in the next major. */
+export const useOpenCodeMessages = useRuntimeMessages;
+/** @deprecated Renamed to `SendRuntimeMessageArgs`. Removed in the next major. */
+export type SendOpenCodeMessageArgs = SendRuntimeMessageArgs;
+/** @deprecated Renamed to `SendRuntimeMessageError`. Removed in the next major. */
+export type SendOpenCodeMessageError = SendRuntimeMessageError;
+/** @deprecated Renamed to `promptRuntimeMessage`. Removed in the next major. */
+export const promptOpenCodeMessage = promptRuntimeMessage;
+/** @deprecated Renamed to `useSendRuntimeMessage`. Removed in the next major. */
+export const useSendOpenCodeMessage = useSendRuntimeMessage;
+/** @deprecated Renamed to `abortRuntimeSession`. Removed in the next major. */
+export const abortOpenCodeSession = abortRuntimeSession;
+/** @deprecated Renamed to `useAbortRuntimeSession`. Removed in the next major. */
+export const useAbortOpenCodeSession = useAbortRuntimeSession;

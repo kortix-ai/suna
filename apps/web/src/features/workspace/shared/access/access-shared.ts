@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 // Shared, framework-free helpers for every access-control surface.
 //
 // One copy of each string / formatter that used to live in three or four
@@ -24,7 +25,8 @@ export const RBAC_UPSELL_MESSAGE =
  * `access-projects-tab.tsx` (`userLabel`).
  */
 export function principalLabel(
-  principal: { email?: string | null; user_id?: string | null; name?: string | null } | null | undefined,
+  principal:
+    { email?: string | null; user_id?: string | null; name?: string | null } | null | undefined,
 ): string {
   if (!principal) return '';
   return principal.email || principal.name || principal.user_id || '';
@@ -86,8 +88,12 @@ export interface ExpiryDisplay {
  * the JSX: no expiry = permanent "Never"; a past timestamp is flagged so
  * the row can paint it `text-kortix-red` instead of `text-kortix-yellow`.
  */
-export function formatExpiry(expiresAt: string | null | undefined): ExpiryDisplay {
-  if (!expiresAt) return { label: 'Never', expired: false, bounded: false };
+export function formatExpiry(
+  expiresAt: string | null | undefined,
+  tI18nComplete: UiTranslator,
+): ExpiryDisplay {
+  if (!expiresAt)
+    return { label: tI18nComplete.raw('text6300ef800bb8'), expired: false, bounded: false };
   const date = new Date(expiresAt);
   if (Number.isNaN(date.getTime())) return { label: '—', expired: false, bounded: true };
   return {
@@ -145,16 +151,16 @@ export interface ConfirmCopy {
  * longer have access here". Every remove/revoke/detach confirm in the
  * access surface uses it, always with `confirmVariant="destructive"`.
  */
-export function removeAccessCopy({
-  principal,
-  scopeName,
-  inherited,
-}: RemoveAccessCopyInput): ConfirmCopy {
+export function removeAccessCopy(
+  { principal, scopeName, inherited }: RemoveAccessCopyInput,
+  tI18nComplete: UiTranslator,
+): ConfirmCopy {
   const base = `${principal} loses access to ${scopeName}.`;
-  if (!inherited || inherited.length === 0) return { title: 'Remove access?', description: base };
+  if (!inherited || inherited.length === 0)
+    return { title: tI18nComplete.raw('text914d43beac26'), description: base };
   return {
-    title: 'Remove access?',
-    description: `${base} They keep the access they get via ${formatList(inherited)}.`,
+    title: tI18nComplete.raw('text914d43beac26'),
+    description: tI18nComplete('textc3bb47ef2fd9', { value0: base, value1: formatList(inherited) }),
   };
 }
 

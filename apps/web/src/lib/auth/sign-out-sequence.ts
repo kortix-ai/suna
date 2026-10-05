@@ -97,6 +97,18 @@ export type SignOutSteps = {
   dropAuthCookie: () => void;
   /** React Query, the account store, per-user localStorage, the IDB cache. */
   resetClientState: () => Promise<void>;
+  /**
+   * Tell the user the server half did not complete.
+   *
+   * Called once, immediately before `leave`, whenever the session was not
+   * PROVEN revoked server-side — the same condition that drives the second
+   * `dropAuthCookie` below. Every other trace of those failures is
+   * `console.error`, which no user reads, and the sign-out ends on a document
+   * load: any toast raised in THIS document dies with it. The caller carries
+   * the notice to `/auth` instead of raising it here — see
+   * `sign-out-notice.ts` for the carry and `AuthContent` for the raise.
+   */
+  notifySignOutIncomplete: () => void;
   /** A DOCUMENT navigation. Never `router.push` — see `performSignOut`. */
   leave: (destination: string) => void;
 };
@@ -205,10 +217,7 @@ export async function runSignOut(
   // beat the guard's stand-down.
   signOutStarted = true;
 
-  const server = await withTimeBudget(
-    steps.finalizeServerSession(),
-    budgets.finalizeServerSession,
-  );
+  const server = await withTimeBudget(steps.finalizeServerSession(), budgets.finalizeServerSession);
   if (server.status !== 'settled') {
     // Best effort. A backend that is down — or merely slow — must never be able
     // to keep a user signed in.
@@ -249,6 +258,8 @@ export async function runSignOut(
   // against a 30s tick) and the fix is one line.
   if (!sessionRemoved) {
     steps.dropAuthCookie();
+    // AFTER the reset sweep, so the notice survives it — see the step's doc.
+    steps.notifySignOutIncomplete();
   }
 
   steps.leave(SIGN_OUT_DESTINATION);

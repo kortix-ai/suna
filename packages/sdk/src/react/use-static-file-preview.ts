@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getAuthToken } from '../core/http/auth';
 import { appendPreviewToken, isSubdomainPreviewUrl } from '../core/session/preview';
+import { shouldAttachPreviewToken } from '../core/session/preview-origin-trust';
 import { probePreviewPort } from '../core/session/preview-probe';
 import {
   STATIC_FILE_HEALTH_RETRY_MS,
@@ -110,7 +111,7 @@ export function useStaticFilePreview(
       // once the probe passes, nothing ever authenticates the subdomain: the
       // "starting" state deadlocks.
       let url = targets.healthUrl;
-      if (isSubdomainPreviewUrl(url)) {
+      if (isSubdomainPreviewUrl(url) && (await shouldAttachPreviewToken(url))) {
         const token = await getAuthToken();
         if (cancelled) return;
         if (token) url = appendPreviewToken(url, token);

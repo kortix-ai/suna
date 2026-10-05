@@ -2,9 +2,13 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   connectEmail,
+  completeSlackInstall,
+  completeTeamsInstall,
   connectSlack,
   bindSlackIdentity,
   bindTeamsIdentity,
+  previewSlackIdentity,
+  previewTeamsIdentity,
   disconnectEmail,
   disconnectSlack,
   getEmailInstallation,
@@ -17,6 +21,7 @@ import {
   updateChannelBinding,
   updateEmailPolicy,
   uploadSlackChannelFile,
+  type ChannelBinding,
 } from './channels';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -71,6 +76,30 @@ test('chat identity binding stays behind typed SDK methods', async () => {
 
   await bindTeamsIdentity('teams-token');
   expect(last().url).toContain('/channels/teams/identity/bind');
+  expect(last().body).toEqual({ token: 'teams-token' });
+});
+
+test('previewSlackIdentity posts the token to the read-only preview route', async () => {
+  nextResponse = {
+    status: 200,
+    body: { service: 'slack', workspaceName: 'Team', chatUserId: 'U1', chatUserName: 'sam' },
+  };
+  const result = await previewSlackIdentity('slack-token');
+  expect(last().url).toContain('/channels/slack/identity/preview');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ token: 'slack-token' });
+  expect(result).toEqual({
+    service: 'slack',
+    workspaceName: 'Team',
+    chatUserId: 'U1',
+    chatUserName: 'sam',
+  });
+});
+
+test('previewTeamsIdentity posts the token and surfaces the server refusal', async () => {
+  nextResponse = { status: 410, body: { error: 'This link is invalid or has expired.' } };
+  await expect(previewTeamsIdentity('teams-token')).rejects.toThrow();
+  expect(last().url).toContain('/channels/teams/identity/preview');
   expect(last().body).toEqual({ token: 'teams-token' });
 });
 
@@ -276,6 +305,57 @@ test('listChannelBindings hits the bindings collection', async () => {
   expect(result.bindings[0]?.effectiveAgent).toEqual({ agent: 'support', source: 'project' });
 });
 
+// A deleted Slack channel, or one the bot left, has no name to show. The
+// server says so, so the settings page can say "Unavailable channel" instead
+// of a bare `C0…` id.
+test('listChannelBindings carries whether Slack still has the conversation', async () => {
+  const gone: ChannelBinding = {
+    bindingId: 'b2',
+    platform: 'slack',
+    workspaceId: 'W1',
+    channelId: 'C0GONE',
+    channelName: null,
+    channelType: null,
+    channelUnavailable: true,
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-01-01',
+    effectiveAgent: { agent: 'support', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+  };
+  nextResponse = { status: 200, body: { projectDefaultAgent: null, bindings: [gone] } };
+
+  const result = await listChannelBindings('P1');
+
+  expect(result.bindings[0]?.channelUnavailable).toBe(true);
+});
+
+// Every thread of a Teams channel is its own binding, named `Team › Channel`.
+// The server adds the thread's session title so the threads can be told apart.
+test('listChannelBindings carries a Teams channel thread\'s title', async () => {
+  const thread: ChannelBinding = {
+    bindingId: 'b3',
+    platform: 'teams',
+    workspaceId: 'tenant-1',
+    channelId: '19:general@thread.tacv2;messageid=1700000000001',
+    channelName: 'Eng › General',
+    channelType: 'channel',
+    threadTitle: 'Deploy review',
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-01-01',
+    effectiveAgent: { agent: 'support', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+  };
+  nextResponse = { status: 200, body: { projectDefaultAgent: null, bindings: [thread] } };
+
+  const result = await listChannelBindings('P1');
+
+  expect(result.bindings[0]?.threadTitle).toBe('Deploy review');
+});
+
 test('updateChannelBinding PATCHes the binding by id', async () => {
   nextResponse = {
     status: 200,
@@ -306,4 +386,25 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
   await expect(updateChannelBinding('P1', 'unknown', { agentName: null })).rejects.toThrow(
     'not found',
   );
+});
+
+test('completeSlackInstall posts the OAuth code and state and returns where to land', async () => {
+  nextResponse = { status: 200, body: { redirect_url: 'https://app.test/projects/P1?success=1' } };
+  const result = await completeSlackInstall('P1', { code: 'c1', state: 's1' });
+  expect(last().url).toContain('/projects/P1/channels/slack/oauth/complete');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ code: 'c1', state: 's1' });
+  expect(result).toEqual({ redirect_url: 'https://app.test/projects/P1?success=1' });
+});
+
+test('completeTeamsInstall surfaces the refusal code when another user started the install', async () => {
+  nextResponse = {
+    status: 403,
+    body: { error: 'This install was started by another Kortix account.', code: 'CHANNEL_INSTALL_STATE_MISMATCH' },
+  };
+  const error = await completeTeamsInstall('P1', { code: 'c2', state: 's2' }).catch((e: unknown) => e);
+  expect(last().url).toContain('/projects/P1/channels/teams/oauth/complete');
+  expect(last().body).toEqual({ code: 'c2', state: 's2' });
+  expect((error as { code?: string }).code).toBe('CHANNEL_INSTALL_STATE_MISMATCH');
+  expect((error as { status?: number }).status).toBe(403);
 });

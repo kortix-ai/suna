@@ -16,7 +16,7 @@ import {
   StackIcon as Layers,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
 import { useBranches } from '../hooks/use-branches';
@@ -218,13 +218,17 @@ function VersionRow({
           <span className="text-foreground truncate text-sm font-medium">{branch.name}</span>
           {branch.is_default && (
             <Badge variant="kortix" size="xs">
-              Main
+              {tHardcodedUi.raw('i18nComplete.texteb814be3ca3b')}
             </Badge>
           )}
         </div>
 
         <div className="text-muted-foreground/80 mt-0.5 flex items-center gap-1.5 text-xs">
-          {date && <span>Updated {date}</span>}
+          {date && (
+            <span>
+              {tHardcodedUi.raw('i18nComplete.text3a5ecca188c0')} {date}
+            </span>
+          )}
           {!branch.is_default && branch.ahead != null && branch.behind != null && (
             <>
               {date && <span className="text-muted-foreground/40">·</span>}

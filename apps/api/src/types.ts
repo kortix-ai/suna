@@ -1,5 +1,5 @@
-import type { AgentGrant } from '@kortix/db';
 import { z } from 'zod';
+import type { AgentGrant } from '@kortix/db';
 import type { BillingState } from './billing/services/billing-state';
 
 // === Request Schemas (Router) ===
@@ -93,14 +93,15 @@ export interface AuthVariables {
   tokenProjectId?: string;
   /** Set for session-scoped sandbox connector PATs. */
   sessionId?: string;
-  /** Exact physical runtime represented by a session-scoped PAT. */
-  sessionRuntimeKind?: 'worker' | 'environment';
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
   /** Per-agent authorization grant — non-null only for agent-session tokens.
    *  Read by assertAgentScope() to gate Kortix CLI/API actions on top of the
    *  user's own role (net = userRole ∩ agentGrant). Null = full access. */
   agentGrant?: AgentGrant | null;
+  /** The human an agent-session token acts on behalf of. Null for an
+   *  unattended run, a cleared session, or any non-session credential. */
+  onBehalfOfUserId?: string | null;
   /** Live impersonation grant id — set only while a platform admin acts as an
    *  account (middleware/impersonation.ts). Its presence means `accountId` is
    *  the TARGET account, not the caller's own. */
@@ -169,8 +170,8 @@ export interface TierConfig {
   models: string[];
   dailyCreditConfig: DailyCreditConfig | null;
   hidden: boolean;
-  /** Max concurrent project sessions allowed for accounts on this tier. */
-  concurrentSessionLimit: number;
+  /** Apps an account on this tier may own, and App runtimes it may run at once. */
+  appLimit: number;
   /** Enterprise feature gates. Absent ⇒ treated as all-false. */
   entitlements: TierEntitlements;
 }
@@ -221,8 +222,8 @@ export interface AccountStateResponse {
    * RESOLVED plan: an active admin-issued trial and the per-seat self-heal
    * overlay the stored tier (billing/services/resolve-billing.ts), so a
    * trialing account reports the plan its gates actually enforce. `tier.name`,
-   * `tier.display_name`, `tier.entitlements` and `limits.concurrent_sessions`
-   * come from the same resolved view.
+   * `tier.display_name`, and `tier.entitlements` come from the same
+   * resolved view.
    *
    * Optional: additive field, so a client built against the older shape still
    * type-checks. The API always sends it.
@@ -351,17 +352,6 @@ export interface AccountStateResponse {
     period_start: string | null;
     period_end: string | null;
   } | null;
-  /**
-   * Account-level resource limits + current usage. The `concurrent_sessions`
-   * field surfaces the same cap the API enforces at session-create time
-   * (see shared/account-limits.ts).
-   */
-  limits?: {
-    concurrent_sessions: {
-      active: number;
-      limit: number;
-    };
-  };
 }
 
 export interface ScheduledChange {

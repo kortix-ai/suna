@@ -10,10 +10,11 @@ import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../type
 import { isPerSeatAccount } from './tier-facts';
 
 export {
+  LEGACY_PAID_TIERS_UNMETERED,
   MINIMUM_CREDIT_FOR_RUN,
   accountMetersCompute,
+  accountRowMetersCompute,
   isCreditPlanAccount,
-  isLegacyAccount,
   isPaidTier,
   isPerSeatAccount,
 } from './tier-facts';
@@ -31,7 +32,7 @@ export const MACHINE_CREDIT_BONUS = 5;
  * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
  * periods. Clamped to >= 1 so we never undercut the provider.
  */
-export const DEFAULT_LLM_PRICE_MARKUP = 1.2;
+const DEFAULT_LLM_PRICE_MARKUP = 1.2;
 
 export function llmPriceMarkup(): number {
   const raw = Number.parseFloat(process.env.KORTIX_LLM_MARKUP ?? '');
@@ -68,19 +69,7 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
-// Per-second customer pricing for the reserved sandbox spec in kortix.yaml.
-// These rates apply to every hosted provider. Each rate is 1.2× Daytona's
-// published list rate.
-// Daytona list (https://www.daytona.io/pricing, as of 2026-06):
-//   vCPU  $0.0504 / core-hour → 0.000014   per core-second
-//   RAM   $0.0162 / GiB-hour  → 0.0000045  per GB-second
-//   disk  $0.000108 / GiB-hour→ 0.00000003 per GB-second
-// We bill the full reserved spec — Daytona's first-5-GiB-free RAM/disk allowance
-// is an ORG-level promo to us, not a per-sandbox grant, so passing it per sandbox
-// would under-bill.
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.0000168;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000054;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.000000036;
+// Per-second customer compute prices live in platform/providers/compute-rates.ts.
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
 export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 
@@ -90,8 +79,8 @@ export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 //   threshold = 25% of one seat (top up when wallet has < 1/4 seat-month left)
 //   amount    = 1 seat-month (refill the equivalent of one seat)
 // Legacy accounts keep their flat $5/$20 (auto_topup_customized=true or just unaffected).
-export const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
-export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
+const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
+const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
 
 // Sensible caps for the per-seat plan. Effectively uncapped for normal use.
 export const MAX_PROJECTS_PER_ACCOUNT = 200;
@@ -172,9 +161,7 @@ export function resolveRenewalGrant(args: {
 }
 
 // ─── Compute instance definitions ───────────────────────────────────────────
-// Single source of truth for the machine tiers we sell.  Prices and specs must
-// stay in sync with the frontend's DISPLAY_PRICES / FALLBACK_TYPES in
-// apps/web/src/hooks/instance/use-server-types.ts.
+// Single source of truth for the machine tiers we sell.
 
 interface ComputeTier {
   label: string;
@@ -243,7 +230,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 50,
+    appLimit: 50,
     entitlements: SELF_SERVE,
   },
 
@@ -257,7 +244,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 50,
+    appLimit: 50,
     entitlements: SELF_SERVE,
   },
 
@@ -271,7 +258,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 200,
+    appLimit: 200,
     entitlements: SELF_SERVE,
   },
 
@@ -280,7 +267,7 @@ const TIERS: Record<string, TierConfig> = {
   // grantForSeats() and applied at subscription create + renew.
   //
   // GRANDFATHERED (billing v3). Existing per-seat customers keep this tier
-  // exactly as it is — same price, same $25/seat grant, same 200-session cap,
+  // exactly as it is — same price, same $25/seat grant, same 200 Apps,
   // and `models: ['all']` so their managed-model access is NOT withdrawn under
   // them. It is `hidden` only so the self-serve grid stops offering it to new
   // customers; every existing subscription resolves it unchanged.
@@ -294,7 +281,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 200,
+    appLimit: 200,
     entitlements: SELF_SERVE,
   },
 
@@ -324,7 +311,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 3,
+    appLimit: 3,
     entitlements: SELF_SERVE,
   },
 
@@ -338,7 +325,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 10,
+    appLimit: 10,
     entitlements: SELF_SERVE,
   },
 
@@ -352,7 +339,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 30,
+    appLimit: 30,
     entitlements: SELF_SERVE,
   },
 
@@ -373,7 +360,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 5000,
+    appLimit: 5000,
     entitlements: ALL_ENTERPRISE,
   },
 
@@ -390,7 +377,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 200,
+    appLimit: 200,
     entitlements: SELF_SERVE,
   },
   tier_6_50: {
@@ -403,7 +390,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 300,
+    appLimit: 300,
     entitlements: SELF_SERVE,
   },
   tier_12_100: {
@@ -416,7 +403,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 400,
+    appLimit: 400,
     entitlements: SELF_SERVE,
   },
   tier_25_200: {
@@ -429,7 +416,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 500,
+    appLimit: 500,
     entitlements: SELF_SERVE,
   },
   tier_50_400: {
@@ -442,7 +429,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 750,
+    appLimit: 750,
     entitlements: SELF_SERVE,
   },
   tier_125_800: {
@@ -455,7 +442,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 1000,
+    appLimit: 1000,
     entitlements: SELF_SERVE,
   },
   tier_200_1000: {
@@ -468,7 +455,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 1500,
+    appLimit: 1500,
     entitlements: SELF_SERVE,
   },
   tier_150_1200: {
@@ -481,7 +468,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 2000,
+    appLimit: 2000,
     entitlements: SELF_SERVE,
   },
 };
@@ -674,6 +661,38 @@ export function getTier(name: string): TierConfig {
 export function getTierByPriceId(priceId: string): TierConfig | null {
   const name = priceIdToTier.get(priceId);
   return name ? (TIERS[name] ?? null) : null;
+}
+
+/**
+ * The plan a SUBSCRIPTION PRICE pays for — the only trustworthy answer to "which
+ * tier did this customer buy". Request bodies and client-supplied tier keys are
+ * never an input.
+ *
+ * One price can be registered under more than one tier (a legacy price reused
+ * as a newer plan's price). `planKeyHint` — the plan key our own server wrote
+ * into the subscription metadata — breaks that tie, and ONLY that tie: a hint
+ * whose configured prices do not include `priceId` is ignored.
+ */
+export function resolveTierForPrice(
+  priceId: string | null | undefined,
+  planKeyHint?: string | null,
+): string | null {
+  if (!priceId) return null;
+  if (planKeyHint && tierHasPrice(planKeyHint, priceId)) return planKeyHint;
+  return priceIdToTier.get(priceId) ?? null;
+}
+
+function tierHasPrice(tierName: string, priceId: string): boolean {
+  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV]) {
+    const tierPrices = priceConfig.subscriptions[tierName];
+    if (!tierPrices) continue;
+    if (
+      tierPrices.monthly === priceId ||
+      tierPrices.yearly === priceId ||
+      tierPrices.yearlyCommitment === priceId
+    ) return true;
+  }
+  return false;
 }
 
 export function getBillingPeriodByPriceId(

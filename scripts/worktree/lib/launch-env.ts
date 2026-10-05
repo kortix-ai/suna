@@ -33,10 +33,22 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
     FRONTEND_URL: `http://localhost:${ports.web}`,
     KORTIX_SKIP_ENSURE_SCHEMA: '1',
-    DATABASE_URL: c.dbUrl,
-    SUPABASE_URL: c.supabaseUrl,
+    // Latency bench only: point the API at apps/api/scripts/latency-proxy.ts
+    // (runbook: .agents/skills/testing/references/api-latency-baseline.md).
+    DATABASE_URL: process.env.KORTIX_WT_API_DATABASE_URL || c.dbUrl,
+    SUPABASE_URL: process.env.KORTIX_WT_API_SUPABASE_URL || c.supabaseUrl,
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
     ...(c.jwtSecret ? { SUPABASE_JWT_SECRET: c.jwtSecret } : {}),
+    // Config archives go through the API's one object store, pointed at THIS
+    // slot's Supabase Storage S3 endpoint. Without the override a --db
+    // worktree would publish into the primary checkout's Supabase (the
+    // endpoint baked into apps/api/.env), i.e. another stack's data plane.
+    KORTIX_CONFIG_ARCHIVE_S3_BUCKET: 'kortix-config-releases',
+    KORTIX_CONFIG_ARCHIVE_S3_REGION: 'local',
+    KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${c.supabaseUrl.replace(/\/+$/, '')}/storage/v1/s3`,
+    KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: 'true',
+    ...(c.s3AccessKeyId ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: c.s3AccessKeyId } : {}),
+    ...(c.s3SecretAccessKey ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: c.s3SecretAccessKey } : {}),
     INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
     SCHEDULER_ENABLED: 'false',
     // Billing is opt-in. --billing exposes local routes. --stripe also injects
@@ -52,12 +64,6 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     LLM_GATEWAY_BASE_URL: '',
     LLM_GATEWAY_PROXY_PORT: String(ports.gateway),
     GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
-    // Managed ("kortix/*") models route to AWS Bedrock; the API builds the
-    // descriptor with these and ships it to the standalone gateway. Region
-    // always set; the API key passes through from the parent shell when present
-    // (else it comes from the dotenvx-decrypted apps/api/.env).
-    AWS_BEDROCK_REGION: process.env.AWS_BEDROCK_REGION || 'us-west-2',
-    ...(process.env.AWS_BEDROCK_API_KEY ? { AWS_BEDROCK_API_KEY: process.env.AWS_BEDROCK_API_KEY } : {}),
   };
 }
 

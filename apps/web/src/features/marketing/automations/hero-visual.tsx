@@ -3,8 +3,9 @@
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
 import { cn } from '@/lib/utils';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { schedule, webhook } from './content';
+import { getLocalizedAutomationsContent } from './content';
 
 /**
  * `/automations` hero scene — the axis, anchored to a moment.
@@ -31,8 +32,6 @@ import { schedule, webhook } from './content';
  * MOTION — one pass on mount, then rest.
  */
 
-const ROWS = schedule.rows.slice(0, 3);
-
 /** Fractions of the axis. Shape follows the cron, not the composition. */
 const MARKS: readonly (readonly number[])[] = [
   [0.06, 0.22, 0.38, 0.54, 0.7, 0.86], // 0 0 9 * * 1-5  — every weekday
@@ -55,14 +54,17 @@ const NEXT = { lane: 1, at: 0.64 };
 const GUTTER = '6.5rem';
 
 export function AutomationsHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { schedule, webhook } = getLocalizedAutomationsContent(tI18nComplete);
+  const rows = schedule.rows.slice(0, 3);
   const reduceMotion = useReducedMotion() ?? false;
-  const next = ROWS[NEXT.lane];
+  const next = rows[NEXT.lane];
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label="Three scheduled triggers on a time axis with a present-moment marker, and the next run called out."
+      aria-label={tI18nComplete.raw('textb2a8625a332e')}
     >
       <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[25rem]">
         {/* ── the present ─────────────────────────────────────────────── */}
@@ -82,7 +84,7 @@ export function AutomationsHeroVisual(): ReactNode {
           transition={{ duration: 0.3, delay: LEAD + 0.34, ease: EASE_OUT }}
           aria-hidden
         >
-          now
+          {tI18nComplete.raw('texted5eb9a37e2d')}
         </m.span>
 
         {/* ── the axis ────────────────────────────────────────────────── */}
@@ -110,7 +112,7 @@ export function AutomationsHeroVisual(): ReactNode {
         </div>
 
         {/* ── the lanes ───────────────────────────────────────────────── */}
-        {ROWS.map((row, lane) => (
+        {rows.map((row, lane) => (
           <div
             key={row.slug}
             className="absolute inset-x-0 flex items-center"
@@ -180,11 +182,11 @@ export function AutomationsHeroVisual(): ReactNode {
 
         {/* ── what happens next ───────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[3%] bottom-[5%] left-[22%] rounded-lg border p-4 "
+          className="border-border/70 bg-card absolute right-[3%] bottom-[5%] left-[22%] rounded-lg border p-4"
           {...panel(reduceMotion)}
         >
           <span className="text-muted-foreground/45 block font-mono text-[10px] tracking-widest uppercase">
-            next run
+            {tI18nComplete.raw('textc7247bffdae8')}
           </span>
           <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-foreground font-mono text-[14px]">{next?.slug}</span>

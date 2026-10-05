@@ -1,13 +1,17 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
+  missing,
   resolveAccountContext,
+  resolveSpanInstant,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { iamBase } from '../iam.ts';
 import { confirm } from '../prompts.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, visibleWidth } from '../style.ts';
 
 // `kortix tokens` — the two kinds of non-interactive credential an account
 // issues, in one place:
@@ -29,14 +33,6 @@ import { C, help, pad, status } from '../style.ts';
 // Note `kortix token` (singular) is a different, unrelated command: it prints
 // the ACTIVE token's context (`whoami --token-only`).
 
-const RELATIVE_SPAN = /^(\d+)\s*(h|d|w|y)$/i;
-const SPAN_MS: Record<string, number> = {
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-  y: 31_536_000_000,
-};
-
 /**
  * Resolve `--expires` to the ISO-8601 instant the API stores.
  *
@@ -45,17 +41,7 @@ const SPAN_MS: Record<string, number> = {
  * API only speaks ISO. Resolved here so `--json` shows the instant really sent.
  */
 export function resolveExpiry(input: string, now: Date = new Date()): string | null {
-  const value = input.trim();
-  if (!value) return null;
-  const relative = RELATIVE_SPAN.exec(value);
-  if (relative) {
-    const amount = Number(relative[1]);
-    const unit = relative[2]!.toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return new Date(now.getTime() + amount * SPAN_MS[unit]!).toISOString();
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return resolveSpanInstant(input, now, 1);
 }
 
 interface AccountToken {
@@ -84,10 +70,22 @@ interface ServiceAccount {
   disabled_at?: string | null;
 }
 
+/** One row of `GET /oauth/grants`. */
+interface ConnectedApp {
+  client_id: string;
+  name: string;
+  self_registered: boolean;
+  redirect_hosts: string[];
+  granted_at: string | null;
+  last_active_at: string | null;
+}
+
 const HELP = help`Usage: kortix tokens <subcommand> [options]
 
-Non-interactive credentials for this account. Reads need token.read; minting
-needs token.create; revoking needs token.revoke.
+Non-interactive credentials for this account. Reads need token.read. Every
+member may mint and revoke their OWN personal keys (token.personal.create,
+token.personal.revoke). Service accounts and other people's keys need
+token.create / token.revoke.
 
 Personal API keys — act as YOU, and die with your membership:
   ls [--mine] [--json]              List the account's keys. --mine narrows to
@@ -101,9 +99,16 @@ Service accounts — act as THEMSELVES, with no inherited access:
   service-accounts ls [--json]              List service accounts.
   service-accounts new <name>               Create one. The bearer prints ONCE.
       [--description <t>] [--expires <when>]
-  service-accounts disable <id>             Disable (reversible only by
-                                            deleting and re-creating).
+  service-accounts disable <id>             Disable the service account (it
+                                            cannot authorize; delete and
+                                            re-create to return).
   service-accounts rm <id> [-y]             Delete permanently.
+
+Connected apps — apps you approved with "Sign in with Kortix" (MCP clients
+such as Claude Code or Cursor). Yours, across every account:
+  apps ls [--json]                  List them.
+  apps rm <client-id> [-y]          Revoke one: its tokens stop working at
+                                    once, and it must ask you again.
 
 A new service account holds NO permissions. Grant it one with
 \`kortix access grant --service-account <id> --role <key>\`.
@@ -123,26 +128,17 @@ Examples:
   kortix tokens ls --mine
   kortix tokens new ci-deploy --expires 90d
   kortix tokens new laptop --project 1a2b… --expires 2027-01-01
+  kortix tokens apps ls
   kortix tokens service-accounts new nightly-reporter --description "Cron"
   kortix access grant --service-account <id> --role member --project 1a2b…
 `;
 
 export async function runTokens(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let mine = false;
@@ -157,24 +153,25 @@ export async function runTokens(argv: string[]): Promise<number> {
     mine = takeFlagBool(rest, ['--mine']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
   let expiresAt: string | undefined;
   if (f.expires !== undefined) {
     const iso = resolveExpiry(f.expires);
-    if (!iso) {
-      process.stderr.write(
-        `${status.err(`--expires "${f.expires}" is not an ISO-8601 instant or a span like 30d/12h/6w/1y.`)}\n`,
+    if (!iso)
+      return fail(
+        `--expires "${f.expires}" is not an ISO-8601 instant or a span like 30d/12h/6w/1y.`,
       );
-      return 2;
-    }
     expiresAt = iso;
   }
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({
+    accountArg: f.account,
+    hostArg: f.host,
+    accountOptional: sub === 'apps',
+  });
   if (!ctx) return 1;
   const saBase = `${iamBase(ctx.accountId)}/service-accounts`;
 
@@ -205,8 +202,7 @@ export async function runTokens(argv: string[]): Promise<number> {
           `  ${C.dim}${pad('NAME', nameW)}   ${pad('PUBLIC KEY', keyW)}   ${pad('STATUS', 7)}   ${pad('EXPIRES', 10)}   TOKEN ID${C.reset}\n`,
         );
         for (const t of tokens) {
-          const state =
-            t.status === 'active' ? t.status : `${C.yellow}${t.status}${C.reset}`;
+          const state = t.status === 'active' ? t.status : `${C.yellow}${t.status}${C.reset}`;
           process.stdout.write(
             `  ${pad(t.name, nameW)}   ${pad(t.public_key, keyW)}   ${pad(state, 7)}   ` +
               `${pad(t.expires_at ? t.expires_at.slice(0, 10) : 'never', 10)}   ${C.faded}${t.token_id}${C.reset}\n`,
@@ -250,26 +246,13 @@ export async function runTokens(argv: string[]): Promise<number> {
         return 0;
       }
 
+      case 'apps':
+        return await connectedApps(ctx.client, positional, { json, yes });
+
       case 'rm':
       case 'revoke':
-      case 'delete': {
-        const tokenId = positional[0];
-        if (!tokenId) return missing('a token id (see `kortix tokens ls`)');
-        if (!yes) {
-          const ok = await confirm(
-            `Revoke API key ${C.bold}${tokenId}${C.reset}? Anything using it stops working immediately.`,
-            false,
-            { onEndOfInput: false },
-          );
-          if (!ok) {
-            process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
-            return 0;
-          }
-        }
-        await ctx.client.delete(`/accounts/tokens/${encodeURIComponent(tokenId)}`);
-        process.stdout.write(`${status.ok(`Revoked ${C.bold}${tokenId}${C.reset}`)}\n`);
-        return 0;
-      }
+      case 'delete':
+        return await revokeToken(ctx.client, positional, { yes });
 
       case 'service-accounts':
       case 'sa':
@@ -287,6 +270,94 @@ export async function runTokens(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+/** `kortix tokens rm` — revoke one of the account's personal API keys. */
+async function revokeToken(
+  client: NonNullable<ReturnType<typeof resolveAccountContext>>['client'],
+  positional: string[],
+  opts: { yes: boolean },
+): Promise<number> {
+  const tokenId = positional[0];
+  if (!tokenId) return missing('a token id (see `kortix tokens ls`)');
+  if (!opts.yes) {
+    const ok = await confirm(
+      `Revoke API key ${C.bold}${tokenId}${C.reset}? Anything using it stops working immediately.`,
+      false,
+      { onEndOfInput: false },
+    );
+    if (!ok) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
+    }
+  }
+  await client.delete(`/accounts/tokens/${encodeURIComponent(tokenId)}`);
+  process.stdout.write(`${status.ok(`Revoked ${C.bold}${tokenId}${C.reset}`)}\n`);
+  return 0;
+}
+
+/** `kortix tokens apps` — OAuth grants you approved ("Sign in with Kortix"). */
+async function connectedApps(
+  client: NonNullable<ReturnType<typeof resolveAccountContext>>['client'],
+  positional: string[],
+  opts: { json: boolean; yes: boolean },
+): Promise<number> {
+  const action = positional[0] ?? 'ls';
+  if (action === 'ls' || action === 'list') {
+    const { grants } = await client.get<{ grants: ConnectedApp[] }>('/oauth/grants');
+    if (opts.json) {
+      emitJson(grants);
+      return 0;
+    }
+    if (grants.length === 0) {
+      process.stdout.write(`\n  ${C.dim}No connected apps.${C.reset}\n\n`);
+      return 0;
+    }
+    const label = (g: ConnectedApp) =>
+      g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name;
+    const nameW = Math.max(...grants.map((g) => visibleWidth(label(g))), 4);
+    process.stdout.write('\n');
+    process.stdout.write(
+      `  ${C.dim}${pad('NAME', nameW)}   ${pad('SIGNS IN AT', 22)}   ${pad('LAST ACTIVE', 11)}   CLIENT ID${C.reset}\n`,
+    );
+    for (const g of grants) {
+      process.stdout.write(
+        `  ${pad(label(g), nameW)}   ${pad(g.redirect_hosts.join(', ') || '-', 22)}   ` +
+          `${pad((g.last_active_at ?? g.granted_at ?? '-').slice(0, 10), 11)}   ${C.faded}${g.client_id}${C.reset}\n`,
+      );
+    }
+    process.stdout.write(
+      `\n  ${C.dim}${grants.length} app${grants.length === 1 ? '' : 's'}${C.reset}\n\n`,
+    );
+    return 0;
+  }
+  if (action === 'rm' || action === 'revoke') {
+    const clientId = positional[1];
+    if (!clientId) return missing('a client id (see `kortix tokens apps ls`)');
+    if (!opts.yes) {
+      const ok = await confirm(
+        `Revoke ${C.bold}${clientId}${C.reset}? It loses access to your account at once.`,
+        false,
+        { onEndOfInput: false },
+      );
+      if (!ok) {
+        process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+        return 0;
+      }
+    }
+    const r = await client.delete<{ revoked_tokens: number }>(
+      `/oauth/grants/${encodeURIComponent(clientId)}`,
+    );
+    if (opts.json) {
+      emitJson(r);
+      return 0;
+    }
+    process.stdout.write(
+      `${status.ok(`Revoked ${C.bold}${clientId}${C.reset} (${r.revoked_tokens} live token${r.revoked_tokens === 1 ? '' : 's'})`)}\n`,
+    );
+    return 0;
+  }
+  return fail(`Unknown \`tokens apps\` action "${action}". Use ls or rm.`);
 }
 
 async function serviceAccounts(
@@ -393,14 +464,6 @@ async function serviceAccounts(
     }
 
     default:
-      process.stderr.write(
-        `${status.err(`unknown service-accounts verb "${verb}" — use ls|new|disable|rm`)}\n`,
-      );
-      return 2;
+      return fail(`unknown service-accounts verb "${verb}" — use ls|new|disable|rm`);
   }
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   projectSecrets,
   projectSessionSecretHandles,
+  roleAssignments,
   projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
@@ -36,7 +37,7 @@ let tokenProjectId: string | undefined = PROJECT_ID;
 let sessionId: string | undefined = SESSION_ID;
 let agentGrant: Record<string, unknown> | null = {
   agent: 'default',
-  kortixCli: 'all',
+  permissions: 'all',
   connectors: 'all',
   env: ['PRIMARY'],
 };
@@ -93,8 +94,7 @@ const databaseMock = {
   select: () => ({
     from: (table: unknown) => ({
       where: () => {
-        if (table === projectSessions)
-          return { limit: async () => (sessionRow ? [sessionRow] : []) };
+        if (table === projectSessions) return { limit: async () => (sessionRow ? [sessionRow] : []) };
         // The egress pin reads the sandbox row to see whether this token is
         // being used from the box it was issued to. `sandboxRow` is null by
         // default, i.e. UNPINNED — which the route must allow, or every session
@@ -108,6 +108,8 @@ const databaseMock = {
         if (table === projectSessionSecretHandles) {
           return { orderBy: async () => handleRows };
         }
+        // Secret audiences (secret-audience.ts): this project narrows none.
+        if (table === roleAssignments) return Promise.resolve([]);
         throw new Error('unexpected table');
       },
     }),
@@ -178,8 +180,6 @@ function buildApp() {
       authType: 'pat' | 'supabase';
       tokenProjectId?: string;
       sessionId?: string;
-      sandboxId?: string;
-      sessionRuntimeKind?: 'worker' | 'environment';
       agentGrant?: Record<string, unknown> | null;
     };
   }>();
@@ -187,11 +187,7 @@ function buildApp() {
     c.set('userId', USER_ID);
     c.set('authType', authType);
     if (tokenProjectId) c.set('tokenProjectId', tokenProjectId);
-    if (sessionId) {
-      c.set('sessionId', sessionId);
-      c.set('sandboxId', sessionId);
-      c.set('sessionRuntimeKind', 'worker');
-    }
+    if (sessionId) c.set('sessionId', sessionId);
     c.set('agentGrant', agentGrant);
     await next();
   });
@@ -249,7 +245,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     sessionId = SESSION_ID;
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: ['PRIMARY'],
     };
@@ -271,14 +267,14 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
    */
   describe('the session credential is bound to its own sandbox', () => {
     test('a request from the pinned sandbox is served', async () => {
-      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
-      const response = await brokerRequest('67.213.121.131');
+      sandboxRow = { metadata: { egress_ip: '198.51.100.21' } };
+      const response = await brokerRequest('198.51.100.21');
       expect(response.status).toBe(200);
       expect(brokerCalls).toHaveLength(1);
     });
 
     test('the SAME token from anywhere else is refused before the secret is decrypted', async () => {
-      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
+      sandboxRow = { metadata: { egress_ip: '198.51.100.21' } };
       const response = await brokerRequest('203.0.113.9');
       expect(response.status).toBe(403);
       expect(await response.json()).toMatchObject({ code: 'sandbox_egress_mismatch' });
@@ -300,7 +296,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     test('a caller with no resolvable address cannot pass a pinned session', async () => {
       // Absent != matching. Treating "unknown" as a match would let anyone
       // through by simply stripping the header.
-      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
+      sandboxRow = { metadata: { egress_ip: '198.51.100.21' } };
       const response = await brokerRequest();
       expect(response.status).toBe(403);
       expect(brokerCalls).toHaveLength(0);
@@ -322,7 +318,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
   test('intersects the immutable agent grant with the session allowlist before decryption', async () => {
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: ['OTHER'],
     };
@@ -334,7 +330,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
 
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: ['PRIMARY'],
     };
@@ -343,15 +339,15 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     expect(sessionDenied.status).toBe(403);
     expect(await sessionDenied.json()).toMatchObject({ code: 'policy_denied' });
     expect(decrypted).toHaveLength(0);
-    expect(
-      audits.every((event) => JSON.stringify(event).includes('shared-secret-value') === false),
-    ).toBe(true);
+    expect(audits.every((event) => JSON.stringify(event).includes('shared-secret-value') === false)).toBe(
+      true,
+    );
   });
 
   test('accepts a broker handle materialized from an all grant narrowed by the session allowlist', async () => {
     agentGrant = {
       agent: 'default',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: 'all',
       env: 'all',
     };
@@ -444,12 +440,11 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
 
   describe('server-side substitution', () => {
     // The egress-enforced path: the guest holds handles, the relay swaps them
-    // for the real values. See
-    // docs/specs/2026-08-19-secrets-exposure-usage-model.md §5.
+    // for the real values.
     beforeEach(() => {
       agentGrant = {
         agent: 'default',
-        kortixCli: 'all',
+        permissions: 'all',
         connectors: 'all',
         env: ['PRIMARY', 'SECOND'],
       };
@@ -483,10 +478,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     test('a secret whose own policy denies this host is never decrypted', async () => {
       // Substitution must not widen who may spend: the destination is admitted
       // for the route's secret, not for this one.
-      handleRows = [
-        handleFor(),
-        secondHandle({ policySnapshot: { rules: [{ host: 'elsewhere.example' }] } }),
-      ];
+      handleRows = [handleFor(), secondHandle({ policySnapshot: { rules: [{ host: 'elsewhere.example' }] } })];
 
       const response = await brokerRequest();
 
@@ -498,7 +490,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     });
 
     test('a secret outside the agent grant is never decrypted', async () => {
-      agentGrant = { agent: 'default', kortixCli: 'all', connectors: 'all', env: ['PRIMARY'] };
+      agentGrant = { agent: 'default', permissions: 'all', connectors: 'all', env: ['PRIMARY'] };
 
       const response = await brokerRequest();
 
@@ -523,7 +515,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
       expect(refused?.after).toMatchObject({ refusals: { forged: 1, stolen: 0, host_denied: 0 } });
     });
 
-    test('a VALID handle minted for another session is audited as stolen, not forged', async () => {
+    test("a VALID handle minted for another session is audited as stolen, not forged", async () => {
       // The tag verifies — this deployment minted it — but the lookup id is not
       // one of THIS session's active handles. Different incident, different
       // reason, and the difference has to survive into the audit row.
@@ -552,7 +544,10 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     });
 
     test('an expired handle is not spendable', async () => {
-      handleRows = [handleFor(), secondHandle({ expiresAt: new Date(Date.now() - 60_000) })];
+      handleRows = [
+        handleFor(),
+        secondHandle({ expiresAt: new Date(Date.now() - 60_000) }),
+      ];
 
       await brokerRequest();
 
@@ -563,11 +558,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
   });
 
   test('records broker failures without recording the secret', async () => {
-    brokerFailure = new MockSecretBrokerError(
-      'upstream_timeout',
-      'upstream request timed out',
-      504,
-    );
+    brokerFailure = new MockSecretBrokerError('upstream_timeout', 'upstream request timed out', 504);
 
     const response = await brokerRequest();
 

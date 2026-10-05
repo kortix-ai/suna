@@ -1,5 +1,7 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -67,21 +69,11 @@ Global options:
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 export async function runGateway(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let json = false;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
@@ -90,8 +82,7 @@ export async function runGateway(argv: string[]): Promise<number> {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
@@ -131,12 +122,6 @@ function outJson(data: unknown): number {
   return 0;
 }
 
-// Write a usage error and return the arg-error exit code (2).
-function fail(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
-}
-
 // Pull an optional leading positional action (e.g. `routing set`) off argv,
 // defaulting when the next token is a flag or absent. Avoids a non-null
 // assertion on `rest.shift()`.
@@ -167,11 +152,7 @@ interface RoutingPolicyDoc {
   capabilities: { write: boolean };
 }
 
-export async function gatewayRouting(
-  rest: string[],
-  opts: CtxOpts,
-  json: boolean,
-): Promise<number> {
+async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'get');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -294,7 +275,7 @@ function renderRouting(doc: RoutingPolicyDoc): number {
 
 // ── Budgets ─────────────────────────────────────────────────────────────────
 
-export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -366,7 +347,7 @@ export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean
 
 // ── External gateway API keys ───────────────────────────────────────────────
 
-export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -421,7 +402,7 @@ export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean):
 
 // ── Usage / analytics ───────────────────────────────────────────────────────
 
-export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   let days: string | undefined;
@@ -457,7 +438,7 @@ export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean)
   }
 }
 
-export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   // Pull flags off FIRST so a flag VALUE (e.g. the `3` in `--limit 3`) is never
   // mistaken for a positional logId.
   let limit: string | undefined;
@@ -509,7 +490,7 @@ export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean):
 
 // ── Playground (test a model end-to-end through the gateway) ─────────────────
 
-export async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   let prompt: string | undefined;
   try {
     prompt = takeFlagValue(rest, ['--prompt', '-p']);

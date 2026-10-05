@@ -10,6 +10,19 @@ import {
   resolveSettingsOverlayHref,
 } from './settings-tabs';
 
+describe('standalone account settings destinations', () => {
+  test('connected opens the selected account Git pane without a project', () => {
+    expect(legacySectionRedirect('', 'connected', 'acc1')).toBe(
+      '/projects?accountId=acc1&accountTab=git',
+    );
+  });
+
+  test('waits for the account rather than guessing a destination', () => {
+    expect(isAccountGraduatedSection('connected')).toBe(true);
+    expect(legacySectionRedirect('', 'connected')).toBeNull();
+  });
+});
+
 describe('SETTINGS_TABS', () => {
   test('holds every tab exactly once', () => {
     expect(new Set(SETTINGS_TABS).size).toBe(SETTINGS_TABS.length);
@@ -206,8 +219,8 @@ describe('legacySectionRedirect', () => {
         opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/customize/review');
-    expect(resolveSettingsOverlayHref('/projects/p1/customize/review')).toEqual({ opensOverlay: false });
+    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
+    expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
   });
 
   test('secrets, channels, and models graduated a SECOND time — off /config, onto their own top-level tab', () => {
@@ -248,8 +261,8 @@ describe('legacySectionRedirect', () => {
   });
 
   test('computers graduated to Connectors — a bookmark must not 404', () => {
-    // `main` (#6313) deleted `computers-view.tsx` and made the computer a
-    // connector (`ComputerTunnelManager`). Both the legacy `/customize/
+    // `main` (#6313) deleted `computers-view.tsx`; a paired computer is an
+    // account of the `computer` connector. Both the legacy `/customize/
     // computers` and the settings-era `/settings/computers` deep links resolve
     // through this map, so neither can land on a tab that no longer exists.
     expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/customize/connectors');
@@ -307,7 +320,7 @@ describe('legacySectionRedirect', () => {
  * stops going where it used to.
  */
 describe('account-scoped sections redirect to /accounts/[id]', () => {
-  // Legacy section id -> the `?tab=` segment `app/(app)/accounts/[id]/page.tsx`
+  // Legacy section id -> the `?tab=` segment `features/accounts/hub/account-hub-content.tsx`
   // reads. Hand-kept mirror of ACCOUNT_GRADUATED, so a rename there without a
   // rename here fails immediately. Two are not 1:1 — the account page calls
   // Organization `settings` and Usage `transactions`. `api-keys` and `tokens`
@@ -334,16 +347,16 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     expect(ACCOUNT_GRADUATED).toEqual(ACCOUNT_SECTIONS);
   });
 
-  test('every id resolves to its account-page tab when an account id is supplied', () => {
+  test('every id opens the account hub over the project it came from', () => {
     for (const [legacyId, tab] of Object.entries(ACCOUNT_SECTIONS)) {
-      // `members` is the one non-generic id: it carries a `&project=`
+      // `members` is the one non-generic id: it carries an `accountProject=`
       // special case (see `legacySectionRedirect`) so a stale
       // `/projects/<id>/members` bookmark lands pre-filtered to the project
       // it came from, not every project the account can see.
       const expected =
         legacyId === 'members'
-          ? `/accounts/acc1?tab=${tab}&project=p1`
-          : `/accounts/acc1?tab=${tab}`;
+          ? `/projects/p1?accountId=acc1&accountTab=${tab}&accountProject=p1`
+          : `/projects/p1?accountId=acc1&accountTab=${tab}`;
       expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe(expected);
     }
   });

@@ -40,14 +40,35 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "review_center"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_worker"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
  * catalog to the contract key list and requires every entry to declare its
  * enforcement.
+ *
+ * ## Hidden flags (`catalogHidden`)
+ *
+ * A flag that has become THE behavior is no longer a choice we present, but it
+ * is not yet safe to delete: support still needs one lever to put a single
+ * project back on the old behavior while that project migrates.
+ * `catalogHidden: true` is exactly that state — RESOLVABLE but UNADVERTISED:
+ *
+ *   • `resolveFeatureFlag` / `resolveFeatureFlags` — UNCHANGED. The platform
+ *     default still applies and an explicit project override still wins.
+ *   • `buildFeatureFlagCatalog` — OMITS the entry, so Settings → Feature flags
+ *     does not list it and no UI presents it as a toggle.
+ *   • `isFeatureFlagKey` — UNCHANGED, so `PATCH /projects/:id/features` keeps
+ *     accepting the key. That is the support escape hatch, and it is the whole
+ *     reason this is not `available: () => false` (which would force the flag
+ *     OFF for every project — the opposite of what a hidden default means).
+ *
+ * A hidden flag is a DATED state, not a parking spot: hide it in the release
+ * that makes it the default, delete it in the next one. The comment on the
+ * entry names the release and the spec section that ends it.
  */
 import { config } from '../config';
+import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
 export type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
@@ -82,18 +103,21 @@ export interface FeatureFlagDef {
   enforcement: FeatureFlagEnforcement;
   /** Mandatory for 'ui-only': why the server does not enforce. */
   enforcementNote?: string;
+  /**
+   * Omit this flag from the serialized catalog ({@link buildFeatureFlagCatalog})
+   * so no UI lists it as a toggle. Resolution and `PATCH /projects/:id/features`
+   * are untouched — see "Hidden flags" in this file's header. Set it only on a
+   * flag whose value is now the product behavior, and delete the flag in the
+   * next release.
+   */
+  catalogHidden?: true;
 }
 
 /**
  * The registry. Order here is the order shown in Settings → Feature flags.
  *
- * agent_tunnel → connector: paired machines are selectable accounts inside a
- * regular `computer` connector profile. A profile can contain one or more
- * machines and uses the normal connector grant, policy, call, and audit paths.
- * Pairing does not auto-create project access. This flag gates the dedicated
- * fleet surface (Customize → Computers, device auth, and tunnel permissions).
- * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration. See docs/specs/computer-connector.md.
+ * Computers need no flag: a paired machine is an account on the project's
+ * `computer` connector. The platform-wide `TUNNEL_ENABLED` env is the only gate.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
@@ -108,29 +132,13 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'agent_tunnel',
-    name: 'Agent Computer Tunnel',
-    description:
-      'Let agents securely reach a local machine — files, shell, and desktop control — over a permissioned reverse tunnel. Connect a computer, then grant access per capability.',
-    stability: 'experimental',
-    // The backend service must be running platform-wide for the surface to work.
-    available: () => config.TUNNEL_ENABLED,
-    // Explicit opt-in: off by default even where the service is available.
-    platformDefault: () => false,
-    enforcement: 'ui-only',
-    enforcementNote:
-      'Tunnel state is account-scoped (device auth, machines) and the computer ' +
-      'connector deliberately materializes independent of this flag — see the ' +
-      'registry header. The platform-wide TUNNEL_ENABLED env is the hard gate.',
-  },
-  {
     key: 'connectors_api_discover',
     name: 'Connectors API Discover',
     description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
-    stability: 'experimental',
+      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
+    stability: 'beta',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
+    // Direct discovery is an explicit opt-in, not the reliable managed default.
     platformDefault: () => false,
     enforcement: 'routes',
   },
@@ -146,23 +154,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'teams',
-    name: 'Microsoft Teams',
-    description:
-      'Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
-    stability: 'experimental',
-    // Always listable. Server-side bot credentials (MICROSOFT_APP_ID /
-    // MICROSOFT_APP_PASSWORD) only decide whether the MANAGED install path is
-    // offered — `teamsMode().available` reports that separately, and a project
-    // can always bring its own bot app. Gating availability on the credentials
-    // would hide the bring-your-own flow on exactly the deployments that need
-    // it (self-host).
-    available: () => true,
-    // Explicit opt-in: a project turns Teams on in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:
@@ -173,7 +164,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => config.LLM_GATEWAY_ENABLED,
     // Fleet rollout switch, default ON (config.ts LLM_GATEWAY_DEFAULT_ENABLED).
     // Turning the flag OFF per project is the first-class native path — the
-    // deliberate lever for deployments (e.g. Essentia) that bring their own
+    // deliberate lever for deployments (e.g. SampleCo) that bring their own
     // keys end to end. Explicit project overrides always win, and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
@@ -186,19 +177,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'llm-catalog/model-picker/model-defaults routes, and gateway title ' +
       'generation. Toggling propagates to active sandboxes via ' +
       'propagateLlmGatewayModeToActiveSandboxes.',
-  },
-  {
-    key: 'review_center',
-    name: 'Review Center',
-    description:
-      'A friendly inbox for change requests, approvals, and agent outputs — review and act (approve, reject, ask for changes) from one place, on the web or from Slack. The surface and what feeds it are still expanding.',
-    stability: 'experimental',
-    // Pure web/DB surface — the routes + table ship with the app, so no operator
-    // env gates it. Always available; a project opts in per Settings.
-    available: () => true,
-    // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
   },
   {
     key: 'meta_agent',
@@ -227,7 +205,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'monitors',
     name: 'Monitors',
     description:
-      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental; see docs/specs/2026-08-12-monitors.md.',
+      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental.',
     stability: 'experimental',
     // Monitors need a provider that can run a persistent (never auto-stopped)
     // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
@@ -239,10 +217,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
+    key: 'reminders',
+    name: 'Reminders',
+    description:
+      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+    stability: 'beta',
+    available: () => true,
+    // Per-project opt-in while the surface settles.
+    platformDefault: () => false,
+    // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
+    // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
+    enforcement: 'routes',
+  },
+  {
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:
-      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, and it uses one of your concurrent-session slots until you use it or it expires. Turn this off to trade instant starts for lower cost.',
+      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
     // The surface is small and server-owned, but the cost tradeoff is real and
     // the presence model is new. `beta` says "we intend this on for everyone,
     // and we expect to tune the grant".
@@ -274,11 +265,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'No dedicated routes. The secret write paths (POST /secrets and PUT ' +
-      '/secrets/:id/strategy in projects/routes/r3.ts) reject a request that ' +
+      'No dedicated routes. The secret write paths (POST /secrets in ' +
+      'projects/routes/secrets.ts, PUT /secrets/:id/strategy in ' +
+      'projects/routes/secret-delivery.ts) reject a request that ' +
       'moves a secret INTO egress delivery when the flag is off. A secret that ' +
       'is already egress keeps serving and stays editable, so turning the flag ' +
       'off never strands an existing enforced secret.',
+  },
+  {
+    key: 'pooled_provider_secrets',
+    name: 'Pooled Provider Secrets',
+    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   {
     key: 'pi_worker',
@@ -287,13 +289,64 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Compile boot artifacts for every push: a pi-based worker runtime .mjs per commit (agent config from kortix.yaml baked in at that exact sha, downloadable per ref+sha) plus the OpenCode compiled-boot artifacts for this project even where KORTIX_COMPILED_BOOT_MODE is off. Harness/worker split experiment. Sessions boot ON the worker when the manifest also sets `runtime: pi`; without that manifest line sessions keep the OpenCode path.',
     stability: 'experimental',
     available: () => true,
-    // Explicit opt-in per project, EXCEPT on a deployment that exists to run pi
-    // (KORTIX_PI_WORKER_DEFAULT_ENABLED), where every project wants it and
-    // asking each one to tick a box is just a way to boot microVMs by accident.
-    // Off ⇒ no artifact is compiled on push and the download route answers 403.
-    // A project's explicit choice still wins in both directions.
-    platformDefault: () => config.KORTIX_PI_WORKER_DEFAULT_ENABLED,
+    // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
+    // the download route answers 403.
+    platformDefault: () => false,
     enforcement: 'routes',
+  },
+  {
+    key: 'pi_harness',
+    name: 'Pi Harness (in-sandbox)',
+    description:
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
+      'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
+  },
+  {
+    key: 'config_releases',
+    name: 'Config Releases',
+    description:
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
+    stability: 'experimental',
+    available: () => true,
+    // OFF by default until this is proven on real projects (Marko, 2026-09-24:
+    // "its off for now, as its untested"). The behaviour it gates is the
+    // intended one; the default is a rollout decision, not a design opinion.
+    // Turn it on per project in Settings, watch it, then widen. Flip this to
+    // `true` when the rollout is done.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: the descriptor route ' +
+      '(POST /projects/:id/sessions/:id/config-release) and the archive route ' +
+      '(GET /projects/:id/config-archives/:tree) answer 403 `feature_disabled` ' +
+      'when off — config-releases/routes.ts. BEHAVIORAL: convergeSessionConfig ' +
+      'returns `disabled` without reaching the box (session-config-convergence.ts), ' +
+      'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
+      'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
+      'no release is built, no archive is stored, and no kortix.config_releases ' +
+      'row is written.',
+  },
+  {
+    key: 'us_region',
+    name: 'US Region',
+    description:
+      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region.",
+    stability: 'experimental',
+    // Two operator gates: Platinum must be the configured provider, and the
+    // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
+    // also what says the Platinum org holds a grant for it. Unset ⇒ hidden.
+    available: () => Boolean(config.PLATINUM_API_KEY) && platinumUsRegion() !== null,
+    platformDefault: () => false,
+    // Read at provisioning (platform/services/session-sandbox.ts
+    // resolveSessionSandboxRegion) and sent as `region` on the Platinum
+    // create. Off ⇒ no region is sent and Platinum places in its home region.
+    enforcement: 'behavioral',
   },
 ];
 
@@ -361,11 +414,15 @@ export interface FeatureFlagView {
 }
 
 /**
- * Build the full per-project catalog the clients render. Self-contained so the
- * UI never hard-codes the flag list — add to FLAGS and it appears.
+ * Build the per-project catalog the clients render. Self-contained so the UI
+ * never hard-codes the flag list — add to FLAGS and it appears.
+ *
+ * `catalogHidden` entries are omitted: they still resolve and are still
+ * writable through `PATCH /projects/:id/features`, they are simply not offered
+ * as a toggle (see "Hidden flags" in this file's header).
  */
 export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
-  return FLAGS.map((f) => ({
+  return FLAGS.filter((f) => !f.catalogHidden).map((f) => ({
     key: f.key,
     name: f.name,
     description: f.description,

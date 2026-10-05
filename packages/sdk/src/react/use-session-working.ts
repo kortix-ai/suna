@@ -1,6 +1,6 @@
 'use client';
 
-import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus } from '../core/runtime/runtime-types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
@@ -8,9 +8,9 @@ import { useSyncStore } from '../browser/stores/sync-store';
 import {
   type SessionTurn,
   type SessionTurnEnded,
+  type SessionTurnFailure,
   getSessionTurn,
 } from '../core/rest/projects-client/sessions';
-import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import {
   type AbortReceipt,
   type SendReceipt,
@@ -20,6 +20,10 @@ import {
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
+import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
+import { createTickSingleFlight } from '../core/session/single-flight';
+import type { SessionTurnOutcome } from '../core/session/turn-end-cause';
+import { TURN_END_SETTLE_MS } from '../core/session/turn-end-settle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 
@@ -71,6 +75,7 @@ export function streamTurnPhase(status: SessionStatus | undefined): 'idle' | 'ac
 export interface SessionTurnObservation {
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
+  recent_failures?: SessionTurnFailure[];
   atMs: number;
 }
 
@@ -114,19 +119,8 @@ export function buildWorkingInputs(input: {
     // live turns whenever a frame was dropped.
     stream: input.status
       ? {
-          // Only `idle` means idle. Everything else — `busy`, `retry`, and any
-          // word this build does not know — is working.
-          //
-          // This used to be the inverse (`busy`/`retry` kept, EVERYTHING else
-          // collapsed to `idle`), which disagreed with `streamTurnPhase` right
-          // above on the same question. The pi runtime emits
-          // `{type:'running'}`, which is outside OpenCode's `idle|busy|retry`
-          // union, so for the whole of every pi turn this asserted "idle" while
-          // the agent was generating: the working indicator and the Stop button
-          // disappeared mid-answer.
-          //
-          // Unknown is not idle. An unreadable status is a reason to keep the
-          // escape hatch visible, not to hide it.
+          // Only an explicit terminal state can clear an active session. An
+          // unknown producer state must preserve the user's Stop control.
           type:
             input.status.type === 'idle'
               ? 'idle'
@@ -170,7 +164,10 @@ const workingObserverCounts = new Map<string, number>();
  * `STREAM_OBSERVATION_MAX_MS` window. The frame's age is a fact about the
  * frame, so it lives with the frame.
  */
-export function streamObservationStamp(storeStampMs: number | undefined, nowMs: number): number {
+export function streamObservationStamp(
+  storeStampMs: number | undefined,
+  nowMs: number,
+): number {
   return storeStampMs ?? nowMs;
 }
 
@@ -194,22 +191,56 @@ export function streamObservationStamp(storeStampMs: number | undefined, nowMs: 
 export async function readSessionTurnObservation(
   projectId: string,
   sessionId: string,
+  options: {
+    /**
+     * May this read answer from the session-open bundle? Default yes — the
+     * open burst is what the bundle is for. The hook passes `false` for every
+     * read after its first: a poll, or a read issued BECAUSE something changed
+     * (a status frame, the inbox draining), must not be answered by a snapshot
+     * taken before the change. The bundle stays claimable for seconds, and in
+     * that window a re-read that came back with the bundle's `turns: []`
+     * retired the very floor that asked for it.
+     */
+    bundle?: boolean;
+  } = {},
 ): Promise<SessionTurnObservation> {
-  const claimed = claimOpenBundle(projectId, sessionId);
+  const claimed = options.bundle === false ? null : claimOpenBundle(projectId, sessionId);
   if (claimed) {
     const bundle = await claimed;
     const turn = bundle ? openBundleTurn(bundle) : null;
     // The stamp is the bundle's `observed_at` — the instant the SERVER took the
     // reading — never arrival, for the same reason the direct read below stamps
     // before the request and not after it.
-    if (turn) return { turns: turn.turns, last_ended: turn.last_ended, atMs: turn.atMs };
+    if (turn) {
+      return {
+        turns: turn.turns,
+        last_ended: turn.last_ended,
+        recent_failures: turn.recent_failures,
+        atMs: turn.atMs,
+      };
+    }
   }
-  // Stamped BEFORE the request. An answer is only as fresh as the moment
-  // it was asked, and a slow proxy hop must not make a stale read look new.
-  const atMs = Date.now();
-  const status = await getSessionTurn(projectId, sessionId);
-  return { turns: status.turns ?? [], last_ended: status.last_ended, atMs };
+  // ONE request per session per tick. Three components mount the `/turn`
+  // query and each one's status-phase effect invalidates it in the same
+  // commit; TanStack's cancel-and-refire then issued three requests the wire
+  // never aborted (staging HAR 2026-09-23: identical triples, same ms). A
+  // trigger in a LATER tick still gets a read of its own — see
+  // `createTickSingleFlight`.
+  return turnReads(`${projectId}/${sessionId}`, async () => {
+    // Stamped BEFORE the request. An answer is only as fresh as the moment
+    // it was asked, and a slow proxy hop must not make a stale read look new.
+    const atMs = Date.now();
+    const status = await getSessionTurn(projectId, sessionId);
+    return {
+      turns: status.turns ?? [],
+      last_ended: status.last_ended,
+      recent_failures: status.recent_failures,
+      atMs,
+    };
+  });
 }
+
+const turnReads = createTickSingleFlight<SessionTurnObservation>();
 
 export function useSessionWorking(
   projectId: string,
@@ -312,10 +343,15 @@ export function useSessionWorking(
 
   const pollOwner = usePollOwner(`turn:${projectId}/${sessionId}`, canRead);
 
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: qk.project.sessionTurn(projectId, sessionId),
     enabled: canRead,
-    queryFn: () => readSessionTurnObservation(projectId, sessionId),
+    // The bundle answers only the FIRST read; see `readSessionTurnObservation`.
+    queryFn: () =>
+      readSessionTurnObservation(projectId, sessionId, {
+        bundle: queryClient.getQueryData(qk.project.sessionTurn(projectId, sessionId)) === undefined,
+      }),
     // ONE timer per session, however many components mount this hook.
     // `refetchInterval` is scheduled per OBSERVER: three mount points on a
     // session route (this hook is called by `useSession`, the composer and the
@@ -343,7 +379,6 @@ export function useSessionWorking(
   // The prompt list is invalidated with it: a reading of the inbox is the one
   // input with a life shorter than its own poll interval, and the turn ending
   // is exactly when a `waiting` row becomes a running one.
-  const queryClient = useQueryClient();
   // Keyed on the PHASE, not on the observation instant. The instant changes on
   // every frame, and the runtime emits many per turn — see `streamTurnPhase`
   // for the measured `busy`/`retry` oscillation this stops re-fetching on.
@@ -357,6 +392,27 @@ export function useSessionWorking(
       queryKey: qk.project.sessionPrompts(projectId, sessionId),
     });
   }, [canRead, projectId, sessionId, streamPhase, queryClient]);
+
+  // A ROW LEAVING THE QUEUE is news about `/turn`, and nothing else would ask.
+  //
+  // The drain is the moment the control plane hands a prompt to the runtime, so
+  // the ledger row for the turn it opens is written by a request this tab has
+  // not read since — and the projection's drain floor holds `working` until a
+  // read taken AFTER that instant answers. Waiting for the ordinary cadence
+  // would make that floor a 5-15s guess instead of a round trip.
+  //
+  // Keyed on the store's own stamp, not on a per-mount ref: three hooks observe
+  // one session (`useSession`, the composer, the panel) and a mount that first
+  // sees the store after the transition would never fire. One stamp, one fire,
+  // whichever mount sees it first. `/prompts` is deliberately NOT invalidated —
+  // re-reading a list that is empty for a known reason buys nothing.
+  const drainedAtMs = inbox?.drainedAtMs;
+  useEffect(() => {
+    if (!canRead || drainedAtMs == null) return;
+    void queryClient.invalidateQueries({
+      queryKey: qk.project.sessionTurn(projectId, sessionId),
+    });
+  }, [canRead, projectId, sessionId, drainedAtMs, queryClient]);
 
   // Re-evaluated on every render because `nowMs` moves — the projection is
   // pure, so this costs one object and cannot drift from the poll's own view.
@@ -384,8 +440,54 @@ export function useSessionWorking(
 
   // Stable identity while the ANSWER is unchanged, so consumers that memoize on
   // it are not re-run once per render just because `now` moved.
-  const identity = `${projection.state}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
+  const identity = `${projection.state}|${projection.pendingDelivery ?? false}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // biome-ignore lint/correctness/useExhaustiveDependencies: these five fields define projection identity; object identity does not.
   return useMemo(() => projection, [identity]);
+}
+
+/**
+ * Why this session's turns ended, read from the `/turn` cache entry
+ * `useSessionWorking` keeps fresh. A cache reader: it never fetches, so mounting
+ * it adds no request and no poll timer. Every field is `undefined` until the
+ * owner has read. Feed it to `turnEndNotice` or `turnEndCause`.
+ *
+ * One nudge: when the newest reading lists a failure with no cause that ended
+ * inside `TURN_END_SETTLE_MS`, the cause may be one frame behind. The hook then
+ * invalidates the entry once the window has passed, so the OWNER reads again —
+ * otherwise the turn stays silent until the next idle poll.
+ */
+export function useSessionTurnOutcome(projectId: string, sessionId: string): SessionTurnOutcome {
+  const queryClient = useQueryClient();
+  const query = useQuery<SessionTurnObservation>({
+    queryKey: qk.project.sessionTurn(projectId, sessionId),
+    queryFn: () => readSessionTurnObservation(projectId, sessionId, { bundle: false }),
+    enabled: false,
+  });
+  const lastEnded = query.data?.last_ended;
+  const recentFailures = query.data?.recent_failures;
+  const atMs = query.data?.atMs;
+
+  const settleInMs = useMemo(() => {
+    if (typeof atMs !== 'number') return null;
+    let wait: number | null = null;
+    for (const failure of recentFailures ?? []) {
+      if (failure.error || !failure.ended_at) continue;
+      const remaining = TURN_END_SETTLE_MS - (atMs - Date.parse(failure.ended_at));
+      if (remaining > 0 && (wait === null || remaining > wait)) wait = remaining;
+    }
+    return wait;
+  }, [recentFailures, atMs]);
+
+  useEffect(() => {
+    if (settleInMs === null) return;
+    const timer = setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: qk.project.sessionTurn(projectId, sessionId) });
+    }, settleInMs);
+    return () => clearTimeout(timer);
+  }, [settleInMs, queryClient, projectId, sessionId]);
+
+  return useMemo(
+    () => ({ last_ended: lastEnded, recent_failures: recentFailures, atMs }),
+    [lastEnded, recentFailures, atMs],
+  );
 }

@@ -2,22 +2,33 @@
  * Utility functions for Mermaid diagram detection and processing
  */
 
+import { isMermaidCode } from '@kortix/shared/markdown-math';
+
+// Shared with apps/mobile, which routes the same fences to its diagram renderer.
+export { isMermaidCode };
+
 /**
- * Detects if a code block contains Mermaid syntax
+ * Validates Mermaid syntax (basic validation)
  */
-export function isMermaidCode(language: string, code: string): boolean {
-  if (!code?.trim()) return false;
+export function validateMermaidSyntax(code: string): { valid: boolean; error?: string } {
+  if (!code?.trim()) {
+    return { valid: false, error: 'Empty diagram' };
+  }
 
-  // Check if language is explicitly mermaid
-  if (language === 'mermaid') return true;
+  try {
+    // Basic syntax checks
+    const lines = code
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
 
-  // For unknown languages, only check if content STARTS with a mermaid diagram
-  // This prevents false positives from content that happens to contain mermaid keywords
-  if (!language || language === 'text' || language === 'plain') {
-    const trimmed = code.trim();
-    const firstLine = trimmed.split('\n')[0]?.toLowerCase().trim();
+    if (lines.length === 0) {
+      return { valid: false, error: 'Empty diagram' };
+    }
 
-    const mermaidStarters = [
+    // Check for basic mermaid structure
+    const firstLine = lines[0].toLowerCase();
+    const validStarters = [
       'graph',
       'flowchart',
       'sequencediagram',
@@ -38,55 +49,17 @@ export function isMermaidCode(language: string, code: string): boolean {
       'c4container',
       'c4component',
       'c4dynamic',
-      // Git graph specific patterns (gitgraph starts with these commands)
-      'commit',
-      'branch',
-      'checkout',
-      'merge'
     ];
 
-    // Only treat as Mermaid if the first line starts with a diagram declaration
-    return mermaidStarters.some(starter => firstLine.startsWith(starter.toLowerCase()));
-  }
-
-  return false;
-}
-
-/**
- * Validates Mermaid syntax (basic validation)
- */
-export function validateMermaidSyntax(code: string): { valid: boolean; error?: string } {
-  if (!code?.trim()) {
-    return { valid: false, error: 'Empty diagram' };
-  }
-
-  try {
-    // Basic syntax checks
-    const lines = code.split('\n').map(line => line.trim()).filter(Boolean);
-
-    if (lines.length === 0) {
-      return { valid: false, error: 'Empty diagram' };
-    }
-
-    // Check for basic mermaid structure
-    const firstLine = lines[0].toLowerCase();
-    const validStarters = [
-      'graph', 'flowchart', 'sequencediagram', 'classdiagram',
-      'statediagram', 'erdiagram', 'journey', 'gantt', 'pie',
-      'gitgraph', 'mindmap', 'timeline', 'sankey', 'block',
-      'quadrant', 'requirement', 'c4context', 'c4container',
-      'c4component', 'c4dynamic'
-    ];
-
-    const hasValidStarter = validStarters.some(starter =>
-      firstLine.startsWith(starter) ||
-      firstLine.includes(starter)
+    const hasValidStarter = validStarters.some(
+      (starter) => firstLine.startsWith(starter) || firstLine.includes(starter),
     );
 
     if (!hasValidStarter) {
       return {
         valid: false,
-        error: 'Diagram must start with a valid Mermaid diagram type (e.g., graph, flowchart, sequenceDiagram, etc.)'
+        error:
+          'Diagram must start with a valid Mermaid diagram type (e.g., graph, flowchart, sequenceDiagram, etc.)',
       };
     }
 
@@ -94,7 +67,7 @@ export function validateMermaidSyntax(code: string): { valid: boolean; error?: s
   } catch (error) {
     return {
       valid: false,
-      error: error instanceof Error ? error.message : 'Invalid syntax'
+      error: error instanceof Error ? error.message : 'Invalid syntax',
     };
   }
 }
@@ -128,7 +101,7 @@ export function extractMermaidDiagrams(content: string): Array<{
         original,
         code: code.trim(),
         language: language || 'mermaid',
-        index
+        index,
       });
     }
     index++;

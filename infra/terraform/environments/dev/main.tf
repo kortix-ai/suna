@@ -95,6 +95,42 @@ data "aws_secretsmanager_secret" "env" {
   name = "kortix-dev-env"
 }
 
+# ── Project snapshot object store (S3 config provider) ────────────────────────
+# Private bucket the API's leader worker publishes prebuilt project snapshots
+# to, and sandboxes read through short-lived presigned GETs. The name is
+# deterministic on purpose: the task names it through the non-secret
+# KORTIX_PROJECT_SNAPSHOT_S3_BUCKET / _S3_REGION overrides in the deploy
+# workflow (see .github/workflows/deploy-<env>.yml). Applying this creates the bucket
+# and the task-role grant only; naming it in the task env starts the producer;
+# KORTIX_PROJECT_SNAPSHOT_MODE / a project's metadata turns consumption on.
+module "project_snapshots" {
+  source = "../../modules/project-snapshots-bucket"
+  name   = "${local.name}-project-snapshots"
+  tags   = local.tags
+  # Transfer Acceleration for the dev measurement of 2026-09-16: the bucket is
+  # in us-west-2 while the sandboxes are not (Daytona `us` boxes on the US east
+  # coast, Platinum boxes in Amsterdam), and a 1.6 MB boot object over a
+  # 150-190 ms round trip is bound by TLS setup + TCP slow start. Pairs with
+  # KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE=true in deploy-dev.yml's task env
+  # overrides. Flipping this back costs about USD 0.04/GB extra.
+  transfer_acceleration = true
+}
+
+# ── Audit-event archive (WORM) ────────────────────────────────────────────────
+# Weekly kortix.audit_events partitions older than the 90-day hot window,
+# exported by the API as gzip JSONL with Object Lock retention (365 days). The
+# task names it through AUDIT_ARCHIVE_BUCKET / AUDIT_ARCHIVE_REGION in the
+# deploy workflow. Applying this creates the bucket, its KMS key, and the
+# task-role grant only.
+module "audit_archive" {
+  source = "../../modules/audit-archive-bucket"
+  name   = "${local.name}-audit-archive"
+  # Disposable environment: GOVERNANCE lets an operator with s3:BypassGovernanceRetention
+  # clear test data. Prod uses COMPLIANCE (the module default).
+  object_lock_mode = "GOVERNANCE"
+  tags             = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -115,10 +151,15 @@ module "api" {
   environment = merge(var.api_environment, {
     LLM_GATEWAY_PROXY_TARGET = "https://gateway-dev-ecs-fargate.kortix.com"
   })
-  secrets                 = var.api_secrets
-  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
-  ses_send_region         = "us-east-2"
-  ses_send_identity_names = ["kortix.com", "kortix.ai"]
+  secrets                     = var.api_secrets
+  secrets_blob_arn            = data.aws_secretsmanager_secret.env.arn
+  ses_send_region             = "us-east-2"
+  ses_send_identity_names     = ["kortix.com", "kortix.ai"]
+  project_snapshots_enabled   = true
+  project_snapshot_bucket_arn = module.project_snapshots.bucket_arn
+  audit_archive_enabled       = true
+  audit_archive_bucket_arn    = module.audit_archive.bucket_arn
+  audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
@@ -182,7 +223,7 @@ module "gateway" {
   # 2 GiB gives admission a 1 GiB budget (memory-budget.ts takes 50%), i.e.
   # ~341 MiB of concurrent wire bytes at the measured 3x amplification. The old
   # 512 MiB (dev) / 1 GiB (staging, prod) sat right on top of the size that
-  # OOM-killed the Essentia gateway on a single 28 MB request.
+  # OOM-killed the SampleCo gateway on a single 28 MB request.
   #
   # Capacity comes from REPLICAS, not from one big task: the gateway is
   # stateless and ALBRequestCountPerTarget already scales it. min_capacity is

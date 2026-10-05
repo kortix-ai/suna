@@ -22,29 +22,36 @@
  * while this tab is active, so opening the panel never fires its queries.
  */
 
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   KeyIcon as KeyRound,
   PlusIcon as Plus,
-  ShieldCheckIcon as ShieldCheck,
   ShieldWarningIcon as ShieldWarning,
   DeviceMobileIcon as Smartphone,
   TrashIcon as Trash2,
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+
+import { CopyButton } from '@/components/markdown/copy-button';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { inputSurfaceClasses, inputTransitionClasses } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
+import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
@@ -63,9 +70,11 @@ export function totpQrSrc(qr: string): string {
 export function FactorRow({
   factor,
   onRemove,
+  copy = DEFAULT_SECURITY_TAB_COPY,
 }: {
   factor: { id: string; friendly_name?: string; factor_type?: string; status?: string };
   onRemove: (id: string) => void;
+  copy?: SecurityTabCopy;
 }) {
   const Icon = factor.factor_type === 'phone' ? Smartphone : KeyRound;
   return (
@@ -77,21 +86,25 @@ export function FactorRow({
         <div className="min-w-0">
           <div className="text-foreground truncate text-sm">
             {factor.friendly_name ||
-              (factor.factor_type === 'phone' ? 'Phone' : 'Authenticator app')}
+              (factor.factor_type === 'phone' ? copy.phone : copy.authenticatorApp)}
           </div>
           <div className="text-muted-foreground text-xs">
-            {factor.factor_type === 'phone' ? 'SMS' : 'Authenticator app (TOTP)'}
+            {factor.factor_type === 'phone' ? copy.sms : copy.authenticatorTotp}
           </div>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Badge variant={factor.status === 'verified' ? 'kortix' : 'outline'} size="xs">
-          {factor.status}
-        </Badge>
+        {/* A verified factor is the normal case and needs no label; only an
+            unfinished one is called out. */}
+        {factor.status === 'verified' ? null : (
+          <Badge variant="outline" size="xs">
+            {factor.status === 'unverified' ? copy.unverified : factor.status}
+          </Badge>
+        )}
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Remove factor"
+          aria-label={copy.removeFactor}
           onClick={() => onRemove(factor.id)}
         >
           <Trash2 className="size-4" />
@@ -101,13 +114,142 @@ export function FactorRow({
   );
 }
 
+const CODE_LENGTH = 6;
+
+/** Groups a TOTP secret in fours, the way authenticator apps print it,
+ *  four groups to a line so a 32-character key splits into two even rows. */
+export function formatSecret(secret: string): string {
+  return secret
+    .replace(/(.{4})(?=.)/g, '$1 ')
+    .replace(/((?:\S{4} ){3}\S{4}) /g, '$1\n');
+}
+
+/** The enrollment dialog: scan on the left, type the code on the right.
+ *  One real input sits over six drawn cells, so paste, autofill
+ *  (`one-time-code`) and screen readers all see a single field. The
+ *  container verifies as soon as the sixth digit lands. */
+export function EnrollDialog({
+  enrolling,
+  code,
+  onCodeChange,
+  onVerify,
+  isVerifying,
+  onCancel,
+  copy,
+}: {
+  enrolling: EnrollingFactor | null;
+  code: string;
+  onCodeChange: (value: string) => void;
+  onVerify: () => void;
+  isVerifying: boolean;
+  onCancel: () => void;
+  copy: SecurityTabCopy;
+}) {
+  return (
+    <Modal open={enrolling !== null} onOpenChange={(open) => !open && onCancel()}>
+      <ModalContent
+        // modal.tsx centres only from `lg`. From `sm` (640px, every tablet in
+        // portrait) this is the same centred two-column window as desktop;
+        // phones keep the bottom sheet.
+        className="overflow-hidden border-0 sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:h-auto sm:w-[calc(100%-3rem)] sm:max-w-[46rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl lg:h-auto lg:max-w-[46rem]"
+        modalClassName="space-y-0"
+      >
+        {enrolling ? (
+          <div className="flex flex-col sm:flex-row">
+            {/* `dark` scopes the dark tokens to this panel in both themes. */}
+            <div className="dark bg-background text-foreground border-border flex shrink-0 flex-col gap-5 border-b p-6 sm:w-[44%] sm:gap-6 sm:border-e sm:border-b-0 md:w-[21rem]">
+              <div className="space-y-1 pe-8 sm:pe-0">
+                <h3 className="text-lg font-semibold tracking-tight">{copy.scanTitle}</h3>
+                <p className="text-muted-foreground text-sm text-pretty">{copy.scanDescription}</p>
+              </div>
+              {/* biome-ignore lint/performance/noImgElement: QR is an inline SVG data URL, next/image adds nothing */}
+              <img
+                src={totpQrSrc(enrolling.qr)}
+                alt={copy.qrAlt}
+                className="aspect-square w-full max-w-64 self-center rounded-lg bg-white p-3 sm:max-w-none"
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-col gap-6 p-6">
+              <div className="space-y-1 pe-8">
+                <ModalTitle className="text-lg leading-7 tracking-tight">{copy.codeTitle}</ModalTitle>
+                <ModalDescription className="text-pretty">{copy.codeDescription}</ModalDescription>
+              </div>
+
+              <label className="group relative flex items-center justify-between gap-2 sm:gap-0">
+                <span className="sr-only">{copy.codeTitle}</span>
+                {Array.from({ length: CODE_LENGTH }, (_, i) => (
+                  <span
+                    key={i}
+                    aria-hidden
+                    className={cn(
+                      inputSurfaceClasses,
+                      inputTransitionClasses,
+                      'text-foreground flex h-14 w-[15%] items-center justify-center font-mono text-2xl font-medium tracking-tight',
+                      // The real input is invisible; the cell it is typing into
+                      // wears the Input focus treatment while the field has focus.
+                      i === Math.min(code.length, CODE_LENGTH - 1) &&
+                        'group-focus-within:border-ring group-focus-within:ring-ring/15 group-focus-within:ring-3',
+                    )}
+                  >
+                    {code[i] ?? ''}
+                  </span>
+                ))}
+                <input
+                  value={code}
+                  onChange={(e) =>
+                    onCodeChange(e.target.value.replace(/\D/g, '').slice(0, CODE_LENGTH))
+                  }
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={CODE_LENGTH}
+                  disabled={isVerifying}
+                  autoFocus
+                  className="absolute inset-0 cursor-text opacity-0"
+                />
+              </label>
+
+              {enrolling.secret ? (
+                <div className="border-border flex-1 space-y-2 border-t pt-5">
+                  <div className="text-muted-foreground text-xs font-medium">
+                    {copy.manualSecret}
+                  </div>
+                  <div className="border-border bg-muted/40 flex min-h-10 items-center justify-between gap-2 rounded-md border py-1.5 ps-3 pe-1">
+                    <code className="min-w-0 font-mono text-xs leading-5 font-medium tracking-tight whitespace-pre-line">
+                      {formatSecret(enrolling.secret)}
+                    </code>
+                    <CopyButton code={enrolling.secret} className="shrink-0" />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={onCancel}>
+                  {copy.cancel}
+                </Button>
+                <Button
+                  onClick={onVerify}
+                  disabled={code.length !== CODE_LENGTH || isVerifying}
+                  className="gap-1.5"
+                >
+                  {isVerifying ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+                  {copy.verifyAndEnable}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </ModalContent>
+    </Modal>
+  );
+}
+
 export interface SecurityTabViewProps {
   // Two-factor authentication
   factors?: FactorInfo[];
   factorsLoading?: boolean;
   factorsError?: boolean;
   onRetryFactors?: () => void;
-  sessionVerified?: boolean;
   removeFactorTarget?: string | null;
   onRequestRemoveFactor?: (id: string) => void;
   onCancelRemoveFactor?: () => void;
@@ -122,10 +264,106 @@ export interface SecurityTabViewProps {
   isVerifyingEnroll?: boolean;
   onCancelEnroll?: () => void;
 
+  // Devices
+  devices?: DeviceRow[];
+  devicesLoading?: boolean;
+  devicesError?: boolean;
+  onRetryDevices?: () => void;
+
   // Other devices
   onSignOutOtherDevices?: () => void;
   isSigningOutOtherDevices?: boolean;
+  copy?: Partial<SecurityTabCopy>;
 }
+
+/** One row in the Devices section. `detail` arrives as the finished,
+ *  translated string — the container composes it, so the pure view holds no
+ *  date formatting and no locale hook. */
+export interface DeviceRow {
+  label: string;
+  detail?: string;
+}
+
+export interface SecurityTabCopy {
+  twoFactorTitle: string;
+  twoFactorDescription: string;
+  authenticatorApp: string;
+  authenticatorDescription: string;
+  statusOn: string;
+  addAuthenticatorApp: string;
+  factorsLoadFailed: string;
+  retry: string;
+  factorsUnchanged: string;
+  noFactorEnrolled: string;
+  noFactorDescription: string;
+  scanTitle: string;
+  scanDescription: string;
+  qrAlt: string;
+  manualSecret: string;
+  codeTitle: string;
+  codeDescription: string;
+  verifyAndEnable: string;
+  cancel: string;
+  removeFactorTitle: string;
+  removeFactorDescription: string;
+  removeFactor: string;
+  devices: string;
+  currentDevice: string;
+  deviceActive: string;
+  noDevices: string;
+  noDevicesDescription: string;
+  devicesLoadFailed: string;
+  signOutOtherDevices: string;
+  signOutOtherDevicesDescription: string;
+  phone: string;
+  sms: string;
+  authenticatorTotp: string;
+  verified: string;
+  unverified: string;
+}
+
+export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
+  twoFactorTitle: 'Two-factor authentication',
+  twoFactorDescription:
+    'A second factor keeps your account safe even if your sign-in is compromised.',
+  authenticatorApp: 'Authenticator app',
+  authenticatorDescription: 'Add an authenticator app (TOTP) as a second factor.',
+  statusOn: 'On · Asked at sign-in and before sensitive changes',
+  addAuthenticatorApp: 'Add authenticator app',
+  factorsLoadFailed: 'Couldn’t load your authenticator apps',
+  retry: 'Retry',
+  factorsUnchanged:
+    'Your two-factor settings are unchanged — this is only the list failing to load.',
+  noFactorEnrolled: 'No second factor enrolled',
+  noFactorDescription:
+    'If your organization requires MFA, you’ll be blocked from gated actions until you enroll an authenticator here.',
+  scanTitle: 'Scan with your phone',
+  scanDescription: 'Open any authenticator app and scan this code.',
+  qrAlt: 'TOTP enrollment QR code',
+  manualSecret: 'Can’t scan? Enter this key',
+  codeTitle: 'Enter the code',
+  codeDescription: 'Type the 6 digits your app shows. It verifies on its own.',
+  verifyAndEnable: 'Verify',
+  cancel: 'Cancel',
+  removeFactorTitle: 'Remove this factor?',
+  removeFactorDescription:
+    'If your organization requires MFA and this is your only verified factor, you will be locked out of gated actions until you enroll again.',
+  removeFactor: 'Remove factor',
+  devices: 'Devices',
+  currentDevice: 'This browser',
+  deviceActive: 'Active',
+  noDevices: 'No signed-in devices',
+  noDevicesDescription: 'You are not signed in on any device right now.',
+  devicesLoadFailed: 'Couldn’t load your signed-in devices',
+  signOutOtherDevices: 'Sign out other devices',
+  signOutOtherDevicesDescription:
+    'Ends every other session signed in as you. This browser stays signed in.',
+  phone: 'Phone',
+  sms: 'SMS',
+  authenticatorTotp: 'Authenticator app (TOTP)',
+  verified: 'verified',
+  unverified: 'unverified',
+};
 
 /** Presentational only — no hooks, no data fetching. Every prop is optional
  *  with a safe default so the bare `<SecurityTabView />` the test file
@@ -135,7 +373,6 @@ export function SecurityTabView({
   factorsLoading = false,
   factorsError = false,
   onRetryFactors = () => {},
-  sessionVerified = false,
   removeFactorTarget = null,
   onRequestRemoveFactor = () => {},
   onCancelRemoveFactor = () => {},
@@ -149,9 +386,15 @@ export function SecurityTabView({
   onVerifyEnroll = () => {},
   isVerifyingEnroll = false,
   onCancelEnroll = () => {},
+  devices = [],
+  devicesLoading = false,
+  devicesError = false,
+  onRetryDevices = () => {},
   onSignOutOtherDevices = () => {},
   isSigningOutOtherDevices = false,
+  copy: copyOverrides = {},
 }: SecurityTabViewProps) {
+  const copy = { ...DEFAULT_SECURITY_TAB_COPY, ...copyOverrides };
   const verified = factors.filter((f) => f.status === 'verified');
 
   return (
@@ -161,30 +404,24 @@ export function SecurityTabView({
       {/* Two-factor authentication */}
       <section className="space-y-3">
         <SettingsSubsectionHeader
-          title="Two-factor authentication"
-          description="A second factor keeps your account safe even if your sign-in is compromised."
+          title={copy.twoFactorTitle}
+          description={copy.twoFactorDescription}
         />
 
         <SettingsRowGroup>
           <SettingsRow
-            label="Authenticator app"
-            description="Add an authenticator app (TOTP) as a second factor."
+            label={copy.authenticatorApp}
+            description={
+              verified.length > 0 ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="bg-kortix-green size-1.5 shrink-0 rounded-full" />
+                  {copy.statusOn}
+                </span>
+              ) : (
+                copy.authenticatorDescription
+              )
+            }
           >
-            {verified.length > 0 && (
-              <Badge
-                variant="secondary"
-                size="xs"
-                className={cn(
-                  'shrink-0 gap-1',
-                  sessionVerified
-                    ? 'bg-kortix-green/15 text-kortix-green border-transparent'
-                    : 'text-muted-foreground',
-                )}
-              >
-                <ShieldCheck className="size-3.5" />
-                {sessionVerified ? 'Session verified' : 'Enrolled'}
-              </Badge>
-            )}
             {enrolling ? null : (
               <Button
                 size="sm"
@@ -193,7 +430,7 @@ export function SecurityTabView({
                 disabled={isStartingEnroll}
               >
                 {isStartingEnroll ? <Loading className="size-3.5" /> : <Plus className="size-4" />}
-                Add authenticator app
+                {copy.addAuthenticatorApp}
               </Button>
             )}
           </SettingsRow>
@@ -206,7 +443,9 @@ export function SecurityTabView({
               <Skeleton className="h-8 w-full rounded-sm" />
             </div>
           ) : factorsError ? null : (
-            factors.map((f) => <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} />)
+            factors.map((f) => (
+              <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} copy={copy} />
+            ))
           )}
         </SettingsRowGroup>
 
@@ -222,87 +461,37 @@ export function SecurityTabView({
           <InfoBanner
             tone="destructive"
             icon={Warning}
-            title="Couldn’t load your authenticator apps"
+            title={copy.factorsLoadFailed}
             action={
               <Button variant="outline" size="sm" onClick={onRetryFactors}>
-                Retry
+                {copy.retry}
               </Button>
             }
           >
-            Your two-factor settings are unchanged — this is only the list failing to load.
+            {copy.factorsUnchanged}
           </InfoBanner>
         ) : !factorsLoading && factors.length === 0 && !enrolling ? (
-          <InfoBanner tone="warning" icon={ShieldWarning} title="No second factor enrolled">
-            If your organization requires MFA, you’ll be blocked from gated actions until you enroll
-            an authenticator here.
+          <InfoBanner tone="warning" icon={ShieldWarning} title={copy.noFactorEnrolled}>
+            {copy.noFactorDescription}
           </InfoBanner>
         ) : null}
 
-        {enrolling ? (
-          <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
-            <div>
-              <h4 className="text-foreground text-sm font-medium">
-                Scan with your authenticator app
-              </h4>
-              <p className="text-muted-foreground mt-1 text-xs text-pretty">
-                Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code
-                it shows.
-              </p>
-            </div>
-            <div className="flex items-start gap-4">
-              {/* biome-ignore lint/performance/noImgElement: QR is an inline SVG data URL, next/image adds nothing */}
-              <img
-                src={totpQrSrc(enrolling.qr)}
-                alt="TOTP enrollment QR code"
-                className="border-border/60 size-36 shrink-0 rounded-md border bg-white p-2"
-              />
-              <div className="min-w-0 flex-1 space-y-3">
-                {enrolling.secret && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Manual entry secret</Label>
-                    <code className="border-border/60 bg-muted/30 block truncate rounded border px-2 py-1.5 font-mono text-xs">
-                      {enrolling.secret}
-                    </code>
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <Label className="text-xs">6-digit code</Label>
-                  <Input
-                    value={enrollCode}
-                    onChange={(e) =>
-                      onEnrollCodeChange(e.target.value.replace(/\D/g, '').slice(0, 6))
-                    }
-                    placeholder="123456"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    className="w-32 font-mono tracking-widest"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={onVerifyEnroll}
-                    disabled={enrollCode.length !== 6 || isVerifyingEnroll}
-                    className="gap-1.5"
-                  >
-                    {isVerifyingEnroll && <Loading className="size-4" />}
-                    Verify and enable
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={onCancelEnroll}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <EnrollDialog
+          enrolling={enrolling}
+          code={enrollCode}
+          onCodeChange={onEnrollCodeChange}
+          onVerify={onVerifyEnroll}
+          isVerifying={isVerifyingEnroll}
+          onCancel={onCancelEnroll}
+          copy={copy}
+        />
 
         <ConfirmDialog
           open={removeFactorTarget !== null}
           onOpenChange={(open) => !open && onCancelRemoveFactor()}
-          title="Remove this factor?"
-          description="If your organization requires MFA and this is your only verified factor, you will be locked out of gated actions until you enroll again."
-          confirmLabel="Remove factor"
+          title={copy.removeFactorTitle}
+          description={copy.removeFactorDescription}
+          confirmLabel={copy.removeFactor}
           confirmVariant="destructive"
           onConfirm={onConfirmRemoveFactor}
           isPending={isRemovingFactor}
@@ -311,11 +500,38 @@ export function SecurityTabView({
 
       {/* Devices */}
       <section className="space-y-3">
-        <SettingsSubsectionHeader title="Devices" />
+        <SettingsSubsectionHeader title={copy.devices} />
         <SettingsRowGroup>
+          {/* While the list is in flight, one shape-matched skeleton stands in
+              for a device row, so the group does not jump when the answer
+              lands — same answer as the factor list above. */}
+          {devicesLoading ? (
+            <div className="px-4 py-3">
+              <Skeleton className="h-8 w-full rounded-sm" />
+            </div>
+          ) : (
+            devices.map((device) => (
+              <div key={device.label} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
+                    <Smartphone className="text-muted-foreground size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-foreground truncate text-sm">{device.label}</div>
+                    {device.detail ? (
+                      <div className="text-muted-foreground text-xs">{device.detail}</div>
+                    ) : null}
+                  </div>
+                </div>
+                <Badge variant="success" size="xs">
+                  {copy.deviceActive}
+                </Badge>
+              </div>
+            ))
+          )}
           <SettingsRow
-            label="Sign out other devices"
-            description="Ends every other session signed in as you. This browser stays signed in."
+            label={copy.signOutOtherDevices}
+            description={copy.signOutOtherDevicesDescription}
           >
             <Button
               size="sm"
@@ -324,10 +540,29 @@ export function SecurityTabView({
               disabled={isSigningOutOtherDevices}
             >
               {isSigningOutOtherDevices ? <Loading className="size-3.5 shrink-0" /> : null}
-              Sign out other devices
+              {copy.signOutOtherDevices}
             </Button>
           </SettingsRow>
         </SettingsRowGroup>
+
+        {/* The three answers the device list can give, below the group so no
+            state nests a second border inside it — the same split the factor
+            list makes. A failed fetch is an error with a Retry, never the
+            empty-state copy; an empty list is said out loud. Loading outranks
+            both. */}
+        {devicesLoading ? null : devicesError ? (
+          <ErrorState
+            size="sm"
+            title={copy.devicesLoadFailed}
+            action={
+              <Button variant="outline" size="sm" onClick={onRetryDevices}>
+                {copy.retry}
+              </Button>
+            }
+          />
+        ) : devices.length === 0 ? (
+          <EmptyState size="sm" title={copy.noDevices} description={copy.noDevicesDescription} />
+        ) : null}
       </section>
     </div>
   );
@@ -336,8 +571,80 @@ export function SecurityTabView({
 /** Container: owns every hook and renders `SecurityTabView` with real data
  *  and handlers. Only ever mounted while this tab is active. */
 export function SecurityTab() {
+  const t = useTranslations('settings.security');
+  const locale = useLocale();
+  const copy: SecurityTabCopy = {
+    twoFactorTitle: t('twoFactorTitle'),
+    twoFactorDescription: t('twoFactorDescription'),
+    authenticatorApp: t('authenticatorApp'),
+    authenticatorDescription: t('authenticatorDescription'),
+    statusOn: t('statusOn'),
+    addAuthenticatorApp: t('addAuthenticatorApp'),
+    factorsLoadFailed: t('factorsLoadFailed'),
+    retry: t('retry'),
+    factorsUnchanged: t('factorsUnchanged'),
+    noFactorEnrolled: t('noFactorEnrolled'),
+    noFactorDescription: t('noFactorDescription'),
+    scanTitle: t('scanTitle'),
+    scanDescription: t('scanDescription'),
+    qrAlt: t('qrAlt'),
+    manualSecret: t('manualSecret'),
+    codeTitle: t('codeTitle'),
+    codeDescription: t('codeDescription'),
+    verifyAndEnable: t('verifyAndEnable'),
+    cancel: t('cancel'),
+    removeFactorTitle: t('removeFactorTitle'),
+    removeFactorDescription: t('removeFactorDescription'),
+    removeFactor: t('removeFactor'),
+    devices: t('devices'),
+    currentDevice: t('currentDevice'),
+    deviceActive: t('deviceActive'),
+    noDevices: t('noDevices'),
+    noDevicesDescription: t('noDevicesDescription'),
+    devicesLoadFailed: t('devicesLoadFailed'),
+    signOutOtherDevices: t('signOutOtherDevices'),
+    signOutOtherDevicesDescription: t('signOutOtherDevicesDescription'),
+    phone: t('phone'),
+    sms: t('sms'),
+    authenticatorTotp: t('authenticatorTotp'),
+    verified: t('verified'),
+    unverified: t('unverified'),
+  };
   const supabase = createClient();
   const mfa = useMfa();
+
+  // The devices signed in as you. GoTrue gives a client no way to enumerate
+  // the account's other sessions, so this list holds the one device it can
+  // vouch for — the browser this page runs on — backed by a real
+  // `GET /auth/v1/user` call; `last_sign_in_at` is the auth server's own
+  // record of when that session signed in. A session-less answer (the user
+  // is signed out) is the explicit empty state, not an error.
+  const deviceQuery = useQuery({
+    queryKey: ['auth-current-device'],
+    queryFn: async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error?.name === 'AuthSessionMissingError') return null;
+      if (error) throw error;
+      return data.user;
+    },
+    staleTime: 10_000,
+  });
+
+  const signedInAt = deviceQuery.data?.last_sign_in_at ?? null;
+  const devices: DeviceRow[] = signedInAt
+    ? [
+        {
+          label: copy.currentDevice,
+          detail: t('deviceSignedInAt', {
+            date: new Intl.DateTimeFormat(locale, {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            }).format(new Date(signedInAt)),
+          }),
+        },
+      ]
+    : [];
 
   // `scope: 'others'` revokes every refresh token but this browser's, so the
   // person stays signed in where they pressed the button.
@@ -346,9 +653,24 @@ export function SecurityTab() {
       const { error } = await supabase.auth.signOut({ scope: 'others' });
       if (error) throw error;
     },
-    onSuccess: () => successToast('Signed out of your other devices'),
-    onError: (error: Error) => errorToast(error.message || 'Could not sign out other devices'),
+    onSuccess: () => successToast(t('signedOutOtherDevices')),
+    onError: (error: Error) => errorToast(error.message || t('signOutOtherDevicesFailed')),
   });
+
+  // Remove factor and sign-out-other-devices end a factor or sessions, so an
+  // aal1 session with a verified TOTP factor asks for the code first
+  // (KRTX-1386): requestMfaStepUp opens the global challenge dialog and runs
+  // the action once the code verifies. A verified session runs the action
+  // directly.
+  const runWithStepUp = (action: () => void) =>
+    requestMfaStepUp(mfa.challengeRequired, action);
+
+  // The sixth digit submits the code; no button press needed.
+  const { enrollCode, isVerifyingEnroll, verifyEnroll } = mfa;
+  useEffect(() => {
+    if (enrollCode.length === 6 && !isVerifyingEnroll) verifyEnroll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per completed code
+  }, [enrollCode]);
 
   return (
     <SecurityTabView
@@ -356,11 +678,12 @@ export function SecurityTab() {
       factorsLoading={mfa.factorsLoading}
       factorsError={mfa.factorsError}
       onRetryFactors={mfa.onRetryFactors}
-      sessionVerified={mfa.sessionVerified}
       removeFactorTarget={mfa.removeFactorTarget}
       onRequestRemoveFactor={mfa.setRemoveFactorTarget}
       onCancelRemoveFactor={() => mfa.setRemoveFactorTarget(null)}
-      onConfirmRemoveFactor={mfa.confirmRemoveFactor}
+      onConfirmRemoveFactor={() => {
+        if (mfa.removeFactorTarget) runWithStepUp(mfa.confirmRemoveFactor);
+      }}
       isRemovingFactor={mfa.isRemovingFactor}
       enrolling={mfa.enrolling}
       enrollCode={mfa.enrollCode}
@@ -370,8 +693,13 @@ export function SecurityTab() {
       onVerifyEnroll={mfa.verifyEnroll}
       isVerifyingEnroll={mfa.isVerifyingEnroll}
       onCancelEnroll={mfa.cancelEnroll}
-      onSignOutOtherDevices={() => signOutOthers.mutate()}
+      devices={devices}
+      devicesLoading={deviceQuery.isLoading}
+      devicesError={deviceQuery.isError}
+      onRetryDevices={() => deviceQuery.refetch()}
+      onSignOutOtherDevices={() => runWithStepUp(() => signOutOthers.mutate())}
       isSigningOutOtherDevices={signOutOthers.isPending}
+      copy={copy}
     />
   );
 }

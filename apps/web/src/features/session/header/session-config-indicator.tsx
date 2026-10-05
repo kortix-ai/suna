@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 /**
  * "This session is running an older version of your agent" — said in the header.
  *
@@ -8,15 +10,16 @@
  * the condition and carries the one button that fixes it.
  *
  * It is in the HEADER rather than inline in the transcript because staleness is
- * ambient session state, not a reply to a message. The inline slot next to
- * `ConnectorRequiredNotice` is bound to the last send's error — a card there
- * would scroll away, then re-anchor under an unrelated message.
+ * ambient session state, not a reply to a message — unlike a send failure,
+ * which `TurnErrorDisplay` renders inline, bound to the message that
+ * triggered it.
  *
  * Like the changes chip, it renders NOTHING when there is nothing to say. A
  * permanent "config up to date" badge would be chrome on every session, forever,
  * to report the case that is true almost always.
  */
 
+import { Badge, type badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
@@ -26,12 +29,15 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
 import { reloadProgressText } from '@/hooks/projects/session-reload-progress';
 import {
+  fallbackCopyKeys,
   type ReloadBusyReason,
+  type SessionConfigNotice,
   useSessionConfigFreshness,
 } from '@/hooks/projects/use-session-config-freshness';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import type { SessionReloadPhase } from '@kortix/sdk';
-import { ArrowsClockwiseIcon } from '@phosphor-icons/react';
+import { ArrowsClockwiseIcon, WarningIcon } from '@phosphor-icons/react';
+import type { VariantProps } from 'class-variance-authority';
 import { useState } from 'react';
 import { SessionReloadProgressView } from './session-reload-progress-view';
 
@@ -69,6 +75,7 @@ export function SessionConfigIndicator({
   phase: SessionReloadPhase | null;
   canReload: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { notice } = useSessionConfigFreshness(projectId, sessionId);
   const [open, setOpen] = useState(false);
   const [isAskingAgent, setIsAskingAgent] = useState(false);
@@ -83,13 +90,13 @@ export function SessionConfigIndicator({
         buildAgentGitReconciliationPrompt(baseRef),
       );
       successToast(
-        disposition === 'queued'
-          ? 'Branch sync queued after the current turn'
-          : 'Asked the agent to sync the branch',
+        disposition === tI18nComplete.raw('textd36be6494248')
+          ? tI18nComplete.raw('textb11e0f2cb028')
+          : tI18nComplete.raw('texta56be319eda4'),
       );
       setOpen(false);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Could not reach the agent');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text29490fc13cfc'));
     } finally {
       setIsAskingAgent(false);
     }
@@ -99,8 +106,11 @@ export function SessionConfigIndicator({
   // This component may vanish the moment a reload lands, and a dialog that
   // unmounts mid-question is worse than no dialog.
   if (notice.kind === 'hidden' && !isPending) return null;
+  if (!isPending && notice.kind === 'fallback') return <SessionConfigFallbackChip notice={notice} />;
 
-  const label = isPending ? reloadProgressText(phase) : 'Agent config update available';
+  const label = isPending
+    ? reloadProgressText(phase, tI18nComplete)
+    : tI18nComplete.raw('textc6b12eb62d1c');
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -116,7 +126,7 @@ export function SessionConfigIndicator({
               <>
                 <Loading className="size-3.5 shrink-0" />
                 <span className="truncate text-xs" aria-live="polite">
-                  {reloadProgressText(phase)}
+                  {reloadProgressText(phase, tI18nComplete)}
                 </span>
               </>
             ) : (
@@ -140,7 +150,7 @@ export function SessionConfigIndicator({
             </span>
             <div className="min-w-0">
               <h3 className="text-foreground truncate text-sm font-semibold tracking-tight">
-                {isPending ? 'Reloading agent config' : label}
+                {isPending ? tI18nComplete.raw('text06a8fc899ccb') : label}
               </h3>
             </div>
           </div>
@@ -150,21 +160,19 @@ export function SessionConfigIndicator({
           ) : (
             <>
               <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
-                A newer agent config is available. Reloading restarts the agent runtime and leaves
-                every project file and commit unchanged.
+                {tI18nComplete.raw('text69ea5dbbb997')}
               </p>
 
               <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
-                If the branch is behind, ask the agent to merge the latest base branch, resolve
-                conflicts, test the result, commit it, and reload safely.
+                {tI18nComplete.raw('textaa821f12cbc6')}
               </p>
 
-              <p className="text-muted-foreground mt-2.5 font-mono text-[11px]">
-                <span className="text-foreground/80">
+              <p className="text-muted-foreground mt-2.5 font-mono text-xs">
+                <span className="text-foreground">
                   {notice.kind === 'stale' ? notice.running : '—'}
                 </span>
                 {' → '}
-                <span className="text-foreground/80">
+                <span className="text-foreground">
                   {notice.kind === 'stale' ? notice.latest : '—'}
                 </span>
               </p>
@@ -174,9 +182,7 @@ export function SessionConfigIndicator({
 
         {isPending ? (
           <div className="px-4 py-2.5">
-            <p className="text-muted-foreground text-xs">
-              Keep this page open. The session remains available after the runtime swap completes.
-            </p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texta8f4dc742e8f')}</p>
           </div>
         ) : canReload ? (
           <div className="border-border flex flex-wrap items-center gap-2 border-t px-3 py-2.5">
@@ -186,7 +192,7 @@ export function SessionConfigIndicator({
               ) : (
                 <ArrowsClockwiseIcon className="size-3.5 shrink-0" />
               )}
-              Reload config
+              {tI18nComplete.raw('textb4b21a20cc58')}
             </Button>
             <Button
               size="sm"
@@ -195,7 +201,7 @@ export function SessionConfigIndicator({
               onClick={askAgentToSync}
             >
               {isAskingAgent ? <Loading className="size-3.5 shrink-0" /> : null}
-              Ask agent to sync
+              {tI18nComplete.raw('textb301cac49225')}
             </Button>
           </div>
         ) : (
@@ -203,10 +209,100 @@ export function SessionConfigIndicator({
           // only ever 403s is worse than a sentence saying who can press it.
           <div className="border-border border-t px-4 py-2.5">
             <p className="text-muted-foreground text-xs text-pretty">
-              The session owner or a project manager can reload it.
+              {tI18nComplete.raw('textce49e021df99')}
             </p>
           </div>
         )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * How loud the fallback chip is. `destructive` is the loud error treatment the
+ * spec recommends. Set it to
+ * `secondary` for a quiet notice; nothing else changes.
+ */
+const FALLBACK_CHIP_VARIANT: NonNullable<VariantProps<typeof badgeVariants>['variant']> =
+  'destructive';
+
+/**
+ * `fallback_reason` set: the desired config failed on the box, and an earlier
+ * config serves the session. The chip stays until a convergence succeeds. Its
+ * popover names the reason, what runs now, and the release that failed.
+ */
+function SessionConfigFallbackChip({
+  notice,
+}: {
+  notice: Extract<SessionConfigNotice, { kind: 'fallback' }>;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const label = tI18nComplete.raw('textd9ff3a72833d');
+  const servingLabel =
+    notice.source === 'release'
+      ? tI18nComplete.raw('text00ed4c71dc2b')
+      : tI18nComplete.raw('textbd7a1a3b4141');
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Badge
+          asChild
+          variant={FALLBACK_CHIP_VARIANT}
+          size="sm"
+          data-testid="session-config-fallback-chip"
+          className="max-w-56 cursor-pointer normal-case active:scale-[0.96]"
+        >
+          <button type="button" aria-label={label}>
+            <WarningIcon />
+            <span className="truncate">{label}</span>
+          </button>
+        </Badge>
+      </PopoverTrigger>
+
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-[320px] overflow-hidden p-0"
+        data-testid="session-config-fallback-detail"
+      >
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="bg-kortix-red/15 text-kortix-red flex size-8 shrink-0 items-center justify-center rounded-sm">
+              <WarningIcon className="size-4" />
+            </span>
+            <h3 className="text-foreground min-w-0 text-sm font-semibold tracking-tight">
+              {tI18nComplete.raw('textebfb07812fb4')}
+            </h3>
+          </div>
+          <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
+            {tI18nComplete.raw(fallbackCopyKeys(notice.source).runs)}
+          </p>
+        </div>
+
+        <dl className="border-border space-y-2 border-t px-4 py-3 text-xs">
+          <div className="space-y-0.5">
+            <dt className="text-muted-foreground">{tI18nComplete.raw('textf81ab834de5f')}</dt>
+            <dd className="text-foreground font-mono break-words">{notice.reason}</dd>
+          </div>
+          <div className="space-y-0.5">
+            <dt className="text-muted-foreground">{tI18nComplete.raw('text44cdf35701cd')}</dt>
+            <dd className="text-foreground">
+              {servingLabel}
+              {notice.servingReleaseId ? (
+                <span className="text-muted-foreground ml-1.5 font-mono">
+                  {notice.servingReleaseId}
+                </span>
+              ) : null}
+            </dd>
+          </div>
+          {notice.failedReleaseId ? (
+            <div className="space-y-0.5">
+              <dt className="text-muted-foreground">{tI18nComplete.raw('text591f9f0f3259')}</dt>
+              <dd className="text-foreground font-mono">{notice.failedReleaseId}</dd>
+            </div>
+          ) : null}
+        </dl>
       </PopoverContent>
     </Popover>
   );
@@ -231,7 +327,9 @@ export function SessionConfigReloadConfirm({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const copy = busyReason ? BUSY_COPY[busyReason] : null;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const busyCopy = useLocalizedUiCatalog(BUSY_COPY);
+  const copy = busyReason ? busyCopy[busyReason] : null;
   return (
     <ConfirmDialog
       open={!!copy}
@@ -243,8 +341,8 @@ export function SessionConfigReloadConfirm({
           <p className="mt-2">{copy?.tail}</p>
         </>
       }
-      confirmLabel="Reload anyway"
-      cancelLabel="Wait"
+      confirmLabel={tI18nComplete.raw('textd5dfe5707a58')}
+      cancelLabel={tI18nComplete.raw('text26b83994dca8')}
       confirmVariant="destructive"
       confirmIcon={<ArrowsClockwiseIcon className="size-3.5" />}
       isPending={isPending}

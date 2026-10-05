@@ -2,8 +2,9 @@
 
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { isolation } from './content';
+import { getLocalizedSecurityContent } from './content';
 
 /**
  * `/security` hero scene — the containment.
@@ -28,9 +29,6 @@ import { isolation } from './content';
  * MOTION — one pass on mount, then rest.
  */
 
-const INSIDE = isolation.inside.items;
-const OUTSIDE = isolation.outside.items;
-
 /** Where the wall stands. Crosses sit on it; labels run up to it. */
 const WALL = 46;
 
@@ -43,17 +41,24 @@ const CORNERS = [
 ] as const;
 
 export function SecurityHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { isolation } = getLocalizedSecurityContent(tI18nComplete);
+  const inside = isolation.inside.items;
+  const outside = isolation.outside.items;
   const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label={`A session's chamber: what is ${isolation.inside.label}, and what ${isolation.outside.label}.`}
+      aria-label={tI18nComplete('text8552ade1b621', {
+        inside: isolation.inside.label,
+        outside: isolation.outside.label,
+      })}
     >
       <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[27rem]">
         {/* ── what never gets in ──────────────────────────────────────── */}
-        {OUTSIDE.map((item, i) => (
+        {outside.map((item, i) => (
           <div
             key={item}
             className="absolute left-0 flex items-center gap-2"
@@ -78,7 +83,7 @@ export function SecurityHeroVisual(): ReactNode {
         ))}
 
         {/* crosses, sitting on the wall itself */}
-        {OUTSIDE.map((item, i) => (
+        {outside.map((item, i) => (
           <m.span
             key={`x-${item}`}
             className="bg-background text-muted-foreground/45 absolute z-20 -translate-x-1/2 -translate-y-1/2 px-[3px] font-mono text-[11px] leading-none"
@@ -111,7 +116,7 @@ export function SecurityHeroVisual(): ReactNode {
           </span>
 
           <ul className="mt-5 flex flex-col gap-4">
-            {INSIDE.map((item, i) => (
+            {inside.map((item, i) => (
               <m.li
                 key={item}
                 className="flex items-start gap-2.5"

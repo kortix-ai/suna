@@ -106,6 +106,25 @@ disk = 20
     expect(issues.every((i) => i.severity !== 'error')).toBe(true);
   });
 
+  test('container_runtime accepts a boolean and rejects anything else', () => {
+    const ok = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+dockerfile = ".kortix/Dockerfile.dev"
+container_runtime = true
+`);
+    expect(ok.valid).toBe(true);
+    const bad = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+dockerfile = ".kortix/Dockerfile.dev"
+container_runtime = "yes"
+`);
+    expect(bad.errorPaths).toContain('sandbox.templates[0].container_runtime');
+  });
+
   test('rejects entries with both image AND dockerfile', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
@@ -333,7 +352,7 @@ prompt = "Error sweep"
   });
 });
 
-// `type: monitor` — docs/specs/2026-08-12-monitors.md. A monitor names a repo
+// `type: monitor`. A monitor names a repo
 // command the platform supervises 24/7; its stdout lines are the events.
 describe('validateManifest — [[triggers]] type = "monitor"', () => {
   test('a stream monitor with run + mode passes', () => {
@@ -806,7 +825,7 @@ describe('validateManifest — input tolerance (mirrors runtime parser)', () => 
   });
 
   test('an empty-string grant is accepted as deny', () => {
-    expect(connectorErrors(`[[agents]]\nname = "a"\nkortix_cli = ""\nconnectors = ""`)).toEqual([]);
+    expect(connectorErrors(`[[agents]]\nname = "a"\nkortix_permissions = ""\nconnectors = ""`)).toEqual([]);
   });
 });
 

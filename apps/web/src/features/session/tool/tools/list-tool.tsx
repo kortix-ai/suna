@@ -1,24 +1,24 @@
 'use client';
 import { InlineFileList, parseFilePaths } from '@/features/session/tool/shared/file-list';
+import { filePhase, fileVerb } from '@/features/session/tool/shared/file-verb';
 import {
   BasicTool,
-  ToolEmptyState,
-  ToolOutputFallback,
   isErrorOutput,
   partInput,
   partOutput,
   partStatus,
+  ToolEmptyState,
+  ToolOutputFallback,
   ToolRunningContext,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { getDirectory } from '@/ui';
 import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
 const NO_PATHS: string[] = [];

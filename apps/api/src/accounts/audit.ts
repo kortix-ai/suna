@@ -12,14 +12,19 @@
 //   - DELETE /:accountId/audit/webhooks/:id
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
+import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
-import { flushAuditEvents, recordAuditEvent } from '../shared/audit';
+import {
+  AUDIT_READ_FLUSH_BARRIER_MS,
+  flushAuditEvents,
+  recordAuditEvent,
+} from '../shared/audit';
+import { auditCredentialNames } from '../shared/audit-credential-names';
+import { requestClientIp } from '../shared/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -33,11 +38,14 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
-import { AuditListSchema } from '../shared/audit-schema';
+import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
+import { readExportPage } from '../shared/audit-archive/export-page';
+import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
 import { requireEntitlement } from './iam/helpers';
+import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 
@@ -92,10 +100,11 @@ export { buildFilters, type AuditFilterInput } from './audit-filters';
 // GET /v1/accounts/:accountId/audit
 //   ?action=connector.       — prefix match on action
 //   ?actor=<uuid>           — only events performed by this user
-//   ?actor_type=agent       — human, agent, service_account, or system
+//   ?actor_type=agent       — human, agent, service_account, system, or anonymous
 //   ?project_id=<uuid>      — one project
 //   ?session_id=<id>        — one session
-//   ?source=cli             — one client or execution source
+//   ?source=api_key         — one trusted execution source (authoritative_source)
+//   ?credential_kind=oauth_app — one credential class the API authenticated
 //   ?outcome=failure        — success, failure, denied, or pending
 //   ?request_id=<id>        — one API request
 //   ?correlation_id=<id>    — one cross-system operation
@@ -118,10 +127,11 @@ auditRouter.openapi(
       query: z.object({
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
         outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
         request_id: z.string().optional(),
@@ -151,6 +161,7 @@ auditRouter.openapi(
     const projectId = c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
+    const credentialKind = c.req.query('credential_kind')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
     const outcome = c.req.query('outcome')?.trim() || null;
     const requestId = c.req.query('request_id')?.trim() || null;
@@ -170,9 +181,11 @@ auditRouter.openapi(
       return c.json({ error: (error as Error).message }, 400);
     }
 
-    // Flush the snapshot emitted before this read. Traffic that arrives after
-    // this barrier stays asynchronous and cannot delay the request indefinitely.
-    await flushAuditEvents();
+    // Flush the snapshot emitted before this read — read-your-writes — but
+    // never past the barrier bound: the audit queue's per-session serialize
+    // waits without a timeout, and under a write convoy that barrier was the
+    // 25s deadline 503s on this route (prod, 2026-09-28, KRTX-631).
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
 
     const conditions = buildFilters(accountId, {
       actor,
@@ -180,6 +193,7 @@ auditRouter.openapi(
       projectId,
       sessionId,
       source,
+      credentialKind,
       phase,
       outcome,
       requestId,
@@ -199,18 +213,19 @@ auditRouter.openapi(
 
     const rows = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
     const last = page[page.length - 1];
     const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    const names = await auditCredentialNames(page);
 
     return c.json({
-      events: page.map(serializeAuditEvent),
+      events: page.map((row) => serializeAuditEvent(row, names)),
       next_cursor: nextCursor,
     });
   },
@@ -252,11 +267,14 @@ const CSV_HEADERS = [
   'agent_name',
   'initiator_actor_type',
   'initiator_actor_id',
+  'on_behalf_of_user_id',
   'parent_event_id',
   'delegation_depth',
   'source',
   'authoritative_source',
   'client_reported_source',
+  'credential_kind',
+  'credential_id',
   'outcome',
   'action',
   'phase',
@@ -292,6 +310,8 @@ auditRouter.openapi(
     path: '/{accountId}/audit/export',
     tags: ['accounts'],
     summary: 'Export audit events as CSV or JSONL',
+    description:
+      'Oldest first, 10,000 events per page (follow X-Audit-Next-Cursor). Reaches back 365 days: events older than 90 days are read from the S3 archive. The list endpoint covers the last 90 days only.',
     ...auth,
     request: {
       params: AccountIdParam,
@@ -299,10 +319,11 @@ auditRouter.openapi(
         format: z.enum(['csv', 'jsonl']).optional(),
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
         outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
         request_id: z.string().optional(),
@@ -343,6 +364,7 @@ auditRouter.openapi(
     const projectId = c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
+    const credentialKind = c.req.query('credential_kind')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
     const outcome = c.req.query('outcome')?.trim() || null;
     const requestId = c.req.query('request_id')?.trim() || null;
@@ -362,41 +384,38 @@ auditRouter.openapi(
       return c.json({ error: (error as Error).message }, 400);
     }
 
-    await flushAuditEvents();
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
 
-    const conditions = buildFilters(accountId, {
-      actor,
-      actorType,
-      projectId,
-      sessionId,
-      source,
-      phase,
-      outcome,
-      requestId,
-      correlationId,
-      actionPrefix,
-      resourceType,
-      sinceRaw,
-      untilRaw,
-      q,
-    });
-
-    if (parsedCursor) {
-      conditions.push(buildAuditCursorCondition(parsedCursor, accountId, 'ascending'));
-    }
-
-    const fetched = await db
-      .select()
-      .from(auditEvents)
-      .where(and(...conditions))
-      // Export is chronological (oldest → newest) — that's the order humans
-      // expect when grepping through a CSV; pagination uses reverse order.
-      .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId))
-      .limit(exportLimit + 1);
-    const hasMore = fetched.length > exportLimit;
-    const rows = hasMore ? fetched.slice(0, exportLimit) : fetched;
-    const last = rows.at(-1);
-    const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    // Ascending, across the archive (weeks older than 90 days, S3) and PostgreSQL. A bucket that is
+    // not configured means PostgreSQL only.
+    const page = await readExportPage(
+      { db, store: auditArchiveStore().configured ? auditArchiveStore() : null },
+      {
+        accountId,
+        cursor: parsedCursor,
+        limit: exportLimit,
+        filters: {
+          actor,
+          actorType,
+          projectId,
+          sessionId,
+          source,
+          credentialKind,
+          phase,
+          outcome,
+          requestId,
+          correlationId,
+          actionPrefix,
+          resourceType,
+          sinceRaw,
+          untilRaw,
+          q,
+        },
+      },
+    );
+    const rows = page.rows;
+    const hasMore = page.nextCursor !== null;
+    const nextCursor = page.nextCursor;
 
     const filenameDate = new Date().toISOString().slice(0, 10);
     const filename = `audit-${filenameDate}.${format}`;
@@ -463,7 +482,7 @@ auditRouter.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
-    await flushAuditEvents();
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
     const result = await reconcileAuditEvents(accountId, limit);
     await recordAuditEvent({
       accountId,
@@ -481,14 +500,6 @@ auditRouter.openapi(
 // Per-account HTTP destinations the audit pipeline POSTs to. Managed
 // under account.write (same gate as other account-admin secrets). Secret
 // is shown ONCE at create — never returned in subsequent reads.
-
-async function readBody(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
-}
 
 function serializeWebhook(w: typeof auditWebhooks.$inferSelect, includeSecret = false) {
   return {
@@ -562,7 +573,7 @@ auditRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
 
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return c.json({ error: 'name is required' }, 400);
@@ -621,7 +632,7 @@ auditRouter.openapi(
       resourceId: row.webhookId,
       after: { name: row.name, url: row.url, action_prefix: row.actionPrefix },
       ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+        requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
 
@@ -669,7 +680,7 @@ auditRouter.openapi(
       .limit(1);
     if (!before) return c.json({ error: 'webhook not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const updates: Record<string, unknown> = { updatedAt: new Date() };
 
     if (typeof body.name === 'string') {
@@ -703,7 +714,7 @@ auditRouter.openapi(
       before: { name: before.name, enabled: before.enabled, action_prefix: before.actionPrefix },
       after: { name: updated.name, enabled: updated.enabled, action_prefix: updated.actionPrefix },
       ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+        requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
 
@@ -738,7 +749,7 @@ auditRouter.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
-    await flushAuditEvents();
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
     const [hook] = await db
       .select({ webhookId: auditWebhooks.webhookId })
       .from(auditWebhooks)
@@ -859,7 +870,7 @@ auditRouter.openapi(
       resourceId: webhookId,
       before: { name: rows[0]!.name, url: rows[0]!.url },
       ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+        requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
 

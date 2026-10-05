@@ -10,7 +10,9 @@
  * Pure. No database, no auth: the caller owns both.
  */
 
+import type { SessionPrompt } from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
+import { DELIVERY_FAILURE_COPY } from '../session-lifecycle/types';
 import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
 
 export type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
@@ -52,7 +54,10 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   // below would otherwise fall through to `queued` and show a prompt that is
   // already at OpenCode as if it had never been sent.
   if (result.status === 'forwarded') return { state: 'delivering', reason: 'forwarded' };
-  if (row.status === 'running') return { state: 'delivering', reason: null };
+  // A claim only checks admission. It must not flash Sending during a live turn.
+  if (row.status === 'running' && typeof result.delivery_started_at === 'string') {
+    return { state: 'delivering', reason: null };
+  }
   const admission = result.admission_reason;
   if (typeof admission === 'string') return { state: 'waiting', reason: admission };
   // Parked on a DOWN runtime. Still `queued` — the row IS in line and the server
@@ -66,11 +71,47 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   return { state: 'queued', reason: null };
 }
 
-export function serializePrompt(row: PromptRow) {
+/**
+ * What a queued prompt's attachments are, WITHOUT their bytes.
+ *
+ * A reload discards the composer's optimistic bubble, so this durable row is
+ * the only thing left that knows a prompt had files. It carried `text` alone,
+ * and a refreshed tab therefore rendered a bare sentence for a send of seven
+ * attachments while the upload was still in flight (2026-09-04) — the user
+ * could not tell a stuck upload from a prompt that never had files.
+ *
+ * Names and MIME types only. The parts hold `data:` URLs measured in megabytes
+ * and this view is POLLED; shipping the bytes would re-send the whole payload
+ * on every tick. A name and a type is all a pending tile draws.
+ */
+const PROMPT_ATTACHMENT_LIMIT = 32;
+
+function promptAttachments(payload: Record<string, unknown>): Array<{
+  filename: string;
+  mime: string;
+}> {
+  const parts = Array.isArray(payload.parts) ? payload.parts : [];
+  const attachments: Array<{ filename: string; mime: string }> = [];
+  for (const part of parts) {
+    if (!part || typeof part !== 'object') continue;
+    const file = part as { type?: unknown; filename?: unknown; mime?: unknown };
+    if (file.type !== 'file') continue;
+    attachments.push({
+      filename: typeof file.filename === 'string' && file.filename.trim() ? file.filename : 'File',
+      mime: typeof file.mime === 'string' ? file.mime : 'application/octet-stream',
+    });
+    if (attachments.length >= PROMPT_ATTACHMENT_LIMIT) break;
+  }
+  return attachments;
+}
+
+export function serializePrompt(row: PromptRow): SessionPrompt {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);
   return {
+    placement: payload.placement === 'transcript' ? 'transcript' as const : 'composer' as const,
+    full_text: typeof payload.text === 'string' ? payload.text : '',
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
     // The id the message ACTUALLY carries in the transcript, when known: the
@@ -103,8 +144,20 @@ export function serializePrompt(row: PromptRow) {
     // How many automatic re-attempts a runtime-unreachable park has spent, out
     // of MAX_RUNTIME_UNREACHABLE_RETRIES. 0 for every other row.
     runtime_retries: typeof result.runtime_retries === 'number' ? result.runtime_retries : 0,
-    last_error: row.lastError ?? null,
+    last_error: readableDeliveryError(row.lastError),
+    /** Names + types of this prompt's files, so a reloaded tab can still draw
+     *  their tiles while the send is in flight. Never the bytes. */
+    attachments: promptAttachments(payload),
+    /** Posted without a turn (the first message of a conversation with people):
+     *  no agent will answer it, so a host shows no "thinking" for it. */
+    no_reply: payload.noReply === true,
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };
+}
+
+/** Older durable rows retain internal outcome labels across deployments. */
+function readableDeliveryError(error: string | null): string | null {
+  const outcome = error?.match(/^delivery outcome: (pending|unreachable|not-landed|no-session|failed)$/)?.[1];
+  return outcome ? DELIVERY_FAILURE_COPY[outcome as keyof typeof DELIVERY_FAILURE_COPY] : error ?? null;
 }

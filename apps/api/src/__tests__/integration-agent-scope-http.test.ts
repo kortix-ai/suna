@@ -65,7 +65,7 @@ describe('HTTP enforcement — CR merge gate via the real route', () => {
   // from a manifest actually carries.
   test('agent granted gitops.push but NOT gitops.merge → 403 at the route', async () => {
     if (!ctx) { console.warn('[http] no owner+project in local DB — skipping'); return; }
-    const secret = await mintToken({ agent: 'release-bot', kortixCli: ['project.gitops.push'], connectors: [] });
+    const secret = await mintToken({ agent: 'release-bot', permissions: ['project.gitops.push'], connectors: [] });
     const res = await mergeReq(secret);
     expect(res.status).toBe(403);
     const body = await res.json().catch(() => ({}));
@@ -74,7 +74,7 @@ describe('HTTP enforcement — CR merge gate via the real route', () => {
 
   test('agent granted gitops.merge → passes the scope gate (404 CR-not-found, not 403)', async () => {
     if (!ctx) return;
-    const secret = await mintToken({ agent: 'deployer', kortixCli: ['project.gitops.merge'], connectors: [] });
+    const secret = await mintToken({ agent: 'deployer', permissions: ['project.gitops.merge'], connectors: [] });
     const res = await mergeReq(secret);
     expect(res.status).not.toBe(403);
   });
@@ -85,7 +85,7 @@ describe('HTTP enforcement — CR merge gate via the real route', () => {
     // correct — the spelling is corrected at manifest-parse time, and a token
     // carrying it means the manifest never went through that path.
     if (!ctx) return;
-    const secret = await mintToken({ agent: 'stale', kortixCli: ['project.cr.merge'], connectors: [] });
+    const secret = await mintToken({ agent: 'stale', permissions: ['project.cr.merge'], connectors: [] });
     const res = await mergeReq(secret);
     expect(res.status).toBe(403);
   });
@@ -94,7 +94,7 @@ describe('HTTP enforcement — CR merge gate via the real route', () => {
     if (!ctx) return;
     const secret = await mintToken({
       agent: 'meta',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: [],
       env: [],
     });

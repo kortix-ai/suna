@@ -1,8 +1,9 @@
 'use client';
 
+import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
+import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  commitSessionChangesRequest,
   createChangeRequest,
   fetchChangeRequest,
   fetchChangeRequestDiff,
@@ -19,14 +20,11 @@ import {
   type ChangeRequestMergePreview,
   type ChangeRequestMergeResponse,
   type ChangeRequestStatus,
-  type CommitSessionResult,
   type VersionDiffPreview,
 } from '../api/change-requests';
 import { useProjectContext } from '../context';
-import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
 import { branchKeys } from './use-branches';
 import { commitKeys } from './use-commits';
-import { qk } from '@kortix/sdk/react';
 
 export const changeRequestKeys = {
   all: ['project-files', 'change-requests'] as const,
@@ -40,6 +38,10 @@ export const changeRequestKeys = {
     ['project-files', 'change-requests', projectId, 'list'] as const,
   list: (projectId: string, status: ChangeRequestStatus | 'all') =>
     ['project-files', 'change-requests', projectId, 'list', status] as const,
+  /** One session's change requests, every status. Nested under `listScope`,
+   *  so each project and list invalidation reaches it as well. */
+  sessionList: (projectId: string, sessionId: string) =>
+    ['project-files', 'change-requests', projectId, 'list', 'session', sessionId] as const,
   detail: (projectId: string, crId: string) =>
     ['project-files', 'change-requests', projectId, crId] as const,
   diff: (projectId: string, crId: string) =>
@@ -161,6 +163,26 @@ export function useChangeRequests(
   });
 }
 
+/**
+ * The change requests ONE session opened, filtered by the server. A session's
+ * outcome cards poll this every 60 s per open thread; the unfiltered project
+ * list they used to poll measured 565 KB on prod.
+ */
+export function useSessionChangeRequests(
+  sessionId: string | undefined,
+  options?: { refetchInterval?: number },
+) {
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  return useQuery<{ change_requests: ChangeRequest[] }>({
+    queryKey: changeRequestKeys.sessionList(projectId, sessionId ?? ''),
+    queryFn: () => fetchChangeRequests(projectId, 'all', { originSessionId: sessionId }),
+    enabled: Boolean(projectId) && Boolean(sessionId),
+    staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
 export function useChangeRequest(crId: string | null, options?: { enabled?: boolean }) {
   const ctx = useProjectContext();
   const qc = useQueryClient();
@@ -265,29 +287,6 @@ function useInvalidateAll(projectIdArg?: string) {
   };
 }
 
-/**
- * Commit + push the session sandbox's pending changes to its branch.
- *
- * NOTE (2026-05-29): currently UNUSED. Built for a one-click fully-UI "Open
- * change request" flow; the shipped flow instead asks the agent to commit +
- * open the CR from a chat prompt. Kept for that future direction.
- */
-export function useCommitSessionChanges(options?: { projectId?: string }) {
-  const ctx = useProjectContext();
-  const qc = useQueryClient();
-  const projectId = options?.projectId ?? ctx?.projectId ?? '';
-  return useMutation<CommitSessionResult, Error, { sessionId: string; message?: string }>({
-    mutationFn: ({ sessionId, message }) =>
-      commitSessionChangesRequest(projectId, sessionId, { message }),
-    onSuccess: () => {
-      // The working tree was just committed — the git-status banner and the
-      // branch list (ahead/behind) are now stale.
-      qc.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
-      qc.invalidateQueries({ queryKey: branchKeys.list(projectId) });
-    },
-  });
-}
-
 export function useOpenChangeRequest(options?: { projectId?: string }) {
   const ctx = useProjectContext();
   const projectId = options?.projectId ?? ctx?.projectId ?? '';
@@ -295,7 +294,13 @@ export function useOpenChangeRequest(options?: { projectId?: string }) {
   return useMutation<
     ChangeRequest,
     Error,
-    { title: string; description?: string; head_ref: string; base_ref?: string; session_id?: string }
+    {
+      title: string;
+      description?: string;
+      head_ref: string;
+      base_ref?: string;
+      session_id?: string;
+    }
   >({
     mutationFn: (input) => createChangeRequest(projectId, input),
     onSuccess: invalidate,

@@ -5,7 +5,7 @@
  * Select but `disabled`, and `canSubmit` additionally required
  * `source === 'managed'` — so both were dead options with an apology under
  * them. Nothing was missing on the server: `POST /projects/create-repo` and
- * `POST /projects/link-repository` (`apps/api/src/projects/routes/r2.ts`) are
+ * `POST /projects/link-repository` (`apps/api/src/projects/routes/project-from-repository.ts`) are
  * live, and `createProjectRepo` / `linkRepository` are exported from
  * `@kortix/sdk`. Only the client wiring was gone, deleted with
  * `project-create-modal.tsx` in #6276.
@@ -16,8 +16,8 @@
  * and the `default_branch` note on `buildLinkRepositoryPayload`).
  */
 
-import type { NewWorkspaceFormState, RepositorySource } from './new-workspace-form';
 import type { CreateProjectRepoInput, LinkRepositoryInput } from '@kortix/sdk';
+import type { NewWorkspaceFormState, RepositorySource } from './new-workspace-form';
 
 /** True for the two sources that act through a GitHub App installation. */
 export function isGitHubSource(source: RepositorySource): boolean {
@@ -58,8 +58,7 @@ export function withRepositorySource(
     source,
     installationId: null,
     repoFullName: null,
-    defaultBranch:
-      state.source === 'github-import' ? MANAGED_DEFAULT_BRANCH : state.defaultBranch,
+    defaultBranch: state.source === 'github-import' ? MANAGED_DEFAULT_BRANCH : state.defaultBranch,
   };
 }
 
@@ -67,7 +66,7 @@ export function withRepositorySource(
  * A workspace name turned into a GitHub repository name.
  *
  * `POST /projects/create-repo` validates `name` against
- * `/^[a-zA-Z0-9._-]+$/` (`r2.ts`) — no spaces — while a workspace name is
+ * `/^[a-zA-Z0-9._-]+$/` (`project-from-repository.ts`) — no spaces — while a workspace name is
  * free text and routinely has them. The old create modal did this inline as
  * `values.name.trim().replace(/\s+/g, '-')`, which only covered spaces: a
  * name like `Ana's agents` still reached the route with an apostrophe and
@@ -88,18 +87,6 @@ export function repoSlugFromName(name: string): string {
     .replace(/^[._-]+/, '')
     .replace(/[._-]+$/, '');
   return slug || 'workspace';
-}
-
-/**
- * `github.com/<owner>/<repo>` for the repository "Create in GitHub" would
- * make, or null while the owner is still unknown. Rendered under the source
- * picker so the derived slug is visible BEFORE the user presses Create —
- * `repoSlugFromName` can change the name they typed quite a lot, and finding
- * that out from the created repo is finding out too late.
- */
-export function plannedRepoPath(ownerLogin: string | null, name: string): string | null {
-  if (!ownerLogin) return null;
-  return `github.com/${ownerLogin}/${repoSlugFromName(name)}`;
 }
 
 /**
@@ -137,14 +124,14 @@ export function iconPayload(state: NewWorkspaceFormState): Record<string, unknow
  *
  * `name` is the GITHUB repository name and `project_name` is the Kortix
  * workspace name — two different fields the route reads separately
- * (`r2.ts`: `name` is charset-validated then passed to `createRepo`,
+ * (`project-from-repository.ts`: `name` is charset-validated then passed to `createRepo`,
  * `project_name` falls back to `deriveProjectName(repo.full_name)`). Sending
  * only `name` was survivable in the old modal because its repo-name field WAS
  * the project name; here the user types a workspace name with spaces, so both
  * are sent and the workspace keeps the name that was typed.
  *
  * No `default_branch`. The route does not accept one — it reads
- * `repo.default_branch` off the repository GitHub just created (`r2.ts`) —
+ * `repo.default_branch` off the repository GitHub just created (`project-from-repository.ts`) —
  * so `/new` hides the branch field for this source rather than collecting a
  * value that would be silently dropped.
  */
@@ -192,4 +179,47 @@ export function buildLinkRepositoryPayload(
     ...(branch ? { default_branch: branch } : {}),
     ...iconPayload(state),
   };
+}
+
+/**
+ * Apply a repository choice from the `/new` list — source and GitHub owner in
+ * one update.
+ *
+ * Delegates the clearing rules to `withRepositorySource` so a switch cannot
+ * leak a repository or a branch across sources, then sets the installation the
+ * chosen owner is reached through.
+ */
+export function withRepositoryChoice(
+  state: NewWorkspaceFormState,
+  choice: { kind: RepositorySource; installationId: string | null },
+): NewWorkspaceFormState {
+  return { ...withRepositorySource(state, choice.kind), installationId: choice.installationId };
+}
+
+/**
+ * True when the `managed` source is importing an existing managed repository
+ * rather than provisioning a new one.
+ *
+ * `repoFullName` is null for every ordinary managed create — `/new` only ever
+ * sets it under `managed` through the operator-only managed-import picker — so
+ * its presence IS the distinction, and no fourth `RepositorySource` value is
+ * needed for a case that shares the source's meaning.
+ */
+export function isManagedImport(state: NewWorkspaceFormState): boolean {
+  return state.source === 'managed' && Boolean(state.repoFullName);
+}
+
+/**
+ * The request body for importing a repository the managed-git owner already
+ * holds: `link-repository`, through the managed credentials rather than a
+ * per-account GitHub App installation.
+ */
+export function buildManagedImportPayload(
+  state: NewWorkspaceFormState,
+  accountId: string | undefined,
+): LinkRepositoryInput {
+  // `source: 'managed'` is the explicit selector; a managed choice carries no
+  // installation id (`withRepositoryChoice` clears it), so the two can never
+  // both reach the route.
+  return { ...buildLinkRepositoryPayload(state, accountId), source: 'managed' };
 }

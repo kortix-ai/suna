@@ -1,29 +1,50 @@
+import { holdPendingSetupLink } from '@/components/setup-links/util';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
+import { autoLinkUrls } from '@kortix/shared';
+import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
 
 // Pure, deterministic helpers used by the unified markdown renderer. Extracted
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
 
 /**
- * Is the WebAssembly runtime Shiki needs available in this context?
+ * The text Streamdown parses: KaTeX delimiters normalised, system tags removed,
+ * bare URLs linked.
  *
- * Shiki's oniguruma grammar engine compiles to WebAssembly. Some browsers /
- * contexts block or disable WebAssembly entirely — privacy browsers (Brave with
- * aggressive shields, LibreWolf, Tor Browser in high-security mode), hardened /
- * sandboxed WebViews, enterprise-policy-locked browsers, and scrapers/bots with
- * spoofed Chrome UAs running on runtimes without WebAssembly. In those contexts
- * eagerly kicking off `getSingletonHighlighter()` at module init leaves a
- * promise that rejects with `ReferenceError: WebAssembly is not defined` (V8) /
- * `Can't find variable: WebAssembly` (WebKit). Because the singleton starts
- * before any code block renders, the rejection has no consumer attached yet and
- * fires `onunhandledrejection` → Sentry → Better Stack.
- *
- * Gate the highlighter on this check so such visitors degrade to plain
- * (un-highlighted) code instead of paging on every page load.
- *
- * See Better Stack 1604d50a (`WebAssembly is not defined`).
+ * While the message streams, a setup link whose URL is still arriving is held
+ * as a pending card first (`holdPendingSetupLink`), so the reader never sees
+ * its raw `[label](` or a card built from a partial token. Settled text is
+ * never held.
  */
-export function shikiWasmAvailable(): boolean {
-  return typeof WebAssembly !== 'undefined';
+export function prepareMarkdownSource(content: string, isStreaming: boolean): string {
+  const prepared = stripKortixSystemTags(prepareMarkdownForKatex(content));
+  return autoLinkUrls(isStreaming ? holdPendingSetupLink(prepared) : prepared);
+}
+
+/** A reference-style link target: `[label]: destination`, up to three spaces in. */
+const LINK_REFERENCE_DEFINITION = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*\S/m;
+
+/**
+ * Does this markdown define a reference-style link target (`[1]: https://…`)?
+ *
+ * Streamdown parses a streaming message block by block, and a definition in
+ * one block cannot resolve a `[text][1]` in another: the reference renders as
+ * raw brackets. A message with a definition is therefore parsed whole, which is
+ * what Streamdown already does for footnotes.
+ */
+export function hasLinkReferenceDefinition(markdown: string): boolean {
+  return LINK_REFERENCE_DEFINITION.test(markdown);
+}
+
+/**
+ * Is this href Streamdown's stand-in for a URL that has not arrived yet?
+ *
+ * While a message streams, Streamdown's `remend` closes a half-written link as
+ * `[label](streamdown:incomplete-link)` so the label renders before the URL is
+ * complete. That href is not a destination. It must never become an anchor.
+ */
+export function isStreamingLinkPlaceholder(href: string | undefined): boolean {
+  return !!href && /^streamdown:/i.test(href);
 }
 
 /** Same-origin link? Internal links route through next/link; the rest open externally. */
@@ -32,6 +53,34 @@ export function isInternalUrl(href: string | undefined): boolean {
   if (href.startsWith('http://') || href.startsWith('https://')) return false;
   if (href.includes('://')) return false;
   return href.startsWith('/') || href.startsWith('#');
+}
+
+/** Base for resolving a relative image URL when there is no window (server render, tests). */
+const NO_WINDOW_PAGE_URL = 'https://page.invalid/';
+
+/**
+ * The host a markdown image would be fetched from, when that host is not this
+ * app. `null` for a same-origin or relative source, for `data:` and `blob:`,
+ * and for a source the sandbox proxy rewrote (`proxiedSrc !== src`): that is
+ * the session's own file served through the API, not a third party.
+ *
+ * The URL is resolved against the page exactly as the browser will fetch it,
+ * so protocol-relative (`//host`), backslash (`\\host`), padded and
+ * mixed-case forms are classified by where they actually point. Anything that
+ * resolves off this origin is remote; a source that does not parse is too.
+ */
+export function remoteImageHost(src: string, proxiedSrc: string = src): string | null {
+  if (proxiedSrc !== src) return null;
+  const page = typeof window !== 'undefined' ? window.location.href : NO_WINDOW_PAGE_URL;
+  let url: URL;
+  try {
+    url = new URL(src, page);
+  } catch {
+    return src.trim().slice(0, 64) || null;
+  }
+  if (url.protocol === 'data:' || url.protocol === 'blob:') return null;
+  if (url.origin === new URL(page).origin) return null;
+  return url.host || url.protocol;
 }
 
 /**
@@ -76,126 +125,7 @@ export function shouldUseNextLink(href: string | undefined): boolean {
   return isInternalUrl(href) && isLinkSafeHref(href);
 }
 
-/**
- * Fenced-code language hints that are not the id the highlighter preloads.
- *
- * Two kinds live here and both cost the reader something:
- *
- * 1. Hints Shiki has no grammar *or* alias for — `golang`, `env`, `patch`,
- *    `svg`, `psql`, `plaintext`. `ensureLangLoaded` throws on these, the catch
- *    warns, and the block renders unhighlighted forever.
- * 2. Hints Shiki resolves but only through its own alias table — `rs`, `kt`,
- *    `c++`, `ps1`. Those highlight, but `highlightSync` gates on
- *    `loadedLangs.has(lang)`, which is seeded from `PRELOAD_LANGS` verbatim, so
- *    the unresolved spelling misses the fast path and the block repaints from
- *    plain to colour a frame later.
- *
- * Every value must therefore be a `PRELOAD_LANGS` entry, not Shiki's canonical
- * id — that list carries `dockerfile`, `makefile` and `bash`, which are
- * themselves Shiki aliases (of `docker`, `make`, `shellscript`). Normalising to
- * the canonical id would be correct and still miss the sync path. The unit test
- * pins this; add an alias there and it fails until the target is preloaded.
- */
-export const LANGUAGE_ALIASES: Record<string, string> = {
-  // web
-  htm: 'html',
-  js: 'javascript',
-  node: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  ts: 'typescript',
-  mts: 'typescript',
-  cts: 'typescript',
-  sass: 'scss',
-  svg: 'xml',
-  // backend / systems
-  py: 'python',
-  py3: 'python',
-  python3: 'python',
-  rb: 'ruby',
-  rs: 'rust',
-  golang: 'go',
-  kt: 'kotlin',
-  kts: 'kotlin',
-  cs: 'csharp',
-  'c#': 'csharp',
-  'c++': 'cpp',
-  cxx: 'cpp',
-  hpp: 'cpp',
-  ex: 'elixir',
-  exs: 'elixir',
-  // shell / ops
-  sh: 'bash',
-  shell: 'bash',
-  zsh: 'bash',
-  console: 'bash',
-  'shell-session': 'bash',
-  ps1: 'powershell',
-  pwsh: 'powershell',
-  docker: 'dockerfile',
-  make: 'makefile',
-  mk: 'makefile',
-  tf: 'terraform',
-  tfvars: 'terraform',
-  // data / config
-  yml: 'yaml',
-  md: 'markdown',
-  mdown: 'markdown',
-  jsonl: 'json',
-  ndjson: 'json',
-  env: 'dotenv',
-  patch: 'diff',
-  gql: 'graphql',
-  protobuf: 'proto',
-  psql: 'sql',
-  postgres: 'sql',
-  postgresql: 'sql',
-  mysql: 'sql',
-  sqlite: 'sql',
-  txt: 'text',
-  plain: 'text',
-  plaintext: 'text',
-};
-
-/** Normalise a fenced-code language hint to a Shiki grammar id. */
-export function normalizeLanguage(lang: string): string {
-  const lower = lang.toLowerCase();
-  return LANGUAGE_ALIASES[lower] || lower;
-}
-
-/**
- * Hints the header shows exactly as typed, even though they normalise to
- * something else for highlighting. The grammar id is a Shiki implementation
- * detail; these spellings name a narrower thing the reader chose on purpose, and
- * collapsing them loses that — a `psql` block labelled "sql", an `svg` block
- * labelled "xml", a `c++` block labelled "cpp". Everything else takes the
- * normalised name, so the two tables cannot drift apart.
- */
-const LABEL_KEEPS_INPUT = new Set([
-  'c#',
-  'c++',
-  'console',
-  'cxx',
-  'hpp',
-  'jsonl',
-  'mysql',
-  'ndjson',
-  'patch',
-  'postgres',
-  'postgresql',
-  'psql',
-  'shell-session',
-  'sqlite',
-  'svg',
-]);
-
-/** Display label for the code-block header; empty hint falls back to "text". */
-export function languageLabel(language: string): string {
-  if (!language) return 'text';
-  const lower = language.toLowerCase();
-  if (LABEL_KEEPS_INPUT.has(lower)) return lower;
-  return LANGUAGE_ALIASES[lower] || lower;
-}
+export { LANGUAGE_ALIASES, normalizeLanguage, languageLabel } from '@kortix/shared/code-language';
 
 const FILE_EXTENSION_RE = /\.\w{1,10}$/;
 const COMMON_NON_FILES = new Set(['e.g.', 'i.e.', 'etc.', 'vs.', 'v1.', 'v2.']);

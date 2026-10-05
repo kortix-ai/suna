@@ -1,7 +1,6 @@
+import { FullScreenPresentationViewer } from '@/features/file-renderers/presentation/FullScreenPresentationViewer';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import React from 'react';
-import { FullScreenPresentationViewer } from '@/features/file-renderers/presentation/FullScreenPresentationViewer';
 
 interface PresentationViewerState {
   isOpen: boolean;
@@ -21,7 +20,11 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
       sandboxUrl: undefined,
       initialSlide: undefined,
 
-      openPresentation: (presentationName: string, sandboxUrl: string, initialSlide: number = 1) => {
+      openPresentation: (
+        presentationName: string,
+        sandboxUrl: string,
+        initialSlide: number = 1,
+      ) => {
         set({
           isOpen: true,
           presentationName,
@@ -41,41 +44,9 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
     }),
     {
       name: 'presentation-viewer-store',
-    }
-  )
-);
-
-// Backward compatibility hook
-export function usePresentationViewerContext() {
-  const openPresentation = usePresentationViewerStore((s) => s.openPresentation);
-  const closePresentation = usePresentationViewerStore((s) => s.closePresentation);
-
-  return {
-    openPresentation,
-    closePresentation,
-  };
-}
-
-// Hook for backward compatibility with usePresentationViewer
-export function usePresentationViewer() {
-  const isOpen = usePresentationViewerStore((s) => s.isOpen);
-  const presentationName = usePresentationViewerStore((s) => s.presentationName);
-  const sandboxUrl = usePresentationViewerStore((s) => s.sandboxUrl);
-  const initialSlide = usePresentationViewerStore((s) => s.initialSlide);
-  const openPresentation = usePresentationViewerStore((s) => s.openPresentation);
-  const closePresentation = usePresentationViewerStore((s) => s.closePresentation);
-
-  return {
-    viewerState: {
-      isOpen,
-      presentationName,
-      sandboxUrl,
-      initialSlide,
     },
-    openPresentation,
-    closePresentation,
-  };
-}
+  ),
+);
 
 // Component wrapper to render the FullScreenPresentationViewer
 export function PresentationViewerWrapper() {

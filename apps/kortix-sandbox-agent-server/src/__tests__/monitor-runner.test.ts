@@ -5,23 +5,14 @@
 // owns is exactly "what a real process printed becomes exactly these events".
 // A mocked spawn would test the mock. The timers are shrunk through the
 // runner's option seams so a 10-minute restart window is a 200 ms one here.
-//
-// Spec: docs/specs/2026-08-12-monitors.md.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  MONITOR_LINE_MAX_BYTES,
-  MonitorRunner,
-  type MonitorSpec,
-  type MonitorWireEvent,
-  normalizeLine,
-  parseMonitorSpecs,
-  truncateLine,
-} from '../monitor-runner'
+import { MONITOR_LINE_MAX_BYTES, type MonitorWireEvent } from '@kortix/api-contract/runtime-relay'
+import { MonitorRunner, type MonitorSpec, normalizeLine, parseMonitorSpecs } from '@/services/monitor/monitor-runner'
 
 const API_URL = 'http://api.test/v1'
 const PROJECT_ID = 'proj-1'
@@ -32,7 +23,7 @@ let runners: MonitorRunner[] = []
 
 /** Collects every batch a runner POSTs, and lets a test script the responses. */
 function fakeIngest(
-  respond: (batch: MonitorWireEvent[], call: number) => Response = () =>
+  respond: (batch: MonitorWireEvent[], call: number) => Response | Promise<Response> = () =>
     Response.json({ accepted: 0, deduped: 0, suppressed: 0 }, { status: 202 }),
 ) {
   const batches: MonitorWireEvent[][] = []
@@ -109,32 +100,11 @@ afterEach(async () => {
 })
 
 describe('line normalization', () => {
-  test('a JSON object line is stored as its parsed fields', () => {
-    expect(normalizeLine('{"severity":"error","order_id":7}')).toEqual({
-      severity: 'error',
-      order_id: 7,
-    })
-  })
-
   test('anything that is not a JSON object becomes { raw }', () => {
     expect(normalizeLine('plain text')).toEqual({ raw: 'plain text' })
     expect(normalizeLine('[1,2]')).toEqual({ raw: '[1,2]' })
     // A truncated/garbage JSON object must not throw — it degrades to raw.
     expect(normalizeLine('{"severity":')).toEqual({ raw: '{"severity":' })
-  })
-
-  test('an oversize line keeps its head and gains the truncated marker', () => {
-    const truncated = truncateLine({ raw: 'x'.repeat(MONITOR_LINE_MAX_BYTES * 2) })
-    expect(truncated.truncated).toBe(true)
-    expect(String(truncated.raw).length).toBeLessThan(MONITOR_LINE_MAX_BYTES)
-    expect(Buffer.byteLength(JSON.stringify(truncated), 'utf8')).toBeLessThanOrEqual(
-      MONITOR_LINE_MAX_BYTES,
-    )
-  })
-
-  test('a line inside the bound is untouched', () => {
-    const line = { severity: 'error' }
-    expect(truncateLine(line)).toBe(line)
   })
 })
 
@@ -237,24 +207,71 @@ describe('batching', () => {
 
   test('the queue is bounded: overflow drops the OLDEST and announces it', async () => {
     script('flood.sh', '#!/bin/bash\nfor i in $(seq 1 400); do echo "line-$i"; done\nsleep 30\n')
-    // A fake ingest that never answers ok holds the queue open while the flood
-    // arrives, so the bound is what decides the outcome.
+    // A fake ingest that never answers ok, and a batch window longer than the
+    // test, hold the queue open while the flood arrives: the bound decides.
     const ingest = fakeIngest(() => new Response('nope', { status: 500 }))
     const runner = makeRunner(
       [{ slug: 'flood', run: './flood.sh', mode: 'stream', intervalSeconds: null, expectEventWithinSeconds: null }],
       ingest,
-      { queueMax: 25, batchWindowMs: 5_000 },
+      { queueMax: 25, batchWindowMs: 60_000 },
     )
     runner.start()
 
-    await waitFor(() => runner.stats().dropped > 0)
-    expect(runner.stats().queued).toBeLessThanOrEqual(26)
+    // 400 lines into a 25-slot queue: 375 go. `dropped` counts lines only, so
+    // 375 also proves line-400 was read, however the pipe chunked the flood.
+    await waitFor(() => runner.stats().dropped >= 375)
+    expect(runner.stats().dropped).toBe(375)
+    expect(runner.stats().queued).toBe(25)
     await runner.stop()
-    const suppressed = ingest
-      .events()
-      .filter((event) => event.kind === 'lifecycle' && event.line.event === 'suppressed')
-    expect(suppressed.length).toBeGreaterThanOrEqual(1)
-    expect(Number(suppressed[0]!.line.dropped)).toBeGreaterThan(0)
+    // The stop flush carries the NEWEST 25 lines, then ONE note for the drop.
+    const [batch] = ingest.batches
+    expect(batch!.filter((event) => event.kind === 'event').map((event) => event.line.raw)).toEqual(
+      Array.from({ length: 25 }, (_, index) => `line-${376 + index}`),
+    )
+    const notes = batch!.filter((event) => event.kind === 'lifecycle')
+    expect(notes.map((event) => [event.line.event, event.line.dropped])).toEqual([['suppressed', 375]])
+  })
+
+  test('an overflow during a POST drops behind the lines on the wire, never them', async () => {
+    script(
+      'wave.sh',
+      // line-1..5 leave in ONE write: five echoes can reach the reader in two
+      // chunks under load, and the first POST then carries only three.
+      "#!/bin/bash\nprintf 'line-1\\nline-2\\nline-3\\nline-4\\nline-5\\n'\n" +
+        'while [ ! -e go ]; do sleep 0.01; done\n' +
+        'for i in $(seq 6 40); do echo "line-$i"; done\nsleep 30\n',
+    )
+    // The first POST stays open until the test releases it.
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const ok = () => Response.json({ accepted: 0, deduped: 0, suppressed: 0 }, { status: 202 })
+    const ingest = fakeIngest(async (_batch, call) => {
+      if (call === 1) await held
+      return ok()
+    })
+    const runner = makeRunner(
+      [{ slug: 'wave', run: './wave.sh', mode: 'stream', intervalSeconds: null, expectEventWithinSeconds: null }],
+      ingest,
+      { queueMax: 10 },
+    )
+    runner.start()
+
+    // line-1..5 are on the wire. 35 more lines meet 5 free slots: 30 go.
+    await waitFor(() => ingest.batches.length === 1)
+    expect(ingest.batches[0]!.map((event) => event.line.raw)).toEqual(['line-1', 'line-2', 'line-3', 'line-4', 'line-5'])
+    writeFileSync(join(workspace, 'go'), '')
+    await waitFor(() => runner.stats().dropped >= 30)
+    release()
+    await waitFor(() => runner.stats().queued === 0 && runner.stats().posted >= 11)
+
+    const shipped = ingest.eventsFor('wave')
+    expect(shipped.filter((event) => event.kind === 'event').map((event) => event.line.raw)).toEqual([
+      ...['line-1', 'line-2', 'line-3', 'line-4', 'line-5'],
+      ...['line-36', 'line-37', 'line-38', 'line-39', 'line-40'],
+    ])
+    expect(runner.stats().dropped).toBe(30)
+    const notes = shipped.filter((event) => event.kind === 'lifecycle')
+    expect(notes.map((event) => [event.line.event, event.line.dropped])).toEqual([['suppressed', 30]])
   })
 })
 
@@ -277,7 +294,7 @@ describe('lifecycle events', () => {
     expect(ingest.eventsFor('flap').filter((event) => event.kind === 'event').length).toBeGreaterThanOrEqual(2)
   })
 
-  test('five restarts inside the window emit `restart_budget_exhausted`, exactly once', async () => {
+  test('exhausting the restart budget emits `restart_budget_exhausted`, exactly once', async () => {
     script('die.sh', '#!/bin/bash\nexit 1\n')
     const ingest = fakeIngest()
     const runner = makeRunner(
@@ -329,13 +346,15 @@ describe('lifecycle events', () => {
       ingest,
     ).start()
 
-    await waitFor(() => ingest.eventsFor('chatty').filter((e) => e.kind === 'event').length >= 8)
+    // The script needs ~2 s for 8 beats; under a loaded single-process suite it
+    // measured past the 5 s default, so budget 5x the event.
+    await waitFor(() => ingest.eventsFor('chatty').filter((e) => e.kind === 'event').length >= 8, 12_000)
     expect(ingest.eventsFor('chatty').filter((event) => event.line.event === 'silent')).toHaveLength(0)
-  })
+  }, 15_000)
 })
 
 describe('poll mode', () => {
-  test('a poll run publishes its stdout and reports a non-zero exit', async () => {
+  test('a clean poll publishes its stdout and emits no lifecycle event', async () => {
     script('poll.sh', '#!/bin/bash\necho "{\\"depth\\":4}"\nexit 0\n')
     const ingest = fakeIngest()
     makeRunner(
@@ -415,5 +434,22 @@ describe('delivery', () => {
     // ONE attempt total: a superseded boot can never be accepted, so retrying
     // and re-flushing are both pure waste.
     expect(ingest.batches).toHaveLength(1)
+  })
+
+  test('another 4xx is a definitive rejection: the batch is not retried', async () => {
+    // A 400 is the daemon's own bug and a 403 a lost authorization; retrying
+    // either just burns the batch window. The 5xx row above does retry.
+    script('denied.sh', '#!/bin/bash\nfor i in $(seq 1 5); do echo "line-$i"; done\nsleep 30\n')
+    const ingest = fakeIngest(() => Response.json({ error: 'forbidden' }, { status: 403 }))
+    const runner = makeRunner(
+      [{ slug: 'denied', run: './denied.sh', mode: 'stream', intervalSeconds: null, expectEventWithinSeconds: null }],
+      ingest,
+    )
+    runner.start()
+
+    await waitFor(() => ingest.batches.length >= 1)
+    await Bun.sleep(120)
+    const first = JSON.stringify(ingest.batches[0])
+    expect(ingest.batches.filter((batch) => JSON.stringify(batch) === first)).toHaveLength(1)
   })
 })

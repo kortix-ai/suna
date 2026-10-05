@@ -3,7 +3,7 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
 import { getExplicitLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
-import { createClient } from '@/lib/supabase/client';
+import { updateProfileMetadata } from '@/lib/auth/update-profile';
 import { useCallback, useEffect, useState } from 'react';
 
 export function useLanguage() {
@@ -58,16 +58,7 @@ export function useLanguage() {
       }
 
       try {
-        const supabase = createClient();
-        const { error: updateError } = await supabase.auth.updateUser({
-          data: { locale: newLocale },
-        });
-
-        if (updateError) {
-          console.warn('Failed to save locale to user profile:', updateError);
-          setIsChanging(false);
-          return;
-        }
+        await updateProfileMetadata({ locale: newLocale });
       } catch (error) {
         console.warn('Error saving locale to user profile:', error);
         setIsChanging(false);

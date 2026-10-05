@@ -1,5 +1,5 @@
 import { authenticatedFetch } from '../http/auth';
-import { getActiveOpenCodeUrl } from '../session/server-store/active';
+import { getActiveRuntimeUrl } from '../session/server-store/active';
 
 /**
  * An attachment whose BYTES live behind the sandbox daemon's part endpoint.
@@ -8,7 +8,7 @@ import { getActiveOpenCodeUrl } from '../session/server-store/active';
  * proxy, for sandboxes on an older daemon) swaps every oversized `data:` url
  * in a file part for `/kortix/part/:sessionID/:messageID/:partID`, so a session
  * with hundreds of image reads lists in kilobytes instead of tens of megabytes.
- * Measured before the change (essentia, 2026-08-24): 20 messages = 7-19 MB,
+ * Measured before the change (sampleco, 2026-08-24): 20 messages = 7-19 MB,
  * reads dying on the 30 s fetch deadline, a retry re-issuing the whole thing.
  *
  * The bytes are fetched here, per part, when a row is on screen — through the
@@ -33,7 +33,7 @@ export async function fetchAttachmentPart(ref: string): Promise<Blob> {
   if (!isAttachmentPartRef(ref)) {
     throw new Error(`not an attachment part reference: ${ref}`);
   }
-  const base = getActiveOpenCodeUrl();
+  const base = getActiveRuntimeUrl();
   if (!base) throw new Error('runtime url not bound');
   const res = await authenticatedFetch(`${base}${ref}`);
   if (!res.ok) throw new Error(`attachment part fetch failed: ${res.status}`);

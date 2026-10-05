@@ -29,6 +29,13 @@ export interface Capabilities {
   internalCron: boolean;
   /** The target OWNER account is already funded enough to create sessions. */
   funded: boolean;
+  /**
+   * The runner can reach an App at its own public hostname. Local Apps are
+   * served under `*.apps.localhost`; a deployed target needs real DNS for its
+   * Apps domain, and a preview sandbox origin has none (the API runs in
+   * direct-edge mode, so `x-kortix-app-host` cannot stand in for it).
+   */
+  appHost: boolean;
 }
 
 export interface Env {
@@ -158,6 +165,7 @@ export function loadEnv(): Env {
     admin: adminToken != null,
     internalCron: internalServiceKey != null,
     funded: pick('KE2E_CAP_FUNDED') === '1',
+    appHost: pick('KE2E_CAP_APP_HOST') === '1' || inferTarget(apiUrl) === 'local',
   };
 
   cached = {

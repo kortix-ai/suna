@@ -4,8 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
+import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { useParams } from 'next/navigation';
 import {
   GitDiffIcon as FileDiff,
   ClockCounterClockwiseIcon as History,
@@ -33,11 +36,12 @@ interface DriveHeaderProps {
  * The desktop shell's title-bar hook — the SAME class the capability tab row
  * wears (`capability-tabs.tsx`). Both rows are the first in-flow child of
  * their layout, so both start at y=0 and share the band with the OS window
- * controls; the rules in globals.css widen the indents so neither renders
- * under the macOS traffic lights or the Win/Linux control cluster.
+ * controls; the rules in globals.css widen the macOS left indent. Win/Linux
+ * retain the native frame, so their controls sit outside the web content.
  *
  * Files used to carry its own near-duplicate (`.kx-files-header`) with its own
- * platform split. One class, one rule, one behaviour.
+ * platform split. The standalone header also takes the shared native band
+ * height, keeping its centre aligned with the macOS traffic lights.
  */
 export const FILES_HEADER_DESKTOP_CLASS = 'kx-titlebar-row';
 
@@ -49,7 +53,7 @@ export const FILES_HEADER_DESKTOP_CLASS = 'kx-titlebar-row';
 export function driveHeaderClass(offsetForSidebarToggle: boolean) {
   return cn(
     'relative flex h-11 shrink-0 items-center gap-1 border-b px-2',
-    offsetForSidebarToggle && FILES_HEADER_DESKTOP_CLASS,
+    offsetForSidebarToggle && `${FILES_HEADER_DESKTOP_CLASS} kx-titlebar-band-height`,
   );
 }
 
@@ -75,10 +79,85 @@ export function DriveHeader({
   isDownloading,
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const sidebar = useOptionalSidebar();
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
   const reviewCount = reviewsToggle.openCount ?? 0;
+  const params = useParams<{ id?: string }>();
+
+  const actions = (
+    <div className="flex shrink-0 items-center gap-1">
+      <VersionSelector />
+
+      <Hint label={tI18nComplete.raw('text635261ece1f6')} side="bottom">
+        <Button
+          type="button"
+          aria-label={tI18nComplete.raw('texta6df11e706c5')}
+          aria-pressed={historyToggle.open}
+          variant={historyToggle.open ? 'secondary' : 'ghost'}
+          size="icon-sm"
+          onClick={historyToggle.onToggle}
+          className={cn(
+            'active:scale-[0.96]',
+            !historyToggle.open && 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <History className="size-4" />
+        </Button>
+      </Hint>
+
+      <Button
+        type="button"
+        aria-pressed={reviewsToggle.open}
+        variant={reviewsToggle.open ? 'secondary' : 'ghost'}
+        size="sm"
+        onClick={reviewsToggle.onToggle}
+        title={
+          reviewCount > 0
+            ? tI18nComplete('text03fbe991de6e', {
+                value0: reviewCount,
+                value1: reviewCount === 1 ? '' : 's',
+              })
+            : tI18nComplete.raw('text1d826553e961')
+        }
+        className={cn(
+          'active:scale-[0.96]',
+          !reviewsToggle.open &&
+            reviewCount === 0 &&
+            'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <FileDiff className="size-4 shrink-0" />
+        <span className="hidden sm:inline">{tI18nComplete.raw('text486f49f03bf7')}</span>
+        {reviewCount > 0 && (
+          <Badge variant="success" size="tabular" className="ml-0.5">
+            {reviewCount}
+          </Badge>
+        )}
+      </Button>
+
+      <DriveViewMenu
+        onRefresh={onRefresh}
+        onDownloadDir={onDownloadDir}
+        isDownloading={isDownloading}
+      />
+    </div>
+  );
+
+  // The standalone page: the shared project page header, with the folder path
+  // in its own strip below it, shown only inside a subfolder.
+  if (offsetForSidebarToggle && params?.id) {
+    const title = tI18nComplete.raw('textabc7e9892806');
+    return (
+      <>
+        <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>
+          {actions}
+        </ProjectPageHeader>
+        <DrivePathBar rootLabel={title} as="row" />
+      </>
+    );
+  }
 
   return (
     <header
@@ -89,59 +168,9 @@ export function DriveHeader({
     >
       {offsetForSidebarToggle ? <SidebarToggle /> : null}
 
-      <DrivePathBar rootLabel="Files" />
+      <DrivePathBar rootLabel={tI18nComplete.raw('textabc7e9892806')} />
 
-      <div className="flex shrink-0 items-center gap-1">
-        <VersionSelector />
-
-        <Hint label="Browse every saved version of this project" side="bottom">
-          <Button
-            type="button"
-            aria-label="Version history"
-            aria-pressed={historyToggle.open}
-            variant={historyToggle.open ? 'secondary' : 'ghost'}
-            size="icon-sm"
-            onClick={historyToggle.onToggle}
-            className={cn(
-              'active:scale-[0.96]',
-              !historyToggle.open && 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <History className="size-4" />
-          </Button>
-        </Hint>
-
-        <Button
-          type="button"
-          aria-pressed={reviewsToggle.open}
-          variant={reviewsToggle.open ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={reviewsToggle.onToggle}
-          title={
-            reviewCount > 0
-              ? `${reviewCount} proposed change${reviewCount === 1 ? '' : 's'} waiting for review`
-              : 'Review changes proposed by your agents'
-          }
-          className={cn(
-            'active:scale-[0.96]',
-            !reviewsToggle.open && reviewCount === 0 && 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <FileDiff className="size-4 shrink-0" />
-          <span className="hidden sm:inline">Proposed changes</span>
-          {reviewCount > 0 && (
-            <Badge variant="success" size="tabular" className="ml-0.5">
-              {reviewCount}
-            </Badge>
-          )}
-        </Button>
-
-        <DriveViewMenu
-          onRefresh={onRefresh}
-          onDownloadDir={onDownloadDir}
-          isDownloading={isDownloading}
-        />
-      </div>
+      {actions}
     </header>
   );
 }

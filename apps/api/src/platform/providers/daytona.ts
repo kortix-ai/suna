@@ -5,7 +5,8 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { SandboxState } from '@daytonaio/sdk';
 import { SANDBOX_VERSION, config } from '../../config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
@@ -22,8 +23,9 @@ import {
   assertWorkloadCredential,
   providerAutoStopBackstopMinutes,
   sandboxWorkloadType,
-} from './index';
+} from './contract';
 import { classifyDaytonaState } from './daytona-state';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
 // @daytonaio/sdk's Daytona.createAxiosInstance) — effectively unbounded for
@@ -87,9 +89,9 @@ function reportIfDiskQuotaError(err: unknown, reason: string): never {
 // otherwise one env would stop another env's sandboxes. `kortix.managed` marks
 // "we created it"; `kortix.env` pins the owning environment. The reaper lists
 // by exactly these labels (see listManagedRunningSandboxes).
-export function managedSandboxLabels(workloadType?: SandboxWorkloadType): Record<string, string> {
+export async function managedSandboxLabels(workloadType?: SandboxWorkloadType): Promise<Record<string, string>> {
   return {
-    'kortix.managed': 'true',
+    'kortix.managed': await sandboxOwnershipMarker(),
     'kortix.env': config.INTERNAL_KORTIX_ENV,
     ...(workloadType === 'app' ? { 'kortix.workload': workloadType } : {}),
   };
@@ -106,7 +108,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
   SandboxWorkloadType,
-} from './index';
+} from './contract';
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
 // is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
@@ -117,25 +119,6 @@ import type {
 // idle-stop / wake detection always reads fresh; start/stop/remove bust the entry.
 const STATUS_CACHE_TTL_MS = 1500;
 const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
-
-function isMissingSandboxError(error: unknown): boolean {
-  const err = error as
-    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
-    | null
-    | undefined;
-  if (err?.status === 404 || err?.statusCode === 404) return true;
-  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
-  if (code === 'not_found' || code === 'notfound') return true;
-  const message =
-    typeof err?.message === 'string'
-      ? err.message.toLowerCase()
-      : String(error ?? '').toLowerCase();
-  return (
-    message.includes('not found') ||
-    message.includes('no such sandbox') ||
-    message.includes('sandbox does not exist')
-  );
-}
 
 /**
  * Daytona sandbox lifecycle policy, applied as SDK create() params so a box
@@ -245,7 +228,7 @@ export class DaytonaProvider implements SandboxProvider {
           // API/tunnel that created it dies. Intervals are env-tunable
           // (KORTIX_SANDBOX_AUTO*).
           ...daytonaLifecycle(opts.autoStopInterval),
-          labels: managedSandboxLabels(workloadType),
+          labels: await managedSandboxLabels(workloadType),
           public: false,
         },
         { timeout: createTimeoutSeconds },
@@ -317,66 +300,6 @@ export class DaytonaProvider implements SandboxProvider {
     if (result.exitCode !== 0) {
       throw new Error(
         `Daytona App bootstrap failed for ${externalId}: exit ${result.exitCode}: ${result.result.slice(0, 500)}`,
-      );
-    }
-  }
-
-  /**
-   * Bring the SESSION runtime process back in an already-running box.
-   *
-   * Daytona resumes the box and starts nothing inside it — the same fact
-   * `ensureAppRuntimeStarted` above exists for, applied to the other workload.
-   * Without this a stopped session never returns: measured on pi.kortix.com
-   * 2026-08-29, every resume of a stopped pi-worker session failed with
-   * `runtime_unreachable_timeout` and was cycled back to stopped, while
-   * never-stopped boxes on the SAME snapshot (`kortix-piworker-preview-…`)
-   * stayed ready. Restarting the BOX cannot fix a box that is already fine.
-   *
-   * Idempotent by construction:
-   *  - the port probe returns early when the runtime is already listening, so
-   *    calling this on a healthy box does nothing;
-   *  - `flock -n` means two concurrent wakes cannot launch two workers, and a
-   *    losing caller exits 0 rather than failing the wake.
-   *
-   * `setsid` + full redirection detaches the worker from the exec channel —
-   * the entrypoint `exec`s the worker in the FOREGROUND, so without this the
-   * toolbox call would block until the 15s timeout and then reap the very
-   * process it just started.
-   *
-   * Best-effort by contract: the caller falls through to its existing
-   * stop-and-retry, so a failure here can only ever leave today's behaviour.
-   */
-  async ensureSessionRuntimeStarted(externalId: string): Promise<void> {
-    const daytona = getDaytona();
-    const sandbox = await withTimeout(
-      daytona.get(externalId),
-      PROVIDER_CALL_TIMEOUT_MS,
-      `Daytona get(${externalId}) for session runtime bootstrap`,
-    );
-    // `sh -c`, single string: the guest image is Alpine with no bash. The probe
-    // uses node (guaranteed present — it is what the worker runs on) rather
-    // than curl, which the pi-worker image does not ship.
-    const command = [
-      'sh -c',
-      "'",
-      'PORT=${KORTIX_SERVICE_PORT:-8000}; ',
-      'if node -e "require(\'net\').connect({port:process.env.PORT||8000,host:\'127.0.0.1\'})',
-      '.on(\'connect\',()=>process.exit(0)).on(\'error\',()=>process.exit(1))" 2>/dev/null; then ',
-      'echo already-listening; exit 0; fi; ',
-      'flock -n /run/kortix-pi-worker.lock -c ',
-      '"setsid /usr/local/bin/pi-worker-entrypoint >>/var/log/kortix-pi-worker.log 2>&1 &" ',
-      '|| echo lock-held; ',
-      'echo launched',
-      "'",
-    ].join('');
-    const result = await withTimeout(
-      sandbox.process.executeCommand(command, undefined, undefined, 15),
-      PROVIDER_CALL_TIMEOUT_MS,
-      `Daytona session runtime bootstrap(${externalId})`,
-    );
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `Daytona session runtime bootstrap failed for ${externalId}: exit ${result.exitCode}: ${String(result.result).slice(0, 500)}`,
       );
     }
   }
@@ -487,7 +410,7 @@ export class DaytonaProvider implements SandboxProvider {
         const out: Array<{ externalId: string; createdAt: Date | null }> = [];
         for await (const box of getDaytona().list({
           states: [SandboxState.STARTED],
-          labels: managedSandboxLabels(),
+          labels: await managedSandboxLabels(),
           limit: 100,
         } as any)) {
           const externalId = (box as { id?: string }).id;
@@ -524,7 +447,7 @@ export class DaytonaProvider implements SandboxProvider {
       return status;
     } catch (err) {
       runningStatusCache.delete(externalId);
-      if (isMissingSandboxError(err)) return 'removed';
+      if (isProviderNotFound(err)) return 'removed';
       return 'unknown';
     }
   }

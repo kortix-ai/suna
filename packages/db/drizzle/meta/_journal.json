@@ -474,50 +474,365 @@
     {
       "idx": 67,
       "version": "7",
-      "when": 1788332400000,
-      "tag": "20260902070000_session_worker_log",
+      "when": 1789058652035,
+      "tag": "20260910164412_drop_dead_audit_events_index_snapshot",
       "breakpoints": true
     },
     {
       "idx": 68,
       "version": "7",
-      "when": 1788332401000,
-      "tag": "20260902070001_pi_runtime_artifacts",
+      "when": 1789398339291,
+      "tag": "20260914150539_project_snapshot_archives",
       "breakpoints": true
     },
     {
       "idx": 69,
       "version": "7",
-      "when": 1788338411452,
-      "tag": "20260902084011_filesystems",
+      "when": 1789416949254,
+      "tag": "20260914201549_user_provider_connections",
       "breakpoints": true
     },
     {
       "idx": 70,
       "version": "7",
-      "when": 1788415128245,
-      "tag": "20260903055848_sandbox_compute_environment_workload",
+      "when": 1789543425192,
+      "tag": "20260916072345_personal_provider_pools",
       "breakpoints": true
     },
     {
       "idx": 71,
       "version": "7",
-      "when": 1788422839862,
-      "tag": "20260903080719_pi_runtime_identity",
+      "when": 1789560030714,
+      "tag": "20260916120030_account_scim_users",
       "breakpoints": true
     },
     {
       "idx": 72,
       "version": "7",
-      "when": 1788505141547,
-      "tag": "20260904065901_session_worker_log_append_id",
+      "when": 1789563642253,
+      "tag": "20260916130042_prompt_attachments",
       "breakpoints": true
     },
     {
       "idx": 73,
       "version": "7",
-      "when": 1788505167134,
-      "tag": "20260904065927_session_worker_log_append_id_unique",
+      "when": 1789588154428,
+      "tag": "20260916194914_pooled_provider_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789623252436,
+      "tag": "20260917053412_account_secret_project_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1789756430086,
+      "tag": "20260918183350_session_turn_end_error",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1790063929219,
+      "tag": "20260922075849_admins_see_all_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790085063114,
+      "tag": "20260922135103_agent_session_on_behalf_of",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790088460441,
+      "tag": "20260922144740_audit_events_on_behalf_of",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790288304214,
+      "tag": "20260924221824_connector_sync_fences_and_usage_request_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790298012393,
+      "tag": "20260925010012_sso_domain_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790301779036,
+      "tag": "20260925020259_schema_contract_declarations",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790305502458,
+      "tag": "20260925030502_perf_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790333774831,
+      "tag": "20260925105614_config_release_quarantine",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790361989682,
+      "tag": "20260925184629_audit_events_session_sequence_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1790366690218,
+      "tag": "20260925200450_push_device_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1790466891799,
+      "tag": "20260926235451_gateway_logs_project_failed_time_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790476022260,
+      "tag": "20260927022702_accounts_created_at_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790583495303,
+      "tag": "20260928081815_account_secret_needs_reauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790615801030,
+      "tag": "20260928171641_sandbox_templates_container_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790617744563,
+      "tag": "20260928174904_github_user_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1790622019414,
+      "tag": "20260928190000_audit_reconciliation_account_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790641152592,
+      "tag": "20260929001912_provider_events_account_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1790642780246,
+      "tag": "20260929004620_drop_audit_events_account_client_source_time_index_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1790656129079,
+      "tag": "20260929042849_computer_accounts_lineage",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1790686483090,
+      "tag": "20260929125443_session_initiator",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790703018479,
+      "tag": "20260929173018_drizzle_snapshot_drop_opencode_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1790706996214,
+      "tag": "20260929183636_chat_identity_mfa_verified",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1790731056771,
+      "tag": "20260930011736_tunnel_device_auth_machine_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790736323064,
+      "tag": "20260930024523_audit_events_credential_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790778759397,
+      "tag": "20260930143239_session_presence_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1790781246005,
+      "tag": "20260930151406_session_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790813095392,
+      "tag": "20261001000455_audit_reconciliation_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1790840217324,
+      "tag": "20261001073657_trigger_run_failing_since",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790854200000,
+      "tag": "20261001113000_session_runtime_projection_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1790891254334,
+      "tag": "20261001214734_drop_unused_audit_events_indexes_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790893772228,
+      "tag": "20261001222932_audit_events_uuid_v7",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1790896090063,
+      "tag": "20261001230810_audit_events_partition_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1790896776290,
+      "tag": "20261001231936_audit_archive_chunks",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1790939671516,
+      "tag": "20261002111431_app_deployments_deleted_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1790956626526,
+      "tag": "20261002155706_session_lifecycle_commands_forwarded_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1790976647914,
+      "tag": "20261002213047_account_tokens_fk_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1790980522327,
+      "tag": "20261002223522_app_deployment_events_runtime_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1790986874502,
+      "tag": "20261003002114_account_secret_project_id_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1791022559790,
+      "tag": "20261003101559_chat_pending_picker_project_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1791027817427,
+      "tag": "20261003114337_drop_unused_access_requests_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1791039264700,
+      "tag": "20261003145424_drop_duplicate_account_memberships_index_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1791051577945,
+      "tag": "20261003181937_krtx1307_parked_verify_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1791081225637,
+      "tag": "20261004023345_chat_pending_auth_messages_project_index",
       "breakpoints": true
     }
   ]

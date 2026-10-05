@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { Agent, Command, Session } from '@kortix/sdk/react';
 import type { Editor, JSONContent } from '@tiptap/core';
@@ -9,13 +10,15 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'rea
 
 import { textToParagraphs } from '../composer-logic';
 import { COMPOSER_TEXT_METRICS } from '../composer-text-metrics';
+import { useLatestRef } from '../hooks/use-latest-ref';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
-import { SLASH_ACTIONS } from '../menus/slash-actions';
+import { localizedSlashActions } from '../menus/slash-actions';
 import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashFile } from '../menus/slash-files';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
+import { isCursorOnFirstVisualLine } from './first-visual-line';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 import { createSuggestionExtension } from './suggestion';
@@ -115,7 +118,9 @@ export interface ComposerEditorProps {
   placeholder: string;
   disabled?: boolean;
   autoFocus?: boolean;
-  onSubmit: () => void;
+  onSubmit: (placement: 'transcript' | 'composer') => void;
+  /** Up with the caret on the first visual row — see `createSubmitOnEnterHandler`. */
+  onArrowUpAtStart?: () => boolean;
   /**
    * Fires ONLY on the empty↔non-empty boundary — once when the first character
    * is typed, once when the last is deleted, never in between. This is the
@@ -265,14 +270,36 @@ export function createUpdateHandler(
  * submitting.
  */
 export function createSubmitOnEnterHandler(
-  onSubmit: () => void,
+  onSubmit: (placement: 'transcript' | 'composer') => void,
   isDisabled: () => boolean,
+  /**
+   * Up from the first visual row. Returns whether it acted — `false` leaves
+   * the key to ProseMirror, so Up still moves the caret when there is nothing
+   * to take back.
+   */
+  onArrowUpAtStart?: () => boolean,
 ): (view: EditorView, event: KeyboardEvent) => boolean {
-  return (_view, event) => {
-    if (isDisabled()) return false;
-    if (event.key === 'Enter' && !event.shiftKey) {
+  return (view, event) => {
+    if (isDisabled() || event.isComposing || event.keyCode === 229) return false;
+    // ProseMirror synthesizes a plain Event for multiline DOM changes.
+    // It has no modifier fields and must not submit pasted or filled text.
+    if (event.key === 'Enter' && event.shiftKey === false) {
       event.preventDefault();
-      onSubmit();
+      onSubmit(event.metaKey || event.ctrlKey ? 'composer' : 'transcript');
+      return true;
+    }
+    if (
+      event.key === 'ArrowUp' &&
+      onArrowUpAtStart &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.isComposing &&
+      isCursorOnFirstVisualLine(view) &&
+      onArrowUpAtStart()
+    ) {
+      event.preventDefault();
       return true;
     }
     return false;
@@ -338,8 +365,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     {
       placeholder,
       disabled,
-      autoFocus,
+      autoFocus = false,
       onSubmit,
+      onArrowUpAtStart,
       onEmptyChange,
       onDocChange,
       agents,
@@ -355,35 +383,21 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     },
     ref,
   ) {
+    const t = useTranslations('threads');
+    const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+    const defaultActions = useMemo(() => localizedSlashActions(tI18nComplete), [tI18nComplete]);
     // Mirrors use-composer-focus.ts's onTypeAheadRef: @tiptap/react only
     // resyncs `onUpdate`/other callback options when some OTHER option also
     // changed (it explicitly ignores their identity in its own option
     // comparison), so a fresh inline callback each render would otherwise go
     // stale. Applied to every value a stable, memoized-once closure below
     // needs to read fresh: onEmptyChange, onSubmit, disabled, placeholder.
-    const onEmptyChangeRef = useRef(onEmptyChange);
-    const onDocChangeRef = useRef(onDocChange);
-    useEffect(() => {
-      onEmptyChangeRef.current = onEmptyChange;
-    }, [onEmptyChange]);
-    useEffect(() => {
-      onDocChangeRef.current = onDocChange;
-    }, [onDocChange]);
-
-    const onSubmitRef = useRef(onSubmit);
-    useEffect(() => {
-      onSubmitRef.current = onSubmit;
-    }, [onSubmit]);
-
-    const disabledRef = useRef(disabled ?? false);
-    useEffect(() => {
-      disabledRef.current = disabled ?? false;
-    }, [disabled]);
-
-    const placeholderRef = useRef(placeholder);
-    useEffect(() => {
-      placeholderRef.current = placeholder;
-    }, [placeholder]);
+    const onEmptyChangeRef = useLatestRef(onEmptyChange);
+    const onDocChangeRef = useLatestRef(onDocChange);
+    const onSubmitRef = useLatestRef(onSubmit);
+    const onArrowUpAtStartRef = useLatestRef(onArrowUpAtStart);
+    const disabledRef = useLatestRef(disabled ?? false);
+    const placeholderRef = useLatestRef(placeholder);
 
     // Same "extensions are frozen at construction" reasoning as
     // `placeholderRef` above (see extensions.ts) — the mention/slash
@@ -391,59 +405,27 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     // the moment a menu opens or updates, never at construction, so these
     // refs are what keeps the `@`/`/` menus reading LIVE data instead of
     // whatever was current the moment the editor first mounted.
-    const agentsRef = useRef(agents ?? []);
-    useEffect(() => {
-      agentsRef.current = agents ?? [];
-    }, [agents]);
-
-    const sessionsRef = useRef(sessions ?? []);
-    useEffect(() => {
-      sessionsRef.current = sessions ?? [];
-    }, [sessions]);
-
-    const currentSessionIdRef = useRef(currentSessionId);
-    useEffect(() => {
-      currentSessionIdRef.current = currentSessionId;
-    }, [currentSessionId]);
-
-    const commandsRef = useRef(commands ?? []);
-    useEffect(() => {
-      commandsRef.current = commands ?? [];
-    }, [commands]);
+    const agentsRef = useLatestRef(agents ?? []);
+    const sessionsRef = useLatestRef(sessions ?? []);
+    const currentSessionIdRef = useLatestRef(currentSessionId);
+    const commandsRef = useLatestRef(commands ?? []);
 
     // Same live-getter reasoning as commandsRef — defaults to SLASH_ACTIONS
     // (buildSlashSections' own default, made explicit here rather than left
     // implicit) so an unset `actions` prop is byte-identical to before this
     // prop existed.
-    const actionsRef = useRef(actions ?? SLASH_ACTIONS);
-    useEffect(() => {
-      actionsRef.current = actions ?? SLASH_ACTIONS;
-    }, [actions]);
+    const actionsRef = useLatestRef(actions ?? defaultActions);
 
     // Same live-getter reasoning again, and it matters MORE here than for any
     // ref above: this list grows while the user watches. The agent finishes a
     // file mid-turn, the panel re-derives, and the very next `/` must already
     // offer it — a value closed over at editor construction would offer the
     // session's files as they were when the tab was opened, forever.
-    const filesRef = useRef(files ?? []);
-    useEffect(() => {
-      filesRef.current = files ?? [];
-    }, [files]);
+    const filesRef = useLatestRef(files ?? []);
 
-    const onSelectCommandRef = useRef(onSelectCommand);
-    useEffect(() => {
-      onSelectCommandRef.current = onSelectCommand;
-    }, [onSelectCommand]);
-
-    const onSelectActionRef = useRef(onSelectAction);
-    useEffect(() => {
-      onSelectActionRef.current = onSelectAction;
-    }, [onSelectAction]);
-
-    const onMenuOpenChangeRef = useRef(onMenuOpenChange);
-    useEffect(() => {
-      onMenuOpenChangeRef.current = onMenuOpenChange;
-    }, [onMenuOpenChange]);
+    const onSelectCommandRef = useLatestRef(onSelectCommand);
+    const onSelectActionRef = useLatestRef(onSelectAction);
+    const onMenuOpenChangeRef = useLatestRef(onMenuOpenChange);
 
     /**
      * Guards `createSubmitOnEnterHandler` (below) against submitting the
@@ -510,7 +492,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         reportedMenuOpenRef.current = next;
         onMenuOpenChangeRef.current?.(next);
       },
-      [],
+      [onMenuOpenChangeRef],
     );
 
     const handleUpdate = useMemo(
@@ -519,16 +501,19 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           (isEmpty) => onEmptyChangeRef.current(isEmpty),
           (doc, isEmpty) => onDocChangeRef.current?.(doc, isEmpty),
         ),
-      [],
+      [onDocChangeRef, onEmptyChangeRef],
     );
 
     const handleKeyDown = useMemo(
       () =>
         createSubmitOnEnterHandler(
-          () => onSubmitRef.current(),
+          (placement) => onSubmitRef.current(placement),
           () => disabledRef.current || mentionOwnsEnterRef.current || slashOwnsEnterRef.current,
+          // An open `@`/`/` menu claims arrow keys through `mentionOwnsEnterRef`
+          // / `slashOwnsEnterRef` above, so Up never reaches this while one is open.
+          () => onArrowUpAtStartRef.current?.() ?? false,
         ),
-      [],
+      [disabledRef, onArrowUpAtStartRef, onSubmitRef],
     );
 
     const editor = useEditor({
@@ -566,6 +551,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             getCommands: () => commandsRef.current,
             getActions: () => actionsRef.current,
             getFiles: () => filesRef.current,
+            actionsHeading: tI18nComplete.raw('textff8059dc6752'),
             // NOT read through a ref, unlike every getter around it. This is
             // frozen at construction on purpose: it is a per-instance
             // selector string that identifies this composer's dock element
@@ -589,7 +575,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         attributes: {
           role: 'textbox',
           'aria-multiline': 'true',
-          'aria-label': 'Message input',
+          'aria-label': t('messageInput'),
           /**
            * `min-h-[3.5em]` — taller than one line by design. History: was
            * `1.5em` (exactly one line) on the reasoning that a taller floor
@@ -620,7 +606,32 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     });
 
     useEffect(() => {
-      editor?.setEditable(!disabled);
+      /**
+       * `emitUpdate: false` — editability is not content.
+       *
+       * TipTap's `setEditable` emits the editor's `update` event by default
+       * (`@tiptap/core`, `Editor.setEditable`), and this editor's `onUpdate` is
+       * `createUpdateHandler`, whose entire job is to report a DOCUMENT change.
+       * So every flip of `disabled` handed the draft saver the live document as
+       * if the user had just typed it.
+       *
+       * That is what put a SENT message back in the project-home composer. Its
+       * send flips `disabled`, and at the time it also kept the text in the box
+       * (`clearOnSend={false}`), so in a production build the phantom change
+       * landed AFTER the send's `clearSavedDraft()` and its 400ms debounce
+       * re-saved the message as the project's unsent draft — measured on
+       * dev.kortix.com: clear at T, phantom write at T+406ms, and the next
+       * visit to project home restored "Hi" into the composer.
+       *
+       * That composer clears now (`clearOnSend="text-only"`), so its phantom
+       * write would carry an empty document. The guard stays: it is about
+       * `setEditable`, and every composer that flips `disabled` mid-send is one
+       * debounce away from the same bug.
+       *
+       * The view still refreshes — `setOptions` calls `view.updateState`
+       * whether or not the event is emitted.
+       */
+      editor?.setEditable(!disabled, false);
     }, [editor, disabled]);
 
     useEffect(() => {

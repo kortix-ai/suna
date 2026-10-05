@@ -1,14 +1,17 @@
-import { accountTokens, accounts, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import type { AgentGrant } from '@kortix/db';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import {
-  candidateSecretKeyHashes,
-  generateAccountTokenPair,
-  hashSecretKey,
-  isAccountToken,
-  isApiKeySecretConfigured,
-} from '../shared/crypto';
+import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
+import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
+import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
+import {
+  hashSecretKey,
+  generateAccountTokenPair,
+  isApiKeySecretConfigured,
+  isAccountToken,
+} from '../shared/crypto';
+import type { AgentGrant } from '@kortix/db';
+import { isUuid } from '../shared/validate';
+import { createLastUsedTracker } from '../shared/throttled-last-used';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,13 +26,28 @@ export interface AccountTokenValidationResult {
   /** Non-null = this token belongs to a specific session (sandbox connector
    *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
   sessionId?: string | null;
-  runtimeKind?: 'worker' | 'environment' | null;
-  runtimeId?: string | null;
   /** Non-null = this is an agent-session token; the running agent's resolved
    *  authorization (which Kortix CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
   agentGrant?: AgentGrant | null;
+  /** The human an agent-session token acts on behalf of (spec
+   *  2026-09-22-agents-as-principals §2.3). Null for an unattended run, a
+   *  session another human prompted, and every non-session token. Read fresh
+   *  on every request (this query is not memoized). */
+  onBehalfOfUserId?: string | null;
+  /** The agent's standing-identity service account (agent-session tokens),
+   *  else null. Read with the rest of the row so the IAM actor does not read
+   *  the same `account_tokens` row a second time (see `iam/actor.ts`). */
+  serviceAccountId?: string | null;
   error?: string;
+  /** True = the credential itself can never come back (missing, revoked,
+   *  expired, or its sandbox lease closed). The auth middleware turns this
+   *  into a typed 401 (`code:'session_token_revoked'`) so a retrying client
+   *  can stop: a revoked session credential that keeps retrying hammers the
+   *  gate forever (prod 2026-09-26/27: ~10k 401s/h across runtime-projection,
+   *  turn-stream and audit/events from boxes that outlived their token).
+   *  Absent on success and on 'Validation error' (a DB failure IS transient). */
+  credentialDead?: boolean;
 }
 
 export interface CreateAccountTokenParams {
@@ -42,9 +60,6 @@ export interface CreateAccountTokenParams {
   /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
    *  through the gateway is attributed to the session. */
   sessionId?: string | null;
-  /** Exact runtime principal. Null is accepted only for legacy worker tokens. */
-  runtimeKind?: 'worker' | 'environment' | null;
-  runtimeId?: string | null;
   expiresAt?: Date;
   /** Set for agent-session tokens — the resolved per-agent grant to stamp
    *  onto the token (already ∩ the launching user's role). */
@@ -53,6 +68,9 @@ export interface CreateAccountTokenParams {
    *  authorizes this session AS the SA (its own policies) ∩ agentGrant, not the
    *  launching user. Null = legacy (authorize as the user). */
   serviceAccountId?: string | null;
+  /** Agent-session tokens only: the human the session acts on behalf of
+   *  (spec 2026-09-22-agents-as-principals §2.3). Null = unattended. */
+  onBehalfOfUserId?: string | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -80,8 +98,15 @@ export interface AccountTokenListEntry {
 
 // ─── Throttle for last_used_at updates ───────────────────────────────────────
 
-const THROTTLE_MS = 15 * 60 * 1000;
-const lastUsedCache = new Map<string, number>();
+const updateLastUsedThrottled = createLastUsedTracker((tokenId) =>
+  db.update(accountTokens)
+    .set({ lastUsedAt: new Date() })
+    .where(and(
+      eq(accountTokens.tokenId, tokenId),
+      eq(accountTokens.status, 'active'),
+      isNull(accountTokens.revokedAt),
+    )),
+);
 
 // ─── CRUD Operations ─────────────────────────────────────────────────────────
 
@@ -124,9 +149,11 @@ async function loadPatPolicy(accountId: string): Promise<{
  *   - require_expiry → must provide expires_at
  *   - max_lifetime_days → expires_at can't be more than N days out
  *
- * Project-scoped tokens (sandbox injection) are EXEMPT: they're short-
- * lived by construction (sandbox lifetime) and we don't want admin
- * policy to break the agent runtime.
+ * Session-bound tokens (a sandbox's own KORTIX_TOKEN, `sessionId` set) are
+ * EXEMPT: they live and die with the session, and admin policy must not
+ * break the agent runtime. A project-scoped token WITHOUT a session binding
+ * (`POST /projects/:id/cli-token`, `POST /accounts/tokens {project_id}`) is a
+ * durable credential like any other PAT and follows the policy.
  */
 export async function createAccountToken(
   params: CreateAccountTokenParams,
@@ -135,7 +162,7 @@ export async function createAccountToken(
     throw new Error('API_KEY_SECRET not configured');
   }
 
-  if (!params.projectId) {
+  if (!params.sessionId) {
     const policy = await loadPatPolicy(params.accountId);
     if (policy) {
       if (policy.requireExpiry && !params.expiresAt) {
@@ -166,14 +193,13 @@ export async function createAccountToken(
       userId: params.userId,
       projectId: params.projectId ?? null,
       sessionId: params.sessionId ?? null,
-      runtimeKind: params.runtimeKind ?? null,
-      runtimeId: params.runtimeId ?? null,
       name: params.name,
       publicKey,
       secretKeyHash,
       expiresAt: params.expiresAt ?? null,
       agentGrant: params.agentGrant ?? null,
       serviceAccountId: params.serviceAccountId ?? null,
+      onBehalfOfUserId: params.onBehalfOfUserId ?? null,
     })
     .returning();
 
@@ -270,6 +296,32 @@ export async function listPersonalAccountTokens(
 }
 
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
+/**
+ * Who minted an account token, and whether it is a hand-minted personal token
+ * (not a session, service-account or agent-grant bearer). The revoke route
+ * decides between `token.personal.revoke` and `token.revoke` on this.
+ */
+export async function getAccountTokenOwner(
+  tokenId: string,
+  accountId: string,
+): Promise<{ userId: string | null; personal: boolean } | null> {
+  const [row] = await db
+    .select({
+      userId: accountTokens.userId,
+      sessionId: accountTokens.sessionId,
+      serviceAccountId: accountTokens.serviceAccountId,
+      agentGrant: accountTokens.agentGrant,
+    })
+    .from(accountTokens)
+    .where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.accountId, accountId)))
+    .limit(1);
+  if (!row) return null;
+  return {
+    userId: row.userId ?? null,
+    personal: !row.sessionId && !row.serviceAccountId && !row.agentGrant,
+  };
+}
+
 export async function revokeAccountToken(
   tokenId: string,
   accountId: string,
@@ -362,6 +414,7 @@ export async function revokeSessionConnectorTokens(
  * Validate a CLI Personal Access Token (kortix_pat_... prefix).
  * Returns the account + user id on success.
  */
+
 export async function validateAccountToken(
   secretKey: string,
 ): Promise<AccountTokenValidationResult> {
@@ -373,9 +426,40 @@ export async function validateAccountToken(
     return { isValid: false, error: 'Invalid PAT format — expected kortix_pat_ prefix' };
   }
 
+  let hashes: string[];
   try {
-    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
+    hashes = await candidateSecretKeyHashesAsync(secretKey);
+  } catch (err) {
+    console.error('Account token hashing error:', err);
+    return { isValid: false, error: 'Validation error' };
+  }
+  const result = await validateAccountTokenMatching(() =>
+    inArray(accountTokens.secretKeyHash, hashes),
+  );
+  if (result.isValid) markTokenValidated(secretKey);
+  return result;
+}
 
+/**
+ * Validate a token row by its id, with EXACTLY the checks
+ * `validateAccountToken` applies to a presented secret: active, not revoked,
+ * not expired, a session token only while its sandbox is live, idle-revoke.
+ *
+ * For callers that received a server-signed reference to a token instead of
+ * the secret — the connector → App assertion (apps/access.ts). Never expose
+ * this to a client-supplied id without such a signature.
+ */
+export async function validateAccountTokenById(
+  tokenId: string,
+): Promise<AccountTokenValidationResult> {
+  if (!isUuid(tokenId)) return { isValid: false, error: 'Invalid token id' };
+  return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId));
+}
+
+async function validateAccountTokenMatching(
+  match: () => SQL,
+): Promise<AccountTokenValidationResult> {
+  try {
     // Join the owning account so we can apply idle-revoke without a
     // second round-trip on the hot path.
     const [row] = await db
@@ -385,20 +469,20 @@ export async function validateAccountToken(
         userId: accountTokens.userId,
         projectId: accountTokens.projectId,
         sessionId: accountTokens.sessionId,
-        runtimeKind: accountTokens.runtimeKind,
-        runtimeId: accountTokens.runtimeId,
         status: accountTokens.status,
         expiresAt: accountTokens.expiresAt,
         lastUsedAt: accountTokens.lastUsedAt,
         createdAt: accountTokens.createdAt,
         agentGrant: accountTokens.agentGrant,
+        onBehalfOfUserId: accountTokens.onBehalfOfUserId,
+        serviceAccountId: accountTokens.serviceAccountId,
         patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
       .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
       .where(
         and(
-          inArray(accountTokens.secretKeyHash, secretKeyHashes),
+          match(),
           eq(accountTokens.status, 'active'),
           // `revoked_at` is the SECOND half of the revocation invariant and it
           // must be checked here, not only `status`. Nothing in the database
@@ -423,11 +507,11 @@ export async function validateAccountToken(
       .limit(1);
 
     if (!row) {
-      return { isValid: false, error: 'PAT not found or revoked' };
+      return { isValid: false, error: 'PAT not found or revoked', credentialDead: true };
     }
 
     if (row.expiresAt && row.expiresAt < new Date()) {
-      return { isValid: false, error: 'PAT expired' };
+      return { isValid: false, error: 'PAT expired', credentialDead: true };
     }
 
     // A session credential is authority for one live sandbox, not a durable
@@ -435,35 +519,20 @@ export async function validateAccountToken(
     // active. This closes the stopped/deleted-session replay window without
     // affecting human CLI tokens, and permits the daemon's boot callbacks.
     if (row.sessionId) {
-      const [lease] =
-        row.runtimeKind === 'environment'
-          ? await db
-              .select({ status: sessionEnvironments.status })
-              .from(sessionEnvironments)
-              .where(
-                and(
-                  eq(sessionEnvironments.sessionId, row.sessionId),
-                  eq(sessionEnvironments.accountId, row.accountId),
-                  ...(row.projectId ? [eq(sessionEnvironments.projectId, row.projectId)] : []),
-                  ...(row.runtimeId ? [eq(sessionEnvironments.environmentId, row.runtimeId)] : []),
-                  inArray(sessionEnvironments.status, ['provisioning', 'active']),
-                ),
-              )
-              .limit(1)
-          : await db
-              .select({ status: sessionSandboxes.status })
-              .from(sessionSandboxes)
-              .where(
-                and(
-                  eq(sessionSandboxes.sessionId, row.sessionId),
-                  eq(sessionSandboxes.accountId, row.accountId),
-                  ...(row.projectId ? [eq(sessionSandboxes.projectId, row.projectId)] : []),
-                  ...(row.runtimeId ? [eq(sessionSandboxes.sandboxId, row.runtimeId)] : []),
-                  inArray(sessionSandboxes.status, ['provisioning', 'active']),
-                ),
-              )
-              .limit(1);
-      if (!lease) return { isValid: false, error: 'Session token is not active' };
+      const [lease] = await db
+        .select({ status: sessionSandboxes.status })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sessionId, row.sessionId),
+            eq(sessionSandboxes.accountId, row.accountId),
+            ...(row.projectId ? [eq(sessionSandboxes.projectId, row.projectId)] : []),
+            inArray(sessionSandboxes.status, ['provisioning', 'active']),
+          ),
+        )
+        .limit(1);
+      if (!lease)
+        return { isValid: false, error: SESSION_LEASE_REFUSAL, credentialDead: true };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
@@ -482,7 +551,11 @@ export async function validateAccountToken(
           .catch((err) => {
             console.warn('PAT idle auto-revoke failed:', err);
           });
-        return { isValid: false, error: 'PAT auto-revoked due to inactivity' };
+        return {
+          isValid: false,
+          error: 'PAT auto-revoked due to inactivity',
+          credentialDead: true,
+        };
       }
     }
 
@@ -495,47 +568,12 @@ export async function validateAccountToken(
       tokenId: row.tokenId,
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
-      runtimeKind: row.runtimeKind ?? null,
-      runtimeId: row.runtimeId ?? null,
-      agentGrant: row.agentGrant ?? null,
+      agentGrant: readStoredAgentGrant(row.agentGrant),
+      onBehalfOfUserId: row.onBehalfOfUserId ?? null,
+      serviceAccountId: row.serviceAccountId ?? null,
     };
   } catch (err) {
     console.error('Account token validation error:', err);
     return { isValid: false, error: 'Validation error' };
-  }
-}
-
-// ─── Internal ────────────────────────────────────────────────────────────────
-
-async function updateLastUsedThrottled(tokenId: string): Promise<void> {
-  const now = Date.now();
-  const lastUpdate = lastUsedCache.get(tokenId) || 0;
-  if (now - lastUpdate < THROTTLE_MS) return;
-
-  lastUsedCache.set(tokenId, now);
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) lastUsedCache.delete(k);
-    }
-  }
-
-  try {
-    await db
-      .update(accountTokens)
-      .set({ lastUsedAt: new Date() })
-      // Same liveness predicate as the validation query. A revoked token must
-      // not keep refreshing its own idle clock: without this, a token revoked
-      // between the read and this write looks freshly used, which defeats the
-      // idle-revoke sweep above and makes the token appear live in the UI.
-      .where(
-        and(
-          eq(accountTokens.tokenId, tokenId),
-          eq(accountTokens.status, 'active'),
-          isNull(accountTokens.revokedAt),
-        ),
-      );
-  } catch (err) {
-    console.warn('Failed to update account_tokens.last_used_at:', err);
   }
 }

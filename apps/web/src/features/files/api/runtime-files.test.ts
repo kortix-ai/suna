@@ -6,9 +6,8 @@ mock.module('@kortix/sdk/react', () => ({
   getActiveStaticFilePreviewUrl: () => staticFileUrl,
 }));
 
-const { isBrowserViewable, openFileInNewTab, RuntimeNotBoundError, uniqueZipNames } = await import(
-  './runtime-files'
-);
+const { isBrowserViewable, openFileInNewTab, RuntimeNotBoundError, uniqueZipNames } =
+  await import('./runtime-files');
 
 const originalWindow = globalThis.window;
 const originalFetch = globalThis.fetch;

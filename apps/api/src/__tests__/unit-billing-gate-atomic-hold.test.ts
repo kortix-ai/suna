@@ -22,7 +22,7 @@ let creditAccount: {
   stripeSubscriptionStatus: string | null;
 } | null = null;
 let billingInternalEnabled = true;
-let deductCreditsCalls: Array<{ accountId: string; amount: number }> = [];
+let debitCalls: Array<{ accountId: string; amount: number }> = [];
 let deductShouldFail = false;
 
 mock.module('../config', () => ({
@@ -35,21 +35,30 @@ mock.module('../config', () => ({
 
 mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => creditAccount,
+  updateCreditAccount: async (_accountId: string, data: Record<string, unknown>) => {
+    if (creditAccount) Object.assign(creditAccount, data);
+  },
+}));
+
+// billing-gate debits through wallet-debits, which fires the auto-topup check.
+mock.module('../billing/services/auto-topup', () => ({
+  checkAndTriggerAutoTopup: async () => {},
 }));
 
 mock.module('../billing/services/free-tier', () => ({
   ensureFreeTierAccountReady: async () => {},
 }));
 
-mock.module('../billing/services/credits', () => ({
-  deductCredits: async (accountId: string, amount: number) => {
-    deductCreditsCalls.push({ accountId, amount });
-    if (deductShouldFail) {
-      throw new Error('Insufficient credits');
-    }
-    return { success: true, cost: amount, newBalance: 0, transactionId: 'txn-1' };
+mock.module('../billing/wallet', () => ({
+  wallet: {
+    debit: async ({ accountId, amount }: { accountId: string; amount: number }) => {
+      debitCalls.push({ accountId, amount });
+      if (deductShouldFail) {
+        throw new Error('Insufficient credits');
+      }
+      return { amount, balance: 0, transactionId: 'txn-1', replayed: false };
+    },
   },
-  grantCredits: async () => ({ success: true }),
 }));
 
 const { checkBillingActive } = await import('../billing/services/billing-gate');
@@ -57,7 +66,7 @@ const { checkBillingActive } = await import('../billing/services/billing-gate');
 describe('checkBillingActive — atomic admission hold (pure-wallet path)', () => {
   beforeEach(() => {
     billingInternalEnabled = true;
-    deductCreditsCalls = [];
+    debitCalls = [];
     deductShouldFail = false;
     creditAccount = {
       balance: 5,
@@ -73,8 +82,8 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     expect((result as { holdUsd?: number }).holdUsd).toBe(0.01);
     // The critical behavioral change: this is a real deduction call through
     // the SAME atomic path the final charge uses, not a passive balance read.
-    expect(deductCreditsCalls).toHaveLength(1);
-    expect(deductCreditsCalls[0]).toEqual({ accountId: 'acct-1', amount: 0.01 });
+    expect(debitCalls).toHaveLength(1);
+    expect(debitCalls[0]).toEqual({ accountId: 'acct-1', amount: 0.01 });
   });
 
   test('a hold that fails (concurrent drain / insufficient balance) denies with insufficient_credits — same denial shape as the old read check', async () => {
@@ -91,7 +100,7 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('no_account');
-    expect(deductCreditsCalls).toHaveLength(0);
+    expect(debitCalls).toHaveLength(0);
   });
 
   test('an active per-seat subscription at $0 is REFUSED — nothing bypasses the floor', async () => {
@@ -117,7 +126,7 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(true);
     expect((result as { holdUsd?: number }).holdUsd).toBe(0.01);
-    expect(deductCreditsCalls).toHaveLength(1);
+    expect(debitCalls).toHaveLength(1);
   });
 
   test('a per-seat account with no active subscription falls back to the wallet-floor check (no hold — subscription_required, not insufficient_credits)', async () => {
@@ -130,7 +139,7 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('subscription_required');
-    expect(deductCreditsCalls).toHaveLength(0);
+    expect(debitCalls).toHaveLength(0);
   });
 
   test('self-host / billing-internal-disabled deploys skip the gate entirely — no hold, always ok', async () => {
@@ -138,6 +147,6 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(true);
     expect((result as { holdUsd?: number }).holdUsd).toBeUndefined();
-    expect(deductCreditsCalls).toHaveLength(0);
+    expect(debitCalls).toHaveLength(0);
   });
 });

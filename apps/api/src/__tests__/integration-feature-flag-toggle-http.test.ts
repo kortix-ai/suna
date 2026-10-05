@@ -4,6 +4,7 @@ import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
+import { insertIntoView } from './helpers/compat-views';
 
 // PATCH /v1/projects/:projectId/features (canonical) and .../experimental
 // (deprecated alias) drive the real HTTP route against the real DB. The two
@@ -45,10 +46,8 @@ beforeAll(async () => {
       metadata: { experimental: { apps: true } },
     },
   ]);
-  await db
-    .insert(accountMembers)
-    .values({ userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, accountMembers, { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
     { accountId: ACCOUNT, projectId: ARCHIVED, userId: MANAGER, projectRole: 'manager' },
   ]);
@@ -112,16 +111,16 @@ describe('PATCH /v1/projects/:projectId/features', () => {
   test('the /experimental alias behaves identically', async () => {
     const viaAlias = await patch(
       `/v1/projects/${PROJECT}/experimental`,
-      JSON.stringify({ feature: 'review_center', enabled: true }),
+      JSON.stringify({ feature: 'apps', enabled: true }),
     );
     expect(viaAlias.status).toBe(200);
     const aliasBody = await viaAlias.json();
-    expect(aliasBody.experimental.review_center).toBe(true);
-    expect(await storedOverrides(PROJECT)).toEqual({ review_center: true });
+    expect(aliasBody.experimental.apps).toBe(true);
+    expect(await storedOverrides(PROJECT)).toEqual({ apps: true });
 
     const viaCanonical = await patch(
       `/v1/projects/${PROJECT}/features`,
-      JSON.stringify({ feature: 'review_center', enabled: true }),
+      JSON.stringify({ feature: 'apps', enabled: true }),
     );
     expect(viaCanonical.status).toBe(200);
     const canonicalBody = await viaCanonical.json();
@@ -130,7 +129,7 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 
     await patch(
       `/v1/projects/${PROJECT}/features`,
-      JSON.stringify({ feature: 'review_center', enabled: null }),
+      JSON.stringify({ feature: 'apps', enabled: null }),
     );
   });
 

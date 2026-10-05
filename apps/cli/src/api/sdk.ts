@@ -2,8 +2,9 @@ import { type Kortix, type KortixPlatformConfig, createKortix } from '@kortix/sd
 import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
-import { ApiError } from './client.ts';
-import { secureRemoteBase } from './config.ts';
+import { sdkBackendUrl } from '@kortix/shared/host-config';
+
+export { sdkBackendUrl } from '@kortix/shared/host-config';
 
 /**
  * The CLI's ONE seam onto `@kortix/sdk`. Every Kortix backend call the CLI
@@ -12,30 +13,13 @@ import { secureRemoteBase } from './config.ts';
  * list has length 1, so a second escape hatch cannot be added quietly.
  */
 
-/**
- * Normalize a stored CLI host base into the absolute `<origin>/v1` the SDK
- * requires. Two shapes reach us:
- *
- *   - host login stores a bare origin (`https://api.kortix.com`)
- *   - a session sandbox injects `KORTIX_API_URL` *with* the mount (`https://<tunnel>/v1`)
- *
- * `createKortix` throws `INVALID_BACKEND_URL` on a relative base outside a
- * browser (there is no `window.location` to resolve against), and the SDK
- * appends endpoint paths verbatim — so the version mount must be present
- * exactly once.
- */
-export function sdkBackendUrl(apiBase: string): string {
-  let base = secureRemoteBase(apiBase).replace(/\/+$/, '');
-  if (base.endsWith('/v1')) base = base.slice(0, -3);
-  return `${base.replace(/\/+$/, '')}/v1`;
-}
-
 export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   const token = auth.token;
   return {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
-    clientSource: 'cli',
+    // Baked by the release build (`--define`); unset in a local `bun run`.
+    clientVersion: process.env.KORTIX_CLI_VERSION ? `cli/${process.env.KORTIX_CLI_VERSION}` : undefined,
   };
 }
 
@@ -71,50 +55,12 @@ export function withKortixScope<T>(auth: Auth, fn: () => Promise<T>): Promise<T>
   return runWithKortix(sdkConfigFromAuth(auth), fn);
 }
 
-interface RuntimeResult<T> {
-  data?: T;
-  error?: unknown;
-  response?: Response;
-}
-
-function runtimeErrorMessage(error: unknown): string {
-  if (typeof error === 'string') return error;
-  if (!error || typeof error !== 'object') return 'OpenCode request failed';
-  const record = error as Record<string, unknown>;
-  if (typeof record.message === 'string') return record.message;
-  const data = record.data;
-  if (
-    data &&
-    typeof data === 'object' &&
-    typeof (data as Record<string, unknown>).message === 'string'
-  ) {
-    return (data as Record<string, unknown>).message as string;
-  }
-  return 'OpenCode request failed';
-}
-
-/**
- * Unwrap the generated OpenCode client's `{ data, error, response }` result.
- * Commands use the CLI's established `ApiError` so `surfaceApiError` keeps its
- * current status-code and payload behavior.
- */
-export function unwrapRuntime<T>(result: RuntimeResult<T>): T {
-  if (result.error !== undefined) {
-    throw new ApiError(
-      result.response?.status ?? 0,
-      runtimeErrorMessage(result.error),
-      result.error,
-    );
-  }
-  return result.data as T;
-}
-
-export interface RunningOpenCodeProxy {
+export interface RunningSandboxPortProxy {
   url: string;
   close(): void;
 }
 
-interface StartOpenCodeProxyOpts {
+interface StartSandboxPortProxyOpts {
   runtimeUrl: string;
   token: string;
   port?: number;
@@ -128,10 +74,15 @@ interface ProxyWsData {
 }
 
 /**
- * Expose one SDK-resolved OpenCode runtime on localhost for `opencode attach`.
- * This adapter owns the only raw HTTP/WebSocket transport allowed in the CLI.
+ * Expose one SDK-resolved sandbox port (any `/p/{externalId}/{port}` proxy
+ * route — OpenCode on 8000 for `opencode attach`, or an arbitrary dev-server
+ * port for `sessions forward` / the TUI Ports panel) on localhost, injecting
+ * the Kortix bearer token. This adapter owns the only raw HTTP/WebSocket
+ * transport allowed in the CLI. `startSandboxPortProxy` below is this same
+ * function under its established name at the one call site that predates the
+ * generalization.
  */
-export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCodeProxy {
+export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningSandboxPortProxy {
   const baseHttp = opts.runtimeUrl.replace(/\/+$/, '');
   const baseWs = baseHttp.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
 
@@ -153,7 +104,7 @@ export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCod
       }
 
       const upstream = `${baseHttp}${incoming.pathname}${incoming.search}`;
-      return forwardOpenCodeHttp(req, upstream, opts.token);
+      return forwardProxiedHttp(req, upstream, opts.token);
     },
     websocket: {
       open(ws) {
@@ -223,7 +174,7 @@ export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCod
   };
 }
 
-async function forwardOpenCodeHttp(
+async function forwardProxiedHttp(
   request: Request,
   upstream: string,
   token: string,
@@ -242,7 +193,7 @@ async function forwardOpenCodeHttp(
       body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
     });
   } catch (error) {
-    return new Response(`OpenCode proxy upstream error: ${(error as Error).message}`, {
+    return new Response(`Sandbox proxy upstream error: ${(error as Error).message}`, {
       status: 502,
     });
   }

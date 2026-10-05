@@ -1,3 +1,4 @@
+import { numberValue, type NumericValue } from './cost-values';
 import { gatewayRequestLogs } from '@kortix/db';
 import { sql, type SQL } from 'drizzle-orm';
 
@@ -31,9 +32,6 @@ import { sql, type SQL } from 'drizzle-orm';
  * so no surface publishes the Kortix margin on a managed request.
  */
 
-/** Numeric columns come back from postgres as strings; usage hints arrive as numbers. */
-type NumericValue = number | string | null | undefined;
-
 export interface LlmSpendRow {
   billingMode: string | null | undefined;
   upstreamCost: NumericValue;
@@ -41,17 +39,12 @@ export interface LlmSpendRow {
 }
 
 export interface LlmSpendBreakdown {
-  /** Debited from the Kortix wallet — managed inference, or the BYOK platform fee. */
+  /** Debited from the Kortix wallet. Current BYOK requests always report 0. */
   kortix_cost: number;
   /** Paid straight to your own provider on your own key. Always 0 for managed inference. */
   provider_cost: number;
   /** `kortix_cost + provider_cost` — every dollar this request cost you. */
   total_cost: number;
-}
-
-function numberValue(value: NumericValue): number {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 /**
@@ -101,7 +94,7 @@ export const rowTotalSpendSql: SQL<string> = sql`(${gatewayRequestLogs.finalCost
 const aggregate = (rowExpression: SQL<string>) =>
   sql<number>`coalesce(sum(${rowExpression}), 0)::float8`;
 
-/** Windowed total LLM spend. This is the headline number on every cost surface. */
+/** Windowed total LLM spend for gateway observability. */
 export const totalSpendSql = aggregate(rowTotalSpendSql);
 
 /** Windowed spend debited from the Kortix wallet. */

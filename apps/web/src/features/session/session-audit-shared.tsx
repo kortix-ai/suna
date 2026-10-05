@@ -20,62 +20,16 @@ import {
   type SessionAudit,
   type SessionAuditAction,
   getSessionAudit,
-  listSessionsNeedingInput,
   resolveApproval,
 } from '@kortix/sdk';
+import { readSessionAudit } from '@kortix/sdk/react';
 import {
   type QueryClient,
   useInfiniteQuery,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-
-/**
- * Per-session pending-approval summary for the sidebar "needs input" badge.
- * Returns `{ sessions: { [sessionId]: count } }` keyed by BOTH the OpenCode and
- * Kortix session ids, so a caller can look up whichever id it holds. Polls
- * quietly (no error toast) since it's an ambient indicator.
- */
-export function useSessionsNeedingInput(projectId: string | undefined) {
-  return useQuery({
-    queryKey: ['sessions-needing-input', projectId ?? ''],
-    // `enabled` guards presence, so the `?? ''` fallback is never exercised.
-    queryFn: () => listSessionsNeedingInput(projectId ?? '', { showErrors: false }),
-    enabled: !!projectId,
-    staleTime: 5_000,
-    refetchInterval: 15_000,
-  });
-}
-
-/**
- * Route-independent variant for the sidebar: query needs-input for EACH project
- * the visible sessions belong to (their `projectID`), then merge. Avoids relying
- * on a route projectId — the sidebar renders on routes (e.g. /sessions/:id) where
- * the route param isn't a project. Returns `{ sessions, total }` where `sessions`
- * is keyed by both OpenCode + Kortix session ids.
- */
-export function useSessionsNeedingInputForProjects(projectIds: string[]) {
-  const results = useQueries({
-    queries: projectIds.map((pid) => ({
-      queryKey: ['sessions-needing-input', pid],
-      queryFn: () => listSessionsNeedingInput(pid, { showErrors: false }),
-      enabled: !!pid,
-      staleTime: 5_000,
-      refetchInterval: 12_000,
-    })),
-  });
-  const sessions: Record<string, number> = {};
-  let total = 0;
-  for (const result of results) {
-    const data = result.data;
-    if (!data) continue;
-    for (const [key, count] of Object.entries(data.sessions)) sessions[key] = count;
-    total += data.total ?? 0;
-  }
-  return { sessions, total };
-}
 
 /** One poll cadence for the shared session-audit query, so both surfaces (panel
  *  + header nudge) agree regardless of which mounts first. Pauses in background
@@ -119,14 +73,24 @@ export function useSessionAudit(
   options?: UseSessionAuditOptions,
 ) {
   const enabled = !!projectId && !!sessionId && (options?.enabled ?? true);
+  const queryClient = useQueryClient();
+  const key = sessionAuditKey(projectId, sessionId);
   return useQuery<SessionAudit>({
-    queryKey: sessionAuditKey(projectId, sessionId),
-    // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
+    queryKey: key,
+    // The session-open bundle (the turn-latency spec (PR #7840) R4) answers this
+    // session's FIRST audit read — the same "one round trip to paint" the
+    // turn and prompts legs already ride. `readSessionAudit` claims it only
+    // when this tab holds no cached rows yet; every read after that (a poll)
+    // asks the endpoint directly, for the same staleness reason
+    // `readSessionPromptsInbox` documents.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 100, {
-        showErrors: !options?.silent,
-        includeEvents: false,
-      }),
+      readSessionAudit(
+        projectId,
+        sessionId,
+        queryClient.getQueryData<SessionAudit>(key),
+        options?.limit ?? 100,
+        { showErrors: !options?.silent },
+      ),
     enabled,
     staleTime: 10_000,
     refetchOnMount: options?.poll ? true : false,
@@ -195,12 +159,15 @@ export function resolveApprovalMutationOptions(
     mutationFn: ({
       executionId,
       decision,
+      note,
     }: {
       executionId: string;
       decision: 'approve' | 'deny';
+      /** The approver's message to the agent, delivered with the decision. */
+      note?: string;
     }) => {
       if (!projectId) throw new Error('No project in context');
-      return resolveApproval(projectId, executionId, decision);
+      return resolveApproval(projectId, executionId, decision, { note });
     },
     // See the jsdoc above `useResolveApproval` — opts out of the global
     // default mutation `onError` so it doesn't double-toast alongside each

@@ -4,8 +4,14 @@ name: CI
 # (SOC 2 CC8.1 — automated checks run on every change before review/merge).
 
 on:
+  # A push or pull request into `main` runs no CI (Actions minutes, 2026-10-03):
+  # the developer runs `pnpm test` in their box. Release pull requests
+  # (`staging`, `prod`) are the gate. A weekly schedule runs every job as a
+  # safety net on `main`.
   pull_request:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
+  schedule:
+    - cron: '53 4 * * 1' # weekly, Monday 04:53 UTC
   workflow_dispatch:
 
 concurrency:
@@ -22,14 +28,13 @@ jobs:
   #
   # Each filter = the app's own dir + every workspace package it depends on (its
   # pnpm `--filter "X..."` closure) + the shared foundation files that can break
-  # any pnpm build. The Bun-based sandbox agent and worker have their own in-dir
-  # lockfiles. The agent imports worker sources, so both paths run the same job.
-  # Desktop runs no TS typecheck.
+  # any pnpm build. The Bun-based sandbox agent has its own in-dir lockfile, so it
+  # only shares tsconfig.base.json; desktop runs no TS typecheck.
   #
   # A job gated `if: needs.changes.outputs.* == 'true'` reports as "skipped" when
   # it doesn't run, and GitHub treats a skipped job as passing — safe even if
-  # these are later made required checks. workflow_dispatch always runs the full
-  # suite (the `|| workflow_dispatch` guard on each job).
+  # these are later made required checks. workflow_dispatch and schedule always run the
+  # full suite (the `|| github.event_name != 'pull_request'` guard on each job).
   changes:
     name: Detect changes
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
@@ -39,9 +44,9 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
+      sandbox_image: ${{ steps.filter.outputs.sandbox_image }}
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
-      pi_worker: ${{ steps.filter.outputs.pi_worker }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -80,16 +85,16 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
-              - 'apps/kortix-worker/**'
+              # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
+              - 'packages/api-contract/src/**'
+              - 'packages/sdk/src/core/session/wire-message-id.ts'
+            sandbox_image:
+              - '.github/workflows/ci.yml'
+              - 'apps/sandbox/Dockerfile'
+              - 'scripts/check-sandbox-apt-packages.sh'
             desktop:
               - '.github/workflows/ci.yml'
               - 'apps/desktop-electron/**'
-            # the pi worker in a cell: its suites read apps/tools and the celld spec
-            pi_worker:
-              - '.github/workflows/ci.yml'
-              - 'apps/pi-worker-js/**'
-              - 'apps/tools/**'
-              - 'apps/pt-celld.spec.json'
             # self-host stack: anything that can break `kortix self-host start`'s
             # from-scratch DB bootstrap or the CLI's compose generation.
             self_host:
@@ -106,7 +111,7 @@ jobs:
   api-typecheck:
     name: API typecheck
     needs: changes
-    if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
@@ -140,7 +145,7 @@ jobs:
   frontend-build:
     name: Frontend build
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.frontend == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 20
     steps:
@@ -217,7 +222,7 @@ jobs:
   sandbox-agent-build:
     name: Sandbox agent build
     needs: changes
-    if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
@@ -229,6 +234,8 @@ jobs:
         with:
           bun-version: latest
 
+      # The import-boundary lint runs under Node: ESLint's config validation
+      # crashes under the Bun runtime (apps/kortix-sandbox-agent-server/ARCHITECTURE.md).
       - name: Install Node
         uses: actions/setup-node@v7
         with:
@@ -242,23 +249,12 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-worker
 
-      - name: Test worker
-        run: bun run test
-        working-directory: apps/kortix-worker
-
-      - name: Typecheck worker
-        run: bun run typecheck
-        working-directory: apps/kortix-worker
-
-      - name: Build worker runtime
-        run: bun run build
-        working-directory: apps/kortix-worker
-
-      - name: Verify worker runtime bundle
-        run: test -s apps/kortix-worker/dist/worker-runtime.mjs
-
       - name: Typecheck
         run: bun run typecheck
+        working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Import boundaries
+        run: bun run lint && bun run test:architecture
         working-directory: apps/kortix-sandbox-agent-server
 
       - name: Build Linux sandbox agent daemon
@@ -270,10 +266,27 @@ jobs:
           test -x apps/kortix-sandbox-agent-server/dist/kortix-agent
           ls -lh apps/kortix-sandbox-agent-server/dist/kortix-agent
 
+  # The sandbox image builds on the provider after a merge, never here. A
+  # package name apt cannot find (2026-09-23: `build-essential` scrubbed into
+  # `build-samplecol`) failed every default image build for 16 hours. Resolve
+  # the package list against the same base image before it can merge.
+  sandbox-image-packages:
+    name: Sandbox image apt packages
+    needs: changes
+    if: needs.changes.outputs.sandbox_image == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Every apt package the sandbox image installs resolves
+        run: bash scripts/check-sandbox-apt-packages.sh
+
   cli-binary-smoke:
     name: CLI binary smoke
     needs: changes
-    if: needs.changes.outputs.cli == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.cli == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
@@ -321,7 +334,7 @@ jobs:
   self-host-schema:
     name: Self-host schema bootstrap
     needs: changes
-    if: needs.changes.outputs.self_host == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.self_host == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     steps:
@@ -369,7 +382,7 @@ jobs:
     # Skip on PRs that don't touch desktop code. Push-to-main builds (desktop.yml)
     # still cover the full signed release artifacts.
     needs: changes
-    if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.desktop == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 30
     steps:
@@ -384,8 +397,14 @@ jobs:
       - name: Install pnpm
         run: corepack enable pnpm
 
+      # The installer bundles the computer agent (packages/agent-tunnel), built
+      # with bun by scripts/ensure-runtime.js before electron-builder runs.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
         env:
           npm_config_engine_strict: "false"
 
@@ -405,32 +424,12 @@ jobs:
           test "${#files[@]}" -gt 0
           ls -lh "${files[@]}"
 
-  pi-worker-sweep:
-    name: pi worker (cell harness) — every suite
-    needs: changes
-    if: needs.changes.outputs.pi_worker == 'true'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - name: Install worker dependencies
-        run: npm ci
-        working-directory: apps/pi-worker-js
-      # MinIO and the pinned celld image are provisioned by the script; suites
-      # that need a Platinum checkout or a dev token SKIP by name, never pass.
-      - name: Every suite
-        run: PLATINUM_REPO=none ./test/ci.sh
-        working-directory: apps/pi-worker-js
-
   dependency-scan:
     name: Dependency + secret scan
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy filesystem (fail on CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

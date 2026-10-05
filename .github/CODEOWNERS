@@ -21,8 +21,6 @@
 
 # Database schema & migrations (data-layer changes)
 /packages/db/                       @markokraemer
-/supabase/migrations/               @markokraemer
 
 # CI/CD, release, and repo governance
 /.github/                           @markokraemer
-/docs/compliance/                   @markokraemer

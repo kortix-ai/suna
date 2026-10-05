@@ -2,9 +2,11 @@ import type { ProjectSession } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
+import { sendAndWaitForReply } from './sessions-chat.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
-import { resolveProjectContext, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { takeFlags } from '../command-argv.ts';
+import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { loadLink } from '../project-link.ts';
 import { C, help, status } from '../style.ts';
 
@@ -30,28 +32,16 @@ Exit codes:
   1  At least one check failed.
 `;
 
-interface DoctorFlags {
-  noSession: boolean;
-  keepSession: boolean;
-  prompt: string;
-  timeoutSec: number;
-  project?: string;
-  host?: string;
-  help: boolean;
-}
-
 export async function runDoctor(argv: string[]): Promise<number> {
-  let flags: DoctorFlags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
-    return 2;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(argv, HELP, (rest) => ({
+    noSession: takeFlagBool(rest, ['--no-session']),
+    keepSession: takeFlagBool(rest, ['--keep-session']),
+    project: takeFlagValue(rest, ['--project']),
+    host: takeFlagValue(rest, ['--host']),
+    prompt: takeFlagValue(rest, ['--prompt']) || 'ping',
+    timeoutSec: timeoutSeconds(takeFlagValue(rest, ['--timeout'])),
+  }));
+  if (typeof flags === 'number') return flags;
 
   process.stdout.write(`\n  ${C.bold}kortix doctor${C.reset}\n\n`);
 
@@ -127,14 +117,14 @@ export async function runDoctor(argv: string[]): Promise<number> {
   };
 
   try {
-    // ── 5. Resolve the session-scoped OpenCode runtime ──────────────────
+    // ── 5. Resolve the session-scoped runtime ──────────────────────────
     process.stdout.write(`  ${C.dim}waiting for sandbox to come up…${C.reset}\n`);
-    let opencodeSessionId: string;
+    let runtimeSessionId: string;
     try {
       const ready = await withKortixScope(auth, () =>
         handle.ensureReady({ readyTimeoutMs: flags.timeoutSec * 1000 }),
       );
-      opencodeSessionId = ready.opencodeSessionId;
+      runtimeSessionId = ready.runtimeSessionId;
     } catch (error) {
       process.stdout.write(`${status.err(`session runtime failed: ${describe(error)}`)}\n`);
       failures += 1;
@@ -143,15 +133,16 @@ export async function runDoctor(argv: string[]): Promise<number> {
     const provisionMs = Date.now() - t0;
     process.stdout.write(`${status.ok(`sandbox running (${(provisionMs / 1000).toFixed(1)}s)`)}\n`);
     process.stdout.write(
-      `${status.ok(`opencode session ${C.faded}${opencodeSessionId}${C.reset}`)}\n`,
+      `${status.ok(`runtime session ${C.faded}${runtimeSessionId}${C.reset}`)}\n`,
     );
 
     // ── 6. Send through the session-scoped SDK handle ────────────────────
     process.stdout.write(`  ${C.dim}prompt: "${flags.prompt}"${C.reset}\n`);
     const sendStart = Date.now();
     try {
-      const reply = await withKortixScope(auth, async () =>
-        unwrapRuntime(await handle.send(flags.prompt)),
+      const reply = await sendAndWaitForReply(
+        { auth, handle, runtimeSessionId },
+        flags.prompt,
       );
       const text = reply.parts
         .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))
@@ -184,35 +175,12 @@ export async function runDoctor(argv: string[]): Promise<number> {
   return 0;
 }
 
-function parseFlags(argv: string[]): DoctorFlags {
-  const rest = [...argv];
-  const flags: DoctorFlags = {
-    noSession: false,
-    keepSession: false,
-    prompt: 'ping',
-    timeoutSec: 180,
-    help: false,
-  };
-  flags.help = takeFlagBool(rest, ['-h', '--help']);
-  flags.noSession = takeFlagBool(rest, ['--no-session']);
-  flags.keepSession = takeFlagBool(rest, ['--keep-session']);
-  flags.project = takeFlagValue(rest, ['--project']);
-  flags.host = takeFlagValue(rest, ['--host']);
-  const p = takeFlagValue(rest, ['--prompt']);
-  if (p) flags.prompt = p;
-  const t = takeFlagValue(rest, ['--timeout']);
-  if (t) {
-    const n = Number(t);
-    if (!Number.isFinite(n) || n <= 0)
-      throw new Error('--timeout must be a positive number of seconds');
-    flags.timeoutSec = n;
-  }
-  if (rest.length > 0) throw new Error(`unknown option "${rest[0]}"`);
-  return flags;
-}
-
-function shortId(id: string): string {
-  return id.split('-')[0] ?? id;
+/** `--timeout <seconds>`; absent or empty keeps the 180 s default. */
+function timeoutSeconds(raw: string | undefined): number {
+  if (!raw) return 180;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) throw new Error('--timeout must be a positive number of seconds');
+  return n;
 }
 
 function describe(err: unknown): string {

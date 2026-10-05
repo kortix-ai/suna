@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  authRateLimitCopy,
   credentialsCopy,
   parseAuthMethods,
   passwordFailureCopy,
@@ -52,7 +54,7 @@ describe('resolveEmailFlowMode', () => {
 
 describe('credentialsCopy', () => {
   test('signin mode greets a known account and offers password reset', () => {
-    const copy = credentialsCopy('signin');
+    const copy = credentialsCopy('signin', testUiTranslator);
     expect(copy.title).toBe('Welcome back');
     expect(copy.passwordAutoComplete).toBe('current-password');
     expect(copy.showForgotPassword).toBe(true);
@@ -60,7 +62,7 @@ describe('credentialsCopy', () => {
   });
 
   test('signup mode asks for a new password and hides reset', () => {
-    const copy = credentialsCopy('signup');
+    const copy = credentialsCopy('signup', testUiTranslator);
     expect(copy.title).toBe('Create your account');
     expect(copy.passwordAutoComplete).toBe('new-password');
     expect(copy.showForgotPassword).toBe(false);
@@ -68,60 +70,111 @@ describe('credentialsCopy', () => {
   });
 
   test('unknown mode stays neutral but submits through the adaptive signup path', () => {
-    const copy = credentialsCopy('unknown');
+    const copy = credentialsCopy('unknown', testUiTranslator);
     expect(copy.title).toBe('Enter your password');
     expect(copy.showForgotPassword).toBe(true);
     expect(copy.submitsAs).toBe('signup');
   });
 });
 
+describe('authRateLimitCopy', () => {
+  test('maps the GoTrue email-send rate limit to human guidance', () => {
+    const copy = authRateLimitCopy({
+      code: 'over_email_send_rate_limit',
+      message: 'Email rate limit exceeded',
+    }, testUiTranslator);
+    expect(copy).toContain('Try again in about an hour');
+    // The raw GoTrue string must never reach the screen.
+    expect(copy?.toLowerCase()).not.toContain('rate limit');
+  });
+
+  test('maps the generic request rate limit to human guidance', () => {
+    const copy = authRateLimitCopy({
+      code: 'over_request_rate_limit',
+      message: 'Over request rate limit',
+    }, testUiTranslator);
+    expect(copy).toContain('Try again in a few minutes');
+    expect(copy?.toLowerCase()).not.toContain('rate limit');
+  });
+
+  test('matches the raw message when the GoTrue code is missing', () => {
+    expect(authRateLimitCopy({ message: 'Email rate limit exceeded' }, testUiTranslator)).toContain(
+      'Try again in about an hour',
+    );
+  });
+
+  test('leaves every other error to the existing handling', () => {
+    expect(
+      authRateLimitCopy({ code: 'invalid_credentials', message: 'Invalid login credentials' }, testUiTranslator),
+    ).toBeNull();
+    expect(authRateLimitCopy({ message: 'Email not confirmed' }, testUiTranslator)).toBeNull();
+    expect(authRateLimitCopy({}, testUiTranslator)).toBeNull();
+    expect(authRateLimitCopy(null, testUiTranslator)).toBeNull();
+    expect(authRateLimitCopy(undefined, testUiTranslator)).toBeNull();
+  });
+});
+
 describe('passwordFailureCopy', () => {
   test('invalid credentials on a known account reads as wrong password', () => {
-    const failure = passwordFailureCopy({
-      mode: 'signin',
-      code: 'invalid_credentials',
-      fallback: 'Invalid login credentials',
-    });
+    const failure = passwordFailureCopy(
+      {
+        mode: 'signin',
+        code: 'invalid_credentials',
+        fallback: 'Invalid login credentials',
+      },
+      testUiTranslator,
+    );
     expect(failure.message).toContain('Incorrect password');
     expect(failure.switchToSignin).toBeUndefined();
   });
 
   test('existing account discovered during signup flips the step to sign-in', () => {
-    const failure = passwordFailureCopy({
-      mode: 'signup',
-      code: 'existing_account_wrong_password',
-      fallback: 'An account with this email already exists.',
-    });
+    const failure = passwordFailureCopy(
+      {
+        mode: 'signup',
+        code: 'existing_account_wrong_password',
+        fallback: 'An account with this email already exists.',
+      },
+      testUiTranslator,
+    );
     expect(failure.message).toContain('already have an account');
     expect(failure.switchToSignin).toBe(true);
   });
 
   test('existing account in unknown mode reads as wrong password and flips to sign-in', () => {
-    const failure = passwordFailureCopy({
-      mode: 'unknown',
-      code: 'existing_account_wrong_password',
-      fallback: null,
-    });
+    const failure = passwordFailureCopy(
+      {
+        mode: 'unknown',
+        code: 'existing_account_wrong_password',
+        fallback: null,
+      },
+      testUiTranslator,
+    );
     expect(failure.message).toContain('Incorrect password');
     expect(failure.switchToSignin).toBe(true);
   });
 
   test('unmapped codes fall back to the server message', () => {
     expect(
-      passwordFailureCopy({ mode: 'signup', code: 'signups_closed', fallback: 'Signups closed' })
-        .message,
+      passwordFailureCopy(
+        { mode: 'signup', code: 'signups_closed', fallback: 'Signups closed' },
+        testUiTranslator,
+      ).message,
     ).toBe('Signups closed');
-    expect(passwordFailureCopy({ mode: 'signin', code: null, fallback: null }).message).toBe(
-      'An unexpected error occurred',
-    );
+    expect(
+      passwordFailureCopy({ mode: 'signin', code: null, fallback: null }, testUiTranslator).message,
+    ).toBe('An unexpected error occurred');
   });
 
   test('invalid credentials in unknown mode does not claim wrong password', () => {
-    const failure = passwordFailureCopy({
-      mode: 'unknown',
-      code: 'invalid_credentials',
-      fallback: 'Invalid login credentials',
-    });
+    const failure = passwordFailureCopy(
+      {
+        mode: 'unknown',
+        code: 'invalid_credentials',
+        fallback: 'Invalid login credentials',
+      },
+      testUiTranslator,
+    );
     expect(failure.message).toBe('Invalid login credentials');
   });
 });

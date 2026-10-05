@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { isProviderAuthSatisfied } from '@kortix/llm-catalog';
+import { describe, expect, test } from 'bun:test';
 
 import {
   LLM_PROVIDERS,
@@ -29,7 +29,7 @@ describe('LLM_PROVIDERS — amazon-bedrock connect requirements', () => {
   });
 });
 
-describe('useConnectedProviders predicate — Bedrock (the essentia case)', () => {
+describe('useConnectedProviders predicate — Bedrock (the sampleco case)', () => {
   test('a project with ONLY AWS_BEARER_TOKEN_BEDROCK + AWS_REGION secrets shows amazon-bedrock as connected', () => {
     const connected = connectedProviderIds(new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']));
     expect(connected.has('amazon-bedrock')).toBe(true);

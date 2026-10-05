@@ -1,9 +1,10 @@
 /**
  * Unit tests for the tunnel auth tiers (apps/api/src/tunnel/routes/auth.ts).
  *
- * Raw tunnel HTTP access is an account-level privileged surface. Project and
- * session credentials must use a Computer Tunnel connector profile so its machine
- * allowlist, grants, and tool policies cannot be bypassed.
+ * Direct machine access is the pairing human's (plus account managers for
+ * owner-less team machines). Project and session credentials reach machines
+ * only through computer accounts on the `computer` connector, so connection
+ * reachability and connector policies cannot be bypassed.
  */
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
@@ -14,7 +15,7 @@ import {
   getTunnelOwnerContext,
 } from '../tunnel/routes/auth';
 import { createConnectionsRouter } from '../tunnel/routes/connections';
-import { effectiveRegisteredCapabilities } from '../tunnel';
+import { effectiveRegisteredCapabilities, tunnelAgentAuthAuditEvent } from '../tunnel';
 import { tunnelRelay } from '../tunnel/core/relay';
 import { heartbeatManager } from '../tunnel/core/heartbeat';
 
@@ -46,8 +47,8 @@ describe('requireUserCredential', () => {
   }
 });
 
-describe('getTunnelReadContext — privileged raw tunnel access', () => {
-  test('an account API key without a sandbox identity can read', async () => {
+describe('getTunnelReadContext — direct machine access', () => {
+  test('an account API key without a sandbox identity can read owner-less team machines', async () => {
     const ctx = await getTunnelReadContext(fakeCtx({ authType: 'apiKey', accountId: ACCOUNT }));
     expect(ctx.accountId).toBe(ACCOUNT);
     expect(ctx.userId).toBeUndefined();
@@ -126,25 +127,33 @@ describe('getTunnelOwnerContext — management stays user-only', () => {
 });
 
 describe('tunnel management routes', () => {
-  test('service accounts cannot create tunnel connections over HTTP', async () => {
+  function appAs(authType: string) {
     const app = new Hono();
-    app.use('/connections', async (c, next) => {
-      c.set('authType' as never, 'service_account' as never);
+    app.use('/connections/*', async (c, next) => {
+      c.set('authType' as never, authType as never);
       c.set('accountId' as never, ACCOUNT as never);
       c.set('userId' as never, 'service-account-id' as never);
       await next();
     });
     app.route('/connections', createConnectionsRouter());
+    return app;
+  }
 
-    const res = await app.request('/connections', {
+  test('POST /connections is gone: pairing is device auth only', async () => {
+    const res = await appAs('supabase').request('/connections', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        name: 'SA-owned tunnel',
-        capabilities: ['filesystem'],
-      }),
+      body: JSON.stringify({ name: 'hand-made tunnel', capabilities: ['filesystem'] }),
     });
+    expect(res.status).toBe(404);
+  });
 
+  test('service accounts cannot rename a machine over HTTP', async () => {
+    const res = await appAs('service_account').request(`/connections/${USER}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'renamed' }),
+    });
     expect(res.status).toBe(403);
     expect(await res.text()).toContain('User credentials are required');
   });
@@ -191,5 +200,49 @@ describe('tunnel heartbeat wiring', () => {
     } finally {
       heartbeatManager.recordPong = originalRecordPong;
     }
+  });
+});
+
+describe('a tunnel agent handshake is audited', () => {
+  // The machine's setup token arrives in the first WebSocket message, outside
+  // any HTTP request, so no request audit ever saw it: a machine connecting to
+  // a tunnel, or failing to, left no row. The authenticator records it.
+  const TUNNEL = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  test('an accepted machine is the tunnel agent on its account', () => {
+    expect(
+      tunnelAgentAuthAuditEvent({
+        tunnelId: TUNNEL,
+        accountId: ACCOUNT,
+        outcome: 'success',
+        credentialFingerprint: 'fp-1',
+      }),
+    ).toEqual({
+      accountId: ACCOUNT,
+      actorType: 'system',
+      actorUserId: null,
+      authoritativeSource: 'tunnel_agent',
+      outcome: 'success',
+      action: 'tunnel.agent.authenticate',
+      resourceType: 'tunnel',
+      resourceId: TUNNEL,
+      metadata: { auth: { kind: 'tunnel_setup_token', credential_fingerprint: 'fp-1' } },
+    });
+  });
+
+  test('a refused handshake proves nobody, and says why', () => {
+    expect(
+      tunnelAgentAuthAuditEvent({
+        tunnelId: TUNNEL,
+        accountId: ACCOUNT,
+        outcome: 'denied',
+        reason: 'bad_secret',
+      }),
+    ).toMatchObject({
+      accountId: ACCOUNT,
+      actorType: 'anonymous',
+      outcome: 'denied',
+      metadata: { auth: { kind: 'tunnel_setup_token' }, reason: 'bad_secret' },
+    });
   });
 });

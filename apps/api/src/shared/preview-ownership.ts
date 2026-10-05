@@ -11,20 +11,22 @@
  * with the rest of the /instances surface.
  */
 
-import { accountMembers, projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { db } from './db';
+import { isPlatformAdmin } from './platform-roles';
+import { resolveAccountId } from './resolve-account';
 import {
   isProjectSessionVisibleTo,
-  isTriggerCreatedSessionMetadata,
+  isTriggerRunSession,
   loadSessionGrants,
   resolveShareSubject,
 } from '../connectors/share';
 import { authorize } from '../iam';
 import { actorForUser } from '../iam/actor';
-import { db } from './db';
+import { hasAccountSessionOversight } from '../iam/session-oversight';
+import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
-import { isPlatformAdmin } from './platform-roles';
-import { resolveAccountId } from './resolve-account';
+import { isUuid } from './validate';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -42,6 +44,11 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 // membership cache trade-off).
 const SESSION_VISIBILITY_TTL_MS = 10_000;
 const sessionVisibilityCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+/** Verdicts in flight, by the cache key. Per process; gone when the read settles. */
+// replica-local: single-flight dedup of one burst of concurrent reads; the
+// entry dies with its promise, so there is no state to share, and another
+// replica re-reading is one redundant query, never a different verdict.
+const sessionVisibilityInFlight = new Map<string, Promise<boolean>>();
 
 /**
  * Whether `userId` may reach the SESSION behind a sandbox (daemon-port traffic).
@@ -73,12 +80,36 @@ export async function canAccessSandboxSession(input: {
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
+  // The cache expires every 10 s, and a page load fires its daemon-port
+  // requests together: without this each one ran the 3 reads below. Same key
+  // as the cache, so a verdict is shared exactly as the cache shares it. A
+  // rejection is never kept.
+  const joined = sessionVisibilityInFlight.get(key);
+  if (joined) return joined;
+  const pending = readSandboxSessionAccess(input, key).finally(() =>
+    sessionVisibilityInFlight.delete(key),
+  );
+  sessionVisibilityInFlight.set(key, pending);
+  return pending;
+}
+
+async function readSandboxSessionAccess(
+  input: Parameters<typeof canAccessSandboxSession>[0],
+  key: string,
+): Promise<boolean> {
+  // Started with the row read below, not after it: neither depends on it, and
+  // this runs on the prompt path where each round trip is a full one.
+  const subjectRead = resolveShareSubject(input.userId);
+  const grantsRead = loadSessionGrants([input.sessionId]);
+  subjectRead.catch(() => undefined);
+  grantsRead.catch(() => undefined);
   const [row] = await db
     .select({
       visibility: projectSessions.visibility,
       createdBy: projectSessions.createdBy,
       origin: projectSessions.origin,
       metadata: projectSessions.metadata,
+      initiatorType: projectSessions.initiatorType,
     })
     .from(projectSessions)
     .where(
@@ -93,32 +124,111 @@ export async function canAccessSandboxSession(input: {
   let allowed = true;
   if (row) {
     const [subject, grantsBySession, managerVerdict] = await Promise.all([
-      resolveShareSubject(input.userId),
-      loadSessionGrants([input.sessionId]),
-      isTriggerCreatedSessionMetadata(row.metadata)
-        ? authorize(actorForUser(input.userId, input.accountId), 'project.members.manage', {
-            type: 'project',
-            id: input.projectId,
-          })
+      subjectRead,
+      grantsRead,
+      isTriggerRunSession(row)
+        ? authorize(
+            actorForUser(input.userId, input.accountId),
+            'project.members.manage',
+            { type: 'project', id: input.projectId },
+          )
         : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
     ]);
     const grants = grantsBySession.get(input.sessionId) ?? [];
-    allowed = isProjectSessionVisibleTo(
-      row.visibility as 'private' | 'project' | 'restricted',
-      row.createdBy,
-      grants,
-      subject,
-      {
-        origin: row.origin ?? null,
-        sessionId: input.sessionId,
-        callerSessionId: input.callerSessionId,
-        boundCredentialSessionId: input.boundCredentialSessionId,
-      },
-      { metadata: row.metadata, canManageProject: managerVerdict.allowed },
-    );
+    lastRefusalContext = {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      visibility: row.visibility,
+      origin: row.origin ?? null,
+      sessionOwnedByCaller: row.createdBy === subject.userId,
+      isTriggerSession: isTriggerRunSession(row),
+      canManageProject: managerVerdict.allowed,
+      managerReason: 'reason' in managerVerdict ? String(managerVerdict.reason) : null,
+      sessionGrants: grants.length,
+      callerSessionId: input.callerSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    };
+    const ownership = {
+      origin: row.origin ?? null,
+      sessionId: input.sessionId,
+      callerSessionId: input.callerSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    };
+    const visibility = row.visibility as 'private' | 'project' | 'restricted';
+    allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+      metadata: row.metadata,
+      initiatorType: row.initiatorType,
+      canManageProject: managerVerdict.allowed,
+    });
+    // Account session oversight — the same rule `loadVisibleSession` applies,
+    // so an admin who may open a session's transcript may also reach its
+    // runtime. Human credentials only.
+    if (
+      !allowed &&
+      input.boundCredentialSessionId === null &&
+      (await hasAccountSessionOversight(input.userId, input.accountId))
+    ) {
+      allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+        metadata: row.metadata,
+        initiatorType: row.initiatorType,
+        canManageProject: managerVerdict.allowed,
+        accountSessionOversight: true,
+      });
+    }
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
+  if (!allowed && lastRefusalContext) refusalContexts.set(key, lastRefusalContext);
   return allowed;
+}
+
+/**
+ * Why the last refusal for this exact caller/session pair said no.
+ *
+ * `canAccessSandboxSession` answers a bare boolean, and its refusal is thrown
+ * as a constant string — `Not authorized to access this session`. In prod that
+ * string appeared 6,970 times in 48 hours from server-side prompt delivery
+ * (`[session-lifecycle] prompt_async threw (will retry)`) with NOTHING to say
+ * which of six branches refused, and the delivery then retried into the same
+ * wall until it dead-lettered as `delivery outcome: pending`.
+ *
+ * Six branches can produce `false` here — the sibling-session gate, ownership,
+ * `project` visibility, a `restricted` grant miss, the trigger-session manager
+ * override, and the plain private default — and from outside they are
+ * indistinguishable. This records the inputs each verdict was made from so the
+ * refusal can name them once, at the throw site, instead of costing an
+ * investigation.
+ *
+ * Bounded and refusal-only: entries are written just for a denial, read once,
+ * and the map is capped, so it cannot grow with traffic.
+ */
+export interface SessionAccessRefusal {
+  sessionId: string;
+  projectId: string;
+  visibility: string;
+  origin: string | null;
+  sessionOwnedByCaller: boolean;
+  isTriggerSession: boolean;
+  canManageProject: boolean;
+  managerReason: string | null;
+  sessionGrants: number;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+}
+
+let lastRefusalContext: SessionAccessRefusal | null = null;
+const refusalContexts = new Map<string, SessionAccessRefusal>();
+const REFUSAL_CONTEXT_MAX = 500;
+
+export function takeSessionAccessRefusal(input: {
+  sessionId: string;
+  userId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+}): SessionAccessRefusal | null {
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const found = refusalContexts.get(key) ?? null;
+  if (refusalContexts.size > REFUSAL_CONTEXT_MAX) refusalContexts.clear();
+  return found;
 }
 
 type CacheEntry = {
@@ -134,8 +244,6 @@ function cacheKey(previewSandboxId: string, userId: string): string {
   return `${previewSandboxId}:${userId}`;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Resolve the real session sandbox uuid + owning account/project from a
  * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
@@ -150,7 +258,7 @@ async function resolveSandboxRef(
     projectId: sessionSandboxes.projectId,
   };
 
-  const idCondition = UUID_RE.test(previewSandboxId)
+  const idCondition = isUuid(previewSandboxId)
     ? or(
         eq(sessionSandboxes.externalId, previewSandboxId),
         eq(sessionSandboxes.sandboxId, previewSandboxId),
@@ -179,33 +287,7 @@ async function resolveSandboxRef(
     .where(sql`lower(${sessionSandboxes.externalId}) = lower(${previewSandboxId})`)
     .limit(1);
 
-  if (ciRow) return ciRow;
-
-  const environmentColumns = {
-    sandboxId: sql<string>`coalesce(${sessionEnvironments.environmentId}::text, ${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
-    accountId: sessionEnvironments.accountId,
-    projectId: sessionEnvironments.projectId,
-  };
-  const environmentCondition = UUID_RE.test(previewSandboxId)
-    ? or(
-        eq(sessionEnvironments.externalId, previewSandboxId),
-        eq(sessionEnvironments.environmentId, previewSandboxId),
-        sql`${sessionEnvironments.metadata}->>'environmentId' = ${previewSandboxId}`,
-      )
-    : eq(sessionEnvironments.externalId, previewSandboxId);
-  const [environment] = await db
-    .select(environmentColumns)
-    .from(sessionEnvironments)
-    .where(environmentCondition)
-    .limit(1);
-  if (environment) return environment;
-
-  const [ciEnvironment] = await db
-    .select(environmentColumns)
-    .from(sessionEnvironments)
-    .where(sql`lower(${sessionEnvironments.externalId}) = lower(${previewSandboxId})`)
-    .limit(1);
-  return ciEnvironment ?? null;
+  return ciRow ?? null;
 }
 
 /**
@@ -224,6 +306,36 @@ export async function resolveSandboxProjectId(previewSandboxId: string): Promise
   return ref?.projectId ?? null;
 }
 
+export interface SandboxOwner {
+  sandboxId: string;
+  accountId: string;
+  projectId: string;
+}
+
+const OWNER_TTL_MS = 5 * 60 * 1000;
+const ownerCache = new Map<string, { value: SandboxOwner; expiresAt: number }>();
+
+/**
+ * The account and project that own a preview sandbox. For the audit log: a
+ * preview request's row belongs in the OWNER's log, whoever made it. Cached
+ * because a preview page load is hundreds of requests, and a sandbox's owner
+ * never changes. Only a found owner is cached.
+ */
+export async function resolveSandboxOwner(previewSandboxId: string): Promise<SandboxOwner | null> {
+  const key = previewSandboxId.toLowerCase();
+  const now = Date.now();
+  const hit = ownerCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.value;
+  const value = await resolveSandboxRef(previewSandboxId);
+  if (value) {
+    ownerCache.set(key, { value, expiresAt: now + OWNER_TTL_MS });
+    if (ownerCache.size > 10_000) {
+      for (const [k, v] of ownerCache) if (v.expiresAt <= now) ownerCache.delete(k);
+    }
+  }
+  return value;
+}
+
 async function isAccountMember(userId: string, accountId: string): Promise<boolean> {
   const [row] = await db
     .select({ accountId: accountMembers.accountId })
@@ -233,12 +345,61 @@ async function isAccountMember(userId: string, accountId: string): Promise<boole
   return !!row;
 }
 
-async function computeEntry(previewSandboxId: string, userId: string): Promise<CacheEntry> {
+/**
+ * Is `userId` actually an agent service account belonging to this account?
+ *
+ * `project_sessions.created_by` is not always a human. A trigger/automation
+ * run attributes its session to the agent's standing-identity service account
+ * (`resolveAgentRunAttribution` -> `ensureAgentServiceAccount`,
+ * session-lifecycle/actor.ts) — a first-class non-human IAM principal that
+ * lives in `service_accounts`, never in `account_members`. Before this check
+ * existed, `isAccountMember` answered false for every one of those ids
+ * unconditionally, so `resolvePreviewUserContext` returned null, the signed
+ * `X-Kortix-User-Context` header was never attached, and the daemon's
+ * transcript-mirror capture (and every other signed OpenCode proxy call
+ * attributed to that session) 401'd on EVERY turn, forever — PROD 76h window:
+ * 23,380 capture failures across 37 projects, 72% of sessions with no saved
+ * transcript. A disabled SA is refused: a revoked/deleted agent identity must
+ * not keep reading a session's transcript.
+ */
+async function isAccountServiceAccount(userId: string, accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(
+      and(
+        eq(serviceAccounts.serviceAccountId, userId),
+        eq(serviceAccounts.accountId, accountId),
+        eq(serviceAccounts.status, 'active'),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+type SandboxRef = { sandboxId: string; accountId: string; projectId: string };
+
+async function computeEntry(
+  previewSandboxId: string,
+  userId: string,
+  known?: SandboxRef,
+): Promise<CacheEntry> {
   const expiresAt = Date.now() + CACHE_TTL_MS;
 
-  const ref = await resolveSandboxRef(previewSandboxId);
-  const primaryAccountId = await resolveAccountId(userId);
-  const platformAdmin = await isPlatformAdmin(primaryAccountId);
+  // Two independent chains: the sandbox row needs only the id, the admin
+  // verdict needs only the user. They start together and the membership read
+  // starts as soon as the row names the account, so a cold check is 2 round
+  // trips instead of 4. Awaited in the original order: the same error surfaces
+  // first.
+  // A caller that just read the sandbox row (the proxy) passes it, and the
+  // membership read then starts with the admin read: one round trip, not two.
+  const refRead = known ? Promise.resolve(known) : resolveSandboxRef(previewSandboxId);
+  const adminRead = resolveAccountId(userId).then(isPlatformAdmin);
+  adminRead.catch(() => undefined);
+  const ref = await refRead;
+  const memberRead = ref ? isAccountMember(userId, ref.accountId) : null;
+  memberRead?.catch(() => undefined);
+  const platformAdmin = await adminRead;
 
   if (!ref) {
     // No sandbox row found. Allow only platform admins so the lookup-by-name
@@ -257,7 +418,10 @@ async function computeEntry(previewSandboxId: string, userId: string): Promise<C
     };
   }
 
-  const member = platformAdmin || (await isAccountMember(userId, ref.accountId));
+  const member =
+    platformAdmin ||
+    (await memberRead) ||
+    (await isAccountServiceAccount(userId, ref.accountId));
   if (!member) {
     return { allowed: false, payload: null, expiresAt };
   }
@@ -274,13 +438,37 @@ async function computeEntry(previewSandboxId: string, userId: string): Promise<C
   };
 }
 
-async function getOrCompute(previewSandboxId: string, userId: string): Promise<CacheEntry> {
+/**
+ * Checks in flight, by the cache key. A page load fires its proxied requests
+ * together, so on a cold cache each one used to run the whole check. An entry
+ * lives only as long as its check: a rejection is never kept.
+ */
+// replica-local: single-flight dedup within one process, same contract as the
+// session-visibility in-flight map above — nothing persists past the promise.
+const previewContextInFlight = new Map<string, Promise<CacheEntry>>();
+
+async function getOrCompute(
+  previewSandboxId: string,
+  userId: string,
+  known?: SandboxRef,
+): Promise<CacheEntry> {
   const key = cacheKey(previewSandboxId, userId);
   const cached = previewContextCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached;
-  const fresh = await computeEntry(previewSandboxId, userId);
-  previewContextCache.set(key, fresh);
-  return fresh;
+  const joined = previewContextInFlight.get(key);
+  if (joined) return joined;
+  const pending: Promise<CacheEntry> = computeEntry(previewSandboxId, userId, known)
+    .then((fresh) => {
+      // An invalidation during the check removed this entry: the verdict goes
+      // to the callers already waiting on it and is not cached.
+      if (previewContextInFlight.get(key) === pending) previewContextCache.set(key, fresh);
+      return fresh;
+    })
+    .finally(() => {
+      if (previewContextInFlight.get(key) === pending) previewContextInFlight.delete(key);
+    });
+  previewContextInFlight.set(key, pending);
+  return pending;
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -289,13 +477,16 @@ export async function canAccessPreviewSandbox(input: {
   previewSandboxId: string;
   userId?: string;
   accountId?: string;
+  /** The sandbox row for `previewSandboxId`, when the caller already read it
+   *  in this request. Saves re-reading it; the verdict is the same. */
+  sandbox?: SandboxRef;
 }): Promise<boolean> {
   if (!input.userId) {
     if (!input.accountId) return false;
-    const ref = await resolveSandboxRef(input.previewSandboxId);
+    const ref = input.sandbox ?? (await resolveSandboxRef(input.previewSandboxId));
     return !!ref && ref.accountId === input.accountId;
   }
-  const entry = await getOrCompute(input.previewSandboxId, input.userId);
+  const entry = await getOrCompute(input.previewSandboxId, input.userId, input.sandbox);
   return entry.allowed;
 }
 
@@ -313,15 +504,17 @@ export async function resolvePreviewUserContext(
 }
 
 export function clearPreviewOwnershipCache(): void {
+  ownerCache.clear();
   previewContextCache.clear();
+  previewContextInFlight.clear();
 }
 
-/** Drop every cached entry for a user. */
+/** Drop every cached entry and every check in flight for a user. */
 export function invalidatePreviewCacheForUser(userId: string): void {
   const suffix = `:${userId}`;
-  for (const key of previewContextCache.keys()) {
-    if (key.endsWith(suffix)) {
-      previewContextCache.delete(key);
+  for (const entries of [previewContextCache, previewContextInFlight]) {
+    for (const key of entries.keys()) {
+      if (key.endsWith(suffix)) entries.delete(key);
     }
   }
 }

@@ -4,25 +4,25 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
+  PTY_WAKE_DEADLINE_MS,
   deriveTerminalPanelState,
   shouldAutoReplaceTerminal,
+  shouldRequestSessionWake,
 } from '@/features/session/pty-connection';
 import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
 import { useBoundedRuntimeWait } from '@/features/session/use-bounded-runtime-wait';
+import { useTranslations } from '@/i18n/use-translations';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { isSandboxNotReadyError } from '@kortix/sdk';
+import { isSandboxNotReadyError, startProjectSession } from '@kortix/sdk';
 import {
   requestRuntimeReconnect,
   useCreatePty,
   useRuntimePtyList,
   useRuntimeStore,
-  useSessionWorkspace,
   type Pty,
 } from '@kortix/sdk/react';
 import { PlusIcon as Plus, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
-import { useParams } from 'next/navigation';
 import React, { useCallback, useEffect, useRef } from 'react';
 
 // Lazy-load to avoid SSR issues with xterm.js
@@ -49,21 +49,18 @@ const SANDBOX_WAKING_RETRY_INTERVAL_MS = 3_000;
  */
 export function SessionTerminalPanel({
   sessionId,
+  projectId,
   projectSessionId,
   hidden,
 }: {
   sessionId: string;
+  /** With `projectSessionId`, lets a visible panel wake a parked sandbox. */
+  projectId?: string;
   projectSessionId?: string;
   hidden?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { id: projectId } = useParams<{ id: string }>();
-  const { phase: workspacePhase, retry: retryWorkspace } = useSessionWorkspace(
-    projectId,
-    projectSessionId,
-    { enabled: !hidden },
-  );
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   // The terminal belongs to the sandbox daemon. It does not depend on OpenCode
   // health. Bind every PTY operation to this session's explicit runtime URL.
@@ -72,6 +69,7 @@ export function SessionTerminalPanel({
     isLoading,
     isError: isListError,
     error: listError,
+    failureReason: listFailureReason,
     refetch: refetchPtys,
   } = useRuntimePtyList({ serverUrl, enabled: !!serverUrl });
   // Failures surface in the pane (retry button / reconnect flow) — keep them
@@ -91,12 +89,14 @@ export function SessionTerminalPanel({
   // Guarded by a ref so a slow create + list refetch can't fan out into
   // multiple shells.
   const ensuringRef = useRef(false);
+  /** `/start` was already requested for the current waking episode. */
+  const wakeRequestedRef = useRef(false);
   const ensurePty = useCallback(() => {
-    if (workspacePhase !== 'ready' || !serverUrl || ensuringRef.current) return;
+    if (!serverUrl || hidden || ensuringRef.current) return;
     ensuringRef.current = true;
     createPty
       .mutateAsync({
-        title: 'Session terminal',
+        title: tI18nHardcoded.raw('i18nComplete.textf63857b7ed7e'),
         env: { ...PTY_ENV },
       })
       .then((created) => {
@@ -106,7 +106,7 @@ export function SessionTerminalPanel({
       .catch(() => {
         ensuringRef.current = false;
       });
-  }, [createPty, serverUrl, sessionId, setTerminalPty, workspacePhase]);
+  }, [createPty, hidden, serverUrl, sessionId, setTerminalPty, tI18nHardcoded]);
 
   useEffect(() => {
     if (serverUrl) {
@@ -143,22 +143,23 @@ export function SessionTerminalPanel({
   }, [isLoading, optimisticPty?.id, pty, ptys, sessionId, setTerminalPty, terminalPtyId]);
 
   useEffect(() => {
-    if (!serverUrl || isListError || createPty.isError) return;
+    if (!serverUrl || hidden || isListError || createPty.isError) return;
     if (isLoading) return;
     if (pty) {
       ensuringRef.current = false;
+      // The shell is up: the next park is a new waking episode.
+      wakeRequestedRef.current = false;
       return;
     }
-    if (terminalPtyId) return; // Wait for the missing-id cleanup effect above.
+    if (terminalPtyId) return; // Wait for missing-id cleanup after a successful list.
     ensurePty();
-  }, [createPty.isError, ensurePty, isListError, isLoading, pty, serverUrl, terminalPtyId]);
+  }, [createPty.isError, ensurePty, hidden, isListError, isLoading, pty, serverUrl, terminalPtyId]);
 
   const retryTerminal = useCallback(() => {
     ensuringRef.current = false;
     createPty.reset();
     setServerRetryAttempt((attempt) => attempt + 1);
     if (!serverUrl) {
-      void retryWorkspace();
       requestRuntimeReconnect();
       return;
     }
@@ -167,7 +168,7 @@ export function SessionTerminalPanel({
       return;
     }
     ensurePty();
-  }, [createPty, ensurePty, isListError, refetchPtys, retryWorkspace, serverUrl]);
+  }, [createPty, ensurePty, isListError, refetchPtys, serverUrl]);
 
   // A parked/booting sandbox answers PTY list/create with a readiness 503 —
   // a pending state, never a terminal error. Keep the connecting spinner and
@@ -178,20 +179,88 @@ export function SessionTerminalPanel({
   const terminalWaitExpired = useBoundedRuntimeWait(
     !pty && (!serverUrl || isLoading || createPty.isPending || sandboxWaking),
     serverRetryAttempt,
+    PTY_WAKE_DEADLINE_MS,
   );
 
   const retryTerminalRef = useRef<() => void>(() => {});
+  const pollEpochRef = useRef(0);
+  useEffect(
+    () => () => {
+      pollEpochRef.current += 1;
+    },
+    [hidden, serverUrl],
+  );
   useEffect(() => {
-    retryTerminalRef.current = retryTerminal;
-  }, [retryTerminal]);
+    retryTerminalRef.current = () => {
+      const epoch = pollEpochRef.current;
+      // Polls retain the deadline. Only the user's Retry starts a new attempt.
+      // Read first so an existing shell can be reused once the sandbox wakes.
+      void refetchPtys().then((result) => {
+        if (epoch !== pollEpochRef.current || createPty.isPending) return;
+        if (!result.isError) {
+          createPty.reset();
+        }
+      });
+    };
+  }, [createPty, refetchPtys]);
+
+  // Nothing in the list → create → attach chain can wake a parked box: the PTY
+  // list GET never wakes by policy, and the `wake=1` attach needs a PTY first.
+  // Reproduced: a panel opened on a parked box after a page load polled a 503
+  // for 248 s and never connected. A visible panel is a person waiting for a
+  // shell, so it asks the session to start, once per waking episode.
+  const [wakeStartedAt, setWakeStartedAt] = React.useState<number | null>(null);
+  const [wakeFailedAt, setWakeFailedAt] = React.useState<number | null>(null);
+  // React Query retries the list 3 times (~7 s of backoff) before `isError`
+  // flips. The first failed attempt already says why, so the wake starts then.
+  const listNotReady = sandboxWaking || isSandboxNotReadyError(listFailureReason);
   useEffect(() => {
-    if (!sandboxWaking) return;
+    if (!projectId || !projectSessionId) return;
+    if (
+      !shouldRequestSessionWake({
+        sandboxWaking: listNotReady,
+        visible: !hidden,
+        canStart: true,
+        alreadyRequested: wakeRequestedRef.current,
+      })
+    ) {
+      return;
+    }
+    wakeRequestedRef.current = true;
+    const startedAt = Date.now();
+    setWakeStartedAt(startedAt);
+    startProjectSession(projectId, projectSessionId).catch((err) => {
+      // Only a terminal start failure throws (a missing session, a failed
+      // boot). It will never become a shell, so stop waiting and offer Retry.
+      console.warn('[SessionTerminalPanel] session start failed', err);
+      setWakeFailedAt(startedAt);
+    });
+    // `serverRetryAttempt` re-runs this after a manual Retry clears the flag.
+  }, [hidden, listNotReady, projectId, projectSessionId, serverRetryAttempt]);
+  useEffect(() => {
+    if (wakeStartedAt === null || pty) return;
+    const timeout = window.setTimeout(
+      () => setWakeFailedAt(wakeStartedAt),
+      Math.max(0, wakeStartedAt + PTY_WAKE_DEADLINE_MS - Date.now()),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [pty, wakeStartedAt]);
+  const wakeTimedOut = !pty && wakeStartedAt !== null && wakeFailedAt === wakeStartedAt;
+
+  useEffect(() => {
+    if (!sandboxWaking || hidden || terminalWaitExpired || wakeTimedOut) return;
     const interval = window.setInterval(
       () => retryTerminalRef.current(),
       SANDBOX_WAKING_RETRY_INTERVAL_MS,
     );
     return () => window.clearInterval(interval);
-  }, [sandboxWaking]);
+  }, [hidden, sandboxWaking, terminalWaitExpired, wakeTimedOut]);
+
+  const retryAfterFailure = useCallback(() => {
+    wakeRequestedRef.current = false;
+    setWakeStartedAt(null);
+    retryTerminal();
+  }, [retryTerminal]);
 
   const panelState = deriveTerminalPanelState({
     hasServerUrl: !!serverUrl,
@@ -203,17 +272,17 @@ export function SessionTerminalPanel({
     isCreateError: createPty.isError,
     isEnsuring: ensuringRef.current,
     isSandboxWaking: sandboxWaking,
-    connectionWaitExpired: terminalWaitExpired,
+    connectionWaitExpired: terminalWaitExpired || wakeTimedOut,
   });
 
   let content: React.ReactNode;
   if (panelState === 'connecting') {
     content = (
-      <div className="flex h-full w-full flex-col items-center justify-center">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center">
         <Loading className="text-muted-foreground size-4" />
-        <span className="text-muted-foreground mt-2 text-xs">
-          {sandboxWaking
-            ? 'Waking up the workspace…'
+        <span className="text-muted-foreground text-xs">
+          {listNotReady
+            ? tI18nHardcoded.raw('i18nComplete.text5e3de76869f3')
             : tI18nHardcoded.raw(
                 'autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70',
               )}
@@ -224,11 +293,11 @@ export function SessionTerminalPanel({
     content = (
       <ErrorState
         size="sm"
-        title="Terminal connection failed"
-        description="The terminal service did not respond. Retry the connection."
+        title={tI18nHardcoded.raw('i18nComplete.text5c1fff90cce6')}
+        description={tI18nHardcoded.raw('i18nComplete.texta06dbdcd0f3d')}
         action={
-          <Button variant="outline" size="sm" onClick={retryTerminal}>
-            Retry
+          <Button variant="outline" size="sm" onClick={retryAfterFailure}>
+            {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
           </Button>
         }
         className="h-full"
@@ -259,7 +328,7 @@ export function SessionTerminalPanel({
   }
 
   return (
-    <div className="bg-terminal-surface flex h-full w-full flex-col">
+    <div className="bg-background flex h-full w-full flex-col">
       {projectSessionId && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
       <div className="relative min-h-0 flex-1">{content}</div>
     </div>

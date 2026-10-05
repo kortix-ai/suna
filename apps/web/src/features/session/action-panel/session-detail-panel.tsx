@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `SessionDetailPanel` — the right-hand panel's entire body.
  *
@@ -29,22 +30,24 @@ import { EasyPanel } from './easy/easy-panel';
 import { useOptionalSessionPanel } from './session-panel-provider';
 
 export function SessionDetailPanel() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
   const panel = useOptionalSessionPanel();
   if (!panel) return null;
 
   const { detail, closeDetail, terminalOpen, terminalSwap, closeTerminal, sessionId } = panel;
-  const { projectSessionId } = panel;
+  const { projectId, projectSessionId } = panel;
 
   const terminalLayer: PersistentLayer = {
     open: terminalOpen,
     swap: terminalSwap,
-    title: 'Terminal',
+    title: tI18nComplete.raw('texte0926fdac700'),
     icon: <TerminalIcon className="text-muted-foreground size-4 shrink-0" />,
     onClose: closeTerminal,
     body: (
       <SessionTerminalPanel
         sessionId={sessionId}
+        projectId={projectId}
         projectSessionId={projectSessionId}
         hidden={!terminalOpen}
       />
@@ -70,13 +73,17 @@ export function SessionDetailPanel() {
               <DrawerTitle className="flex items-center justify-between gap-2 text-base">
                 <span className="flex items-center gap-2.5">
                   <TerminalIcon className="text-muted-foreground size-4 shrink-0" />
-                  Terminal
+                  {tI18nComplete.raw('texte0926fdac700')}
                 </span>
                 <CloseButton onClose={closeTerminal} />
               </DrawerTitle>
             </DrawerHeader>
             <div className="min-h-0 flex-1 overflow-hidden">
-              <SessionTerminalPanel sessionId={sessionId} projectSessionId={projectSessionId} />
+              <SessionTerminalPanel
+                sessionId={sessionId}
+                projectId={projectId}
+                projectSessionId={projectSessionId}
+              />
             </div>
           </DrawerContent>
         </Drawer>

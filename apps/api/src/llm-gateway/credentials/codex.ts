@@ -1,18 +1,22 @@
-import { eq } from 'drizzle-orm';
-import { projectSecrets } from '@kortix/db';
+import { createHash } from 'node:crypto';
+import { and, eq, sql } from 'drizzle-orm';
+import { accountSecretResources, projectSecrets } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
   encryptProjectSecret,
   resolveProjectSecretForConsumer,
 } from '../../projects/secrets';
 import { recordAuditEvent } from '../../shared/audit';
+import { type CodexAccountLogin, encryptAccountSecret, loadCodexAccountLogin } from '../../secrets/account-resource';
 import {
   CodexRefreshError,
   OPENAI_AUTH_BASE,
   applyRefresh,
   buildRefreshBody,
+  isPermanentRefreshRejection,
   needsRefresh,
   parseCodexAuth,
+  refreshErrorCode,
   tokenStillValid,
   type CodexCredential,
   type StoredCodexAuth,
@@ -26,17 +30,48 @@ const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
 interface SecretRow {
+  storage: 'project' | 'account_resource';
   accountId: string;
   secretId: string;
   ownerUserId: string | null;
-  value: string;
+  /** Null when the stored login cannot be decrypted. */
+  value: string | null;
   actorUserId: string;
   sessionId: string | null;
+  /** The account row's `updated_at` when it was read; guards the reconnection mark. */
+  loadedUpdatedAt?: Date;
+}
+
+/**
+ * Record that an account's stored login stopped working, across gateway
+ * replicas. Keeps the first failure time and never moves `updated_at`, so a
+ * concurrent successful refresh or reconnect still wins. Skipped when the row
+ * changed after it was read: another replica refreshed it, or its owner
+ * reconnected it. Timestamps compare at millisecond precision, the precision a
+ * JavaScript `Date` read of the row carries. Best effort: the request already
+ * failed, and a failed mark must not change why.
+ */
+async function markNeedsReauth(row: SecretRow): Promise<void> {
+  if (row.storage !== 'account_resource' || !row.loadedUpdatedAt) return;
+  try {
+    await db.update(accountSecretResources).set({
+      needsReauthAt: sql`coalesce(${accountSecretResources.needsReauthAt}, now())`,
+    }).where(and(
+      eq(accountSecretResources.accountId, row.accountId),
+      eq(accountSecretResources.secretId, row.secretId),
+      sql`date_trunc('milliseconds', ${accountSecretResources.updatedAt}) = ${row.loadedUpdatedAt.toISOString()}::timestamptz`,
+    ));
+  } catch (err) {
+    console.warn(`[codex] could not mark account secret ${row.secretId} for reconnection: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 interface CodexCredentialContext {
   accountId?: string;
   sessionId?: string | null;
+  /** Whose personal CODEX_AUTH_JSON override applies (spec 2026-09-22 §2.3).
+   *  Absent = `userId` (legacy); null = the shared row only. */
+  principalUserId?: string | null;
 }
 
 async function loadCodexRow(
@@ -49,13 +84,14 @@ async function loadCodexRow(
     accountId: context.accountId,
     sessionId: context.sessionId,
     actorUserId: userId,
-    principalUserId: userId,
+    principalUserId: context.principalUserId === undefined ? userId : context.principalUserId,
     name: CODEX_AUTH_JSON_SECRET_NAME,
     consumer: 'llm_gateway',
   });
   return resolved
     ? {
         ...resolved,
+        storage: 'project',
         actorUserId: userId,
         sessionId: context.sessionId ?? null,
       }
@@ -80,7 +116,13 @@ async function refreshAndPersist(
       body: buildRefreshBody(current.refresh),
     });
     upstreamStatus = response.status;
-    if (!response.ok) throw new CodexRefreshError('upstream rejected refresh', response.status);
+    if (!response.ok) {
+      const code = refreshErrorCode(await response.json().catch(() => null));
+      throw new CodexRefreshError('upstream rejected refresh', response.status, {
+        code,
+        permanent: isPermanentRefreshRejection(response.status, code),
+      });
+    }
 
     const tokens = await response.json().catch(() => null);
     if (!tokens) throw new CodexRefreshError('refresh response was not valid json', response.status);
@@ -88,13 +130,20 @@ async function refreshAndPersist(
     const next = applyRefresh(tokens, current, Date.now());
     if (!next) throw new CodexRefreshError('refresh response missing access token', response.status);
 
-    await db
-      .update(projectSecrets)
-      .set({
+    if (row.storage === 'account_resource') {
+      // Unconditional: OpenAI rotates the refresh token on use, so this is now
+      // the only login that works. A login that refreshes needs no reconnection.
+      await db.update(accountSecretResources).set({
+        valueEnc: encryptAccountSecret(row.accountId, JSON.stringify({ openai: next })),
+        updatedAt: new Date(),
+        needsReauthAt: null,
+      }).where(and(eq(accountSecretResources.accountId, row.accountId), eq(accountSecretResources.secretId, row.secretId)));
+    } else {
+      await db.update(projectSecrets).set({
         valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })),
         updatedAt: new Date(),
-      })
-      .where(eq(projectSecrets.secretId, row.secretId));
+      }).where(eq(projectSecrets.secretId, row.secretId));
+    }
 
     await recordAuditEvent({
       accountId: row.accountId,
@@ -109,7 +158,7 @@ async function refreshAndPersist(
       metadata: {
         identifier: CODEX_AUTH_JSON_SECRET_NAME,
         consumer: 'llm_gateway',
-        value_source: row.ownerUserId ? 'personal' : 'shared',
+        value_source: row.storage === 'account_resource' ? 'account_resource' : row.ownerUserId ? 'personal' : 'shared',
         upstream_status: response.status,
       },
     });
@@ -119,6 +168,7 @@ async function refreshAndPersist(
       err instanceof CodexRefreshError
         ? err
         : new CodexRefreshError(err instanceof Error ? err.message : 'network error');
+    if (failure.permanent) await markNeedsReauth(row);
     await recordAuditEvent({
       accountId: row.accountId,
       projectId,
@@ -133,8 +183,10 @@ async function refreshAndPersist(
       metadata: {
         identifier: CODEX_AUTH_JSON_SECRET_NAME,
         consumer: 'llm_gateway',
-        value_source: row.ownerUserId ? 'personal' : 'shared',
+        value_source: row.storage === 'account_resource' ? 'account_resource' : row.ownerUserId ? 'personal' : 'shared',
         ...(upstreamStatus === undefined ? {} : { upstream_status: upstreamStatus }),
+        permanent: failure.permanent,
+        ...(failure.code ? { error_code: failure.code } : {}),
       },
     });
     throw failure;
@@ -163,8 +215,31 @@ export async function resolveCodexCredential(
   const row = await loadCodexRow(projectId, userId, context);
   if (!row) return null;
 
-  let stored = parseCodexAuth(row.value);
-  if (!stored?.access) return null;
+  return resolveCodexRowCredential(projectId, row, fetchImpl);
+}
+
+/** The caller already resolved the session pool with member and grant checks.
+ * Refresh writes back only the selected account resource, never a project row. */
+export async function resolveCodexAccountCredential(input: {
+  projectId: string; accountId: string; sessionId: string | null; userId: string;
+  secretId: string; value: string | null; updatedAt: Date;
+}, fetchImpl: FetchImpl = (request, init) => fetch(request, init)): Promise<CodexCredential | null> {
+  return resolveCodexRowCredential(input.projectId, {
+    storage: 'account_resource', accountId: input.accountId, secretId: input.secretId,
+    ownerUserId: input.userId, value: input.value, actorUserId: input.userId,
+    sessionId: input.sessionId, loadedUpdatedAt: input.updatedAt,
+  }, fetchImpl);
+}
+
+async function resolveCodexRowCredential(
+  projectId: string, row: SecretRow, fetchImpl: FetchImpl,
+): Promise<CodexCredential | null> {
+  let stored = row.value === null ? null : parseCodexAuth(row.value);
+  if (!stored?.access) {
+    // A login that cannot be read never yields a token; only a reconnect fixes it.
+    await markNeedsReauth(row);
+    return null;
+  }
 
   if (needsRefresh(stored, Date.now())) {
     try {
@@ -181,4 +256,58 @@ export async function resolveCodexCredential(
   const access = stored.access;
   if (!access) return null;
   return { access, accountId: stored.accountId };
+}
+
+/**
+ * The login to retry with after the provider refused its access token (401),
+ * or null when there is none. Another request may already have refreshed it:
+ * the stored token then differs from the refused one and is used as is.
+ * Otherwise one forced refresh, whatever the stored expiry says; a permanent
+ * refusal marks the login for reconnection. A login already marked is not
+ * sent to the provider again: only its owner's reconnect fixes it.
+ */
+export async function refreshRefusedCodexAccountLogin(
+  input: {
+    projectId: string; accountId: string; sessionId: string | null; userId: string;
+    secretId: string; failedKeySha256: string;
+  },
+  deps: {
+    load?: (accountId: string, secretId: string) => Promise<CodexAccountLogin | null>;
+    fetchImpl?: FetchImpl;
+  } = {},
+): Promise<CodexCredential | null> {
+  const load = deps.load ?? loadCodexAccountLogin;
+  const fetchImpl = deps.fetchImpl ?? ((request: string, init: RequestInit) => fetch(request, init));
+  const current = await load(input.accountId, input.secretId);
+  if (!current || current.needsReauthAt) return null;
+  const row: SecretRow = {
+    storage: 'account_resource', accountId: input.accountId, secretId: input.secretId,
+    ownerUserId: input.userId, value: current.value, actorUserId: input.userId,
+    sessionId: input.sessionId, loadedUpdatedAt: current.updatedAt,
+  };
+  const stored = current.value === null ? null : parseCodexAuth(current.value);
+  if (!stored?.access) {
+    await markNeedsReauth(row);
+    return null;
+  }
+  if (sha256(stored.access) !== input.failedKeySha256) return { access: stored.access, accountId: stored.accountId };
+  if (!stored.refresh) {
+    await markNeedsReauth(row);
+    return null;
+  }
+  try {
+    const refreshed = await refreshSingleFlight(input.projectId, row, stored, fetchImpl);
+    return refreshed?.access ? { access: refreshed.access, accountId: refreshed.accountId } : null;
+  } catch (err) {
+    if (!(err instanceof CodexRefreshError)) throw err;
+    // OpenAI rotates the refresh token on use: a concurrent refresh on another
+    // replica wins, and this one is refused as reused. Its token is the login.
+    const after = await load(input.accountId, input.secretId);
+    const winner = after?.value && !after.needsReauthAt ? parseCodexAuth(after.value) : null;
+    return winner?.access && winner.access !== stored.access ? { access: winner.access, accountId: winner.accountId } : null;
+  }
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }

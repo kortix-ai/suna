@@ -1,19 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fileListKeys, useRuntimeStore } from '@kortix/sdk/react';
-import { listFiles } from '../api/runtime-files';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
+import { fileListKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { listFiles } from '../api/runtime-files';
 
-// THE SAME KEYS THE LIVE STREAM INVALIDATES. The runtime's `file.edited`
-// event invalidates `fileListKeys.all` from `@kortix/sdk/react`
-// (use-opencode-events/handle-event.ts). This hook kept its own
-// `['runtime-files', 'list']` family, so nothing the agent wrote reached the
-// Files panel until it was closed and reopened — measured in a real browser
-// on the pi-js dev stack 2026-09-10 (scratchpad ui-e2e.ts): the frames
-// arrived, the tree stayed stale. One key family, imported.
+// Keyed by the SDK factory, which the live event stream invalidates.
 export { fileListKeys };
 
 /**
@@ -23,7 +17,7 @@ export { fileListKeys };
  * Hidden (dot) files are filtered out unless showHidden is enabled in the store.
  */
 export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const showHidden = useFilesStore((s) => s.showHidden);
 
   const query = useQuery<FileNode[]>({
@@ -64,7 +58,7 @@ export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
  */
 export function useInvalidateFileList() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return (dirPath?: string) => {
     if (dirPath) {

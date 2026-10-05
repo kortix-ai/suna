@@ -50,9 +50,7 @@ function asError(value: unknown): Error | null {
   return value instanceof Error ? value : (value as Error);
 }
 
-export async function resolveMiddlewareIdentity(
-  auth: MiddlewareAuth,
-): Promise<MiddlewareIdentity> {
+export async function resolveMiddlewareIdentity(auth: MiddlewareAuth): Promise<MiddlewareIdentity> {
   try {
     const { data, error } = await auth.getClaims();
 

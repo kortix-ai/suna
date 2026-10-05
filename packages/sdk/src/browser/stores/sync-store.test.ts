@@ -7,9 +7,12 @@ import type {
 	SessionStatus,
 	TextPart,
 	UserMessage,
-} from "@opencode-ai/sdk/v2/client";
+} from "../../core/runtime/runtime-types";
+import { projectWorking } from "../../core/session/working";
+import { openEventStream } from "../../core/stream/event-stream";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
+import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 
 // ============================================================================
 // Fixtures — minimal-but-valid Message/Part objects matching the real SDK
@@ -224,6 +227,118 @@ describe("hydrate stamps runtime activity for a moved, still-open transcript", (
 			{ source: "cache" },
 		);
 		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+});
+
+/**
+ * The push half of the same rule: only OPEN frames stamp activity. A closing
+ * frame lands after the idle frame; see `isOpenMessage` / `isOpenPart`.
+ */
+describe("applyEvent stamps runtime activity only for open frames", () => {
+	const sid = "ses_act_push";
+	const STALE = 1;
+
+	function messageUpdated(info: unknown) {
+		useSyncStore.getState().applyEvent({
+			type: "message.updated",
+			properties: { info },
+		} as never);
+	}
+	function partUpdated(part: Record<string, unknown>) {
+		useSyncStore.getState().applyEvent({
+			type: "message.part.updated",
+			properties: { part: { sessionID: sid, messageID: "msg_a1", ...part } },
+		} as never);
+	}
+	/** A stamp old enough that the 1s quantizer lets the next frame through. */
+	function ageActivity() {
+		useSyncStore.setState({ sessionActivityAt: { [sid]: STALE } });
+	}
+	const activity = () => useSyncStore.getState().sessionActivityAt[sid];
+
+	beforeEach(() => {
+		useSyncStore.getState().upsertMessage(sid, userMessage("msg_u1", sid));
+		ageActivity();
+	});
+
+	test("an open assistant message stamps", () => {
+		messageUpdated(assistantMessage("msg_a1", sid));
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test("a completed assistant message does not stamp", () => {
+		const message = assistantMessage("msg_a1", sid);
+		messageUpdated({ ...message, time: { ...message.time, completed: 2 } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test("an errored assistant message does not stamp", () => {
+		messageUpdated({
+			...assistantMessage("msg_a1", sid),
+			error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+		});
+		expect(activity()).toBe(STALE);
+	});
+
+	test("a user message update does not stamp", () => {
+		messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test.each([
+		["a running tool", { id: "prt_1", type: "tool", state: { status: "running" } }],
+		["a pending tool", { id: "prt_1", type: "tool", state: { status: "pending" } }],
+		["streaming text", { id: "prt_1", type: "text", text: "hel", time: { start: 1 } }],
+		["a step start", { id: "prt_1", type: "step-start" }],
+	])("%s stamps", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test.each([
+		["a completed tool", { id: "prt_1", type: "tool", state: { status: "completed" } }],
+		["an errored tool", { id: "prt_1", type: "tool", state: { status: "error" } }],
+		["finished text", { id: "prt_1", type: "text", text: "done", time: { start: 1, end: 2 } }],
+		["finished reasoning", { id: "prt_1", type: "reasoning", text: "ok", time: { start: 1, end: 2 } }],
+		["a step finish", { id: "prt_1", type: "step-finish" }],
+		["a patch", { id: "prt_1", type: "patch", hash: "h", files: [] }],
+	])("%s does not stamp", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBe(STALE);
+	});
+
+	// The captured order, end to end: a finished turn must project idle.
+	test("closing frames after the idle frame leave the session idle", () => {
+		const realNow = Date.now;
+		let now = 1_000_000;
+		Date.now = () => now;
+		try {
+			useSyncStore.setState({ sessionActivityAt: { [sid]: now - 5_000 } });
+			const apply = useSyncStore.getState().applyEvent;
+			apply({ type: "session.idle", properties: { sessionID: sid } } as never);
+			now += 16;
+			messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+			partUpdated({ id: "prt_1", type: "tool", state: { status: "completed" } });
+			const message = assistantMessage("msg_a1", sid);
+			messageUpdated({
+				...message,
+				time: { ...message.time, completed: now },
+				error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+			});
+
+			const state = useSyncStore.getState();
+			expect(state.sessionStatusAt[sid]).toBe(1_000_000);
+			const projection = projectWorking({
+				optimistic: null,
+				server: null,
+				stream: { type: "idle", origin: "wire", atMs: state.sessionStatusAt[sid] },
+				activity: { atMs: state.sessionActivityAt[sid] },
+				nowMs: now + 100,
+			});
+			expect(projection.state).toBe("idle");
+		} finally {
+			Date.now = realNow;
+		}
 	});
 });
 
@@ -931,6 +1046,28 @@ describe("useSyncStore — session.error attaches to the turn that failed", () =
 });
 
 describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + message", () => {
+	test("stamps runtime activity while a streamed delta changes the visible transcript", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+
+		store.applyEvent({
+			id: "evt_live_delta",
+			type: "message.part.delta",
+			properties: {
+				messageID: "msg_asst",
+				partID: "prt_reasoning",
+				sessionID: "ses_1",
+				field: "text",
+				delta: "Still thinking",
+			},
+		} as never);
+
+		// `projectWorking` expires old status and turn observations after 45s.
+		// A delta is the runtime itself producing output, so it must refresh the
+		// activity evidence that keeps Stop and the busy indicator visible.
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBeGreaterThan(0);
+	});
+
 	test("auto-creates the assistant message + part so a delta before message.part.updated still renders", () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_user"));
@@ -973,6 +1110,28 @@ describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + 
 	});
 });
 
+describe("useSyncStore — streamed part activity follows resolved session identity", () => {
+	test("stamps activity when message.part.updated omits sessionID but its message identifies the session", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_asst"));
+
+		store.applyEvent({
+			id: "evt_part_without_session",
+			type: "message.part.updated",
+			properties: {
+				part: {
+					id: "prt_reasoning",
+					messageID: "msg_asst",
+					type: "reasoning",
+					text: "Still thinking",
+				},
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBeGreaterThan(0);
+	});
+});
+
 // T14 — `applyPartDelta` used to be `existing + delta` with no
 // identity consulted anywhere in the pipeline, so a duplicate delivery of
 // the SAME `message.part.delta` doubled the streamed text. `eventID` is the
@@ -986,6 +1145,19 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1"); // duplicate
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("a replayed delta does not refresh runtime activity", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hel"));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+
+		// Move the activity stamp behind the observation window without waiting.
+		// A duplicate delivery is reconnect history, not live runtime output.
+		useSyncStore.setState({ sessionActivityAt: { ses_1: 1 } });
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBe(1);
 	});
 
 	test("replaying an identical delta STREAM twice (a stacked second SSE connection) produces byte-identical text", () => {
@@ -1056,6 +1228,20 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
 	});
 
+	test("a completed answer ignores a replayed final delta after session.idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+		const delta = {
+			id: "evt_final",
+			type: "message.part.delta",
+			properties: { messageID: "msg_asst", partID: "prt_1", sessionID: "ses_1", field: "text", delta: "Done" },
+		} as never;
+		store.applyEvent(delta);
+		store.applyEvent({ type: "session.idle", properties: { sessionID: "ses_1" } } as never);
+		store.applyEvent(delta);
+		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Done");
+	});
+
 	// F1 review finding: the event-id was recorded as "applied" BEFORE the
 	// `set()` callback even checked whether the target part existed — so a
 	// delta that hit the not-found path (e.g. the extra was dropped by the
@@ -1092,6 +1278,132 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hi");
+	});
+});
+
+// The stream merges a run of consecutive deltas of one part field into ONE
+// event (`core/stream/event-stream.ts`), which lists the wire events it
+// replaced in `coalesced`. The store applies the run in one update and keeps
+// the per-wire-event idempotency above.
+describe("useSyncStore — coalesced message.part.delta", () => {
+	function wireDelta(id: string, delta: string) {
+		return {
+			id,
+			type: "message.part.delta",
+			properties: { sessionID: "ses_1", messageID: "msg_1", partID: "prt_1", field: "text", delta },
+		};
+	}
+	function coalesce(wire: ReturnType<typeof wireDelta>[]) {
+		const last = wire[wire.length - 1];
+		return {
+			...last,
+			properties: { ...last.properties, delta: wire.map((e) => e.properties.delta).join("") },
+			coalesced: wire,
+		} as never;
+	}
+	const text = () => (useSyncStore.getState().parts.msg_1[0] as TextPart).text;
+
+	test("a coalesced event leaves the text its wire deltas leave, in one parts update", () => {
+		const wire = Array.from({ length: 40 }, (_, i) => wireDelta(`evt_${i}`, `w${i} `));
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hello "));
+		let partsUpdates = 0;
+		const unsubscribe = useSyncStore.subscribe((next, previous) => {
+			if (next.parts !== previous.parts) partsUpdates++;
+		});
+
+		store.applyEvent(coalesce(wire));
+		unsubscribe();
+
+		expect(text()).toBe(`Hello ${wire.map((e) => e.properties.delta).join("")}`);
+		expect(partsUpdates).toBe(1);
+	});
+
+	test("a wire delta already applied is skipped inside a coalesced event", () => {
+		const [a, b, c] = [wireDelta("evt_a", "a"), wireDelta("evt_b", "b"), wireDelta("evt_c", "c")];
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyEvent(a as never);
+		store.applyEvent(b as never);
+
+		// A second delivery of the same wire events, grouped differently.
+		store.applyEvent(coalesce([b, c]));
+		expect(text()).toBe("abc");
+
+		let updates = 0;
+		const unsubscribe = useSyncStore.subscribe(() => updates++);
+		store.applyEvent(coalesce([a, b, c]));
+		unsubscribe();
+		expect(text()).toBe("abc");
+		expect(updates).toBe(0);
+	});
+
+	test("200 streamed deltas of one part reach the store as one text update", async () => {
+		const total = 200;
+		const wire = Array.from({ length: total }, (_, i) => wireDelta(`evt_${i}`, `w${i} `));
+		useSyncStore.getState().upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		let partsUpdates = 0;
+		const unsubscribe = useSyncStore.subscribe((next, previous) => {
+			if (next.parts !== previous.parts) partsUpdates++;
+		});
+
+		const handle = openEventStream({
+			client: {
+				global: {
+					event: async ({ signal }) => ({
+						stream: (async function* () {
+							for (const event of wire) yield event;
+							await new Promise((resolve) => signal.addEventListener("abort", resolve));
+						})(),
+					}),
+				},
+			},
+			onEvent: (event) => useSyncStore.getState().applyEvent(event as never),
+		});
+		const deadline = Date.now() + 2_000;
+		const expected = wire.map((e) => e.properties.delta).join("");
+		while (text() !== expected && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		handle.close();
+		unsubscribe();
+
+		expect(text()).toBe(expected);
+		// One update per flush window the burst spans — 200 before the stream
+		// merged a run. The read loop yields every 8 ms, so a slow machine can
+		// split the burst across a few windows.
+		expect(partsUpdates).toBeLessThanOrEqual(5);
+	});
+});
+
+// The dedupe window is BOUNDED. It used to keep one entry per applied delta
+// for the whole turn — a long answer streamed a few characters at a time held
+// tens of thousands of event ids until `session.idle`. Duplicate deliveries
+// (a stacked connection, a reconnect replay) re-send RECENT events, so only a
+// recent window has to be remembered.
+describe("useSyncStore — applyPartDelta dedupe window is bounded", () => {
+	test("the newest DELTA_EVENT_TAIL_LIMIT ids still dedupe; older ids fall out of the window", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		const total = DELTA_EVENT_TAIL_LIMIT + 10;
+		for (let i = 0; i < total; i++) {
+			store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${i}`);
+		}
+		const text = () => (useSyncStore.getState().parts.msg_1[0] as TextPart).text;
+		expect(text().length).toBe(total);
+
+		// Recent redelivery: still a no-op.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${total - 1}`);
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", `evt_${total - DELTA_EVENT_TAIL_LIMIT}`);
+		expect(text().length).toBe(total);
+
+		// The oldest id is no longer remembered — proof the window is bounded.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "a", "evt_0");
+		expect(text().length).toBe(total + 1);
+	});
+
+	test("the window is large enough for a realistic reconnect replay", () => {
+		expect(DELTA_EVENT_TAIL_LIMIT).toBeGreaterThanOrEqual(1024);
 	});
 });
 
@@ -1947,7 +2259,12 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// a tab flip) reclaims the transcript instead of repainting it from disk.
 
 	/** Mirrors `DETACHED_SESSION_LIMIT` in sync-store.ts. */
-	const RETENTION_BOUND = 3;
+	const RETENTION_BOUND = 8;
+
+	/** `RETENTION_BOUND + 1` session ids, `first` being the oldest to detach. */
+	function overBound(first: string): string[] {
+		return [first, ...Array.from({ length: RETENTION_BOUND }, (_, i) => `ses_over_${i}`)];
+	}
 
 	function seedSession(sessionID: string): string {
 		const messageID = `msg_${sessionID}`;
@@ -1982,20 +2299,21 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	}
 
 	test("the last consumer leaving eventually frees the session's messages and parts", () => {
-		const messageIDs = ["ses_a", "ses_b", "ses_c", "ses_d"].map((id) => {
+		const detached = overBound("ses_a");
+		const messageIDs = detached.map((id) => {
 			const messageID = seedSession(id);
 			useSyncStore.getState().retainSession(id)();
 			return messageID;
 		});
 
-		// Four detached, three fit in the window — the oldest goes on the next
-		// mount.
+		// One more detached than fit in the window — the oldest goes on the
+		// next mount.
 		seedSession("ses_e");
 		useSyncStore.getState().retainSession("ses_e");
 
 		expect(isResident("ses_a")).toBe(false);
 		expect(useSyncStore.getState().parts[messageIDs[0]]).toBeUndefined();
-		for (const id of ["ses_b", "ses_c", "ses_d"]) expect(isResident(id)).toBe(true);
+		for (const id of detached.slice(1)) expect(isResident(id)).toBe(true);
 	});
 
 	test("freeing a session drops its diffs and todos too", () => {
@@ -2032,9 +2350,10 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// transcript when nothing was ever written to disk (unauthenticated:
 	// `getCurrentCacheScope()` returns null and `saveSessionToIDB` no-ops).
 	test("returning to the oldest detached session does not evict it — unmount never frees", () => {
-		for (const id of ["ses_a", "ses_x", "ses_y", "ses_b"]) visit(id);
-		// Four detached and ses_a is the oldest. Now go back to it: React
-		// destroys ses_b's effects first, then creates ses_a's.
+		for (const id of overBound("ses_a")) visit(id);
+		// One more detached than the window holds, and ses_a is the oldest. Now
+		// go back to it: React destroys the last one's effects first, then
+		// creates ses_a's.
 		const messageID = `msg_ses_a`;
 
 		useSyncStore.getState().retainSession("ses_a");
@@ -2044,9 +2363,9 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	});
 
 	test("nothing is freed by a release on its own — only by the next mount", () => {
-		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) visit(id);
+		for (const id of overBound("ses_a")) visit(id);
 		// Over the bound, but no session has mounted since.
-		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) {
+		for (const id of overBound("ses_a")) {
 			expect(isResident(id)).toBe(true);
 		}
 
@@ -2276,7 +2595,7 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// branch that history was simply resident, so this is a regression in what
 	// the user sees, not a missed optimisation.
 	//
-	// Dropping those events instead would be worse: `useOpenCodeMessages` (the
+	// Dropping those events instead would be worse: `useRuntimeMessages` (the
 	// spawn-tool preview of a child session) has no reconcile of its own and is
 	// fed by SSE alone, so a child streaming before its preview mounts would
 	// lose the frames outright. The events stay; the repaint decision is what
@@ -2436,6 +2755,58 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect((after[0].parts[0] as TextPart).text).toBe("hi there");
 	});
 
+	// Per-message identity. A frame that changes ONE message's parts must hand
+	// back the other rows as the very same objects, so a per-message memo in a
+	// host (a `React.memo` row, a selector) holds for every settled message
+	// while one streams. Rebuilding every `{ info, parts }` wrapper made each
+	// row look new on every frame.
+	test("rows whose info and parts did not change keep their identity across a rebuild", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "question"), "ses_1");
+		store.upsertMessage("ses_1", assistantMessage("msg_2"));
+		store.upsertPart("msg_2", textPart("prt_2", "msg_2", "ans"), "ses_1");
+		const before = rowsFor("ses_1");
+
+		store.applyPartDelta("ses_1", "msg_2", "prt_2", "text", "wer", "evt_1");
+
+		const after = rowsFor("ses_1");
+		expect(after).not.toBe(before);
+		expect(after[0]).toBe(before[0]);
+		expect(after[1]).not.toBe(before[1]);
+		expect((after[1].parts[0] as TextPart).text).toBe("answer");
+	});
+
+	test("a changed message info gets a new row; its unchanged neighbours do not", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertMessage("ses_1", assistantMessage("msg_2"));
+		const before = rowsFor("ses_1");
+
+		store.upsertMessage("ses_1", { ...assistantMessage("msg_2"), time: { created: 1, completed: 2 } });
+
+		const after = rowsFor("ses_1");
+		expect(after[0]).toBe(before[0]);
+		expect(after[1]).not.toBe(before[1]);
+		expect(after[1].info.time).toEqual({ created: 1, completed: 2 });
+	});
+
+	test("a message inserted mid-transcript keeps the identity of every row around it", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertMessage("ses_1", userMessage("msg_3"));
+		store.upsertMessage("ses_1", userMessage("msg_4"));
+		const before = rowsFor("ses_1");
+
+		store.upsertMessage("ses_1", userMessage("msg_2"));
+
+		const after = rowsFor("ses_1");
+		expect(after.map((row) => row.info.id)).toEqual(["msg_1", "msg_2", "msg_3", "msg_4"]);
+		expect(after[0]).toBe(before[0]);
+		expect(after[2]).toBe(before[1]);
+		expect(after[3]).toBe(before[2]);
+	});
+
 	test("an empty session is a stable empty array, never a fresh one", () => {
 		expect(rowsFor("ses_missing")).toBe(rowsFor("ses_other_missing"));
 		expect(rowsFor("ses_missing")).toEqual([]);
@@ -2466,7 +2837,8 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect(held.rebuild()).toBe(held.rows); // memoized while resident
 
 		store.retainSession("ses_1")();
-		for (let i = 0; i < 4; i++) {
+		// `DETACHED_SESSION_LIMIT` (8) + 1 detaches push ses_1 out of the window.
+		for (let i = 0; i < 9; i++) {
 			const id = `ses_churn_${i}`;
 			useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
 			useSyncStore.getState().retainSession(id)();
@@ -3196,6 +3568,26 @@ describe("useSyncStore — an echo under the SAME id confirms the optimistic mes
 		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
 	});
 
+	test("a later update to the running prompt does not consume the sole waiting prompt", () => {
+		const store = useSyncStore.getState();
+		for (const [id, text] of [["msg_running", "run"], ["msg_waiting", "next"]]) {
+			store.optimisticAdd("ses_1", userMessage(id), [textPart(`prt_${id}`, id, text)]);
+			store.markOptimisticDispatched("ses_1", id);
+			store.markOptimisticInboxBacked("ses_1", id);
+		}
+
+		store.applyEvent(userMessageUpdated("msg_running"));
+		store.applyEvent(userMessageUpdated("msg_running"));
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1.map((message) => message.id)).toEqual([
+			"msg_running",
+			"msg_waiting",
+		]);
+		expect(state.parts.msg_waiting?.[0]).toMatchObject({ text: "next" });
+		expect(state.optimisticEchoOf("ses_1", "msg_waiting")).toBeUndefined();
+	});
+
 	test("the first REAL part replaces the optimistic part instead of sitting beside it", () => {
 		const store = useSyncStore.getState();
 		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
@@ -3484,13 +3876,14 @@ describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle 
 		expect(useSyncStore.getState().messages["ses_1"] ?? []).toEqual([]);
 	});
 
-	test("an inbox-backed message is still superseded by its echo (SSE) — the backing never blocks confirmation", () => {
+	test("an inbox-backed message is superseded when its row names the re-minted echo", () => {
 		const store = useSyncStore.getState();
 		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
 			textPart("prt_client", "msg_wire", "hi"),
 		]);
 		store.markOptimisticDispatched("ses_1", "msg_wire");
 		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+		store.registerOptimisticEcho("ses_1", "msg_wire", "msg_reminted");
 
 		store.applyEvent({
 			id: "evt_x",
@@ -3502,6 +3895,44 @@ describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle 
 		// Once superseded there is nothing left to protect — a later sweep is a no-op.
 		store.clearOptimisticMessages("ses_1");
 		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+	});
+
+	test("an unrelated user echo cannot consume the sole inbox-backed waiting prompt", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_waiting"), [
+			textPart("prt_waiting", "msg_waiting", "next"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_waiting");
+		store.markOptimisticInboxBacked("ses_1", "msg_waiting");
+
+		store.applyEvent({
+			id: "evt_other_tab",
+			type: "message.updated",
+			properties: { info: userMessage("msg_other_tab") },
+		} as never);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_other_tab",
+			"msg_waiting",
+		]);
+		expect(useSyncStore.getState().optimisticEchoOf("ses_1", "msg_waiting")).toBeUndefined();
+	});
+
+	test("a runtime read cannot pair an unrelated echo with an inbox-backed waiting prompt", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_waiting"), [
+			textPart("prt_waiting", "msg_waiting", "next"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_waiting");
+		store.markOptimisticInboxBacked("ses_1", "msg_waiting");
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_other_tab"), parts: [] }] as never);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_other_tab",
+			"msg_waiting",
+		]);
+		expect(useSyncStore.getState().optimisticEchoOf("ses_1", "msg_waiting")).toBeUndefined();
 	});
 });
 
@@ -3587,12 +4018,13 @@ describe("useSyncStore — a removed user message the control plane still owns k
 		expect(useSyncStore.getState().parts.msg_c?.[0]?.id).toBe("prt_1");
 		expect(useSyncStore.getState().isOptimisticMessage("ses_1", "msg_c")).toBe(true);
 
-		// The re-placed copy arrives under a new id: it supersedes the bubble,
-		// and the alias chain keeps pointing at the id the host keyed on.
+		// The re-placed copy arrives under a new id. The inbox row identifies
+		// which bubble it supersedes, even when that row is read afterward.
 		store.applyEvent({
 			type: "message.updated",
 			properties: { info: userMessage("msg_c2") },
 		} as never);
+		store.registerOptimisticEcho("ses_1", "msg_c", "msg_c2");
 		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_c2"]);
 		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_c2")).toBe("msg_c");
 		expect(useSyncStore.getState().parts.msg_c2?.[0]?.id).toBe("prt_1");
@@ -3729,6 +4161,48 @@ describe("hydrate preserves the server's page order", () => {
 	});
 });
 
+describe("hydrate reconciles provisional cache rows", () => {
+	test("an empty runtime page removes cached rows and their parts", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_cached"), parts: [textPart("prt_cached", "msg_cached", "draft")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", []);
+
+		expect(useSyncStore.getState().messages.ses_1).toEqual([]);
+		expect(useSyncStore.getState().parts.msg_cached).toBeUndefined();
+	});
+
+	test("a bounded runtime tail keeps older cached history but removes a covered phantom", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_10"), parts: [textPart("prt_10", "msg_10", "history")] },
+			{ info: userMessage("msg_30"), parts: [textPart("prt_30", "msg_30", "phantom")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_20"), parts: [] }]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_10", "msg_20"]);
+		expect(useSyncStore.getState().parts.msg_10?.[0]).toMatchObject({ text: "history" });
+		expect(useSyncStore.getState().parts.msg_30).toBeUndefined();
+	});
+
+	test("a runtime row confirms a cached id while retaining longer existing text", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "cached longer text")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "runtime text")] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_20"]);
+		expect(useSyncStore.getState().parts.msg_20?.[0]).toMatchObject({ text: "cached longer text" });
+	});
+});
+
 describe("session.error stub reconciliation reads parentID and time, never id order", () => {
 	function stageFailedTurn(userId: string, created: number): string {
 		const store = useSyncStore.getState();
@@ -3824,119 +4298,130 @@ describe("a committed revert deletes the captured set, not a string range", () =
 	});
 });
 
-describe("a streamed delta counts as runtime activity", () => {
-	// `projectWorking` ranks "the runtime produced output"
-	// (`sessionActivityAt`) FIRST — above the `/turn` ledger, which lags and,
-	// on pi, leaves rows open. Only `message.part.updated` used to stamp it.
-	// That was harmless while every runtime streamed snapshots; it stopped
-	// being harmless when pi began sending real deltas (~280 deltas and ~6
-	// snapshots per answer), because the stamp then went stale mid-generation
-	// and the composer showed Stop off a poll instead of off the stream.
-	test("message.part.delta stamps sessionActivityAt", () => {
-		const sid = "ses_delta_activity";
-		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
-		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+/**
+ * A PART frame can arrive before the message frame it belongs to, and the
+ * store's safety net used to answer that by inventing an assistant message.
+ *
+ * For an assistant's own reply that guess is right. For the ECHO of a prompt
+ * this tab just sent it is wrong twice over: the runtime re-mints a queued
+ * prompt's wire id at delivery, so the echo arrives under an id the tab has
+ * never seen, and its first part carries the USER's text. The invented message
+ * therefore painted the user's own words a second time, in the agent's voice,
+ * beside the bubble they were already looking at — until the real
+ * `message.updated` landed a moment later and corrected both.
+ *
+ * Reported 2026-09-08: "I send the prompt, I see it dimmed with the X and the
+ * working row, then after milliseconds I see that same prompt duplicated, then
+ * it goes back to a single prompt and starts."
+ */
+describe("a part frame that beats its message frame never invents a role", () => {
+	const S = "ses_echo";
+	const WIRE = "msg_wire0000001";
+	const REMINT = "msg_remint000001";
+	const TEXT = "ok just testing to show weird behavior";
 
-		useSyncStore.getState().applyEvent({
-			type: "message.part.delta",
-			properties: {
-				sessionID: sid,
-				messageID: "msg_1",
-				partID: "msg_1-p0",
-				field: "text",
-				delta: "Hello",
+	const rolesById = () =>
+		(useSyncStore.getState().messages[S] ?? []).map((m) => `${m.role}:${m.id}`);
+
+	const partFrame = (messageID: string) => ({
+		type: "message.part.updated",
+		properties: {
+			part: {
+				id: "prt_server_1",
+				messageID,
+				sessionID: S,
+				type: "text",
+				text: TEXT,
 			},
-		} as never);
-
-		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
+		},
 	});
 
-	test("a delta with no sessionID cannot stamp anything", () => {
-		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
-		useSyncStore.getState().applyEvent({
-			type: "message.part.delta",
-			properties: { messageID: "msg_1", partID: "msg_1-p0", field: "text", delta: "x" },
-		} as never);
-		expect(Object.keys(useSyncStore.getState().sessionActivityAt)).toHaveLength(0);
-	});
-});
-
-describe("replayed frames are history, not live output", () => {
-	// The stream replays the `since=` backlog on every connect — a reconnect,
-	// and every page load. Stamping that replay with `Date.now()` made it look
-	// like the runtime producing output NOW: `projectWorking` ranks activity
-	// above everything, so opening a session whose answer had finished long
-	// before pinned the composer on Stop for the full 45s observation window.
-	test("activity is stamped with the frame's own emit time, not now", () => {
-		const sid = "ses_replay";
-		const longAgo = Date.now() - 10 * 60_000;
-		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
-
-		useSyncStore.getState().applyEvent({
-			type: "message.part.delta",
-			at: longAgo,
-			properties: {
-				sessionID: sid,
-				messageID: "msg_1",
-				partID: "msg_1-p0",
-				field: "text",
-				delta: "old",
-			},
-		} as never);
-
-		const stamped = useSyncStore.getState().sessionActivityAt[sid];
-		expect(stamped).toBe(longAgo);
-		// The point: it must NOT read as fresh.
-		expect(Date.now() - (stamped ?? 0)).toBeGreaterThan(60_000);
+	const infoFrame = (id: string) => ({
+		type: "message.updated",
+		properties: { info: { id, sessionID: S, role: "user", time: { created: 2 } } },
 	});
 
-	test("a live frame with no emit time still stamps now", () => {
-		const sid = "ses_live_nostamp";
-		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
-		const before = Date.now();
-		useSyncStore.getState().applyEvent({
-			type: "message.part.delta",
-			properties: {
-				sessionID: sid,
-				messageID: "msg_1",
-				partID: "msg_1-p0",
-				field: "text",
-				delta: "x",
-			},
-		} as never);
-		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThanOrEqual(before);
-	});
-});
+	function sendOptimistically() {
+		useSyncStore
+			.getState()
+			.optimisticAdd(
+				S,
+				{ id: WIRE, sessionID: S, role: "user", time: {} } as unknown as Message,
+				[{ id: "prt_local_1", messageID: WIRE, sessionID: S, type: "text", text: TEXT } as Part],
+			);
+		useSyncStore.getState().markOptimisticDispatched(S, WIRE);
+		useSyncStore.getState().markOptimisticInboxBacked(S, WIRE);
+	}
 
-describe("a replayed STATUS frame is history too", () => {
-	// The activity stamp was only half of it. `streamAnswers` in projectWorking
-	// reads `sessionStatusAt`, and that was also `Date.now()` — so a stale
-	// `running` status replayed from the since= backlog read as a FRESH
-	// observation and returned working/stream, which is what kept the Stop
-	// button up on a session whose answer had finished the day before
-	// (pi.kortix.com, 6/6 samples on a freshly loaded settled session).
-	test("a replayed running status is stamped old, not now", () => {
-		const sid = "ses_replay_status";
-		const longAgo = Date.now() - 10 * 60_000;
-		useSyncStore.setState({ sessionStatus: {}, sessionStatusAt: {}, sessionStatusOrigin: {} });
-
-		useSyncStore.getState().applyEvent({
-			type: "session.status",
-			at: longAgo,
-			properties: { sessionID: sid, status: { type: "running" } },
-		} as never);
-
-		expect(useSyncStore.getState().sessionStatusAt[sid]).toBe(longAgo);
+	beforeEach(() => {
+		useSyncStore.getState().reset();
 	});
 
-	test("a status with no emit time still stamps now", () => {
-		const sid = "ses_live_status";
-		useSyncStore.setState({ sessionStatus: {}, sessionStatusAt: {}, sessionStatusOrigin: {} });
-		const before = Date.now();
-		useSyncStore.getState().applyEvent({
-			type: "session.status",
-			properties: { sessionID: sid, status: { type: "running" } },
-		} as never);
-		expect(useSyncStore.getState().sessionStatusAt[sid]).toBeGreaterThanOrEqual(before);
+	test("the re-minted echo's part does not paint the prompt a second time", () => {
+		sendOptimistically();
+		expect(rolesById()).toEqual([`user:${WIRE}`]);
+
+		// The part frame wins the race. Before: a message appeared here as
+		// `assistant:msg_remint000001` carrying the user's own text.
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${WIRE}`]);
+
+		// The info frame places the real message. Once the inbox row names its
+		// original wire id, its text appears as one user bubble.
+		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		useSyncStore.getState().registerOptimisticEcho(S, WIRE, REMINT);
+		expect(rolesById()).toEqual([`user:${REMINT}`]);
+		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
+		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);
+	});
+
+	test("an id the store already knows to be an echo is never an assistant either", () => {
+		sendOptimistically();
+		useSyncStore.getState().registerOptimisticEcho(S, WIRE, REMINT);
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById().some((entry) => entry.startsWith("assistant:"))).toBe(false);
+	});
+
+	test("with no send in flight the safety net still creates the assistant stub", () => {
+		// The net exists for a real assistant part that outran its own message
+		// frame, and that case is untouched: nothing here is waiting for an
+		// echo, so there is nothing the part could be mistaken for.
+		//
+		// A user message has to exist first. An assistant part is a REPLY, so a
+		// session with nothing to reply to cannot be what this net is for — see
+		// the empty-session test below.
+		useSyncStore.getState().applyEvent(infoFrame("msg_user00000001") as never);
+		useSyncStore.getState().applyEvent(partFrame("msg_assistant0001") as never);
+		expect(rolesById()).toEqual(["user:msg_user00000001", "assistant:msg_assistant0001"]);
+	});
+
+	test("a part for an unknown message never opens a session with an assistant", () => {
+		// The project-home route: the prompt is a server-created inbox row, so
+		// this tab paints no optimistic message and `awaitsUserEcho` has nothing
+		// to see. The transcript is EMPTY, and the first thing to arrive is a
+		// part of the re-minted echo — carrying the USER's text. Inventing an
+		// assistant for it put the prompt on screen in the agent's voice beside
+		// its own queued bubble.
+		//
+		// A session cannot begin with an assistant turn. `message.part.delta`
+		// has guarded on exactly this since it was written ("only if the session
+		// already has a user message"); this is the same rule on the frame that
+		// actually creates the message.
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById()).toEqual([]);
+
+		// Not lost — the part is stored, and the info frame brings it in.
+		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${REMINT}`]);
+		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
+		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);
+	});
+
+	test("a send already confirmed does not keep suppressing the net", () => {
+		sendOptimistically();
+		useSyncStore.getState().applyEvent(infoFrame(WIRE) as never);
+		// The echo landed under the id we painted, so nothing is outstanding.
+		useSyncStore.getState().applyEvent(partFrame("msg_assistant0002") as never);
+		expect(rolesById()).toEqual([`user:${WIRE}`, "assistant:msg_assistant0002"]);
 	});
 });

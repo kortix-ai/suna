@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowsClockwiseIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
@@ -52,6 +53,8 @@ export function StarterPromptBand({
   onPick: (text: string) => void;
   className?: string;
 }) {
+  const t = useTranslations('projectHome');
+  const tPrompts = useTranslations('starterPrompts.items');
   /*
    * Today's five. The store resolves them at import time on the client
    * (`stores/starter-prompt-rotation-store.ts`), so this selector returns the
@@ -76,12 +79,12 @@ export function StarterPromptBand({
   ];
 
   return (
-    <section aria-label="Start with" className={cn(BAND_PANEL_CLASS, className)}>
+    <section aria-label={t('starters.title')} className={cn(BAND_PANEL_CLASS, className)}>
       <div className={BAND_HEADER_CLASS}>
         {/* No count and no progress bar — there is nothing here to finish —
             and no dismiss control, because this IS the resting state. There is
             nothing to dismiss it to. */}
-        <h2 className={BAND_TITLE_CLASS}>Start with</h2>
+        <h2 className={BAND_TITLE_CLASS}>{t('starters.title')}</h2>
 
         {/*
           Shuffle.
@@ -103,13 +106,13 @@ export function StarterPromptBand({
           — you pressed it, the rows changed — and the changed rows ARE the
           feedback. The press scale is the only motion, and it is the house one.
         */}
-        <Hint label="Shuffle" side="top">
+        <Hint label={t('starters.shuffle')} side="top">
           <Button
             type="button"
             variant="ghost"
             size="icon-xs"
             onClick={reshuffle}
-            aria-label="Shuffle the starter prompts"
+            aria-label={t('starters.shuffleLabel')}
             className="text-muted-foreground shrink-0 transition-[color,background-color,scale] active:scale-[0.96]"
           >
             <ArrowsClockwiseIcon className="size-3.5" />
@@ -120,13 +123,15 @@ export function StarterPromptBand({
       <div className={BAND_LIST_CLASS}>
         {rows.map((prompt, index) => {
           const PromptIcon = prompt.icon;
-          const chalk = chalkColors(prompt.label);
+          const label = tPrompts(`${prompt.id}.label`);
+          const translatedPrompt = tPrompts(`${prompt.id}.prompt`);
+          const chalk = chalkColors(prompt.id);
 
           return (
             <button
               key={prompt.id}
               type="button"
-              onClick={() => onPick(prompt.prompt)}
+              onClick={() => onPick(translatedPrompt)}
               className={cn(
                 BAND_ROW_CLASS,
                 BAND_ROW_HOVER_CLASS,
@@ -164,7 +169,7 @@ export function StarterPromptBand({
                 style={{ color: chalk.foreground }}
               />
               <span className="font-kerning-normal text-foreground min-w-0 flex-1 truncate text-sm">
-                {prompt.label}
+                {label}
               </span>
             </button>
           );

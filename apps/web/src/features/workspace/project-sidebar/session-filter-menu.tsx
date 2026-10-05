@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType } from 'react';
 
 import {
@@ -22,11 +23,27 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Slack } from '@/features/icon/icons/slack';
-import { Telegram } from '@/features/icon/icons/telegram';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { resolveLabelFacetOptions } from '@/features/workspace/project-sidebar/session-label-facet';
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import {
+  matchesAccessFilters,
+  matchesOwnerFilters,
+  resolveAccessFacetOptions,
+  resolveOwnerFacetOptions,
+  resolvePageFacetVisibility,
+  UNKNOWN_OWNER_KEY,
+  type SessionAccessFilter,
+} from '@/features/workspace/project-sessions/session-owner-filters';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+import {
+  selectAccessFilters,
+  selectLabelFilters,
   selectGroupMode,
   selectHiddenSections,
+  selectOwnerFilters,
   selectOrderMode,
   selectSourceFilters,
   selectStatusFilters,
@@ -35,17 +52,16 @@ import {
 } from '@/stores/session-filter-store';
 import type { ProjectSession } from '@kortix/sdk';
 import {
-  CalendarDotsIcon as CalendarClock,
-  EnvelopeIcon as Mail,
-  ChatsIcon as MessagesSquare,
+  GlobeIcon,
+  LockSimpleIcon,
+  TagIcon,
   UsersIcon as UsersSolid,
-  WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 
 import {
   groupSessions,
-  SESSION_GROUP_MODES,
-  SESSION_ORDER_MODES,
+  localizedSessionGroupModes,
+  localizedSessionOrderModes,
   type SessionGroupMode,
   type SessionOrderMode,
 } from './session-grouping';
@@ -90,13 +106,20 @@ export interface SessionFilterShowOption {
 export function resolveShowOptions(
   sessions: ProjectSession[],
   mode: SessionGroupMode,
+  tI18nComplete: UiTranslator,
   reviewCountBySession: Record<string, number> = {},
+  ownerLabels?: { you?: string; unknown?: string },
 ): SessionFilterShowOption[] {
-  return groupSessions(sessions, {
-    mode,
-    order: 'activity',
-    reviewCountBySession,
-  }).sections.map((section) => ({ id: section.id, label: section.label }));
+  return groupSessions(
+    sessions,
+    {
+      mode,
+      order: 'activity',
+      reviewCountBySession,
+      ownerLabels,
+    },
+    tI18nComplete,
+  ).sections.map((section) => ({ id: section.id, label: section.label }));
 }
 
 /** The section ids that would actually render right now — mode, order, review
@@ -108,14 +131,21 @@ export function resolveRenderedSectionIds(
   mode: SessionGroupMode,
   order: SessionOrderMode,
   hiddenSections: readonly string[],
+  tI18nComplete: UiTranslator,
   reviewCountBySession: Record<string, number> = {},
+  ownerLabels?: { you?: string; unknown?: string },
 ): string[] {
-  return groupSessions(sessions, {
-    mode,
-    order,
-    reviewCountBySession,
-    hiddenSections,
-  }).sections.map((section) => section.id);
+  return groupSessions(
+    sessions,
+    {
+      mode,
+      order,
+      reviewCountBySession,
+      hiddenSections,
+      ownerLabels,
+    },
+    tI18nComplete,
+  ).sections.map((section) => section.id);
 }
 
 /**
@@ -153,10 +183,13 @@ export function resolveStatusFacetOptions(
   sessions: ProjectSession[],
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
+  tI18nComplete: UiTranslator,
 ): SessionFilterFacetOption<SessionStatusFilter>[] {
-  const passingSource = sessions.filter((session) => matchesSourceFilters(session, sourceFilters));
+  const passingSource = sessions.filter((session) =>
+    matchesSourceFilters(session, sourceFilters, tI18nComplete),
+  );
   return buildFacetOptions(
-    SESSION_STATUS_FILTERS,
+    localizeUiCatalog(SESSION_STATUS_FILTERS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
     passingSource,
     (session, value) => matchesStatusFilters(session, [value]),
     statusFilters,
@@ -167,24 +200,29 @@ export function resolveSourceFacetOptions(
   sessions: ProjectSession[],
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
+  tI18nComplete: UiTranslator,
 ): SessionFilterFacetOption<SessionSourceFilter>[] {
   const passingStatus = sessions.filter((session) => matchesStatusFilters(session, statusFilters));
   return buildFacetOptions(
-    SESSION_SOURCE_FILTERS,
+    localizeUiCatalog(SESSION_SOURCE_FILTERS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
     passingStatus,
-    (session, value) => matchesSourceFilters(session, [value]),
+    (session, value) => matchesSourceFilters(session, [value], tI18nComplete),
     sourceFilters,
   );
 }
 
 const SOURCE_FILTER_ICONS: Record<SessionSourceFilter, ComponentType<{ className?: string }>> = {
-  mine: MessagesSquare,
   shared: UsersSolid,
-  slack: Slack,
-  telegram: Telegram,
-  email: Mail,
-  schedule: CalendarClock,
-  webhook: Webhook,
+  ...SOURCE_ICONS,
+};
+
+export const SESSION_ACCESS_ICONS: Record<
+  SessionAccessFilter,
+  ComponentType<{ className?: string }>
+> = {
+  private: LockSimpleIcon,
+  restricted: UsersSolid,
+  project: GlobeIcon,
 };
 
 /** `size-1.5` filled dot — marks a facet's trigger row when that facet's own
@@ -222,11 +260,26 @@ export function SessionFilterMenu({
   surface = 'sidebar',
   reviewCountBySession = {},
 }: SessionFilterMenuProps) {
+  const t = useTranslations('sidebar.filter');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const localizedGroupModes = localizedSessionGroupModes(tI18nComplete);
+  const localizedOrderModes = localizedSessionOrderModes(tI18nComplete);
   const groupMode = useSessionFilterStore(selectGroupMode(projectId, surface));
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, surface));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, surface));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, surface));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, surface));
+  const ownerFilters = useSessionFilterStore(selectOwnerFilters(projectId, surface));
+  const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, surface));
+  const toggleOwnerFilter = useSessionFilterStore((s) => s.toggleOwnerFilter);
+  const toggleAccessFilter = useSessionFilterStore((s) => s.toggleAccessFilter);
+  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId, surface));
+  const toggleLabelFilter = useSessionFilterStore((s) => s.toggleLabelFilter);
+  // Owner and Access are the page's facets: the page lists every session the
+  // viewer may open (for an account admin with session oversight, everyone's),
+  // while the sidebar is the viewer's own working set.
+  const pageFacets = surface === 'page';
+  const ownerLabels = { you: t('ownerValue.you'), unknown: t('ownerValue.unknown') };
   const setGroupMode = useSessionFilterStore((s) => s.setGroupMode);
   const setOrderMode = useSessionFilterStore((s) => s.setOrderMode);
   const toggleStatusFilter = useSessionFilterStore((s) => s.toggleStatusFilter);
@@ -235,14 +288,128 @@ export function SessionFilterMenu({
   const toggleSectionHidden = useSessionFilterStore((s) => s.toggleSectionHidden);
   const collapseAllSections = useSessionFilterStore((s) => s.collapseAllSections);
 
-  const groupLabel = SESSION_GROUP_MODES.find((mode) => mode.value === groupMode)?.label ?? '';
-  const orderLabel = SESSION_ORDER_MODES.find((mode) => mode.value === orderMode)?.label ?? '';
+  const groupLabels: Record<SessionGroupMode, string> = {
+    status: t('group.status'),
+    activity: t('group.activity'),
+    source: t('group.source'),
+    owner: t('group.owner'),
+    none: t('group.none'),
+  };
+  const orderLabels: Record<SessionOrderMode, string> = {
+    activity: t('order.activity'),
+    created: t('order.created'),
+    name: t('order.name'),
+  };
+  const sectionLabels: Record<string, string> = {
+    'needs-you': t('section.needsYou'),
+    running: t('section.running'),
+    recent: t('section.recent'),
+    today: t('section.today'),
+    yesterday: t('section.yesterday'),
+    week: t('section.week'),
+    older: t('section.older'),
+    chat: t('section.chat'),
+    slack: t('section.slack'),
+    telegram: t('section.telegram'),
+    email: t('section.email'),
+    schedule: t('section.scheduled'),
+    webhook: t('section.webhook'),
+    all: t('section.all'),
+  };
+  const statusLabels: Record<SessionStatusFilter, string> = {
+    running: t('statusValue.running'),
+    done: t('statusValue.done'),
+    stopped: t('statusValue.stopped'),
+    failed: t('statusValue.failed'),
+    legacy: t('statusValue.legacy'),
+  };
+  const sourceLabels: Record<SessionSourceFilter, string> = {
+    shared: t('sourceValue.shared'),
+    slack: t('section.slack'),
+    telegram: t('section.telegram'),
+    teams: t('section.teams'),
+    email: t('section.email'),
+    schedule: t('section.scheduled'),
+    webhook: t('section.webhook'),
+  };
+  const groupLabel = groupLabels[groupMode];
+  const orderLabel = orderLabels[orderMode];
 
-  const showOptions = resolveShowOptions(sessions, groupMode, reviewCountBySession);
-  const statusOptions = resolveStatusFacetOptions(sessions, statusFilters, sourceFilters);
-  const sourceOptions = resolveSourceFacetOptions(sessions, statusFilters, sourceFilters);
-  const showFiltersSection = statusOptions.length > 0 || sourceOptions.length > 0;
-  const hasActiveFacets = statusFilters.length > 0 || sourceFilters.length > 0;
+  const showOptions = resolveShowOptions(
+    sessions,
+    groupMode,
+    tI18nComplete,
+    reviewCountBySession,
+    ownerLabels,
+  );
+  // Each facet's counts come from the sessions passing every OTHER facet, so a
+  // count always equals the rows the list shows when that option alone is
+  // picked. On the sidebar the owner and access facets are inert (empty).
+  const activeOwners = pageFacets ? ownerFilters : [];
+  const activeAccess = pageFacets ? accessFilters : [];
+  const passingOwnerAndAccess = sessions.filter(
+    (session) =>
+      matchesOwnerFilters(session, activeOwners) && matchesAccessFilters(session, activeAccess),
+  );
+  const statusOptions = resolveStatusFacetOptions(
+    passingOwnerAndAccess,
+    statusFilters,
+    sourceFilters,
+    tI18nComplete,
+  );
+  const sourceOptions = resolveSourceFacetOptions(
+    passingOwnerAndAccess,
+    statusFilters,
+    sourceFilters,
+    tI18nComplete,
+  );
+  const passingStatusAndSource = sessions.filter(
+    (session) =>
+      matchesStatusFilters(session, statusFilters) &&
+      matchesSourceFilters(session, sourceFilters, tI18nComplete),
+  );
+  const ownerOptions = pageFacets
+    ? resolveOwnerFacetOptions(
+        passingStatusAndSource.filter((session) => matchesAccessFilters(session, activeAccess)),
+        activeOwners,
+      )
+    : [];
+  const accessOptions = pageFacets
+    ? resolveAccessFacetOptions(
+        passingStatusAndSource.filter((session) => matchesOwnerFilters(session, activeOwners)),
+        activeAccess,
+      )
+    : [];
+  // Presence comes from every session, counts from the other facets: a pick in
+  // one facet must not remove another facet's row from the open menu.
+  const pageFacetVisibility = pageFacets
+    ? resolvePageFacetVisibility(sessions, activeOwners, activeAccess)
+    : { owner: false, access: false };
+  const showOwnerFacet = pageFacetVisibility.owner;
+  const showAccessFacet = pageFacetVisibility.access;
+  // Server-side facet: `sessions` already carry every selected label, so the
+  // options are the labels that co-occur with the current selection.
+  const labelOptions = resolveLabelFacetOptions(sessions, labelFilters);
+  const labelFilterSet = new Set(labelFilters);
+  const showFiltersSection =
+    statusOptions.length > 0 ||
+    sourceOptions.length > 0 ||
+    labelOptions.length > 0 ||
+    showOwnerFacet ||
+    showAccessFacet;
+  const hasActiveFacets =
+    statusFilters.length > 0 ||
+    sourceFilters.length > 0 ||
+    labelFilters.length > 0 ||
+    activeOwners.length > 0 ||
+    activeAccess.length > 0;
+  const ownerFilterSet = new Set(activeOwners);
+  const accessFilterSet = new Set(activeAccess);
+  const accessLabels: Record<SessionAccessFilter, string> = {
+    private: t('accessValue.private'),
+    restricted: t('accessValue.restricted'),
+    project: t('accessValue.project'),
+  };
   const hiddenSectionSet = new Set(hiddenSections);
   const statusFilterSet = new Set(statusFilters);
   const sourceFilterSet = new Set(sourceFilters);
@@ -251,7 +418,7 @@ export function SessionFilterMenu({
     <DropdownMenuContent align={align} side={side} className="w-56 p-1">
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
-          <span className="min-w-0 flex-1 truncate">Grouping</span>
+          <span className="min-w-0 flex-1 truncate">{t('grouping')}</span>
           <span className="text-muted-foreground truncate text-xs">{groupLabel}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-40 p-1">
@@ -259,13 +426,13 @@ export function SessionFilterMenu({
             value={groupMode}
             onValueChange={(value) => setGroupMode(projectId, value as SessionGroupMode, surface)}
           >
-            {SESSION_GROUP_MODES.map((mode) => (
+            {localizedGroupModes.map((mode) => (
               <DropdownMenuRadioItem
                 key={mode.value}
                 value={mode.value}
                 onSelect={(event) => event.preventDefault()}
               >
-                {mode.label}
+                {groupLabels[mode.value]}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -274,7 +441,7 @@ export function SessionFilterMenu({
 
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
-          <span className="min-w-0 flex-1 truncate">Ordering</span>
+          <span className="min-w-0 flex-1 truncate">{t('ordering')}</span>
           <span className="text-muted-foreground truncate text-xs">{orderLabel}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-40 p-1">
@@ -282,13 +449,13 @@ export function SessionFilterMenu({
             value={orderMode}
             onValueChange={(value) => setOrderMode(projectId, value as SessionOrderMode, surface)}
           >
-            {SESSION_ORDER_MODES.map((mode) => (
+            {localizedOrderModes.map((mode) => (
               <DropdownMenuRadioItem
                 key={mode.value}
                 value={mode.value}
                 onSelect={(event) => event.preventDefault()}
               >
-                {mode.label}
+                {orderLabels[mode.value]}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -298,7 +465,7 @@ export function SessionFilterMenu({
       {showOptions.length > 0 && (
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <span className="min-w-0 flex-1 truncate">Show</span>
+            <span className="min-w-0 flex-1 truncate">{t('show')}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-48 p-1">
             {showOptions.map((option) => (
@@ -308,7 +475,7 @@ export function SessionFilterMenu({
                 onCheckedChange={() => toggleSectionHidden(projectId, option.id, surface)}
                 onSelect={(event) => event.preventDefault()}
               >
-                {option.label}
+                {sectionLabels[option.id] ?? option.label}
               </DropdownMenuCheckboxItem>
             ))}
           </DropdownMenuSubContent>
@@ -319,7 +486,7 @@ export function SessionFilterMenu({
         <>
           <DropdownMenuSeparator />
           <div className="flex items-center justify-between gap-2 pr-1">
-            <DropdownMenuLabel className="flex-1">Filters</DropdownMenuLabel>
+            <DropdownMenuLabel className="flex-1">{t('filters')}</DropdownMenuLabel>
             <DropdownMenuItem
               disabled={!hasActiveFacets}
               className="text-muted-foreground w-auto shrink-0 cursor-pointer justify-end px-2 text-xs font-medium"
@@ -331,14 +498,14 @@ export function SessionFilterMenu({
                 resetFilters(projectId, surface);
               }}
             >
-              Reset
+              {t('reset')}
             </DropdownMenuItem>
           </div>
 
           {statusOptions.length > 0 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">Status</span>
+                <span className="min-w-0 flex-1 truncate">{t('status')}</span>
                 {statusFilters.length > 0 && <FacetActiveDot />}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-48 p-1">
@@ -349,7 +516,7 @@ export function SessionFilterMenu({
                     onCheckedChange={() => toggleStatusFilter(projectId, option.value, surface)}
                     onSelect={(event) => event.preventDefault()}
                   >
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{statusLabels[option.value]}</span>
                     <span className="text-muted-foreground ml-auto text-xs tabular-nums">
                       {option.count}
                     </span>
@@ -362,7 +529,7 @@ export function SessionFilterMenu({
           {sourceOptions.length > 0 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">Source</span>
+                <span className="min-w-0 flex-1 truncate">{t('source')}</span>
                 {sourceFilters.length > 0 && <FacetActiveDot />}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-48 p-1">
@@ -376,7 +543,7 @@ export function SessionFilterMenu({
                       onSelect={(event) => event.preventDefault()}
                     >
                       <OptionIcon className="size-4" />
-                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{sourceLabels[option.value]}</span>
                       <span className="text-muted-foreground ml-auto text-xs tabular-nums">
                         {option.count}
                       </span>
@@ -386,7 +553,95 @@ export function SessionFilterMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
-        </>
+
+          {labelOptions.length > 0 && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="min-w-0 flex-1 truncate">{t('labels')}</span>
+                {labelFilters.length > 0 && <FacetActiveDot />}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto p-1">
+                {labelOptions.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.value}
+                    checked={labelFilterSet.has(option.value)}
+                    onCheckedChange={() => toggleLabelFilter(projectId, option.value, surface)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    <TagIcon className="size-4" />
+                    <span className="min-w-0 flex-1 truncate">{option.value}</span>
+                    <span className="text-muted-foreground ml-auto text-xs tabular-nums">
+                      {option.count}
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
+
+          {showOwnerFacet && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="min-w-0 flex-1 truncate">{t('owner')}</span>
+                {activeOwners.length > 0 && <FacetActiveDot />}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto p-1">
+                {ownerOptions.map((option) => {
+                  const label = option.isViewer
+                    ? t('ownerValue.you')
+                    : option.value === UNKNOWN_OWNER_KEY
+                      ? t('ownerValue.unknown')
+                      : (option.name ?? option.email ?? option.value);
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={option.value}
+                      checked={ownerFilterSet.has(option.value)}
+                      onCheckedChange={() => toggleOwnerFilter(projectId, option.value, surface)}
+                      onSelect={(event) => event.preventDefault()}
+                    >
+                      <UserAvatar
+                        size="xs"
+                        name={option.name ?? undefined}
+                        email={option.email ?? ''}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{label}</span>
+                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
+                        {option.count}
+                      </span>
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
+
+          {showAccessFacet && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="min-w-0 flex-1 truncate">{t('access')}</span>
+                {activeAccess.length > 0 && <FacetActiveDot />}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-52 p-1">
+                {accessOptions.map((option) => {
+                  const OptionIcon = SESSION_ACCESS_ICONS[option.value];
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={option.value}
+                      checked={accessFilterSet.has(option.value)}
+                      onCheckedChange={() => toggleAccessFilter(projectId, option.value, surface)}
+                      onSelect={(event) => event.preventDefault()}
+                    >
+                      <OptionIcon className="size-4" />
+                      <span className="min-w-0 flex-1 truncate">{accessLabels[option.value]}</span>
+                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
+                        {option.count}
+                      </span>
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}        </>
       )}
 
       <DropdownMenuSeparator />
@@ -401,13 +656,15 @@ export function SessionFilterMenu({
               groupMode,
               orderMode,
               hiddenSections,
+              tI18nComplete,
               reviewCountBySession,
+              ownerLabels,
             ),
             surface,
           )
         }
       >
-        Collapse all
+        {t('collapseAll')}
       </DropdownMenuItem>
     </DropdownMenuContent>
   );

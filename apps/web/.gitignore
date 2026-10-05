@@ -65,3 +65,9 @@ public/pdfium/
 public/react-docx/
 public/react-xlsx/
 public/emojibase/
+public/i18n/
+
+# Blume docs build (blume.config.ts) — generated, never committed
+dist/
+public/docs/
+.blume/

@@ -10,6 +10,7 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realSsoRepository from '../repositories/sso';
 
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: { ACCOUNT_READ: 'account.read', ACCOUNT_WRITE: 'account.write' },
@@ -60,7 +61,10 @@ const ssoMappingRow = {
   createdBy: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
+// Spread the real module: `mock.module` replaces it wholesale, and the SSO
+// router also imports the pure domain-verification helpers from it.
 mock.module('../repositories/sso', () => ({
+  ...realSsoRepository,
   getSsoProvider: async () => ssoProviderRow,
   upsertSsoProvider: async () => ssoProviderRow,
   deleteSsoProvider: async () => true,
@@ -83,7 +87,7 @@ function buildApp() {
   return app;
 }
 
-const ACCOUNT = 'acct-1';
+const ACCOUNT = '00000000-0000-4000-a000-000000000001';
 
 describe('SCIM tokens — DELETE bypasses the entitlement gate, POST keeps it', () => {
   test('DELETE /scim/tokens/:tokenId succeeds on an unentitled account', async () => {

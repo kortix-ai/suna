@@ -20,6 +20,9 @@
  *     the public. The rows carry a status instead of a link — see MOBILE_ROWS.
  */
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import type { DesktopOs, MobileOs } from './detect-os';
 
 export const hero = {
@@ -76,3 +79,19 @@ export const TERMINAL = {
   description: 'Install the CLI and drive Kortix from your shell.',
   support: 'macOS & Linux · WSL on Windows',
 };
+
+export function localizedDownloadContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      desktopCard: DESKTOP_CARD,
+      mobileCard: MOBILE_CARD,
+      desktopRows: DESKTOP_ROWS,
+      mobileRows: MOBILE_ROWS,
+      mobileStatus: MOBILE_STATUS,
+      terminal: TERMINAL,
+    },
+    tI18nComplete,
+    REMAINING_UI_TRANSLATION_KEYS,
+  );
+}

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { refusesSelfMerge, resolveChangeRequestBase } from './change-request-policy';
+import {
+  MANIFEST_WRITE_ACTIONS,
+  refusesSelfMerge,
+  requiredManifestActions,
+  resolveChangeRequestBase,
+  resolveChangeRequestOrigin,
+} from './change-request-policy';
 
 const SESSION = 'sess-a';
 const OTHER = 'sess-b';
@@ -65,26 +71,93 @@ describe('resolveChangeRequestBase', () => {
 });
 
 describe('refusesSelfMerge', () => {
-  test('a session may not merge the change request it opened', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION })).toBe(true);
+  test('an ungoverned session may not merge the change request it opened', () => {
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION, hasExplicitMergeGrant: false })).toBe(true);
+  });
+
+  test('an explicitly granted session may merge the change request it opened', () => {
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION, hasExplicitMergeGrant: true })).toBe(false);
   });
 
   test('a session MAY merge a change request opened by someone else', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: OTHER })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: OTHER, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('a session may merge a change request a PERSON opened', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('a person is never refused', () => {
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: SESSION })).toBe(false);
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: SESSION, hasExplicitMergeGrant: false })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('two null ids are not treated as a match', () => {
     // Guards the obvious `a === b` bug: without the truthiness check, a person
     // merging a person-opened CR would be refused.
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
+  });
+});
+
+describe('resolveChangeRequestOrigin', () => {
+  test('binds an omitted session_id to the authenticated session', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: SESSION, requestedSessionId: null }))
+      .toEqual({ ok: true, originSessionId: SESSION });
+  });
+
+  test('rejects a different session_id', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: SESSION, requestedSessionId: OTHER }))
+      .toMatchObject({ ok: false, code: 'CR_SESSION_ID_MISMATCH' });
+  });
+
+  test('requires authenticated session identity for an agent principal', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: null, requestedSessionId: null }))
+      .toMatchObject({ ok: false, code: 'CR_SESSION_ID_REQUIRED' });
+  });
+
+  test("keeps a person's supplied session origin", () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: false, actingSessionId: null, requestedSessionId: SESSION }))
+      .toEqual({ ok: true, originSessionId: SESSION });
+  });
+});
+
+
+describe('requiredManifestActions — a merge needs what the direct route asserts', () => {
+  const base = 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    kortix_permissions: ["project.read"]\n';
+  const withTrigger = `${base}triggers:\n  - slug: hourly\n    type: cron\n    cron: "0 * * * *"\n    prompt: tidy\n    agent: a\n`;
+
+  test('no governed section changed → nothing extra', () => {
+    expect(requiredManifestActions(base, `${base}project:\n  name: renamed\n`, 'yaml')).toEqual([]);
+    expect(requiredManifestActions(base, base, 'yaml')).toEqual([]);
+    expect(requiredManifestActions(null, null, 'yaml')).toEqual([]);
+  });
+
+  test('widening an agent needs project.agent.write', () => {
+    expect(requiredManifestActions(base, base.replace('["project.read"]', 'all'), 'yaml')).toEqual(['project.agent.write']);
+    expect(requiredManifestActions(base, `${base}  b: {}\n`, 'yaml')).toEqual(['project.agent.write']);
+  });
+
+  test('triggers: added → create, edited → update, removed → delete', () => {
+    expect(requiredManifestActions(base, withTrigger, 'yaml')).toEqual(['project.trigger.create']);
+    expect(requiredManifestActions(withTrigger, withTrigger.replace('prompt: tidy', 'prompt: sweep'), 'yaml')).toEqual([
+      'project.trigger.update',
+    ]);
+    expect(requiredManifestActions(withTrigger, base, 'yaml')).toEqual(['project.trigger.delete']);
+  });
+
+  test('switching default_agent needs project.agent.write', () => {
+    const two = `${base}  b: {}\n`;
+    expect(requiredManifestActions(two, two.replace('default_agent: a', 'default_agent: b'), 'yaml')).toEqual([
+      'project.agent.write',
+    ]);
+  });
+
+  test('key order and formatting do not count', () => {
+    const reordered = 'agents:\n  a:\n    kortix_permissions: ["project.read"]\ndefault_agent: a\nkortix_version: 2\n';
+    expect(requiredManifestActions(base, reordered, 'yaml')).toEqual([]);
+  });
+
+  test('a side that does not parse needs every manifest-write permission (fail closed)', () => {
+    expect(requiredManifestActions(base, 'agents: [unclosed', 'yaml')).toEqual([...MANIFEST_WRITE_ACTIONS]);
   });
 });

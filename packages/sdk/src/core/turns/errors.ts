@@ -66,53 +66,6 @@ function messageFieldFromJsonish(str: string): string | undefined {
   return typeof literal === 'string' && literal.trim() ? literal.trim() : undefined;
 }
 
-function isHtmlTagBoundary(char: string | undefined): boolean {
-  return char === undefined || char === '>' || char === '/' || char.charCodeAt(0) <= 32;
-}
-
-function startsHtmlTag(lower: string, offset: number, name: 'script' | 'style'): boolean {
-  const prefix = `<${name}`;
-  return lower.startsWith(prefix, offset) && isHtmlTagBoundary(lower[offset + prefix.length]);
-}
-
-/** Remove tags and non-visible script/style bodies with one forward scan. */
-function visibleHtmlText(str: string, lower: string): string {
-  const chunks: string[] = [];
-  let cursor = 0;
-  while (cursor < str.length) {
-    const tagStart = str.indexOf('<', cursor);
-    if (tagStart === -1) {
-      chunks.push(str.slice(cursor));
-      break;
-    }
-    chunks.push(str.slice(cursor, tagStart));
-
-    const hiddenTag = startsHtmlTag(lower, tagStart, 'script')
-      ? 'script'
-      : startsHtmlTag(lower, tagStart, 'style')
-        ? 'style'
-        : undefined;
-    if (hiddenTag) {
-      const openEnd = str.indexOf('>', tagStart + hiddenTag.length + 1);
-      if (openEnd === -1) break;
-      const closeStart = lower.indexOf(`</${hiddenTag}>`, openEnd + 1);
-      if (closeStart === -1) break;
-      cursor = closeStart + hiddenTag.length + 3;
-      chunks.push(' ');
-      continue;
-    }
-
-    const tagEnd = str.indexOf('>', tagStart + 1);
-    if (tagEnd === -1) {
-      chunks.push(str.slice(tagStart));
-      break;
-    }
-    chunks.push(' ');
-    cursor = tagEnd + 1;
-  }
-  return chunks.join(' ');
-}
-
 /**
  * A gateway or CDN error page (`<html><title>502 Bad Gateway</title>…`). The
  * title is the sentence; failing that, the visible text, capped so a whole
@@ -120,19 +73,124 @@ function visibleHtmlText(str: string, lower: string): string {
  */
 function textFromHtml(str: string): string | undefined {
   if (!/^\s*<(?:!doctype|html|head|body)\b/i.test(str)) return undefined;
+  // One lowercased copy, reused by both scans below, so tag matching is
+  // case-insensitive without a regex.
   const lower = str.toLowerCase();
-  const titleStart = lower.indexOf('<title');
-  const titleOpenEnd = titleStart === -1 ? -1 : str.indexOf('>', titleStart + 6);
-  const titleEnd = titleOpenEnd === -1 ? -1 : lower.indexOf('</title>', titleOpenEnd + 1);
-  const title =
-    titleEnd === -1
-      ? undefined
-      : str.slice(titleOpenEnd + 1, titleEnd).includes('<')
-        ? undefined
-        : str.slice(titleOpenEnd + 1, titleEnd).trim();
+  const title = titleFromHtml(str, lower);
   if (title) return title;
-  const text = visibleHtmlText(str, lower).replace(/\s+/g, ' ').trim();
+  const text = visibleTextFromHtml(str, lower);
   return text ? text.slice(0, 200) : undefined;
+}
+
+/**
+ * A tag name ends here — the next character is not another name character.
+ * Without this, `<scriptish>` would be treated as a `<script>` open tag.
+ */
+function isTagNameBoundary(code: number): boolean {
+  if (Number.isNaN(code)) return true; // end of string
+  const isAlnum =
+    (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+  return !isAlnum;
+}
+
+/** Index just past the `>` that closes the tag opening at `lt`, or end of string. */
+function endOfTag(str: string, lt: number): number {
+  const gt = str.indexOf('>', lt);
+  return gt === -1 ? str.length : gt + 1;
+}
+
+/**
+ * The `<title>` text, by forward scan.
+ *
+ * This was `/<title[^>]*>([^<]*)<\/title>/i`, which CodeQL flagged as
+ * `js/polynomial-redos`: every `<title` in the body is a match start, and
+ * `[^>]*` rescans the whole tail from each one before failing, so a page that
+ * is a long run of unclosed tags costs O(n^2). The body is whatever an upstream
+ * gateway returned, so it is attacker-influenced. Measured before this change:
+ * 30,000 unclosed `<title` took 4.25 s. Every `indexOf` below starts at a
+ * position that only moves forward, so the whole scan is linear.
+ *
+ * Semantics are unchanged: the title must be followed by a real `</title>`
+ * close, and its text stops at the first `<`. The one thing that IS new is
+ * tolerating whitespace before the bracket (`</title >`), which HTML permits.
+ */
+function titleFromHtml(str: string, lower: string): string | undefined {
+  let from = 0;
+  for (;;) {
+    const open = lower.indexOf('<title', from);
+    if (open === -1) return undefined;
+    const afterName = open + '<title'.length;
+    if (!isTagNameBoundary(lower.charCodeAt(afterName))) {
+      from = afterName;
+      continue;
+    }
+    const gt = str.indexOf('>', afterName);
+    if (gt === -1) return undefined;
+    const nextTag = str.indexOf('<', gt + 1);
+    if (nextTag !== -1 && lower.startsWith('</title', nextTag)) {
+      const title = str.slice(gt + 1, nextTag).trim();
+      if (title) return title;
+    }
+    from = gt + 1;
+  }
+}
+
+/** Element content that is never visible text, so it must not reach a transcript row. */
+const NON_VISIBLE_ELEMENTS = ['script', 'style'] as const;
+
+/**
+ * The page's visible text, by forward scan.
+ *
+ * Replaces `/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi` plus
+ * `/<[^>]+>/g`, which carried two CodeQL findings:
+ *
+ *  - `js/bad-tag-filter` — `<\/script>` does not match `</script >`, which HTML
+ *    permits, so the script body survived the strip and landed in the message.
+ *  - `js/polynomial-redos` — same rescan-from-every-start shape as above;
+ *    30,000 unclosed `<script` took 4.32 s.
+ *
+ * An unterminated `<script` swallows the rest of the document, which is what a
+ * browser does too.
+ */
+function visibleTextFromHtml(str: string, lower: string): string {
+  const parts: string[] = [];
+  let i = 0;
+  while (i < str.length) {
+    const lt = str.indexOf('<', i);
+    if (lt === -1) {
+      parts.push(str.slice(i));
+      break;
+    }
+    parts.push(str.slice(i, lt));
+    const skipped = NON_VISIBLE_ELEMENTS.find(
+      (tag) =>
+        lower.startsWith(`<${tag}`, lt) &&
+        isTagNameBoundary(lower.charCodeAt(lt + tag.length + 1)),
+    );
+    if (skipped) {
+      const close = lower.indexOf(`</${skipped}`, lt);
+      i = close === -1 ? str.length : endOfTag(str, close);
+      continue;
+    }
+    i = endOfTag(str, lt);
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The AI SDK's `JSONParseError` for a streamed chunk that did not parse:
+ * `JSON parsing failed: Text: <every unparsed byte>. Error message: <cause>`.
+ * The embedded text is the model's raw stream (often several
+ * `chat.completion.chunk` bodies run together), so it is never the sentence.
+ * Name the model when a chunk carries one; the text stays available through
+ * `rawErrorText`.
+ */
+function streamParseFailure(str: string): string | undefined {
+  if (!str.startsWith('JSON parsing failed: Text:')) return undefined;
+  const model = str.match(/"model"\s*:\s*"([^"\\]{1,120})"/)?.[1]?.trim();
+  return model
+    ? `The response from ${model} could not be read.`
+    : 'The model response could not be read.';
 }
 
 /** `overloaded_error` → `Overloaded error`; `rate_limit_exceeded` → `Rate limit exceeded`. */
@@ -161,6 +219,9 @@ function unwrapString(
   const str = stripErrorPrefixes(raw);
   if (!str) return undefined;
   if (depth >= MAX_UNWRAP_DEPTH) return str;
+
+  const streamFailure = streamParseFailure(str);
+  if (streamFailure) return streamFailure;
 
   // The whole string is a body (possibly a double-encoded one).
   const parsed = tryParseJson(str);
@@ -241,6 +302,43 @@ export function unwrapError(raw: unknown): string {
 }
 
 /**
+ * The technical text behind `unwrapError`'s sentence — the upstream body or
+ * the provider's own wording — for a collapsed "details" disclosure. Returns
+ * `undefined` when that text says nothing the sentence does not already say,
+ * so a host never renders a disclosure that repeats the title.
+ */
+export function rawErrorText(raw: unknown): string | undefined {
+  const text = rawTextOf(raw)?.trim();
+  if (!text) return undefined;
+  const sentence = unwrapError(raw);
+  if (text === sentence || stripErrorPrefixes(text) === sentence) return undefined;
+  return text;
+}
+
+/** OpenCode's envelope (`data.message`, plus the upstream `data.responseBody`
+ *  of an `APIError`), a thrown `Error`'s message, or the serialized value. */
+function rawTextOf(raw: unknown): string | undefined {
+  if (typeof raw === 'string') return raw;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  const data = record.data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const { message, responseBody } = data as Record<string, unknown>;
+    const parts = [message, responseBody].filter(
+      (part, index, all): part is string =>
+        typeof part === 'string' && part.trim() !== '' && all.indexOf(part) === index,
+    );
+    if (parts.length > 0) return parts.join('\n\n');
+  }
+  if (typeof record.message === 'string' && record.message) return record.message;
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Best-effort substring spanning the first `{` to the last `}` in a larger
  * non-JSON string — correct for the common single-object case (nested
  * double-wrapped errors don't nest braces inside the outer text). Shared by
@@ -295,6 +393,12 @@ export interface GatewayErrorDetails {
   upstreamStatus?: number;
   requestId?: string;
   attemptFailures?: GatewayAttemptFailure[];
+  /** The model the request named (`requested_model`). A resolution error has
+   *  no provider yet, so this is how a host tells which connection failed —
+   *  `codex/…` is the member's ChatGPT subscription. */
+  requestedModel?: string;
+  /** The model after routing (`resolved_model`), e.g. what `auto` became. */
+  resolvedModel?: string;
 }
 
 export interface GatewayAttemptFailure {
@@ -365,6 +469,10 @@ function gatewayFieldsFrom(obj: Record<string, unknown>): GatewayErrorDetails | 
   const requestId =
     typeof obj.request_id === 'string' && obj.request_id ? obj.request_id : undefined;
   const attemptFailures = attemptFailuresFrom(obj.attempt_failures);
+  const requestedModel =
+    typeof obj.requested_model === 'string' && obj.requested_model ? obj.requested_model : undefined;
+  const resolvedModel =
+    typeof obj.resolved_model === 'string' && obj.resolved_model ? obj.resolved_model : undefined;
   if (
     !provider &&
     !code &&
@@ -376,7 +484,11 @@ function gatewayFieldsFrom(obj: Record<string, unknown>): GatewayErrorDetails | 
     return undefined;
   const message =
     (typeof obj.message === 'string' && obj.message) || extractErrorFromObject(obj) || '';
-  return { message, provider, code, suggestion, upstreamStatus, requestId, attemptFailures };
+  return {
+    message, provider, code, suggestion, upstreamStatus, requestId, attemptFailures,
+    ...(requestedModel ? { requestedModel } : {}),
+    ...(resolvedModel ? { resolvedModel } : {}),
+  };
 }
 
 /**
@@ -412,7 +524,11 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
   const record = raw as Record<string, unknown>;
 
   const direct = gatewayFieldsFrom(record);
-  if (direct) return direct;
+  // A runtime error `{ name, data, code }` is not the gateway body: its `code`
+  // is the daemon's own class (`rate_limit`), and the envelope, when there is
+  // one, sits in `data`. That outer `code` is the answer only when it does not.
+  const runtimeError = typeof record.name === 'string' && typeof record.data === 'object';
+  if (direct && !runtimeError) return direct;
 
   const errorField = record.error;
   if (errorField && typeof errorField === 'object' && !Array.isArray(errorField)) {
@@ -445,5 +561,5 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
     }
   }
 
-  return undefined;
+  return direct;
 }

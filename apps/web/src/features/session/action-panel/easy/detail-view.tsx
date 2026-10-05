@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The one place Easy mode shows detail.
  *
@@ -29,7 +30,6 @@ import type { ToolPart } from '@/ui';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
-  SidebarSimpleIcon as PanelLeft,
   XIcon as X,
 } from '@phosphor-icons/react';
 import {
@@ -47,18 +47,20 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 import { PanelWidthButton } from './viewer-actions';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
 export function CloseButton({ onClose }: { onClose: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Button
       variant="ghost"
       size="icon"
       onClick={onClose}
-      aria-label="Close"
+      aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
       className="size-7 shrink-0 active:scale-[0.96]"
     >
       {/* `size-3.5`, not `size-4`: an X is a full-bleed glyph — it fills its
@@ -240,13 +242,14 @@ export interface Detail {
  * conflict trap. The buttons carry mobile instead.
  */
 function DetailNav({ nav }: { nav: NonNullable<Detail['nav']> }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="border-border flex shrink-0 items-center justify-end gap-0.5 border-t px-2 py-1">
       <span className="text-muted-foreground mr-1 text-xs tabular-nums">{nav.position}</span>
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Previous"
+        aria-label={tI18nComplete.raw('texta57b08a480b8')}
         disabled={!nav.prev}
         onClick={() => nav.prev?.()}
         className="size-7 active:scale-[0.96]"
@@ -256,7 +259,7 @@ function DetailNav({ nav }: { nav: NonNullable<Detail['nav']> }) {
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Next"
+        aria-label={tI18nComplete.raw('text1ff57a29d7c9')}
         disabled={!nav.next}
         onClick={() => nav.next?.()}
         className="size-7 active:scale-[0.96]"
@@ -590,11 +593,7 @@ export function DetailLayer({
   // it hides for either, with the same motion, so the two layers read as
   // siblings in one place rather than two unrelated overlays.
   const covered = open || persistentOpen;
-  const persistentMotion = terminalLayerMotion(
-    persistentOpen,
-    !!persistentLayer?.swap,
-    !!reduce,
-  );
+  const persistentMotion = terminalLayerMotion(persistentOpen, !!persistentLayer?.swap, !!reduce);
 
   return (
     <div className="relative h-full w-full shrink-0">
@@ -741,8 +740,7 @@ export function DetailLayer({
 
 /** Tools that re-send their ENTIRE state on every call rather than a delta. */
 function isSnapshotTool(tool: string): boolean {
-  const n = normalizeName(tool);
-  return n === 'todo_write' || n === 'todowrite';
+  return isPlanWriteTool(tool);
 }
 
 /**
@@ -782,6 +780,7 @@ export function ToolParts({
    */
   summary?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const visible = collapseSnapshots(parts);
   // A step's own icon already went red for this (StepIcon, ContextCard) — but
   // that glance lives on the panel's home, one screen back. Once the user has
@@ -791,11 +790,18 @@ export function ToolParts({
     (part) => (part.state as { status?: string } | undefined)?.status === 'error',
   );
 
+  // A lone `show` call IS the preview: `ToolPartRenderer` sizes it `h-full`
+  // (`fillsPanel`), and that height only resolves if this column has one too.
+  // Without it the preview's iframe fell back to the browser's 150px default.
+  const fillsPanel =
+    visible.length === 1 && (visible[0].tool === 'show' || visible[0].tool === 'show-user');
+
   return (
     <ToolSurfaceContext.Provider value="panel">
       <div
         className={cn(
           'flex min-w-0 flex-col gap-2',
+          fillsPanel && 'h-full',
           // Tool views cap their own scroll height for the inline chat, where
           // they're one item among many. Here the detail IS the tool — a web
           // search that shows 5 of its 20 results behind an inner scrollbar is
@@ -810,7 +816,7 @@ export function ToolParts({
         {summary && <p className="text-muted-foreground text-sm text-pretty">{summary}</p>}
         {failed && (
           <div className="border-kortix-red/30 bg-kortix-red/5 text-foreground rounded-md border px-3 py-2 text-sm">
-            This step hit a problem — the details below show what happened.
+            {tI18nComplete.raw('text4e1c9bd64a7d')}
           </div>
         )}
         {/* One rendered call → open it; several → every row starts closed and

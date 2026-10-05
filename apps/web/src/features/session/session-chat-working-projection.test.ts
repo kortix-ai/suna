@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url';
 // wiring under test is which value reaches which call. `between()` FAILS on a
 // missing anchor rather than yielding '' and passing.
 const chat = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
+// The turn card's own wiring moved to `session-chat/transcript.tsx` (KRTX-355,
+// phase 2 of the session-chat split); the assertions on it read that module.
+const turn = readFileSync(
+  fileURLToPath(new URL('./session-chat/transcript.tsx', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -44,15 +50,19 @@ describe('the composer reads ONE working answer', () => {
     expect(chat).not.toContain('30_000');
   });
 
-  test('the send receipt names the optimistic turn only when the session was idle', () => {
+  test('the send receipt names the optimistic turn only when the send was not queued', () => {
+    // `willQueue` replaced `sendingIntoRunningTurn`: a send made while anything
+    // is already queued waits too (FIFO), so it names the working turn as well.
     const send = between(
       chat,
       'const clientMessageId = overrides?.clientMessageId',
-      'return messageID;',
+      // NOT `return messageID;`: the send's upload wait returns early on a
+      // failed attachment, so that anchor ends the slice inside `deliver()`,
+      // before the receipt calls this asserts on. End at the declaration that
+      // follows the whole callback instead.
+      'const heldSendFailures = useHeldSendFailureStore(',
     );
-    expect(send).toContain(
-      'const receiptTurnId = sendingIntoRunningTurn ? workingTurnIdRef.current : messageID;',
-    );
+    expect(send).toContain('const receiptTurnId = willQueue ? workingTurnIdRef.current : messageID;');
     expect(send).toContain('noteSendReceipt(messageID, receiptTurnId)');
     // Acceptance is what lets a `/turn` read answer for the send AT ALL: until
     // `POST .../prompts` returns there is no row for it to see.
@@ -117,7 +127,11 @@ describe('the composer reads ONE working answer', () => {
     const send = between(
       chat,
       'const clientMessageId = overrides?.clientMessageId',
-      'return messageID;',
+      // NOT `return messageID;`: the send's upload wait returns early on a
+      // failed attachment, so that anchor ends the slice inside `deliver()`,
+      // before the receipt calls this asserts on. End at the declaration that
+      // follows the whole callback instead.
+      'const heldSendFailures = useHeldSendFailureStore(',
     );
     expect(send).toContain('clearSendReceipt(messageID)');
   });
@@ -177,11 +191,7 @@ describe('the composer reads ONE working answer', () => {
     // either is severed: the retry predicate must flow into the
     // `resolveEffectiveBusy` call, and the composer must read `effectiveBusy`.
     expect(chat).toContain('hasRetryingAssistantTurn(messages)');
-    const busyResolution = between(
-      chat,
-      'const effectiveBusy = resolveEffectiveBusy({',
-      '});',
-    );
+    const busyResolution = between(chat, 'const effectiveBusy = resolveEffectiveBusy({', '});');
     expect(busyResolution).toContain('hasRetryingAssistant');
     expect(chat).toContain('sessionWorking={effectiveBusy}');
   });
@@ -198,8 +208,8 @@ describe('the turn card reads the same working answer', () => {
     // Not "the last turn": a prompt queued mid-turn is the last user message
     // while the agent still streams the turn before it — `resolveWorkingTurn`
     // picks the turn, the projection says whether it works.
-    const turn = between(chat, 'function SessionTurnImpl(', 'const activeAssistantMessage');
-    expect(turn).toContain('isWorkingTurn && sessionWorking');
+    const turnState = between(turn, 'const working = isWorkingTurn && sessionWorking;', 'const agentWorking');
+    expect(turnState).toContain('isWorkingTurn && sessionWorking');
     // The raw slot no longer decides any turn's shimmer inside the card.
     expect(turn).not.toContain('getWorkingState(');
   });
@@ -211,25 +221,17 @@ describe('the turn card reads the same working answer', () => {
     expect(chat).toContain('resolveLastTurnWorking({');
     expect(chat).toContain('isChildSession');
     expect(chat).toContain('sessionWorking={lastTurnWorking}');
-    expect(chat).toContain(
-      'resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds })',
-    );
+    // The projection names the turn first; only where it names none does this
+    // tab's own unanswered idle send (`freshSendHint`) — the one-frame "queued"
+    // flash on send that anchored the scroll back and forth.
+    expect(chat).toContain('hintMessageId: working.turnId ?? freshSendTurnId,');
+    expect(chat).toContain('setFreshSend({ sessionId, messageId: messageID });');
   });
 
   test('retry copy keeps the raw frame — the projection does not carry the reason', () => {
-    const turn = between(chat, 'function SessionTurnImpl(', '// Cost info');
-    expect(turn).toContain('getRetryInfo(sessionStatus)');
-    expect(turn).toContain('getRetryMessage(sessionStatus)');
-  });
-
-  test('"Send now" decides from the projection, not the raw slot', () => {
-    // Both failure directions were real: a stale-idle slot dispatched into a
-    // live turn (OpenCode answers that by aborting it — the "Interrupted"
-    // symptom), and a stale-busy slot issued a spurious Stop that held the
-    // whole inbox.
-    const sendNow = between(chat, 'const handleQueueSendNow = useCallback(', 'stop: async ()');
-    expect(sendNow).toContain('isRunning: () => serverHoldsOpenTurn(working)');
-    expect(sendNow).not.toContain('useSessionStateStore.getState()');
+    const retry = between(turn, 'function useTurnRetryState(', 'return { retryInfo, retryMessage, retrySecondsLeft };');
+    expect(retry).toContain('getRetryInfo(sessionStatus)');
+    expect(retry).toContain('getRetryMessage(sessionStatus)');
   });
 
   test('the composer honors the server admission verdict — a failed row cannot pose as a sent prompt', () => {

@@ -3,7 +3,8 @@
 import { Reveal } from '@/components/home/reveal';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
-import { scope } from './content';
+import { useTranslations } from '@/i18n/use-translations';
+import { getLocalizedConnectorsContent } from './content';
 import { Eyebrow, Section } from './shared';
 
 /**
@@ -12,6 +13,8 @@ import { Eyebrow, Section } from './shared';
  * parse.
  */
 export function ScopeSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { scope } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <Section id="scope">
       <SectionHeader eyebrow={scope.eyebrow} title={scope.title} description={scope.sub} />

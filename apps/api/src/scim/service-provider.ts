@@ -5,6 +5,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { ScimResource, listResponse, scimRouter } from './app';
+import { ENTERPRISE_USER_SCHEMA } from './user-profile';
 
 // ─── Discovery ────────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ function resourceTypeFor(accountId: string, def: (typeof RESOURCE_TYPE_DEFS)[num
     endpoint: def.endpoint,
     description: `${def.name} resource`,
     schema: def.schema,
+    ...(def.name === 'User' ? { schemaExtensions: [{ schema: ENTERPRISE_USER_SCHEMA, required: false }] } : {}),
     meta: {
       resourceType: 'ResourceType',
       location: `/scim/v2/accounts/${accountId}/ResourceTypes/${def.name}`,
@@ -112,13 +114,32 @@ const SCHEMA_DEFS = [
       attr('userName', 'string', { required: true, uniqueness: 'server' }),
       attr('active', 'boolean'),
       attr('externalId', 'string'),
+      attr('displayName', 'string'),
+      attr('title', 'string'),
+      ...['preferredLanguage', 'locale', 'timezone', 'nickName', 'profileUrl', 'userType'].map(name => attr(name, 'string')),
+      attr('phoneNumbers', 'complex', { multiValued: true, subAttributes: [attr('value', 'string'), attr('type', 'string'), attr('primary', 'boolean')] }),
+      attr('addresses', 'complex', { multiValued: true, subAttributes: [
+        ...['type', 'formatted', 'streetAddress', 'locality', 'region', 'postalCode', 'country'].map(name => attr(name, 'string')),
+        attr('primary', 'boolean'),
+      ] }),
+      attr('groups', 'complex', { multiValued: true, mutability: 'readOnly', subAttributes: [attr('value', 'string')] }),
       attr('emails', 'complex', {
         multiValued: true,
-        subAttributes: [attr('value', 'string'), attr('primary', 'boolean')],
+        subAttributes: [attr('value', 'string'), attr('type', 'string'), attr('primary', 'boolean')],
       }),
       attr('name', 'complex', {
-        subAttributes: [attr('givenName', 'string'), attr('familyName', 'string')],
+        subAttributes: ['givenName', 'familyName', 'formatted', 'middleName', 'honorificPrefix', 'honorificSuffix'].map(name => attr(name, 'string')),
       }),
+    ],
+  },
+  {
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:Schema'],
+    id: ENTERPRISE_USER_SCHEMA,
+    name: 'EnterpriseUser',
+    description: 'Enterprise User',
+    attributes: [
+      ...['employeeNumber', 'costCenter', 'organization', 'division', 'department'].map(name => attr(name, 'string')),
+      attr('manager', 'complex', { subAttributes: [attr('value', 'string'), attr('$ref', 'reference'), attr('displayName', 'string')] }),
     ],
   },
   {

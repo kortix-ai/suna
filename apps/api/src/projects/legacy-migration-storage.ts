@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
+import { getSupabase } from '../shared/supabase';
 
 const BUCKET = () => config.LEGACY_MIGRATION_BACKUP_BUCKET;
 const ARCHIVE_FILE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024;
@@ -25,21 +25,6 @@ export async function ensureBackupBucket(): Promise<void> {
 
 export function opencodeObjectPath(sandboxId: string): string {
   return `${sandboxId}/opencode.tar.gz`;
-}
-
-export async function createOpencodeArchiveUploadUrl(
-  sandboxId: string,
-): Promise<{ uploadUrl: string; path: string }> {
-  await ensureBackupBucket();
-  const path = opencodeObjectPath(sandboxId);
-  const supabase = getSupabase();
-  const { data, error } = await supabase.storage
-    .from(BUCKET())
-    .createSignedUploadUrl(path, { upsert: true });
-  if (error || !data?.signedUrl) {
-    throw error ?? new Error('failed to create opencode archive upload url');
-  }
-  return { uploadUrl: toPublicStorageUrl(data.signedUrl), path };
 }
 
 export async function uploadOpencodeArchive(

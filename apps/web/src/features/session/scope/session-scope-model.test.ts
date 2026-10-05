@@ -129,7 +129,6 @@ describe('createSessionScopeDraft', () => {
         issues: { connection_id: 'connection-issues-1' },
       },
       connector_bindings_inherited: true,
-      require_connectors: [],
     });
   });
 
@@ -174,15 +173,18 @@ describe('session scope summaries', () => {
     ).toBe('None allowed');
   });
 
-  test('counts explicit selections, including a required unconnected alias', () => {
+  test('counts explicit selections', () => {
+    // No more required-but-unconnected alias — a session no longer declares
+    // connectors it requires (connector-credentials rework); a connector CALL
+    // denies instead, with `connect_url`. The summary counts bound connectors
+    // only.
     expect(sessionSecretsSummary({ secrets: ['MAIL_TOKEN', 'ISSUE_TOKEN'] })).toBe('2 selected');
     expect(
       sessionConnectorsSummary({
         connector_bindings: { mail: { connection_id: 'connection-mail-1' } },
         connector_bindings_inherited: false,
-        require_connectors: ['issues'],
       }),
-    ).toBe('2 selected');
+    ).toBe('1 selected');
   });
 });
 
@@ -207,14 +209,12 @@ describe('resetting an axis to the project default', () => {
         {
           connector_bindings: { 'mail-read': { connection_id: 'hand-picked' } },
           connector_bindings_inherited: false,
-          require_connectors: ['issues'],
         },
         catalog(),
       ),
     ).toEqual({
       connector_bindings: { 'mail-read': { connection_id: 'connection-mail-default' } },
       connector_bindings_inherited: true,
-      require_connectors: [],
     });
   });
 
@@ -229,7 +229,6 @@ describe('resetting an axis to the project default', () => {
     ).toEqual({
       secrets: ['MAIL_TOKEN', 'ISSUE_TOKEN'],
       connector_bindings: null,
-      require_connectors: [],
     });
   });
 });
@@ -261,7 +260,6 @@ describe('createNewSessionScopeDraft', () => {
         issues: { connection_id: 'connection-issues-only' },
       },
       connector_bindings_inherited: true,
-      require_connectors: [],
     });
   });
 
@@ -281,7 +279,6 @@ describe('createNewSessionScopeDraft', () => {
       secrets: null,
       connector_bindings: {},
       connector_bindings_inherited: true,
-      require_connectors: [],
     });
   });
 
@@ -303,14 +300,12 @@ describe('buildSessionScopeReplacement', () => {
         connector_bindings: {
           issues: { connection_id: 'connection-issues-2' },
         },
-        require_connectors: [],
       }),
     ).toEqual({
       secrets: ['ISSUE_TOKEN'],
       connector_bindings: {
         issues: { connection_id: 'connection-issues-2' },
       },
-      require_connectors: [],
     });
   });
 
@@ -319,7 +314,6 @@ describe('buildSessionScopeReplacement', () => {
       connector_bindings: {
         'mail-read': { connection_id: 'connection-mail-2' },
       },
-      require_connectors: [],
     });
 
     expect(replacement.connector_bindings).toEqual({
@@ -327,14 +321,14 @@ describe('buildSessionScopeReplacement', () => {
     });
     expect(JSON.stringify(replacement)).not.toContain('authorization_id');
     expect(JSON.stringify(replacement)).not.toContain('profile_id');
+    // No `require_connectors` — a session no longer declares connectors it
+    // requires (connector-credentials rework); a connector CALL denies
+    // instead, with `connect_url`.
+    expect(JSON.stringify(replacement)).not.toContain('require_connectors');
   });
 
   test('preserves omitted axes', () => {
     expect(buildSessionScopeReplacement({ secrets: null })).toEqual({ secrets: null });
-    // `require_connectors` is absent from BOTH the draft and any previous scope,
-    // so it stays out of the replacement — sending `[]` would be an instruction
-    // to clear every requirement the session has, off a request that said nothing
-    // about them. Omitted and empty are opposite here, exactly as for secrets.
     expect(buildSessionScopeReplacement({ connector_bindings: {} })).toEqual({
       connector_bindings: {},
     });
@@ -349,12 +343,10 @@ describe('buildSessionScopeReplacement', () => {
       buildSessionScopeReplacement({
         secrets: null,
         connector_bindings: {},
-        require_connectors: [],
       }),
     ).toEqual({
       secrets: null,
       connector_bindings: {},
-      require_connectors: [],
     });
   });
 
@@ -366,11 +358,9 @@ describe('buildSessionScopeReplacement', () => {
           mail: { connection_id: 'stale-client-default' },
         },
         connector_bindings_inherited: true,
-        require_connectors: [],
       }),
     ).toEqual({
       secrets: null,
-      require_connectors: [],
     });
   });
 
@@ -386,7 +376,6 @@ describe('buildSessionScopeReplacement', () => {
         'mail-read': { connection_id: 'connection-mail-1' },
         issues: { connection_id: 'connection-issues-1' },
       },
-      require_connectors: [],
     });
   });
 
@@ -471,7 +460,12 @@ describe('buildSessionScopeSelectionCatalog', () => {
     expect(none.connector_connections).toEqual({ status: 'ready', items: [] });
   });
 
-  test('offers only project connections for project strategy connectors', () => {
+  test('offers both project and member connections, regardless of the connector strategy', () => {
+    // A project and a member account can coexist on the same connector —
+    // ownership is an ACCOUNT property (`owner_type`), not an exclusive
+    // connector-level mode any more (connector-credentials rework).
+    // `connector.authorizationStrategy` is carried through only as a
+    // deprecated derived summary; it no longer filters this list.
     const result = buildSessionScopeSelectionCatalog({
       secrets: ready([]),
       connectors: ready([connector('mail-read', 'project')]),
@@ -491,11 +485,18 @@ describe('buildSessionScopeSelectionCatalog', () => {
           slug: 'mail-read',
           name: 'mail-read',
           authorization_strategy: 'project',
+          // Default first, then by connection id — `project-active` is
+          // default, `member-active` is not.
           connections: [
             {
               connection_id: 'project-active',
               label: 'project-active',
               is_default: true,
+            },
+            {
+              connection_id: 'member-active',
+              label: 'member-active',
+              is_default: false,
             },
           ],
         },
@@ -503,7 +504,7 @@ describe('buildSessionScopeSelectionCatalog', () => {
     });
   });
 
-  test('offers only current-user connections for user strategy connectors', () => {
+  test('excludes only inactive connections and connections to a different connector', () => {
     const result = buildSessionScopeSelectionCatalog({
       secrets: ready([]),
       connectors: ready([connector('issues', 'user')]),
@@ -522,10 +523,16 @@ describe('buildSessionScopeSelectionCatalog', () => {
           slug: 'issues',
           name: 'issues',
           authorization_strategy: 'user',
+          // Neither is default, so alphabetical by connection id.
           connections: [
             {
               connection_id: 'member-active',
               label: 'member-active',
+              is_default: false,
+            },
+            {
+              connection_id: 'project-active',
+              label: 'project-active',
               is_default: false,
             },
           ],

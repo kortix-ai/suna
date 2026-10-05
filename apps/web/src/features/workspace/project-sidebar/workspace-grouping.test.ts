@@ -172,9 +172,11 @@ describe('resolveWorkspaceRowNavigation', () => {
   const other = workspace('p-other', 'a2', 'other', null);
 
   test('the already-active row opens ITS account settings, not a switch', () => {
+    // A hub TARGET, not a URL: the account hub is a modal over the current
+    // page and has no route of its own.
     expect(resolveWorkspaceRowNavigation(active, 'p-active')).toEqual({
       kind: 'account-settings',
-      href: '/accounts/a1',
+      to: { accountId: 'a1', params: {} },
     });
   });
 

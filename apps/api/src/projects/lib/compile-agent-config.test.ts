@@ -61,11 +61,14 @@ const {
   agentMarkdownPath,
   compileAgentConfig,
   compileSelectedAgentConfig,
+  manifestPiPackageLists,
+  manifestPiPackages,
+  manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
-  resolveManifestRuntime,
+  selectSessionHarness,
 } = await import('./compile-agent-config');
-type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
+type CompiledAgents = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
 // Governance-only v2 manifest — the 2026-07-05 redirect's shape. Behavior
 // lives in each agent's own `.kortix/opencode/agents/<name>.md`.
@@ -77,11 +80,11 @@ agents:
   support:
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
-    kortix_cli: [project.session.start, project.cr.open]
+    kortix_permissions: [project.session.start, project.cr.open]
     workspace: runtime
   pr-bot:
     connectors: [github]
-    kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    kortix_permissions: [project.cr.open, project.cr.merge, project.review.submit]
 `;
 
 const V1_FIXTURE_TOML = `
@@ -130,67 +133,21 @@ describe('KNOWN_BEHAVIOR_KEYS / OpencodeAgentConfigSchema coordination', () => {
   });
 });
 
-describe('agentMarkdownPath', () => {
-  test('defaults to .kortix/opencode/agents/<name>.md', () => {
-    expect(agentMarkdownPath({}, 'support')).toBe('.kortix/opencode/agents/support.md');
+describe('agentMarkdownPath (where a new or edited .md is written)', () => {
+  test('defaults to agents/<name>.md', () => {
+    expect(agentMarkdownPath({}, 'support')).toBe('agents/support.md');
   });
 
-  test('honors a custom top-level [opencode] config_dir', () => {
+  test('an OpenCode config_dir no longer moves agents', () => {
     expect(agentMarkdownPath({ opencode: { config_dir: 'custom/dir' } }, 'support')).toBe(
-      'custom/dir/agents/support.md',
-    );
-  });
-});
-
-// kortix_version 3 is v2's body with two defaults flipped for the pi runtime.
-// Both flips are DEFAULTS, so the only way to be sure they took is to assert
-// the resolved value at each version rather than the presence of a key.
-describe('kortix_version 3 — the pi-native config directory', () => {
-  test('v3 agents live in .kortix/pi, not .kortix/opencode', () => {
-    expect(agentMarkdownPath({ kortix_version: 3 }, 'support')).toBe(
-      '.kortix/pi/agents/support.md',
+      'agents/support.md',
     );
   });
 
-  test('v2 and v1 are unmoved', () => {
-    expect(agentMarkdownPath({ kortix_version: 2 }, 'support')).toBe(
-      '.kortix/opencode/agents/support.md',
+  test('agents.<name>.file wins', () => {
+    expect(agentMarkdownPath({ agents: { support: { file: 'team/support.md' } } }, 'support')).toBe(
+      'team/support.md',
     );
-    expect(agentMarkdownPath({ kortix_version: 1 }, 'support')).toBe(
-      '.kortix/opencode/agents/support.md',
-    );
-  });
-
-  test('a `pi:` block names its own directory', () => {
-    expect(
-      agentMarkdownPath({ kortix_version: 3, pi: { config_dir: 'custom/dir' } }, 'support'),
-    ).toBe('custom/dir/agents/support.md');
-  });
-
-  test('`pi:` wins over `opencode:` when a v3 manifest sets both', () => {
-    expect(
-      agentMarkdownPath(
-        { kortix_version: 3, pi: { config_dir: 'from/pi' }, opencode: { config_dir: 'from/oc' } },
-        'support',
-      ),
-    ).toBe('from/pi/agents/support.md');
-  });
-
-  // A v3 project that still sets `opencode: config_dir` is making a deliberate
-  // statement about where its files are. Ignoring it in favour of the v3
-  // default would read a directory that does not exist and lose every agent.
-  test('a v3 manifest with only `opencode: config_dir` is still honoured', () => {
-    expect(
-      agentMarkdownPath({ kortix_version: 3, opencode: { config_dir: 'legacy/dir' } }, 'support'),
-    ).toBe('legacy/dir/agents/support.md');
-  });
-
-  test('a v3 manifest compiles through the same v2 path', () => {
-    const manifest = parseManifestText(
-      ['kortix_version: 3', 'default_agent: support', 'agents:', '  support: {}'].join('\n'),
-      'yaml',
-    );
-    expect(compileAgentConfig(manifest)).not.toBeNull();
   });
 });
 
@@ -236,7 +193,7 @@ describe('compileAgentConfig — behavior comes from the agent .md, not the mani
   };
 
   test('compiles the full agent map with 1:1 OpenCode AgentConfig field parity from the .md frontmatter', () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
     expect(compiled).not.toBeNull();
     expect(compiled.agent.support).toEqual({
       description: 'Handles customer support triage',
@@ -259,18 +216,18 @@ describe('compileAgentConfig — behavior comes from the agent .md, not the mani
     });
   });
 
-  test('never copies governance fields (connectors/secrets/kortix_cli/workspace) — no runtime representation', () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+  test('never copies governance fields (connectors/secrets/kortix_permissions/workspace) — no runtime representation', () => {
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
     for (const agentConfig of Object.values(compiled.agent)) {
       expect(agentConfig).not.toHaveProperty('connectors');
       expect(agentConfig).not.toHaveProperty('secrets');
-      expect(agentConfig).not.toHaveProperty('kortix_cli');
+      expect(agentConfig).not.toHaveProperty('kortix_permissions');
       expect(agentConfig).not.toHaveProperty('workspace');
     }
   });
 
   test("top-level model passthrough is the default_agent's compiled model", () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
     expect(compiled.model).toBe('anthropic/claude-sonnet-5');
     expect(compiled.small_model).toBeUndefined();
   });
@@ -281,12 +238,38 @@ kortix_version: 2
 default_agent: pr-bot
 agents:
   pr-bot:
-    kortix_cli: []
+    kortix_permissions: []
 `);
     const compiled = compileAgentConfig(noModelManifest, 'opencode', {
       '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.model).toBeUndefined();
+  });
+
+  // W1 B5: pi reads `default_agent` for a session with no agent chosen; OpenCode reads the same key.
+  test('names the manifest default_agent, so every runtime runs it when no agent is chosen', () => {
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
+    expect(compiled.default_agent).toBe('support');
+  });
+
+  test('omits default_agent when that agent cannot run as the primary one', () => {
+    const subagent = parseYaml(`
+kortix_version: 2
+default_agent: pr-bot
+agents:
+  pr-bot:
+    kortix_permissions: []
+`);
+    const disabled = parseYaml(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    enabled: false
+`);
+    const md = { '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs') };
+    expect((compileAgentConfig(subagent, 'opencode', md) as CompiledAgents).default_agent).toBeUndefined();
+    expect((compileAgentConfig(disabled, 'opencode', {}) as CompiledAgents).default_agent).toBeUndefined();
   });
 });
 
@@ -309,7 +292,7 @@ agents:
     ).not.toThrow();
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/kortix.md': content,
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.kortix).toEqual({
       mode: 'primary',
       model: 'anthropic/claude-sonnet-5',
@@ -328,7 +311,7 @@ agents:
   fresh:
     connectors: none
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.fresh).toEqual({});
   });
 
@@ -341,7 +324,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': 'Just the body, no frontmatter.',
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a).toEqual({ prompt: 'Just the body, no frontmatter.' });
   });
 });
@@ -357,7 +340,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': supportMd('disable: false', 'Body.'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.disable).toBe(true);
   });
 
@@ -370,7 +353,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': supportMd('disable: true', 'Body.'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.disable).toBe(true);
   });
 });
@@ -426,7 +409,7 @@ agents:
   a:
     skills: all
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ skill: 'allow' });
   });
 
@@ -438,7 +421,7 @@ agents:
   a:
     skills: none
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ skill: 'deny' });
   });
 
@@ -450,7 +433,7 @@ agents:
   a:
     skills: []
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ skill: 'deny' });
   });
 
@@ -462,7 +445,7 @@ agents:
   a:
     skills: [pdf-export, web-research]
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({
       skill: { 'pdf-export': 'allow', 'web-research': 'allow', '*': 'deny' },
     });
@@ -481,7 +464,7 @@ agents:
         ['permission:', '  skill: deny', '  edit: ask'].join('\n'),
         'Body.',
       ),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ edit: 'ask', skill: 'allow' });
   });
 
@@ -495,7 +478,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': supportMd('permission: allow', 'Body.'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     const permission = compiled.agent.a.permission as Record<string, unknown>;
     expect(permission.skill).toBe('deny');
     expect(permission.edit).toBe('allow');
@@ -514,7 +497,7 @@ agents:
         ['permission:', '  skill:', '    "trusted-*": allow', '    "*": deny'].join('\n'),
         'Body.',
       ),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({
       skill: { 'trusted-*': 'allow', '*': 'deny' },
     });
@@ -528,7 +511,7 @@ agents:
   a:
     skills: [github-tools]
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a).not.toHaveProperty('skills');
   });
 });
@@ -542,6 +525,101 @@ agents:
   a: {}
 `);
     expect(() => compileAgentConfig(manifest, 'claude' as never)).toThrow(CompileAgentConfigError);
+  });
+});
+
+describe('selectSessionHarness — flag OR manifest', () => {
+  test('pi when the project flag is on, whatever the manifest says', () => {
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: true })).toBe('pi');
+  });
+
+  test('pi when the manifest says runtime: pi, even with the flag off', () => {
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: true })).toBe('pi');
+  });
+
+  test('opencode in every other case', () => {
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode', llmGateway: true })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null, llmGateway: true })).toBe('opencode');
+  });
+
+  // W1 B7: pi calls models only through the gateway; without it the box would never start.
+  test('opencode when the LLM gateway is off, even when the flag or the manifest asks for pi', () => {
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: false })).toBe('opencode');
+  });
+});
+
+describe('manifestRuntime — the harness a manifest selects', () => {
+  test('pi only for a v2 manifest that says runtime: pi; everything else is opencode', () => {
+    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\n'))).toBe('pi');
+    expect(manifestRuntime(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toBe('opencode');
+    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: opencode\n'))).toBe('opencode');
+    expect(manifestRuntime(parseYaml('runtime: pi\n'))).toBe('opencode');
+    expect(manifestRuntime(null)).toBe('opencode');
+  });
+});
+
+describe('manifestPiPackages — the project pi packages a manifest declares', () => {
+  test('the v2 harnesses.pi.packages list, entries kept as written', () => {
+    const raw = parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: ./x.ts\n        skills: []\n');
+    expect(manifestPiPackages(raw)).toEqual(['npm:pi-web-access@0.30.0', { source: './x.ts', skills: [] }]);
+  });
+
+  const MULTI = parseYaml(
+    [
+      'kortix_version: 2',
+      'default_agent: builder',
+      'harnesses:',
+      '  pi:',
+      '    packages: [npm:pi-web-access@0.30.0, npm:shared@1.0.0, ./.kortix/pi/audit.ts]',
+      'agents:',
+      '  builder: {}',
+      '  researcher:',
+      '    harnesses:',
+      '      pi:',
+      '        packages: [npm:@juicesharp/rpiv-todo@2.11.0, { source: npm:shared@2.0.0, skills: [] }]',
+      '  reviewer:',
+      '    harnesses:',
+      '      pi:',
+      '        exclude: [pi-web-access, ./.kortix/pi/audit.ts]',
+      '  twin: {}',
+    ].join('\n'),
+  );
+
+  test('an agent gets the top-level list, minus its exclude, plus its own; its entry wins for the same package', () => {
+    expect(manifestPiPackages(MULTI, 'researcher')).toEqual([
+      'npm:pi-web-access@0.30.0',
+      { source: 'npm:shared@2.0.0', skills: [] },
+      './.kortix/pi/audit.ts',
+      'npm:@juicesharp/rpiv-todo@2.11.0',
+    ]);
+    expect(manifestPiPackages(MULTI, 'reviewer')).toEqual(['npm:shared@1.0.0']);
+    expect(manifestPiPackages(MULTI, 'builder')).toEqual(['npm:pi-web-access@0.30.0', 'npm:shared@1.0.0', './.kortix/pi/audit.ts']);
+  });
+
+  test('no agent named means the default agent; an unknown agent gets the top-level list', () => {
+    expect(manifestPiPackages(MULTI)).toEqual(manifestPiPackages(MULTI, 'builder'));
+    const reviewerDefault = { ...MULTI, default_agent: 'reviewer' };
+    expect(manifestPiPackages(reviewerDefault, 'default')).toEqual(['npm:shared@1.0.0']);
+    expect(manifestPiPackages(MULTI, 'ghost')).toEqual(manifestPiPackages(MULTI, 'builder'));
+  });
+
+  test('one list per distinct effective list: agents with the same list share it', () => {
+    const lists = manifestPiPackageLists(MULTI);
+    expect(lists).toHaveLength(3);
+    expect(lists).toContainEqual(manifestPiPackages(MULTI, 'builder'));
+    expect(lists).toContainEqual(manifestPiPackages(MULTI, 'researcher'));
+    expect(lists).toContainEqual(['npm:shared@1.0.0']);
+  });
+
+  test('empty for a v1 manifest, no harnesses block, or a malformed one', () => {
+    expect(manifestPiPackages(parseYaml('harnesses:\n  pi:\n    packages: [npm:a@1.0.0]\n'))).toEqual([]);
+    expect(manifestPiPackages(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toEqual([]);
+    expect(manifestPiPackages(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    packages: npm:a@1.0.0\n'))).toEqual([]);
+    expect(manifestPiPackages(null)).toEqual([]);
   });
 });
 
@@ -566,6 +644,20 @@ describe('resolveCompiledAgentConfigForSession', () => {
     expect(await resolveCompiledAgentConfigForSession(PROJECT)).toBeNull();
   });
 
+  test('a runtime: pi manifest still compiles its agents, and the read hands the manifest to the caller', async () => {
+    manifestFile = { path: 'kortix.yaml', content: `${GOVERNANCE_FIXTURE}\nruntime: pi\n` };
+    mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' };
+    let seen: Record<string, unknown> | null = null;
+    const result = await resolveCompiledAgentConfigForSession(PROJECT, null, { onManifest: (raw) => { seen = raw; } });
+    expect(result).not.toBeNull();
+    expect((JSON.parse(result!) as CompiledAgents).agent.support.prompt).toBe('Support body.');
+    expect(manifestRuntime(seen)).toBe('pi');
+    // The restricted-session compiler reads the same manifest and reports it too.
+    seen = null;
+    await resolveSelectedAgentConfigForSession(PROJECT, 'support', null, { onManifest: (raw) => { seen = raw; } });
+    expect(manifestRuntime(seen)).toBe('pi');
+  });
+
   test("reads each declared agent's conventional .md and returns the compiled JSON for a v2 manifest", async () => {
     manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
     mdFileContent = {
@@ -575,7 +667,7 @@ describe('resolveCompiledAgentConfigForSession', () => {
     readRepoFileCalls = [];
     const result = await resolveCompiledAgentConfigForSession(PROJECT);
     expect(result).not.toBeNull();
-    const parsed = JSON.parse(result!) as OpencodeConfig;
+    const parsed = JSON.parse(result!) as CompiledAgents;
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.agent['pr-bot'].prompt).toBe('PR bot body.');
     expect(
@@ -590,7 +682,7 @@ describe('resolveCompiledAgentConfigForSession', () => {
     mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' }; // pr-bot.md missing
     const result = await resolveCompiledAgentConfigForSession(PROJECT);
     expect(result).not.toBeNull();
-    const parsed = JSON.parse(result!) as OpencodeConfig;
+    const parsed = JSON.parse(result!) as CompiledAgents;
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.agent['pr-bot']).toEqual({});
   });
@@ -609,40 +701,6 @@ agents:
       '.kortix/opencode/agents/support.md': supportMd('mode: bogus', 'Body.'),
     };
     expect(await resolveCompiledAgentConfigForSession(PROJECT)).toBeNull();
-  });
-});
-
-// This is the gate `sessions.ts` reads to decide whether a session boots the
-// pi worker image or the OpenCode stack, so "v3 means pi" has to hold HERE and
-// not merely in the constant that says so.
-describe('resolveManifestRuntime — the version decides when the manifest does not', () => {
-  const yaml = (body: string) => ({ path: 'kortix.yaml', content: body });
-
-  test('v3 with no runtime key resolves to pi', async () => {
-    manifestFile = yaml('kortix_version: 3\ndefault_agent: a\nagents:\n  a: {}\n');
-    expect(await resolveManifestRuntime(PROJECT)).toBe('pi');
-  });
-
-  test('v2 with no runtime key stays opencode', async () => {
-    manifestFile = yaml('kortix_version: 2\ndefault_agent: a\nagents:\n  a: {}\n');
-    expect(await resolveManifestRuntime(PROJECT)).toBe('opencode');
-  });
-
-  test('an explicit runtime always wins over the version default', async () => {
-    manifestFile = yaml('kortix_version: 3\nruntime: opencode\ndefault_agent: a\nagents:\n  a: {}\n');
-    expect(await resolveManifestRuntime(PROJECT)).toBe('opencode');
-    manifestFile = yaml('kortix_version: 2\nruntime: pi\ndefault_agent: a\nagents:\n  a: {}\n');
-    expect(await resolveManifestRuntime(PROJECT)).toBe('pi');
-  });
-
-  test('a v1 manifest is not a runtime declaration at all', async () => {
-    manifestFile = { path: 'kortix.toml', content: V1_FIXTURE_TOML };
-    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
-  });
-
-  test('no manifest resolves to null, so the caller keeps the OpenCode path', async () => {
-    manifestFile = null;
-    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
   });
 });
 
@@ -752,12 +810,44 @@ describe('resolveSelectedAgentConfigForSession', () => {
     readRepoFileCalls = [];
 
     const result = await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main');
-    const parsed = JSON.parse(result) as OpencodeConfig;
+    const parsed = JSON.parse(result) as CompiledAgents;
 
     expect(Object.keys(parsed.agent)).toEqual(['support']);
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
-    expect(readRepoFileCalls).toEqual(['.kortix/opencode/agents/support.md']);
+    // Root layout first, then the legacy layout that holds the file.
+    expect(readRepoFileCalls).toEqual(['agents/support.md', '.kortix/opencode/agents/support.md']);
+  });
+
+  test('reads the root-layout agents/<name>.md without touching the legacy path', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {
+      'agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Root body.'),
+      '.kortix/opencode/agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Legacy body.'),
+    };
+    readRepoFileCalls = [];
+
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as CompiledAgents;
+
+    expect(parsed.agent.support.prompt).toBe('Root body.');
+    expect(readRepoFileCalls).toEqual(['agents/support.md']);
+  });
+
+  test('an explicit agents.<name>.file is the only path read', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: GOVERNANCE_FIXTURE.replace('  support:\n', '  support:\n    file: team/support.md\n'),
+    };
+    mdFileContent = {
+      'team/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Team body.'),
+      'agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Root body.'),
+    };
+    readRepoFileCalls = [];
+
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as CompiledAgents;
+
+    expect(parsed.agent.support.prompt).toBe('Team body.');
+    expect(readRepoFileCalls).toEqual(['team/support.md']);
   });
 
   test('fails closed when the selected agent configuration cannot be read', async () => {
@@ -783,37 +873,85 @@ describe('resolveSelectedAgentConfigForSession', () => {
   });
 });
 
-describe('an agent block that is only comments', () => {
-  // YAML parses `echo-probe:\n  # comment` as NULL. It is a legitimate
-  // declaration — the agent exists and grants nothing. It used to hit
-  // `block.enabled` and throw, and because the all-agents compile is
-  // all-or-nothing, ONE such agent took the whole project's config down:
-  // every session booted with no compiled agent config, and the per-agent
-  // prebuild fell back to the default agent alone (pi.kortix.com,
-  // 2026-08-29).
-  const manifest = [
-    'kortix_version: 2',
-    'default_agent: kortix',
-    'agents:',
-    '  kortix:',
-    '    skills: all',
-    '  echo-probe:',
-    '    # grants nothing',
-  ].join('\n');
-
-  test('compiles alongside its siblings instead of failing them all', () => {
-    const parsed = parseManifestText(manifest, 'yaml');
-    const compiled = compileAgentConfig(parsed, 'opencode', {}) as OpencodeConfig;
-    expect(Object.keys(compiled.agent).sort()).toEqual(['echo-probe', 'kortix']);
+describe('v3 YAML-only agent boot', () => {
+  test('reads only YAML and an explicit prompt_file at the session ref', async () => {
+    manifestFile = { path: 'kortix.yaml', content: `kortix_version: 3
+runtime: pi
+default_agent: writer
+agents:
+  writer:
+    model: test/model
+    prompt: Be concise.
+  reader:
+    prompt_file: agents/reader.md
+` };
+    mdFileContent = { 'agents/reader.md': 'Read only.' };
+    readRepoFileCalls = [];
+    const result = await resolveCompiledAgentConfigForSession(PROJECT, 'feature/yaml');
+    expect(JSON.parse(result!).agent.writer.prompt).toBe('Be concise.');
+    expect(JSON.parse(result!).agent.reader.prompt).toBe('Read only.');
+    expect(readRepoFileCalls).toEqual(['agents/reader.md']);
+    expect(manifestRuntime(parseYaml(manifestFile.content))).toBe('pi');
+    const selected = await resolveSelectedAgentConfigForSession(PROJECT, 'reader', 'feature/yaml');
+    expect(Object.keys(JSON.parse(selected).agent)).toEqual(['reader']);
   });
 
-  test('the single-agent path still rejects one that is NOT declared', () => {
-    const parsed = parseManifestText(manifest, 'yaml');
-    // Key presence, not truthiness: `echo-probe` is declared-but-null and must
-    // compile; `nope` is absent and must not.
-    expect(() => compileSelectedAgentConfig(parsed, 'echo-probe', 'opencode', {})).not.toThrow();
-    expect(() => compileSelectedAgentConfig(parsed, 'nope', 'opencode', {})).toThrow(
-      /not declared/,
-    );
+  test('a missing prompt file never produces a partial agent configuration', async () => {
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    prompt_file: agents/missing.md\n' };
+    mdFileContent = {};
+    await expect(resolveCompiledAgentConfigForSession(PROJECT)).rejects.toThrow('no such file');
+    await expect(resolveSelectedAgentConfigForSession(PROJECT, 'writer')).rejects.toThrow('no such file');
+  });
+
+  test('compiles inline behavior without an agent markdown file and isolates selected agent', () => {
+    const manifest = parseYaml(`kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    model: test/model\n    prompt: Speak briefly.\n    skills: [review]\n  reader:\n    prompt_file: agents/reader.md\n`);
+    const files = { 'agents/reader.md': 'Read only.' };
+    const compiled = compileAgentConfig(manifest, 'opencode', files);
+    expect(compiled?.model).toBe('test/model');
+    expect(compiled?.agent.writer?.prompt).toBe('Speak briefly.');
+    expect(compiled?.agent.writer?.permission).toMatchObject({ skill: { '*': 'deny', review: 'allow' } });
+    expect(compiled?.agent.reader?.prompt).toBe('Read only.');
+    const selected = compileSelectedAgentConfig(manifest, 'reader', 'opencode', files);
+    expect(Object.keys(selected.agent)).toEqual(['reader']);
+    expect(selected.agent.reader?.prompt).toBe('Read only.');
+    expect(() => compileAgentConfig(manifest, 'opencode')).toThrow('prompt_file');
+    expect(() => compileAgentConfig({ ...manifest, agents: { writer: { prompt_file: '../secret.md' } } }, 'opencode', { '../secret.md': 'wrong' })).toThrow('prompt_file');
+  });
+});
+
+describe('v2 agent tool toggles', () => {
+  test('manifest tool toggles compile per agent without changing other agents', () => {
+    const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });
+    expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
+    expect(config?.agent.other.tools).toBeUndefined();
+  });
+});
+
+describe('compileAgentConfig — a denied bash/edit also denies the tools that do the same job', () => {
+  const manifest = parseYaml(
+    ['kortix_version: 2', 'default_agent: kortix', 'agents:', '  kortix:', '    skills: all', '  no-edit:', '    skills: all', ''].join('\n'),
+  );
+  const compileNoEdit = (frontmatter: string) =>
+    compileAgentConfig(manifest, 'opencode', {
+      'agents/no-edit.md': supportMd(frontmatter, 'body'),
+    })!.agent['no-edit']!.permission as Record<string, unknown>;
+
+  test('bash: deny and edit: deny deny pty_* and memory', () => {
+    const permission = compileNoEdit('permission:\n  edit: deny\n  bash: deny\n  task: deny');
+    expect(permission).toMatchObject({ edit: 'deny', bash: 'deny', task: 'deny', memory: 'deny' });
+    for (const tool of ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list']) {
+      expect(permission[tool]).toBe('deny');
+    }
+  });
+
+  test('a pattern-scoped bash rule that allows something leaves pty_* alone', () => {
+    const permission = compileNoEdit('permission:\n  bash:\n    "*": deny\n    "ls *": allow');
+    expect(permission.pty_spawn).toBeUndefined();
+  });
+
+  test('an explicit rule on the tool wins', () => {
+    const permission = compileNoEdit('permission:\n  bash: deny\n  pty_list: allow');
+    expect(permission.pty_list).toBe('allow');
+    expect(permission.pty_spawn).toBe('deny');
   });
 });

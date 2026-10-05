@@ -31,6 +31,13 @@ const header = source.slice(source.indexOf('<SidebarHeader'), source.indexOf('</
 const headerCode = header.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 describe('project sidebar header', () => {
+  test('the docked first row shares the native-light band without a blank inset', () => {
+    expect(headerCode).toContain('kx-project-sidebar-titlebar');
+    expect(headerCode).toContain('kx-titlebar-band-height');
+    expect(headerCode).not.toContain('var(--kx-titlebar-inset');
+    expect(headerCode).toContain('data-peek={peek ?');
+  });
+
   test('the workspace switcher leads the row', () => {
     expect(header).toContain('<WorkspaceSwitcher projectId={projectId} />');
   });
@@ -73,13 +80,13 @@ describe('project sidebar header', () => {
   test('the collapse toggle took the mark button’s place', () => {
     expect(header).toContain('onClick={toggleSidebar}');
     expect(header).toContain('<PanelLeft');
-    expect(header).toContain("aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}");
+    expect(header).toContain("aria-label={isExpanded ? t('collapse') : t('pin')}");
   });
 
   // ⌘K is otherwise the palette's only entry point, which is invisible to
   // anyone who does not already know it exists.
   test('a search control opens the command palette', () => {
-    expect(header).toContain('aria-label="Search"');
+    expect(header).toContain("aria-label={t('search')}");
     expect(header).toContain('<MagnifyingGlassIcon');
     expect(header).toContain('onClick={handleOpenSearch}');
     expect(source).toContain('openCommandPalette()');
@@ -87,16 +94,16 @@ describe('project sidebar header', () => {
 
   // No keystroke exists on touch, so the button is the only way in there.
   test('search renders on mobile too, unlike the collapse toggle', () => {
-    const search = header.slice(header.indexOf('aria-label="Search"'));
-    expect(search.indexOf('{!isMobile && (')).toBeGreaterThan(-1);
-    const beforeSearch = header.slice(0, header.indexOf('aria-label="Search"'));
-    expect(beforeSearch).not.toContain('{!isMobile && (');
+    const search = header.slice(header.indexOf("aria-label={t('search')}"));
+    expect(search.indexOf('{!isMobile && !peek && (')).toBeGreaterThan(-1);
+    const beforeSearch = header.slice(0, header.indexOf("aria-label={t('search')}"));
+    expect(beforeSearch).not.toContain('{!isMobile && !peek && (');
   });
 
   // Mobile renders the panel as a Sheet: no docked state to collapse, and
   // `state` there still reads the desktop cookie. Same reason the session
   // header's own toggle exempts mobile from its docked-open gate.
   test('the toggle is desktop-only', () => {
-    expect(header).toContain('{!isMobile && (');
+    expect(header).toContain('{!isMobile && !peek && (');
   });
 });

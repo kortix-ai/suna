@@ -1,42 +1,31 @@
-import { Stack, useRouter, Redirect } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
-import { View } from 'react-native';
-import { KortixLoader } from '@/components/ui';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 /**
  * Auth Layout
- * 
+ *
  * Stack navigation for authentication screens.
  * CRITICAL: Authenticated users should NEVER see auth screens.
- * This layout immediately redirects authenticated users to /home.
+ * This layout immediately redirects authenticated users to the start screen.
+ *
+ * No loader of its own (KRTX-244): at launch the native splash covers the
+ * auth check, and later `isLoading` only flips during a sign-in or sign-up,
+ * where the screen's own disabled button shows progress. A full-screen loader
+ * here unmounted the form mid-sign-in and stacked a second loader on the
+ * start screen's.
  */
 export default function AuthLayout() {
   const { colorScheme } = useColorScheme();
-  const { isAuthenticated, isLoading } = useAuthContext();
-
-  // While auth is loading, show nothing to prevent flash
-  if (isLoading) {
-    return (
-      <View 
-        style={{ 
-          flex: 1, 
-          backgroundColor: colorScheme === 'dark' ? '#09090B' : '#FFFFFF',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <KortixLoader size="xlarge" />
-      </View>
-    );
-  }
+  const { isAuthenticated } = useAuthContext();
 
   // CRITICAL: Authenticated users should NEVER be on auth screens
   // Redirect them immediately to home
   if (isAuthenticated) {
-    log.log('🚫 Auth layout: user is authenticated, redirecting to /projects');
-    return <Redirect href="/projects" />;
+    log.log('🚫 Auth layout: user is authenticated, redirecting to the last project');
+    return <Redirect href="/" />;
   }
 
   return (
@@ -44,12 +33,12 @@ export default function AuthLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: {
-          backgroundColor: colorScheme === 'dark' ? '#09090B' : '#FFFFFF',
+          backgroundColor: colorScheme === 'dark' ? THEME.dark.background : THEME.light.background,
         },
-        animation: 'slide_from_right',
       }}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="email" />
     </Stack>
   );
 }

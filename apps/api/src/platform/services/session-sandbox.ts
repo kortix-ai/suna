@@ -12,64 +12,76 @@
  * path in sandbox-cloud.ts.
  */
 
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
-import { META_SANDBOX_SLUG } from '@kortix/shared';
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { startComputeSession } from '../../billing/services/compute-metering';
-import { config } from '../../config';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
-import type { GitBackedProject } from '../../projects/git';
-import { instanceStampMetadata } from '../../projects/instance-scope';
-import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
-import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
-import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
-import {
-  type ActiveRouting,
-  readActiveRouting,
-} from '../../projects/provider-transition/provider-transition-store';
-import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
-import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
-import {
-  type PreparedInitialSandboxTurn,
-  initialSandboxTurnMetadata,
-} from '../../projects/sandbox-turn-lifecycle';
-import { accountEntitledToLlmGateway } from '../../shared/account-limits';
+import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
+import {
+  patchedSandboxMetadata,
+  transitionSandbox,
+  transitionSession,
+} from '../../projects/session-lifecycle/status-transitions';
+import { signalSessionRuntimeActive } from '../../projects/session-lifecycle/runtime-active-signal';
+import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
-import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
+import { createAccountToken } from '../../repositories/account-tokens';
+import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
-  DEFAULT_SANDBOX_SLUG,
-  type EnsureSandboxImageResult,
-  deleteSandboxImage,
-  ensureMetaSandboxImage,
-  ensureSandboxImage,
-  resolveTemplate,
-} from '../../snapshots/builder';
-import {
-  type CreateSandboxOpts,
-  type ProviderName,
-  type ProvisionResult,
-  SandboxTemplateNotFoundError,
   getProvider,
+  SandboxTemplateNotFoundError,
+  type CreateSandboxOpts,
+  type ProvisionResult,
+  type ProviderName,
 } from '../providers';
-import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
-import { claimParkedPlatinumBox, maintainPlatinumPiWorkerPool } from './pi-worker-pool-platinum';
-import { adoptSharedCellHost, sharedCellHostEnabled, sharedCellHostName } from './cell-host-platinum';
-import { selectProvider } from './provider-balancer';
-import { recordProviderEvent } from './provider-events';
-import { ProvisionTimeline } from './provision-timeline';
-import { providerFallbackSetting } from './runtime-settings';
 import {
-  SANDBOX_INIT_MAX_ATTEMPTS,
+  readActiveRouting,
+  type ActiveRouting,
+} from '../../projects/provider-transition/provider-transition-store';
+import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
   buildSandboxInitSuccessMetadata,
   retrySandboxProvisionCreate,
+  SANDBOX_INIT_MAX_ATTEMPTS,
+  sandboxInitMetadataPatch,
 } from './sandbox-init-state';
+import {
+  ensureSandboxImage,
+  ensureMetaSandboxImage,
+  deleteSandboxImage,
+  resolveTemplate,
+  DEFAULT_SANDBOX_SLUG,
+  type EnsureSandboxImageResult,
+  type SandboxImageSpec,
+} from '../../snapshots/builder';
+import { config } from '../../config';
+import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
+import { providerFallbackSetting } from './runtime-settings';
+import { selectProvider } from './provider-balancer';
+import { ProvisionTimeline } from './provision-timeline';
+import { recordProviderEvent } from './provider-events';
+import type { GitBackedProject } from '../../projects/git';
+import { startComputeSession } from '../../billing/services/compute-metering';
+import { readManifest } from '../../projects/triggers';
+import { resolveAgentGrant } from '../../projects/agents';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
+import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
+import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
+import { instanceStampMetadata } from '../../projects/instance-scope';
+import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
-import { mintSessionRuntimeToken } from './session-runtime-token';
+import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
+import { agentPrincipalModeFor } from '../../iam/agent-principal';
+import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
+import {
+  type PreparedInitialSandboxTurn,
+  initialSandboxTurnMetadata,
+} from '../../projects/session-turn-ledger';
+import { resolveSessionSandboxRegion } from './sandbox-region';
+import { logger } from '../../lib/logger';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -87,6 +99,26 @@ const BEFORE_ACTIVE_HOOK_TIMEOUT_MS = configuredTimeoutMs(
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
 const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
+/**
+ * The spec compute metering bills a session at.
+ *
+ * The image that booted is the authority: the provider allocates the box from
+ * the size that image was built with. Meta and pi-worker images are built at
+ * 1 vCPU / 2 GB / 8 GB and have no project template, so a template lookup for
+ * them always failed and billed the 2 / 4 / 20 fallback instead.
+ */
+export function computeMeteringSpec(
+  imageSpec: SandboxImageSpec | null | undefined,
+  templateSpec: Partial<SandboxImageSpec> | null,
+): typeof DEFAULT_METERING_SPEC {
+  const source = imageSpec ?? templateSpec;
+  const spec = { ...DEFAULT_METERING_SPEC };
+  if (source?.cpu !== undefined) spec.cpuCores = source.cpu;
+  if (source?.memoryGb !== undefined) spec.memoryGb = source.memoryGb;
+  if (source?.diskGb !== undefined) spec.diskGb = source.diskGb;
+  return spec;
+}
+
 async function openComputeSessionForSandbox(
   sandboxId: string,
   accountId: string,
@@ -94,17 +126,19 @@ async function openComputeSessionForSandbox(
   userId: string | null | undefined,
   sandboxSlug: string | undefined,
   provider: ProviderName,
+  imageSpec: SandboxImageSpec | null | undefined,
 ): Promise<void> {
-  const spec = { ...DEFAULT_METERING_SPEC };
-  try {
-    const tpl = await resolveTemplate(project, sandboxSlug);
-    if (tpl.cpu !== undefined) spec.cpuCores = tpl.cpu;
-    if (tpl.memoryGb !== undefined) spec.memoryGb = tpl.memoryGb;
-    if (tpl.diskGb !== undefined) spec.diskGb = tpl.diskGb;
-  } catch {
-    // Template resolution failed (repo unreachable, parse error, etc.). Fall
-    // back to defaults so metering still records the session.
+  let templateSpec: Partial<SandboxImageSpec> | null = null;
+  if (!imageSpec) {
+    try {
+      const tpl = await resolveTemplate(project, sandboxSlug);
+      templateSpec = { cpu: tpl.cpu, memoryGb: tpl.memoryGb, diskGb: tpl.diskGb };
+    } catch {
+      // Template resolution failed (repo unreachable, parse error, etc.). Fall
+      // back to defaults so metering still records the session.
+    }
   }
+  const spec = computeMeteringSpec(imageSpec, templateSpec);
   await startComputeSession({
     sandboxId,
     accountId,
@@ -132,6 +166,76 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
 }
 
 /**
+ * Resolve the agent's grant from the manifest's `[[agents]]` overlay, then mint
+ * the per-session account token carrying it. Grant resolution is fail-closed:
+ * an unreadable manifest stops provisioning instead of minting an unrestricted
+ * credential. The grant is read from the default branch, so any `[[agents]]`
+ * change activates only through a merged change request.
+ */
+export async function mintSessionToken(opts: {
+  accountId: string;
+  userId: string;
+  projectId: string;
+  sandboxId: string;
+  agentName: string;
+  gitProject: GitBackedProject;
+}): Promise<string> {
+  const platformMetaAgent = isMetaAgentName(opts.agentName);
+  // The reserved coordinator uses a platform-owned full project grant. It acts
+  // as the launching user and never resolves through a project-declared agent
+  // or standing service account.
+  const [agentGrant, serviceAccountId] = platformMetaAgent
+    ? [platformMetaAgentGrant(), null]
+    : await Promise.all([
+        // Resolve the per-session grant AND the agent's standing-identity
+        // service account in parallel. Grant resolution must throw on failure.
+        // The SA resolution is FAIL-SAFE: on error
+        // we mint without a service_account_id, which is the legacy behavior
+        // (authorize as the user ∩ grant). It never widens authority.
+        resolveAgentGrant(opts.agentName, opts.gitProject),
+        ensureAgentServiceAccount({
+          accountId: opts.accountId,
+          projectId: opts.projectId,
+          agentName: opts.agentName,
+        }).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to ensure agent service account for ${opts.projectId}:`,
+            err,
+          );
+          return null;
+        }),
+      ]);
+  // Agents as principals (spec 2026-09-22 §2.1): with the project flag on, a
+  // governed agent authorizes AS its service account. A token without one would
+  // fall back to the launcher — for an unattended run, the account OWNER — so
+  // under the flag a missing service account stops provisioning instead.
+  const [agentPrincipal, onBehalfOfUserId] = await Promise.all([
+    agentPrincipalModeFor(opts.projectId, agentGrant),
+    resolveSessionOnBehalfOf({ accountId: opts.accountId, sessionId: opts.sandboxId, userId: opts.userId }),
+  ]);
+  if (agentPrincipal && !serviceAccountId) {
+    throw new Error(
+      `project ${opts.projectId}: governed agent "${opts.agentName}" has no service account; ` +
+        'refusing to mint a session credential that would authorize as the launcher',
+    );
+  }
+  const tok = await createAccountToken({
+    accountId: opts.accountId,
+    userId: opts.userId,
+    projectId: opts.projectId,
+    // session_id == sandbox_id by construction. This is the sandbox's one
+    // Kortix credential. Every API surface derives its narrower authority from
+    // these claims and the route's own authorization gate.
+    sessionId: opts.sandboxId,
+    name: `Session ${opts.sandboxId.slice(0, 8)}`,
+    agentGrant,
+    serviceAccountId,
+    onBehalfOfUserId,
+  });
+  return tok.secretKey;
+}
+
+/**
  * FIX-A kill-switch. Default ON: boot by the activated pinned template id, with
  * a name-boot fallback ONLY on a definitive GC'd-pin 404. Set
  * `KORTIX_SESSION_BOOT_BY_TEMPLATE_ID=0` (or off/false/no) to revert to the
@@ -141,12 +245,6 @@ export function sessionBootByTemplateIdEnabled(): boolean {
   const raw = (process.env.KORTIX_SESSION_BOOT_BY_TEMPLATE_ID ?? '').trim().toLowerCase();
   if (raw === '') return true; // default ON
   return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
-}
-
-/** Default-off kill switch for the shared slim cold-boot image. */
-export function fastColdBootEnabled(): boolean {
-  const raw = (process.env.KORTIX_FAST_COLD_BOOT_ENABLED ?? '').trim().toLowerCase();
-  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes';
 }
 
 /**
@@ -186,7 +284,12 @@ export function decideSessionBoot(input: {
     imageSnapshotName,
     disabledForSession,
   } = input;
-  if (disabledForSession || !killSwitchOn || !providerSupportsIdBoot || !imageIsDefault) {
+  if (
+    disabledForSession ||
+    !killSwitchOn ||
+    !providerSupportsIdBoot ||
+    !imageIsDefault
+  ) {
     return { bootByTemplateId: null };
   }
   const pinnedId = routing?.activeExternalTemplateId ?? null;
@@ -218,9 +321,7 @@ export function decideSessionBoot(input: {
  * Idempotency-Key replay adopts it) rather than jumping straight to 3, which
  * would mint a fresh, unrelated create identity and could orphan a live box.
  */
-export function restorePlatinumCreateAttempt(
-  metadata: Record<string, unknown> | null | undefined,
-): number {
+export function restorePlatinumCreateAttempt(metadata: Record<string, unknown> | null | undefined): number {
   const raw = metadata?.platinumCreateAttempt;
   const n = typeof raw === 'number' ? raw : Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -257,8 +358,12 @@ export async function provisionSessionSandbox(opts: {
    * Extra env vars injected into the sandbox at provider create-time. These
    * land in the Daytona snapshot's environment so its boot script can read
    * them (e.g. `KORTIX_PROJECT_REPO_URL`, `KORTIX_PROJECT_BRANCH`).
+   *
+   * A promise is awaited only where the provider input is built, so the env
+   * build overlaps the image check, the row insert and the token mint. None of
+   * the three reads it.
    */
-  extraEnvVars?: Record<string, string>;
+  extraEnvVars?: Record<string, string> | Promise<Record<string, string>>;
   /**
    * Project + ref the session boots against. The boot path resolves the
    * commit SHA for `baseRef` and asks the snapshot builder for the matching
@@ -282,7 +387,10 @@ export async function provisionSessionSandbox(opts: {
    */
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
-  const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
+  const { sandboxId, accountId, projectId, userId, serverType } = opts;
+  // An explicit caller location wins; otherwise the project's `us_region`
+  // flag decides (sandbox-region.ts). Only Platinum reads it.
+  const location = opts.location ?? resolveSessionSandboxRegion(opts.projectMetadata);
   const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
@@ -290,6 +398,10 @@ export async function provisionSessionSandbox(opts: {
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
   // `let`, not `const`: provider failover (one-shot, admin-gated) reassigns
   // these in the provision loop's catch when the primary fails at birth.
+  // Observed here so an env build that fails early is not an unhandled
+  // rejection before the await below.
+  const extraEnvRead = Promise.resolve(opts.extraEnvVars ?? {});
+  extraEnvRead.catch(() => undefined);
   let providerName = opts.provider || (await selectProvider());
   let provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
@@ -319,20 +431,20 @@ export async function provisionSessionSandbox(opts: {
           // those suites die at import with `SyntaxError: Export named
           // 'ensurePiWorkerImage' not found` — attributed to no test, and it
           // takes an unrelated parallel worker down with it. The register's
-          // rule is "fix the import, not the mocks"
-          // (.claude/skills/learnings/SKILL.md:39). This edge is reached once,
+          // rule is "fix the import, not the mocks" (learnings entry
+          // 2026-08-27T142521Z-a-new-import-edge-into-a-widely-mocked-graph-breaks-hand-wri.md). This edge is reached once,
           // on the pi-worker branch only, so deferring it costs nothing and
           // needs no test churn.
           import('../../snapshots/builder').then(({ ensurePiWorkerImage }) =>
             ensurePiWorkerImage({ source: 'session-start', provider: targetProvider }),
           )
         : ensureSandboxImage(gitProject, {
-            slug,
-            accountId,
-            source: 'session-start',
-            provider: targetProvider,
-            allowProjectImage: opts.allowProjectImage,
-          });
+          slug,
+          accountId,
+          source: 'session-start',
+          provider: targetProvider,
+          allowProjectImage: opts.allowProjectImage,
+        });
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.
   // The snapshot identity + provider cache-check depend only on the repo
@@ -347,7 +459,11 @@ export async function provisionSessionSandbox(opts: {
   // path.
   let firstImagePromise: Promise<FirstImage> | null = (async () => {
     const gitProject = await resolveGitProject();
+    // Parallel branch: note() keeps the main path's deltas truthful. These two
+    // marks split what used to show up as one opaque `image-cached` wait.
+    tl.note('image:git-project');
     const image = await resolveImage(gitProject, providerName);
+    tl.note('image:resolved');
     return { ...image, gitProject };
   })();
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
@@ -399,55 +515,35 @@ export async function provisionSessionSandbox(opts: {
     // identity guards and child records intentionally forbid deleting it. The
     // recovery transaction resets external_id to NULL and stamps an explicit
     // authorization marker; only that exact placeholder may be claimed here.
-    return db
-      .update(sessionSandboxes)
-      .set({
-        provider: providerName,
-        status: 'provisioning',
-        baseUrl: null,
-        config: {},
-        // Legacy recovery placeholders may still exist while this release rolls
-        // out. Consume their authorization marker atomically so at most one
-        // allocator can claim the row and call provider.create(). New code never
-        // creates this marker because established identities are fail-closed.
-        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify(instanceStampMetadata())}::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(sessionSandboxes.sandboxId, sandboxId),
-          isNull(sessionSandboxes.externalId),
-          eq(sessionSandboxes.status, 'provisioning'),
-          sql`coalesce(${sessionSandboxes.metadata}->>'identityRecoveryAuthorizedAt', '') <> ''`,
-        ),
-      )
-      .returning();
+    // Legacy recovery placeholders may still exist while this release rolls
+    // out. Consume their authorization marker atomically so at most one
+    // allocator can claim the row and call provider.create(). New code never
+    // creates this marker because established identities are fail-closed.
+    const claimed = await transitionSandbox('reprovision', sandboxId, {
+      columns: { provider: providerName, baseUrl: null, config: {} },
+      metadata: { strip: ['identityRecoveryAuthorizedAt'], merge: instanceStampMetadata() },
+      guard: and(
+        eq(sessionSandboxes.status, 'provisioning'),
+        isNull(sessionSandboxes.externalId),
+        sql`coalesce(${sessionSandboxes.metadata}->>'identityRecoveryAuthorizedAt', '') <> ''`,
+      ),
+    });
+    return claimed ? [claimed] : [];
   };
 
-  const [sandboxRows, sessionToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sessionToken] = await Promise.all([
     createOrClaimSandboxRow(),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
     // minting is fail-closed: a sandbox without its session identity cannot
     // securely reach any Kortix service.
-    mintSessionRuntimeToken({
+    mintSessionToken({
       accountId,
       userId,
       projectId,
-      sessionId: sandboxId,
-      runtimeKind: 'worker',
-      runtimeId: sandboxId,
+      sandboxId,
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
     }),
-    llmGatewayEnabled
-      ? accountEntitledToLlmGateway(accountId).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
-            err instanceof Error ? err.message : String(err),
-          );
-          return false;
-        })
-      : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
@@ -473,13 +569,19 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement is a three-part gate: operator availability, per-project
-  // experimental opt-in, and account entitlement. If any part is off we inject
-  // no KORTIX_LLM_* env, so OpenCode stays on its native provider behavior.
-  // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
-  // so legacy paying customers are no longer wrongly stripped to the Zen-only
-  // catalog. Per-request affordability stays in the gateway's own billing gate.
-  const gatewayEnabled = llmGatewayEnabled && gatewayEntitled;
+  // Enablement is the project's `llm_gateway` flag alone (operator
+  // availability + per-project opt-in), the same rule prompt-time env-sync
+  // applies (sandbox-env-sync.ts). The account's plan is NOT a boot gate: the
+  // gateway limits a free account to free/BYOK models per request
+  // (principal.freeModelsOnly, resolve-candidates.ts). Gating boot on the plan
+  // booted free accounts without the gateway; OpenCode recovered on the first
+  // prompt's env-sync, but pi has no native path and never started.
+
+  const extraEnvVars = await extraEnvRead.catch(async (error) => {
+    // The row exists and no box ever will: close it. The caller fails the session.
+    await transitionSandbox('failProvisioning', sandbox.sandboxId).catch(() => null);
+    throw error;
+  });
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -493,12 +595,12 @@ export async function provisionSessionSandbox(opts: {
     serverType,
     location,
     envVars: {
-      ...(opts.extraEnvVars ?? {}),
+      ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
       // executor and Git credentials stay server-side. The route being called
       // determines what this token may do.
-      KORTIX_TOKEN: sessionToken.secretKey,
-      ...(gatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
+      KORTIX_TOKEN: sessionToken,
+      ...(llmGatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -528,7 +630,8 @@ export async function provisionSessionSandbox(opts: {
       slug: string;
       contentHash: string;
       isDefault: boolean;
-      runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
+      runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+      spec?: SandboxImageSpec;
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
     // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
@@ -554,699 +657,576 @@ export async function provisionSessionSandbox(opts: {
     // own internal retry-on-transient-error loop reuses createOpts unchanged,
     // so it reuses this SAME attempt (and therefore the SAME Platinum
     // Idempotency-Key/name) across those "ambiguous retry" iterations.
-    let platinumCreateAttempt =
-      restorePlatinumCreateAttempt(sandbox.metadata as Record<string, unknown> | null) || 1;
+    let platinumCreateAttempt = restorePlatinumCreateAttempt(sandbox.metadata as Record<string, unknown> | null) || 1;
     providerCreateInput.createAttempt = platinumCreateAttempt;
-    while (true) {
-      try {
-        const branch = opts.baseRef || opts.gitProject.defaultBranch;
-        // Resolved for its VALIDATION only: it re-reads the agent grant and
-        // throws on a policy no session could serve, which is what turns a broken
-        // secret config into `invalid-secret-boundary-policy` instead of a
-        // generic provider fault. There is nothing to register with a provider —
-        // one mechanism serves daytona, e2b and platinum alike (docs/specs/
-        // 2026-08-19-secrets-exposure-usage-model.md §4): the guest gets a HANDLE
-        // and the broker route substitutes the real value server-side.
-        await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
+    provisioning: while (true) {
+    try {
+      const branch = opts.baseRef || opts.gitProject.defaultBranch;
+      // Resolved for its VALIDATION only: it re-reads the agent grant and
+      // throws on a policy no session could serve, which is what turns a broken
+      // secret config into `invalid-secret-boundary-policy` instead of a
+      // generic provider fault. There is nothing to register with a provider —
+      // one mechanism serves daytona, e2b and platinum alike: the guest gets a HANDLE
+      // and the broker route substitutes the real value server-side.
+      await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
+      tl.note('network-boundary');
 
-        // Stateless image resolution: ask Daytona if it has the image; build if not.
-        // No DB lookup, no degraded fallback — the snapshot is either there or we
-        // build it inline. The build log captures the attempt for the dashboard;
-        // it is never read on this path. The first attempt consumes the promise we
-        // kicked off in parallel with the token round-trip; heal-retries re-resolve
-        // from scratch (the prior snapshot was just deleted).
-        let image: EnsureSandboxImageResult;
-        if (firstImagePromise) {
-          image = await firstImagePromise;
-          firstImagePromise = null;
-        } else {
-          const gitProject = await resolveGitProject();
-          image = await resolveImage(gitProject, providerName);
-        }
-        imageInfo = {
-          snapshotName: image.snapshotName,
-          slug: image.slug,
-          contentHash: image.contentHash,
-          isDefault: image.isDefault,
-          runtimeProfile: image.runtimeProfile,
-        };
-        tl.mark(image.built ? 'image-built' : 'image-cached');
-        providerCreateInput.snapshot = image.snapshotName;
+      // Stateless image resolution: ask Daytona if it has the image; build if not.
+      // No DB lookup, no degraded fallback — the snapshot is either there or we
+      // build it inline. The build log captures the attempt for the dashboard;
+      // it is never read on this path. The first attempt consumes the promise we
+      // kicked off in parallel with the token round-trip; heal-retries re-resolve
+      // from scratch (the prior snapshot was just deleted).
+      let image: EnsureSandboxImageResult;
+      if (firstImagePromise) {
+        image = await firstImagePromise;
+        firstImagePromise = null;
+      } else {
+        const gitProject = await resolveGitProject();
+        image = await resolveImage(gitProject, providerName);
+      }
+      imageInfo = {
+        snapshotName: image.snapshotName,
+        slug: image.slug,
+        contentHash: image.contentHash,
+        isDefault: image.isDefault,
+        runtimeProfile: image.runtimeProfile,
+        spec: image.spec,
+      };
+      tl.mark(image.built ? 'image-built' : 'image-cached');
+      providerCreateInput.snapshot = image.snapshotName;
+      console.log(
+        `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
+        `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
+        `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
+      );
+
+      const firstStage = provider.provisioning.stages[0];
+      // FIX-A: honor the activated pinned template id (provider-matched) so the
+      // running sandbox is the EXACT warm image activation chose — behind the
+      // kill-switch, and only when the provider supports id-boot.
+      const bootDecision = decideSessionBoot({
+        killSwitchOn: sessionBootByTemplateIdEnabled(),
+        routing: activeRouting,
+        providerName,
+        providerSupportsIdBoot: typeof provider.createFromExternalId === 'function',
+        imageIsDefault: image.isDefault,
+        imageSnapshotName: image.snapshotName,
+        disabledForSession: idBootDisabled || opts.allowProjectImage === false,
+      });
+      if (bootDecision.bootByTemplateId) {
         console.log(
-          `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
-            `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
-            `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
+          `[session-sandbox] booting ${sandbox.sandboxId} by PINNED template id ` +
+          `${bootDecision.bootByTemplateId} (provider ${providerName})`,
         );
-
-        const firstStage = provider.provisioning.stages[0];
-        // FIX-A: honor the activated pinned template id (provider-matched) so the
-        // running sandbox is the EXACT warm image activation chose — behind the
-        // kill-switch, and only when the provider supports id-boot.
-        const bootDecision = decideSessionBoot({
-          killSwitchOn: sessionBootByTemplateIdEnabled(),
-          routing: activeRouting,
-          providerName,
-          providerSupportsIdBoot: typeof provider.createFromExternalId === 'function',
-          // A Platinum pin identifies the standard default template. The fast
-          // profile has its own content-addressed name and must never boot that
-          // standard pin by mistake.
-          imageIsDefault: image.isDefault && image.runtimeProfile !== 'fast',
-          imageSnapshotName: image.snapshotName,
-          disabledForSession: idBootDisabled || opts.allowProjectImage === false,
-        });
-        if (bootDecision.bootByTemplateId) {
-          console.log(
-            `[session-sandbox] booting ${sandbox.sandboxId} by PINNED template id ` +
-              `${bootDecision.bootByTemplateId} (provider ${providerName})`,
-          );
-        }
-        const createFn = bootDecision.bootByTemplateId
-          ? (o: CreateSandboxOpts) =>
-              provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
-          : undefined;
-        // No provider edge is armed at create: one mechanism serves daytona, e2b
-        // and platinum alike (docs/specs/2026-08-19-secrets-exposure-usage-model.md
-        // §4). The guest holds a handle; the broker route substitutes server-side.
-        let result: ProvisionResult;
-        let attempts: number;
-        // P1.8 (harness/worker split): a pi worker boot tries the parked pool
-        // first. The claim delivers the exact env the create would have
-        // (session token + gateway URL included), so the box boots the same
-        // session either way; null falls through to the cold create unchanged.
-        // A pi worker boot runs as a CELL on Platinum: the cell speaks the
-        // session protocol (apps/pi-worker-js `/kortix/*`) and spawns as an
-        // isolate rather than a microVM. Inert for every other runtime and for
-        // every other provider.
-        if (opts.metadata?.pi_worker_boot === true && providerName === 'platinum') {
-          providerCreateInput.piWorker = true;
-          // If no host exists yet, the box this session is about to create
-          // BECOMES the host — named for the project so the next session
-          // adopts it instead of paying 2443 ms of its own.
-          if (sharedCellHostEnabled() && opts.projectId) {
-            providerCreateInput.cellHostName = sharedCellHostName(opts.projectId);
-          }
-        }
-        // THE PROJECT'S CELL HOST, BEFORE THE POOL. A session on a cell
-        // sandbox that already exists costs 194 ms cold; making it one costs
-        // 2443 ms (dev, 2026-09-07). So the first question is whether this
-        // project already has a host, and only then whether a park is going.
-        const sharedHost =
-          opts.metadata?.pi_worker_boot === true && providerName === 'platinum'
-            // The session's own id rides in the base URL, so the browser's
-            // in-box calls name it on a box that holds many — see
-            // sharedCellBaseUrl. `sandbox.sandboxId` IS the session id.
-            ? await adoptSharedCellHost(opts.projectId, sandbox.sandboxId).catch((err) => {
-                console.warn(
-                  `[session-sandbox] shared cell host lookup failed for ${sandbox.sandboxId}; cold create:`,
-                  err,
-                );
-                return null;
-              })
-            : null;
-        if (sharedHost) tl.mark('cell-host-adopted');
-        const pooledClaim = sharedHost ??
-          (opts.metadata?.pi_worker_boot === true && providerName === 'platinum'
-            ? await claimParkedPlatinumBox(
-                providerCreateInput.envVars ?? {},
-                // The rename IS the de-registration on Platinum (no label or
-                // metadata mutation exists), so the claim hands the box the
-                // exact name a cold create would have given it.
-                `kortix-${sandbox.sandboxId}-a0`,
-              ).catch((err) => {
-                console.warn(
-                  `[session-sandbox] platinum pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
-                  err,
-                );
-                return null;
-              })
-          : opts.metadata?.pi_worker_boot === true && providerName === 'daytona'
-            ? await claimParkedPiWorkerBox(providerCreateInput.envVars ?? {}).catch((err) => {
-                console.warn(
-                  `[session-sandbox] pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
-                  err,
-                );
-                return null;
-              })
-            : null);
-        if (pooledClaim) {
-          result = {
-            externalId: pooledClaim.externalId,
-            baseUrl: pooledClaim.baseUrl,
-            metadata: {
-              provisionedBy: opts.userId,
-              daytonaSandboxId: pooledClaim.externalId,
-              snapshot: imageInfo!.snapshotName,
-              pooled: true,
-            },
-          };
-          attempts = 0;
-          tl.mark('pool-claim');
-        } else {
-          try {
-            ({ result, attempts } = await retrySandboxProvisionCreate(
-              provider,
-              providerCreateInput,
-              {
-                onAttemptStart: async (attempt, maxAttempts) => {
-                  lastProvisionAttempt = attempt;
-                  lastProvisionMaxAttempts = maxAttempts;
-                  await db
-                    .update(sessionSandboxes)
-                    .set({
-                      metadata: {
-                        ...buildSandboxInitAttemptMetadata(
-                          sandbox.metadata as Record<string, unknown> | null,
-                          attempt,
-                          attempt === 1 ? 'provisioning' : 'retrying',
-                          firstStage?.id,
-                          attempt === 1
-                            ? firstStage?.message
-                            : `Retrying initialization (${attempt}/${maxAttempts})…`,
-                          maxAttempts,
-                        ),
-                        // S1: persist the MONOTONIC counter every attempt (cheap,
-                        // idempotent write of the current value) so a mid-attempt
-                        // process crash still leaves the latest value durable for
-                        // restorePlatinumCreateAttempt to pick up on resume.
-                        platinumCreateAttempt,
-                      },
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
-                },
-                onAttemptFailure: async (attempt, error, willRetry, maxAttempts) => {
-                  lastProvisionAttempt = attempt;
-                  lastProvisionMaxAttempts = maxAttempts;
-                  await db
-                    .update(sessionSandboxes)
-                    .set({
-                      ...(willRetry
-                        ? { status: 'provisioning' as const }
-                        : { status: 'error' as const }),
-                      metadata: buildSandboxInitFailureMetadata(
-                        sandbox.metadata as Record<string, unknown> | null,
-                        error,
-                        attempt,
-                        willRetry,
-                        maxAttempts,
-                      ),
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
-                },
-              },
-              createFn,
-            ));
-          } catch (createErr) {
-            // FIX-A: a DEFINITIVE GC'd-pin 404 → fall back to a NAME boot for THIS
-            // session (re-enter the loop with id-boot disabled). Do NOT self-repair
-            // the pin here — that races the activation generation CAS; log it and let
-            // the provider-transition controller re-pin. A transient 5xx (or any
-            // other error) is re-thrown to the outer catch (failover/capacity/error)
-            // and surfaced — never silently name-booted onto a possibly-wrong image.
-            if (
-              bootDecision.bootByTemplateId &&
-              createErr instanceof SandboxTemplateNotFoundError
-            ) {
+      }
+      const createFn = bootDecision.bootByTemplateId
+        ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
+        : undefined;
+      // No provider edge is armed at create: one mechanism serves daytona, e2b
+      // and platinum alike. The guest holds a handle; the broker route substitutes server-side.
+      let result: ProvisionResult;
+      let attempts: number;
+      // P1.8 (harness/worker split): a pi worker boot tries the parked pool
+      // first. The claim delivers the exact env the create would have
+      // (session token + gateway URL included), so the box boots the same
+      // session either way; null falls through to the cold create unchanged.
+      const pooledClaim =
+        opts.metadata?.pi_worker_boot === true && providerName === 'daytona'
+          ? await claimParkedPiWorkerBox(providerCreateInput.envVars ?? {}).catch((err) => {
               console.warn(
-                `[session-sandbox] pinned template ${bootDecision.bootByTemplateId} for ${sandbox.sandboxId} ` +
-                  `is gone (404) — booting by name; leaving the pin for the controller to re-pin`,
+                `[session-sandbox] pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
+                err,
               );
-              idBootDisabled = true;
-              // S1: a confirmed GC'd-pin 404 is a genuinely NEW attempt (a
-              // different template id is about to be booted) — advance so the
-              // next create gets a fresh Idempotency-Key/name instead of reusing
-              // the pinned-template attempt's.
-              platinumCreateAttempt += 1;
-              providerCreateInput.createAttempt = platinumCreateAttempt;
-              continue;
-            }
-            throw createErr;
-          }
-        }
-        // Refill toward target after every pi boot — a consumed claim leaves a
-        // hole, and a claim miss means the pool is empty. Fire-and-forget.
-        if (opts.metadata?.pi_worker_boot === true && providerName === 'platinum') void maintainPlatinumPiWorkerPool();
-        if (opts.metadata?.pi_worker_boot === true && providerName === 'daytona') {
-          void maintainPiWorkerPool();
-        }
-        bgExternalId = result.externalId;
-        tl.mark(`provider-create:${attempts}x`);
-        const timeline = tl.summary();
-
-        const [currentSession] = await db
-          .select({ status: projectSessions.status, metadata: projectSessions.metadata })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, sandbox.sandboxId))
-          .limit(1);
-        const currentSessionMetadata =
-          (currentSession?.metadata as Record<string, unknown> | null) ?? {};
-        if (typeof currentSessionMetadata.deletedAt === 'string') {
-          // Only an explicit deletion authorizes provider removal. A normal stop
-          // uses the same status and must never be mistaken for deletion.
-          await provider.remove(result.externalId).catch((err) => {
-            console.warn(
-              `[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`,
-              err,
-            );
-          });
+              return null;
+            })
+          : null;
+      if (pooledClaim) {
+        result = {
+          externalId: pooledClaim.externalId,
+          baseUrl: pooledClaim.baseUrl,
+          metadata: {
+            provisionedBy: opts.userId,
+            daytonaSandboxId: pooledClaim.externalId,
+            snapshot: imageInfo!.snapshotName,
+            pooled: true,
+          },
+        };
+        attempts = 0;
+        tl.mark('pool-claim');
+      } else {
+      try {
+      ({ result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
+        onAttemptStart: async (attempt, maxAttempts) => {
+          lastProvisionAttempt = attempt;
+          lastProvisionMaxAttempts = maxAttempts;
+          const snapshot = sandbox.metadata as Record<string, unknown> | null;
           await db
             .update(sessionSandboxes)
             .set({
-              externalId: result.externalId,
-              baseUrl: result.baseUrl || null,
-              // 'archived', not 'stopped': the box is gone, so GET …/sandbox must
-              // not try to resume it — it reprovisions fresh on reopen instead.
-              status: 'archived',
-              metadata: {
-                ...((sandbox.metadata as Record<string, unknown> | null) ?? {}),
-                initStatus: 'failed',
-                initAbortedAt: new Date().toISOString(),
-                lastInitError: 'Session was stopped before provider create completed',
+              metadata: patchedSandboxMetadata(
+                sandboxInitMetadataPatch(snapshot, {
+                  ...buildSandboxInitAttemptMetadata(
+                    snapshot,
+                    attempt,
+                    attempt === 1 ? 'provisioning' : 'retrying',
+                    firstStage?.id,
+                    attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${maxAttempts})…`,
+                    maxAttempts,
+                  ),
+                  // S1: persist the MONOTONIC counter every attempt (cheap,
+                  // idempotent write of the current value) so a mid-attempt
+                  // process crash still leaves the latest value durable for
+                  // restorePlatinumCreateAttempt to pick up on resume.
+                  platinumCreateAttempt,
+                }),
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        },
+        onAttemptFailure: async (attempt, error, willRetry, maxAttempts) => {
+          lastProvisionAttempt = attempt;
+          lastProvisionMaxAttempts = maxAttempts;
+          const snapshot = sandbox.metadata as Record<string, unknown> | null;
+          await transitionSandbox(willRetry ? 'reprovision' : 'failProvisioning', sandbox.sandboxId, {
+            metadata: sandboxInitMetadataPatch(
+              snapshot,
+              buildSandboxInitFailureMetadata(snapshot, error, attempt, willRetry, maxAttempts),
+            ),
+          });
+        },
+      }, createFn));
+      } catch (createErr) {
+        // FIX-A: a DEFINITIVE GC'd-pin 404 → fall back to a NAME boot for THIS
+        // session (re-enter the loop with id-boot disabled). Do NOT self-repair
+        // the pin here — that races the activation generation CAS; log it and let
+        // the provider-transition controller re-pin. A transient 5xx (or any
+        // other error) is re-thrown to the outer catch (failover/capacity/error)
+        // and surfaced — never silently name-booted onto a possibly-wrong image.
+        if (bootDecision.bootByTemplateId && createErr instanceof SandboxTemplateNotFoundError) {
+          console.warn(
+            `[session-sandbox] pinned template ${bootDecision.bootByTemplateId} for ${sandbox.sandboxId} ` +
+            `is gone (404) — booting by name; leaving the pin for the controller to re-pin`,
+          );
+          idBootDisabled = true;
+          // S1: a confirmed GC'd-pin 404 is a genuinely NEW attempt (a
+          // different template id is about to be booted) — advance so the
+          // next create gets a fresh Idempotency-Key/name instead of reusing
+          // the pinned-template attempt's.
+          platinumCreateAttempt += 1;
+          providerCreateInput.createAttempt = platinumCreateAttempt;
+          continue provisioning;
+        }
+        throw createErr;
+      }
+      }
+      // Refill toward target after every pi boot — a consumed claim leaves a
+      // hole, and a claim miss means the pool is empty. Fire-and-forget.
+      if (opts.metadata?.pi_worker_boot === true && providerName === 'daytona') {
+        void maintainPiWorkerPool();
+      }
+      bgExternalId = result.externalId;
+      tl.mark(`provider-create:${attempts}x`);
+      const timeline = tl.summary();
+
+      const [currentSession] = await db
+        .select({ status: projectSessions.status, metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sandbox.sandboxId))
+        .limit(1);
+      const currentSessionMetadata =
+        (currentSession?.metadata as Record<string, unknown> | null) ?? {};
+      if (typeof currentSessionMetadata.deletedAt === 'string') {
+        // Only an explicit deletion authorizes provider removal. A normal stop
+        // uses the same status and must never be mistaken for deletion.
+        await provider.remove(result.externalId).catch((err) => {
+          console.warn(`[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`, err);
+        });
+        // 'archived', not 'stopped': the box is gone, so GET …/sandbox must
+        // not try to resume it — it reprovisions fresh on reopen instead.
+        await transitionSandbox('archive', sandbox.sandboxId, {
+          columns: { externalId: result.externalId, baseUrl: result.baseUrl || null },
+          metadata: {
+            merge: {
+              initStatus: 'failed',
+              initAbortedAt: new Date().toISOString(),
+              lastInitError: 'Session was stopped before provider create completed',
+              provisionTimeline: timeline,
+              providerExternalId: result.externalId,
+            },
+          },
+        });
+        tl.mark('row-stopped-before-active');
+        tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
+        const stopTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: stopTl.totalMs, marks: stopTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
+        return;
+      }
+
+      if (currentSession?.status === 'stopped') {
+        // A manual stop or idle reconciliation won while provider.create was
+        // in flight. Preserve the disk/identity and power it down.
+        await provider.stop(result.externalId).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to stop concurrently-paused sandbox ${result.externalId}:`,
+            err,
+          );
+        });
+        const snapshot = sandbox.metadata as Record<string, unknown> | null;
+        await transitionSandbox('stop', sandbox.sandboxId, {
+          columns: { externalId: result.externalId, baseUrl: result.baseUrl || null },
+          metadata: sandboxInitMetadataPatch(snapshot, {
+            ...buildSandboxInitSuccessMetadata(
+              snapshot,
+              {
+                ...result.metadata,
                 provisionTimeline: timeline,
                 providerExternalId: result.externalId,
               },
-              updatedAt: new Date(),
-            })
-            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
-          tl.mark('row-stopped-before-active');
-          tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
-          const stopTl = tl.summary();
-          recordProviderEvent({
-            provider: providerName,
-            kind: 'provision',
-            outcome: 'stopped',
-            totalMs: stopTl.totalMs,
-            marks: stopTl.marks,
-            attempts,
-            sessionId: sandbox.sandboxId,
-            accountId,
-          });
-          return;
-        }
+              attempts,
+              lastProvisionMaxAttempts,
+            ),
+            stoppedDuringProvisioning: true,
+            stoppedAt: new Date().toISOString(),
+          }),
+        });
+        tl.mark('row-stopped-during-provision');
+        tl.log({ provider: providerName, attempts, stoppedDuringProvisioning: true });
+        const stoppedTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: stoppedTl.totalMs, marks: stoppedTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
+        return;
+      }
 
-        if (currentSession?.status === 'stopped') {
-          // A manual stop or idle reconciliation won while provider.create was
-          // in flight. Preserve the disk/identity and power it down.
-          await provider.stop(result.externalId).catch((err) => {
-            console.warn(
-              `[session-sandbox] failed to stop concurrently-paused sandbox ${result.externalId}:`,
-              err,
-            );
-          });
-          await db
-            .update(sessionSandboxes)
-            .set({
-              externalId: result.externalId,
-              baseUrl: result.baseUrl || null,
-              status: 'stopped',
-              metadata: {
-                ...buildSandboxInitSuccessMetadata(
-                  sandbox.metadata as Record<string, unknown> | null,
-                  {
-                    ...result.metadata,
-                    provisionTimeline: timeline,
-                    providerExternalId: result.externalId,
-                  },
-                  attempts,
-                  lastProvisionMaxAttempts,
-                ),
-                stoppedDuringProvisioning: true,
-                stoppedAt: new Date().toISOString(),
-              },
-              updatedAt: new Date(),
-            })
-            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
-          tl.mark('row-stopped-during-provision');
-          tl.log({ provider: providerName, attempts, stoppedDuringProvisioning: true });
-          const stoppedTl = tl.summary();
-          recordProviderEvent({
-            provider: providerName,
-            kind: 'provision',
-            outcome: 'stopped',
-            totalMs: stoppedTl.totalMs,
-            marks: stoppedTl.marks,
-            attempts,
-            sessionId: sandbox.sandboxId,
-            accountId,
-          });
-          return;
+      // Pre-active hook (legacy migration chat restore). Runs while the row is
+      // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
+      //
+      // The comment here used to say "never block the session opening on it" while
+      // the code awaited it UNBOUNDED — and the telemetry shows what that cost
+      // when the hook was live: `before-active-hook` p50 12 267ms, p90 33 762ms,
+      // max 62 490ms across 162 provisions, every millisecond of it added to
+      // time-to-usable because the row cannot flip to 'active' until this returns
+      // (last live occurrence 2026-07-12; no caller passes `beforeActive` today,
+      // so this is currently unreachable).
+      //
+      // Left in place as the documented extension point it is, but now bounded so
+      // re-enabling it cannot silently reintroduce a 12-60s stall. On timeout the
+      // hook keeps running detached — it is a data-restore, so abandoning the WAIT
+      // is right while abandoning the WORK is not — and the session proceeds to
+      // 'active' as the original comment always promised.
+      if (opts.beforeActive) {
+        try {
+          await withTimeout(
+            opts.beforeActive(result.externalId),
+            BEFORE_ACTIVE_HOOK_TIMEOUT_MS,
+            `beforeActive(${sandbox.sandboxId})`,
+          );
+          tl.mark('before-active-hook');
+        } catch (err) {
+          console.warn(`[session-sandbox] beforeActive hook failed or timed out for ${sandbox.sandboxId}:`, err);
+          tl.mark('before-active-hook-abandoned');
         }
+      }
 
-        // Pre-active hook (legacy migration chat restore). Runs while the row is
-        // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
-        //
-        // The comment here used to say "never block the session opening on it" while
-        // the code awaited it UNBOUNDED — and the telemetry shows what that cost
-        // when the hook was live: `before-active-hook` p50 12 267ms, p90 33 762ms,
-        // max 62 490ms across 162 provisions, every millisecond of it added to
-        // time-to-usable because the row cannot flip to 'active' until this returns
-        // (last live occurrence 2026-07-12; no caller passes `beforeActive` today,
-        // so this is currently unreachable).
-        //
-        // Left in place as the documented extension point it is, but now bounded so
-        // re-enabling it cannot silently reintroduce a 12-60s stall. On timeout the
-        // hook keeps running detached — it is a data-restore, so abandoning the WAIT
-        // is right while abandoning the WORK is not — and the session proceeds to
-        // 'active' as the original comment always promised.
-        if (opts.beforeActive) {
-          try {
-            await withTimeout(
-              opts.beforeActive(result.externalId),
-              BEFORE_ACTIVE_HOOK_TIMEOUT_MS,
-              `beforeActive(${sandbox.sandboxId})`,
-            );
-            tl.mark('before-active-hook');
-          } catch (err) {
-            console.warn(
-              `[session-sandbox] beforeActive hook failed or timed out for ${sandbox.sandboxId}:`,
-              err,
-            );
-            tl.mark('before-active-hook-abandoned');
-          }
-        }
+      // Async providers leave the row at 'provisioning' so the dashboard
+      // poller can flip it to 'active' once port 8000 is reachable. Sync
+      // providers (none today) would be ready immediately on create.
+      const snapshot = sandbox.metadata as Record<string, unknown> | null;
+      const finishMetadata = buildSandboxInitSuccessMetadata(
+          snapshot,
+          {
+            ...result.metadata,
+            provisioningStage: firstStage?.id,
+            provisionTimeline: timeline,
+            providerExternalId: result.externalId,
+            runtimeArtifact: {
+              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
+              providerArtifactRef: imageInfo!.snapshotName,
+              contentHash: imageInfo!.contentHash,
+              sandboxSlug: imageInfo!.slug,
+              isPlatformDefault: imageInfo!.isDefault,
+              runtimeProfile: imageInfo!.runtimeProfile ?? 'standard',
+              branch,
+              provider: providerName,
+            },
+          },
+          attempts,
+          lastProvisionMaxAttempts,
+        );
 
-        // Async providers leave the row at 'provisioning' so the dashboard
-        // poller can flip it to 'active' once port 8000 is reachable. Sync
-        // providers (none today) would be ready immediately on create.
-        const finishUpdate: Partial<typeof sessionSandboxes.$inferInsert> = {
+      // Conditional finish: `deleteSession()` is the ONLY place that sets a
+      // session_sandboxes row to 'archived', and it does so as soon as the
+      // user deletes the session — even while this provisioning IIFE is still
+      // in flight. Guard the write so a late-finishing provision can never
+      // resurrect a tombstoned row. If no row comes back, the session was
+      // deleted mid-provision: remove the box we just created and stop —
+      // no 'running' flip, no compute metering.
+      //
+      // Every provider flips to 'active' here: the legacy provider
+      // provisioning status does not gate this table, and the frontend's own
+      // readiness poller validates port 8000. `activate` never leaves
+      // `archived`.
+      const finished = await transitionSandbox('activate', sandbox.sandboxId, {
+        columns: {
           externalId: result.externalId,
           baseUrl: result.baseUrl || null,
-          metadata: buildSandboxInitSuccessMetadata(
-            sandbox.metadata as Record<string, unknown> | null,
-            {
-              ...result.metadata,
-              provisioningStage: firstStage?.id,
-              provisionTimeline: timeline,
-              providerExternalId: result.externalId,
-              runtimeArtifact: {
-                artifactType:
-                  providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
-                providerArtifactRef: imageInfo!.snapshotName,
-                contentHash: imageInfo!.contentHash,
-                sandboxSlug: imageInfo!.slug,
-                isPlatformDefault: imageInfo!.isDefault,
-                runtimeProfile: imageInfo!.runtimeProfile ?? 'standard',
-                branch,
-                provider: providerName,
-              },
-            },
-            attempts,
-            lastProvisionMaxAttempts,
-          ),
-          config: { serviceKey: sessionToken.secretKey, llmGatewayEnabled: gatewayEnabled },
+          config: { serviceKey: sessionToken, llmGatewayEnabled },
           lastUsedAt: new Date(),
-          updatedAt: new Date(),
-        };
-        if (!provider.provisioning.async) {
-          finishUpdate.status = 'active';
-        } else {
-          // For cloud providers we still flip to active here because the legacy
-          // provider provisioning status does not gate this table; the frontend's
-          // own readiness poller validates port 8000.
-          finishUpdate.status = 'active';
-        }
+        },
+        metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),
+      });
 
-        // Conditional finish: `deleteSession()` is the ONLY place that sets a
-        // session_sandboxes row to 'archived', and it does so as soon as the
-        // user deletes the session — even while this provisioning IIFE is still
-        // in flight. Guard the write so a late-finishing provision can never
-        // resurrect a tombstoned row. If no row comes back, the session was
-        // deleted mid-provision: remove the box we just created and stop —
-        // no 'running' flip, no compute metering.
-        const [finished] = await db
-          .update(sessionSandboxes)
-          .set(finishUpdate)
-          .where(
-            and(
-              eq(sessionSandboxes.sandboxId, sandbox.sandboxId),
-              ne(sessionSandboxes.status, 'archived'),
-            ),
-          )
-          .returning();
-
-        if (!finished) {
+      if (!finished) {
+        console.warn(
+          `[session-sandbox] session ${sandbox.sandboxId} was deleted mid-provision — removing box ${result.externalId} instead of finishing provisioning`,
+        );
+        await provider.remove(result.externalId).catch((err) =>
           console.warn(
-            `[session-sandbox] session ${sandbox.sandboxId} was deleted mid-provision — removing box ${result.externalId} instead of finishing provisioning`,
-          );
-          await provider
-            .remove(result.externalId)
-            .catch((err) =>
-              console.warn(
-                `[session-sandbox] cleanup of ${result.externalId} after mid-provision delete failed:`,
-                err,
-              ),
-            );
-          tl.mark('row-deleted-mid-provision');
-          tl.log({ provider: providerName, attempts, deletedMidProvision: true });
-          const delTl = tl.summary();
-          recordProviderEvent({
-            provider: providerName,
-            kind: 'provision',
-            outcome: 'stopped',
-            totalMs: delTl.totalMs,
-            marks: delTl.marks,
-            attempts,
-            sessionId: sandbox.sandboxId,
-            accountId,
-          });
-          return;
-        }
-
-        // Mirror sandbox readiness onto the project_sessions row so the
-        // sidebar's status dot stops spinning. session_id == sandbox_id by
-        // construction, so the lookup is direct. Only flip sessions that are
-        // still genuinely mid-provision (queued/branching/provisioning) —
-        // 'stopped' (deleted, or an explicit stop) and 'running' (won by the
-        // separate stopped→running resume path in routes/shared.ts) must not be
-        // clobbered back to 'running' by a provisioning attempt finishing late.
-        await db
-          .update(projectSessions)
-          .set({
-            status: 'running',
-            sandboxUrl: result.baseUrl || null,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(projectSessions.sessionId, sandbox.sandboxId),
-              inArray(projectSessions.status, [...PROVISIONING_SESSION_STATUSES]),
-            ),
-          )
-          .catch(() => {});
-
-        tl.mark('row-active');
-        tl.log({ provider: providerName, attempts });
-
-        const okTl = tl.summary();
+            `[session-sandbox] cleanup of ${result.externalId} after mid-provision delete failed:`,
+            err,
+          ),
+        );
+        tl.mark('row-deleted-mid-provision');
+        tl.log({ provider: providerName, attempts, deletedMidProvision: true });
+        const delTl = tl.summary();
         recordProviderEvent({
-          provider: providerName,
-          kind: 'provision',
-          outcome: 'ok',
-          totalMs: okTl.totalMs,
-          marks: okTl.marks,
-          attempts,
-          sessionId: sandbox.sandboxId,
-          accountId,
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: delTl.totalMs, marks: delTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
         });
+        return;
+      }
 
-        // Billing v2 — open a compute metering row. No-op for legacy accounts.
-        // Spec is resolved from the project manifest with provider-default fallbacks.
-        void openComputeSessionForSandbox(
-          sandbox.sandboxId,
-          accountId,
-          opts.gitProject,
-          userId,
-          imageInfo?.slug,
-          providerName,
-        ).catch((err) =>
+      // Mirror sandbox readiness onto the project_sessions row so the
+      // sidebar's status dot stops spinning. session_id == sandbox_id by
+      // construction, so the lookup is direct. Only flip sessions that are
+      // still genuinely mid-provision (queued/branching/provisioning) —
+      // 'stopped' (deleted, or an explicit stop) and 'running' (won by the
+      // separate stopped→running resume path in routes/shared.ts) must not be
+      // clobbered back to 'running' by a provisioning attempt finishing late.
+      await transitionSession('provisioned', sandbox.sandboxId, {
+        sandboxUrl: result.baseUrl || null,
+      }).catch((sessionErr) =>
+        // No sweep repairs this: stuck-sessions skips a session whose sandbox
+        // row is active. Log it so it is at least visible.
+        logger.error(
+          `[session-sandbox] ${sandbox.sandboxId} is active but its session row was not marked provisioned:`,
+          { error: sessionErr instanceof Error ? sessionErr.message : String(sessionErr) },
+        ),
+      );
+
+      tl.mark('row-active');
+      // A first prompt waiting for this box re-opens the session now.
+      signalSessionRuntimeActive(sandbox.sandboxId);
+      tl.log({ provider: providerName, attempts });
+
+      const okTl = tl.summary();
+      recordProviderEvent({
+        provider: providerName, kind: 'provision', outcome: 'ok',
+        totalMs: okTl.totalMs, marks: okTl.marks, attempts,
+        sessionId: sandbox.sandboxId, accountId,
+      });
+
+      // Billing v2 — open a compute metering row. No-op for legacy accounts.
+      // Billed at the size of the image that booted (computeMeteringSpec).
+      void openComputeSessionForSandbox(
+        sandbox.sandboxId,
+        accountId,
+        opts.gitProject,
+        userId,
+        imageInfo?.slug,
+        providerName,
+        imageInfo?.spec,
+      ).catch(
+        (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
             err instanceof Error ? err.message : String(err),
           ),
-        );
-        break;
-      } catch (bgErr) {
-        // The selected provider dropped the image between resolve and create. Force a rebuild
-        // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
-        // and retry once. Capped at one heal per session start.
-        if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
-          healedStaleSnapshot = true;
-          await deleteSandboxImage(opts.gitProject, {
-            slug: imageInfo.slug,
-            provider: providerName,
-          }).catch((err: unknown) =>
-            console.warn(
-              `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
-              err,
-            ),
-          );
+      );
+      break provisioning;
+    } catch (bgErr) {
+      // The selected provider dropped the image between resolve and create. Force a rebuild
+      // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
+      // and retry once. Capped at one heal per session start.
+      if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
+        healedStaleSnapshot = true;
+        await deleteSandboxImage(opts.gitProject, {
+          slug: imageInfo.slug,
+          provider: providerName,
+        }).catch((err: unknown) =>
           console.warn(
-            `[session-sandbox] healing missing image ${imageInfo.snapshotName} for ${sandbox.sandboxId} — retrying`,
+            `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
+            err,
+          ),
+        );
+        console.warn(
+          `[session-sandbox] healing missing image ${imageInfo.snapshotName} for ${sandbox.sandboxId} — retrying`,
+        );
+        if (bgExternalId) {
+          await provider.remove(bgExternalId).catch((cleanupErr) =>
+            console.warn(`[session-sandbox] post-heal cleanup of ${bgExternalId} failed:`, cleanupErr),
           );
+          bgExternalId = null;
+        }
+        imageInfo = null;
+        // S1: the old box (if any) was just removed above and we're about to
+        // build/boot a genuinely fresh image — advance so the retry mints a
+        // fresh Idempotency-Key/name rather than reusing the healed attempt's.
+        platinumCreateAttempt += 1;
+        providerCreateInput.createAttempt = platinumCreateAttempt;
+        continue provisioning;
+      }
+
+      const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
+
+      // ── Provider failover (one-shot, on init) ────────────────────────────
+      // Admin-gated (DB `provider_fallback`, OFF by default). When ON, a
+      // provider that fails to provision the session AT BIRTH hands off ONCE to
+      // the next allowed provider before the session is marked failed. Init
+      // only — a running box is never migrated here. The new provider re-resolves
+      // its own image (the snapshot is provider-specific), so we clear all image
+      // state and re-enter the loop.
+      {
+        const next = nextFailoverProvider({
+          providerLocked: providerWasExplicitlySelected,
+          fallbackAttempted,
+          fallbackEnabled: providerFallbackSetting().enabled,
+          current: providerName,
+          allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+        }) as ProviderName | null;
+        let switched = false;
+        if (next) {
+          fallbackAttempted = true;
+          console.warn(
+            `[session-sandbox] ${providerName} provisioning failed for ${sandbox.sandboxId} — failing over to ${next}: ${bgMessage.slice(0, 160)}`,
+          );
+          const foTl = tl.summary();
+          recordProviderEvent({
+            provider: providerName, kind: 'provision', outcome: 'error',
+            totalMs: foTl.totalMs, marks: foTl.marks,
+            errorClass: 'other', error: `failover→${next}: ${bgMessage}`,
+            sessionId: sandbox.sandboxId, accountId,
+          });
           if (bgExternalId) {
-            await provider
-              .remove(bgExternalId)
-              .catch((cleanupErr) =>
-                console.warn(
-                  `[session-sandbox] post-heal cleanup of ${bgExternalId} failed:`,
-                  cleanupErr,
-                ),
-              );
+            const failedBox = bgExternalId;
+            await provider.remove(failedBox).catch((removeErr) =>
+              logger.error(
+                `[session-sandbox] failover could not remove ${providerName} box ${failedBox} for ${sandbox.sandboxId}; the orphan sweep stops it:`,
+                { error: removeErr instanceof Error ? removeErr.message : String(removeErr) },
+              ),
+            );
             bgExternalId = null;
           }
+          // The row must name the new provider BEFORE its box exists: a box
+          // on `next` under a row that still says `providerName` is unknown to
+          // the orphan sweep, which stops it. If the switch does not land,
+          // fail this session instead of failing over.
+          switched = await transitionSandbox('reprovision', sandbox.sandboxId, {
+            columns: { provider: next },
+          }).then(
+            () => true,
+            (switchErr) => {
+              logger.error(
+                `[session-sandbox] failover to ${next} aborted for ${sandbox.sandboxId}: the provider switch was not written:`,
+                { error: switchErr instanceof Error ? switchErr.message : String(switchErr) },
+              );
+              return false;
+            },
+          );
+        }
+        if (next && switched) {
+          providerName = next;
+          provider = getProvider(next);
+          providerCreateInput.snapshot = undefined;
+          firstImagePromise = null;
           imageInfo = null;
-          // S1: the old box (if any) was just removed above and we're about to
-          // build/boot a genuinely fresh image — advance so the retry mints a
-          // fresh Idempotency-Key/name rather than reusing the healed attempt's.
+          healedStaleSnapshot = false;
+          // S1: a genuinely new attempt — a DIFFERENT provider is about to
+          // create an unrelated box, so reusing the failed provider's
+          // Idempotency-Key/name here would be meaningless (Platinum is the
+          // only provider that reads it today, but this keeps the counter
+          // correct if `next` is Platinum).
           platinumCreateAttempt += 1;
           providerCreateInput.createAttempt = platinumCreateAttempt;
-          continue;
+          tl.mark(`failover:${next}`);
+          continue provisioning;
         }
-
-        const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
-
-        // ── Provider failover (one-shot, on init) ────────────────────────────
-        // Admin-gated (DB `provider_fallback`, OFF by default). When ON, a
-        // provider that fails to provision the session AT BIRTH hands off ONCE to
-        // the next allowed provider before the session is marked failed. Init
-        // only — a running box is never migrated here. The new provider re-resolves
-        // its own image (the snapshot is provider-specific), so we clear all image
-        // state and re-enter the loop.
-        {
-          const next = nextFailoverProvider({
-            providerLocked: providerWasExplicitlySelected,
-            fallbackAttempted,
-            fallbackEnabled: providerFallbackSetting().enabled,
-            current: providerName,
-            allowed: config.ALLOWED_SANDBOX_PROVIDERS,
-          }) as ProviderName | null;
-          if (next) {
-            fallbackAttempted = true;
-            console.warn(
-              `[session-sandbox] ${providerName} provisioning failed for ${sandbox.sandboxId} — failing over to ${next}: ${bgMessage.slice(0, 160)}`,
-            );
-            const foTl = tl.summary();
-            recordProviderEvent({
-              provider: providerName,
-              kind: 'provision',
-              outcome: 'error',
-              totalMs: foTl.totalMs,
-              marks: foTl.marks,
-              errorClass: 'other',
-              error: `failover→${next}: ${bgMessage}`,
-              sessionId: sandbox.sandboxId,
-              accountId,
-            });
-            if (bgExternalId) {
-              await provider.remove(bgExternalId).catch(() => {});
-              bgExternalId = null;
-            }
-            providerName = next;
-            provider = getProvider(next);
-            providerCreateInput.snapshot = undefined;
-            firstImagePromise = null;
-            imageInfo = null;
-            healedStaleSnapshot = false;
-            // S1: a genuinely new attempt — a DIFFERENT provider is about to
-            // create an unrelated box, so reusing the failed provider's
-            // Idempotency-Key/name here would be meaningless (Platinum is the
-            // only provider that reads it today, but this keeps the counter
-            // correct if `next` is Platinum).
-            platinumCreateAttempt += 1;
-            providerCreateInput.createAttempt = platinumCreateAttempt;
-            await db
-              .update(sessionSandboxes)
-              .set({ provider: next, status: 'provisioning', updatedAt: new Date() })
-              .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
-              .catch(() => {});
-            tl.mark(`failover:${next}`);
-            continue;
-          }
-        }
-
-        // Keep provider SDK text in diagnostic metadata. Show one stable contract
-        // for E2B, Daytona, Platinum, and future providers.
-        const failure = classifySandboxProvisioningFailure(bgErr);
-        const { isCapacity, isGitAuth, userMessage } = failure;
-        const failureCategory = failure.category;
-        if (isCapacity) {
-          console.warn(
-            `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — stopping automatic provisioning:`,
-            bgMessage.slice(0, 200),
-          );
-        } else if (isGitAuth) {
-          console.error(
-            `[session-sandbox] git auth/repo-access failure provisioning ${sandbox.sandboxId} (not a provider fault):`,
-            bgMessage.slice(0, 300),
-          );
-        } else {
-          console.error(
-            `[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`,
-            bgErr,
-          );
-        }
-
-        if (bgExternalId) {
-          try {
-            await provider.remove(bgExternalId);
-          } catch (cleanupErr) {
-            console.error(
-              `[session-sandbox] Failed to clean up provider resource ${bgExternalId}:`,
-              cleanupErr,
-            );
-          }
-        }
-
-        try {
-          await db
-            .update(sessionSandboxes)
-            .set({
-              status: 'error',
-              metadata: {
-                ...buildSandboxInitFailureMetadata(
-                  sandbox.metadata as Record<string, unknown> | null,
-                  bgErr,
-                  lastProvisionAttempt,
-                  false,
-                  lastProvisionMaxAttempts,
-                ),
-                errorMessage: userMessage,
-                lastProvisioningError: bgMessage.slice(0, 500),
-                ...(failureCategory ? { failureCategory } : {}),
-              },
-              updatedAt: new Date(),
-            })
-            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
-          await db
-            .update(projectSessions)
-            .set({ status: 'failed', error: userMessage, updatedAt: new Date() })
-            .where(eq(projectSessions.sessionId, sandbox.sandboxId))
-            .catch(() => {});
-        } catch (markErr) {
-          console.error(
-            `[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`,
-            markErr,
-          );
-        }
-        // Tell the originating channel (Slack) so the live thread shows the friendly
-        // reason now instead of a stranded ⏳ until the 30-min GC. Fire-and-forget;
-        // a no-op for non-channel sessions.
-        notifySessionProvisioningFailed(sandbox.sandboxId, userMessage);
-        const errTl = tl.summary();
-        recordProviderEvent({
-          provider: providerName,
-          kind: 'provision',
-          outcome: 'error',
-          totalMs: errTl.totalMs,
-          marks: errTl.marks,
-          errorClass: isCapacity ? 'capacity' : 'other',
-          error: bgMessage,
-          sessionId: sandbox.sandboxId,
-          accountId,
-        });
-        break;
       }
+
+      // Keep provider SDK text in diagnostic metadata. Show one stable contract
+      // for E2B, Daytona, Platinum, and future providers.
+      const failure = classifySandboxProvisioningFailure(bgErr);
+      const { isCapacity, isGitAuth, userMessage } = failure;
+      const failureCategory = failure.category;
+      if (isCapacity) {
+        console.warn(
+          `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — stopping automatic provisioning:`,
+          bgMessage.slice(0, 200),
+        );
+      } else if (isGitAuth) {
+        console.error(
+          `[session-sandbox] git auth/repo-access failure provisioning ${sandbox.sandboxId} (not a provider fault):`,
+          bgMessage.slice(0, 300),
+        );
+      } else {
+        console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
+      }
+
+      if (bgExternalId) {
+        try {
+          await provider.remove(bgExternalId);
+        } catch (cleanupErr) {
+          console.error(`[session-sandbox] Failed to clean up provider resource ${bgExternalId}:`, cleanupErr);
+        }
+      }
+
+      try {
+        const snapshot = sandbox.metadata as Record<string, unknown> | null;
+        await transitionSandbox('failProvisioning', sandbox.sandboxId, {
+          metadata: sandboxInitMetadataPatch(snapshot, {
+            ...buildSandboxInitFailureMetadata(
+              snapshot,
+              bgErr,
+              lastProvisionAttempt,
+              false,
+              lastProvisionMaxAttempts,
+            ),
+            errorMessage: userMessage,
+            lastProvisioningError: bgMessage.slice(0, 500),
+            ...(failureCategory ? { failureCategory } : {}),
+          }),
+        });
+        await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch((sessionErr) =>
+          logger.error(
+            `[session-sandbox] ${sandbox.sandboxId} failed but its session row was not marked failed (stuck-sessions stops it after its TTL):`,
+            { error: sessionErr instanceof Error ? sessionErr.message : String(sessionErr) },
+          ),
+        );
+      } catch (markErr) {
+        console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
+      }
+      // Tell the originating channel (Slack) so the live thread shows the friendly
+      // reason now instead of a stranded ⏳ until the 30-min GC. Fire-and-forget;
+      // a no-op for non-channel sessions.
+      notifySessionProvisioningFailed(sandbox.sandboxId, userMessage);
+      const errTl = tl.summary();
+      recordProviderEvent({
+        provider: providerName, kind: 'provision', outcome: 'error',
+        totalMs: errTl.totalMs, marks: errTl.marks,
+        errorClass: isCapacity ? 'capacity' : 'other', error: bgMessage,
+        sessionId: sandbox.sandboxId, accountId,
+      });
+      break provisioning;
+    }
     }
   })();
 

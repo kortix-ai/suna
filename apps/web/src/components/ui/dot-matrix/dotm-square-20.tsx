@@ -1,15 +1,9 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { rowMajorIndex } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
+import { createDotm5x5Component, rowMajorIndex } from '@/lib/dotmatrix-core';
 
-export type DotmSquare20Props = DotMatrixCommonProps;
 
 /** Clockwise perimeter: one closed loop you can trace with your eye. */
 const PERIMETER_PATH: readonly number[] = [
@@ -28,7 +22,7 @@ const PERIMETER_PATH: readonly number[] = [
   rowMajorIndex(4, 0),
   rowMajorIndex(3, 0),
   rowMajorIndex(2, 0),
-  rowMajorIndex(1, 0)
+  rowMajorIndex(1, 0),
 ];
 
 const LOOP_LEN = PERIMETER_PATH.length;
@@ -45,7 +39,7 @@ const TWIST_INNER_BY_HEAD_STEP: ReadonlyMap<number, number> = new Map([
   [0, rowMajorIndex(1, 1)],
   [4, rowMajorIndex(1, 3)],
   [8, rowMajorIndex(3, 3)],
-  [12, rowMajorIndex(3, 1)]
+  [12, rowMajorIndex(3, 1)],
 ]);
 
 function pathStepForCellIndex(cellIndex: number): number {
@@ -60,36 +54,17 @@ function opacityFromTail(distance: number, tail: readonly number[]): number {
   return tail[distance]!;
 }
 
-export function DotmSquare20({
-  speed = 1.45,
-  pattern = "full",
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare20Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
-  });
-  const headStep = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
-    cycleMsBase: 1600,
-    steps: LOOP_LEN,
-    speed,
-  });
+function makeResolver(cycle: number, reducedMotion: boolean): DotAnimationResolver {
 
-  const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, index, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const onLoop = pathStepForCellIndex(index);
-      const backHead = (headStep + Math.floor(LOOP_LEN / 2)) % LOOP_LEN;
+      const backHead = (cycle + Math.floor(LOOP_LEN / 2)) % LOOP_LEN;
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         if (onLoop >= 0) {
           return { style: { opacity: IDLE_RING_OPACITY } };
         }
@@ -102,42 +77,27 @@ export function DotmSquare20({
       let opacity = BASE_OPACITY;
 
       if (onLoop >= 0) {
-        const forward = (headStep - onLoop + LOOP_LEN) % LOOP_LEN;
+        const forward = (cycle - onLoop + LOOP_LEN) % LOOP_LEN;
         const alongBack = (backHead - onLoop + LOOP_LEN) % LOOP_LEN;
         opacity = Math.max(
           opacity,
           opacityFromTail(forward, TAIL_BRIGHT),
-          opacityFromTail(alongBack, BACK_TAIL_BRIGHT)
+          opacityFromTail(alongBack, BACK_TAIL_BRIGHT),
         );
       }
 
-      const twistInner = TWIST_INNER_BY_HEAD_STEP.get(headStep);
+      const twistInner = TWIST_INNER_BY_HEAD_STEP.get(cycle);
       if (twistInner === index) {
         opacity = Math.max(opacity, TWIST_INNER_OPACITY);
       }
 
       const seam = rowMajorIndex(2, 2);
-      if (index === seam && headStep % 4 === 0) {
+      if (index === seam && cycle % 4 === 0) {
         opacity = Math.max(opacity, SEAM_PULSE_OPACITY);
       }
 
       return { style: { opacity: Math.min(1, opacity) } };
     };
-  }, [headStep, reducedMotion]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
 }
+
+export const DotmSquare20 = createDotm5x5Component('DotmSquare20', makeResolver, { speed: 1.45, cycleMsBase: 1600, steps: LOOP_LEN });

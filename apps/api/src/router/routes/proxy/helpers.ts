@@ -1,15 +1,15 @@
 import { HTTPException } from 'hono/http-exception';
-import { matchAllowedRoute, type ProxyServiceConfig } from '../../config/proxy-services';
-import { validateSecretKey } from '../../../repositories/api-keys';
-import { validateAccountToken } from '../../../repositories/account-tokens';
-import { isAccountToken, isKortixToken } from '../../../shared/crypto';
+import { wallet } from '../../../billing/wallet';
 import { config, getToolCost } from '../../../config';
-import { deductToolCredits } from '../../services/billing';
-import { grantCredits } from '../../../billing/services/credits';
-import { dollarsToCents, refundActorSpend, reserveActorSpend } from '../../services/member-spend';
-import { type ActorContext } from '../../../shared/actor-context';
 import { getTraceHeaders } from '../../../lib/request-context';
-import type { ToolCreditReservation, AuthResult } from './app';
+import { validateAccountToken } from '../../../repositories/account-tokens';
+import { validateSecretKey } from '../../../repositories/api-keys';
+import type { ActorContext } from '../../../shared/actor-context';
+import { isAccountToken, isKortixToken } from '../../../shared/crypto';
+import { type ProxyServiceConfig, matchAllowedRoute } from '../../config/proxy-services';
+import { deductToolCredits } from '../../services/billing';
+import { refundReservation, reserveActorCost } from '../../services/reservation';
+import type { AuthResult, ToolCreditReservation } from './app';
 
 // Re-export matchAllowedRoute for handlers (kept here so handlers import from one place)
 export { matchAllowedRoute };
@@ -23,7 +23,7 @@ export { matchAllowedRoute };
  *
  * The in-sandbox `KORTIX_TOKEN` — the credential every built-in tool presents
  * to this proxy — is the FIRST shape: a session-scoped PAT auto-minted at
- * session create (projects/routes/r3.ts). This resolver only ever consulted
+ * session create (projects/routes/project-credentials.ts). This resolver only ever consulted
  * the second table, so every built-in tool call answered
  * `401 Invalid Kortix token in x-api-key` while the same token authenticated
  * fine on every other route. Try the right validator for the prefix; never
@@ -39,95 +39,81 @@ export async function resolveKortixAccount(token: string): Promise<string | null
   return key.isValid && key.accountId ? key.accountId : null;
 }
 
+interface KortixTokenSource {
+  extract: (c: any) => unknown | Promise<unknown>;
+  invalid: string;
+  /** Mode 2: the user's own key rides in Authorization; only the account is identified. */
+  passthrough?: boolean;
+}
+
+// The client shapes the proxy accepts a Kortix credential in, in precedence order.
+// The first shape that carries a Kortix-shaped token decides the outcome: a valid
+// token authenticates, an invalid one is a hard 401 — never a free passthrough.
+const KORTIX_TOKEN_SOURCES: KortixTokenSource[] = [
+  {
+    // Mode 1: a Kortix token (kortix_/kortix_sb_) in Authorization — full
+    // Kortix-managed flow. Everyone else sends "Bearer ", the Replicate SDK
+    // "Token ". If it looks like a Kortix token but fails validation → hard reject.
+    invalid: 'Invalid Kortix token',
+    extract: (c) => {
+      const authHeader = c.req.header('Authorization');
+      if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+      return authHeader?.startsWith('Token ') ? authHeader.slice(6) : undefined;
+    },
+  },
+  {
+    // Mode 1b: the Anthropic SDK sends the key via x-api-key; a Kortix token there
+    // is Mode 1 (Kortix-managed).
+    invalid: 'Invalid Kortix token in x-api-key',
+    extract: (c) => c.req.header('x-api-key'),
+  },
+  {
+    // Mode 1c: the Tavily SDK sends the key in the JSON body as "api_key". Check
+    // the body for a Kortix token so sandbox tools can auth through the proxy.
+    invalid: 'Invalid Kortix token in request body',
+    extract: async (c) => {
+      if (c.req.method !== 'POST') return undefined;
+      const bodyText = await c.req.raw.clone().text();
+      if (!bodyText || !bodyText.includes('kortix_')) return undefined;
+      return JSON.parse(bodyText)?.api_key;
+    },
+  },
+  {
+    // Mode 2: the user's own API key is in Authorization (Bearer) or a
+    // provider-specific header (e.g. Anthropic's x-api-key). The Kortix token
+    // rides in X-Kortix-Token so we can identify and authorize the account.
+    invalid: 'Invalid X-Kortix-Token',
+    passthrough: true,
+    extract: (c) => c.req.header('X-Kortix-Token'),
+  },
+];
+
 export async function tryAuthenticate(c: any): Promise<AuthResult> {
-  const authHeader = c.req.header('Authorization');
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+  if (!config.DATABASE_URL) return { isKortixUser: false };
 
-  // --- Mode 1: Kortix token directly in Authorization header ---
-  // The user sent kortix_ or kortix_sb_ as the Bearer token — full Kortix-managed flow.
-  // If it looks like a Kortix token but fails validation → hard reject.
-
-  if (bearerToken && isKortixToken(bearerToken) && config.DATABASE_URL) {
+  for (const source of KORTIX_TOKEN_SOURCES) {
+    let token: string | undefined;
     try {
-      const accountId = await resolveKortixAccount(bearerToken);
-      if (accountId) return { isKortixUser: true, accountId };
-    } catch {
-      // Fall through to reject below
-    }
-    // Looks like a Kortix token but didn't validate — reject.
-    // Never allow an invalid Kortix token to fall through to free passthrough.
-    throw new HTTPException(401, { message: 'Invalid Kortix token' });
-  }
-
-  // --- Mode 1a: Kortix token in Authorization: Token <token> (Replicate SDK) ---
-  // The Replicate SDK uses "Token " prefix instead of "Bearer ".
-  const tokenPrefixed = authHeader?.startsWith('Token ') ? authHeader.slice(6) : undefined;
-  if (tokenPrefixed && isKortixToken(tokenPrefixed) && config.DATABASE_URL) {
-    try {
-      const accountId = await resolveKortixAccount(tokenPrefixed);
-      if (accountId) return { isKortixUser: true, accountId };
-    } catch {
-      // Fall through to reject below
-    }
-    throw new HTTPException(401, { message: 'Invalid Kortix token' });
-  }
-
-  // --- Mode 1b: Kortix token in x-api-key header (Anthropic SDK) ---
-  // The Anthropic SDK sends the API key via x-api-key instead of Authorization.
-  // If the value is a Kortix token, treat it as Mode 1 (Kortix-managed).
-  const xApiKey = c.req.header('x-api-key');
-  if (xApiKey && isKortixToken(xApiKey) && config.DATABASE_URL) {
-    try {
-      const accountId = await resolveKortixAccount(xApiKey);
-      if (accountId) return { isKortixUser: true, accountId };
-    } catch {
-      // Fall through to reject below
-    }
-    throw new HTTPException(401, { message: 'Invalid Kortix token in x-api-key' });
-  }
-
-  // --- Mode 1c: Kortix token in JSON body field (Tavily SDK) ---
-  // The Tavily SDK sends the API key in the JSON body as "api_key" instead of a header.
-  // Check the body for a Kortix token so sandbox tools can auth through the proxy.
-  if (config.DATABASE_URL && c.req.method === 'POST') {
-    try {
-      const cloned = c.req.raw.clone();
-      const bodyText = await cloned.text();
-      if (bodyText && bodyText.includes('kortix_')) {
-        const json = JSON.parse(bodyText);
-        const bodyApiKey = json?.api_key;
-        if (bodyApiKey && isKortixToken(bodyApiKey)) {
-          const accountId = await resolveKortixAccount(bodyApiKey);
-          if (accountId) return { isKortixUser: true, accountId };
-          throw new HTTPException(401, { message: 'Invalid Kortix token in request body' });
-        }
-      }
+      const raw = await source.extract(c);
+      token = typeof raw === 'string' && isKortixToken(raw) ? raw : undefined;
     } catch (e) {
+      // A body that is not JSON carries no api_key: not this shape, try the next.
       if (e instanceof HTTPException) throw e;
-      // Body wasn't JSON or didn't contain api_key — continue
+      continue;
     }
+    if (!token) continue;
+
+    // A Kortix-shaped token resolves, or it hard-rejects below. Never allow an
+    // invalid Kortix token to fall through to free passthrough.
+    const accountId = await resolveKortixAccount(token).catch(() => null);
+    if (!accountId) throw new HTTPException(401, { message: source.invalid });
+
+    return source.passthrough
+      ? { isKortixUser: true, accountId, isPassthrough: true }
+      : { isKortixUser: true, accountId };
   }
 
-  // --- Mode 2: User's own key + Kortix token in X-Kortix-Token ---
-  // The user's own API key is in Authorization (Bearer) or a provider-specific
-  // header (e.g. Anthropic's x-api-key). The Kortix token rides in
-  // X-Kortix-Token so we can identify the account for platform-fee billing.
-  // If X-Kortix-Token looks like a Kortix token but fails → hard reject.
-
-  if (config.DATABASE_URL) {
-    const kortixTokenHeader = c.req.header('X-Kortix-Token');
-    if (kortixTokenHeader && isKortixToken(kortixTokenHeader)) {
-      try {
-        const accountId = await resolveKortixAccount(kortixTokenHeader);
-        if (accountId) return { isKortixUser: true, accountId, isPassthrough: true };
-      } catch {
-        // Fall through to reject below
-      }
-      throw new HTTPException(401, { message: 'Invalid X-Kortix-Token' });
-    }
-  }
-
-  // --- Mode 3: No Kortix token anywhere — pure passthrough, no billing ---
+  // Mode 3: no Kortix token anywhere — pure passthrough, no billing.
   return { isKortixUser: false };
 }
 
@@ -273,14 +259,19 @@ export async function reserveToolProxyCredits(
     throw new HTTPException(402, { message: creditReservation.error || 'Insufficient credits' });
   }
 
-  const actorReservedCents = await reserveActorCost(actor, creditReservation.cost, () =>
-    grantCredits(
-      accountId,
-      creditReservation.cost,
-      'tool_reservation_refund',
-      `Tool reservation refund after member cap: ${billingToolName}`,
-      false,
-    ),
+  const actorReservedCents = await reserveActorCost(
+    actor,
+    creditReservation.cost,
+    () =>
+      wallet.grant({
+        accountId,
+        amount: creditReservation.cost,
+        kind: 'tool_reservation_refund',
+        description: `Tool reservation refund after member cap: ${billingToolName}`,
+        expiring: false,
+        key: null,
+      }),
+    'PROXY',
   );
 
   return {
@@ -292,48 +283,11 @@ export async function reserveToolProxyCredits(
   };
 }
 
-async function reserveActorCost(
-  actor: ActorContext | null,
-  cost: number,
-  refundCredits: () => Promise<unknown>,
-): Promise<number> {
-  const cents = dollarsToCents(cost);
-  if (!actor || cents <= 0) return 0;
-
-  const reserved = await reserveActorSpend(actor.sandboxId, actor.userId, cents);
-  if (reserved.success) return reserved.reservedCents;
-
-  await refundCredits().catch((err) => {
-    console.error('[PROXY] Credit refund after member cap failure failed:', err);
-  });
-  const cap =
-    reserved.capCents === null ? 'configured' : `$${(reserved.capCents / 100).toFixed(2)} / cycle`;
-  throw new HTTPException(402, {
-    message: `Spending cap reached (${cap}). Ask the instance owner to raise or remove the cap.`,
-  });
-}
-
 export async function refundToolReservation(
   reservation: ToolCreditReservation | null,
   description: string,
 ): Promise<void> {
-  if (!reservation) return;
-  if (reservation.cost > 0) {
-    await grantCredits(
-      reservation.accountId,
-      reservation.cost,
-      'tool_reservation_refund',
-      description,
-      false,
-    );
-  }
-  if (reservation.actor && (reservation.actorReservedCents ?? 0) > 0) {
-    await refundActorSpend(
-      reservation.actor.sandboxId,
-      reservation.actor.userId,
-      reservation.actorReservedCents ?? 0,
-    );
-  }
+  await refundReservation(reservation, 'tool_reservation_refund', description);
 }
 
 export function injectApiKey(

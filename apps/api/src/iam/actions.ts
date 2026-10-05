@@ -54,6 +54,12 @@ export const ACCOUNT_ACTIONS = {
   TOKEN_READ: 'token.read',
   TOKEN_CREATE: 'token.create',
   TOKEN_REVOKE: 'token.revoke',
+  // A person's OWN personal access tokens. A PAT acts as the person who minted
+  // it, so these grant nothing beyond that person's own roles; every system
+  // account role holds them. `token.create` / `token.revoke` stay admin leaves
+  // for OAuth clients, service accounts, and other people's tokens.
+  TOKEN_PERSONAL_CREATE: 'token.personal.create',
+  TOKEN_PERSONAL_REVOKE: 'token.personal.revoke',
 
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
@@ -88,6 +94,7 @@ export const PROJECT_ACTIONS = {
 
   PROJECT_GATEWAY_LOGS_READ: 'project.gateway.logs.read',
   PROJECT_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
+  PROJECT_USAGE_READ: 'project.usage.read',
   PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
   PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
 
@@ -107,8 +114,14 @@ export const PROJECT_ACTIONS = {
   PROJECT_COMMAND_WRITE: 'project.command.write',
   PROJECT_FILE_READ: 'project.file.read',
   PROJECT_FILE_WRITE: 'project.file.write',
-  PROJECT_CUSTOMIZE_READ: 'project.customize.read',
-  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
+  // Project settings: name, description, icon, sandbox provider, feature
+  // flags, the connected repository.
+  PROJECT_SETTINGS_WRITE: 'project.settings.write',
+  // The project's sandbox environment: templates and snapshot rebuilds.
+  PROJECT_SANDBOX_WRITE: 'project.sandbox.write',
+  // Which models the project may use, its defaults, and gateway routing.
+  PROJECT_MODEL_READ: 'project.model.read',
+  PROJECT_MODEL_WRITE: 'project.model.write',
   PROJECT_GITOPS_READ: 'project.gitops.read',
   PROJECT_GITOPS_PUSH: 'project.gitops.push',
   PROJECT_GITOPS_MERGE: 'project.gitops.merge',
@@ -116,7 +129,7 @@ export const PROJECT_ACTIONS = {
   // scopes a SESSION credential to its own branch structurally — that binding
   // is the credential's identity, not a permission, and is never grantable.
   // These two leaves are what a principal needs to act OUTSIDE that lane, and
-  // they are what a role or a `kortix_cli` grant can hand to an agent
+  // they are what a role or a `kortix_permissions` grant can hand to an agent
   // deliberately. Absent = denied: unlike the rest of the agent-grant fold, the
   // git path treats a null grant as "principal defaults", never "unrestricted".
   // See git-proxy/ref-policy.ts.
@@ -171,7 +184,7 @@ const TRIGGER_ACTIONS = {
 // only ever asserts project-scoped actions), so granting or omitting them in
 // a custom role was a silent no-op. The two routes that needed a real
 // send-primitive gate (Slack file upload, meet/speak) were moved onto
-// project.connector.write instead — see r4.ts.
+// project.connector.write instead — see routes/channel-slack.ts.
 
 // ─── Aggregate type for all valid action strings ───────────────────────────
 

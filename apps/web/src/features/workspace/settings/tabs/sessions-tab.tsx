@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The Sessions tab — what a running session is allowed to do to get your
  * attention: sounds and browser notifications.
@@ -63,9 +64,88 @@ const SOUND_EVENTS: { id: SoundEvent; label: string; description: string }[] = [
 ];
 
 type NotificationPrefKey = Exclude<keyof WebNotificationPreferences, 'enabled'>;
+type NotificationTypeKey = 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission';
+type NotificationBehaviorKey = 'onlyWhenHidden' | 'playSound';
+
+interface LabelDescription {
+  label: string;
+  description: string;
+}
+
+export interface SessionsTabCopy {
+  notifications: string;
+  notificationsDescription: string;
+  unsupported: string;
+  enableNotifications: string;
+  permissionGranted: string;
+  permissionDenied: string;
+  permissionDefault: string;
+  notificationTypes: string;
+  behavior: string;
+  sendTestNotification: string;
+  notificationTypesCopy: Record<NotificationTypeKey, LabelDescription>;
+  notificationBehaviorCopy: Record<NotificationBehaviorKey, LabelDescription>;
+  sounds: string;
+  soundsDescription: string;
+  soundPacks: Record<SoundPack, LabelDescription>;
+  volume: string;
+  preview: string;
+  soundEvents: Record<SoundEvent, LabelDescription>;
+  testNotificationTitle: string;
+  testNotificationBody: string;
+}
+
+export const DEFAULT_SESSIONS_TAB_COPY: SessionsTabCopy = {
+  notifications: 'Browser notifications',
+  notificationsDescription: 'Browser notifications for what happens in your sessions.',
+  unsupported: 'Your browser does not support notifications.',
+  enableNotifications: 'Enable notifications',
+  permissionGranted: 'Browser permission granted',
+  permissionDenied: 'Blocked by browser — update in browser site settings',
+  permissionDefault: 'Will request browser permission when enabled',
+  notificationTypes: 'Notification types',
+  behavior: 'Behavior',
+  sendTestNotification: 'Send test notification',
+  notificationTypesCopy: {
+    onCompletion: { label: 'Task completions', description: 'When a session finishes its task' },
+    onError: { label: 'Errors', description: 'When a session encounters an error' },
+    onQuestion: { label: 'Questions', description: 'When Kortix needs your input to continue' },
+    onPermission: {
+      label: 'Permission requests',
+      description: 'When Kortix needs permission to use a tool',
+    },
+  },
+  notificationBehaviorCopy: {
+    onlyWhenHidden: {
+      label: 'Only when tab is hidden',
+      description: "Only notify when you're on another tab",
+    },
+    playSound: {
+      label: 'Notification sound',
+      description: 'Play a sound when a notification is sent',
+    },
+  },
+  sounds: 'Sounds',
+  soundsDescription: 'Sound pack played for session events.',
+  soundPacks: {
+    off: { label: 'Off', description: 'All sounds disabled' },
+    opencode: { label: 'Default', description: 'Default sound pack' },
+    kortix: { label: 'Seshion Pack', description: "Whistlin'" },
+  },
+  volume: 'Volume',
+  preview: 'Preview',
+  soundEvents: {
+    completion: { label: 'Task Completion', description: 'When AI finishes a task' },
+    error: { label: 'Error', description: 'When a session encounters an error' },
+    notification: { label: 'Notification', description: 'Questions and permission requests' },
+    send: { label: 'Message Sent', description: 'When you send a message' },
+  },
+  testNotificationTitle: 'Test Notification',
+  testNotificationBody: 'Notifications are working correctly!',
+};
 
 const NOTIFICATION_TYPE_TOGGLES: {
-  key: NotificationPrefKey;
+  key: NotificationTypeKey;
   icon: PhosphorIcon;
   label: string;
   description: string;
@@ -97,7 +177,7 @@ const NOTIFICATION_TYPE_TOGGLES: {
 ];
 
 const NOTIFICATION_BEHAVIOR_TOGGLES: {
-  key: NotificationPrefKey;
+  key: NotificationBehaviorKey;
   icon: PhosphorIcon;
   label: string;
   description: string;
@@ -146,6 +226,7 @@ export interface SessionsTabViewProps {
     value: WebNotificationPreferences[K],
   ) => void;
   onSendTestNotification?: () => void;
+  copy?: SessionsTabCopy;
 }
 
 /** Presentational only — no hooks, no store read. Every prop is optional with
@@ -164,6 +245,7 @@ export function SessionsTabView({
   onToggleNotificationsEnabled = () => {},
   onNotificationPreferenceChange = () => {},
   onSendTestNotification = () => {},
+  copy = DEFAULT_SESSIONS_TAB_COPY,
 }: SessionsTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -176,27 +258,25 @@ export function SessionsTabView({
           // "Browser notifications", not "Notifications": the pane itself is
           // called Notifications now, and a section repeating the pane's name
           // says nothing. Sounds is the other kind.
-          title="Browser notifications"
-          description="Browser notifications for what happens in your sessions."
+          title={copy.notifications}
+          description={copy.notificationsDescription}
         />
         {!notificationsSupported ? (
           <div className="rounded-md border p-4">
-            <p className="text-muted-foreground text-sm">
-              Your browser does not support notifications.
-            </p>
+            <p className="text-muted-foreground text-sm">{copy.unsupported}</p>
           </div>
         ) : (
           <div className="space-y-6">
             <div className="rounded-md border">
               <NotificationToggle
                 icon={BellSolid}
-                label="Enable notifications"
+                label={copy.enableNotifications}
                 description={
                   notificationPermission === 'granted'
-                    ? 'Browser permission granted'
+                    ? copy.permissionGranted
                     : notificationPermission === 'denied'
-                      ? 'Blocked by browser — update in browser site settings'
-                      : 'Will request browser permission when enabled'
+                      ? copy.permissionDenied
+                      : copy.permissionDefault
                 }
                 enabled={notificationPreferences.enabled}
                 onToggle={onToggleNotificationsEnabled}
@@ -208,15 +288,15 @@ export function SessionsTabView({
               <>
                 <div className="flex flex-col space-y-3">
                   <label className="text-muted-foreground text-sm font-medium">
-                    Notification types
+                    {copy.notificationTypes}
                   </label>
                   <div className="divide-y rounded-md border">
                     {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
                       <NotificationToggle
                         key={toggle.key}
                         icon={toggle.icon}
-                        label={toggle.label}
-                        description={toggle.description}
+                        label={copy.notificationTypesCopy[toggle.key].label}
+                        description={copy.notificationTypesCopy[toggle.key].description}
                         enabled={notificationPreferences[toggle.key] as boolean}
                         onToggle={(v) => onNotificationPreferenceChange(toggle.key, v)}
                         idPrefix="pref-notif-"
@@ -226,14 +306,16 @@ export function SessionsTabView({
                 </div>
 
                 <div className="flex flex-col space-y-3">
-                  <label className="text-muted-foreground text-sm font-medium">Behavior</label>
+                  <label className="text-muted-foreground text-sm font-medium">
+                    {copy.behavior}
+                  </label>
                   <div className="divide-y rounded-md border">
                     {NOTIFICATION_BEHAVIOR_TOGGLES.map((toggle) => (
                       <NotificationToggle
                         key={toggle.key}
                         icon={toggle.icon}
-                        label={toggle.label}
-                        description={toggle.description}
+                        label={copy.notificationBehaviorCopy[toggle.key].label}
+                        description={copy.notificationBehaviorCopy[toggle.key].description}
                         enabled={notificationPreferences[toggle.key] as boolean}
                         onToggle={(v) => onNotificationPreferenceChange(toggle.key, v)}
                         idPrefix="pref-notif-"
@@ -243,7 +325,7 @@ export function SessionsTabView({
                 </div>
 
                 <Button onClick={onSendTestNotification} variant="outline" size="sm">
-                  Send test notification
+                  {copy.sendTestNotification}
                 </Button>
               </>
             )}
@@ -255,10 +337,7 @@ export function SessionsTabView({
 
       {/* Sounds */}
       <section className="space-y-3">
-        <SettingsSubsectionHeader
-          title="Sounds"
-          description="Sound pack played for session events."
-        />
+        <SettingsSubsectionHeader title={copy.sounds} description={copy.soundsDescription} />
         <RadioGroup
           value={soundPack}
           onValueChange={(value) => onSoundPackChange(value as SoundPack)}
@@ -271,8 +350,8 @@ export function SessionsTabView({
               key={pack.id}
               value={pack.id}
               id={`pref-sound-pack-${pack.id}`}
-              label={pack.label}
-              description={pack.description}
+              label={copy.soundPacks[pack.id].label}
+              description={copy.soundPacks[pack.id].description}
             />
           ))}
         </RadioGroup>
@@ -285,7 +364,7 @@ export function SessionsTabView({
                 min={0}
                 max={100}
                 value={[Math.round(soundVolume * 100)]}
-                thumbLabel="Volume"
+                thumbLabel={copy.volume}
                 formatValue={(value) => `${value}%`}
                 onValueChange={(value) => onSoundVolumeChange(value[0] / 100)}
               />
@@ -301,12 +380,14 @@ export function SessionsTabView({
                   <Field key={event.id} orientation="horizontal" className="group px-3.5 py-2.5">
                     <FieldContent className="gap-0">
                       <FieldTitle>
-                        <label htmlFor={`pref-sound-event-${event.id}`}>{event.label}</label>
+                        <label htmlFor={`pref-sound-event-${event.id}`}>
+                          {copy.soundEvents[event.id].label}
+                        </label>
                       </FieldTitle>
-                      <FieldDescription>{event.description}</FieldDescription>
+                      <FieldDescription>{copy.soundEvents[event.id].description}</FieldDescription>
                     </FieldContent>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Hint label="Preview">
+                      <Hint label={copy.preview}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -336,6 +417,85 @@ export function SessionsTabView({
 /** Container: owns every store hook and renders `SessionsTabView`. Only ever
  *  mounted while this tab is active. */
 export function SessionsTab() {
+  const t = useTranslations('settings.sessions');
+  const copy: SessionsTabCopy = {
+    notifications: t('notifications'),
+    notificationsDescription: t('notificationsDescription'),
+    unsupported: t('unsupported'),
+    enableNotifications: t('enableNotifications'),
+    permissionGranted: t('permissionGranted'),
+    permissionDenied: t('permissionDenied'),
+    permissionDefault: t('permissionDefault'),
+    notificationTypes: t('notificationTypes'),
+    behavior: t('behavior'),
+    sendTestNotification: t('sendTestNotification'),
+    notificationTypesCopy: {
+      onCompletion: {
+        label: t('types.onCompletion.label'),
+        description: t('types.onCompletion.description'),
+      },
+      onError: {
+        label: t('types.onError.label'),
+        description: t('types.onError.description'),
+      },
+      onQuestion: {
+        label: t('types.onQuestion.label'),
+        description: t('types.onQuestion.description'),
+      },
+      onPermission: {
+        label: t('types.onPermission.label'),
+        description: t('types.onPermission.description'),
+      },
+    },
+    notificationBehaviorCopy: {
+      onlyWhenHidden: {
+        label: t('notificationBehavior.onlyWhenHidden.label'),
+        description: t('notificationBehavior.onlyWhenHidden.description'),
+      },
+      playSound: {
+        label: t('notificationBehavior.playSound.label'),
+        description: t('notificationBehavior.playSound.description'),
+      },
+    },
+    sounds: t('sounds'),
+    soundsDescription: t('soundsDescription'),
+    soundPacks: {
+      off: {
+        label: t('soundPacks.off.label'),
+        description: t('soundPacks.off.description'),
+      },
+      opencode: {
+        label: t('soundPacks.opencode.label'),
+        description: t('soundPacks.opencode.description'),
+      },
+      kortix: {
+        label: t('soundPacks.kortix.label'),
+        description: t('soundPacks.kortix.description'),
+      },
+    },
+    volume: t('volume'),
+    preview: t('preview'),
+    soundEvents: {
+      completion: {
+        label: t('soundEvents.completion.label'),
+        description: t('soundEvents.completion.description'),
+      },
+      error: {
+        label: t('soundEvents.error.label'),
+        description: t('soundEvents.error.description'),
+      },
+      notification: {
+        label: t('soundEvents.notification.label'),
+        description: t('soundEvents.notification.description'),
+      },
+      send: {
+        label: t('soundEvents.send.label'),
+        description: t('soundEvents.send.description'),
+      },
+    },
+    testNotificationTitle: t('testNotificationTitle'),
+    testNotificationBody: t('testNotificationBody'),
+  };
   const soundPreferences = useSoundStore((s) => s.preferences);
   const setSoundPack = useSoundStore((s) => s.setPack);
   const setSoundVolume = useSoundStore((s) => s.setVolume);
@@ -354,8 +514,8 @@ export function SessionsTab() {
     sendWebNotification(
       {
         type: 'completion',
-        title: 'Test Notification',
-        body: 'Notifications are working correctly!',
+        title: copy.testNotificationTitle,
+        body: copy.testNotificationBody,
         tag: 'test',
       },
       true,
@@ -377,6 +537,7 @@ export function SessionsTab() {
       onToggleNotificationsEnabled={() => void toggleNotificationsEnabled()}
       onNotificationPreferenceChange={setNotificationPreference}
       onSendTestNotification={handleSendTestNotification}
+      copy={copy}
     />
   );
 }

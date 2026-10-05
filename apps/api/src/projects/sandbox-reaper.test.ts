@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
@@ -8,10 +8,18 @@ import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
 let appRuntimeKeepRows: any[] = [];
+let environmentKeepRows: any[] = [];
+let monitorKeepRows: any[] = [];
+let freshReference = async (_provider: string, _externalId: string): Promise<boolean> => false;
+mock.module('./reaping/orphan-box-references', () => ({
+  hasProviderBoxReference: (provider: string, externalId: string) => freshReference(provider, externalId),
+}));
 // `terminal` is a real provider answer (Daytona `error`, Platinum `failed`), so
 // the fixture has to be able to express it — see decideReconcile.
-let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'terminal' | 'unknown'> =
-  {};
+let statusByExternal: Record<
+  string,
+  'running' | 'stopped' | 'removed' | 'terminal' | 'unknown'
+> = {};
 let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
 let stopsByProvider: Array<{ provider: string; externalId: string }> = [];
@@ -67,6 +75,7 @@ let unconfirmedTurnDrips: string[] = [];
 // on its own, without every existing exact-equality assertion having to carry
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
+let clearedTurnCauses: Array<string | null> = [];
 let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
   sandboxId: string;
@@ -74,8 +83,10 @@ let huskFinalizeCalls: Array<{
   opencodeSessionId: string;
   messageId: string | null;
 }> = [];
-let huskOutcomeBySandbox: Record<string, 'finalized' | 'not_husk' | 'unreadable' | 'unconfirmed'> =
-  {};
+let huskOutcomeBySandbox: Record<
+  string,
+  'finalized' | 'not_husk' | 'unreadable' | 'unconfirmed'
+> = {};
 /** Records husk-finalize and turn-clear calls in the order the pass makes them,
  *  so a test can assert the husk is closed BEFORE its record is deleted. */
 let lifecycleCallOrder: string[] = [];
@@ -106,7 +117,7 @@ function applyOrder(rows: any[], now: Date = NOW): any[] {
 }
 
 function hasTurnAuthority(row: any): boolean {
-  const states = [row.metadata?.activeTurn?.state];
+  const states: unknown[] = [];
   const activeTurns = row.metadata?.activeTurns;
   if (activeTurns && typeof activeTurns === 'object' && !Array.isArray(activeTurns)) {
     states.push(...Object.values(activeTurns).map((turn: any) => turn?.state));
@@ -238,7 +249,7 @@ mock.module('../shared/db', () => ({
             const predicateText = describeSql(predicate);
             const boundValues = new Set(sqlValues(predicate));
             const selectsWithoutTurnAuthority =
-              predicateText.includes('activeTurn') && /\band\s+not\s*\(/i.test(predicateText);
+              predicateText.includes('activeTurn') && /and\s+not\s+exists\s*\(/i.test(predicateText);
             const selectedSandboxRows = candidates
               .filter((row) =>
                 !predicateText.includes('activeTurn')
@@ -257,6 +268,10 @@ mock.module('../shared/db', () => ({
                 ? selectedSandboxRows
                 : table === appRuntimes
                   ? appRuntimeKeepRows
+                  : table === sessionEnvironments
+                    ? environmentKeepRows
+                    : table === projectMonitorBoxes
+                      ? monitorKeepRows
                   : table === sandboxComputeSessions
                     ? computeRows
                     : table === projectSessions
@@ -379,101 +394,102 @@ const reapAndReconcileSandboxes = (
   now?: Date,
   scope?: { sandboxIds?: readonly string[]; activeTurnsOnly?: boolean },
 ) =>
-  sandboxReaper.reapAndReconcileSandboxes(
-    now,
-    {
-      renewActiveSandboxTurn: async (sandboxId: string, token: string) => {
-        activeTurnRenewalCalls.push({ sandboxId, token });
-        return activeTurnRenewalBySandbox[sandboxId] ?? 'inactive';
-      },
-      observeSandboxTurn: async (
-        _provider: unknown,
-        _externalId: string,
-        sandboxId?: string,
-        turn?: { token?: string },
-      ) => {
-        turnObservationCalls.push({ sandboxId: sandboxId ?? '', token: turn?.token ?? '' });
-        return {
-          observation:
-            (turn?.token ? turnObservationByToken[turn.token] : undefined) ??
-            deliveringTurnObservationBySandbox[sandboxId ?? ''] ??
-            'unknown',
-          endReason: daemonTurnEndBySandbox[sandboxId ?? ''] ?? null,
-          // The daemon answering AT ALL is a separate fact from what it said. The
-          // default is true because the ordinary unreadable answer is a 200 from
-          // an agent build that omits the turn fields; a daemon that answers
-          // nothing is the explicit case each test opts into.
-          daemonAnswered: daemonAnsweredByToken[turn?.token ?? ''] ?? true,
-          orphanedPrompt: orphanedPromptByToken[turn?.token ?? ''] ?? false,
-        };
-      },
-      reconcileSandboxTurnDelivery: async (
-        sandboxId: string,
-        token: string,
-        observation: 'active' | 'terminal' | 'unknown',
-        reason?: string,
-      ) => {
-        deliveringTurnRecoveryCalls.push({ sandboxId, token, observation, reason });
-        return observation === 'active'
-          ? 'active'
-          : observation === 'terminal'
-            ? 'inactive'
-            : 'deferred';
-      },
-      clearSandboxTurn: async (
-        sandboxId: string,
-        token: string,
-        _graceMs?: number,
-        reason?: string,
-      ) => {
-        clearedTurnCalls.push({
-          sandboxId,
-          token,
-        });
-        clearedTurnReasons.push(reason);
-        lifecycleCallOrder.push(`clear:${token}`);
-        return true;
-      },
-      finalizeHuskTurn: async (target: {
-        sandboxId: string;
-        externalId: string;
-        opencodeSessionId: string;
-        messageId: string | null;
-      }) => {
-        huskFinalizeCalls.push(target);
-        lifecycleCallOrder.push(`husk:${target.opencodeSessionId}`);
-        return huskOutcomeBySandbox[target.sandboxId] ?? 'not_husk';
-      },
-      extendUnconfirmedTurnDeadline: async (sandboxId: string) => {
-        unconfirmedTurnDrips.push(sandboxId);
-        return true;
-      },
-      requeueAbandonedPrompt: async (input: {
-        sessionId: string;
-        wireMessageId: string | null;
-        turnToken: string;
-        endReason: string;
-      }) => {
-        promptRedeliveries.push(input);
-        return 'requeued';
-      },
-      promoteNextInboxRow: async (sessionId: string) => {
-        promotedQueueSessions.push(sessionId);
-        return `prompt:${sessionId}`;
-      },
-      drainSessionLifecycleQueue: async (input: { idempotencyKey?: string }) => {
-        if (input.idempotencyKey) targetedQueueDrains.push(input.idempotencyKey);
-        return { claimed: 1, completed: 1, failed: 0 };
-      },
+  sandboxReaper.reapAndReconcileSandboxes(now, {
+    renewActiveSandboxTurn: async (sandboxId: string, token: string) => {
+      activeTurnRenewalCalls.push({ sandboxId, token });
+      return activeTurnRenewalBySandbox[sandboxId] ?? 'inactive';
     },
-    scope,
-  );
+    observeSandboxTurn: async (
+      _provider: unknown,
+      _externalId: string,
+      sandboxId?: string,
+      turn?: { token?: string },
+    ) => {
+      turnObservationCalls.push({ sandboxId: sandboxId ?? '', token: turn?.token ?? '' });
+      return {
+        observation:
+          (turn?.token ? turnObservationByToken[turn.token] : undefined) ??
+          deliveringTurnObservationBySandbox[sandboxId ?? ''] ??
+          'unknown',
+        endReason: daemonTurnEndBySandbox[sandboxId ?? ''] ?? null,
+        // The daemon answering AT ALL is a separate fact from what it said. The
+        // default is true because the ordinary unreadable answer is a 200 from
+        // an agent build that omits the turn fields; a daemon that answers
+        // nothing is the explicit case each test opts into.
+        daemonAnswered: daemonAnsweredByToken[turn?.token ?? ''] ?? true,
+        orphanedPrompt: orphanedPromptByToken[turn?.token ?? ''] ?? false,
+      };
+    },
+    reconcileSandboxTurnDelivery: async (
+      sandboxId: string,
+      token: string,
+      observation: 'active' | 'terminal' | 'unknown',
+      reason?: string,
+    ) => {
+      deliveringTurnRecoveryCalls.push({ sandboxId, token, observation, reason });
+      return observation === 'active'
+        ? 'active'
+        : observation === 'terminal'
+          ? 'inactive'
+          : 'deferred';
+    },
+    clearSandboxTurn: async (
+      sandboxId: string,
+      token: string,
+      _graceMs?: number,
+      reason?: string,
+      cause?: { name: string | null } | null,
+    ) => {
+      clearedTurnCalls.push({
+        sandboxId,
+        token,
+      });
+      clearedTurnReasons.push(reason);
+      clearedTurnCauses.push(cause?.name ?? null);
+      lifecycleCallOrder.push(`clear:${token}`);
+      return true;
+    },
+    finalizeHuskTurn: async (target: {
+      sandboxId: string;
+      externalId: string;
+      opencodeSessionId: string;
+      messageId: string | null;
+    }) => {
+      huskFinalizeCalls.push(target);
+      lifecycleCallOrder.push(`husk:${target.opencodeSessionId}`);
+      return huskOutcomeBySandbox[target.sandboxId] ?? 'not_husk';
+    },
+    extendUnconfirmedTurnDeadline: async (sandboxId: string) => {
+      unconfirmedTurnDrips.push(sandboxId);
+      return true;
+    },
+    requeueAbandonedPrompt: async (input: {
+      sessionId: string;
+      wireMessageId: string | null;
+      turnToken: string;
+      endReason: string;
+    }) => {
+      promptRedeliveries.push(input);
+      return 'requeued';
+    },
+    promoteNextInboxRow: async (sessionId: string) => {
+      promotedQueueSessions.push(sessionId);
+      return `prompt:${sessionId}`;
+    },
+    drainSessionLifecycleQueue: async (input: { idempotencyKey?: string }) => {
+      if (input.idempotencyKey) targetedQueueDrains.push(input.idempotencyKey);
+      return { claimed: 1, completed: 1, failed: 0 };
+    },
+  }, scope);
 
 const HOUR = 3_600_000;
 
 beforeEach(() => {
   candidates = [];
   appRuntimeKeepRows = [];
+  environmentKeepRows = [];
+  monitorKeepRows = [];
+  freshReference = async () => false;
   statusByExternal = {};
   stopErrorByExternal = {};
   stops = [];
@@ -504,6 +520,7 @@ beforeEach(() => {
   clearedTurnCalls = [];
   promptRedeliveries = [];
   clearedTurnReasons = [];
+  clearedTurnCauses = [];
   unconfirmedTurnDrips = [];
   __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
@@ -564,7 +581,7 @@ describe('provider-neutral turn observation', () => {
         },
         'ext-1',
         'sb-1',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       );
 
       expect(observation).toEqual({
@@ -605,7 +622,7 @@ describe('provider-neutral turn observation', () => {
   // The reaper's drip may keep a box alive on the first and must never keep one
   // alive on the second, so the reading has to tell them apart. A build that
   // predates the turn fields answers 200 without them
-  // (apps/kortix-sandbox-agent-server/src/routes/health.ts adds them only when
+  // (apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts adds them only when
   // it can observe the turn) — the runtime is UP and only its account of the
   // turn is missing. Nothing coming back is the opposite fact.
   test('a 200 without the turn fields is unknown, but the daemon ANSWERED', async () => {
@@ -613,9 +630,7 @@ describe('provider-neutral turn observation', () => {
     try {
       expect(
         await observeSandboxTurn(
-          {
-            resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }),
-          },
+          { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
         ),
       ).toEqual({
@@ -630,16 +645,11 @@ describe('provider-neutral turn observation', () => {
   });
 
   test('a non-2xx is the proxy refusing, not the daemon answering', async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: () => new Response('bad gateway', { status: 502 }),
-    });
+    const server = Bun.serve({ port: 0, fetch: () => new Response('bad gateway', { status: 502 }) });
     try {
       expect(
         await observeSandboxTurn(
-          {
-            resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }),
-          },
+          { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
         ),
       ).toEqual({
@@ -664,12 +674,10 @@ describe('provider-neutral turn observation', () => {
     try {
       expect(
         await observeSandboxTurn(
-          {
-            resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }),
-          },
+          { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
           'sb-1',
-          { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+          { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
         ),
       ).toEqual({
         observation: 'terminal',
@@ -689,9 +697,7 @@ describe('provider-neutral turn observation', () => {
     try {
       expect(
         await observeSandboxTurn(
-          {
-            resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }),
-          },
+          { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
         ),
       ).toEqual({
@@ -715,9 +721,7 @@ describe('provider-neutral turn observation', () => {
     try {
       expect(
         await observeSandboxTurn(
-          {
-            resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }),
-          },
+          { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
         ),
       ).toEqual({
@@ -870,11 +874,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'turn-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'turn-token': {
+              token: 'turn-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -935,11 +941,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -968,11 +976,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -998,11 +1008,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + 60_000),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1018,6 +1030,194 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ]);
     expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'delivery-token' }]);
     expect(unconfirmedTurnDrips).toEqual([]);
+    expect(r.stopped).toBe(0);
+  });
+
+  test('a turn record past the absolute ceiling is settled, never probed and never renewed', async () => {
+    // PROD 2026-09-09: 44 open turn records on `active` boxes, 42 of them older
+    // than 24 h and the oldest 20 DAYS. The daemon on those boxes answers every
+    // probe `active`, so `renewActiveSandboxTurn` re-granted four more hours on
+    // every pass and the box became immortal — while its audit relay produced
+    // ~13k contended-ingest 503s an hour. Age is the one bound the box cannot
+    // author.
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'wedged-token': {
+              token: 'wedged-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 20 * 24 * HOUR,
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    // The daemon still insists the turn is live; that must no longer matter.
+    turnObservationByToken['wedged-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'wedged-token' }]);
+    expect(clearedTurnReasons).toEqual(['unknown']);
+    // Settled BEFORE the probe: nothing asked the box, and nothing renewed it.
+    expect(turnObservationCalls).toEqual([]);
+    expect(activeTurnRenewalCalls).toEqual([]);
+    expect(unconfirmedTurnDrips).toEqual([]);
+    expect(r.turnsSettled).toBe(1);
+    // The prompt behind a turn wedged for weeks is NOT re-run by a sweep.
+    expect(promptRedeliveries).toEqual([]);
+  });
+
+  // 2026-09-29 incident: an env-driven OpenCode respawn SIGTERMed the process
+  // 200ms after the API accepted a turn — before `relayTurnBeginToApi` ever
+  // ran, so the record's `messageId` stayed null forever. `GET .../turn`
+  // showed `state: "active"` for HOURS; only `kortix sessions stop` cleared
+  // it. `observeSandboxTurn` cannot see this as terminal: with no `messageId`
+  // to scope the daemon's probe, the daemon's own oracle reads the orphaned
+  // (but still OPEN) assistant message as "in flight" even though
+  // `/session/status` is idle — so `turnObservationByToken` reporting
+  // 'active' here is the REALISTIC daemon answer, not a test artifact.
+  test('a turn with NO messageId past its ceiling is settled by age+identity alone, even while the daemon insists it is active', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'orphaned-token': {
+              token: 'orphaned-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+              startedAtMs: NOW.getTime() - 31 * 60_000, // 31 min — past the 30 min default
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    // The daemon insists the (husk-shaped) root is still in flight — see the
+    // comment above. That must no longer matter: this ceiling settles on age
+    // and missing identity alone.
+    turnObservationByToken['orphaned-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'orphaned-token' }]);
+    expect(clearedTurnReasons).toEqual(['runtime_gone']);
+    // Settled BEFORE the probe, same as the absolute ceiling above.
+    expect(turnObservationCalls).toEqual([]);
+    expect(activeTurnRenewalCalls).toEqual([]);
+    expect(r.turnsSettled).toBe(1);
+    // No `messageId` to redeliver by — `redeliverAbandonedPrompt` no-ops.
+    expect(promptRedeliveries).toEqual([]);
+    // The queued NEXT prompt (a trigger's queued continue_session) drains.
+    expect(promotedQueueSessions).toEqual(['sess-1']);
+  });
+
+  test('a turn with no messageId INSIDE its ceiling is left alone for observation to settle normally', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'young-orphan-token': {
+              token: 'young-orphan-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+              startedAtMs: NOW.getTime() - 5_000, // 5s — a turn_begin relay is still due
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['young-orphan-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([]);
+    expect(r.turnsSettled).toBe(0);
+    expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'young-orphan-token' }]);
+  });
+
+  test('a `delivering` turn with no messageId past the no-begin-relay ceiling is NOT settled by this path', async () => {
+    // Scoped to `state === 'active'` only — a `delivering` record already has
+    // its own, much shorter delivery-grace handling (turnDeliveryGraceMs).
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 60_000),
+        metadata: {
+          activeTurns: {
+            'delivering-token': {
+              token: 'delivering-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+              startedAtMs: NOW.getTime() - 31 * 60_000,
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['delivering-token'] = 'terminal';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    // Not settled by the new ceiling; the existing delivering-state path (its
+    // own grace already long expired at 31 min) reconciles it instead.
+    expect(clearedTurnReasons).not.toEqual(['runtime_gone']);
+  });
+
+  test('a turn inside the ceiling keeps its box, and a record with no start instant is exempt', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'young-token': {
+              token: 'young-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              // 23h — under the 24h ceiling, and far past the 4h grant, so this
+              // is exactly the long turn the grant exists to keep alive.
+              startedAtMs: NOW.getTime() - 23 * HOUR,
+            },
+            // No `startedAtMs`: it can prove no age, so the ceiling cannot
+            // apply to it. Inventing an anchor would expire live work.
+            'ageless-token': {
+              token: 'ageless-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_2',
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['young-token'] = 'active';
+    turnObservationByToken['ageless-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([]);
+    expect(r.turnsSettled).toBe(0);
+    expect(turnObservationCalls.map((call) => call.token).sort()).toEqual([
+      'ageless-token',
+      'young-token',
+    ]);
     expect(r.stopped).toBe(0);
   });
 
@@ -1099,11 +1299,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1125,11 +1327,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1161,11 +1365,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1189,11 +1395,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1212,11 +1420,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1246,14 +1456,16 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
-            // Past ORPHANED_PROMPT_MIN_AGE_MS — see the sibling test below for
-            // why a record this young is not orphaned yet.
-            startedAtMs: NOW.getTime() - 120_000,
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              // Past ORPHANED_PROMPT_MIN_AGE_MS — see the sibling test below for
+              // why a record this young is not orphaned yet.
+              startedAtMs: NOW.getTime() - 120_000,
+            },
           },
         },
       }),
@@ -1280,8 +1492,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
-    // EXPECTATION CHANGED 2026-08-20 (live incident, Essentia session
-    // d1b74954): this used to CLEAR the record while skipping the redelivery.
+    // EXPECTATION CHANGED 2026-08-20 (live incident, a SampleCo
+    // session): this used to CLEAR the record while skipping the redelivery.
     // Clearing deletes the record — the only thing that can ever trigger the
     // redelivery — so a terminal observation landing inside the age floor was
     // a one-shot race that swallowed the prompt for good (cleared `unknown` at
@@ -1292,12 +1504,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
-            startedAtMs: NOW.getTime() - 2_000,
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 2_000,
+            },
           },
         },
       }),
@@ -1321,11 +1535,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1346,11 +1562,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: null,
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+            },
           },
         },
       }),
@@ -1368,11 +1586,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1425,11 +1645,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1676,6 +1898,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
     expect(clearedTurnReasons).toEqual(['completed']);
+    expect(clearedTurnCauses).toEqual([null]);
   });
 
   test('a turn the model killed is recorded failed, exactly as the session.error relay records it', async () => {
@@ -1690,6 +1913,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     await reapAndReconcileSandboxes(NOW);
 
     expect(clearedTurnReasons).toEqual(['failed']);
+    // Its own end frame never arrived, so the reaper says what it saw.
+    expect(clearedTurnCauses).toEqual(['RuntimeTurnFailed']);
   });
 
   test('a husk the reaper had to force-close is failed, never completed', async () => {
@@ -1704,6 +1929,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(r.husksFinalized).toBe(1);
     expect(clearedTurnReasons).toEqual(['failed']);
+    expect(clearedTurnCauses).toEqual(['TurnHuskFinalized']);
   });
 
   test('a terminal answer no observer can explain is recorded unknown', async () => {
@@ -1781,17 +2007,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE SILENT RENEWAL STARVATION THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a): `deadlineGrant` stayed
+  // Incident 2026-08-17T20:40:03Z (a prod session): `deadlineGrant` stayed
   // `boot_floor` for the box's whole life. The daemon on that warm snapshot
   // answered the turn probe with nothing readable, so `observeSandboxTurn`
   // never returned `active`, `renewActiveSandboxTurn` never ran, and the box
   // reached its 15-minute resume floor mid-turn. A provider-RUNNING box holding
   // a RECENT control-plane-minted turn record is far more likely mid-turn with
   // a mute daemon than abandoned, so it gets a bounded drip instead of silence.
-  const unknownTurnCandidate = (
-    startedAtMs: number | null,
-    deadlineAt = new Date(NOW.getTime() + 60_000),
-  ) =>
+  const unknownTurnCandidate = (startedAtMs: number | null, deadlineAt = new Date(NOW.getTime() + 60_000)) =>
     candidate({
       deadlineAt,
       metadata: {
@@ -1823,7 +2046,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE PROBE ITSELF WAS THE LOAD ═══
-  // Essentia 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // SampleCo 2026-08-25 (one session): two API replicas re-asked one box
   // 345 times in an hour after `unknown`; every ask made OpenCode serialise
   // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
   // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
@@ -1856,6 +2079,24 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(turnObservationCalls).toHaveLength(4);
     await reapAndReconcileSandboxes(new Date(NOW.getTime() + 201_000));
     expect(turnObservationCalls).toHaveLength(5);
+  });
+
+  test('an unreadable turn warns once per episode, not on every renewal tick', async () => {
+    candidates = [unknownTurnCandidate(NOW.getTime() - 10 * 60_000)];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['mute-token'] = 'unknown';
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message: string) => { warnings.push(message); };
+    try {
+      await reapAndReconcileSandboxes(NOW);
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 10_000));
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 25_000));
+      expect(unconfirmedTurnDrips).toEqual(['sb-1', 'sb-1', 'sb-1']);
+      expect(warnings.filter((message) => message.includes('turn observation unknown; drip-extending'))).toHaveLength(1);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══
@@ -2123,7 +2364,9 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // Once the deadline has passed with nothing but unknown evidence, the
     // existing path clears the record and parks the box. The drip is a
     // PRE-expiry extension, not a way back from one.
-    candidates = [unknownTurnCandidate(NOW.getTime() - 60_000, new Date(NOW.getTime() - 1))];
+    candidates = [
+      unknownTurnCandidate(NOW.getTime() - 60_000, new Date(NOW.getTime() - 1)),
+    ];
     statusByExternal['ext-1'] = 'running';
     turnObservationByToken['mute-token'] = 'unknown';
 
@@ -2178,7 +2421,9 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect((await reapAndReconcileSandboxes(NOW)).stopped).toBe(1);
 
-    const stopSettles = ledgerSettleStatements.filter((statement) => statement.includes('sb-1'));
+    const stopSettles = ledgerSettleStatements.filter((statement) =>
+      statement.includes('sb-1'),
+    );
     expect(stopSettles).toHaveLength(1);
     expect(stopSettles[0]).toContain('UPDATE kortix.session_turns');
     expect(stopSettles[0]).toContain('runtime_gone');
@@ -2195,7 +2440,9 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     await reapAndReconcileSandboxes(NOW);
 
     // Runs even with nothing to reap — that is exactly when orphans linger.
-    const backstop = ledgerSettleStatements.find((statement) => statement.includes('NOT EXISTS'));
+    const backstop = ledgerSettleStatements.find((statement) =>
+      statement.includes('NOT EXISTS'),
+    );
     expect(backstop).toContain('UPDATE kortix.session_turns');
     expect(backstop).toContain("state <> 'ended'");
     expect(backstop).toContain('runtime_gone');
@@ -2245,11 +2492,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'newer-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_newer',
+          activeTurns: {
+            'newer-token': {
+              token: 'newer-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_newer',
+            },
           },
         },
       }),
@@ -2314,6 +2563,74 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.stopped).toBe(0);
     expect(stops).toEqual([]);
     expect(pausedCompute).toEqual([]);
+  });
+
+  test('a Daytona org throttle during renewal is transient, never an error line', async () => {
+    candidates = [candidate({ provider: 'daytona', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    const throttled = new Error('DaytonaRateLimitError: ThrottlerException: Too Many Requests');
+    throttled.name = 'DaytonaRateLimitError';
+    lifecycleRenewErrorByExternal['ext-1'] = throttled;
+
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => {
+      logged.push(String(args[0]));
+    };
+    let r: Awaited<ReturnType<typeof reapAndReconcileSandboxes>>;
+    try {
+      r = await reapAndReconcileSandboxes(NOW);
+    } finally {
+      console.error = realError;
+    }
+
+    expect(r.transient).toBe(1);
+    expect(r.errors).toBe(0);
+    expect(r.stopped).toBe(0);
+    expect(stops).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+    expect(logged.filter((line) => line.includes('[reaper] failed for sandbox'))).toEqual([]);
+  });
+
+  test('a Platinum org write throttle during renewal is transient, not a reaper error', async () => {
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new Error(
+      'platinum POST /v1/sandboxes/sbx_synthetic/exec -> 429 {"code":"rate_limited","error":"too many write requests for this org"}',
+    );
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const result = await reapAndReconcileSandboxes(NOW);
+      expect(result.transient).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.stopped).toBe(0);
+      expect(logged).toEqual([]);
+    } finally {
+      console.error = realError;
+    }
+  });
+
+  test('an unreachable Platinum guest during renewal retries without paging each pass', async () => {
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new Error(
+      'Platinum lifecycle renewal failed for ext-1: exit unknown: guest vsock unreachable after 5s: EOF',
+    );
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const result = await reapAndReconcileSandboxes(NOW);
+      expect(result.transient).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.stopped).toBe(0);
+      expect(stops).toEqual([]);
+      expect(logged).toEqual([]);
+    } finally {
+      console.error = realError;
+    }
   });
 
   test('the deadline is the WHOLE decision — the box is never consulted', async () => {
@@ -2472,7 +2789,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): one
+  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): one
   // provider read of `stopped` durably parked a box that was running a turn,
   // `stopReason: provider_reconcile`, and Daytona's own autoStopInterval was 720
   // — the provider never stopped it. `stopping` and `pending_stop` both map to
@@ -2512,7 +2829,9 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ).toBe(false);
     // The observation is RECORDED, so the next pass can confirm it.
     expect(
-      rowUpdates().some((c) => describeSql(c.updates.metadata).includes('pendingStopObservedAtMs')),
+      rowUpdates().some((c) =>
+        describeSql(c.updates.metadata).includes('pendingStopObservedAtMs'),
+      ),
     ).toBe(true);
   });
 
@@ -2522,7 +2841,9 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // parked a healthy box mid-turn on 2026-08-21 — so a genuine park takes a
     // few passes instead of one. Same behaviour, later: the marker must be
     // older than MIDTURN_STOP_CONFIRMATION_MS, not merely older than a pass.
-    candidates = [midTurnCandidate({}, { pendingStopObservedAtMs: NOW.getTime() - 90_000 })];
+    candidates = [
+      midTurnCandidate({}, { pendingStopObservedAtMs: NOW.getTime() - 90_000 }),
+    ];
     statusByExternal['ext-1'] = 'stopped';
 
     const r = await reapAndReconcileSandboxes(NOW);
@@ -2560,18 +2881,17 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(pausedCompute).toEqual([]);
     // The suspicion is kept, not discarded: a genuine stop still parks later.
     expect(
-      rowUpdates().some((c) => describeSql(c.updates.metadata).includes('pendingStopObservedAtMs')),
+      rowUpdates().some((c) =>
+        describeSql(c.updates.metadata).includes('pendingStopObservedAtMs'),
+      ),
     ).toBe(true);
   });
 
   test('a running read between the two clears the pending marker', async () => {
     candidates = [
-      midTurnCandidate(
-        { deadlineAt: new Date(NOW.getTime() + HOUR) },
-        {
-          pendingStopObservedAtMs: NOW.getTime() - 20_000,
-        },
-      ),
+      midTurnCandidate({ deadlineAt: new Date(NOW.getTime() + HOUR) }, {
+        pendingStopObservedAtMs: NOW.getTime() - 20_000,
+      }),
     ];
     statusByExternal['ext-1'] = 'running';
     turnObservationByToken['active-token'] = 'active';
@@ -2632,10 +2952,10 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(endedCompute).toEqual(['sb-1']);
     const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sbUpdate?.updates.status).toBe('stopped');
-    expect(sbUpdate?.updates.metadata).toMatchObject({
-      runtimeIdentityState: 'unavailable',
-      preservedExternalId: 'ext-1',
-    });
+    // Merged into the row's current metadata in SQL, never assigned.
+    const metadata = describeSql(sbUpdate?.updates.metadata);
+    expect(metadata).toContain('"runtimeIdentityState":"unavailable"');
+    expect(metadata).toContain('"preservedExternalId":"ext-1"');
     expect(stops).toEqual([]);
   });
 
@@ -2685,6 +3005,34 @@ describe('reapOrphanProviderBoxes', () => {
   const NOW2 = new Date('2026-06-21T12:00:00Z');
   const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
 
+  test('keeps worker environments and monitor boxes', async () => {
+    environmentKeepRows = [{ provider: 'daytona', externalId: 'worker-env' }];
+    monitorKeepRows = [{ provider: 'daytona', externalId: 'monitor' }];
+    managedBoxes = ['worker-env', 'monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
+    expect(stops).toEqual([]);
+  });
+
+  test('a reference that appears after listing vetoes the stop', async () => {
+    managedBoxes = [{ externalId: 'adopted', createdAt: hoursAgo(48) }];
+    freshReference = async () => true;
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
+    expect(stops).toEqual([]);
+  });
+
+  test('an unreadable database never authorizes a stop', async () => {
+    managedBoxes = [{ externalId: 'unknown', createdAt: hoursAgo(48) }];
+    freshReference = async () => { throw new Error('database unavailable'); };
+    expect((await reapOrphanProviderBoxes(NOW2)).errors).toBe(1);
+    expect(stops).toEqual([]);
+  });
+
+  test('the concurrent workers never exceed 50 provider stops', async () => {
+    managedBoxes = Array.from({ length: 70 }, (_, i) => ({ externalId: `orphan-${i}`, createdAt: hoursAgo(48) }));
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(50);
+    expect(stops).toHaveLength(50);
+  });
+
   test('stops boxes with no live DB row; keeps live, too-young, and unknown-age boxes', async () => {
     // keepSet (the DB's view of live boxes) comes from the sessionSandboxes query.
     candidates = [{ provider: 'daytona', externalId: 'keep-1' }];
@@ -2732,7 +3080,7 @@ describe('reapOrphanProviderBoxes', () => {
     const r = await reapOrphanProviderBoxes(NOW2);
 
     expect(stops).toEqual(['real-orphan']);
-    expect(r).toEqual({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
   });
 
   test('lists and stops orphan boxes through every configured provider adapter', async () => {
@@ -2745,7 +3093,7 @@ describe('reapOrphanProviderBoxes', () => {
       { provider: 'daytona', externalId: 'daytona-orphan' },
       { provider: 'e2b', externalId: 'e2b-orphan' },
     ]);
-    expect(r).toEqual({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });
 
   test('env flag off → no-op (never lists or stops)', async () => {
@@ -2755,7 +3103,7 @@ describe('reapOrphanProviderBoxes', () => {
       managedBoxes = [{ externalId: 'orphan-x', createdAt: hoursAgo(48) }];
       const r = await reapOrphanProviderBoxes(NOW2);
       expect(stops).toEqual([]);
-      expect(r).toEqual({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
+      expect(r).toMatchObject({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
     } finally {
       if (prev === undefined) delete process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED;
       else process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED = prev;
@@ -3241,11 +3589,6 @@ describe('reconcileOrphanComputeSessions', () => {
     appMetadata: null,
     appProvider: null,
     appExternalId: null,
-    environmentStatus: null,
-    environmentUpdatedAt: null,
-    environmentMetadata: null,
-    environmentProvider: null,
-    environmentExternalId: null,
     ...over,
   });
 
@@ -3322,82 +3665,6 @@ describe('reconcileOrphanComputeSessions', () => {
     expect(r.byReason['sandbox-not-active']).toBe(1);
     expect(statusCalls).toEqual([]);
     expect(pausedComputeWindows[0].windowEnd?.getTime()).toBe(stoppedAt.getTime());
-  });
-
-  test('a running environment refreshes liveness and keeps billing', async () => {
-    const lastSeen = new Date(NOW3.getTime() - 2 * HOUR);
-    computeRows = [
-      openRow({
-        workloadType: 'environment',
-        computeMetadata: { lastAliveAt: lastSeen.toISOString() },
-        sbStatus: null,
-        sessionProvider: null,
-        sessionExternalId: null,
-        environmentStatus: 'active',
-        environmentUpdatedAt: lastSeen.toISOString(),
-        environmentMetadata: {},
-        environmentProvider: 'daytona',
-        environmentExternalId: 'env-ext-1',
-      }),
-    ];
-    statusByExternal['env-ext-1'] = 'running';
-
-    const r = await reconcileOrphanComputeSessions(NOW3);
-
-    expect(r.closed).toBe(0);
-    expect(statusCalls).toEqual(['env-ext-1']);
-    const stamp = updateCalls.find((call) => call.table === sandboxComputeSessions);
-    expect((stamp?.updates.metadata as any)?.lastAliveAt).toBe(NOW3.toISOString());
-  });
-
-  test('a stopped environment closes its compute window without a provider call', async () => {
-    const stoppedAt = new Date(NOW3.getTime() - HOUR);
-    computeRows = [
-      openRow({
-        workloadType: 'environment',
-        sbStatus: null,
-        sessionProvider: null,
-        sessionExternalId: null,
-        environmentStatus: 'stopped',
-        environmentUpdatedAt: stoppedAt.toISOString(),
-        environmentMetadata: {},
-        environmentProvider: 'daytona',
-        environmentExternalId: 'env-ext-1',
-      }),
-    ];
-
-    const r = await reconcileOrphanComputeSessions(NOW3);
-
-    expect(r.closed).toBe(1);
-    expect(r.byReason['sandbox-not-active']).toBe(1);
-    expect(statusCalls).toEqual([]);
-    expect(pausedComputeWindows[0].windowEnd?.getTime()).toBe(stoppedAt.getTime());
-  });
-
-  test('a legacy environment window uses its metadata marker', async () => {
-    computeRows = [
-      openRow({
-        workloadType: 'session',
-        computeMetadata: {
-          workload: 'session-environment',
-          lastAliveAt: NOW3.toISOString(),
-        },
-        sbStatus: null,
-        sessionProvider: null,
-        sessionExternalId: null,
-        environmentStatus: 'active',
-        environmentUpdatedAt: NOW3.toISOString(),
-        environmentMetadata: {},
-        environmentProvider: 'daytona',
-        environmentExternalId: 'legacy-env-ext-1',
-      }),
-    ];
-    statusByExternal['legacy-env-ext-1'] = 'running';
-
-    const r = await reconcileOrphanComputeSessions(NOW3);
-
-    expect(r.closed).toBe(0);
-    expect(statusCalls).toEqual(['legacy-env-ext-1']);
   });
 
   // The 17 prod rows: 5,587 sandbox-hours billed on boxes our own DB said were

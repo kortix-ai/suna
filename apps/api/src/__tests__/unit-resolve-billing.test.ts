@@ -5,18 +5,19 @@ import { describe, expect, test } from 'bun:test';
 // behaves as, where that came from, its effective entitlements after the
 // account-level overrides, and its concurrent-session cap.
 //
-// It replaces nothing yet. These tests pin the semantics it is required to
-// reproduce — the trial overlay and per-seat self-heal from
-// effective-tier.ts:93-100, the enterprise/demo/managed-models overrides from
-// entitlements.ts:107-140, and the session-limit override from
-// shared/account-limits.ts:151-160 — so the consumer flip in the next PR is a
-// mechanical swap and not a behavior change.
+// These tests pin its semantics: the trial overlay (with its lazy expiry and
+// seat allowance), the per-seat self-heal, the enterprise/demo/managed-models
+// overrides, and the session-limit override.
 //
 // No mocks: the module is pure by construction. If it ever needs one, it has
 // stopped being pure and that is the bug.
 
 import { PLAN_CATALOG } from '../billing/services/plan-catalog';
-import { type BillingRow, resolveBillingFromRow } from '../billing/services/resolve-billing';
+import {
+  type BillingRow,
+  activeTrialSeatLimit,
+  resolveBillingFromRow,
+} from '../billing/services/resolve-billing';
 
 const NOW = Date.UTC(2026, 0, 15, 12, 0, 0);
 const HOUR = 3_600_000;
@@ -38,7 +39,7 @@ describe('no row', () => {
       expect(r.plan.key).toBe('none');
       expect(r.source).toBe('no_account');
       expect(r.entitlements).toEqual(PLAN_CATALOG.none?.entitlements as never);
-      expect(r.limits.concurrentSessions).toEqual({ value: 50, source: 'plan' });
+      expect('limits' in r).toBe(false);
     }
   });
 });
@@ -51,14 +52,10 @@ describe('stored tier', () => {
       expect(r.plan.key).toBe(key);
       expect(r.source).toBe('stored');
       expect(r.entitlements).toEqual(record.entitlements);
-      expect(r.limits.concurrentSessions).toEqual({
-        value: record.limits.concurrentSessions,
-        source: 'plan',
-      });
     });
   }
 
-  test('null tier reads as none, not free (matches resolveEffectiveTier)', () => {
+  test('null tier reads as none, not free', () => {
     const r = resolveBillingFromRow({ tier: null }, NOW);
     expect(r.plan.key).toBe('none');
     expect(r.source).toBe('stored');
@@ -86,7 +83,6 @@ describe('trial overlay', () => {
     expect(r.source).toBe('trial');
     expect(r.entitlements.sso).toBe(true);
     expect(r.entitlements.managedModels).toBe(true);
-    expect(r.limits.concurrentSessions.value).toBe(5000);
   });
 
   test('expired trial falls back to the stored tier', () => {
@@ -128,6 +124,18 @@ describe('trial overlay', () => {
     expect(missing.plan.key).toBe('free');
   });
 
+  test.each([
+    ['ends exactly now', iso(0)],
+    ['has an unparseable end date', 'garbage'],
+  ])('a trial that %s does not grant', (_name, trialEndsAt) => {
+    const r = resolveBillingFromRow(
+      { tier: 'free', trialStatus: 'active', trialTier: 'enterprise', trialEndsAt },
+      NOW,
+    );
+    expect(r.plan.key).toBe('free');
+    expect(r.source).toBe('stored');
+  });
+
   test('trial outranks the per-seat self-heal', () => {
     const r = resolveBillingFromRow(
       {
@@ -152,7 +160,6 @@ describe('per-seat self-heal', () => {
       expect(r.source).toBe('per_seat_selfheal');
       expect(r.entitlements.managedModels).toBe(true);
       expect(r.entitlements.metersCompute).toBe(true);
-      expect(r.limits.concurrentSessions).toEqual({ value: 200, source: 'plan' });
     }
   });
 
@@ -194,7 +201,6 @@ describe('enterprise entitlement overlays', () => {
     expect(r.entitlements.auditAccess).toBe(true);
     // The overlay grants the enterprise IDENTITY surface only. Plan-shaped
     // facts stay the plan's.
-    expect(r.limits.concurrentSessions).toEqual({ value: 200, source: 'plan' });
     expect(r.entitlements.metersCompute).toBe(true);
   });
 
@@ -205,7 +211,6 @@ describe('enterprise entitlement overlays', () => {
     expect(r.entitlements.auditAccess).toBe(true);
     // Demo is an identity preview, not a plan upgrade: no managed models.
     expect(r.entitlements.managedModels).toBe(false);
-    expect(r.limits.concurrentSessions.value).toBe(50);
   });
 
   test('both flags false → plan gating stands', () => {
@@ -245,24 +250,12 @@ describe('managedModelsOverride is tri-state', () => {
   });
 });
 
-describe('maxConcurrentSessions override', () => {
-  test('a positive override wins over the plan cap, in both directions', () => {
-    const up = resolveBillingFromRow({ tier: 'free', maxConcurrentSessions: 900 }, NOW);
-    expect(up.limits.concurrentSessions).toEqual({ value: 900, source: 'account_override' });
-    const down = resolveBillingFromRow({ tier: 'enterprise', maxConcurrentSessions: 5 }, NOW);
-    expect(down.limits.concurrentSessions).toEqual({ value: 5, source: 'account_override' });
-  });
-
-  test('non-positive / null / non-finite overrides fall back to the plan cap', () => {
-    for (const value of [0, -1, null, Number.NaN]) {
-      const r = resolveBillingFromRow({ tier: 'free', maxConcurrentSessions: value }, NOW);
-      expect(r.limits.concurrentSessions).toEqual({ value: 50, source: 'plan' });
-    }
-  });
-
-  test('a fractional override floors, like resolveAccountLimitInfo', () => {
-    const r = resolveBillingFromRow({ tier: 'free', maxConcurrentSessions: 7.9 }, NOW);
-    expect(r.limits.concurrentSessions.value).toBe(7);
+describe('removed maxConcurrentSessions column', () => {
+  test('a stale value on the row changes nothing and no limits are resolved', () => {
+    const stale = { tier: 'free', maxConcurrentSessions: 900 } as unknown as BillingRow;
+    const r = resolveBillingFromRow(stale, NOW);
+    expect(r).toEqual(resolveBillingFromRow({ tier: 'free' }, NOW));
+    expect('limits' in r).toBe(false);
   });
 });
 
@@ -323,32 +316,12 @@ describe('entitlement_overrides precedence', () => {
     expect(dead.entitlements.managedModels).toBe(false);
   });
 
-  test('maxConcurrentSessions: JSONB over column, and expiry restores the column', () => {
-    const jsonb = resolveBillingFromRow(
-      {
-        tier: 'free',
-        maxConcurrentSessions: 7,
-        entitlementOverrides: { maxConcurrentSessions: { value: 900 } },
-      },
+  test('a stale maxConcurrentSessions JSONB key is ignored', () => {
+    const r = resolveBillingFromRow(
+      { tier: 'free', entitlementOverrides: { maxConcurrentSessions: { value: 900 } } },
       NOW,
     );
-    expect(jsonb.limits.concurrentSessions).toEqual({ value: 900, source: 'account_override' });
-
-    const expired = resolveBillingFromRow(
-      {
-        tier: 'free',
-        maxConcurrentSessions: 7,
-        entitlementOverrides: { maxConcurrentSessions: { value: 900, expires_at: iso(-1) } },
-      },
-      NOW,
-    );
-    expect(expired.limits.concurrentSessions).toEqual({ value: 7, source: 'account_override' });
-
-    const gone = resolveBillingFromRow(
-      { tier: 'free', entitlementOverrides: { maxConcurrentSessions: { value: 900, expires_at: iso(-1) } } },
-      NOW,
-    );
-    expect(gone.limits.concurrentSessions).toEqual({ value: 50, source: 'plan' });
+    expect(r).toEqual(resolveBillingFromRow({ tier: 'free' }, NOW));
   });
 
   test('managedModelsOverride stays tri-state through the JSONB', () => {
@@ -372,7 +345,6 @@ describe('entitlement_overrides precedence', () => {
       expect(r.plan.key).toBe('pro');
       expect(r.entitlements.sso).toBe(false);
       expect(r.entitlements.managedModels).toBe(true);
-      expect(r.limits.concurrentSessions).toEqual({ value: 200, source: 'plan' });
     }
   });
 });
@@ -521,7 +493,7 @@ describe('display naming', () => {
 
 describe('purity', () => {
   test('the same row and clock always resolve identically', () => {
-    const row: BillingRow = { tier: 'free', ...LIVE_SEAT_SUB, maxConcurrentSessions: 12 };
+    const row: BillingRow = { tier: 'free', ...LIVE_SEAT_SUB };
     expect(resolveBillingFromRow(row, NOW)).toEqual(resolveBillingFromRow(row, NOW));
   });
 
@@ -530,5 +502,22 @@ describe('purity', () => {
     r.entitlements.managedModels = true;
     expect(PLAN_CATALOG.free?.entitlements.managedModels).toBe(false);
     expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.managedModels).toBe(false);
+  });
+});
+
+describe('activeTrialSeatLimit — the trial seat gate on member add and invite', () => {
+  const activeTrial = { trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: iso(24 * HOUR) };
+
+  test.each([
+    ['an active trial returns its seat allowance', { ...activeTrial, trialSeats: 5 }, 5],
+    ['fractional seats floor', { ...activeTrial, trialSeats: 5.9 }, 5],
+    ['an uncapped trial lifts no gate', { ...activeTrial, trialSeats: null }, null],
+    ['zero seats is uncapped', { ...activeTrial, trialSeats: 0 }, null],
+    ['negative seats is uncapped', { ...activeTrial, trialSeats: -3 }, null],
+    ['a lapsed trial lifts no gate', { ...activeTrial, trialSeats: 5, trialEndsAt: iso(-1) }, null],
+    ['a revoked trial lifts no gate', { ...activeTrial, trialSeats: 5, trialStatus: 'revoked' }, null],
+    ['no row lifts no gate', null, null],
+  ] as const)('%s', (_name, row, limit) => {
+    expect(activeTrialSeatLimit(row, NOW)).toBe(limit);
   });
 });

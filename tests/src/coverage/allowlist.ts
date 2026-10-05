@@ -6,6 +6,56 @@ export interface AllowEntry {
 
 export const uncoveredAllow: AllowEntry[] = [
   {
+    method: "GET",
+    path: "/v1/runtime-assets/entrypoint",
+    reason:
+      "DEBT, not a considered exemption, and NOT introduced by this branch. The route exists on the app but is absent from the committed tests/spec/routes.generated.json, so the coverage gate had never seen it; regenerating the manifest for the headless-auth routes surfaced it. It needs a flow from whoever owns runtime-assets. Recorded so a stale manifest cannot re-hide it.",
+  },
+  {
+    method: "HEAD",
+    path: "/v1/runtime-assets/entrypoint",
+    reason: "Same route as the GET above, same reason — surfaced by regenerating a stale manifest, not added here.",
+  },
+  {
+    method: "PATCH",
+    path: "/v1/auth/user",
+    reason:
+      "Headless profile-metadata write, the replacement for supabase.auth.updateUser({ data }). Covered at the unit level by apps/api/src/__tests__/unit-auth-user-metadata.test.ts (caller-bearer forwarding, .strict() refusal of a smuggled password/email, GoTrue error passthrough) and verified live against real GoTrue. No ke2e flow yet: the local test profile has no second confirmed user to attribute a metadata write to, and asserting it as the same user the flow already signs in as would test GoTrue, not us.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/sign-in/sso",
+    reason:
+      "Enterprise SSO discovery. Cannot be flow-covered on the local profile: SAML is disabled there, so the route can only ever answer saml_provider_disabled — asserting that would pin the absence of a provider, not the behaviour. Unit-covered in unit-auth-headless.test.ts (redirect URL returned, 404 passthrough for a domain with no IdP). Needs a staging flow once an IdP exists.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/mfa/factors",
+    reason:
+      "MFA enrol. Local Supabase ships MFA disabled (GOTRUE_MFA_TOTP_ENROLL_ENABLED=false), so the local profile cannot exercise it without changing Supabase config the profile does not own. Unit-covered in unit-auth-mfa.test.ts and verified end to end by hand against real GoTrue with TOTP enabled: enrol -> challenge -> verify with a generated code -> a token carrying aal2.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/mfa/factors/:*/challenge",
+    reason: "MFA challenge — same reason as POST /v1/auth/mfa/factors: MFA is disabled on the local test profile's Supabase.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/mfa/factors/:*/verify",
+    reason: "MFA verify — same reason as POST /v1/auth/mfa/factors. This is the leg that produces an aal2 session, which authorize() step 6 requires; verified by hand, not by the local profile.",
+  },
+  {
+    method: "DELETE",
+    path: "/v1/auth/mfa/factors/:*",
+    reason: "MFA unenrol — same reason as POST /v1/auth/mfa/factors.",
+  },
+  {
+    method: "GET",
+    path: "/v1/projects/:*/git/connection",
+    reason:
+      "DEBT, not a considered exemption, and NOT introduced by this branch. The route exists on the app but was missing from tests/spec/routes.generated.json, so the gate never saw it; regenerating the manifest for the headless-auth routes surfaced it. Nothing covers it — it needs a flow. This entry keeps the gap visible instead of letting a stale manifest re-hide it.",
+  },
+  {
     method: "POST",
     path: "/v1/admin/api/accounts/:*/members/:*/role",
     reason:
@@ -68,11 +118,6 @@ export const uncoveredAllow: AllowEntry[] = [
   },
   {
     method: "POST",
-    path: "/v1/projects/:*/channels/teams/file/upload",
-    reason: "server-side consent-card upload, exercised via the in-sandbox teams CLI, not end-user clients",
-  },
-  {
-    method: "POST",
     path: "/v1/webhooks/teams/:*/messages",
     reason: "Bot Framework BYO-bot inbound webhook — JWT-authed by Microsoft, same shape as the flow-covered managed /v1/webhooks/teams/messages",
   },
@@ -82,29 +127,36 @@ export const uncoveredAllow: AllowEntry[] = [
     reason: "Teams admin-consent OAuth callback — browser redirect from Microsoft (admin_consent+tenant), not an API client route; mirrors the slack oauth callback",
   },
   {
-    method: "POST",
-    path: "/v1/projects/:*/sessions/:*/environment/ensure",
-    reason:
-      "DEBT. Harness/worker split P1.7: lazily provisions the pi session's compute environment — a REAL cloud sandbox, which the local flow profile explicitly excludes, so no local flow can exercise it yet. Auth ordering, the session-caller self-scope, and the pi-worker slug gate are pinned source-level in apps/api/src/projects/routes/session-environment.test.ts; the live contract is verified against dev. Needs a staging flow once the target-full profile grows a pi lane.",
-  },
-  {
-    method: "GET",
-    path: "/v1/projects/:*/sessions/:*/environment",
-    reason:
-      "DEBT. Read-only status sibling of environment/ensure (same auth gate, never provisions) — same cloud-sandbox exclusion keeps it out of local flows; pinned in the same source test.",
-  },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/sessions/:*/environment/stop",
-    reason:
-      "DEBT. Stop sibling of environment/ensure — same cloud-sandbox exclusion; pinned in the same source test.",
-  },
-  {
     method: "GET",
     path: "/v1/git/:*/fast-boot-bundle",
     reason:
-      "DEBT, not a considered exemption. Route shipped with the fast-git-boot work (#6976) but the manifest was not regenerated then; the canonical regen for the session-environment routes surfaced it. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
+      "DEBT, not a considered exemption. Route shipped with the fast-git-boot work (#6976) but the manifest was not regenerated then; a canonical manifest regen surfaced it. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
   },
+  // `ALL` passthroughs. dump-routes.ts lists real `.all()` handlers since the
+  // one-contract wave; no flow can declare the method `ALL`, so each is listed
+  // here with the reason its concrete traffic is not a local flow.
+  ...["/v1/llm/*", "/v1/llm-gateway/*"].map((path) => ({
+    method: "ALL",
+    path,
+    reason: "LLM gateway bridge; flows declare its concrete routes (see externalRoutes)",
+  })),
+  {
+    method: "ALL",
+    path: "/v1/p/:sandboxId/:port/*",
+    reason: "sandbox preview proxy; needs a live cloud sandbox, which the local profile excludes",
+  },
+  ...["/:port", "/:port/*", "/file", "/file/*"].map((tail) => ({
+    method: "ALL",
+    path: `/v1/p/public-share/:token${tail}`,
+    reason: "public-share proxy into a live sandbox; needs a cloud sandbox, which the local profile excludes",
+  })),
+  ...["context7", "firecrawl", "gemini", "groq", "openai", "serper", "tavily", "xai"].flatMap((provider) =>
+    [`/v1/router/${provider}`, `/v1/router/${provider}/*`].map((path) => ({
+      method: "ALL",
+      path,
+      reason: "provider passthrough to a third-party API; needs real provider keys, which the local profile excludes",
+    })),
+  ),
 ];
 
 export const externalRoutes: AllowEntry[] = [

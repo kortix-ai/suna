@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useTranslations } from 'next-intl';
 
 import {
@@ -26,6 +27,7 @@ export function SandboxPicker({
   selectedSlug: string | null;
   onSelect: (slug: string | null) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const active = items.find((t) => t.slug === activeSlug) ?? items[0] ?? null;
   if (!active) return null;
@@ -36,8 +38,8 @@ export function SandboxPicker({
       selectedSlug={selectedSlug}
       resolvedSlug={activeSlug}
       inherit={{
-        label: 'Agent environment',
-        description: 'Uses the selected agent, project, or platform default.',
+        label: tI18nComplete.raw('text1774cca7f6a4'),
+        description: tI18nComplete.raw('text4eb861e5d86e'),
       }}
       onSelect={onSelect}
       trigger={
@@ -50,7 +52,7 @@ export function SandboxPicker({
         >
           <d.Icon className="size-3.5 shrink-0" />
           <span className="max-w-[7rem] truncate">
-            {selectedSlug ? active.name : 'Agent environment'}
+            {selectedSlug ? active.name : tI18nComplete.raw('text1774cca7f6a4')}
           </span>
           <span className={cn('size-1.5 shrink-0 rounded-full', d.stateDot)} />
         </button>

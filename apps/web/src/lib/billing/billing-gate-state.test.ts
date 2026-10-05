@@ -1,3 +1,4 @@
+import { testUiTranslator } from '@/i18n/test-translator';
 import { describe, expect, test } from 'bun:test';
 import {
   type AccountStateLike,
@@ -145,7 +146,7 @@ describe('accountHasLiveSubscription', () => {
 
 describe('billingGateCopy — the gate never contradicts the modal it opens', () => {
   test('out_of_credits pitches a top-up and opens the top-up modal', () => {
-    const copy = billingGateCopy('out_of_credits');
+    const copy = billingGateCopy('out_of_credits', testUiTranslator);
     expect(copy.title).toBe('Out of credits');
     expect(copy.ctaLabel).toBe('Top up credits');
     expect(copy.dialogReason).toBe('insufficient_credits');
@@ -153,13 +154,13 @@ describe('billingGateCopy — the gate never contradicts the modal it opens', ()
   });
 
   test('no_subscription is the ONLY state that pitches subscribing', () => {
-    const copy = billingGateCopy('no_subscription');
+    const copy = billingGateCopy('no_subscription', testUiTranslator);
     expect(copy.ctaLabel).toBe('Subscribe to Team plan');
     expect(copy.dialogReason).toBe('subscription_required');
   });
 
   test('payment_failed asks for a payment fix, never claims the plan is unaffected', () => {
-    const copy = billingGateCopy('payment_failed');
+    const copy = billingGateCopy('payment_failed', testUiTranslator);
     expect(copy.ctaLabel).toBe('Fix payment');
     expect(copy.message).not.toContain('unaffected');
   });
@@ -172,7 +173,7 @@ describe('billingDialogArgs', () => {
       credits: { can_run: false, total: 0.01 },
       subscription: { subscription_id: 'sub_gone', status: 'canceled' },
     });
-    expect(billingDialogArgs('out_of_credits', state, 'acct-1')).toEqual({
+    expect(billingDialogArgs('out_of_credits', state, 'acct-1', testUiTranslator)).toEqual({
       reason: 'insufficient_credits',
       accountId: 'acct-1',
       billingModel: 'per_seat',
@@ -184,7 +185,9 @@ describe('billingDialogArgs', () => {
 
   test('a funded account nudged to top up gets the top-up modal, never a subscribe pitch', () => {
     const state = accountState({ billing_state: 'active', credits: { can_run: true, total: 1.2 } });
-    expect(billingDialogArgs('active', state, 'acct-3').reason).toBe('insufficient_credits');
+    expect(billingDialogArgs('active', state, 'acct-3', testUiTranslator).reason).toBe(
+      'insufficient_credits',
+    );
   });
 
   test('a never-subscribed account opens the subscribe pitch', () => {
@@ -194,7 +197,7 @@ describe('billingDialogArgs', () => {
       credits: { can_run: false, total: 0 },
       subscription: { subscription_id: null, status: null },
     });
-    expect(billingDialogArgs('no_subscription', state, 'acct-2').reason).toBe(
+    expect(billingDialogArgs('no_subscription', state, 'acct-2', testUiTranslator).reason).toBe(
       'subscription_required',
     );
   });
@@ -256,7 +259,7 @@ describe('the client fallback cannot contradict the server on who bypasses the f
   });
 
   test('a past_due gate never shows the subscribe pitch', () => {
-    const copy = billingGateCopy('payment_failed');
+    const copy = billingGateCopy('payment_failed', testUiTranslator);
     expect(copy.dialogReason).toBe('insufficient_credits');
     expect(copy.title).not.toContain('Subscribe');
     expect(copy.ctaLabel).toBe('Fix payment');
@@ -271,9 +274,9 @@ describe('walletSeverity — the ONLY place a balance becomes an alert', () => {
   });
 
   test('a running account below the low-balance line gets the soft nudge', () => {
-    expect(walletSeverity(accountState({ billing_state: 'active', credits: { total: 4.99 } }))).toBe(
-      'low',
-    );
+    expect(
+      walletSeverity(accountState({ billing_state: 'active', credits: { total: 4.99 } })),
+    ).toBe('low');
   });
 
   test('THE REGRESSION: a $0 wallet on an account the server calls `active` is NOT an alarm', () => {
@@ -302,9 +305,9 @@ describe('walletSeverity — the ONLY place a balance becomes an alert', () => {
     expect(
       walletSeverity(accountState({ billing_state: 'no_subscription', credits: { total: 0 } })),
     ).toBe(null);
-    expect(walletSeverity(accountState({ billing_state: 'no_account', credits: { total: 0 } }))).toBe(
-      null,
-    );
+    expect(
+      walletSeverity(accountState({ billing_state: 'no_account', credits: { total: 0 } })),
+    ).toBe(null);
   });
 
   test('an unloaded account never renders an alarm', () => {
@@ -315,25 +318,25 @@ describe('walletSeverity — the ONLY place a balance becomes an alert', () => {
 
 describe('billingModalCopy — no component writes billing prose', () => {
   test('a voluntary top-up on a healthy account is not an emergency', () => {
-    const copy = billingModalCopy('active', { isPerSeat: true });
+    const copy = billingModalCopy('active', { isPerSeat: true }, testUiTranslator);
     expect(copy.title).toBe('Add credits');
     expect(copy.title).not.toBe('Out of credits');
   });
 
   test('a drained account is told it is out of credits and that its plan survives', () => {
-    const copy = billingModalCopy('out_of_credits', { isPerSeat: true });
+    const copy = billingModalCopy('out_of_credits', { isPerSeat: true }, testUiTranslator);
     expect(copy.title).toBe('Out of credits');
     expect(copy.description).toContain('your Team plan and seats are unaffected');
   });
 
   test('a NON-per-seat account is never promised seats it does not have', () => {
-    const copy = billingModalCopy('out_of_credits', { isPerSeat: false });
+    const copy = billingModalCopy('out_of_credits', { isPerSeat: false }, testUiTranslator);
     expect(copy.description).not.toContain('seats');
     expect(copy.description).toContain('your plan is unaffected');
   });
 
   test('a failing payment is never told its plan is unaffected', () => {
-    const copy = billingModalCopy('payment_failed', { isPerSeat: true });
+    const copy = billingModalCopy('payment_failed', { isPerSeat: true }, testUiTranslator);
     expect(copy.title).toBe('Payment issue on your plan');
     expect(copy.description).not.toContain('unaffected');
   });
@@ -347,7 +350,7 @@ describe('billingModalCopy — no component writes billing prose', () => {
       'no_subscription',
       null,
     ] as const) {
-      const copy = billingModalCopy(state);
+      const copy = billingModalCopy(state, undefined, testUiTranslator);
       expect(copy.title.length).toBeGreaterThan(0);
       expect(copy.description.length).toBeGreaterThan(0);
     }

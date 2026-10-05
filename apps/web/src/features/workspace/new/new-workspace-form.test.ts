@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { KortixAccount } from '@kortix/sdk';
 import {
   INITIAL_FORM_STATE,
   buildProvisionPayload,
@@ -9,7 +10,6 @@ import {
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
 } from './new-workspace-form';
-import type { KortixAccount } from '@kortix/sdk';
 
 const owner: KortixAccount = { account_id: 'a1', name: 'Owner Co', account_role: 'owner' };
 const admin: KortixAccount = { account_id: 'a2', name: 'Admin Co', account_role: 'admin' };
@@ -38,27 +38,31 @@ describe('INITIAL_FORM_STATE', () => {
 });
 
 describe('filterCreatableAccounts', () => {
+  test('custom permission can allow a member and deny an admin', () => {
+    expect(filterCreatableAccounts([owner, admin, member], { a1: true, a2: false, a3: true })).toEqual([owner, member]);
+  });
+
   test('keeps owner and admin accounts', () => {
-    expect(filterCreatableAccounts([owner, admin])).toEqual([owner, admin]);
+    expect(filterCreatableAccounts([owner, admin], { a1: true, a2: true })).toEqual([owner, admin]);
   });
 
   test('excludes a member-role account', () => {
     // The regression this whole fix round exists for: POST /provision 403s
     // "Owner or admin role required" for a member, so offering it in the
     // picker is a choice that can only fail.
-    expect(filterCreatableAccounts([owner, member])).toEqual([owner]);
+    expect(filterCreatableAccounts([owner, member], { a1: true })).toEqual([owner]);
   });
 
   test('excludes an account with no account_role at all — fails closed', () => {
-    expect(filterCreatableAccounts([owner, roleless])).toEqual([owner]);
+    expect(filterCreatableAccounts([owner, roleless], { a1: true })).toEqual([owner]);
   });
 
   test('returns empty when nothing is creatable', () => {
-    expect(filterCreatableAccounts([member, roleless])).toEqual([]);
+    expect(filterCreatableAccounts([member, roleless], {})).toEqual([]);
   });
 
   test('one owner + one member account leaves exactly one creatable — AccountPicker (accounts.length < 2) renders nothing', () => {
-    expect(filterCreatableAccounts([owner, member])).toHaveLength(1);
+    expect(filterCreatableAccounts([owner, member], { a1: true })).toHaveLength(1);
   });
 
   test('keeps the possessive suffix — never returns the bare email', () => {
@@ -72,7 +76,7 @@ describe('filterCreatableAccounts', () => {
       name: "a@x.com's Account",
       account_role: 'owner',
     };
-    const [result] = filterCreatableAccounts([personalAccount]);
+    const [result] = filterCreatableAccounts([personalAccount], { [personalAccount.account_id]: true });
     expect(result?.name).toContain("'s Account");
     expect(result?.name).not.toBe('a@x.com');
     expect(result?.name).toBe("a@x.com's Account");
@@ -121,9 +125,7 @@ describe('resolveDefaultCreatableAccountId', () => {
       account_role: 'owner',
       is_primary_owner: true,
     };
-    expect(resolveDefaultCreatableAccountId([team, primary], 'someone-elses-id')).toBe(
-      'a-primary',
-    );
+    expect(resolveDefaultCreatableAccountId([team, primary], 'someone-elses-id')).toBe('a-primary');
   });
 
   test('falls back to the first creatable account when nothing else matches', () => {
@@ -163,8 +165,8 @@ describe('resolveDefaultCreatableAccountId: order-independent default when a use
       is_primary_owner: true,
     };
 
-    const personalFirst = filterCreatableAccounts([personalAccount, teamAccountUserOwns]);
-    const teamFirst = filterCreatableAccounts([teamAccountUserOwns, personalAccount]);
+    const personalFirst = filterCreatableAccounts([personalAccount, teamAccountUserOwns], { [personalAccount.account_id]: true, [teamAccountUserOwns.account_id]: true });
+    const teamFirst = filterCreatableAccounts([teamAccountUserOwns, personalAccount], { [personalAccount.account_id]: true, [teamAccountUserOwns.account_id]: true });
 
     expect(resolveDefaultCreatableAccountId(personalFirst, userId)).toBe('a-personal-order');
     expect(resolveDefaultCreatableAccountId(teamFirst, userId)).toBe('a-personal-order');
@@ -172,9 +174,17 @@ describe('resolveDefaultCreatableAccountId: order-independent default when a use
 });
 
 describe('isForeignAccountList', () => {
-  const own: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
+  const own: KortixAccount = {
+    account_id: 'me',
+    name: "me@x.com's Account",
+    account_role: 'owner',
+  };
   const foreign1: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
-  const foreign2: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+  const foreign2: KortixAccount = {
+    account_id: 'org-2',
+    name: 'Widgets Co',
+    account_role: 'admin',
+  };
 
   test('false for zero creatable accounts', () => {
     expect(isForeignAccountList([], 'me')).toBe(false);
@@ -205,9 +215,21 @@ describe('isForeignAccountList', () => {
 });
 
 describe('shouldShowAccountLine', () => {
-  const ownSole: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
-  const foreignSole: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
-  const foreignSecond: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+  const ownSole: KortixAccount = {
+    account_id: 'me',
+    name: "me@x.com's Account",
+    account_role: 'owner',
+  };
+  const foreignSole: KortixAccount = {
+    account_id: 'org-1',
+    name: 'Acme Inc',
+    account_role: 'admin',
+  };
+  const foreignSecond: KortixAccount = {
+    account_id: 'org-2',
+    name: 'Widgets Co',
+    account_role: 'admin',
+  };
 
   test('sole OWN account: false — AccountPicker renders the identity line alone (A2.2)', () => {
     expect(shouldShowAccountLine([ownSole], 'me')).toBe(false);
@@ -244,9 +266,9 @@ describe('isSubmittable', () => {
   });
 
   test('true once an account is chosen', () => {
-    expect(
-      isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 3),
-    ).toBe(true);
+    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 3)).toBe(
+      true,
+    );
   });
 
   test('false when the name breaks the charset rule', () => {
@@ -258,7 +280,9 @@ describe('isSubmittable', () => {
   });
 
   test('false at zero accounts even when an account id is somehow set', () => {
-    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 0)).toBe(false);
+    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 0)).toBe(
+      false,
+    );
   });
 });
 

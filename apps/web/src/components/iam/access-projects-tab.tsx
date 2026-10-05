@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `AccessProjectsTab` — the account-level "Projects" tab inside Account
  * Settings' Access section. The single place to see and manage every
@@ -39,7 +40,7 @@
  * member is scoped to, same direct-or-via-group shape), plus a top-level
  * `group_access` array — one entry per group with SOME access to this
  * project. Field names are copied byte-for-byte from the live handler
- * (`apps/api/src/projects/routes/r6.ts`). The SDK's `ProjectAccessMember` /
+ * (`apps/api/src/projects/routes/project-access.ts`). The SDK's `ProjectAccessMember` /
  * `ProjectAccessResponse` types do not carry these fields yet, so this file
  * declares its own extension types below rather than editing the SDK's
  * published types out from under a separate change.
@@ -48,7 +49,7 @@
  * `group_access` entries carry no `expires_at` for the group's own
  * `built_in_role` grant (`project_group_grants.expires_at` exists in the
  * database and on `attachGroupToProject`/`updateProjectGroupGrant`'s params,
- * but `r6.ts`'s `groupAccessById` builder does not select it onto the
+ * but `project-access.ts`'s `groupAccessById` builder does not select it onto the
  * response). A group row therefore shows an expiry ONLY when its custom-role
  * policy carries one, rather than fabricating "never" for a value it cannot
  * see.
@@ -68,9 +69,10 @@
  */
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
+import { ProjectAgentAccessList } from '@/components/iam/project-agent-access-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -110,14 +112,22 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
+  agentIdentitiesQueryKey,
+  agentRolesQueryKey,
+  fetchProjectAgentAssignments,
+  projectAgentAssignmentsQueryKey,
+} from '@/features/workspace/shared/access/agent-principals';
+import {
   approveProjectAccessRequest,
   detachGroupFromProject,
   getProject,
+  listAgentIdentities,
   listPendingProjectInvites,
   listProjectAccess,
   listProjectAccessRequests,
   listProjectResourceGrants,
   listProjectsForAccount,
+  listRoles,
   rejectProjectAccessRequest,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
@@ -171,7 +181,8 @@ interface ResourceGrantEntry {
   resource_type: 'agent' | 'skill';
   resource_id: string;
   expires_at: string | null;
-  source?: 'direct' | 'group';
+  /** `project` = granted to everyone in the project, not to this row. */
+  source?: 'direct' | 'group' | 'project';
   group_id?: string | null;
   group_name?: string | null;
 }
@@ -209,7 +220,11 @@ const GROUP_INHERITED_HINT =
 
 /** The project-scoped custom-role policy the principal holds DIRECTLY. A
  *  group-sourced policy on a member row is not that member's to edit. */
-function directProjectPolicy(
+/** The direct custom-role binding on a row: project-scoped, and not one the
+ *  row inherits through a group. Group rows carry their own policies with no
+ *  `source` — those are the group's own binding and count as direct there.
+ *  Exported for the response pass-through test beside its sibling derivations. */
+export function directProjectPolicy(
   policies: CustomRolePolicyEntry[] | undefined,
 ): CustomRolePolicyEntry | undefined {
   return (policies ?? []).find((p) => p.scope_type === 'project' && p.source !== 'group');
@@ -225,15 +240,21 @@ function agentGrantsOf(grants: ResourceGrantEntry[] | undefined): ResourceGrantE
  * instead of agents renders "Agents: 2 of 3" for a person who reaches one.
  * Direct rows win, so `directAgentIds` below still filters correctly.
  */
-function distinctAgentGrants(grants: ResourceGrantEntry[]): ResourceGrantEntry[] {
+export function distinctAgentGrants(grants: ResourceGrantEntry[]): ResourceGrantEntry[] {
   const byResource = new Map<string, ResourceGrantEntry>();
   for (const grant of grants) {
     const existing = byResource.get(grant.resource_id);
-    if (!existing || (existing.source === 'group' && grant.source !== 'group')) {
+    if (!existing || (!isDirectGrant(existing) && isDirectGrant(grant))) {
       byResource.set(grant.resource_id, grant);
     }
   }
   return [...byResource.values()];
+}
+
+/** A grant that names this row itself — not one inherited through a group or
+ *  given to everyone in the project. Only these are this row's to edit. */
+export function isDirectGrant(grant: Pick<ResourceGrantEntry, 'source'>): boolean {
+  return grant.source !== 'group' && grant.source !== 'project';
 }
 
 /** "via account admin" / "via Engineering +1 more" / "no access". `null` for
@@ -270,13 +291,13 @@ export function agentsMetaPart(
 }
 
 function ExpiryMeta({ expiresAt }: { expiresAt: string | null | undefined }) {
-  const expiry = formatExpiry(expiresAt);
-  if (!expiry.bounded) return <span className="tabular-nums">Expires never</span>;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const expiry = formatExpiry(expiresAt, tI18nComplete);
+  if (!expiry.bounded)
+    return <span className="tabular-nums">{tI18nComplete.raw('text1342ec89ae42')}</span>;
   return (
-    <span
-      className={cn('tabular-nums', expiry.expired ? 'text-kortix-red' : 'text-kortix-yellow')}
-    >
-      Expires {expiry.label}
+    <span className={cn('tabular-nums', expiry.expired ? 'text-kortix-red' : 'text-kortix-yellow')}>
+      {tI18nComplete.raw('textf6725f3af08a')} {expiry.label}
     </span>
   );
 }
@@ -332,6 +353,7 @@ function ProjectPicker({
   accountId: string;
   onSelectProject: (id: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(PROJECT_LIST_PAGE_SIZE);
 
@@ -356,10 +378,11 @@ function ProjectPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">Projects{settled ? ` · ${total}` : ''}</p>
-        <p className="text-muted-foreground text-xs">
-          Every project&apos;s access, in one place. Pick one to see who&apos;s in and manage it.
+        <p className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text04e2a9728af7')}
+          {settled ? ` · ${total}` : ''}
         </p>
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text9949095feb15')}</p>
       </div>
 
       <InputGroupSearch>
@@ -367,7 +390,7 @@ function ProjectPicker({
           <MagnifyingGlassIcon />
         </InputGroupSearchIcon>
         <InputGroupSearchInput
-          placeholder="Search projects"
+          placeholder={tI18nComplete.raw('text9e079c7df9f1')}
           value={search}
           onChange={(event) => {
             setSearch(event.target.value);
@@ -381,11 +404,11 @@ function ProjectPicker({
       {projectsQuery.isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load projects"
+          title={tI18nComplete.raw('text99528001baf3')}
           description={(projectsQuery.error as Error)?.message}
           action={
             <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -399,7 +422,9 @@ function ProjectPicker({
         <EmptyState
           icon={FolderOpenIcon}
           size="sm"
-          title={search ? 'No projects match your search' : 'No projects yet'}
+          title={
+            search ? tI18nComplete.raw('text2302a8311ddf') : tI18nComplete.raw('textf83c80652286')
+          }
         />
       ) : (
         <>
@@ -420,7 +445,7 @@ function ProjectPicker({
                 size="sm"
                 onClick={() => setVisibleCount((count) => count + PROJECT_LIST_PAGE_SIZE)}
               >
-                Show more
+                {tI18nComplete.raw('textf5c9bd131486')}
               </Button>
             </div>
           ) : null}
@@ -434,6 +459,7 @@ function ProjectPicker({
  *  best-effort, never blocks the row: a slow or failed probe just shows
  *  "—"/no dot instead of an error. See header comment. */
 function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelect: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `GET /projects/:id/access-requests` asserts `project.members.manage`, so ask
   // for exactly that. It used to re-derive the answer from the row's role label
   // to save a request per row — which made every custom role holding
@@ -470,10 +496,10 @@ function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelec
       title={project.name}
       badges={
         hasPendingRequests ? (
-          <Hint label="Has pending access requests" side="top">
+          <Hint label={tI18nComplete.raw('text5363a9cf88d5')} side="top">
             <span
               className="bg-kortix-red inline-block size-1.5 shrink-0 rounded-full"
-              aria-label="Pending access requests"
+              aria-label={tI18nComplete.raw('text91de1d3518d8')}
             />
           </Hint>
         ) : null
@@ -481,7 +507,7 @@ function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelec
       meta={
         <span className="text-muted-foreground text-xs">
           {accessQuery.isLoading
-            ? 'Loading…'
+            ? tI18nComplete.raw('textba3bbbe10d8b')
             : memberCount != null
               ? `${memberCount} member${memberCount === 1 ? '' : 's'}`
               : '—'}
@@ -517,6 +543,7 @@ function ProjectAccessPanel({
   canManageRoles: boolean;
   onBack: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   // The single leaf every write control below gates on.
@@ -565,6 +592,42 @@ function ProjectAccessPanel({
   });
   const projectAgentCount = projectResourcesQuery.data?.resources.agents.length;
 
+  // `ProjectAgentAccessList` (the "Agents that hold a role here" block below)
+  // mounts only once `accessQuery` settles (`settledRows`) AND `canManageRoles`
+  // is true — a render gate that is correct (it must not flash the block before
+  // its own permission verdict is known) but happens to sit well behind
+  // `accessQuery`. Its three reads (agent identities, the account's role list,
+  // this project's + the account's service-account assignments) have no data
+  // dependency on `accessQuery` at all: they only need `accountId`/`projectId`,
+  // both already props here. Firing them now — the instant `canManageRoles`
+  // is known, in parallel with `accessQuery` instead of after it — means
+  // `ProjectAgentAccessList` finds warm cache the moment it mounts instead of
+  // starting three more requests from zero. Same query keys and staleTime as
+  // `useAgentIdentities` / `agentRolesQueryKey` / `fetchProjectAgentAssignments`
+  // (`agent-principals.ts`), so this is a pure accelerator, never a second
+  // fetch under a different slot. Gated on `canManageRoles` (already resolved
+  // by the account hub's one batched `:effective:batch` probe) so a non-admin
+  // viewer — who will never see this block — never pays for the 403 these
+  // routes would otherwise answer.
+  useEffect(() => {
+    if (!canManageRoles || !accountId || !projectId) return;
+    void queryClient.prefetchQuery({
+      queryKey: agentIdentitiesQueryKey(accountId),
+      queryFn: () => listAgentIdentities(accountId),
+      staleTime: 60_000,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: agentRolesQueryKey(accountId),
+      queryFn: () => listRoles(accountId),
+      staleTime: 30_000,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: projectAgentAssignmentsQueryKey(accountId, projectId),
+      queryFn: () => fetchProjectAgentAssignments(accountId, projectId),
+      staleTime: 30_000,
+    });
+  }, [canManageRoles, accountId, projectId, queryClient]);
+
   function invalidateAccess() {
     // Every caller of this function has just changed who can do what on this
     // project. Probe verdicts are cached 5 minutes; without this a revoke keeps
@@ -591,10 +654,10 @@ function ProjectAccessPanel({
         return next;
       }),
     onSuccess: () => {
-      successToast('Access removed');
+      successToast(tI18nComplete.raw('textabb84f9edc9e'));
       invalidateAccess();
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to remove access'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('textd3237eaf77bb')),
   });
 
   const [removeGroupTarget, setRemoveGroupTarget] = useState<GroupAccessRow | null>(null);
@@ -609,15 +672,16 @@ function ProjectAccessPanel({
         return next;
       }),
     onSuccess: () => {
-      successToast('Group detached from project');
+      successToast(tI18nComplete.raw('text5fceeb638441'));
       invalidateAccess();
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to detach group'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('texteabb0261292e')),
   });
 
   // ── Pending invites ───────────────────────────────────────────────────
   const [pendingInviteBusyIds, setPendingInviteBusyIds] = useState<Set<string>>(() => new Set());
-  const markInvitePending = (id: string) => setPendingInviteBusyIds((prev) => new Set(prev).add(id));
+  const markInvitePending = (id: string) =>
+    setPendingInviteBusyIds((prev) => new Set(prev).add(id));
   const clearInvitePending = (id: string) =>
     setPendingInviteBusyIds((prev) => {
       const next = new Set(prev);
@@ -627,8 +691,8 @@ function ProjectAccessPanel({
   const [revokeInviteTarget, setRevokeInviteTarget] = useState<PendingProjectInvite | null>(null);
 
   const { copy } = useCopy({
-    successMessage: 'Invite link copied',
-    errorMessage: 'Could not copy link',
+    successMessage: tI18nComplete.raw('textbd769dab6c4d'),
+    errorMessage: tI18nComplete.raw('textfa46ef7689ff'),
   });
 
   const resendInviteMutation = useMutation({
@@ -637,20 +701,20 @@ function ProjectAccessPanel({
     onSettled: (_data, _error, inviteId) => clearInvitePending(inviteId),
     onSuccess: (result) => {
       if (result.email_sent) {
-        successToast('Invite email sent');
+        successToast(tI18nComplete.raw('text7e4f3f8089ab'));
       } else {
-        warningToast('Email skipped — copy the invite link to share manually', {
+        warningToast(tI18nComplete.raw('text370145ffb7ba'), {
           duration: 8_000,
           button: (
             <Button size="sm" onClick={() => copy(result.invite_url)}>
-              Copy link
+              {tI18nComplete.raw('text9adff6870471')}
             </Button>
           ),
         });
       }
       queryClient.invalidateQueries({ queryKey: qk.project.pendingInvites(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to resend invitation'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text82750487a958')),
   });
 
   const revokeInviteMutation = useMutation({
@@ -660,12 +724,12 @@ function ProjectAccessPanel({
     onSuccess: (result) => {
       successToast(
         result.invitation_cancelled
-          ? 'Invitation cancelled.'
-          : 'Project access removed from invitation.',
+          ? tI18nComplete.raw('text134517d2e8c8')
+          : tI18nComplete.raw('textf05cb00433b9'),
       );
       queryClient.invalidateQueries({ queryKey: qk.project.pendingInvites(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to revoke invitation'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text9dbd2a60139d')),
   });
 
   // ── Access requests ───────────────────────────────────────────────────
@@ -683,11 +747,15 @@ function ProjectAccessPanel({
     onMutate: (requestId) => markRequestBusy(requestId),
     onSettled: (_data, _error, requestId) => clearRequestBusy(requestId),
     onSuccess: (result) => {
-      successToast(`${result.member.email ?? 'Requester'} can now view this project`);
+      successToast(
+        tI18nComplete('text975f39d61b4d', {
+          value0: result.member.email ?? tI18nComplete.raw('textb5687cf04af3'),
+        }),
+      );
       queryClient.invalidateQueries({ queryKey: qk.project.accessRequests(projectId) });
       invalidateAccess();
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to approve request'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('textc97583fe9025')),
   });
 
   const rejectRequestMutation = useMutation({
@@ -695,10 +763,10 @@ function ProjectAccessPanel({
     onMutate: (requestId) => markRequestBusy(requestId),
     onSettled: (_data, _error, requestId) => clearRequestBusy(requestId),
     onSuccess: () => {
-      successToast('Access request declined');
+      successToast(tI18nComplete.raw('text64e855d33cce'));
       queryClient.invalidateQueries({ queryKey: qk.project.accessRequests(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to decline request'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text48010f4355d7')),
   });
 
   // ── Grant / edit dialogs ──────────────────────────────────────────────
@@ -725,14 +793,14 @@ function ProjectAccessPanel({
 
   return (
     <AccessDetailShell
-      back={{ label: 'All projects', onClick: onBack }}
+      back={{ label: tI18nComplete.raw('text4b87271b6b81'), onClick: onBack }}
       avatar={<EntityAvatar icon={FolderOpenIcon} size="lg" />}
       title={project?.name ?? '…'}
       loading={projectQuery.isLoading}
       actions={
         <Button asChild type="button" variant="ghost" size="sm" className="gap-1.5">
           <Link href={`/projects/${projectId}`}>
-            Open project
+            {tI18nComplete.raw('text5e5eba7f41ab')}
             <ArrowSquareOutIcon className="size-3.5" />
           </Link>
         </Button>
@@ -743,7 +811,9 @@ function ProjectAccessPanel({
         accessRequestsQuery.isLoading ? (
           <Skeleton className="h-14 w-full rounded-md" />
         ) : (
-          <AccessList header={{ title: 'Asked to join', count: accessRequests.length }}>
+          <AccessList
+            header={{ title: tI18nComplete.raw('textf810ceed99d6'), count: accessRequests.length }}
+          >
             {accessRequests.map((request) => {
               const busy = accessRequestBusyIds.has(request.request_id);
               return (
@@ -757,9 +827,17 @@ function ProjectAccessPanel({
                   title={request.requester_email}
                   metaParts={[
                     <span key="requested" className="tabular-nums">
-                      Requested {formatDate(request.created_at)}
+                      {tI18nComplete.raw('text2d9e28289fac')} {formatDate(request.created_at)}
                     </span>,
-                    ...(request.message ? [<span key="message">&quot;{request.message}&quot;</span>] : []),
+                    ...(request.message
+                      ? [
+                          <span key="message">
+                            {tI18nComplete.raw('text497558230027')}
+                            {request.message}
+                            {tI18nComplete.raw('text497558230027')}
+                          </span>,
+                        ]
+                      : []),
                   ]}
                   pending={busy}
                   actions={
@@ -773,7 +851,7 @@ function ProjectAccessPanel({
                           className="gap-1.5"
                         >
                           <CheckIcon className="size-3.5" />
-                          Approve
+                          {tI18nComplete.raw('text6007acbe30b2')}
                         </Button>
                         <Button
                           type="button"
@@ -783,7 +861,7 @@ function ProjectAccessPanel({
                           className="gap-1.5"
                         >
                           <XIcon className="size-3.5" />
-                          Decline
+                          {tI18nComplete.raw('texta2d285b35287')}
                         </Button>
                       </>
                     )
@@ -800,7 +878,9 @@ function ProjectAccessPanel({
         pendingInvitesQuery.isLoading ? (
           <Skeleton className="h-14 w-full rounded-md" />
         ) : (
-          <AccessList header={{ title: 'Invited to this project', count: pendingInvites.length }}>
+          <AccessList
+            header={{ title: tI18nComplete.raw('texteaca91e7a784'), count: pendingInvites.length }}
+          >
             {pendingInvites.map((invite) => {
               const busy = pendingInviteBusyIds.has(invite.invite_id);
               return (
@@ -820,16 +900,17 @@ function ProjectAccessPanel({
                   }
                   metaParts={[
                     <span key="invited" className="tabular-nums">
-                      Invited {formatDate(invite.created_at)}
+                      {tI18nComplete.raw('text63b17becd812')} {formatDate(invite.created_at)}
                     </span>,
                     invite.invite_expired ? (
                       <span key="expiry" className="text-kortix-orange">
-                        Link expired
+                        {tI18nComplete.raw('texte61180e0dd8a')}
                       </span>
                     ) : (
                       <span key="expiry" className="inline-flex items-center gap-1 tabular-nums">
                         <ClockIcon className="size-3" />
-                        Expires {formatDate(invite.invite_expires_at)}
+                        {tI18nComplete.raw('textf6725f3af08a')}{' '}
+                        {formatDate(invite.invite_expires_at)}
                       </span>
                     ),
                   ]}
@@ -845,7 +926,7 @@ function ProjectAccessPanel({
                           className="gap-1.5"
                         >
                           <ArrowClockwiseIcon className="size-3.5" />
-                          Resend
+                          {tI18nComplete.raw('text1f94843777ae')}
                         </Button>
                         <Button
                           type="button"
@@ -855,7 +936,7 @@ function ProjectAccessPanel({
                           className="gap-1.5"
                         >
                           <XIcon className="size-3.5" />
-                          Revoke
+                          {tI18nComplete.raw('text87e6d00bbf53')}
                         </Button>
                       </>
                     )
@@ -877,11 +958,11 @@ function ProjectAccessPanel({
       ) : accessQuery.isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load access"
+          title={tI18nComplete.raw('textff42d4eadd12')}
           description={(accessQuery.error as Error)?.message}
           action={
             <Button variant="outline" size="sm" onClick={() => accessQuery.refetch()}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -889,13 +970,18 @@ function ProjectAccessPanel({
         <EmptyState
           icon={UsersIcon}
           size="sm"
-          title="Nobody has access yet"
-          description="Grant a member or group access to get started."
+          title={tI18nComplete.raw('text6a50fe407b62')}
+          description={tI18nComplete.raw('text14d959607774')}
           action={
             canManageMembers ? (
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setGrantOpen(true)}
+              >
                 <PlusIcon className="size-3.5" />
-                Grant access
+                {tI18nComplete.raw('text8693768c7e08')}
               </Button>
             ) : undefined
           }
@@ -903,12 +989,17 @@ function ProjectAccessPanel({
       ) : (
         <AccessList
           header={{
-            title: 'Access',
+            title: tI18nComplete.raw('textec5ba0abb717'),
             count: settledRows ? rowCount : undefined,
             actions: canManageMembers ? (
-              <Button type="button" size="sm" onClick={() => setGrantOpen(true)} className="gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setGrantOpen(true)}
+                className="gap-1.5"
+              >
                 <PlusIcon className="size-3.5" />
-                Grant access
+                {tI18nComplete.raw('text8693768c7e08')}
               </Button>
             ) : undefined,
           }}
@@ -937,6 +1028,16 @@ function ProjectAccessPanel({
           ))}
         </AccessList>
       )}
+
+      {/* ── Agents that hold a role here (their ceiling) ─────────────────── */}
+      {canManageRoles && settledRows ? (
+        <ProjectAgentAccessList
+          accountId={accountId}
+          projectId={projectId}
+          projectName={projectName}
+          rbacEnabled={rbacEnabled}
+        />
+      ) : null}
 
       {/* ── The one grant / edit modal ────────────────────────────────── */}
       <AccessDialog
@@ -971,12 +1072,15 @@ function ProjectAccessPanel({
         onOpenChange={(open) => {
           if (!open) setRemoveMemberTarget(null);
         }}
-        {...removeAccessCopy({
-          principal: removeMemberTarget ? principalLabel(removeMemberTarget) : '',
-          scopeName: projectName,
-          inherited: (removeMemberTarget?.group_sources ?? []).map((g) => g.group_name),
-        })}
-        confirmLabel="Remove"
+        {...removeAccessCopy(
+          {
+            principal: removeMemberTarget ? principalLabel(removeMemberTarget) : '',
+            scopeName: projectName,
+            inherited: (removeMemberTarget?.group_sources ?? []).map((g) => g.group_name),
+          },
+          tI18nComplete,
+        )}
+        confirmLabel={tI18nComplete.raw('textc3812fc4acb8')}
         confirmVariant="destructive"
         isPending={removeMemberMutation.isPending}
         onConfirm={() => {
@@ -992,13 +1096,16 @@ function ProjectAccessPanel({
         onOpenChange={(open) => {
           if (!open) setRemoveGroupTarget(null);
         }}
-        {...removeAccessCopy({
-          principal: removeGroupTarget
-            ? (removeGroupTarget.group_name ?? removeGroupTarget.group_id)
-            : '',
-          scopeName: projectName,
-        })}
-        confirmLabel="Detach"
+        {...removeAccessCopy(
+          {
+            principal: removeGroupTarget
+              ? (removeGroupTarget.group_name ?? removeGroupTarget.group_id)
+              : '',
+            scopeName: projectName,
+          },
+          tI18nComplete,
+        )}
+        confirmLabel={tI18nComplete.raw('text74bc11743543')}
         confirmVariant="destructive"
         isPending={detachGroupMutation.isPending}
         onConfirm={() => {
@@ -1014,13 +1121,13 @@ function ProjectAccessPanel({
         onOpenChange={(open) => {
           if (!open) setRevokeInviteTarget(null);
         }}
-        title="Revoke invitation?"
+        title={tI18nComplete.raw('text25f372c4eb6c')}
         description={
           revokeInviteTarget
-            ? `The invitation to ${revokeInviteTarget.email} will be cancelled.`
+            ? tI18nComplete('text4535911857d7', { value0: revokeInviteTarget.email })
             : ''
         }
-        confirmLabel="Revoke"
+        confirmLabel={tI18nComplete.raw('text87e6d00bbf53')}
         confirmVariant="destructive"
         isPending={revokeInviteMutation.isPending}
         onConfirm={() => {
@@ -1053,6 +1160,7 @@ function MemberAccessRow({
   onEdit: (target: EditTarget) => void;
   onRequestRemove: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const label = principalLabel(member) || member.user_id;
   const policy = directProjectPolicy(member.custom_role_policies);
 
@@ -1072,10 +1180,12 @@ function MemberAccessRow({
     : member.project_role
       ? builtinRole(member.project_role)
       : ROLE_NONE;
-  const roleLabel = policy ? policy.role_name : roleValueLabel('project', displayRole);
+  const roleLabel = policy
+    ? policy.role_name
+    : roleValueLabel('project', displayRole, undefined, tI18nComplete);
 
   const agentGrants = distinctAgentGrants(agentGrantsOf(member.resource_grants));
-  const directAgentIds = agentGrants.filter((g) => g.source !== 'group').map((g) => g.resource_id);
+  const directAgentIds = agentGrants.filter(isDirectGrant).map((g) => g.resource_id);
   const expiresAt = policy ? policy.expires_at : (member.expires_at ?? null);
   const via = accessVia(member);
   const inheritedFrom = (member.group_sources ?? []).map((g) => g.group_name);
@@ -1086,7 +1196,7 @@ function MemberAccessRow({
   const kebab: KebabItem[] = editable
     ? [
         {
-          label: 'Edit access',
+          label: tI18nComplete.raw('texta514a684676a'),
           icon: <PencilSimpleIcon className="size-3.5" />,
           onSelect: () =>
             onEdit({
@@ -1107,7 +1217,7 @@ function MemberAccessRow({
         ...(member.project_role
           ? [
               {
-                label: 'Remove access',
+                label: tI18nComplete.raw('textbb349bfe6750'),
                 icon: <TrashIcon className="size-3.5" />,
                 variant: 'destructive' as const,
                 separated: true,
@@ -1140,7 +1250,7 @@ function MemberAccessRow({
       }
       trailing={roleLabel}
       kebab={kebab}
-      kebabLabel={`Actions for ${label}`}
+      kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
       pending={busy}
       notEditable={
         !editable && canManageMembers && (member.has_implicit_access || inheritedOnly)
@@ -1166,6 +1276,7 @@ function GroupAccessRowView({
   onEdit: (target: EditTarget) => void;
   onRequestRemove: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const label = group.group_name ?? group.group_id;
   const policy = directProjectPolicy(group.custom_role_policies);
   const role: RoleValue = policy
@@ -1173,7 +1284,9 @@ function GroupAccessRowView({
     : group.built_in_role
       ? builtinRole(group.built_in_role)
       : ROLE_NONE;
-  const roleLabel = policy ? policy.role_name : roleValueLabel('project', role);
+  const roleLabel = policy
+    ? policy.role_name
+    : roleValueLabel('project', role, undefined, tI18nComplete);
 
   const agentGrants = distinctAgentGrants(agentGrantsOf(group.resource_grants));
   const agentIds = agentGrants.map((g) => g.resource_id);
@@ -1184,7 +1297,7 @@ function GroupAccessRowView({
   const kebab: KebabItem[] = canManageMembers
     ? [
         {
-          label: 'Edit access',
+          label: tI18nComplete.raw('texta514a684676a'),
           icon: <PencilSimpleIcon className="size-3.5" />,
           onSelect: () =>
             onEdit({
@@ -1202,7 +1315,7 @@ function GroupAccessRowView({
             }),
         },
         {
-          label: 'Detach group',
+          label: tI18nComplete.raw('text623b0cedf094'),
           icon: <TrashIcon className="size-3.5" />,
           variant: 'destructive' as const,
           separated: true,
@@ -1217,7 +1330,7 @@ function GroupAccessRowView({
       title={label}
       badges={
         <Badge variant="outline" size="sm">
-          Group
+          {tI18nComplete.raw('text34ca0e766088')}
         </Badge>
       }
       metaParts={[
@@ -1230,7 +1343,7 @@ function GroupAccessRowView({
       ]}
       trailing={roleLabel}
       kebab={kebab}
-      kebabLabel={`Actions for ${label}`}
+      kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
       pending={busy}
     />
   );

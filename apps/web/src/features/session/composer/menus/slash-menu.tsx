@@ -16,6 +16,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { ProgressRing } from '@/components/ui/progress-ring';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ContextRing } from '../context-ring';
 import { ContextUsageCard } from '../token-progress';
@@ -143,6 +144,7 @@ export function SlashMenu({
   onSelect: (row: SlashRow) => void;
   onHover?: (row: SlashRow) => void;
 }) {
+  const t = useTranslations('sessionUi.composerMenus');
   // A query that matches nothing keeps the card, with one dead row saying so.
   // Returning `null` made the palette DISAPPEAR mid-word — the user could not
   // tell "no match" from "the menu closed", and one backspace brought it back
@@ -151,7 +153,7 @@ export function SlashMenu({
     return (
       <MenuCard className={cn('mb-2.5 w-full rounded-lg')}>
         <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
-          No matching command, file, or action
+          {t('noCommandMatch')}
         </p>
       </MenuCard>
     );
@@ -176,7 +178,7 @@ export function SlashMenu({
     <MenuCard className={cn('mb-2.5 flex max-h-96 w-full overflow-hidden rounded-lg shadow-xs')}>
       <div
         role="listbox"
-        aria-label="Commands and actions"
+        aria-label={t('commandsAndActions')}
         aria-activedescendant={`slash-row-${selectedIndex}`}
         // `-1`, matching `mention-menu.tsx`: focusable for AT, but never a tab
         // stop. Keyboard interaction stays in the composer editor, which
@@ -261,7 +263,7 @@ export function SlashMenu({
           )}
           <div className="mt-auto flex items-center justify-end gap-2 pt-4">
             <span className="text-muted-foreground flex items-center gap-1 text-xs">
-              <Kbd>↵</Kbd> to use
+              <Kbd>↵</Kbd> {t('toUse')}
             </span>
             <button
               type="button"
@@ -273,10 +275,10 @@ export function SlashMenu({
                 'bg-primary text-primary-foreground rounded-full px-3.5 py-1.5 text-sm font-medium',
                 // Named properties, never `transition-all`: `scale` is driven
                 // by `active:` and must stay interruptible on its own timeline.
-                'cursor-pointer transition-[background-color,scale] duration-150 active:scale-[0.96]',
+                'duration-normal cursor-pointer transition-[background-color,scale] active:scale-[0.96]',
               )}
             >
-              Use
+              {t('use')}
             </button>
           </div>
         </div>

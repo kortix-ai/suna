@@ -3,18 +3,23 @@ import * as React from 'react';
 
 import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
-import { dialogContentZ, DialogDepthProvider, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+import {
+  dialogContentZ,
+  DialogDepthProvider,
+  dialogOverlayZ,
+  useDialogDepth,
+  useDialogRootLayer,
+} from '@/lib/z-stack';
 import { cva, VariantProps } from 'class-variance-authority';
 import { buttonVariants } from './button';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
-const Dialog = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
-  const parentDepth = useDialogDepth();
-  const depth = parentDepth + 1;
+const Dialog = ({ open, defaultOpen, onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
+  const layer = useDialogRootLayer({ open, defaultOpen, onOpenChange });
 
   return (
-    <DialogDepthProvider depth={depth}>
-      <DialogPrimitive.Root onOpenChange={onOpenChange} {...props} />
+    <DialogDepthProvider depth={layer.depth}>
+      <DialogPrimitive.Root {...props} open={layer.open} onOpenChange={layer.onOpenChange} />
     </DialogDepthProvider>
   );
 };

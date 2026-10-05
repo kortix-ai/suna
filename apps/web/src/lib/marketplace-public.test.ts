@@ -22,9 +22,8 @@ describe('loadMarketplaceExploreData', () => {
         headers: { 'content-type': 'application/json' },
       });
     }) as unknown as typeof fetch;
-    const { loadMarketplaceExploreData, MARKETPLACE_EXPLORE_LANDING_LIMIT } = await import(
-      './marketplace-public'
-    );
+    const { loadMarketplaceExploreData, MARKETPLACE_EXPLORE_LANDING_LIMIT } =
+      await import('./marketplace-public');
 
     await loadMarketplaceExploreData();
 
@@ -67,9 +66,8 @@ describe('loadMarketplaceCompanyData', () => {
         headers: { 'content-type': 'application/json' },
       });
     }) as unknown as typeof fetch;
-    const { loadMarketplaceCompanyData, MARKETPLACE_COMPANY_PAGE_LIMIT } = await import(
-      './marketplace-public'
-    );
+    const { loadMarketplaceCompanyData, MARKETPLACE_COMPANY_PAGE_LIMIT } =
+      await import('./marketplace-public');
 
     await loadMarketplaceCompanyData('kortix');
 

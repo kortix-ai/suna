@@ -6,7 +6,6 @@ import {
   type CatalogReasoningOption,
   catalogModelForWireModel as catalogModelForWireModelCanonical,
 } from '@kortix/llm-catalog';
-import { codexModelIds } from './codex-models';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
 import { SERVED_MANAGED_MODELS } from './served-managed-models';
@@ -30,6 +29,9 @@ interface GatewayModel {
   // group/brand by without parsing `<provider>/<model>` out of the wire id.
   // See apps/web/src/features/session/model-selector.tsx's `pickerGroupId`.
   provider?: string;
+  // The provider's display name from models.dev ("OpenCode Go"). Clients label
+  // a BYOK group with it instead of the synthetic `kortix` provider's name.
+  provider_name?: string;
   reasoning?: boolean;
   // Present iff the model exposes a tunable reasoning-effort knob — the
   // chat runtime's PRIORITY field for offering an effort control without a
@@ -100,25 +102,6 @@ function servedLimit(limit?: { context?: number; input?: number; output?: number
     context: limit?.context && limit.context > 0 ? limit.context : DEFAULT_SERVED_LIMIT.context,
     ...(typeof limit?.input === 'number' && limit.input > 0 ? { input: limit.input } : {}),
     output: limit?.output && limit.output > 0 ? limit.output : DEFAULT_SERVED_LIMIT.output,
-  };
-}
-
-
-/**
- * The input/output modalities served for a CURATED model, reconciled with its
- * curated `vision` flag. `attachment` and `modalities.input` describe one
- * capability and opencode believes the second one, so they must never disagree.
- */
-export function modalitiesFor(
-  vision: boolean,
-  fromCatalog: { input?: string[]; output?: string[] } | undefined,
-): { input: string[]; output: string[] } {
-  const input = [...(fromCatalog?.input ?? [])];
-  if (!input.includes('text')) input.unshift('text');
-  const withImage = input.includes('image') ? input : [...input, 'image'];
-  return {
-    input: vision ? withImage : input.filter((m) => m !== 'image'),
-    output: fromCatalog?.output?.length ? [...fromCatalog.output] : ['text'],
   };
 }
 
@@ -249,16 +232,8 @@ export function managedModels(): Record<string, GatewayModel> {
       ...(caps ?? {}),
       // Curated fields always win over the models.dev record.
       attachment: m.vision,
-      // …AND THE MODALITIES HAVE TO AGREE WITH THEM. opencode does not read
-      // `attachment` when it decides whether a prompt may carry an image — it
-      // reads `modalities.input`. models.dev carries no modalities for some
-      // curated slugs (glm-5.3-flash resolved to `input: []`), so the served
-      // model claimed attachment:true and image input nowhere, and every image
-      // prompt died in the agent with "this model does not support image
-      // input" BEFORE any request left the sandbox (pi-js.kortix.com,
-      // 2026-09-06). A curated vision model advertises image input; a
-      // non-vision one never does, whatever models.dev says.
-      modalities: modalitiesFor(m.vision, caps?.modalities),
+      modalities: { input: m.vision ? ['text', 'image'] : ['text'], output: ['text'] },
+      ...(m.reasoningOptions ? { reasoning_options: m.reasoningOptions } : {}),
       limit: m.limit,
       ...(cost ? { cost } : {}),
     };
@@ -281,6 +256,7 @@ export function gatewayModelsAll(
       out[`${provider.id}/${model.id}`] = {
         name: model.name,
         provider: provider.id,
+        provider_name: provider.name,
         released: model.released,
         release_date: model.released,
         family: (model as { family?: string }).family,
@@ -293,10 +269,11 @@ export function gatewayModelsAll(
 
 export function gatewayCodexModels(
   catalog: Catalog = runtimeModelCatalog.snapshot(),
+  codexIds: readonly string[] = runtimeModelCatalog.codexModelIds(),
 ): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   const catalogModelById = modelsById(catalog);
-  for (const id of codexModelIds()) {
+  for (const id of codexIds) {
     const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
       name: `${model?.name ?? codexName(id)} (ChatGPT)`,

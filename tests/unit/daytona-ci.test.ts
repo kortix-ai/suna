@@ -40,7 +40,7 @@ describe('Daytona CI worker plan', () => {
   test('uses one content-addressed warm snapshot for one lockfile', () => {
     expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v4');
     expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v4-bbbbbbbbbbbbbbbb');
-    expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v3-bbbbbbbbbbbbbbbb-base');
+    expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v4-bbbbbbbbbbbbbbbb-base');
   });
 
   test('builds the same pinned toolchain and repository cache as Platinum', () => {
@@ -49,7 +49,9 @@ describe('Daytona CI worker plan', () => {
       cacheSha: sha,
     });
 
-    expect(dockerfile).toContain('node:22.22.0-bookworm@sha256:');
+    expect(dockerfile).toContain(
+      'node:22.22.2-bookworm@sha256:62e4daa6819762bbd3072af77cc282ab72c631c4aed30dd7980192babaf385b3',
+    );
     expect(dockerfile).toContain('docker.io');
     expect(dockerfile).toContain('docker-compose-linux-x86_64');
     expect(dockerfile).toContain('sha256sum -c -');
@@ -70,6 +72,10 @@ describe('Daytona CI worker plan', () => {
     expect(script).toContain('.kortix-ci-warm-ready');
     expect(script).toContain('daytona-warm.exit');
     expect(script).toContain('modprobe "$module"');
+    expect(script).toContain('if ! modprobe "$module"; then');
+    expect(script).toContain('docker readiness will decide');
+    expect(script).toContain("timeout 180 sh -c 'until docker info");
+    expect(script).toContain('\ndocker info >/dev/null\n');
     expect(script).toContain('pkill -TERM -x dockerd');
     expect(script).toContain('pgrep -x containerd');
     expect(script).toContain('rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes');

@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { hubTarget } from '@/stores/account-panel-store';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
@@ -9,25 +10,29 @@ import type { DraftScope } from '@/features/session/composer/draft/composer-draf
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
+import { isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
+import { useSearchParams } from 'next/navigation';
 import {
-  type SandboxTemplate,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
+  type SandboxTemplate,
 } from '@kortix/sdk';
+import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
-import { MetaRuntimeIndicator } from './home/meta-runtime-indicator';
+import { FirstChat } from './home/first-chat';
 import { SandboxPicker } from './home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
-export { ProjectHomeWelcomeBody } from './home/welcome-body';
 export { PROJECT_SETUP_TILE_ACTIONS } from './home/setup-tiles';
+export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
@@ -37,6 +42,10 @@ export interface ProjectHomeSendOptions extends ComposerOptions {
  * The project's home screen: the wallpaper, the floating sidebar opener, the
  * access-requests bell, and the centred column holding the composer and the
  * setup checklist.
+ *
+ * Until a new project's first message is sent, the column is the first chat
+ * instead (`home/first-chat.tsx`, started by onboarding): the same composer,
+ * docked at the bottom under a welcome from Kortix.
  *
  * This component owns the composer's WIRING — which sandbox, which agent, what
  * a send carries, what a prefill does. Everything it renders is a component of
@@ -54,14 +63,23 @@ export function ProjectHome({
     text: string,
     files: AttachedFile[] | undefined,
     options?: ProjectHomeSendOptions,
-  ) => void;
+    attachments?: AttachmentSubmission,
+  ) => void | Promise<void>;
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tFirstChat = useTranslations('firstChat');
+  // The first chat never ends, but it opens only when asked for
+  // (`firstChatHref`: the sidebar row or the onboarding exit). Plain project
+  // home, which "New session" opens, stays the normal home.
+  const searchParams = useSearchParams();
+  const firstChat = useFirstChatPending(projectId) && isFirstChatRequested(searchParams);
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
+  const [prefill, setPrefill] = useState<{ text: string; id: number; submit?: boolean } | null>(
+    null,
+  );
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
   // `useSandboxHealth`, its own key and its own polling). Changed only by this
@@ -83,7 +101,7 @@ export function ProjectHome({
 
   const showSandboxPicker = sandboxItems.length >= 1;
   // `GET /projects/:id/access-requests` asserts project.members.manage
-  // (`apps/api/src/projects/routes/r6.ts`), so firing it for a plain member is
+  // (`apps/api/src/projects/routes/access-requests.ts`), so firing it for a plain member is
   // a guaranteed 403 for a bell they could never act on anyway. Probe the leaf
   // first and keep the query disabled until it says yes — `showErrors: false`
   // only silenced the toast, the request still went out and still failed.
@@ -115,48 +133,59 @@ export function ProjectHome({
   // Resolved during render so the bell is an anchor and Next holds its payload
   // in the segment cache. `account_id` arrives on a different query than the
   // count, so the bell can paint before the destination exists.
-  const accessRequestsHref = accountId
-    ? `/accounts/${accountId}?tab=access-projects&project=${projectId}`
+  const accessRequestsTo = accountId
+    ? hubTarget(accountId, { tab: 'access-projects', project: projectId })
     : null;
 
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
-      onSend(text, files, {
-        ...options,
-        ...(metaSelected
-          ? { sandbox_slug: META_SANDBOX_SLUG }
-          : selectedSlug
-            ? { sandbox_slug: selectedSlug }
-            : {}),
-      });
+    (
+      text: string,
+      files: AttachedFile[] | undefined,
+      options: ComposerOptions,
+      attachments?: AttachmentSubmission,
+    ) => {
+      const sent = onSend(
+        text,
+        files,
+        {
+          ...options,
+          ...(metaSelected
+            ? { sandbox_slug: META_SANDBOX_SLUG }
+            : selectedSlug
+              ? { sandbox_slug: selectedSlug }
+              : {}),
+        },
+        attachments,
+      );
+      return sent;
     },
     [metaSelected, selectedSlug, onSend],
   );
 
+  const isMobile = useIsMobile();
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
+
+  // Send rejects on failure so the composer keeps its attachment handles.
+  // These callers have no composer draft; the session hook shows the error.
+  const sendOutsideComposer = useCallback(
+    (text: string, options: ComposerOptions) => {
+      void Promise.resolve(handleSend(text, undefined, options)).catch(() => undefined);
+    },
+    [handleSend],
+  );
 
   useEffect(() => {
     if (!pendingPrefill) return;
     consumePrefill(projectId);
-    // The onboarding hand-off (`project-onboarding-wizard.tsx`) sets
-    // `autoSend: true` so the finish step's "Open project" click actually
-    // starts the first turn instead of just filling the box — see
-    // `composer-prefill-store.ts`. Every other caller (the `?q=` deep link,
-    // the command palette) omits the flag and keeps the old prefill-only
-    // behavior below.
-    if (pendingPrefill.autoSend) {
-      handleSend(pendingPrefill.text, undefined, {});
-      return;
-    }
     setPrefill({ text: pendingPrefill.text, id: Date.now() });
-  }, [pendingPrefill, projectId, consumePrefill, handleSend]);
+  }, [pendingPrefill, projectId, consumePrefill]);
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
-      handleSend(`/${cmd.name}${args ? ` ${args}` : ''}`, undefined, options);
+      sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
     },
-    [handleSend],
+    [sendOutsideComposer],
   );
 
   const applySuggestion = (s: string) => {
@@ -190,51 +219,82 @@ export function ProjectHome({
         }
       : undefined;
 
+  const composer = (
+    <ComposerChatInput
+      onSend={handleSend}
+      onCommand={handleCommand}
+      projectId={projectId}
+      draftScope={draftScope}
+      // `busy` here means "create in flight" — spinner in the send slot,
+      // input locked. NOT isBusy (that renders agent-running stop-button
+      // semantics, which leave the composer with no button at all here).
+      isSending={busy}
+      disabled={busy}
+      // The home composer navigates to the new session on send — don't
+      // clear it first (that would drop the text on a gated send). The
+      // message rides across via `create.pending_prompt` and reappears
+      // as the instant shell's optimistic turn.
+      clearOnSend={false}
+      autoFocus
+      // Desktop: a hero composer floating mid-page has no column for a second
+      // rail to align to, so the attach/agent/context controls ride on the
+      // toolbar itself, ahead of the model selector, and the `/` menu opens
+      // BELOW the card, into the empty lower half, instead of shoving the
+      // heading up. Mobile: the toolbar is too narrow to hold them next to the
+      // model selector — the labels overlap — so it uses the session page's
+      // row beneath the card. The first chat docks the composer at the bottom
+      // like a session does, so it keeps a session's defaults: the row
+      // beneath, the menu above.
+      underbarPlacement={firstChat || isMobile ? 'below' : 'inline'}
+      slashMenuPlacement={firstChat ? 'above' : 'below'}
+      placeholder={
+        firstChat
+          ? tFirstChat('placeholder')
+          : tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
+            )
+      }
+      prefill={prefill}
+      onAgentSelectionChange={setSelectedAgent}
+      sandboxSlot={sandboxSlot}
+    />
+  );
+
   return (
     <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
-      <AccessRequestsBell count={pendingAccessCount} href={accessRequestsHref} />
+      <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
 
-      <ProjectHomeWelcomeBody
-        projectId={projectId}
-        onPickSuggestion={applySuggestion}
-        composer={
-          <ComposerChatInput
-            onSend={handleSend}
-            onCommand={handleCommand}
-            projectId={projectId}
-            draftScope={draftScope}
-            // `busy` here means "create in flight" — spinner in the send slot,
-            // input locked. NOT isBusy (that renders agent-running stop-button
-            // semantics, which leave the composer with no button at all here).
-            isSending={busy}
-            disabled={busy}
-            // The home composer navigates to the new session on send — don't
-            // clear it first (that only flashes an empty box before the route
-            // swaps, and would drop the text on a gated send). The message
-            // rides across via the start-stash and reappears as the instant
-            // shell's optimistic turn.
-            clearOnSend={false}
-            autoFocus
-            // A hero composer floating mid-page has no column for a second
-            // rail to align to, so the attach/agent/context controls ride on
-            // the toolbar itself, ahead of the model selector. The session
-            // page keeps the default row beneath the card.
-            underbarPlacement="inline"
-            // Hero composer mid-page: the `/` menu opens BELOW the card, into
-            // the empty lower half, instead of shoving the heading up.
-            slashMenuPlacement="below"
-            placeholder={tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
-            )}
-            prefill={prefill}
-            onAgentSelectionChange={setSelectedAgent}
-            toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
-            sandboxSlot={sandboxSlot}
-          />
-        }
-      />
+      {/* No bubble or "Thinking" row is painted here on send. The page stays
+          the welcome screen with the sentence held in the composer until the
+          create resolves and the session route opens; the instant shell draws
+          the first turn there (`useFirstPromptPreviewStore`). Painting the turn
+          here left a slow or stuck create looking like a live session. */}
+      {firstChat ? (
+        <FirstChat
+          projectId={projectId}
+          inviteTo={canManageMembers ? accessRequestsTo : null}
+          composer={composer}
+          busy={busy}
+          // Both starters send at once, each into a new session. Through the
+          // composer's own submit, not `sendOutsideComposer`: the send carries
+          // the agent and model the composer shows, and a missing model refuses
+          // it the same way a typed message is refused.
+          onRecommendTools={() =>
+            setPrefill({ text: tFirstChat('toolsPrompt'), id: Date.now(), submit: true })
+          }
+          onUpdateMemory={() =>
+            setPrefill({ text: tFirstChat('memoryPrompt'), id: Date.now(), submit: true })
+          }
+        />
+      ) : (
+        <ProjectHomeWelcomeBody
+          projectId={projectId}
+          onPickSuggestion={applySuggestion}
+          composer={composer}
+        />
+      )}
     </div>
   );
 }

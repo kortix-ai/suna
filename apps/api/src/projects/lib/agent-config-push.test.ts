@@ -8,7 +8,6 @@
 // session merged past days ago kept running the agents it booted with, with no
 // documented way to reconcile the two short of starting a new session.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { sessionEnvironments } from '@kortix/db';
 import { config } from '../../config';
 import * as realCompile from './compile-agent-config';
 import * as realSecrets from '../secrets';
@@ -30,12 +29,6 @@ const SANDBOX_ROW = {
   provider: 'daytona',
   config: { serviceKey: 'svc-key' },
 };
-const ENVIRONMENT_ROW = {
-  sessionId: 'sess-1',
-  externalId: 'env-ext-1',
-  provider: 'daytona',
-  config: { serviceKey: 'env-svc-key' },
-};
 const SESSION_ROW = {
   createdBy: 'user-1',
   agentName: 'support',
@@ -50,12 +43,6 @@ let activeSandbox: {
   provider: string;
   config: Record<string, unknown>;
 } | null = SANDBOX_ROW;
-let activeEnvironment: {
-  sessionId: string;
-  externalId: string;
-  provider: string;
-  config: Record<string, unknown>;
-} | null = ENVIRONMENT_ROW;
 let daemonProof = true;
 let daemonReload: string | null = 'restarted';
 
@@ -82,16 +69,15 @@ mock.module('./compile-agent-config', () => ({
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: (table: unknown) => ({
+      from: () => ({
         where: () => {
-          const runtime = table === sessionEnvironments ? activeEnvironment : activeSandbox;
-          const rows = runtime ? [{ ...SESSION_ROW, metadata: sessionMetadata, ...runtime }] : [];
+          const rows = activeSandbox
+            ? [{ ...SESSION_ROW, metadata: sessionMetadata, ...activeSandbox }]
+            : [];
           return {
             limit: async () => rows,
-            then: (
-              resolve: (value: typeof rows) => unknown,
-              reject?: (reason: unknown) => unknown,
-            ) => Promise.resolve(rows).then(resolve, reject),
+            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve(rows).then(resolve, reject),
           };
         },
       }),
@@ -127,7 +113,16 @@ mock.module('./network-secret-boundary', () => ({
 }));
 
 const ORIGINAL_FETCH = globalThis.fetch;
-(globalThis as { fetch: unknown }).fetch = async (_url: unknown, init?: { body?: string }) => {
+let daemonCapabilities: string[] | 'down' = ['file.import', 'file.append'];
+// What the box reports it is RUNNING. `release_id: null` is a box that runs no
+// release — the flag is off for the project, or the release chain stepped down
+// to the image default. The capability is the binary's, not the box's state.
+let daemonRunningConfig: Record<string, unknown> | null = null;
+(globalThis as { fetch: unknown }).fetch = async (url: unknown, init?: { body?: string }) => {
+  if (String(url).endsWith('/kortix/health')) {
+    if (daemonCapabilities === 'down') return new Response('down', { status: 503 });
+    return Response.json({ capabilities: daemonCapabilities, config: daemonRunningConfig });
+  }
   const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
   posted.push({
     opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
@@ -146,9 +141,8 @@ const ORIGINAL_FETCH = globalThis.fetch;
   });
 };
 
-const { propagateProjectSecretsToActiveSandboxes, pushSessionAgentConfigToSandbox } = await import(
-  './sandbox-env-sync'
-);
+const { propagateProjectSecretsToActiveSandboxes, pushSessionAgentConfigToSandbox } =
+  await import('./sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',
@@ -174,47 +168,35 @@ beforeEach(() => {
   compileCalls = [];
   posted = [];
   activeSandbox = SANDBOX_ROW;
-  activeEnvironment = ENVIRONMENT_ROW;
   daemonProof = true;
   daemonReload = 'restarted';
   sessionMetadata = null;
+  daemonCapabilities = ['file.import', 'file.append'];
+  daemonRunningConfig = null;
 });
 
 describe('propagateProjectSecretsToActiveSandboxes', () => {
-  test('reports both runtimes only after each daemon confirms revision, file write, and export count', async () => {
+  test('reports a sandbox only after the daemon confirms revision, file write, and export count', async () => {
     const result = await propagateProjectSecretsToActiveSandboxes('proj-1');
 
     expect(result).toMatchObject({
       ok: true,
-      active_sandboxes: 2,
-      targeted: 2,
-      synced: 2,
+      active_sandboxes: 1,
+      targeted: 1,
+      synced: 1,
       failed: 0,
-      exported: 2,
-      results: [
-        {
-          session_id: 'sess-1',
-          sandbox_id: 'ext-1',
-          status: 'synced',
-          scope: 'inherit',
-          revision: expect.any(String),
-          exported: 1,
-          managed: 1,
-          withheld: 0,
-          agent_env_written: true,
-        },
-        {
-          session_id: 'sess-1',
-          sandbox_id: 'env-ext-1',
-          status: 'synced',
-          scope: 'inherit',
-          revision: expect.any(String),
-          exported: 1,
-          managed: 1,
-          withheld: 0,
-          agent_env_written: true,
-        },
-      ],
+      exported: 1,
+      results: [{
+        session_id: 'sess-1',
+        sandbox_id: 'ext-1',
+        status: 'synced',
+        scope: 'inherit',
+        revision: expect.any(String),
+        exported: 1,
+        managed: 1,
+        withheld: 0,
+        agent_env_written: true,
+      }],
     });
   });
 
@@ -226,23 +208,13 @@ describe('propagateProjectSecretsToActiveSandboxes', () => {
     expect(result).toMatchObject({
       ok: false,
       synced: 0,
-      active_sandboxes: 2,
-      targeted: 2,
-      failed: 2,
+      failed: 1,
       exported: 0,
-      results: [
-        {
-          session_id: 'sess-1',
-          status: 'failed',
-          reason: 'env sync did not confirm agent-env.sh write',
-        },
-        {
-          session_id: 'sess-1',
-          sandbox_id: 'env-ext-1',
-          status: 'failed',
-          reason: 'env sync did not confirm agent-env.sh write',
-        },
-      ],
+      results: [{
+        session_id: 'sess-1',
+        status: 'failed',
+        reason: 'env sync did not confirm agent-env.sh write',
+      }],
     });
   });
 });
@@ -346,5 +318,44 @@ describe('pushSessionAgentConfigToSandbox', () => {
 
     expect(result.applied).toBe(false);
     expect(posted).toEqual([]);
+  });
+});
+
+describe('capability gate on the compiled-governance push', () => {
+  test('a daemon RUNNING a release receives NO governance push', async () => {
+    daemonCapabilities = ['file.import', 'file.append', 'config.release.v1'];
+    daemonRunningConfig = { release_id: 'r-1', source: 'release' };
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result).toEqual({ applied: false, reason: 'the daemon receives compiled governance in its config release' });
+    expect(posted).toEqual([]);
+  });
+
+  // The gate must read the box's STATE, not the binary's capability. With
+  // `config_releases` off the box runs its workspace config dir and owns no
+  // release, so the pre-release governance push is exactly what has to happen.
+  // Verified on a real Platinum box 2026-09-24 (one session, flag off):
+  // health.config = {release_id: null, source: 'workspace'}, capabilities
+  // still list config.release.v1, and `kortix sessions reload` answered
+  // "Nothing to apply: the daemon receives compiled governance in its config
+  // release" — a release the session does not have.
+  test('a config.release.v1 daemon running NO release still receives the governance push', async () => {
+    daemonCapabilities = ['file.import', 'file.append', 'config.release.v1'];
+    daemonRunningConfig = { release_id: null, desired_release_id: null, source: 'workspace', mode: null };
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(true);
+    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  });
+
+  test('a daemon whose health does not answer receives no governance push', async () => {
+    daemonCapabilities = 'down';
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(false);
+    expect(posted).toEqual([]);
+  });
+
+  test('an old daemon still receives the governance push', async () => {
+    const result = await pushSessionAgentConfigToSandbox(INPUT);
+    expect(result.applied).toBe(true);
+    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 });

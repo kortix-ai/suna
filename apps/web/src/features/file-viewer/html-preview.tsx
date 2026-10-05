@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `HtmlPreview` — an HTML file, shown the only way an HTML file can be shown.
  *
@@ -22,7 +23,6 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { useStaticFilePreview } from '@kortix/sdk/react';
 import {
@@ -30,6 +30,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
+import { framePolicy } from './preview-policy';
 
 /**
  * The frame fills its region edge to edge, and paints WHITE behind the
@@ -49,10 +50,16 @@ export function HtmlPreview({
   path,
   fileName,
   className,
+  reloadKey,
   pendingLabel = 'Starting preview server…',
 }: {
   /** Sandbox path of the file to serve. */
   path: string;
+  /** A change reloads the page in place. Only the frame is re-keyed: the
+   *  server probe and the preview session stay, so a reload is one page load,
+   *  not a cold start. Moved at turn end and by the viewer's Refresh, because
+   *  the agent may have changed a stylesheet the markup only points at. */
+  reloadKey?: string | number;
   /** Frame title — what a screen reader announces for the embedded document. */
   fileName: string;
   className?: string;
@@ -61,6 +68,7 @@ export function HtmlPreview({
    *  session panel would show anyway. */
   pendingLabel?: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { url, status, retry } = useStaticFilePreview(path);
 
   // Never a dead end: the server may simply be slower than the bound, and the
@@ -81,12 +89,10 @@ export function HtmlPreview({
         )}
       >
         <FileWarning className="h-5 w-5 opacity-40" />
-        <p className="max-w-xs text-xs opacity-60">
-          {"Couldn't reach the preview server. The sandbox may still be starting up."}
-        </p>
+        <p className="max-w-xs text-xs opacity-60">{tI18nComplete.raw('texte65afdeb4024')}</p>
         <Button variant="outline" size="sm" onClick={retry}>
           <RotateCcw className="h-3.5 w-3.5" />
-          Retry
+          {tI18nComplete.raw('text942087cc2d41')}
         </Button>
       </div>
     );
@@ -110,17 +116,16 @@ export function HtmlPreview({
   }
 
   return (
-    // `ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX` — scripts, forms, popups and
-    // downloads run; `allow-same-origin` is withheld. An agent wrote this page,
-    // so it gets a real browser to run in and an opaque origin to run it from:
-    // it cannot read this app's DOM, cookies or storage. Withholding
-    // `allow-scripts` instead would make every interactive page a screenshot.
+    // An agent wrote this page, so it is a `document` frame: scripts, forms,
+    // popups and downloads run, and the origin is opaque — it cannot read this
+    // app's DOM, cookies or storage. Withholding `allow-scripts` instead would
+    // make every interactive page a screenshot.
     <iframe
-      key={path}
+      key={`${path}:${reloadKey ?? ''}`}
       src={url}
       title={fileName}
       className={cn(HTML_PREVIEW_IFRAME_CLASS, className)}
-      sandbox={ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX}
+      sandbox={framePolicy('document', url).sandbox}
     />
   );
 }

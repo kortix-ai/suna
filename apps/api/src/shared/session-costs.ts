@@ -1,3 +1,4 @@
+import { numberValue, isoValue, type NumericValue, type TemporalValue } from './cost-values';
 import {
   gatewayRequestLogs,
   projectSessions,
@@ -25,12 +26,11 @@ import { db } from './db';
 import {
   kortixBilledSpendSql,
   providerBilledSpendSql,
+  rowKortixBilledSpendSql,
   rowTotalSpendSql,
   totalSpendSql,
 } from './llm-spend';
 
-type NumericValue = number | string | null | undefined;
-type TemporalValue = Date | string | null | undefined;
 type ProjectSessionStatus = typeof projectSessions.$inferSelect.status;
 
 export class InvalidSessionCostQueryError extends Error {
@@ -52,10 +52,11 @@ export interface SessionCostSummary {
   created_at: string;
   updated_at: string;
   last_activity_at: string | null;
+  /** LLM charges debited from the Kortix wallet. Excludes provider-side BYOK spend. */
   llm_cost: number;
-  /** The `llm_cost` slice debited from the Kortix wallet. */
+  /** Alias of `llm_cost`, retained for the additive payee breakdown. */
   llm_kortix_cost: number;
-  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
@@ -220,19 +221,8 @@ export const billedComputeSecondsExpression = sql<number>`
   )
 `;
 
-function numberValue(value: NumericValue): number {
-  const result = Number(value ?? 0);
-  return Number.isFinite(result) ? result : 0;
-}
-
 function sumCosts(left: number, right: number): number {
   return Number((left + right).toFixed(10));
-}
-
-function isoValue(value: TemporalValue): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function requiredIsoValue(value: TemporalValue): string {
@@ -264,7 +254,7 @@ export function assembleSessionCostSummary(input: {
   llm?: LlmAggregateRow;
   compute?: ComputeAggregateRow;
 }): SessionCostSummary {
-  const llmCost = numberValue(input.llm?.llmCost);
+  const llmCost = numberValue(input.llm?.llmKortixCost);
   const computeCost = numberValue(input.compute?.computeCost);
   const ownerType = input.session.ownerId ? (input.owner?.type ?? 'unknown') : null;
 
@@ -361,7 +351,7 @@ export function mergeLegacyGatewaySessionRows(
 // The LLM aggregate columns, shared by the windowed subquery that feeds the
 // session list and the all-time scalar query that feeds the session detail.
 const llmAggregateFields = {
-  llmCost: totalSpendSql,
+  llmCost: kortixBilledSpendSql,
   llmKortixCost: kortixBilledSpendSql,
   llmProviderCost: providerBilledSpendSql,
   requestCount: sql<number>`count(*)::int`,
@@ -502,7 +492,7 @@ async function loadReconciliation(
   const [llmResult, computeResult] = await Promise.all([
     db
       .select({
-        cost: totalSpendSql,
+        cost: kortixBilledSpendSql,
         requests: sql<number>`count(*)::int`,
       })
       .from(gatewayRequestLogs)
@@ -734,7 +724,7 @@ async function loadModelUsage(
       outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
       cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
       cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
-      cost: totalSpendSql,
+      cost: kortixBilledSpendSql,
       lastAt: sql<Date>`max(${gatewayRequestLogs.createdAt})`,
     })
     .from(gatewayRequestLogs)
@@ -742,7 +732,7 @@ async function loadModelUsage(
       and(eq(gatewayRequestLogs.accountId, accountId), eq(gatewayRequestLogs.sessionId, sessionId)),
     )
     .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
-    .orderBy(desc(totalSpendSql));
+    .orderBy(desc(kortixBilledSpendSql));
 
   return rows.map((row) => ({
     provider: row.provider,
@@ -767,7 +757,7 @@ async function loadLedgerEntries(
       .select({
         id: gatewayRequestLogs.logId,
         occurredAt: gatewayRequestLogs.createdAt,
-        cost: rowTotalSpendSql,
+        cost: rowKortixBilledSpendSql,
         provider: gatewayRequestLogs.provider,
         model: gatewayRequestLogs.resolvedModel,
         requestId: gatewayRequestLogs.requestId,

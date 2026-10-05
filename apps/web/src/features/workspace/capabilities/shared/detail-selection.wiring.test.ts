@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -72,14 +72,15 @@ describe('modal shells exist for the resolving window', () => {
     expect(code).toContain('isResolving');
     expect(code).toContain('<ConnectorModalSkeleton />');
     // Radix Dialog requires an accessible name for as long as it is open.
-    expect(code).toContain('<ModalTitle>Loading connector</ModalTitle>');
+    expect(code).toContain("raw('text0c21b0363778')");
   });
 
   test('EntityDetailModal accepts isResolving and renders a skeleton, not null', () => {
     const code = stripComments(read('./entity/entity-modal.tsx'));
     expect(code).toContain('isResolving');
     expect(code).toContain('<EntityModalSkeleton kind={kind} />');
-    expect(code).toContain('Loading {kind}');
+    expect(code).toContain("tI18nComplete.raw('textdc380888c4e2')");
+    expect(code).toContain('{kind}');
   });
 });
 

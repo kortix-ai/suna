@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -7,12 +8,7 @@ import Hint from '@/components/ui/hint';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@kortix/shared';
-import {
-  CheckCircleIcon,
-  GitDiffIcon,
-  PlusIcon,
-  XCircleIcon,
-} from '@phosphor-icons/react';
+import { CheckCircleIcon, GitDiffIcon, PlusIcon, XCircleIcon } from '@phosphor-icons/react';
 
 import type { ChangeRequest, ChangeRequestStatus } from '../api/change-requests';
 import { useProjectContext } from '../context';
@@ -90,6 +86,7 @@ interface ChangeRequestsPanelProps {
  * `useChangeRequest`'s `initialData` for why opening one is no longer a wait.
  */
 export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPanelProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
   const defaultBranch = ctx?.defaultBranch ?? '';
@@ -115,16 +112,16 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
       <ReviewPanel
         open={open}
         onClose={onClose}
-        title="Proposed changes"
+        title={tI18nComplete.raw('text486f49f03bf7')}
         // No refresh control: this list polls every 6s for as long as the panel
         // is open, so a manual refresh could only ever repeat what already
         // happens on its own.
         actions={
-          <Hint label="Propose a change" side="bottom">
+          <Hint label={tI18nComplete.raw('texte16e6a752599')} side="bottom">
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Propose a change"
+              aria-label={tI18nComplete.raw('texte16e6a752599')}
               onClick={() => setOpenDialogShown(true)}
               className="text-muted-foreground hover:text-foreground active:scale-[0.96]"
             >
@@ -139,10 +136,18 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
             className="gap-0"
           >
             <TabsListCompact className="w-fit">
-              <TabsTriggerCompact value="open">Open</TabsTriggerCompact>
-              <TabsTriggerCompact value="merged">Applied</TabsTriggerCompact>
-              <TabsTriggerCompact value="closed">Dismissed</TabsTriggerCompact>
-              <TabsTriggerCompact value="all">All</TabsTriggerCompact>
+              <TabsTriggerCompact value="open">
+                {tI18nComplete.raw('texted077f3d8125')}
+              </TabsTriggerCompact>
+              <TabsTriggerCompact value="merged">
+                {tI18nComplete.raw('text0c79a9c22284')}
+              </TabsTriggerCompact>
+              <TabsTriggerCompact value="closed">
+                {tI18nComplete.raw('text9d74727714db')}
+              </TabsTriggerCompact>
+              <TabsTriggerCompact value="all">
+                {tI18nComplete.raw('texta52ace420f21')}
+              </TabsTriggerCompact>
             </TabsListCompact>
           </Tabs>
         }
@@ -150,7 +155,7 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
         {isLoading && <ReviewRowSkeleton count={5} />}
 
         {error && !isLoading && (
-          <ReviewError title="Couldn't load proposed changes" error={error} />
+          <ReviewError title={tI18nComplete.raw('text769fe61dab43')} error={error} />
         )}
 
         {!isLoading && !error && total === 0 && (
@@ -158,12 +163,12 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
             size="sm"
             className="py-10"
             icon={GitDiffIcon}
-            title={status === 'open' ? 'Nothing waiting for review' : 'Nothing here yet'}
-            description={
+            title={
               status === 'open'
-                ? 'Changes your agents propose show up here before they reach the main version.'
-                : undefined
+                ? tI18nComplete.raw('text4b51686b2606')
+                : tI18nComplete.raw('text49abaf804ab3')
             }
+            description={status === 'open' ? tI18nComplete.raw('textfbd90a3ab227') : undefined}
             action={
               status === 'open' ? (
                 <Button
@@ -173,7 +178,7 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
                   onClick={() => setOpenDialogShown(true)}
                 >
                   <PlusIcon className="size-3.5 shrink-0" />
-                  Propose a change
+                  {tI18nComplete.raw('texte16e6a752599')}
                 </Button>
               ) : undefined
             }
@@ -217,7 +222,9 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
                         <span className="text-muted-foreground/30" aria-hidden>
                           ·
                         </span>
-                        <span className="truncate">into {cr.base_ref}</span>
+                        <span className="truncate">
+                          {tI18nComplete.raw('text6b847a0ed0b2')} {cr.base_ref}
+                        </span>
                       </span>
                     </span>
                   </ReviewRow>

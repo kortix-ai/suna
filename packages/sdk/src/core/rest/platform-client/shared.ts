@@ -6,10 +6,9 @@
  * the barrel index.ts, so the public surface stays unchanged.
  */
 
-import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
-import { ApiError, parseBillingError } from '../../http/api/errors';
 import { safeEnv } from '../../http/env';
+import { stripTrailingSlashes } from '../../../platform/strings';
 import {
   listProjectSessions,
   listProjects,
@@ -38,6 +37,12 @@ export function getPlatformUrl(): string {
   return 'http://localhost:8008/v1';
 }
 
+/** Backend URL → platform API base: trailing slashes stripped, `/v1` appended when absent. */
+export function platformApiBase(backendUrl: string): string {
+  const base = stripTrailingSlashes(backendUrl);
+  return base.endsWith('/v1') ? base : `${base}/v1`;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isDbSandboxId(sandboxId: string | null | undefined): sandboxId is string {
@@ -63,32 +68,6 @@ export function normalizeSandboxId(value: unknown): string | undefined {
   return undefined;
 }
 
-export interface PlatformResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  created?: boolean;
-}
-
-export interface LocalBridgeSandboxResponse {
-  success: boolean;
-  status?: string;
-  data?: SandboxInfo | null;
-}
-
-export const LOCAL_PLATFORM_CANDIDATES = [
-  'http://localhost:8008/v1',
-  'http://127.0.0.1:8008/v1',
-];
-
-export function getLocalBridgeStatusUrl(baseUrl: string): string {
-  // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
-  // quadratically on adversarial input (CodeQL js/polynomial-redos).
-  let end = baseUrl.length;
-  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47 /* '/' */) end--;
-  return `${baseUrl.slice(0, end)}/platform/local-bridge/status`;
-}
-
 function normalizeSessionStatus(status: string | undefined): string {
   if (status === 'running' || status === 'active') return 'active';
   if (status === 'queued' || status === 'branching' || status === 'provisioning') return 'provisioning';
@@ -102,7 +81,8 @@ export function projectSessionToSandboxInfo(
   session: ProjectSession,
   runtime?: ProjectSessionSandbox | null,
 ): SandboxInfo {
-  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
+  // '' when the session has no sandbox yet: the same falsy value callers test.
+  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id || '';
   return {
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,
@@ -175,60 +155,4 @@ export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
     row.session.session_id === sandboxId ||
     row.runtime?.external_id === sandboxId
   ) ?? null;
-}
-
-// ─── Fetch helper ────────────────────────────────────────────────────────────
-
-export async function platformFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<PlatformResponse<T>> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...options.headers as Record<string, string>,
-  };
-
-  // Default 30s timeout for this (non-streaming, request/response JSON) call —
-  // callers that need a different budget (or none) pass their own `signal`.
-  const signal = options.signal ?? AbortSignal.timeout(30_000);
-
-  const res = await authenticatedFetch(`${getPlatformUrl()}${path}`, {
-    ...options,
-    headers,
-    signal,
-  });
-
-  // Defensively parse the body: a non-JSON error body (proxy/gateway HTML, an
-  // empty response, a truncated stream) used to throw an opaque SyntaxError
-  // out of `res.json()` here, masking the real HTTP failure. Read the body
-  // ONCE as text, then attempt to JSON-parse that string — reading text
-  // first (rather than trying `res.json()` and falling back to `res.text()`
-  // on failure) avoids a "body already used" error on the fallback read,
-  // since a `Response` body can only be consumed once.
-  const rawText = await res.text().catch(() => undefined);
-  let body: any;
-  if (rawText) {
-    try {
-      body = JSON.parse(rawText);
-    } catch {
-      /* not JSON — leave body undefined, rawText still available below */
-    }
-  }
-
-  if (!res.ok) {
-    const message = body?.error || body?.message || body?.detail || rawText || `Platform API error ${res.status}`;
-    let error: Error = new ApiError(message, {
-      status: res.status,
-      code: body?.code || body?.error_code || String(res.status),
-      details: body ?? (rawText ? { rawText } : undefined),
-      response: res,
-      endpoint: path,
-    });
-    if (res.status === 402) {
-      error = parseBillingError(Object.assign(error, { response: res, status: res.status, data: body }));
-    }
-    throw error;
-  }
-
-  return body as PlatformResponse<T>;
 }

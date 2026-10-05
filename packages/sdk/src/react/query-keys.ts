@@ -51,6 +51,24 @@
  * prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
+import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
+
+type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels'>;
+
+/** The filter fields that change the server response, or undefined when none is set. */
+function normalizeSessionListFilters(filters?: SessionListFilters) {
+  const q = filters?.q?.trim();
+  const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
+  if (!filters?.parent && !filters?.startedBy && !q && !labels) return undefined;
+  return {
+    parent: filters?.parent ?? null,
+    startedBy: filters?.startedBy ?? null,
+    q: q ?? null,
+    // Only present when set, so pre-label keys stay byte-identical.
+    ...(labels ? { labels } : {}),
+  };
+}
+
 export const qk = {
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.
@@ -120,6 +138,15 @@ export const qk = {
      */
     list: (userId: string | null | undefined) =>
       [...qk.accounts.scope(), userId ?? 'anonymous'] as const,
+
+    /**
+     * The invites pending for one user's email (`listMyAccountInvites`).
+     * Under `scope()` on purpose: joining an invite changes the account
+     * list, and that invalidation targets `scope()`, so the joined invite
+     * drops out of this list in the same refetch.
+     */
+    myInvites: (userId: string | null | undefined) =>
+      [...qk.accounts.scope(), 'my-invites', userId ?? 'anonymous'] as const,
   },
 
   projects: {
@@ -137,6 +164,9 @@ export const qk = {
   project: {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
     scope: (id: string) => ['kx', 'project', id] as const,
+
+    /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
+    needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
 
     /**
      * The bare project row — `getProject`, `GET /projects/:id`, a
@@ -186,6 +216,9 @@ export const qk = {
      */
     modelPicker: (id: string) => [...qk.project.config(id), 'models'] as const,
 
+    /** Persisted provider/model inference restrictions and the effective default. */
+    modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
+
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
      * scope, and every individual session/message beneath it. Never pass
@@ -234,6 +267,41 @@ export const qk = {
       [...qk.project.sessionsScope(id), 'list', scope] as const,
 
     /**
+     * The PAGED session list — `useInfiniteQuery` over
+     * `listProjectSessionsPage`. A separate slot from `sessions(...)` because
+     * the two hold different SHAPES: this one caches
+     * `{ pages: ProjectSessionPage[], pageParams }`, that one caches a bare
+     * `ProjectSession[]`. react-query does not tag a cache entry with the hook
+     * that wrote it, so sharing one key between `useQuery` and
+     * `useInfiniteQuery` hands each hook the other's shape and both render
+     * garbage.
+     *
+     * It still nests under `sessionsScope(id)`, so the existing prefix
+     * invalidation every mutation already performs
+     * (`invalidateQueries({ queryKey: qk.project.sessionsScope(id) })`)
+     * reaches the paged list too. That is the point of the shared prefix — a
+     * new slot must not need a second invalidation nobody remembers to add.
+     */
+    sessionsPaged: (
+      id: string,
+      scope: 'visible' | 'project' = 'visible',
+      filters?: SessionListFilters,
+    ) => {
+      const key = [...qk.project.sessionsScope(id), 'list-paged', scope] as const;
+      // The filter set is one extra segment, present only when a filter is
+      // set, so the unfiltered key is byte-identical to the pre-filter one.
+      const normalized = normalizeSessionListFilters(filters);
+      return normalized ? ([...key, normalized] as const) : key;
+    },
+
+    /**
+     * One session's children (`parent=<sessionId>`), infinite. Its own slot
+     * beside `sessionsPaged`; nests under `sessionsScope` for invalidation.
+     */
+    sessionChildren: (id: string, parentSessionId: string, q?: string) =>
+      [...qk.project.sessionsScope(id), 'list-children', parentSessionId, q?.trim() ?? ''] as const,
+
+    /**
      * One session, by id. Nests directly under the scope-LESS
      * `sessionsScope` prefix, not under a specific `sessions(id, scope)`
      * slot: a session is not "owned" by whichever list scope happened to
@@ -258,6 +326,9 @@ export const qk = {
      */
     sessionSandbox: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'sandbox'] as const,
+    /** `getSessionParticipants` — who can open the session and who sent each prompt. */
+    sessionParticipants: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'participants'] as const,
     /** `listSessionPrompts` — the session's server-side prompt inbox. */
     sessionPrompts: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'prompts'] as const,
@@ -269,12 +340,16 @@ export const qk = {
     /** One connector's config — `getConnectorConfig(id, slug)`. */
     connectorConfig: (id: string, slug: string) =>
       [...qk.project.connectors(id), slug] as const,
-    /** One connector's OAuth2 authorization discovery —
-     *  `discoverConnectionOAuth2Resource(id, connectionId)`. Keyed by connector
-     *  slug, not connection id: the probe reads the connector's server, and the
-     *  connection is created on demand to scope it. */
-    connectorOAuth2Discovery: (id: string, slug: string) =>
-      [...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const,
+    /** One connection's OAuth2 authorization discovery —
+     *  `discoverConnectionOAuth2Resource(id, connectionId)`. The result carries
+     *  the connection id it ran against, and one-click OAuth starts on that id,
+     *  so pass `connection` (the connection id, or a stable stand-in for one not
+     *  created yet): two connections of one connector must not share an entry.
+     *  Without it, the key is the per-connector prefix every entry sits under. */
+    connectorOAuth2Discovery: (id: string, slug: string, connection?: string) =>
+      connection === undefined
+        ? ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const)
+        : ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery', connection] as const),
 
     access: (id: string) => [...qk.project.scope(id), 'access'] as const,
     accessRequests: (id: string) => [...qk.project.access(id), 'requests'] as const,
@@ -305,6 +380,17 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
+    /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
+     *  of every `sessionReminders` key, so invalidating it refreshes the
+     *  project page and every session's reminder chip together. */
+    reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
+    sessionReminders: (id: string, sessionId: string) =>
+      [...qk.project.reminders(id), 'session', sessionId] as const,
+    /** `getSessionMessageAuthors` — `GET /projects/:id/sessions/:sid/message-authors`. */
+    sessionMessageAuthors: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-message-authors', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

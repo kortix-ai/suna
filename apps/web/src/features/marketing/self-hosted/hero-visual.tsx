@@ -3,8 +3,9 @@
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
 import { cn } from '@/lib/utils';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { commands, stack } from './content';
+import { getLocalizedSelfHostedContent } from './content';
 
 /**
  * `/self-hosted` hero scene — the stack, stacked.
@@ -30,13 +31,8 @@ import { commands, stack } from './content';
  * MOTION — one pass on mount, then rest. The caret is the sanctioned exception.
  */
 
-/** Nearest first. `stack.groups` runs kortix → data → edge, so this holds. */
-const PLANES = stack.groups.slice(0, 3);
-
 /** Three per plane keeps every plane one line tall, so the pile stays a pile. */
 const PER_PLANE = 3;
-
-const LINES = commands.install.lines.filter((line) => line !== '').slice(0, 5);
 
 function Line({ line }: { line: string }): ReactNode {
   if (line.startsWith('#')) return <span className="text-muted-foreground/35">{line}</span>;
@@ -53,13 +49,18 @@ function Line({ line }: { line: string }): ReactNode {
 }
 
 export function SelfHostedHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { commands, stack } = getLocalizedSelfHostedContent(tI18nComplete);
+  /** Nearest first. `stack.groups` runs kortix → data → edge, so this holds. */
+  const planes = stack.groups.slice(0, 3);
+  const lines = commands.install.lines.filter((line) => line !== '').slice(0, 5);
   const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label="One Compose project: its service groups stacked as planes, and the terminal command that brought them up."
+      aria-label={tI18nComplete.raw('textab66ce448ad0')}
     >
       <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
         {/* ── one project, holding the planes together ────────────────── */}
@@ -79,11 +80,11 @@ export function SelfHostedHeroVisual(): ReactNode {
           transition={{ duration: 0.3, delay: LEAD + 0.44, ease: EASE_OUT }}
           aria-hidden
         >
-          one compose project
+          {tI18nComplete.raw('text5fbb9e647dca')}
         </m.span>
 
         {/* ── the planes, receding up and right ───────────────────────── */}
-        {PLANES.map((group, i) => {
+        {planes.map((group, i) => {
           const back = i; // 0 = nearest
           return (
             <m.div
@@ -138,7 +139,7 @@ export function SelfHostedHeroVisual(): ReactNode {
             </span>
           </div>
           <div className="bg-background/60 flex flex-col px-4 py-3.5">
-            {LINES.map((line, i) => (
+            {lines.map((line, i) => (
               <m.span
                 key={`${line}-${i}`}
                 className="flex gap-1.5 truncate font-mono text-[11.5px] leading-[1.9] whitespace-pre"
@@ -155,7 +156,7 @@ export function SelfHostedHeroVisual(): ReactNode {
               animate={{ opacity: 1 }}
               transition={{
                 duration: 0.3,
-                delay: LEAD + 0.32 + LINES.length * 0.05,
+                delay: LEAD + 0.32 + lines.length * 0.05,
                 ease: EASE_OUT,
               }}
             >

@@ -49,11 +49,6 @@ interface TemplateCreateResult {
   slug: string;
 }
 
-interface ProviderCoverage {
-  provider: "daytona" | "platinum" | "e2b";
-  available: boolean;
-}
-
 async function openSandboxSection(page: Page, projectId: string) {
   // Sandbox templates is a Workspace row of the Mod+, Settings overlay again
   // (2026-09-02; `/projects/[id]/config` is gone). `/settings/<tab>` is the
@@ -139,20 +134,6 @@ test.describe("12 — Sandbox templates UI", () => {
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
-    const templates = await api<{
-      items: Array<{
-        slug: string;
-        provider_coverage?: ProviderCoverage[];
-      }>;
-    }>(session.access_token, "GET", `/projects/${projectId}/sandbox-templates`);
-    expect(templates.status).toBe(200);
-    const availableProviders =
-      templates.json?.items
-        .find((template) => template.slug === "default")
-        ?.provider_coverage?.filter((item) => item.available)
-        .map((item) => item.provider) ?? [];
-    expect(availableProviders.length).toBeGreaterThan(0);
-
     // Platform default row: "Default" name + "default" slug code chip.
     await expect(
       page.getByText("Default", { exact: true }).first(),
@@ -174,23 +155,44 @@ test.describe("12 — Sandbox templates UI", () => {
       platformRow.getByText("Default", { exact: true }).last(),
     ).toBeVisible();
 
-    // Every available provider reports its real launch state. A local stack can
-    // legitimately report Not ready when no provider snapshot exists.
+    // Every provider the API reports as available renders its real launch
+    // state, and no unavailable provider renders. The expected set comes from
+    // the API, not from this file: the local stack allows Daytona + Platinum,
+    // a PR preview allows only Platinum (`ALLOWED_SANDBOX_PROVIDERS` in
+    // `tests/src/core/preview-stack.ts`). A local stack can legitimately
+    // report Not ready when no provider snapshot exists.
     //
     // The pinned provider renders `Daytona•Selected•Ready`, not `Daytona•Ready`
     // (`sandbox-provider-coverage.tsx:119-126`), so the optional `Selected`
     // segment is part of the contract — without it this assertion silently
     // depends on the project never pinning a provider.
-    const launchState = "Ready|Building|Failed|Not ready|Unavailable|Unknown";
-    const providerState = (provider: string) =>
-      new RegExp(`${provider}(?:[^A-Za-z]*Selected)?[^A-Za-z]*(?:${launchState})`);
-    const providerLabels = {
+    const { status: listStatus, json: listed } = await api<{
+      items: Array<{
+        slug: string;
+        is_default: boolean;
+        provider_coverage?: Array<{ provider: string; available: boolean }>;
+      }>;
+    }>(session.access_token, "GET", `/projects/${projectId}/sandbox-templates`);
+    expect(listStatus).toBe(200);
+    const coverage =
+      listed?.items.find((t) => t.is_default && t.slug === "default")
+        ?.provider_coverage ?? [];
+    const label: Record<string, string> = {
       daytona: "Daytona",
       platinum: "Platinum",
       e2b: "E2B",
-    } as const;
-    for (const provider of availableProviders) {
-      await expect(platformRow).toContainText(providerState(providerLabels[provider]));
+    };
+    const available = coverage.filter((c) => c.available).map((c) => label[c.provider]);
+    const unavailable = coverage.filter((c) => !c.available).map((c) => label[c.provider]);
+    expect(available.length, "at least one provider must be routable").toBeGreaterThan(0);
+    const launchState = "Ready|Building|Failed|Not ready|Unavailable|Unknown";
+    const providerState = (provider: string) =>
+      new RegExp(`${provider}(?:[^A-Za-z]*Selected)?[^A-Za-z]*(?:${launchState})`);
+    for (const provider of available) {
+      await expect(platformRow).toContainText(providerState(provider));
+    }
+    for (const provider of unavailable) {
+      await expect(platformRow).not.toContainText(providerState(provider));
     }
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
@@ -213,7 +215,7 @@ test.describe("12 — Sandbox templates UI", () => {
       {
         slug: customSlug,
         name: "E2E image template",
-        image: "kortix/kortix-sandbox:selfhost-local",
+        image: "ubuntu:24.04",
       },
     );
     expect(created.status).toBe(201);

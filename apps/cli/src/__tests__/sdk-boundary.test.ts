@@ -10,9 +10,10 @@ type BoundaryModule = {
   TRANSPORT_ALLOWLIST: string[];
   scanSource: (source: string, options?: ScanOptions) => Violation[];
   scanCliBoundary: (root?: string) => FileViolation[];
+  scanTuiBoundary: (root?: string) => FileViolation[];
 };
 
-const { TRANSPORT_ALLOWLIST, scanCliBoundary, scanSource } = (await import(
+const { TRANSPORT_ALLOWLIST, scanCliBoundary, scanSource, scanTuiBoundary } = (await import(
   new URL('../../scripts/sdk-boundary.mjs', import.meta.url).href
 )) as BoundaryModule;
 
@@ -141,6 +142,22 @@ describe('scanSource import rules', () => {
     expect(rules(source, { test: true })).toEqual(['opencode-package']);
   });
 
+  test('flags a deprecated OpenCode-named import from @kortix/sdk', () => {
+    expect(rules("import { useOpenCodePtyList } from '@kortix/sdk/react';")).toEqual([
+      'opencode-sdk-name',
+    ]);
+    expect(
+      rules("import {\n  type RuntimeConfig,\n  opencodeKeys as keys,\n} from '@kortix/sdk/react';", {
+        test: true,
+      }),
+    ).toEqual(['opencode-sdk-name']);
+  });
+
+  test('allows the neutral @kortix/sdk names and OpenCode names from other modules', () => {
+    expect(rules("import { useRuntimePtyList, runtimeKeys } from '@kortix/sdk/react';")).toEqual([]);
+    expect(rules("import { ensureOpencodeBin } from './opencode-bin.ts';")).toEqual([]);
+  });
+
   test('flags a deep @kortix/sdk source import', () => {
     const source = "import { y } from '@kortix/sdk/src/core/rest/client';";
 
@@ -179,6 +196,27 @@ describe('TRANSPORT_ALLOWLIST', () => {
 
   test('holds exactly one escape hatch', () => {
     expect(TRANSPORT_ALLOWLIST).toHaveLength(1);
+  });
+});
+
+describe('scanTuiBoundary', () => {
+  test('apps/tui imports no OpenCode package and no OpenCode-named SDK symbol', () => {
+    expect(scanTuiBoundary()).toEqual([]);
+  });
+
+  test('reports a planted OpenCode-named SDK import and skips transport rules', () => {
+    const planted = mkdtempSync(resolve(tmpdir(), 'kortix-tui-sdk-boundary-'));
+    try {
+      writeFileSync(
+        resolve(planted, 'panel.tsx'),
+        "import { useOpenCodePtyList } from '@kortix/sdk/react';\nawait fetch(base);\n",
+      );
+      expect(scanTuiBoundary(planted).map(({ file, line, rule }) => ({ file, line, rule }))).toEqual([
+        { file: 'apps/tui/src/panel.tsx', line: 1, rule: 'opencode-sdk-name' },
+      ]);
+    } finally {
+      rmSync(planted, { recursive: true, force: true });
+    }
   });
 });
 

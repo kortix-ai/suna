@@ -13,11 +13,17 @@ import {
 } from './commits';
 
 function git(args: string[], cwd: string, env?: Record<string, string>): string {
-  return execFileSync('git', args, {
-    cwd,
-    env: { ...process.env, ...env },
-    encoding: 'utf8',
-  }).trim();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const output = execFileSync('git', args, {
+      cwd,
+      env: { ...process.env, ...env },
+      encoding: 'utf8',
+    }).trim();
+    // A successful rev-parse always prints an object ID. Bun's child-process
+    // capture can return an empty string under the parallel package gate.
+    if (args[0] !== 'rev-parse' || output) return output;
+  }
+  throw new Error(`git ${args.join(' ')} returned an empty object ID`);
 }
 
 describe('buildSingleParentDeltaBundle', () => {

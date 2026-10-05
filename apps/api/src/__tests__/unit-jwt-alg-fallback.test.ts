@@ -88,3 +88,45 @@ describe('verifySupabaseJwt — legacy symmetric tokens', () => {
     expect(isInconclusiveVerifyFailure(result.reason)).toBe(true);
   });
 });
+
+/**
+ * Tripwire for the 2026-09-15 prod preview outage.
+ *
+ * The 2026-08-21 fix routed both auth middlewares on
+ * `isInconclusiveVerifyFailure`, but `sandbox-proxy/preview-auth.ts` kept its own
+ * hand-listed reason set (`no-keys`, `no-key-for-kid`). Prod JWKS then held an
+ * ES256 key while GoTrue still signed with HS256, so every preview ORIGIN (and
+ * the WebSocket proxy) answered "Sign in to open this preview" to a valid
+ * session, while `/v1/p/...` served the same token. Three callers, one predicate:
+ * a new caller that routes on a literal reason fails here, not in prod.
+ */
+describe('every verifySupabaseJwt caller routes on the shared predicate', () => {
+  const srcRoot = new URL('..', import.meta.url).pathname;
+
+  function productionSources(): string[] {
+    const glob = new Bun.Glob('**/*.ts');
+    return [...glob.scanSync({ cwd: srcRoot })].filter(
+      (f) => !f.endsWith('.test.ts') && !f.includes('__tests__/') && f !== 'shared/jwt-verify.ts',
+    );
+  }
+
+  test('each caller also calls isInconclusiveVerifyFailure and names no reason literal', async () => {
+    const callers: string[] = [];
+    const offenders: string[] = [];
+    for (const file of productionSources()) {
+      const text = await Bun.file(`${srcRoot}${file}`).text();
+      if (!text.includes('verifySupabaseJwt(')) continue;
+      callers.push(file);
+      if (!text.includes('isInconclusiveVerifyFailure(')) {
+        offenders.push(`${file}: calls verifySupabaseJwt without isInconclusiveVerifyFailure`);
+      }
+      if (/\.reason\s*[!=]==?\s*['"`](no-keys|no-key-for-kid|unsupported-alg)/.test(text)) {
+        offenders.push(`${file}: routes on a literal verify-failure reason`);
+      }
+    }
+    // A broken scan must not pass by finding nothing.
+    expect(callers).toContain('middleware/auth.ts');
+    expect(callers).toContain('sandbox-proxy/preview-auth.ts');
+    expect(offenders).toEqual([]);
+  });
+});

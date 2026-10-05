@@ -1,5 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { activeServerKey, asRuntimeList, cachedRuntimeList, canQueryOpenCodeSession, CACHE_SCOPE_GLOBAL, clearProjectProviderCache, getLSCache, LS_AGENTS, LS_COMMANDS, LS_PROVIDERS, LS_SESSIONS, setLSCache, unwrap, markRuntimeRootPinned } from './shared';
+import {
+  activeServerKey,
+  asRuntimeList,
+  cachedRuntimeList,
+  canQueryRuntimeSession,
+  CACHE_SCOPE_GLOBAL,
+  clearProjectProviderCache,
+  getLSCache,
+  LS_AGENTS,
+  LS_COMMANDS,
+  LS_PROVIDERS,
+  LS_SESSIONS,
+  setLSCache,
+  unwrap,
+} from './shared';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
 
 // ============================================================================
@@ -45,30 +59,51 @@ describe('unwrap', () => {
       'Server returned 503',
     );
   });
+
+  test('carries the response status on the thrown error so retry guards can classify it', () => {
+    // Runtime routes never throw for an HTTP error — they resolve
+    // `{ error, response }` and this unwrap throws. The status must survive:
+    // useRuntimeProviders' 4xx retry guard reads it.
+    try {
+      unwrap({ error: { detail: 'Invalid or expired token' }, response: new Response(null, { status: 401 }) });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { status?: number }).status).toBe(401);
+    }
+  });
+
+  test('throws without a status when the response carried none (transport failure)', () => {
+    try {
+      unwrap({ error: { message: 'socket hung up' } });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { status?: number }).status).toBeUndefined();
+    }
+  });
 });
 
 // ============================================================================
-// canQueryOpenCodeSession — rejects Kortix's own project-session UUIDs (which
+// canQueryRuntimeSession — rejects Kortix's own project-session UUIDs (which
 // aren't real opencode session ids and would 404 the opencode API).
 // ============================================================================
 
-describe('canQueryOpenCodeSession', () => {
+describe('canQueryRuntimeSession', () => {
   test('rejects null/undefined/empty', () => {
-    expect(canQueryOpenCodeSession(null)).toBe(false);
-    expect(canQueryOpenCodeSession(undefined)).toBe(false);
-    expect(canQueryOpenCodeSession('')).toBe(false);
+    expect(canQueryRuntimeSession(null)).toBe(false);
+    expect(canQueryRuntimeSession(undefined)).toBe(false);
+    expect(canQueryRuntimeSession('')).toBe(false);
   });
 
   test('rejects a v4 UUID (the Kortix project-session id shape)', () => {
-    expect(canQueryOpenCodeSession('550e8400-e29b-41d4-a716-446655440000')).toBe(false);
+    expect(canQueryRuntimeSession('550e8400-e29b-41d4-a716-446655440000')).toBe(false);
   });
 
   test('accepts a real opencode session id (ses_<...> shape)', () => {
-    expect(canQueryOpenCodeSession('ses_01hzxk3n8g8g8g8g8g8g8g8g')).toBe(true);
+    expect(canQueryRuntimeSession('ses_01hzxk3n8g8g8g8g8g8g8g8g')).toBe(true);
   });
 
   test('accepts an arbitrary non-UUID string', () => {
-    expect(canQueryOpenCodeSession('not-a-uuid-at-all')).toBe(true);
+    expect(canQueryRuntimeSession('not-a-uuid-at-all')).toBe(true);
   });
 });
 
@@ -76,7 +111,7 @@ describe('canQueryOpenCodeSession', () => {
 // getLSCache / setLSCache / clearProjectProviderCache — the localStorage-backed
 // per-family caches, scoped by the active sandbox id (or an explicit scope).
 // `window`/`localStorage` don't exist in bun's default test environment, so
-// both are stubbed with a minimal in-memory `Storage` implementation.
+// both are stubbed with one minimal in-memory `Storage` implementation.
 // ============================================================================
 
 class MemoryStorage implements Storage {
@@ -106,10 +141,16 @@ interface GlobalWithDom {
   localStorage?: Storage;
 }
 
+/** As in a browser, `window.localStorage` and the bare global are one object. */
+function stubBrowserStorage(): void {
+  const storage = new MemoryStorage();
+  (globalThis as GlobalWithDom).window = { localStorage: storage };
+  (globalThis as GlobalWithDom).localStorage = storage;
+}
+
 describe('getLSCache / setLSCache (localStorage stubbed)', () => {
   beforeEach(() => {
-    (globalThis as GlobalWithDom).window = {};
-    (globalThis as GlobalWithDom).localStorage = new MemoryStorage();
+    stubBrowserStorage();
     setCurrentRuntime(null);
   });
 
@@ -201,8 +242,7 @@ describe('asRuntimeList', () => {
 
 describe('cachedRuntimeList (localStorage stubbed)', () => {
   beforeEach(() => {
-    (globalThis as GlobalWithDom).window = {};
-    (globalThis as GlobalWithDom).localStorage = new MemoryStorage();
+    stubBrowserStorage();
     setCurrentRuntime(null);
   });
 
@@ -224,36 +264,5 @@ describe('cachedRuntimeList (localStorage stubbed)', () => {
 
   test('an empty cache is a miss', () => {
     expect(cachedRuntimeList(LS_COMMANDS)).toBeUndefined();
-  });
-});
-
-
-describe('canQueryOpenCodeSession — a pinned root is a root, whatever it looks like', () => {
-  const uuid = '14bc9c57-7700-4f2a-a1c4-8402971511b6';
-  const other = 'b6bd886b-9e41-40ab-8294-5024c5df3e35';
-
-  test('a bare UUID is the transient shell — not queryable', () => {
-    expect(canQueryOpenCodeSession(other)).toBe(false);
-  });
-
-  test("a daemon's ses_ id is queryable without any pin", () => {
-    expect(canQueryOpenCodeSession('ses_8f2c1a')).toBe(true);
-  });
-
-  test('a UUID the server pinned as the root IS queryable — a cell session reads its transcript on refresh', () => {
-    markRuntimeRootPinned(uuid);
-    expect(canQueryOpenCodeSession(uuid)).toBe(true);
-  });
-
-  test('the pin is per id — another UUID stays the shell', () => {
-    expect(canQueryOpenCodeSession(other)).toBe(false);
-  });
-
-  test('nothing is never queryable, pinned or not', () => {
-    markRuntimeRootPinned(null);
-    markRuntimeRootPinned('');
-    expect(canQueryOpenCodeSession('')).toBe(false);
-    expect(canQueryOpenCodeSession(null)).toBe(false);
-    expect(canQueryOpenCodeSession(undefined)).toBe(false);
   });
 });

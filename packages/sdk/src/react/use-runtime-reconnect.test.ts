@@ -8,6 +8,7 @@ import {
   isImmediateOfflineSignal,
   isImmediateOfflineStatus,
   nextPollDelay,
+  POLL_PARKED,
   runtimeErrorFromHealth,
   RUNTIME_EVIDENCE_FRESH_MS,
   shouldCountProbeFailure,
@@ -15,8 +16,11 @@ import {
   POLL_CONNECTED,
   POLL_FAILING,
   POLL_UNREACHABLE,
+  POLL_RECHECK,
+  shouldHoldHealthy,
   type ProbeResultLike,
 } from './use-runtime-reconnect';
+import { CONNECTION_FAULT_GRACE_MS } from '../core/session/connection';
 import {
   incrementSandboxFail,
   markRuntimeReadyVerified,
@@ -24,7 +28,7 @@ import {
   requestRuntimeReconnect,
   resetForServerSwitch,
   resetSandboxFail,
-  setOpenCodeHealth,
+  setRuntimeHealth,
   setSandboxStatus,
   useSandboxConnectionStore,
 } from '../browser/stores/sandbox-connection-store';
@@ -66,8 +70,10 @@ describe('manual runtime reconnect', () => {
 });
 
 describe('computeFailureStatus — reconnect (was previously connected)', () => {
-  test('first miss drops into connecting, not unreachable', () => {
-    expect(computeFailureStatus(1, true, false)).toBe('connecting');
+  // KRTX-606: this used to drop to `connecting`, which closed the live SSE
+  // stream on one missed probe. A miss changes nothing until the streak holds.
+  test('first miss leaves the status alone', () => {
+    expect(computeFailureStatus(1, true, false)).toBeNull();
   });
 
   test('flips to unreachable at exactly FAIL_THRESHOLD_RECONNECT consecutive failures', () => {
@@ -94,7 +100,7 @@ describe('computeFailureStatus — timeout counts as a plain failure', () => {
   });
 
   test('a timeout after a prior successful connection uses the tighter reconnect threshold', () => {
-    expect(computeFailureStatus(1, true, false)).toBe('connecting');
+    expect(computeFailureStatus(1, true, false)).toBeNull();
     expect(computeFailureStatus(2, true, false)).toBe('unreachable');
   });
 });
@@ -115,6 +121,35 @@ describe('nextPollDelay', () => {
 
   test('polls fast while still connecting (initial phase)', () => {
     expect(nextPollDelay('connecting', null)).toBe(POLL_FAILING);
+  });
+
+  /**
+   * A PARKED box reads as `connected` + `healthy: false`, the same pair a
+   * booting one does — so it inherited the 150ms boot cadence and kept it
+   * forever. A booting box becomes healthy in seconds and the fast poll is what
+   * makes it appear promptly; a parked box resumes only on the next SEND, so
+   * that same cadence is ~400 requests a minute, per open tab, against a state
+   * that cannot change on its own.
+   *
+   * It still has to be CHECKED — a send from another tab, or a wake from
+   * anywhere else, should surface here — so this is a slower heartbeat, not a
+   * stop.
+   */
+  test('a parked box checks back slowly instead of inheriting the boot cadence', () => {
+    expect(nextPollDelay('connected', false, true)).toBe(POLL_PARKED);
+  });
+
+  test('parked is slower than every fault cadence, because it is not a fault', () => {
+    expect(POLL_PARKED).toBeGreaterThan(POLL_UNREACHABLE);
+    expect(POLL_PARKED).toBeGreaterThan(POLL_FAILING);
+  });
+
+  test('a booting box keeps the fast cadence it needs', () => {
+    expect(nextPollDelay('connected', false, false)).toBe(POLL_FAILING);
+  });
+
+  test('a healthy box is never treated as parked', () => {
+    expect(nextPollDelay('connected', true, true)).toBe(POLL_CONNECTED);
   });
 });
 
@@ -230,19 +265,19 @@ describe('sandbox-connection-store recovery resets counters', () => {
 // set while not healthy, cleared the instant it is — is what
 // `useRuntimeBootStalled()` reads to give that case a time bound anyway.
 describe('bootingSinceAt tracks the not-yet-healthy stretch', () => {
-  test('setOpenCodeHealth(false) arms the clock once, not on every call', () => {
+  test('setRuntimeHealth(false) arms the clock once, not on every call', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: null });
-    setOpenCodeHealth(false);
+    setRuntimeHealth(false);
     const first = useSandboxConnectionStore.getState().bootingSinceAt;
     expect(first).not.toBeNull();
 
-    setOpenCodeHealth(false);
+    setRuntimeHealth(false);
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBe(first);
   });
 
-  test('setOpenCodeHealth(true) clears it', () => {
+  test('setRuntimeHealth(true) clears it', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: Date.now() - 60_000 });
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
   });
 
@@ -267,21 +302,21 @@ describe('bootingSinceAt tracks the not-yet-healthy stretch', () => {
   // longer than usual" forever, because nothing is actually starting and the
   // 503 repeats on every 150ms tick. The parked path must NOT arm the clock,
   // and must clear one a prior mount armed.
-  test('setOpenCodeHealth(parked) does NOT arm the boot-stall clock', () => {
+  test('setRuntimeHealth(parked) does NOT arm the boot-stall clock', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: null });
-    setOpenCodeHealth(false, undefined, null, { parked: true });
+    setRuntimeHealth(false, undefined, null, { parked: true });
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
   });
 
-  test('setOpenCodeHealth(parked) clears a clock a prior mount armed', () => {
+  test('setRuntimeHealth(parked) clears a clock a prior mount armed', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: Date.now() - 60_000 });
-    setOpenCodeHealth(false, undefined, null, { parked: true });
+    setRuntimeHealth(false, undefined, null, { parked: true });
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
   });
 
   test('a genuine booting box (no parked flag) still arms the clock', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: null });
-    setOpenCodeHealth(false);
+    setRuntimeHealth(false);
     expect(useSandboxConnectionStore.getState().bootingSinceAt).not.toBeNull();
   });
 });
@@ -368,7 +403,7 @@ describe('shouldCountProbeFailure — only failures that mean "the runtime is go
     expect(shouldCountProbeFailure({ hop: null, ...quiet })).toBe(true);
   });
 
-  // THE INCIDENT (2026-08-17, Essentia): a box saturated by a heavy turn streams
+  // THE INCIDENT (2026-08-17, SampleCo): a box saturated by a heavy turn streams
   // SSE frames fine and misses the 20s probe deadline. The abort carries NO hop,
   // and a proxy 502 raised from the same saturation carries `daemon` — both
   // "count" on hop alone, so two misses flip the session to `unreachable`, the
@@ -464,11 +499,101 @@ describe('mount-time ordering: markRuntimeReadyVerified vs resetForServerSwitch'
     // never runs again for this mount (`useRuntimeReconnect` only calls it on
     // first mount), so nothing clobbers this.
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
 
     expect(useSandboxConnectionStore.getState()).toMatchObject({
       status: 'connected',
       healthy: true,
     });
+  });
+});
+
+// KRTX-606: the status flapped unconnected -> unreachable -> reachable on a
+// running session. Every flip below followed a SINGLE probe, and every flip of
+// `status`/`healthy` also tears down the live SSE stream.
+describe('one probe never flips a connected session (KRTX-606)', () => {
+  test('a failure streak inside the grace period keeps a connected session connected', () => {
+    expect(computeFailureStatus(FAIL_THRESHOLD_RECONNECT, true, false, 1_000)).toBeNull();
+  });
+
+  test('a failure streak past the grace period reads unreachable', () => {
+    expect(computeFailureStatus(FAIL_THRESHOLD_RECONNECT, true, false, CONNECTION_FAULT_GRACE_MS)).toBe('unreachable');
+  });
+
+  test('one 502 from a proxy hop during boot is not an outage', () => {
+    expect(computeFailureStatus(1, false, true, 0)).toBeNull();
+    expect(computeFailureStatus(1, false, true, CONNECTION_FAULT_GRACE_MS)).toBe('unreachable');
+  });
+
+  test('a failing streak re-checks within a second, not on the 30s healthy cadence', () => {
+    expect(nextPollDelay('connected', true, false, true)).toBe(POLL_RECHECK);
+    expect(nextPollDelay('connecting', null, false, true)).toBe(POLL_FAILING);
+  });
+
+  test('a healthy runtime is held through a brief not-ready answer', () => {
+    expect(shouldHoldHealthy({ healthy: true, notReadySinceMs: 0, nowMs: 1_000, lastRuntimeEvidenceAt: null })).toBe(true);
+  });
+
+  test('a not-ready answer that persists past the grace period is believed', () => {
+    expect(
+      shouldHoldHealthy({ healthy: true, notReadySinceMs: 0, nowMs: CONNECTION_FAULT_GRACE_MS, lastRuntimeEvidenceAt: null }),
+    ).toBe(false);
+  });
+
+  test('live SSE frames outrank a persisting not-ready answer', () => {
+    const nowMs = CONNECTION_FAULT_GRACE_MS * 3;
+    expect(shouldHoldHealthy({ healthy: true, notReadySinceMs: 0, nowMs, lastRuntimeEvidenceAt: nowMs - 1_000 })).toBe(true);
+  });
+
+  test('a runtime that was never healthy is not held', () => {
+    expect(shouldHoldHealthy({ healthy: null, notReadySinceMs: 0, nowMs: 1, lastRuntimeEvidenceAt: null })).toBe(false);
+    expect(shouldHoldHealthy({ healthy: false, notReadySinceMs: 0, nowMs: 1, lastRuntimeEvidenceAt: null })).toBe(false);
+  });
+});
+
+describe('a poller remount for the same runtime keeps what it knows (KRTX-606)', () => {
+  test('a first poller mount after a ready session switch does not disconnect the stream', () => {
+    const url = 'https://api.test/v1/p/box-ready/8000';
+    // The session switches before the route mounts the reconnect poller.
+    resetForServerSwitch(url);
+    setSandboxStatus('connected');
+    setRuntimeHealth(true);
+    resetForServerSwitch(url);
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
+  });
+
+  test('resetting for the URL already probed leaves a connected store alone', () => {
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    setSandboxStatus('connected');
+    setRuntimeHealth(true);
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
+  });
+
+  test('a different runtime still starts from nothing', () => {
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    setSandboxStatus('connected');
+    setRuntimeHealth(true);
+    resetForServerSwitch('https://api.test/v1/p/box-b/8000');
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
+  });
+
+  // Cloud: with no session runtime active, the active URL is ''. Session A
+  // unmounting clears its runtime, so session B's poller mounts on '' too — the
+  // same '' A mounted on. That is two sessions, not one.
+  test('an empty URL (no runtime active yet) always resets', () => {
+    resetForServerSwitch('');
+    setSandboxStatus('connected');
+    setRuntimeHealth(true);
+    resetForServerSwitch('');
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null, wasConnected: false });
+  });
+
+  test('a reset without a URL always resets', () => {
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    setSandboxStatus('connected');
+    setRuntimeHealth(true);
+    resetForServerSwitch();
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
   });
 });

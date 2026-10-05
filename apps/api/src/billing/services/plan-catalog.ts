@@ -13,9 +13,6 @@
  * spelling of today's behavior, NOT a redefinition of it.
  * `src/__tests__/unit-plan-catalog-parity.test.ts` asserts the two agree for all
  * 16 keys and fails the build if they ever drift.
- *
- * NOTHING CONSUMES THIS YET. The catalog and `resolve-billing.ts` land first so
- * the parity test can prove them equivalent before any consumer is switched.
  */
 
 /**
@@ -72,7 +69,6 @@ export interface PlanRecord {
     metersCompute: boolean;
   };
   limits: {
-    concurrentSessions: number;
     /**
      * LLM router rate multiplier, transcribed from `tierMultiplier` in
      * `shared/account-limits.ts`. NOTE: free/none are 0, not 1 — a 0 multiplier
@@ -138,7 +134,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: false,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 50, llmRateMultiplier: 0 },
+    limits: { llmRateMultiplier: 0 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'No Plan',
   },
@@ -159,7 +155,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: false,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 50, llmRateMultiplier: 0 },
+    limits: { llmRateMultiplier: 0 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Free',
   },
@@ -183,7 +179,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 200, llmRateMultiplier: 1 },
+    limits: { llmRateMultiplier: 1 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Pro',
   },
@@ -202,7 +198,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 200, llmRateMultiplier: 1 },
+    limits: { llmRateMultiplier: 1 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Plus (Legacy)',
   },
@@ -224,7 +220,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: true,
     },
-    limits: { concurrentSessions: 200, llmRateMultiplier: 1 },
+    limits: { llmRateMultiplier: 1 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Team (legacy seats)',
   },
@@ -246,7 +242,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 3, llmRateMultiplier: 1 },
+    limits: { llmRateMultiplier: 1 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Starter',
   },
@@ -265,7 +261,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 300, llmRateMultiplier: 2 },
+    limits: { llmRateMultiplier: 2 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Pro (Legacy)',
   },
@@ -284,7 +280,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 400, llmRateMultiplier: 3 },
+    limits: { llmRateMultiplier: 3 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Business (Legacy)',
   },
@@ -303,7 +299,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 10, llmRateMultiplier: 1 },
+    limits: { llmRateMultiplier: 1 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Team',
   },
@@ -322,7 +318,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 500, llmRateMultiplier: 4 },
+    limits: { llmRateMultiplier: 4 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Ultra (Legacy)',
   },
@@ -341,7 +337,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 750, llmRateMultiplier: 6 },
+    limits: { llmRateMultiplier: 6 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Enterprise (Legacy)',
   },
@@ -360,7 +356,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 30, llmRateMultiplier: 1 },
+    limits: { llmRateMultiplier: 1 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Scale',
   },
@@ -379,7 +375,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 1000, llmRateMultiplier: 8 },
+    limits: { llmRateMultiplier: 8 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Scale (Legacy)',
   },
@@ -398,7 +394,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 1500, llmRateMultiplier: 10 },
+    limits: { llmRateMultiplier: 10 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Max (Legacy)',
   },
@@ -417,7 +413,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 2000, llmRateMultiplier: 12 },
+    limits: { llmRateMultiplier: 12 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Enterprise Max (Legacy)',
   },
@@ -439,7 +435,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       canPurchaseCredits: true,
       metersCompute: false,
     },
-    limits: { concurrentSessions: 5000, llmRateMultiplier: 1 },
+    limits: { llmRateMultiplier: 1 },
     compute: { rateMultiplier: 1.0 },
     displayName: 'Enterprise',
   },

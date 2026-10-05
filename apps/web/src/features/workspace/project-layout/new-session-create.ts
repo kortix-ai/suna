@@ -7,6 +7,7 @@ export interface NewSessionCreateInput {
   agent_name?: string;
   connector_bindings?: SessionConnectorBindingsInput;
   inherit_unbound?: boolean;
+  provider_secret_pools?: Record<string, string[]>;
 }
 
 /**
@@ -24,7 +25,7 @@ export interface NewSessionCreateInput {
  * no agent was picked), so callers can omit the create overrides entirely.
  */
 export function buildNewSessionCreateInput(
-  options: Pick<ComposerOptions, 'agent' | 'scope'> & { sandbox_slug?: string } = {},
+  options: Pick<ComposerOptions, 'agent' | 'scope' | 'providerSecretPools'> & { sandbox_slug?: string } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
   if (isMetaAgentName(options.agent)) {
@@ -33,6 +34,9 @@ export function buildNewSessionCreateInput(
     input.sandbox_slug = options.sandbox_slug;
   }
   if (options.agent) input.agent_name = options.agent;
+  if (options.providerSecretPools && Object.keys(options.providerSecretPools).length > 0) {
+    input.provider_secret_pools = options.providerSecretPools;
+  }
   if (
     options.scope?.availability.connector_bindings &&
     options.scope.draft.connector_bindings !== undefined &&

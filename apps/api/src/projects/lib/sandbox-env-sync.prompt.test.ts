@@ -8,25 +8,22 @@
 // 5.2s with the secret active and 200 in 1.2s with it disabled. A project with
 // one boundary secret could not run a single agent turn.
 //
-// The edge is gone (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4),
-// which removes the cost at the root. What still has to hold on this path, and
+// The edge is gone, which removes the cost at the root. What still has to hold on this path, and
 // is asserted here: the prompt reaches the daemon, an unchanged env is not
 // re-pushed, and resolving the binding set stays FAIL-CLOSED — it re-reads the
 // agent's grant, and a grant we cannot prove must refuse the turn.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { sessionEnvironments } from '@kortix/db';
 import { config } from '../../config';
 
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Everything the two paths do, in the order they did it. */
 let events: string[] = [];
 let envPushes: Array<{ url: string }> = [];
 let bindings: NetworkBoundarySecretBinding[] = [];
 let boundaryResolveError: Error | null = null;
-let environmentRows: Array<typeof SESSION_ROW> = [];
 
 const SESSION_ROW = {
   createdBy: 'user-1',
@@ -47,15 +44,13 @@ const SESSION_ROW = {
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: (table: unknown) => ({
+      from: () => ({
         where: () => {
-          const rows = table === sessionEnvironments ? environmentRows : [SESSION_ROW];
+          const rows = [SESSION_ROW];
           return {
             limit: async () => rows,
-            then: (
-              resolve: (value: typeof rows) => unknown,
-              reject?: (reason: unknown) => unknown,
-            ) => Promise.resolve(rows).then(resolve, reject),
+            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve(rows).then(resolve, reject),
           };
         },
       }),
@@ -110,12 +105,9 @@ const {
   __resetPromptModelSignatureCacheForTests,
   propagateProjectSecretsToActiveSandboxes,
   syncSandboxEnvForPrompt,
-  syncSessionRuntimesEnvForPrompt,
 } = await import('./sandbox-env-sync');
 
-function binding(
-  overrides: Partial<NetworkBoundarySecretBinding> = {},
-): NetworkBoundarySecretBinding {
+function binding(overrides: Partial<NetworkBoundarySecretBinding> = {}): NetworkBoundarySecretBinding {
   return {
     secretId: 'secret-1',
     identifier: 'billing-api',
@@ -154,40 +146,16 @@ beforeEach(() => {
   envPushes = [];
   bindings = [binding()];
   boundaryResolveError = null;
-  environmentRows = [];
 });
 
 describe('syncSandboxEnvForPrompt — egress-enforced secrets', () => {
-  test('the session wrapper pushes an already-active environment without provisioning one', async () => {
-    environmentRows = [
-      {
-        ...SESSION_ROW,
-        externalId: 'env-ext-1',
-        provider: 'daytona',
-        config: { serviceKey: 'env-service-key' },
-      },
-    ];
-
-    await syncSessionRuntimesEnvForPrompt({
-      projectId: 'proj-1',
-      sessionId: 'sess-1',
-      externalId: 'ext-1',
-      serviceKey: 'svc-key',
-      previewUrl: 'https://sandbox.test',
-      providerHeaders: {},
-      providerName: 'platinum',
-    });
-
-    expect(envPushes).toHaveLength(2);
-  });
-
   test('a boundary secret never reaches a provider, and an unchanged env is pushed once', async () => {
     await prompt();
     await prompt();
     await prompt();
 
-    // Identical env, same box, inside the push TTL: only the first prompt
-    // reaches the daemon at all (see `PROMPT_ENV_PUSH_TTL_MS`).
+    // Identical env, same box: only the first prompt reaches the daemon at
+    // all (see `decideEnvSyncAction` in `env-sync-skip-decision.ts`).
     expect(envPushes).toHaveLength(1);
     // There is no provider step left on this path — no arm, no wait, no 502.
     expect(events).toEqual(['env-push']);
@@ -245,9 +213,7 @@ describe('propagateProjectSecretsToActiveSandboxes — egress-enforced secrets',
       ok: false,
       synced: 0,
       failed: 1,
-      results: [
-        { session_id: 'sess-1', status: 'failed', reason: 'could not resolve the secrets grant' },
-      ],
+      results: [{ session_id: 'sess-1', status: 'failed', reason: 'could not resolve the secrets grant' }],
     });
     expect(envPushes).toEqual([]);
   });

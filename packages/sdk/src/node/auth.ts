@@ -22,7 +22,7 @@
  * redirect through `/refresh`, so a page never renders "signed out" for a user
  * whose refresh token is still good.
  */
-import { createScopedKortix, forwardKortixRequest } from './server';
+import { createScopedKortix, forwardKortixRequest } from './scoped-client';
 import type { Kortix } from '../core/client/kortix';
 import type { AccountIdentity } from '../core/rest/projects-client/accounts';
 import { stripTrailingSlashes } from '../platform/strings';
@@ -51,6 +51,24 @@ export interface KortixAuthOptions {
   fetch?: KortixFetch;
   /** Clock, for tests. */
   now?: () => number;
+  /**
+   * `SameSite` for the session and transaction cookies. Default `'lax'`.
+   *
+   * Set `'none'` only for an App that must complete sign-in while EMBEDDED in
+   * another origin — a Kortix App inside the Kortix UI, a dashboard in a
+   * customer's page. A `Lax` cookie is not sent on a cross-site frame request,
+   * so the callback cannot see its own transaction and the flow fails with
+   * `state_mismatch` no matter how correct everything else is.
+   *
+   * `'none'` REQUIRES a secure context; browsers reject it otherwise. This
+   * option therefore does nothing over plain http, and that is not a bug to
+   * work around — it is the same rule that makes third-party cookies opt-in.
+   *
+   * Default stays `'lax'` because it is the safer choice for the ordinary
+   * top-level app, and widening it for everyone to serve the embedded case
+   * would be exactly backwards.
+   */
+  cookieSameSite?: 'lax' | 'none';
 }
 
 export interface KortixViewer {
@@ -186,11 +204,26 @@ function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
-/** Only a same-origin path may be a post-auth destination. */
+/**
+ * Only a same-origin path may be a post-auth destination.
+ *
+ * Browsers remove tab, CR and LF from a URL and treat `\` as `/`, so
+ * `/\t/evil.example` and `/\evil.example` both navigate to another origin.
+ * Any control character or backslash is refused, and the path is returned in
+ * the canonical form a browser would open.
+ */
 export function safeReturnTo(value: string | null | undefined): string {
   if (!value) return '/';
-  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return '/';
-  return value;
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  if (value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return '/';
+  try {
+    const base = 'https://return-to.invalid';
+    const resolved = new URL(value, base);
+    if (resolved.origin !== base) return '/';
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return '/';
+  }
 }
 
 // ─── payloads ────────────────────────────────────────────────────────────────
@@ -242,8 +275,11 @@ export function createKortixAuth(options: KortixAuthOptions): KortixAuth {
   let now = options.now ?? (() => Date.now());
   const nowS = () => Math.floor(now() / 1000);
 
+  // `None` is only legal alongside `Secure`, so an insecure origin silently
+  // keeps `Lax` rather than emitting a cookie every browser will drop.
+  const sameSite = options.cookieSameSite === 'none' && secure ? 'None' : 'Lax';
   const cookieLine = (name: string, value: string, maxAge: number) =>
-    `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+    `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}${secure ? '; Secure' : ''}`;
   const clearLine = (name: string) => cookieLine(name, '', 0);
 
   const redirectTo = (location: string, cookies: string[] = []): Response => {
@@ -517,7 +553,7 @@ export function createKortixAuth(options: KortixAuthOptions): KortixAuth {
     const current = await viewer(request);
     if (!current) throw new KortixAuthError('unauthenticated', 'No signed-in Kortix viewer on this request');
     const token = current.token;
-    return createScopedKortix({ backendUrl, getToken: async () => token, fetch: fetchImpl, clientSource: 'web' });
+    return createScopedKortix({ backendUrl, getToken: async () => token, fetch: fetchImpl });
   }
 
   return {

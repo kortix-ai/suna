@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   errorStatus,
   gateAction,
@@ -10,11 +11,12 @@ import {
   gateStateForError,
   gateStateForRequestResult,
   isForbiddenState,
+  resolveBoundaryView,
   resolveGateState,
+  routeSessionIdFromParams,
   shouldPollForApproval,
   type AccessGateState,
 } from './project-access-boundary';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 const componentSource = readFileSync(
   fileURLToPath(new URL('./project-access-boundary.tsx', import.meta.url)),
@@ -37,6 +39,31 @@ function copyBlock(locale: string): Record<string, string> {
 }
 
 const en = copyBlock('en');
+
+describe('project access waits for the authenticated identity', () => {
+  test('the query waits for auth hydration and is isolated by user', () => {
+    expect(componentSource).toContain('const { user, isLoading: isAuthLoading } = useAuth();');
+    expect(componentSource).toContain('const authReady = !isAuthLoading && !!user?.id;');
+    expect(componentSource).toContain('enabled: authReady && !!projectId');
+    expect(componentSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
+  });
+
+  test('the boundary renders what resolveBoundaryView decides', () => {
+    expect(componentSource).toContain('const view = resolveBoundaryView({');
+    expect(componentSource).toContain("if (view === 'pending') return <ProjectPendingScreen />;");
+    expect(componentSource).toContain("if (view === 'project') return <>{children}</>;");
+    expect(componentSource).toContain('const polling = authReady &&');
+  });
+
+  test('identity changes remount gate state and retain the signed-out escape', () => {
+    const boundary = componentSource.slice(componentSource.indexOf('export function ProjectAccessBoundary'), componentSource.indexOf('function ProjectAccessForUser'));
+    expect(boundary).toContain('useSignedOutRedirect();');
+    expect(boundary).toContain('key={`${props.projectId}:${user?.id ?? "pending"}`}');
+    expect(componentSource.match(/queryKey: \[QUERY_KEY, projectId, user\?\.id\]/g)).toHaveLength(2);
+    expect(componentSource).toContain('if (authReady) void refetch();');
+    expect(componentSource).toContain('if (!authReady) return;');
+  });
+});
 
 /** The English the user actually reads on a given screen. */
 function englishCopy(state: AccessGateState) {
@@ -185,6 +212,48 @@ describe('resolveGateState', () => {
   });
 });
 
+describe('resolveBoundaryView', () => {
+  const ready = { authReady: true, isPending: false };
+
+  test('unresolved auth shows pending, even over a cached project', () => {
+    expect(
+      resolveBoundaryView({ authReady: false, isPending: false, hasData: true, errorState: null }),
+    ).toBe('pending');
+    expect(
+      resolveBoundaryView({ authReady: true, isPending: true, hasData: false, errorState: null }),
+    ).toBe('pending');
+  });
+
+  test('a readable project renders', () => {
+    expect(resolveBoundaryView({ ...ready, hasData: true, errorState: null })).toBe('project');
+  });
+
+  test('a failed refetch keeps the working shell', () => {
+    // TanStack v5 keeps `data` when a refetch fails and sets `status: 'error'`.
+    // A 500, a timeout, an expired token or a dropped tunnel after the project
+    // opened must not replace the whole app with the error screen.
+    for (const error of [{ status: 500 }, { status: 401 }, new Error('timeout')]) {
+      const errorState = gateStateForError(error);
+      expect(resolveBoundaryView({ ...ready, hasData: true, errorState })).toBe('project');
+    }
+  });
+
+  test('a terminal verdict replaces the shell even when data is cached', () => {
+    // Access revoked, or the project deleted, while the user was in it.
+    for (const status of [403, 404]) {
+      const errorState = gateStateForError({ status });
+      expect(resolveBoundaryView({ ...ready, hasData: true, errorState })).toBe('gate');
+    }
+  });
+
+  test('a first load that failed shows the gate screen', () => {
+    for (const status of [403, 404, 500]) {
+      const errorState = gateStateForError({ status });
+      expect(resolveBoundaryView({ ...ready, hasData: false, errorState })).toBe('gate');
+    }
+  });
+});
+
 /**
  * JAY-729: a failed project surface must never funnel the user back into
  * itself. The escape links read `useAppHome()`, which reads the last-project
@@ -228,7 +297,7 @@ describe('polling lifecycle', () => {
     // This boundary wraps the project shell for the whole session, so a poll
     // that only checks `waiting` keeps calling getProject every 15s while the
     // user works. The guard must include the success case.
-    expect(componentSource).toContain('const polling = !query.isSuccess && shouldPollForApproval');
+    expect(componentSource).toContain('!query.isSuccess && shouldPollForApproval');
     expect(componentSource).toMatch(/if \(!polling\) return;/);
   });
 
@@ -394,8 +463,12 @@ describe('house dialect', () => {
         present: true,
       });
     }
-    // The quiet spinner every other auth sub-surface shows while it resolves.
-    expect(componentSource).toContain('<AuthPendingScreen ');
+    // The one exception to the auth vocabulary: the pending frame. It resolves
+    // into the project shell, not into an auth screen, so it is the shared
+    // "opening a project" mark rather than the consent flows' spinner. Paired
+    // with the absence, so a revert to AuthPendingScreen fails here.
+    expect(componentSource).toContain('<ProjectPendingScreen />');
+    expect(componentSource).not.toContain('<AuthPendingScreen');
   });
 
   test('does not re-introduce a bespoke frame, card or wallpaper', () => {
@@ -427,5 +500,28 @@ describe('house dialect', () => {
     // `Loading` is the codebase's only spinner.
     expect(componentSource).toContain("import Loading from '@/components/ui/loading'");
     expect(componentSource.match(/CircleNotch|SpinnerIcon|animate-spin/)?.[0] ?? null).toBeNull();
+  });
+});
+
+describe('session open read starts beside getProject', () => {
+  test('routeSessionIdFromParams reads the [sessionId] segment only', () => {
+    expect(routeSessionIdFromParams({ id: 'p', sessionId: 's' })).toBe('s');
+    expect(routeSessionIdFromParams({ id: 'p' })).toBeNull();
+    expect(routeSessionIdFromParams({ id: 'p', sessionId: '' })).toBeNull();
+    expect(routeSessionIdFromParams({ id: 'p', sessionId: ['a'] })).toBeNull();
+    expect(routeSessionIdFromParams(null)).toBeNull();
+  });
+
+  test('the boundary starts prefetchSessionOpen gated on auth, not on the project read', () => {
+    // Pinned as source: the gain is the ORDER — the snapshot must not wait for
+    // `getProject`, and it must not fire before the user's token exists.
+    const effect = componentSource.match(
+      /useEffect\(\(\) => \{\s*if \(!authReady \|\| !routeSessionId\) return;\s*void prefetchSessionOpen\(queryClient, projectId, routeSessionId\);/,
+    );
+    expect(effect).not.toBeNull();
+    const prefetchAt = componentSource.indexOf('void prefetchSessionOpen(');
+    const pendingGateAt = componentSource.indexOf("if (view === 'pending') return");
+    expect(prefetchAt).toBeGreaterThan(0);
+    expect(prefetchAt).toBeLessThan(pendingGateAt);
   });
 });

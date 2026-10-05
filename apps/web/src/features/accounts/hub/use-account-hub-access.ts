@@ -5,19 +5,18 @@
  * probe behind the account hub, and the section-visibility rule derived from
  * it.
  *
- * Two consumers, one request: `app/(app)/accounts/[id]/page.tsx` (which pane
- * to render, which controls to offer) and the settings sidebar in
+ * Two consumers, one request: `account-hub-content.tsx` (which pane to
+ * render, which controls to offer) and the settings sidebar in
  * `account-settings-sidebar.tsx` (which nav items exist). Both call the hook
  * below; React Query keys the batch on `(accountId, userId, probes)`, so the
  * second caller reads the first caller's cache entry and the server sees one
  * `:batch` POST per page load, not two.
  */
 
-import { useSearchParams } from 'next/navigation';
-
 import { isBillingEnabled } from '@/lib/config';
 import { usePermissions, type CanResult } from '@/lib/use-permission';
 
+import { useHubSearchParams } from './account-hub-location';
 import { NAV_GROUPS, parseAccountSection, type AccountSection } from './sections';
 
 // Stable (module-level) probe list for the account-capabilities batch. Order
@@ -181,13 +180,14 @@ export interface AccountHubSection extends AccountHubAccess {
 }
 
 /**
- * Access plus the resolved section. Reads `?tab=`, so a component calling
- * this needs a `Suspense` boundary above it when it can render during a
- * static prerender.
+ * Access plus the resolved section. Reads the hub's `tab` through
+ * `useHubSearchParams()` — the URL on the route, the prefixed `accountTab` in
+ * the overlay — so a component calling this needs a `Suspense` boundary above
+ * it when it can render during a static prerender.
  */
 export function useAccountHubSection(accountId: string | undefined): AccountHubSection {
   const access = useAccountHubAccess(accountId);
-  const searchParams = useSearchParams();
+  const searchParams = useHubSearchParams();
   const { sectionVisible, firstVisibleSection } = access;
   const requestedTab: AccountSection = parseAccountSection(searchParams.get('tab')) ?? 'members';
   const activeSection: AccountSection = sectionVisible[requestedTab]

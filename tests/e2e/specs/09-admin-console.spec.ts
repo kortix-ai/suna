@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Page, expect, test } from "@playwright/test";
 import { runDatabaseSql } from "../helpers/database";
-import { INFRASTRUCTURE_STATUSES, json } from "../helpers/http";
+import { INFRASTRUCTURE_STATUSES, createApiJsonClient, json } from "../helpers/http";
 import {
   createAuthUser,
   deleteAuthUser,
@@ -11,8 +11,10 @@ import {
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
+const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
 const password = process.env.E2E_ADMIN_PASSWORD || "E2eAccountAccess123!";
 const authOptions = { supabaseUrl, password, envFiles: ["apps/api/.env"] };
+const api = createApiJsonClient(apiBase);
 
 /**
  * Load `/admin` until the platform-admin guard actually lets the page through.
@@ -34,17 +36,25 @@ const authOptions = { supabaseUrl, password, envFiles: ["apps/api/.env"] };
  * read. Both causes clear on a retry, so retry — and when it never clears,
  * fail naming which of the three states was actually on screen.
  */
-async function openAdminOverview(page: Page, path: string): Promise<void> {
+async function openAdminOverview(
+  page: Page,
+  path: string,
+  heading = "Overview",
+): Promise<void> {
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const roleResponse = page.waitForResponse((response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname.endsWith("/v1/user-roles"),
+    );
     await page.goto(path, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL((url) => url.pathname === path);
-    const overview = page.getByRole("heading", { name: "Overview" }).first();
-    const refused = page.getByText("Admin access required").first();
-    // Resolve the guard's skeleton into one of its two terminal states first,
-    // so a slow probe is a wait and not a failure.
-    await expect(overview.or(refused).first()).toBeVisible({ timeout: 60_000 });
-    if (await overview.isVisible().catch(() => false)) return;
+    const response = await roleResponse;
+    if (response.ok() && (await response.json()).isAdmin === true) {
+      await expect(page.getByRole("heading", { name: heading }).first())
+        .toBeVisible({ timeout: 60_000 });
+      return;
+    }
     if (attempt < attempts) await page.waitForTimeout(5_000);
   }
   throw new Error(
@@ -57,6 +67,7 @@ async function assertAdminRouteClean(
   page: Page,
   path: string,
   expectedTexts: string[],
+  heading = "Overview",
 ) {
   const badResponses: string[] = [];
   const consoleErrors: string[] = [];
@@ -90,18 +101,25 @@ async function assertAdminRouteClean(
       ) {
         return;
       }
+      if (
+        text.includes("MIME type ('text/plain')") &&
+        (text.includes("/_vercel/insights/script.js") ||
+          text.includes("/_vercel/speed-insights/script.js"))
+      ) {
+        return;
+      }
       consoleErrors.push(text);
     }
   });
 
   // First pass: get the guard to let us in. Any attempt here may have raced a
   // degraded replica, so nothing it recorded is evidence about the product.
-  await openAdminOverview(page, path);
+  await openAdminOverview(page, path, heading);
   badResponses.length = 0;
   consoleErrors.length = 0;
 
   // Second pass: this is the load the assertions below judge.
-  await openAdminOverview(page, path);
+  await openAdminOverview(page, path, heading);
 
   for (const text of expectedTexts) {
     await expect(page.getByText(text).first()).toBeVisible();
@@ -128,15 +146,25 @@ test.describe("09 - Admin console", () => {
     const synthetic = configuredAdminEmail
       ? null
       : await createAuthUser(adminEmail, authOptions);
-    if (synthetic) {
-      await runDatabaseSql(`
-insert into kortix.platform_user_roles (account_id, role)
-values ('${synthetic.id}'::uuid, 'super_admin'::kortix.platform_role)
-on conflict (account_id) do update set role = excluded.role;
-`);
-    }
+    let grantedAccountId: string | null = null;
     try {
       const session = await signIn(adminEmail, authOptions);
+      if (synthetic) {
+        // /v1/user-roles resolves the authenticated user id, not an account
+        // selected from /v1/accounts. Keep the grant key tied to the JWT sub.
+        grantedAccountId = synthetic.id;
+        await runDatabaseSql(`
+insert into kortix.platform_user_roles (account_id, role)
+values ('${grantedAccountId}'::uuid, 'super_admin'::kortix.platform_role)
+on conflict (account_id) do update set role = excluded.role;
+`, [], databaseUrl);
+        const role = await api<{ isAdmin: boolean; role: string | null }>(
+          session.access_token,
+          "GET",
+          "/user-roles",
+        );
+        expect(role).toEqual({ isAdmin: true, role: "super_admin" });
+      }
       // Let the assertions below own the admin navigations; otherwise the
       // immediate duplicate /admin load can abort Supabase's user fetch.
       await installBrowserSessionDirect(
@@ -152,13 +180,125 @@ on conflict (account_id) do update set role = excluded.role;
         "Projects",
         "Sandboxes",
         "Maintenance",
+        "Git",
       ]);
 
+      // /admin/git — the instance's ONE managed-git surface. It lived on the
+      // account Git tab until 2026-09-16, when a platform admin ran its
+      // manifest flow from a customer's settings and replaced production's
+      // GitHub App. The card renders here and nowhere else; the page says in
+      // words that it decides how every project on the instance reaches
+      // GitHub.
+      await assertAdminRouteClean(
+        page,
+        "/admin/git",
+        ["Managed GitHub", "One connection for the whole instance"],
+        "Git",
+      );
+
+
+      // Provider console uses synthetic data only: intercept every admin API
+      // request, including writes, so this journey cannot migrate a cloud sandbox.
+      const providerRequests: string[] = [];
+      const unexpectedProviderRequests: string[] = [];
+      const providerWrites: { method: string; path: string; body: unknown }[] = [];
+      let weights = { platinum: 2, daytona: 1 };
+      let fallbackEnabled = false;
+      const fixtureSandbox = { sandboxId: "synthetic-sandbox", sessionId: "synthetic/session", accountId: "synthetic-account", projectId: "synthetic-project", provider: "platinum", externalId: "synthetic-external", status: "active", lastUsedAt: "2026-01-01T00:00:00Z" };
+      await page.route("**/admin/api/**", async (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        providerRequests.push(url.pathname + url.search);
+        if (request.method() !== "GET") {
+          const body: unknown = request.postDataJSON();
+          providerWrites.push({ method: request.method(), path: url.pathname, body });
+          if (request.method() === "PUT" && url.pathname.endsWith("/provider-distribution")) {
+            weights = request.postDataJSON();
+          } else if (request.method() === "PUT" && url.pathname.endsWith("/provider-fallback")) {
+            fallbackEnabled = request.postDataJSON().enabled;
+          } else if (request.method() === "POST" && url.pathname.endsWith("/sandboxes/synthetic%2Fsession/migrate")) {
+            fixtureSandbox.provider = request.postDataJSON().targetProvider;
+          } else {
+            unexpectedProviderRequests.push(`${request.method()} ${url.pathname}`);
+            await route.fulfill({ status: 403, json: { error: "Unknown synthetic provider write" } });
+            return;
+          }
+          await route.fulfill({ status: 200, json: { success: true } });
+          return;
+        }
+        const fixtures: Record<string, unknown> = {
+          "provider-distribution": { allowed: ["platinum", "daytona"], default: "platinum", weights },
+          "sandboxes": { sandboxes: [fixtureSandbox], byProvider: [{ provider: fixtureSandbox.provider, count: 1 }] },
+          "provider-fallback": { enabled: fallbackEnabled },
+          "provider-analytics": {
+            days: Number(url.searchParams.get("days")),
+            totals: { provisions: 0, ok: 0, error: 0, stopped: 0, migrations: 0, successRate: null },
+            providers: [], latencyByDay: [], volumeByDay: [], migrations: [], recentErrors: [],
+          },
+        };
+        const data = fixtures[url.pathname.split("/").pop() || ""];
+        if (request.method() !== "GET" || data === undefined) {
+          unexpectedProviderRequests.push(`${request.method()} ${url.pathname}`);
+          await route.fulfill({ status: 403, json: { error: "Unknown synthetic provider read" } });
+          return;
+        }
+        await route.fulfill({ status: 200, json: data });
+      });
+      await openAdminOverview(page, "/admin/sandboxes", "Sandboxes");
+      await expect(page.getByText("Platinum", { exact: true }).first()).toBeVisible();
+      expect(providerRequests.some(path => path.endsWith("provider-distribution"))).toBe(true);
+      expect(providerRequests.some(path => path.endsWith("sandboxes?limit=300"))).toBe(true);
+      expect(providerRequests.some(path => path.endsWith("provider-fallback"))).toBe(true);
+      expect(providerRequests.some(path => path.includes("provider-analytics"))).toBe(false);
+      await page.getByRole("tab", { name: "Analytics", exact: true }).click();
+      await expect.poll(() => providerRequests.some(path => path.endsWith("provider-analytics?days=7"))).toBe(true);
+      await page.getByRole("combobox").click();
+      await page.getByRole("option", { name: "Last 30 days", exact: true }).click();
+      await expect.poll(() => providerRequests.filter(path => path.endsWith("provider-analytics?days=30")).length).toBeGreaterThan(0);
+      const analyticsReads = providerRequests.filter(path => path.endsWith("provider-analytics?days=30")).length;
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await expect.poll(() => providerRequests.filter(path => path.endsWith("provider-analytics?days=30")).length).toBeGreaterThan(analyticsReads);
+      await page.getByRole("tab", { name: "Overview", exact: true }).click();
+      await page.locator("#weight-platinum").fill("9");
+      const distributionReads = providerRequests.filter(path => path.endsWith("provider-distribution")).length;
+      await page.getByRole("button", { name: "Save distribution", exact: true }).click();
+      await expect.poll(() => providerWrites.length).toBe(1);
+      expect(providerWrites[0]).toEqual({ method: "PUT", path: new URL(apiBase).pathname + "/admin/api/provider-distribution", body: { platinum: 9, daytona: 1 } });
+      await expect.poll(() => providerRequests.filter(path => path.endsWith("provider-distribution")).length).toBeGreaterThan(distributionReads);
+      await expect(page.locator("#weight-platinum")).toHaveValue("9");
+      await page.getByRole("switch", { name: "Enable provider failover" }).click();
+      const fallbackReads = providerRequests.filter(path => path.endsWith("provider-fallback")).length;
+      await page.getByRole("button", { name: "Save failover", exact: true }).click();
+      await expect.poll(() => providerWrites.length).toBe(2);
+      expect(providerWrites[1]?.body).toEqual({ enabled: true });
+      await expect.poll(() => providerRequests.filter(path => path.endsWith("provider-fallback")).length).toBeGreaterThan(fallbackReads);
+      await expect(page.getByRole("switch", { name: "Enable provider failover" })).toBeChecked();
+      const row = page.getByRole("row").filter({ hasText: "synthet" });
+      await row.getByRole("button").click();
+      await page.getByRole("menuitem", { name: "Migrate to another provider…" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("combobox").click();
+      await page.getByRole("option", { name: "daytona", exact: true }).click();
+      expect(providerWrites).toHaveLength(2);
+      const sandboxReads = providerRequests.filter(path => path.endsWith("sandboxes?limit=300")).length;
+      await dialog.getByRole("button", { name: "Migrate", exact: true }).click();
+      await expect.poll(() => providerWrites.length).toBe(3);
+      expect(providerWrites[2]).toEqual({ method: "POST", path: new URL(apiBase).pathname + "/admin/api/sandboxes/synthetic%2Fsession/migrate", body: { targetProvider: "daytona" } });
+      await expect(dialog).not.toBeVisible();
+      await expect.poll(() => providerRequests.filter(path => path.endsWith("sandboxes?limit=300")).length).toBeGreaterThan(sandboxReads);
+      await expect(row.getByText("daytona", { exact: true })).toBeVisible();
+      expect(unexpectedProviderRequests).toEqual([]);
+
     } finally {
-      if (synthetic) {
+      if (grantedAccountId) {
         await runDatabaseSql(
-          `delete from kortix.platform_user_roles where account_id = '${synthetic.id}'::uuid;`,
+          `delete from kortix.platform_user_roles where account_id = '${grantedAccountId}'::uuid;`,
+          [],
+          databaseUrl,
         );
+      }
+      if (synthetic) {
         await deleteAuthUser(synthetic.id, authOptions);
       }
     }

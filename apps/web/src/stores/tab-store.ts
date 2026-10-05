@@ -1,43 +1,31 @@
 'use client';
 
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk';
 import { safeLocalStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
+import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type TabType = 'session' | 'file' | 'dashboard' | 'settings' | 'project' | 'page' | 'preview' | 'terminal' | 'services' | 'browser' | 'desktop';
+export type TabType =
+  | 'session'
+  | 'file'
+  | 'dashboard'
+  | 'settings'
+  | 'project'
+  | 'page'
+  | 'preview'
+  | 'terminal'
+  | 'services'
+  | 'browser'
+  | 'desktop';
 
 /** The permanent dashboard/home tab. Always pinned, always first. */
 export const DASHBOARD_TAB_ID = 'page:/dashboard';
 
-/** Maximum number of recently closed tabs to remember for CMD+Shift+T */
-const MAX_RECENTLY_CLOSED = 20;
-
-/** Maximum depth for tab focus history (VS Code-like back-navigation) */
-const MAX_FOCUS_HISTORY = 50;
-
-/**
- * Short-TTL set of tab IDs that were just closed via the UI. Route-sync
- * effects consult this before auto-opening a tab whose URL matches the
- * current pathname — otherwise the just-closed tab would be reopened
- * immediately because pathname state races behind the close action.
- */
-const _recentlyClosedTabIds = new Set<string>();
-const RECENTLY_CLOSED_TTL_MS = 1500;
-
-export function isTabRecentlyClosed(id: string): boolean {
-  return _recentlyClosedTabIds.has(id);
-}
-
-function markTabClosed(id: string): void {
-  _recentlyClosedTabIds.add(id);
-  setTimeout(() => _recentlyClosedTabIds.delete(id), RECENTLY_CLOSED_TTL_MS);
-}
 export const DASHBOARD_TAB: Omit<Tab, 'openedAt'> & { openedAt: number } = {
   id: DASHBOARD_TAB_ID,
   title: '',
@@ -46,23 +34,6 @@ export const DASHBOARD_TAB: Omit<Tab, 'openedAt'> & { openedAt: number } = {
   pinned: true,
   openedAt: 0,
 };
-
-/**
- * Push the current active tab onto the focus history stack.
- * Deduplicates consecutive entries and caps at MAX_FOCUS_HISTORY.
- */
-function pushFocusHistory(history: string[], tabId: string): string[] {
-  // Don't push duplicates at the top of the stack
-  if (history[0] === tabId) return history;
-  return [tabId, ...history].slice(0, MAX_FOCUS_HISTORY);
-}
-
-/**
- * Remove all occurrences of given tab IDs from focus history.
- */
-function cleanFocusHistory(history: string[], removedIds: Set<string>): string[] {
-  return history.filter((id) => !removedIds.has(id));
-}
 
 /** Ensures the dashboard tab exists at position 0 in the given state. */
 function ensureDashboardTab(
@@ -111,10 +82,6 @@ interface TabState {
   tabOrder: string[];
   /** The currently active/focused tab ID */
   activeTabId: string | null;
-  /** Stack of recently closed tabs (most recent first) for Mod+Shift+T reopen */
-  recentlyClosedTabs: Tab[];
-  /** Focus history stack — most recently focused tab IDs first (VS Code-like back-navigation) */
-  tabFocusHistory: string[];
 
   // --- Actions ---
 
@@ -124,35 +91,8 @@ interface TabState {
   /** Close a tab by ID. Returns the next tab to activate (or null). */
   closeTab: (tabId: string) => string | null;
 
-  /** Reopen the most recently closed tab. Returns the reopened tab or null. */
-  reopenLastClosedTab: () => Tab | null;
-
   /** Set the active tab */
   setActiveTab: (tabId: string) => void;
-
-  /** Update a tab's title */
-  updateTabTitle: (tabId: string, title: string) => void;
-
-  /** Mark a tab dirty/clean */
-  setTabDirty: (tabId: string, dirty: boolean) => void;
-
-  /** Pin/unpin a tab */
-  pinTab: (tabId: string, pinned: boolean) => void;
-
-  /** Reorder tabs (move tabId to newIndex) */
-  moveTab: (tabId: string, newIndex: number) => void;
-
-  /** Close all tabs except the given one */
-  closeOtherTabs: (tabId: string) => void;
-
-  /** Close tabs to the right of the given tab */
-  closeTabsToRight: (tabId: string) => void;
-
-  /** Close all unpinned tabs */
-  closeAllTabs: () => void;
-
-  /** Get ordered tab objects */
-  getOrderedTabs: () => Tab[];
 }
 
 // ============================================================================
@@ -167,16 +107,9 @@ export const useTabStore = create<TabState>()(
       tabs: {},
       tabOrder: [],
       activeTabId: null,
-      recentlyClosedTabs: [],
-      tabFocusHistory: [],
 
       openTab: (tabInput) => {
-        const { tabs, tabOrder, activeTabId, tabFocusHistory } = get();
-
-        // Record current active tab in focus history before switching
-        const newHistory = activeTabId && activeTabId !== tabInput.id
-          ? pushFocusHistory(tabFocusHistory, activeTabId)
-          : tabFocusHistory;
+        const { tabs, tabOrder } = get();
 
         // If tab already exists, update its metadata (URL may have changed) and activate it.
         // Important: do NOT force-refresh preview tabs here. Re-opening or
@@ -193,7 +126,6 @@ export const useTabStore = create<TabState>()(
           set({
             tabs: { ...tabs, [tabInput.id]: merged },
             activeTabId: tabInput.id,
-            tabFocusHistory: newHistory,
           });
           return;
         }
@@ -203,36 +135,25 @@ export const useTabStore = create<TabState>()(
           openedAt: Date.now(),
         };
 
-        const updated = ensureDashboardTab(
-          { ...tabs, [newTab.id]: newTab },
-          [...tabOrder, newTab.id],
-        );
+        const updated = ensureDashboardTab({ ...tabs, [newTab.id]: newTab }, [
+          ...tabOrder,
+          newTab.id,
+        ]);
 
         set({
           ...updated,
           activeTabId: newTab.id,
-          tabFocusHistory: newHistory,
         });
       },
 
       closeTab: (tabId) => {
-        const { tabs, tabOrder, activeTabId, recentlyClosedTabs, tabFocusHistory } = get();
+        const { tabs, tabOrder, activeTabId } = get();
         const tab = tabs[tabId];
         // Prevent closing dashboard tab or any pinned tab
         if (!tab || tab.pinned || tabId === DASHBOARD_TAB_ID) return activeTabId;
 
-        // Mark as just-closed so route-sync effects don't immediately reopen
-        markTabClosed(tabId);
-
-        // Push closed tab onto recently-closed stack
-        const updatedClosedTabs = [tab, ...recentlyClosedTabs].slice(0, MAX_RECENTLY_CLOSED);
-
         const { [tabId]: _, ...remainingTabs } = tabs;
         const newOrder = tabOrder.filter((id) => id !== tabId);
-
-        // Remove the closed tab from focus history
-        const closedSet = new Set([tabId]);
-        const newFocusHistory = cleanFocusHistory(tabFocusHistory, closedSet);
 
         // Determine next active tab
         let nextActiveId: string | null = null;
@@ -263,174 +184,15 @@ export const useTabStore = create<TabState>()(
           tabs: remainingTabs,
           tabOrder: newOrder,
           activeTabId: nextActiveId,
-          recentlyClosedTabs: updatedClosedTabs,
-          tabFocusHistory: newFocusHistory,
         });
 
         return nextActiveId;
       },
 
-      reopenLastClosedTab: () => {
-        const { recentlyClosedTabs, tabs, tabOrder } = get();
-        if (recentlyClosedTabs.length === 0) return null;
-
-        const [tabToReopen, ...remaining] = recentlyClosedTabs;
-
-        // If a tab with the same ID already exists, just activate it
-        if (tabs[tabToReopen.id]) {
-          set({ activeTabId: tabToReopen.id, recentlyClosedTabs: remaining });
-          return tabToReopen;
-        }
-
-        const updated = ensureDashboardTab(
-          { ...tabs, [tabToReopen.id]: tabToReopen },
-          [...tabOrder, tabToReopen.id],
-        );
-
-        set({
-          ...updated,
-          activeTabId: tabToReopen.id,
-          recentlyClosedTabs: remaining,
-        });
-
-        return tabToReopen;
-      },
-
       setActiveTab: (tabId) => {
-        const { tabs, activeTabId, tabFocusHistory } = get();
-        if (!tabs[tabId]) return;
-        const newHistory = activeTabId && activeTabId !== tabId
-          ? pushFocusHistory(tabFocusHistory, activeTabId)
-          : tabFocusHistory;
-        set({ activeTabId: tabId, tabFocusHistory: newHistory });
-      },
-
-      updateTabTitle: (tabId, title) => {
         const { tabs } = get();
         if (!tabs[tabId]) return;
-        set({
-          tabs: { ...tabs, [tabId]: { ...tabs[tabId], title } },
-        });
-      },
-
-      setTabDirty: (tabId, dirty) => {
-        const { tabs } = get();
-        if (!tabs[tabId]) return;
-        set({
-          tabs: { ...tabs, [tabId]: { ...tabs[tabId], dirty } },
-        });
-      },
-
-      pinTab: (tabId, pinned) => {
-        const { tabs, tabOrder } = get();
-        if (!tabs[tabId]) return;
-        const updatedTabs = { ...tabs, [tabId]: { ...tabs[tabId], pinned } };
-
-        // Reorder: pinned tabs at the beginning
-        const pinnedIds = tabOrder.filter((id) => updatedTabs[id]?.pinned);
-        const unpinnedIds = tabOrder.filter((id) => !updatedTabs[id]?.pinned);
-
-        set({
-          tabs: updatedTabs,
-          tabOrder: [...pinnedIds, ...unpinnedIds],
-        });
-      },
-
-      moveTab: (tabId, newIndex) => {
-        const { tabOrder } = get();
-        const currentIndex = tabOrder.indexOf(tabId);
-        if (currentIndex === -1) return;
-        const newOrder = [...tabOrder];
-        newOrder.splice(currentIndex, 1);
-        newOrder.splice(newIndex, 0, tabId);
-        set({ tabOrder: newOrder });
-      },
-
-      closeOtherTabs: (tabId) => {
-        const { tabs, tabFocusHistory } = get();
-        const remainingTabs: Record<string, Tab> = {};
-        const newOrder: string[] = [];
-        const removedIds = new Set<string>();
-
-        // Keep the target tab, all pinned tabs, and always the dashboard
-        for (const id of get().tabOrder) {
-          if (id === tabId || tabs[id]?.pinned || id === DASHBOARD_TAB_ID) {
-            remainingTabs[id] = tabs[id];
-            newOrder.push(id);
-          } else {
-            removedIds.add(id);
-          }
-        }
-
-        removedIds.forEach(markTabClosed);
-
-        const ensured = ensureDashboardTab(remainingTabs, newOrder);
-        set({
-          ...ensured,
-          activeTabId: tabId,
-          tabFocusHistory: cleanFocusHistory(tabFocusHistory, removedIds),
-        });
-      },
-
-      closeTabsToRight: (tabId) => {
-        const { tabs, tabOrder, activeTabId, tabFocusHistory } = get();
-        const index = tabOrder.indexOf(tabId);
-        if (index === -1) return;
-
-        const remainingSet = new Set<string>();
-        const newOrder = tabOrder.filter(
-          (id, i) => {
-            const keep = i <= index || tabs[id]?.pinned || id === DASHBOARD_TAB_ID;
-            if (keep) remainingSet.add(id);
-            return keep;
-          }
-        );
-        const remainingTabs: Record<string, Tab> = {};
-        for (const id of newOrder) {
-          remainingTabs[id] = tabs[id];
-        }
-
-        const removedIds = new Set(tabOrder.filter((id) => !remainingSet.has(id)));
-        removedIds.forEach(markTabClosed);
-        const ensured = ensureDashboardTab(remainingTabs, newOrder);
-        set({
-          ...ensured,
-          activeTabId: remainingTabs[activeTabId!] ? activeTabId : tabId,
-          tabFocusHistory: cleanFocusHistory(tabFocusHistory, removedIds),
-        });
-      },
-
-      closeAllTabs: () => {
-        const { tabs, tabOrder } = get();
-        const remainingTabs: Record<string, Tab> = {};
-        const newOrder: string[] = [];
-        const removedIds = new Set<string>();
-
-        for (const id of tabOrder) {
-          if (tabs[id]?.pinned || id === DASHBOARD_TAB_ID) {
-            remainingTabs[id] = tabs[id];
-            newOrder.push(id);
-          } else {
-            removedIds.add(id);
-          }
-        }
-
-        removedIds.forEach(markTabClosed);
-
-        const ensured = ensureDashboardTab(remainingTabs, newOrder);
-        set({
-          ...ensured,
-          activeTabId: ensured.tabOrder[0] || null,
-          tabFocusHistory: [],  // All non-pinned tabs are gone, clear history
-        });
-      },
-
-      getOrderedTabs: () => {
-        const { tabs, tabOrder } = get();
-        return tabOrder.flatMap((id) => {
-          const tab = tabs[id];
-          return tab ? [tab] : [];
-        });
+        set({ activeTabId: tabId });
       },
     }),
     {
@@ -438,13 +200,10 @@ export const useTabStore = create<TabState>()(
       // Never let a full quota crash the app — the storage wrapper evicts the
       // disposable per-server cache and retries instead of throwing.
       storage: createJSONStorage(() => safeTabStorage),
-      // `recentlyClosedTabs` holds full Tab objects (incl. metadata) and is only
-      // needed for Mod+Shift+T within a session — keep it in memory, off disk.
       partialize: (state) => ({
         tabs: state.tabs,
         tabOrder: state.tabOrder,
         activeTabId: state.activeTabId,
-        tabFocusHistory: state.tabFocusHistory,
       }),
       merge: (persisted, current) => {
         const p = (persisted as Partial<TabState>) || {};
@@ -453,8 +212,6 @@ export const useTabStore = create<TabState>()(
           ...p,
           tabs: p.tabs && typeof p.tabs === 'object' ? p.tabs : current.tabs,
           tabOrder: Array.isArray(p.tabOrder) ? p.tabOrder : current.tabOrder,
-          tabFocusHistory: Array.isArray(p.tabFocusHistory) ? p.tabFocusHistory : current.tabFocusHistory,
-          recentlyClosedTabs: Array.isArray(p.recentlyClosedTabs) ? p.recentlyClosedTabs : current.recentlyClosedTabs,
         };
       },
       // On rehydration, ensure dashboard tab is always present
@@ -468,14 +225,10 @@ export const useTabStore = create<TabState>()(
           if (!state.activeTabId) {
             state.activeTabId = DASHBOARD_TAB_ID;
           }
-          // Initialize focus history for existing users upgrading
-          if (!state.tabFocusHistory) {
-            state.tabFocusHistory = [];
-          }
         }
       },
-    }
-  )
+    },
+  ),
 );
 
 // Registers this store for `resetClientState()`'s sign-out sweep without
@@ -487,7 +240,19 @@ registerPersistedStore('kortix-tabs', () => resetPersistedStore(useTabStore));
 // ============================================================================
 
 /** Tab types rendered via pre-mounted CSS show/hide (use pushState, not router). */
-const PRE_MOUNTED_TAB_TYPES: ReadonlySet<TabType> = new Set(['session', 'file', 'preview', 'terminal', 'settings', 'page', 'project', 'dashboard', 'services', 'browser', 'desktop']);
+const PRE_MOUNTED_TAB_TYPES: ReadonlySet<TabType> = new Set([
+  'session',
+  'file',
+  'preview',
+  'terminal',
+  'settings',
+  'page',
+  'project',
+  'dashboard',
+  'services',
+  'browser',
+  'desktop',
+]);
 
 /**
  * Open (or activate) a tab AND navigate the browser to it.

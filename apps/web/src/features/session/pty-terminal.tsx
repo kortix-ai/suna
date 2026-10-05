@@ -1,17 +1,18 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState, useImperativeHandle, forwardRef } from 'react';
-import { ArrowClockwiseIcon } from '@phosphor-icons/react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Terminal as XTerm, ITheme } from '@xterm/xterm';
+import type { Pty } from '@kortix/sdk';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { ITheme, Terminal as XTerm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { getPtyWebSocketUrl, useUpdatePty } from '@kortix/sdk/react';
-import { invalidateTokenCache } from '@/lib/auth-token';
-import type { Pty } from '@kortix/sdk';
-import { classifyPtyClose, shouldExpirePtyConnect } from './pty-connection';
+import type { RefObject } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { PtyAttachStatus } from './pty-attach-status';
+import type { ConnectionStatus } from './pty-connection';
+import { usePtyConnection } from './use-pty-connection';
+
+export { isTerminalReport, sanitizeTerminalChunk } from './pty-terminal-sanitize';
 
 // ============================================================================
 // Theme
@@ -21,8 +22,8 @@ import { classifyPtyClose, shouldExpirePtyConnect } from './pty-connection';
 // tint. Selection stays neutral so it reads on any ANSI color underneath.
 //
 // `background` and `foreground` MUST stay equal to `--terminal-surface` and
-// `--terminal-fg` in globals.css — the connect bar and the panel shell paint
-// those tokens, and xterm's ITheme only accepts literal colors, never vars.
+// `--terminal-fg` in globals.css — the xterm container paints those tokens
+// around the canvas, and xterm's ITheme only accepts literal colors, never vars.
 const terminalTheme: ITheme = {
   background: '#0f0f0f',
   foreground: '#e5e5e5',
@@ -51,12 +52,6 @@ const terminalTheme: ITheme = {
 // Types
 // ============================================================================
 
-type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
-const PTY_CONNECT_TIMEOUT_MS = 15_000;
-// A close the browser reports as `1006` carries no information at all — it is
-// what a refused upgrade, a dropped socket, and a network blip all look like
-// from JavaScript. Printed at the user it reads as a real error code.
-const UNINFORMATIVE_CLOSE_REASON = /^code (1005|1006)$/;
 // xterm's default is 1000 lines — a single `npm install` or test run scrolls
 // past that, and the buffer is the only place that output exists client-side.
 const PTY_SCROLLBACK_LINES = 10_000;
@@ -94,143 +89,31 @@ function safeFit(fitAddon: FitAddon | null, container: HTMLDivElement | null) {
   }
 }
 
-function sanitizeTerminalChunk(chunk: string): string {
-  return chunk
-    // Cursor shell integration sometimes emits OSC 697 payloads.
-    // If an upstream proxy strips control bytes, only JSON remains visible.
-    .replace(/\x1b]697;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\{"cursor":\d+\}/g, '')
-    // Terminal capability-query *responses* that occasionally get echoed back
-    // into the output stream (e.g. when a prior client answered a query at an
-    // idle prompt): OSC color reports, DECRQM mode status, cursor-position and
-    // device-attribute reports. They render as garbage like
-    // `10;rgb:..`, `2004;2$y`, `R` — strip them so they never show.
-    .replace(/\x1b\][0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\]4;[0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[\??[0-9;]*\$y/g, '')
-    .replace(/\x1b\[\d+;\d+R/g, '')
-    .replace(/\x1b\[\?[0-9;]*c/g, '');
-}
-
-// Responses xterm auto-generates when something queries terminal capabilities:
-// cursor-position (CPR), mode status (DECRQM `$y`), device attributes (DA), and
-// OSC color reports. When the server replays the PTY scrollback on connect, the
-// queries embedded in it make xterm emit these — and at an idle shell prompt the
-// shell echoes them straight back as visible garbage. We drop them during the
-// brief post-connect replay window (real keystrokes are never reports).
-function isTerminalReport(data: string): boolean {
-  return /^(?:\x1b\[\d+;\d+R|\x1b\[\??[0-9;]*\$y|\x1b\[\?[0-9;]*c|\x1b\][0-9;]+(?:;rgb:[0-9a-fA-F/]+)?(?:\x07|\x1b\\))+$/.test(
-    data,
-  );
-}
-
 // ============================================================================
 // Component
 // ============================================================================
 
-let globalPtyConnectionId = 0;
-
-export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(function PtyTerminal({
-  pty,
-  className,
-  hidden,
-  serverUrl,
-  onStatusChange,
-  onUnavailable,
-}, ref) {
+/**
+ * Creates the xterm instance and its resize plumbing. Owns nothing about the
+ * socket: the attach lifecycle lives in `usePtyConnection`. Re-runs on the
+ * same (pty, serverUrl) trigger as the connection, so a sandbox move rebuilds
+ * both the terminal and its socket.
+ */
+function usePtyTerminalXterm(
+  pty: Pty,
+  serverUrl: string | undefined,
+  xtermRef: RefObject<XTerm | null>,
+  handleData: (data: string) => void,
+  sendResize: (cols: number, rows: number) => void,
+) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const connectionIdRef = useRef<number>(0);
-  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const disposedRef = useRef(false);
-  const hadErrorRef = useRef(false);
-  /** True while the NEXT connect is user intent (mount, or "Reconnect now") and
-   *  may therefore wake a parked sandbox. Cleared by each connect so automatic
-   *  backoff retries never resurrect a box. */
-  const wakeOnNextConnectRef = useRef(true);
-  /** The "Waking the sandbox…" line is written once per wake episode, not once
-   *  per backoff retry. Cleared alongside the wake flag on a successful open. */
-  const wakeNoticeShownRef = useRef(false);
-  // Until this timestamp, drop capability-query responses (see isTerminalReport)
-  // so the scrollback replayed on connect doesn't echo garbage at the prompt.
-  const suppressReportsUntilRef = useRef(0);
-  // Set by the effect below; lets the manual "Reconnect now" control jump the
-  // backoff queue without reaching into the effect's closure from outside.
-  const reconnectNowRef = useRef<(() => void) | null>(null);
 
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
-  // True while a backoff timer is armed. The backoff saturates at 15s, so
-  // without an escape hatch a user who fixed the problem still waits it out.
-  const [reconnectPending, setReconnectPending] = useState(false);
-  const updatePty = useUpdatePty({ serverUrl, onError: () => {} });
-
-  const updateStatus = useCallback((s: ConnectionStatus) => {
-    setStatus(s);
-    onStatusChange?.(s);
-  }, [onStatusChange]);
-
-  useImperativeHandle(ref, () => ({
-    focus: () => {
-      xtermRef.current?.focus();
-    },
-    kill: () => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        // Ctrl+C to cancel any pending input
-        wsRef.current.send('\x03');
-        // Small delay so the shell processes Ctrl+C before receiving exit
-        setTimeout(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send('exit\n');
-          }
-        }, 50);
-      }
-    },
-  }));
-
-  // Disconnect WebSocket
-  const disconnect = useCallback(() => {
-    disposedRef.current = true;
-    connectionIdRef.current = 0;
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (connectTimeoutRef.current) {
-      clearTimeout(connectTimeoutRef.current);
-      connectTimeoutRef.current = null;
-    }
-    if (wsRef.current) {
-      wsRef.current.onopen = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onclose = null;
-      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
-        wsRef.current.close();
-      }
-      wsRef.current = null;
-    }
-  }, []);
-
-  // Send resize to server via HTTP PATCH
-  const sendResize = useCallback((cols: number, rows: number) => {
-    if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
-    resizeTimeoutRef.current = setTimeout(() => {
-      updatePty.mutate({ id: pty.id, size: { rows, cols } });
-    }, 100);
-  }, [pty.id, updatePty]);
-
-  // Initialize xterm + connect WebSocket (all in one effect to avoid stale closures)
+  // Initialize xterm (the attach lifecycle lives in usePtyConnection)
   useEffect(() => {
     if (!terminalRef.current) return;
 
     const container = terminalRef.current;
-    disposedRef.current = false;
-    hadErrorRef.current = false;
 
     const term = new XTerm({
       cursorBlink: true,
@@ -253,14 +136,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Send user input through WebSocket. During the post-connect replay window
-    // we suppress xterm's auto-responses to replayed capability queries so they
-    // don't echo back as garbage (real keystrokes are never report sequences).
-    term.onData((data) => {
-      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-      if (Date.now() < suppressReportsUntilRef.current && isTerminalReport(data)) return;
-      wsRef.current.send(data);
-    });
+    term.onData(handleData);
 
     // Handle resize — notify the PTY server
     term.onResize(({ cols, rows }) => {
@@ -276,250 +152,62 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     });
     resizeObserver.observe(container);
 
-    const scheduleReconnect = (reason?: string) => {
-      if (disposedRef.current) return;
-      if (reconnectTimeoutRef.current) return;
-
-      // The auth token is baked into the WS URL as a query param (browsers can't
-      // set WS headers), and a failed upgrade is most often a stale/expired JWT —
-      // the browser only ever surfaces it as a bare error + 1006 close, never the
-      // underlying 401. Drop the cached token so the next connect fetches (and
-      // refreshes) a fresh one, instead of looping forever on the dead token.
-      invalidateTokenCache();
-
-      reconnectAttemptsRef.current += 1;
-      const delay = Math.min(1000 * 2 ** (reconnectAttemptsRef.current - 1), 15000);
-      // `code 1006` is the browser's way of saying it has NO information: it is
-      // what every refused upgrade and every dropped socket looks like from
-      // JavaScript, so printing it tells the user nothing and reads like a real
-      // error code they could act on. Anything else — a close reason, a real
-      // code — is genuine signal and still shown.
-      const suffix = reason && !UNINFORMATIVE_CLOSE_REASON.test(reason) ? ` (${reason})` : '';
-
-      term.writeln(`\r\n\x1b[33mReconnecting in ${Math.ceil(delay / 1000)}s${suffix}...\x1b[0m`);
-      updateStatus('connecting');
-      setReconnectPending(true);
-
-      reconnectTimeoutRef.current = setTimeout(() => {
-        reconnectTimeoutRef.current = null;
-        setReconnectPending(false);
-        connectWebSocket();
-      }, delay);
-    };
-
-    const connectWebSocket = async () => {
-      if (disposedRef.current) return;
-      // A user-initiated attach (panel open, "Reconnect now") may WAKE a parked
-      // sandbox — see getPtyWebSocketUrl.
-      //
-      // The flag is consumed on a SUCCESSFUL open (ws.onopen), not here. Clearing
-      // it before dialing meant the first attempt asked for a wake, failed while
-      // the box was still waking, and every backoff retry then dialed WITHOUT
-      // `wake=1` — so the API answered `sandbox not ready` (503), refused the
-      // upgrade, and the browser saw a bare `code 1006` with no reason. That is
-      // the "Waking the sandbox…" -> "Reconnecting in 1s/2s/4s (code 1006)" loop
-      // users hit, and with a 15-minute autostop against 23,852 stopped boxes it
-      // is the common case, not an edge case. Waking an already-awake box is a
-      // no-op, so keeping the flag armed across retries costs nothing.
-      const wake = wakeOnNextConnectRef.current;
-
-      // --- WebSocket connect ---
-      globalPtyConnectionId++;
-      const myConnectionId = globalPtyConnectionId;
-      connectionIdRef.current = myConnectionId;
-      hadErrorRef.current = false;
-
-      if (reconnectAttemptsRef.current === 0) {
-        updateStatus('connecting');
-      }
-
-      let wsUrl = '';
-      try {
-        wsUrl = await getPtyWebSocketUrl(pty.id, serverUrl, { wake });
-      } catch (err) {
-        console.error('[PtyTerminal] Failed to resolve WebSocket URL:', err);
-        hadErrorRef.current = true;
-        term.writeln('\r\n\x1b[31mFailed to resolve terminal connection URL.\x1b[0m');
-        updateStatus('error');
-        scheduleReconnect('URL error');
-        return;
-      }
-
-      // Bail out if a newer connection was requested while we were resolving the URL
-      if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
-      // `wsUrl` carries the auth token as a query param (see getKortixPtyWebSocketUrl).
-      // Log the token-free origin+path only — never the query string.
-      console.log('[PtyTerminal] Connecting WebSocket:', wsUrl.split('?')[0]);
-
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-      const connectStartedAt = Date.now();
-
-      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-      connectTimeoutRef.current = setTimeout(() => {
-        if (
-          connectionIdRef.current !== myConnectionId ||
-          disposedRef.current ||
-          ws.readyState !== WebSocket.CONNECTING ||
-          !shouldExpirePtyConnect(connectStartedAt, Date.now(), PTY_CONNECT_TIMEOUT_MS)
-        ) {
-          return;
-        }
-
-        connectTimeoutRef.current = null;
-        ws.onerror = null;
-        ws.onclose = null;
-        try {
-          ws.close();
-        } catch {
-          // The reconnect below replaces sockets that reject close while opening.
-        }
-        if (wsRef.current === ws) wsRef.current = null;
-        term.writeln('\r\n\x1b[31mTerminal connection timed out.\x1b[0m');
-        scheduleReconnect('connection timeout');
-      }, PTY_CONNECT_TIMEOUT_MS);
-
-      ws.onopen = () => {
-        if (connectionIdRef.current !== myConnectionId || disposedRef.current) {
-          ws.close();
-          return;
-        }
-        // Consumed only now: the attach succeeded, so the box is awake and the
-        // next dial has nothing left to wake.
-        wakeOnNextConnectRef.current = false;
-        wakeNoticeShownRef.current = false;
-        if (connectTimeoutRef.current) {
-          clearTimeout(connectTimeoutRef.current);
-          connectTimeoutRef.current = null;
-        }
-        console.log('[PtyTerminal] WebSocket connected');
-        reconnectAttemptsRef.current = 0;
-        setReconnectPending(false);
-        // Suppress capability-query echoes while the server replays scrollback.
-        // We deliberately do NOT reset()/clear() here — the PTY is persistent,
-        // so reconnecting should re-attach to the existing shell, not wipe it.
-        // (Color env is set when the PTY is created, not re-exported each open.)
-        suppressReportsUntilRef.current = Date.now() + 1500;
-        updateStatus('connected');
-
-        // Send initial terminal size so the shell renders a prompt
-        const { cols, rows } = term;
-        if (cols && rows) {
-          sendResize(cols, rows);
-        }
-      };
-
-      ws.onmessage = (event) => {
-        if (connectionIdRef.current !== myConnectionId) return;
-        if (typeof event.data === 'string') {
-          term.write(sanitizeTerminalChunk(event.data));
-        } else if (event.data instanceof Blob) {
-          event.data.text().then((text) => term.write(sanitizeTerminalChunk(text)));
-        }
-      };
-
-      ws.onerror = () => {
-        if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
-        // A refused upgrade reaches the browser as a bare error + 1006 with no
-        // status, so the one thing we DO know is worth saying: this attach asked
-        // the API to wake a parked sandbox, and a parked box takes a few seconds
-        // to come back. Without this the panel just counts down at the user.
-        // Once per wake episode, not once per retry. A parked Platinum box takes
-        // ~60s to come back (measured on dev: stop 17:57:02 -> provider running
-        // confirmed 17:58:05), which is a whole backoff ladder of attempts — and
-        // repeating the line every attempt read as a stuck loop rather than as
-        // one thing taking a minute. Reset on a successful open.
-        if (wake && !wakeNoticeShownRef.current) {
-          wakeNoticeShownRef.current = true;
-          term.writeln('\r\n\x1b[33mWaking the sandbox — this can take up to a minute...\x1b[0m');
-        }
-        // Browser WS error events carry no detail (always an empty Event) and the
-        // status (e.g. a 401) is never exposed. The onclose that follows drives
-        // backoff/reconnect, so just flag it — don't spam the terminal with red
-        // text on every attempt, and never echo the token-bearing URL into the
-        // visible buffer. The "Reconnecting in Ns..." line gives the user signal.
-        console.warn('[PtyTerminal] WebSocket connection error — will retry');
-        hadErrorRef.current = true;
-        updateStatus('error');
-      };
-
-      ws.onclose = (event) => {
-        if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
-        console.log('[PtyTerminal] WebSocket closed:', event.code, event.reason);
-        if (connectTimeoutRef.current) {
-          clearTimeout(connectTimeoutRef.current);
-          connectTimeoutRef.current = null;
-        }
-        wsRef.current = null;
-
-        const action = classifyPtyClose({
-          code: event.code,
-          reason: event.reason || '',
-          hadError: hadErrorRef.current,
-        });
-
-        if (!hadErrorRef.current) {
-          term.writeln(`\r\n\x1b[33mConnection closed${event.code ? ` (${event.code})` : ''}${event.reason ? ': ' + event.reason : ''}\x1b[0m`);
-        }
-
-        if (action === 'replace') {
-          updateStatus('error');
-          onUnavailable?.();
-        } else if (action === 'reconnect') {
-          scheduleReconnect(event.reason || `code ${event.code}`);
-        } else {
-          reconnectAttemptsRef.current = 0;
-          updateStatus('disconnected');
-        }
-      };
-    };
-
-    // Skip the armed backoff timer and dial immediately. Attempts reset so the
-    // next automatic retry (if this one also fails) starts at 1s again.
-    reconnectNowRef.current = () => {
-      if (disposedRef.current) return;
-      wakeOnNextConnectRef.current = true;
-      wakeNoticeShownRef.current = false;
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-      reconnectAttemptsRef.current = 0;
-      setReconnectPending(false);
-      connectWebSocket();
-    };
-
-    // A fresh (pty, serverUrl) pair is a new attach — the panel opened, or the
-    // runtime moved. Both are user intent, so the first dial may wake a parked box.
-    wakeOnNextConnectRef.current = true;
-    wakeNoticeShownRef.current = false;
-
-    // Delay fit + initial WS connect to ensure the container has real dimensions
+    // Delay fit to ensure the container has real dimensions — the connection's
+    // first dial runs on the same beat (see usePtyConnection).
     const initTimer = setTimeout(() => {
       safeFit(fitAddon, container);
-      connectWebSocket();
     }, 80);
 
     return () => {
       clearTimeout(initTimer);
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
-      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
-      reconnectNowRef.current = null;
-      setReconnectPending(false);
-      disconnect();
       term.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-    // `serverUrl` is a real input: the WS host is resolved from it, so after a
-    // sandbox move the old socket must be torn down and redialled. The cleanup
-    // above disposes the terminal and closes the socket, so re-running is safe.
   }, [pty.id, serverUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { terminalRef, fitAddonRef };
+}
+
+export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(function PtyTerminal(
+  { pty, className, hidden, serverUrl, onStatusChange, onUnavailable },
+  ref,
+) {
+  const xtermRef = useRef<XTerm | null>(null);
+
+  const {
+    phase,
+    hasConnected,
+    phaseRef,
+    reconnectNow,
+    kill,
+    sendResize,
+    handleData,
+  } = usePtyConnection(pty, serverUrl, xtermRef, { onStatusChange, onUnavailable });
+  const { terminalRef, fitAddonRef } = usePtyTerminalXterm(
+    pty,
+    serverUrl,
+    xtermRef,
+    handleData,
+    sendResize,
+  );
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      xtermRef.current?.focus();
+    },
+    kill,
+  }));
 
   // Re-fit and focus when becoming visible (tab switch)
   useEffect(() => {
     if (hidden) return;
+    // Showing a paused terminal again is a request for the shell.
+    if (phaseRef.current === 'asleep' || phaseRef.current === 'failed') {
+      reconnectNow();
+    }
     requestAnimationFrame(() => {
       safeFit(fitAddonRef.current, terminalRef.current);
       // Never steal focus on a touch device: the mobile tool drawer mounts this
@@ -530,29 +218,29 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       }
       xtermRef.current?.focus();
     });
-  }, [hidden]);
+  // The refs arrive from the two hooks above, so the rule cannot see they are
+  // stable boxes; `reconnectNow` is a stable callback. Nothing here re-runs on
+  // a phase change: the check reads the CURRENT phase at visibility time.
+  }, [hidden, reconnectNow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
       className={cn(
         'bg-terminal-surface relative overflow-hidden',
-        hidden && 'invisible pointer-events-none',
+        hidden && 'pointer-events-none invisible',
         className,
       )}
     >
-      <div ref={terminalRef} className="h-full w-full px-3 py-2" />
-      {reconnectPending && !hidden ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3">
-          <Button
-            size="sm"
-            variant="secondary"
-            className="pointer-events-auto gap-1.5 shadow-md active:scale-[0.96]"
-            onClick={() => reconnectNowRef.current?.()}
-          >
-            <ArrowClockwiseIcon className="size-3.5 shrink-0" />
-            Reconnect now
-          </Button>
-        </div>
+      <div
+        ref={terminalRef}
+        className={cn('h-full w-full px-3 py-2', !hasConnected && 'opacity-0')}
+      />
+      {phase && !hidden ? (
+        <PtyAttachStatus
+          phase={phase}
+          hasConnected={hasConnected}
+          onAction={() => reconnectNow()}
+        />
       ) : null}
     </div>
   );

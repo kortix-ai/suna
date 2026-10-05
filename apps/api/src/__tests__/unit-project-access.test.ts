@@ -9,15 +9,16 @@ import {
   type ProjectRole,
 } from '../projects/access';
 import { normalizeProjectRole as parseProjectRole } from '../iam/roles';
-import { iamActionForProjectAccess, isUuid } from '../projects/lib/access';
+import { iamActionForProjectAccess } from '../projects/lib/access';
+import { isUuid } from '../shared/validate';
 
 describe('isUuid project-id guard', () => {
   test.each([
-    ['fda4e35e', false], // truncated id — used to 500 via Postgres 22P02
+    ['5a1e0c03', false], // truncated id — used to 500 via Postgres 22P02
     ['not-a-uuid', false],
     ['', false],
-    ['fda4e35e-1234-4abc-89ef-0123456789ab', true],
-    ['FDA4E35E-1234-4ABC-89EF-0123456789AB', true], // case-insensitive
+    ['5a1e0c03-1234-4abc-89ef-0123456789ab', true],
+    ['5A1E0C03-1234-4ABC-89EF-0123456789AB', true], // case-insensitive
   ])('isUuid(%p) === %p', (value, expected) => {
     expect(isUuid(value)).toBe(expected);
   });

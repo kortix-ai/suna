@@ -5,7 +5,9 @@ import { isKortixAppUrl } from './kortix-app-url';
 describe('isKortixAppUrl', () => {
   test('keeps every Kortix Apps environment on its direct origin', () => {
     expect(isKortixAppUrl('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/')).toBe(true);
-    expect(isKortixAppUrl('https://staging-demo-bbbbbbbbbbbbbbbb.apps.kortix.com/path?q=1')).toBe(true);
+    expect(isKortixAppUrl('https://staging-demo-bbbbbbbbbbbbbbbb.apps.kortix.com/path?q=1')).toBe(
+      true,
+    );
     expect(isKortixAppUrl('http://aaaaaaaaaaaaaaaa.apps.localhost:8008/')).toBe(true);
   });
 

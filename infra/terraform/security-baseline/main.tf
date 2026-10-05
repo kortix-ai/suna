@@ -102,7 +102,11 @@ resource "aws_sns_topic" "cloudtrail" {
   kms_master_key_id = aws_kms_key.cloudtrail.arn
   signature_version = 2
   tracing_config    = "Active"
-  tags              = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 
 data "aws_iam_policy_document" "cloudtrail_sns" {
@@ -192,11 +196,13 @@ resource "aws_iam_role_policy" "cloudtrail_cloudwatch_logs" {
 # ════════════════════════════════════════════════════════════════════════════
 # GuardDuty — Drata DCF-87 (threat detection). GuardDuty is regional, so every
 # opted-in commercial region is managed even when it currently has no workload.
+# SIX_HOURS: a new finding still publishes at once; only count updates of an
+# existing finding wait, so one finding does not email every 15 minutes.
 # ════════════════════════════════════════════════════════════════════════════
 resource "aws_guardduty_detector" "usw2" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -204,7 +210,7 @@ resource "aws_guardduty_detector" "use1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.use1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -212,7 +218,7 @@ resource "aws_guardduty_detector" "aps1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.aps1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -220,7 +226,7 @@ resource "aws_guardduty_detector" "eun1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.eun1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -228,7 +234,7 @@ resource "aws_guardduty_detector" "euw3" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.euw3
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -236,7 +242,7 @@ resource "aws_guardduty_detector" "euw2" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.euw2
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -244,7 +250,7 @@ resource "aws_guardduty_detector" "euw1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.euw1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -252,7 +258,7 @@ resource "aws_guardduty_detector" "apne3" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.apne3
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -260,7 +266,7 @@ resource "aws_guardduty_detector" "apne2" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.apne2
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -268,7 +274,7 @@ resource "aws_guardduty_detector" "apne1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.apne1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -276,7 +282,7 @@ resource "aws_guardduty_detector" "cac1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.cac1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -284,7 +290,7 @@ resource "aws_guardduty_detector" "sae1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.sae1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -292,7 +298,7 @@ resource "aws_guardduty_detector" "apse1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.apse1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -300,7 +306,7 @@ resource "aws_guardduty_detector" "apse2" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.apse2
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -308,7 +314,7 @@ resource "aws_guardduty_detector" "euc1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.euc1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -316,7 +322,7 @@ resource "aws_guardduty_detector" "use2" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.use2
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -324,7 +330,7 @@ resource "aws_guardduty_detector" "usw1" {
   #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.usw1
   enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  finding_publishing_frequency = "SIX_HOURS"
   tags                         = local.tags
 }
 
@@ -516,7 +522,11 @@ resource "aws_kms_key" "backup" {
       },
     ]
   })
-  tags = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 resource "aws_kms_alias" "backup" {
   name          = "alias/kortix-backup"

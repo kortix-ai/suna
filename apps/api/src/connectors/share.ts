@@ -16,8 +16,6 @@
  * is always project-wide visible; the only access gate is the agent-side
  * `[[agents]].connectors` grant (iam/agent-scope.ts). This file keeps the
  * generic pure helpers + session DB helpers only.
- *
- * See docs/specs/connector.md §6.
  */
 import { eq, inArray } from 'drizzle-orm';
 import {
@@ -127,7 +125,6 @@ export async function resolveShareSubject(userId: string): Promise<ShareSubject>
  * `private` visibility (owner only) instead of modelling it as restricted+owner.
  * The dashboard's SharingIntent maps: project→project, private→private,
  * members→restricted+grants (empty members collapses back to private).
- * See docs/specs/iam.md.
  */
 
 export type SessionVisibility = 'private' | 'project' | 'restricted';
@@ -204,7 +201,7 @@ export function isSessionTargetVisibleToCaller(
   // equal a Kortix session id. Reading it here made all three conditions below
   // true for ANY human opening ANY backend-origin session, so the narrowing
   // returned false and `/start` answered 404 — a session listed in the sidebar
-  // that could never be opened. Measured on a live self-host (essentia,
+  // that could never be opened. Measured on a live self-host (sampleco,
   // 2026-08-24): 43 backend-origin sessions in one project, all unopenable,
   // while `user`- and `schedule`-origin sessions in the same project opened
   // fine.
@@ -276,6 +273,16 @@ export function isTriggerCreatedSessionMetadata(metadata: unknown): boolean {
 }
 
 /**
+ * A trigger's run: the session the trigger created, or a worker that session
+ * spawned (`initiator_type = 'trigger'` is server-derived and copied from the
+ * parent at create, see projects/lib/session-initiator.ts). Managers who may
+ * read the coordinator may read its workers.
+ */
+export function isTriggerRunSession(session: { metadata: unknown; initiatorType?: string | null }): boolean {
+  return session.initiatorType === 'trigger' || isTriggerCreatedSessionMetadata(session.metadata);
+}
+
+/**
  * Project-session content visibility. Project managers can open sessions that
  * triggers created. Ordinary private human sessions remain owner-only. The
  * backend sibling-session gate runs first and cannot be bypassed.
@@ -286,9 +293,26 @@ export function isProjectSessionVisibleTo(
   grants: SecretGrant[],
   subject: ShareSubject,
   ownership: SessionOwnershipContext,
-  context: { metadata: unknown; canManageProject: boolean },
+  context: {
+    metadata: unknown;
+    /** `project_sessions.initiator_type`; see isTriggerRunSession. */
+    initiatorType?: string | null;
+    canManageProject: boolean;
+    /**
+     * The account's "admins can open every session" policy, already resolved
+     * for THIS caller: the flag is on AND the caller holds the account owner or
+     * admin role. See `hasAccountSessionOversight` (iam/authorize.ts).
+     */
+    accountSessionOversight?: boolean;
+  },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // Oversight is a HUMAN admin's power. A sandbox/agent token launched by an
+  // admin must not read every other member's session through it, for the same
+  // reason as the trigger-session manager override below.
+  if (ownership.boundCredentialSessionId === null && context.accountSessionOversight === true) {
+    return true;
+  }
   // The manager override is for callers that are NOT a session-bound agent
   // credential. A sandbox/agent token whose launching user happens to hold
   // `manage` would otherwise read every OTHER trigger-created private session
@@ -300,7 +324,7 @@ export function isProjectSessionVisibleTo(
   if (
     ownership.boundCredentialSessionId === null &&
     context.canManageProject &&
-    isTriggerCreatedSessionMetadata(context.metadata)
+    isTriggerRunSession(context)
   ) {
     return true;
   }

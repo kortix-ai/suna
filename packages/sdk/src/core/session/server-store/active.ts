@@ -3,11 +3,8 @@ import {
   getCurrentRuntimeDbSandboxId,
   getCurrentRuntimeSandboxId,
   getCurrentRuntimeUrl,
-  getCurrentWorkspaceRuntimeSandboxId,
-  getCurrentWorkspaceRuntimeUrl,
-  currentRuntimeStore,
 } from '../current-runtime';
-import { getBackendUrl, getDefaultSandboxUrl, proxySandboxSegment } from './url-helpers';
+import { getBackendUrl, getDefaultSandboxUrl } from './url-helpers';
 import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../preview-options';
 
 /**
@@ -22,7 +19,7 @@ import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../preview-o
  * Prefers the per-session runtime; falls back to the local-dev default sandbox.
  * Use in non-React contexts (API modules, etc.).
  */
-export function getActiveOpenCodeUrl(): string {
+export function getActiveRuntimeUrl(): string {
   const current = getCurrentRuntimeUrl();
   if (current) return current;
   // Cloud/billing deployments have no local default — wait for the session to
@@ -32,14 +29,6 @@ export function getActiveOpenCodeUrl(): string {
   return getDefaultSandboxUrl();
 }
 
-/** Resolve the runtime that owns files, PTYs, and user-exposed ports. */
-export function getActiveWorkspaceUrl(): string {
-  const workspace = getCurrentWorkspaceRuntimeUrl();
-  if (workspace) return workspace;
-  if (currentRuntimeStore.getState().dataRuntimeKind === 'environment') return '';
-  return getActiveOpenCodeUrl();
-}
-
 /**
  * sandboxId for the active runtime.
  * - With an active session: the session's sandbox external id (current-runtime).
@@ -47,14 +36,6 @@ export function getActiveWorkspaceUrl(): string {
  */
 export function getActiveSandboxId(): string | undefined {
   return getCurrentRuntimeSandboxId() ?? platformConfig().sandboxId ?? undefined;
-}
-
-/** Provider id for files, PTYs, and preview ports. */
-export function getActiveWorkspaceSandboxId(): string | undefined {
-  const workspace = getCurrentWorkspaceRuntimeSandboxId();
-  if (workspace) return workspace;
-  if (currentRuntimeStore.getState().dataRuntimeKind === 'environment') return undefined;
-  return getActiveSandboxId();
 }
 
 /**
@@ -95,13 +76,13 @@ export function getBackendPort(): number {
  * proxy. See preview-options.ts.
  */
 export function deriveSubdomainOpts(): ResolvedPreviewOptions {
-  // The id the runtime is addressed by wins over the box's external id — on a
-  // shared cell runner they differ, and only the first names the session
-  // (url-helpers.ts proxySandboxSegment).
-  const addressed = proxySandboxSegment(getActiveWorkspaceUrl());
   return resolvePreviewOptions({
-    sandboxId: addressed || getActiveWorkspaceSandboxId() || '',
+    sandboxId: getActiveSandboxId() || '',
     backendPort: getBackendPort(),
     apiBaseUrl: getBackendUrl(),
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `getActiveRuntimeUrl`. Removed in the next major. */
+export const getActiveOpenCodeUrl = getActiveRuntimeUrl;

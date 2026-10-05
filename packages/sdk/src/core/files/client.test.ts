@@ -254,22 +254,8 @@ test('a transient STATUS is still retried — the status path was already correc
 
 // ── upload: the deadline scales with the body ───────────────────────────────
 
-test('a large upload gets a longer deadline than the flat 30s default', async () => {
-  const signals: Array<AbortSignal | null | undefined> = [];
-  globalThis.fetch = mock(async (_input: unknown, init: RequestInit = {}) => {
-    signals.push(init.signal);
-    return new Response(JSON.stringify([]), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
-
-  // 30 MB — comfortably past anything a flat 30s budget can move on a slow link.
-  const big = new Blob([new Uint8Array(30 * 1024 * 1024)]);
-  await F.uploadFile(big, '/workspace/uploads', 'big.zip');
-
-  expect(signals).toHaveLength(1);
-  expect(F.uploadTimeoutMsForBytes(big.size)).toBeGreaterThan(30_000);
+test('the deadline helper gives a large body more time than the flat 30s default', () => {
+  expect(F.uploadTimeoutMsForBytes(30 * 1024 * 1024)).toBeGreaterThan(30_000);
 });
 
 test('the deadline is bounded at both ends', () => {
@@ -287,9 +273,95 @@ test('an unknown-size body still gets a usable deadline', () => {
   expect(F.uploadTimeoutMsForBytes(undefined)).toBeGreaterThanOrEqual(30_000);
 });
 
+test('a ready-session upload crosses the sandbox edge in bounded chunks and reports progress', async () => {
+  const landedPath = '/workspace/uploads/report-2.pdf';
+  // Mirrors SANDBOX_UPLOAD_CHUNK_BYTES in client.ts (internal, not public API).
+  const chunk = 8 * 1024 * 1024;
+  const chunkSizes: number[] = [];
+  const offsets: number[] = [];
+  const progress: Array<{ loadedBytes: number; totalBytes: number }> = [];
+  let cumulative = 0;
+
+  routeDaemon((url, init) => {
+    if (url.endsWith('/file/upload')) {
+      const form = init.body as FormData;
+      const reserved = form.get('file') as File;
+      expect(reserved.size).toBe(0);
+      return jsonOk([{ path: landedPath, size: 0 }]);
+    }
+    if (url.endsWith('/file/append')) {
+      const form = init.body as FormData;
+      const part = form.get('file') as File;
+      chunkSizes.push(part.size);
+      offsets.push(Number(form.get('offset')));
+      cumulative += part.size;
+      return jsonOk({ path: landedPath, size: cumulative });
+    }
+    return undefined;
+  });
+
+  const bytes = 2 * chunk + 22 * 1024;
+  const result = await F.uploadFile(
+    new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }),
+    '/workspace/uploads',
+    'report.pdf',
+    { onProgress: (event) => progress.push(event) },
+  );
+
+  expect(result).toEqual([{ path: landedPath, size: bytes }]);
+  expect(chunkSizes).toEqual([chunk, chunk, 22 * 1024]);
+  expect(offsets).toEqual([0, chunk, 2 * chunk]);
+  expect(progress).toEqual([
+    { loadedBytes: chunk, totalBytes: bytes },
+    { loadedBytes: 2 * chunk, totalBytes: bytes },
+    { loadedBytes: bytes, totalBytes: bytes },
+  ]);
+  expect(calls.filter((call) => call.url.endsWith('/file/upload'))).toHaveLength(1);
+  expect(calls.filter((call) => call.url.endsWith('/file/append'))).toHaveLength(3);
+});
+
+// 2026-10-02: 64 KiB chunks made a 1 MiB upload 17 sequential proxied requests
+// (17-19 s). The edge now carries 16 MiB bodies intact, so a 1 MiB file is ONE request.
+test('a 1 MiB upload is a single request, not a chunk train', async () => {
+  const landedPath = '/workspace/uploads/one.bin';
+  routeDaemon((url, init) => {
+    if (url.endsWith('/file/upload')) {
+      const file = (init.body as FormData).get('file') as File;
+      return jsonOk([{ path: landedPath, size: file.size }]);
+    }
+    return undefined;
+  });
+  const bytes = 1024 * 1024;
+  const result = await F.uploadFile(new Blob([new Uint8Array(bytes)]), '/workspace/uploads', 'one.bin');
+  expect(result).toEqual([{ path: landedPath, size: bytes }]);
+  expect(calls).toHaveLength(1);
+  expect(calls.filter((call) => call.url.endsWith('/file/append'))).toHaveLength(0);
+});
+
+test('an empty file uploads: 0 of 0 bytes is not a truncated body', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/empty.txt', size: 0 }]) : undefined));
+  const result = await F.uploadFile(new Blob([]), '/workspace', 'empty.txt');
+  expect(result).toEqual([{ path: '/workspace/empty.txt', size: 0 }]);
+});
+
+// A host can hand over a Blob whose length it did not know up front (a pipe-backed
+// file reports 0). Landing MORE than the claimed size is not truncation.
+test('a body that lands more bytes than its claimed size is not refused', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/piped.txt', size: 11 }]) : undefined));
+  const result = await F.uploadFile(new Blob([]), '/workspace', 'piped.txt');
+  expect(result).toEqual([{ path: '/workspace/piped.txt', size: 11 }]);
+});
+
+test('a single-request upload whose landed size disagrees fails instead of reporting success', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/cut.bin', size: 1000 }]) : undefined));
+  const err = await F.uploadFile(new Blob([new Uint8Array(4096)]), '/workspace', 'cut.bin').catch((e) => e);
+  expect(err).toBeInstanceOf(ApiError);
+  expect((err as ApiError).code).toBe('UPLOAD_SIZE_MISMATCH');
+});
+
 // ── the runtime must be resolved before any byte leaves the client ───────────
 //
-// `getActiveOpenCodeUrl()` returns '' on a billing-enabled deployment until a
+// `getActiveRuntimeUrl()` returns '' on a billing-enabled deployment until a
 // session runtime is bound (see `session/server-store/active.ts`). Every op in
 // this module used to interpolate that '' straight into `fetch()`, which makes
 // the URL RELATIVE: the browser then POSTed the user's file AND their bearer
@@ -355,8 +427,9 @@ test('an explicitly empty baseUrl is refused too — it never falls back to the 
 // SUFFIXED name (`notes-mdx8k2-3f9a1c04.md`). So "save this edited file" used to
 // write a DIFFERENT file while the viewer re-read the original path and showed
 // pre-edit bytes under a "File saved" toast. `writeFile` uploads to a temp name
-// and renames over the target (`fs.rename` overwrites atomically), with a backup
-// and rollback so a failed swap cannot destroy the original.
+// and renames over the target (`fs.rename` overwrites a file atomically). The
+// target is never moved aside first: a failed rename leaves it untouched, and a
+// directory at the target makes the rename fail instead of being replaced.
 
 /** Route the daemon endpoints by URL + body, recording every call. */
 function routeDaemon(handler: (url: string, init: RequestInit) => Response | undefined): void {
@@ -384,10 +457,13 @@ const jsonOk = (value: unknown) =>
     headers: { 'content-type': 'application/json' },
   });
 
+/** `GET /file?path=…` — the directory listing `createFile` checks first. */
+const isListing = (url: string) => url.startsWith('http://sbx.test/file?path=');
+
 const renameBodies = () =>
   calls
     .filter((c) => c.url.endsWith('/file/rename'))
-    .map((c) => JSON.parse(c.body!) as { from: string; to: string });
+    .map((c) => JSON.parse(c.body!) as { from: string; to: string; overwrite?: boolean });
 
 test('writeFile uploads to a temp name and renames it OVER the target path', async () => {
   routeDaemon((url) => {
@@ -409,14 +485,10 @@ test('writeFile uploads to a temp name and renames it OVER the target path', asy
   expect(String(uploadForm.get('filename'))).not.toBe('notes.md');
   expect(String(uploadForm.get('filename'))).toMatch(/^\.notes\.md\./);
 
-  const renames = renameBodies();
-  // 1) existing target → backup, 2) uploaded temp → the exact target path.
-  expect(renames[0].from).toBe('/workspace/notes.md');
-  expect(renames[0].to).toMatch(/^\/workspace\/notes\.md\./);
-  expect(renames[1]).toEqual({ from: '/workspace/.notes.md.tmp', to: '/workspace/notes.md' });
-  // The backup is cleaned up once the swap succeeded.
-  const deleted = calls.filter((c) => c.method === 'DELETE').map((c) => JSON.parse(c.body!).path);
-  expect(deleted).toEqual([renames[0].to]);
+  // One rename: the uploaded temp → the exact target path. The existing file
+  // is never moved aside, so nothing is deleted.
+  expect(renameBodies()).toEqual([{ from: '/workspace/.notes.md.tmp', to: '/workspace/notes.md' }]);
+  expect(calls.filter((c) => c.method === 'DELETE')).toEqual([]);
 });
 
 test('writeFile renames the path the daemon ACTUALLY landed, not the one it asked for', async () => {
@@ -428,26 +500,19 @@ test('writeFile renames the path the daemon ACTUALLY landed, not the one it aske
 
   await F.writeFile('/workspace/notes.md', new Blob(['hi']));
 
-  const renames = renameBodies();
-  expect(renames[1]).toEqual({
-    from: '/workspace/.notes.md.tmp-3f9a1c04',
-    to: '/workspace/notes.md',
-  });
+  expect(renameBodies()).toEqual([
+    { from: '/workspace/.notes.md.tmp-3f9a1c04', to: '/workspace/notes.md' },
+  ]);
 });
 
-test('writeFile restores the backup and removes the temp when the swap fails', async () => {
-  let renameCount = 0;
+test('writeFile leaves the target untouched and removes the temp when the swap fails', async () => {
   routeDaemon((url) => {
     if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/.notes.md.tmp', size: 5 }]);
     if (url.endsWith('/file/rename')) {
-      renameCount += 1;
-      // 1st: target → backup (ok). 2nd: temp → target (fails). 3rd: restore (ok).
-      if (renameCount === 2) {
-        return new Response(JSON.stringify({ error: 'EPERM' }), {
-          status: 500,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
+      return new Response(JSON.stringify({ error: 'EPERM' }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     return undefined;
   });
@@ -456,36 +521,44 @@ test('writeFile restores the backup and removes the temp when the swap fails', a
     ApiError,
   );
 
-  const renames = renameBodies();
-  expect(renames).toHaveLength(3);
-  // The original file is put back exactly where it was.
-  expect(renames[2]).toEqual({ from: renames[0].to, to: '/workspace/notes.md' });
-  // ...and the orphaned temp upload is removed.
+  // The only rename attempted is temp → target; the target was never moved.
+  expect(renameBodies()).toEqual([{ from: '/workspace/.notes.md.tmp', to: '/workspace/notes.md' }]);
+  // Only the orphaned temp upload is removed.
   const deleted = calls.filter((c) => c.method === 'DELETE').map((c) => JSON.parse(c.body!).path);
   expect(deleted).toEqual(['/workspace/.notes.md.tmp']);
 });
 
-test('writeFile needs no backup when the target does not exist yet', async () => {
-  routeDaemon((url, init) => {
-    if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/.new.md.tmp', size: 1 }]);
+test('writeFile onto an existing directory fails and never deletes the directory', async () => {
+  // The daemon refuses to replace a directory (409 EISDIR; an older daemon's
+  // bare fs.rename fails with EISDIR as a 500). Either way the write fails.
+  routeDaemon((url) => {
+    if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/.src.kortix-write', size: 1 }]);
     if (url.endsWith('/file/rename')) {
-      const { from } = JSON.parse(String(init.body)) as { from: string };
-      // Backing up a file that isn't there 404s; that is not an error.
-      if (from === '/workspace/new.md') {
-        return new Response(JSON.stringify({ error: 'ENOENT' }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
+      return new Response(JSON.stringify({ error: 'Target is a directory', code: 'EISDIR' }), {
+        status: 409,
+        headers: { 'content-type': 'application/json' },
+      });
     }
+    return undefined;
+  });
+
+  await expect(F.writeFile('/workspace/src', new Blob(['x']))).rejects.toBeInstanceOf(ApiError);
+
+  const deleted = calls.filter((c) => c.method === 'DELETE').map((c) => JSON.parse(c.body!).path);
+  expect(deleted).toEqual(['/workspace/.src.kortix-write']);
+  expect(renameBodies().every((r) => r.from !== '/workspace/src')).toBe(true);
+});
+
+test('writeFile creates a file that does not exist yet with one rename', async () => {
+  routeDaemon((url) => {
+    if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/.new.md.tmp', size: 1 }]);
     return undefined;
   });
 
   const result = await F.writeFile('/workspace/new.md', new Blob(['x']));
 
   expect(result.path).toBe('/workspace/new.md');
-  expect(renameBodies()[1]).toEqual({ from: '/workspace/.new.md.tmp', to: '/workspace/new.md' });
-  // Nothing was backed up, so nothing is deleted.
+  expect(renameBodies()).toEqual([{ from: '/workspace/.new.md.tmp', to: '/workspace/new.md' }]);
   expect(calls.filter((c) => c.method === 'DELETE')).toEqual([]);
 });
 
@@ -498,8 +571,7 @@ test('files namespace exposes write alongside upload', () => {
 //
 // `copyFile`'s upload called bare `fetch()` with a hand-rolled Authorization
 // header, so it silently skipped `platformConfig().fetch` (mobile/whitelabel
-// inject one), the size-scaled deadline, the 401 refresh-and-retry, and the
-// X-Kortix-Client header.
+// inject one), the size-scaled deadline, the 401 refresh-and-retry.
 
 test('copy uploads through platformConfig().fetch, not a bare global fetch', async () => {
   const seen: Array<{ url: string; clientHeader: string | null }> = [];
@@ -522,7 +594,7 @@ test('copy uploads through platformConfig().fetch, not a bare global fetch', asy
 
   const upload = seen.find((s) => s.url.endsWith('/file/upload'));
   expect(upload).toBeDefined();
-  expect(upload!.clientHeader).toBe('web');
+  expect(upload!.clientHeader).toBeNull();
   // The bare-fetch path would have gone to the global mock instead.
   expect(calls.filter((c) => c.url.endsWith('/file/upload'))).toEqual([]);
 });
@@ -557,6 +629,7 @@ test('createFile writes a genuinely EMPTY file — no space byte', async () => {
   // asserted in full: 0 bytes, the name survives, the file lands at the
   // requested path.
   routeDaemon((url) => {
+    if (isListing(url)) return jsonOk([]);
     if (url.endsWith('/file/upload')) {
       return jsonOk([{ path: '/workspace/.data.json.tmp', size: 0 }]);
     }
@@ -597,6 +670,7 @@ test('createFile writes a genuinely EMPTY file — no space byte', async () => {
 
 test('createFile survives an OLD daemon that lands a zero-byte part as "undefined"', async () => {
   routeDaemon((url) => {
+    if (isListing(url)) return jsonOk([]);
     // Exactly what a pre-rebuild kortix-agent returns for an empty part.
     if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/undefined', size: 0 }]);
     return undefined;
@@ -607,7 +681,7 @@ test('createFile survives an OLD daemon that lands a zero-byte part as "undefine
   // The file exists at the path the user asked for, and it is genuinely empty.
   expect(results).toEqual([{ path: '/workspace/notes.md', size: 0 }]);
   const swap = renameBodies().at(-1);
-  expect(swap).toEqual({ from: '/workspace/undefined', to: '/workspace/notes.md' });
+  expect(swap).toEqual({ from: '/workspace/undefined', to: '/workspace/notes.md', overwrite: false });
   // And the bytes really were empty — no space hack anywhere on this path.
   const uploadForm = calls.find((c) => c.url.endsWith('/file/upload'))!.raw as FormData;
   expect((uploadForm.get('file') as File).size).toBe(0);
@@ -616,6 +690,7 @@ test('createFile survives an OLD daemon that lands a zero-byte part as "undefine
 test('two concurrent createFile calls on an OLD daemon cannot cross', async () => {
   let uploads = 0;
   routeDaemon((url) => {
+    if (isListing(url)) return jsonOk([]);
     if (url.endsWith('/file/upload')) {
       uploads += 1;
       // The daemon writes with O_EXCL and suffixes on EEXIST, so the second
@@ -649,6 +724,7 @@ test('two concurrent createFile calls on an OLD daemon cannot cross', async () =
 
 test('createFile keeps returning UploadResult[] — the published shape', async () => {
   routeDaemon((url) => {
+    if (isListing(url)) return jsonOk([]);
     if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/.x.md.tmp', size: 0 }]);
     return undefined;
   });
@@ -685,3 +761,73 @@ test('a trailing-slash path with a pathological slash run normalises in linear t
   expect(performance.now() - started).toBeLessThan(1_000);
 });
 
+// ── createFile is create-only ────────────────────────────────────────────────
+//
+// "New file" and `kortix sessions files touch` name a path the user expects to
+// be NEW. An existing file must keep its bytes and an existing directory must
+// keep its contents: `createFile` fails with `FileExistsError` instead.
+
+const listingWith = (entries: Array<{ name: string; type: 'file' | 'directory' }>) =>
+  jsonOk(entries.map((e) => ({ ...e, path: e.name, absolute: `/workspace/${e.name}`, ignored: false })));
+
+test('createFile refuses a path where a file already exists and writes nothing', async () => {
+  routeDaemon((url) => (isListing(url) ? listingWith([{ name: 'notes.md', type: 'file' }]) : undefined));
+
+  const error = await F.createFile('/workspace/notes.md').catch((e: unknown) => e);
+
+  expect(error).toBeInstanceOf(F.FileExistsError);
+  expect(error).toBeInstanceOf(ApiError);
+  expect((error as F.FileExistsError).status).toBe(409);
+  expect((error as F.FileExistsError).code).toBe('FILE_EXISTS');
+  expect((error as F.FileExistsError).path).toBe('/workspace/notes.md');
+  // No upload, no rename, no delete.
+  expect(calls.map((c) => c.method + ' ' + c.url)).toEqual([
+    'GET http://sbx.test/file?path=.',
+  ]);
+});
+
+test('createFile refuses a path where a directory already exists', async () => {
+  routeDaemon((url) => (isListing(url) ? listingWith([{ name: 'src', type: 'directory' }]) : undefined));
+
+  await expect(F.createFile('/workspace/src')).rejects.toBeInstanceOf(F.FileExistsError);
+  expect(calls.some((c) => c.method === 'DELETE' || c.url.endsWith('/file/rename'))).toBe(false);
+});
+
+test('createFile asks the daemon for a create-only rename and maps its refusal to FileExistsError', async () => {
+  // A file created between the listing and the rename: the daemon's
+  // create-only rename refuses, and the temp upload is cleaned up.
+  routeDaemon((url) => {
+    if (isListing(url)) return jsonOk([]);
+    if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/.race.md.tmp', size: 0 }]);
+    if (url.endsWith('/file/rename')) {
+      return new Response(JSON.stringify({ error: 'Target already exists', code: 'EEXIST' }), {
+        status: 409,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return undefined;
+  });
+
+  await expect(F.createFile('/workspace/race.md')).rejects.toBeInstanceOf(F.FileExistsError);
+  expect(renameBodies()).toEqual([
+    { from: '/workspace/.race.md.tmp', to: '/workspace/race.md', overwrite: false },
+  ]);
+  const deleted = calls.filter((c) => c.method === 'DELETE').map((c) => JSON.parse(c.body!).path);
+  expect(deleted).toEqual(['/workspace/.race.md.tmp']);
+});
+
+test('createFile in a folder that does not exist yet creates it', async () => {
+  routeDaemon((url) => {
+    if (isListing(url)) {
+      return new Response(JSON.stringify({ error: 'Directory not found' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.endsWith('/file/upload')) return jsonOk([{ path: '/workspace/new/.a.md.tmp', size: 0 }]);
+    return undefined;
+  });
+
+  expect(await F.createFile('/workspace/new/a.md')).toEqual([{ path: '/workspace/new/a.md', size: 0 }]);
+  expect(calls.some((c) => c.url === 'http://sbx.test/file/mkdir')).toBe(true);
+});

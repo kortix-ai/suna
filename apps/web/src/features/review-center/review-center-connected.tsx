@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Review Center wired to live data: fetches the project's review items, maps the
  * API rows into the inbox view model, and routes the inbox's actions to the right
@@ -10,7 +11,7 @@
  * design). Connector approvals (`call:`) open the shared full-parameter review
  * component. That component resolves one exact call through `resolveApproval`.
  * The presentational inbox (review-center.tsx) is shared with the mock
- * prototype. See docs/REVIEW_CENTER_DESIGN.md.
+ * prototype.
  */
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,11 @@ import {
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk';
+import {
+  type ReviewVerdict,
+  listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
+} from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -35,7 +40,7 @@ import {
   useReviewItems,
 } from './hooks/use-review-items';
 import { mapApiReviewItem } from './map';
-import { crChangeRequestId, connectorCallId, itemDeepLink, planBulkAction } from './review-actions';
+import { connectorCallId, crChangeRequestId, itemDeepLink, planBulkAction } from './review-actions';
 import { ReviewCenter } from './review-center';
 
 /**
@@ -55,6 +60,7 @@ export function ReviewCenterConnected({
   // Defaults to true to preserve behavior for callers that don't gate.
   canAct?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const qc = useQueryClient();
@@ -73,7 +79,7 @@ export function ReviewCenterConnected({
   // Also names the originating session in each approval's description.
   const { data: sessions } = useQuery({
     queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: !!projectId,
     ...contract('inventory'),
   });
@@ -150,12 +156,12 @@ export function ReviewCenterConnected({
     const executionId = connectorCallId(id);
     if (executionId) {
       resolve.mutate(
-        { executionId, decision: verdict === 'approve' ? 'approve' : 'deny' },
+        { executionId, decision: verdict === 'approve' ? 'approve' : 'deny', note: feedback },
         {
           onSuccess: () =>
             verdict === 'approve'
-              ? successToast('Approved — the agent will continue')
-              : infoToast('Denied'),
+              ? successToast(tI18nComplete.raw('text2b2b0a697042'))
+              : infoToast(tI18nComplete.raw('textda404deb110f')),
           onError: (e) => errorToast(e.message),
         },
       );
@@ -168,7 +174,7 @@ export function ReviewCenterConnected({
       if (verdict === 'approve') {
         merge.mutate(crId, {
           onSuccess: () => {
-            successToast('Change shipped — merged into the base branch');
+            successToast(tI18nComplete.raw('text0cad31cba248'));
             refreshInbox();
           },
           onError: (e) => {
@@ -177,12 +183,12 @@ export function ReviewCenterConnected({
               const conflicts = (e as { data?: { conflicts?: string[] } }).data?.conflicts ?? [];
               refreshInbox();
               if (item?.kind === 'change') {
-                errorToast('This change has merge conflicts', {
-                  description: 'Start an agent session to solve them.',
+                errorToast(tI18nComplete.raw('text3923e8556e27'), {
+                  description: tI18nComplete.raw('text3d33bdd92001'),
                   duration: 10_000,
                   button: (
                     <Button size="sm" onClick={() => recoverChange(item, conflicts)}>
-                      Solve with agent
+                      {tI18nComplete.raw('texte8a1fa10c8d2')}
                     </Button>
                   ),
                 });
@@ -195,7 +201,7 @@ export function ReviewCenterConnected({
       } else if (verdict === 'reject') {
         close.mutate(crId, {
           onSuccess: () => {
-            infoToast('Change closed');
+            infoToast(tI18nComplete.raw('text67382c89fdde'));
             refreshInbox();
           },
           onError: (e) => errorToast(e.message),
@@ -206,7 +212,7 @@ export function ReviewCenterConnected({
         // navigation; the item moves to Waiting once the note lands.
         const note = (feedback ?? '').trim();
         if (!note) {
-          infoToast('Add a note describing what to change, then send.');
+          infoToast(tI18nComplete.raw('text8918eace1b87'));
           return;
         }
         requestChanges.mutate(
@@ -215,8 +221,8 @@ export function ReviewCenterConnected({
             onSuccess: (res) => {
               successToast(
                 res.delivering
-                  ? "Sent to the agent — it'll revise the change."
-                  : 'Saved on the change.',
+                  ? tI18nComplete.raw('text99764404a562')
+                  : tI18nComplete.raw('text871f77182091'),
               );
               refreshInbox();
             },
@@ -245,12 +251,28 @@ export function ReviewCenterConnected({
     }
     if (resolvable.length > 0) {
       infoToast(
-        `${resolvable.length} ${resolvable.length === 1 ? 'approval needs' : 'approvals need'} individual parameter review.`,
+        tI18nComplete('text869cc2438ce5', {
+          value0: resolvable.length,
+          value1:
+            resolvable.length === 1
+              ? tI18nComplete.raw('texte07615d6ccf5')
+              : tI18nComplete.raw('text15506f3e0de0'),
+        }),
       );
     }
     if (unsupported.length > 0) {
       infoToast(
-        `${unsupported.length} ${unsupported.length === 1 ? 'change needs' : 'changes need'} its own review — open ${unsupported.length === 1 ? 'it' : 'them'} to ship.`,
+        tI18nComplete('textda39954e705a', {
+          value0: unsupported.length,
+          value1:
+            unsupported.length === 1
+              ? tI18nComplete.raw('text274a70ce834d')
+              : tI18nComplete.raw('textb9ad2f00fba7'),
+          value2:
+            unsupported.length === 1
+              ? tI18nComplete.raw('text2ad8a7049d7c')
+              : tI18nComplete.raw('textc9a8dc336964'),
+        }),
       );
     }
   }

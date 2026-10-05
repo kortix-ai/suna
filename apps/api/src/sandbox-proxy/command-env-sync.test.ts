@@ -32,8 +32,9 @@ import {
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,
   requestedPromptAgent,
+  requestedPromptManagedModelId,
+  isTurnStartEnvSync,
   runPrePromptEnvSync,
-  shouldSyncProjectEnvBeforeProxy,
 } from './pre-prompt-env-sync';
 
 const RECORD = {
@@ -68,7 +69,7 @@ type Recorder = {
   deps: PrePromptEnvSyncDeps;
   envSync: Array<{ requestedAgent?: string | null; sessionId: string; providerName: string }>;
   remint: Array<{ sessionAgent: string; requestedAgent: string | null }>;
-  snapshot: Array<{ sessionId: string; projectId: string; externalId: string; userId?: string }>;
+  snapshot: Array<{ sessionId: string; projectId: string; accountId: string; userId?: string }>;
   titles: string[];
 };
 
@@ -94,11 +95,12 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
       rec.remint.push({ sessionAgent: input.sessionAgent, requestedAgent: input.requestedAgent });
       return { action: 'skip' };
     }) as PrePromptEnvSyncDeps['remintGrant'],
+    bindTurnIdentity: (async () => false) as PrePromptEnvSyncDeps['bindTurnIdentity'],
     scheduleSnapshot: ((input) => {
       rec.snapshot.push({
         sessionId: input.sessionId,
         projectId: input.projectId,
-        externalId: input.externalId,
+        accountId: input.accountId,
         userId: input.userId,
       });
     }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
@@ -121,6 +123,7 @@ function runSync(rec: Recorder, body: ArrayBuffer, requestedAgent: string | null
       providerHeaders: {},
       serviceKey: 'svc-key',
       requestedAgent,
+      bindTurnIdentity: false,
       body,
       incomingHeaders: jsonHeaders(),
     },
@@ -128,28 +131,25 @@ function runSync(rec: Recorder, body: ArrayBuffer, requestedAgent: string | null
   );
 }
 
-describe('shouldSyncProjectEnvBeforeProxy', () => {
+describe('isTurnStartEnvSync', () => {
   test('matches every endpoint that starts a user turn, /command included', () => {
-    for (const path of [
-      '/session/abc123/prompt_async',
-      '/session/abc123/message',
-      '/session/abc123/command',
-      '/session/abc-123/command?x=1',
+    for (const [method, path] of [
+      ['POST', '/session/abc123/prompt_async'],
+      ['POST', '/session/abc123/message'],
+      ['POST', '/session/abc123/command'],
+      ['POST', '/session/abc-123/command?x=1'],
+      ['post', '/session/abc123/command'],
     ]) {
-      expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', path)).toBe(true);
+      expect(isTurnStartEnvSync(8000, method, path)).toBe(true);
     }
   });
 
-  test('is case-insensitive on the method', () => {
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'post', '/session/abc123/command')).toBe(true);
-  });
-
   test('ignores reads, other ports, and lookalike paths', () => {
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'GET', '/session/abc123/command')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(3000, 'POST', '/session/abc123/command')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/session/abc123/commands')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/not-session/abc/command')).toBe(false);
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/session/abc123/shell')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'GET', '/session/abc123/command')).toBe(false);
+    expect(isTurnStartEnvSync(3000, 'POST', '/session/abc123/command')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/session/abc123/commands')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/not-session/abc/command')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/session/abc123/shell')).toBe(false);
   });
 
   // Deliberate boundary, not an oversight: /summarize is COMPACTION, not a user
@@ -157,8 +157,24 @@ describe('shouldSyncProjectEnvBeforeProxy', () => {
   // user just changed, and blocking a compaction on a secret-grant refusal would
   // wedge a session instead of protecting it. `isTurnStartRequest` covers it for
   // deadline accounting; the env sync deliberately does not.
-  test('does NOT match /summarize', () => {
-    expect(shouldSyncProjectEnvBeforeProxy(8000, 'POST', '/session/abc123/summarize')).toBe(false);
+  test('does NOT match /summarize, on either port and behind the in-box prefix', () => {
+    expect(isTurnStartEnvSync(8000, 'POST', '/session/abc123/summarize')).toBe(false);
+    expect(isTurnStartEnvSync(4096, 'POST', '/session/abc123/summarize')).toBe(false);
+    expect(isTurnStartEnvSync(8000, 'POST', '/proxy/4096/session/abc123/summarize')).toBe(false);
+  });
+
+  // THE HOLE THIS CLOSES. `shouldSyncProjectEnvBeforeProxy` answered `port !== 8000
+  // ⇒ false` on the CLIENT-addressed port and never stripped the in-box
+  // `/proxy/<n>/` prefix. Daytona's `routeIngress` is a pass-through, so a prompt
+  // addressed at :4096 kept `port === 4096` and skipped the secret refresh and the
+  // grant re-mint while still getting the config convergence, which keys on
+  // `isTurnStartRequest`. Both OpenCode halves count: a verified reload swaps
+  // which one is live.
+  test('covers both OpenCode halves and the in-box /proxy/<n>/ prefix', () => {
+    expect(isTurnStartEnvSync(4096, 'POST', '/session/abc123/prompt_async')).toBe(true);
+    expect(isTurnStartEnvSync(4097, 'POST', '/session/abc123/message')).toBe(true);
+    expect(isTurnStartEnvSync(8000, 'POST', '/proxy/4096/session/abc123/message')).toBe(true);
+    expect(isTurnStartEnvSync(4096, 'POST', '/proxy/4097/session/abc123/command')).toBe(true);
   });
 });
 
@@ -180,15 +196,6 @@ describe('the /command body sub-steps', () => {
     expect(parsed).toEqual({ command: 'webapp', arguments: 'go', variant: 'v2' });
   });
 
-  // The helper drops `agent` whatever its value — which is exactly why the call
-  // site gates it on the sentinel. A command naming a CONCRETE agent must reach
-  // opencode with that agent intact, and it does because `requestedPromptAgent`
-  // returns something other than 'default' and the rewrite is never invoked.
-  test('the rewrite is unconditional, so the sentinel gate is what preserves a concrete agent', () => {
-    expect(requestedPromptAgent(COMMAND_BODY, jsonHeaders())).not.toBe('default');
-    const stripped = bodyWithoutPromptAgent(COMMAND_BODY, jsonHeaders());
-    expect('agent' in JSON.parse(new TextDecoder().decode(stripped))).toBe(false);
-  });
 });
 
 describe('runPrePromptEnvSync — a /command body', () => {
@@ -206,26 +213,16 @@ describe('runPrePromptEnvSync — a /command body', () => {
     expect(rec.remint).toEqual([{ sessionAgent: 'default', requestedAgent: 'writer' }]);
   });
 
-  test('schedules the opencode snapshot refresh', async () => {
+  // REGRESSION (staging release gate, SESS-10): the schedule used to omit
+  // `userId`. The daemon 401s every non-`/kortix/*` path without the user
+  // context that only a userId mints, so the refresh degraded to `unreachable`
+  // and never wrote a snapshot.
+  test('schedules the opencode snapshot refresh as the caller', async () => {
     const rec = recorder();
     await runSync(rec, COMMAND_BODY);
     expect(rec.snapshot).toEqual([
-      { sessionId: 'sess-1', projectId: 'proj-1', externalId: 'ext-1', userId: 'u1' },
+      { sessionId: 'sess-1', projectId: 'proj-1', accountId: 'acct-1', userId: 'u1' },
     ]);
-  });
-
-  // REGRESSION (staging release gate, SESS-10): the schedule used to omit
-  // `userId`. `sandboxOpencodeEndpoint` mints the X-Kortix-User-Context header
-  // only when a userId is present (`resolvePreviewUserContext` returns null for
-  // undefined), and the daemon 401s every non-`/kortix/*` path without it. The
-  // refresh therefore degraded to `unreachable` and NEVER wrote:
-  // 0 of 2804 staging sessions created in 2026-08 had a populated
-  // `metadata.opencode_sessions`. Assert the identity reaches the scheduler.
-  test('forwards the caller userId so the daemon call is authenticated', async () => {
-    const rec = recorder();
-    await runSync(rec, COMMAND_BODY);
-    expect(rec.snapshot).toHaveLength(1);
-    expect(rec.snapshot[0]?.userId).toBe('u1');
   });
 
   test('generates NO session title from a command body', async () => {
@@ -275,37 +272,98 @@ describe('runPrePromptEnvSync — refusals and retries', () => {
     expect(rec.remint).toEqual([]);
   });
 
-  // Was: "a grant mismatch refuses the turn with 409". A differing grant is no
-  // longer a refusal anywhere — the env is re-scoped onto the agent that runs,
-  // so `/command` has no mismatch error left to map. What must stay true is that
-  // the only refusals reaching this path are 5xx "could not apply", never a
-  // permanent 409 telling the user to start a new session.
-  test('no grant failure refuses a turn with 409', async () => {
-    for (const err of [
-      new SecretGrantResolutionError('writer', new Error('manifest unreadable')),
-      new SessionGrantRemintError('ses_1', new Error('db down')),
-    ]) {
-      const rec = recorder({ envSyncError: () => err });
-      const refusal = await runSync(rec, COMMAND_BODY);
-      expect(refusal?.status).toBe(503);
-      expect(await refusal?.json()).not.toMatchObject({
-        code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      });
-    }
-  });
-
-  test('a non-retryable env-sync failure refuses with 502', async () => {
-    const rec = recorder({ envSyncError: () => new Error('env sync failed: 400 bad snapshot') });
+  // A differing grant is no longer a refusal: the env is re-scoped onto the
+  // agent that runs. A re-mint that cannot apply is a 5xx "could not apply",
+  // never a permanent 409 telling the user to start a new session.
+  test('a grant re-mint that cannot apply refuses with 503, not 409', async () => {
+    const rec = recorder({
+      envSyncError: () => new SessionGrantRemintError('ses_1', new Error('db down')),
+    });
     const refusal = await runSync(rec, COMMAND_BODY);
-    expect(refusal?.status).toBe(502);
-    expect(await refusal?.json()).toMatchObject({ error: 'env sync failed: 400 bad snapshot' });
+    expect(refusal?.status).toBe(503);
+    expect(await refusal?.json()).toMatchObject({ code: 'AGENT_SWITCH_GRANT_UNAPPLIED' });
+  });
+});
+
+// The 502 for a non-retryable env-sync failure and the retry of a transient
+// one are proven at the HTTP route in __tests__/e2e-preview-proxy.test.ts.
+
+describe('requestedPromptManagedModelId', () => {
+  // /session/:id/message + /prompt_async — verified against @opencode-ai/sdk's
+  // generated `SessionPromptData`: a NESTED `model: {providerID, modelID}`.
+  // This is the shape the server-side prompt queue relay
+  // (`session-lifecycle/runtime-client.ts`) sends, and what the overwhelming
+  // majority of real turn-start bodies use.
+  test('reads the bare managed id off a /message-shaped body (nested model object)', () => {
+    const body = encode({
+      parts: [{ type: 'text', text: 'hi' }],
+      model: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+    });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('deepseek-v4.1-flash');
   });
 
-  // Load-bearing control flow the extraction must not change: a TRANSIENT failure
-  // throws so the caller's wake-and-retry loop handles it like any other sandbox
-  // reachability miss, instead of returning a refusal the client can't retry past.
-  test('a retryable env-sync failure THROWS instead of refusing', async () => {
-    const rec = recorder({ envSyncError: () => new Error('env sync failed: 503 daemon booting') });
-    await expect(runSync(rec, COMMAND_BODY)).rejects.toThrow('env sync failed: 503 daemon booting');
+  test('strips a kortix/ prefix if the nested modelID already carries one', () => {
+    const body = encode({ model: { providerID: 'kortix', modelID: 'kortix/kimi-k3' } });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('kimi-k3');
+  });
+
+  test('a BYOK / non-kortix nested provider is out of scope for this lane', () => {
+    const body = encode({ model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' } });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBeNull();
+  });
+
+  test('a /message body with no model at all (runtime default) is null, not a throw', () => {
+    // `kortix sessions chat` sends exactly this: no `model`, no key.
+    expect(requestedPromptManagedModelId(encode({ parts: [{ type: 'text', text: 'hi' }] }), jsonHeaders())).toBeNull();
+  });
+
+  // /session/:id/summarize — verified against `SessionSummarizeData`: FLAT
+  // top-level {providerID, modelID}, no `model` wrapper. Same shape
+  // `prompt-dedupe.ts` documents for its own dedupe-key reasons.
+  test('reads a /summarize-shaped body (flat top-level providerID/modelID)', () => {
+    const body = encode({ providerID: 'kortix', modelID: 'glm-5.3-flash', auto: true });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('glm-5.3-flash');
+  });
+
+  test('a flat BYOK providerID is out of scope for this lane', () => {
+    const body = encode({ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBeNull();
+  });
+
+  // /session/:id/command — verified against `SessionCommandData`: `model` is
+  // a flat STRING ref ("kortix/<id>" or a native "provider/model"), not an
+  // object. `COMMAND_BODY` above carries a native anthropic ref.
+  // POST /kortix/runtime/sessions/:id/prompt — the body `postPrompt`
+  // (session-lifecycle/runtime-client.ts) relays every inbox prompt as. Without
+  // this branch no relayed turn reaches the model-catalog lane at all.
+  test('reads the Kortix prompt route body (flat kortix/<provider>/<model> string)', () => {
+    const body = encode({
+      message_id: 'msg_0fdcfe9b0000mSIdTv1hWHxxEe',
+      parts: [{ type: 'text', text: 'hi' }],
+      model: 'kortix/codex/gpt-6.1-sol',
+    });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('codex/gpt-6.1-sol');
+  });
+
+  test("reads a /command body's flat kortix/<id> model string", () => {
+    const body = encode({ command: 'webapp', arguments: 'x', model: 'kortix/kimi-k3' });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('kimi-k3');
+  });
+
+  test('a /command body naming a native (non-kortix) provider/model ref is out of scope', () => {
+    expect(requestedPromptManagedModelId(COMMAND_BODY, jsonHeaders())).toBeNull();
+  });
+
+  test('no body, no JSON content-type, or malformed JSON all answer null', () => {
+    expect(requestedPromptManagedModelId(undefined, jsonHeaders())).toBeNull();
+    expect(
+      requestedPromptManagedModelId(
+        encode({ providerID: 'kortix', modelID: 'kimi-k3' }),
+        new Headers({ 'content-type': 'text/plain' }),
+      ),
+    ).toBeNull();
+    expect(
+      requestedPromptManagedModelId(new TextEncoder().encode('{not json').buffer, jsonHeaders()),
+    ).toBeNull();
   });
 });

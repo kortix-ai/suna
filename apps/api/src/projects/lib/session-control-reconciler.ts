@@ -30,19 +30,11 @@
  * it, and a reconnect needs no replay to be correct.
  */
 
-import { and, eq, isNull } from 'drizzle-orm';
-import {
-  connectorCalls,
-  sessionSandboxes,
-  sessionTranscriptMirrors,
-  sessionTranscriptMessages,
-} from '@kortix/db';
-import { count, max } from 'drizzle-orm';
-import { db } from '../../shared/db';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
-import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { serializePrompt } from './session-prompt-view';
 import { readSessionTurnState } from './session-turn-read';
+import { readRuntimeControlState, readMirrorWatermark, readSessionAuditWatermark } from './session-control-readers';
+export type { RuntimeControlState, MirrorWatermark, AuditWatermark } from './session-control-readers';
 import {
   publishControlEvent,
   type ControlEvent,
@@ -97,6 +89,12 @@ interface Reconciler {
   ticking: boolean;
   /** When the last handle was released, or null while one is held. */
   idleSince: number | null;
+  /**
+   * The session's project. Every audit read filters on it, so the
+   * `(project_id, session_id, created_at)` index serves the read instead of
+   * a scan of all tenants' `connector_calls`.
+   */
+  projectId: string | null;
 }
 
 const reconcilers = new Map<string, Reconciler>();
@@ -116,7 +114,10 @@ export interface ControlReconcilerHandle {
  * timer runs while at least one stream holds a handle and stops the moment the
  * last one releases.
  */
-export function acquireControlReconciler(sessionId: string): ControlReconcilerHandle {
+export function acquireControlReconciler(
+  sessionId: string,
+  projectId: string | null = null,
+): ControlReconcilerHandle {
   sweepIdleReconcilers();
   let reconciler = reconcilers.get(sessionId);
   if (!reconciler) {
@@ -133,10 +134,12 @@ export function acquireControlReconciler(sessionId: string): ControlReconcilerHa
       resolveReady,
       ticking: false,
       idleSince: null,
+      projectId,
     };
     reconcilers.set(sessionId, reconciler);
   }
   const target = reconciler;
+  target.projectId ??= projectId;
   target.refs += 1;
   target.idleSince = null;
 
@@ -209,7 +212,7 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       readRuntimeControlState(sessionId),
       readMirrorWatermark(sessionId),
-      readSessionAuditWatermark(sessionId),
+      readSessionAuditWatermark(sessionId, reconciler),
     ]);
 
     if (turn.status === 'fulfilled') {
@@ -301,173 +304,6 @@ export function publishRuntimeStateFrame(sessionId: string, payload: unknown): C
   const event = publishControlEvent(sessionId, type, payload);
   reconciler.latest.set(type, event);
   return event;
-}
-
-export interface RuntimeControlState {
-  known: true;
-  /** The sandbox row's status, or null when the session has no sandbox row. */
-  sandbox_status: string | null;
-  external_id: string | null;
-  provider: string | null;
-  /** A wake is DRIVING this box right now (the fence's own verdict). */
-  waking: boolean;
-  /** Provider status observed by the wake loop, when it recorded one. */
-  wake_provider_status: string | null;
-  deadline_at: string | null;
-}
-
-/** One indexed read: the sandbox row plus the wake fence's verdict on it. */
-async function readRuntimeControlState(sessionId: string): Promise<RuntimeControlState> {
-  const [row] = await db
-    .select({
-      status: sessionSandboxes.status,
-      externalId: sessionSandboxes.externalId,
-      provider: sessionSandboxes.provider,
-      metadata: sessionSandboxes.metadata,
-      deadlineAt: sessionSandboxes.deadlineAt,
-    })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
-
-  if (!row) {
-    return {
-      known: true,
-      sandbox_status: null,
-      external_id: null,
-      provider: null,
-      waking: false,
-      wake_provider_status: null,
-      deadline_at: null,
-    };
-  }
-  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-  return {
-    known: true,
-    sandbox_status: row.status,
-    external_id: row.externalId ?? null,
-    provider: row.provider,
-    waking: runtimeWakeInProgress(metadata),
-    wake_provider_status:
-      typeof metadata.runtimeWakeProviderStatus === 'string'
-        ? metadata.runtimeWakeProviderStatus
-        : null,
-    deadline_at: row.deadlineAt ? row.deadlineAt.toISOString() : null,
-  };
-}
-
-export interface MirrorWatermark {
-  known: true;
-  /** `false` when nothing has ever been mirrored for this session. */
-  present: boolean;
-  captured_at: string | null;
-  /** TRUE only when a capture PROVED it saw the session's first message. */
-  head_complete: boolean;
-  opencode_session_id: string | null;
-  message_count: number;
-  newest_message_at: string | null;
-}
-
-/**
- * How far the durable transcript copy has caught up.
- *
- * Two aggregate reads on the mirror's own index — never the message BODIES.
- * The watermark is what a client needs to decide whether to ask for an older
- * page; shipping the rows here would re-create the 7-19 MB transcript payloads
- * the mirror exists to prevent.
- */
-async function readMirrorWatermark(sessionId: string): Promise<MirrorWatermark> {
-  const [mirror] = await db
-    .select({
-      capturedAt: sessionTranscriptMirrors.capturedAt,
-      headComplete: sessionTranscriptMirrors.headComplete,
-      opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
-    })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
-    .limit(1);
-
-  if (!mirror) {
-    return {
-      known: true,
-      present: false,
-      captured_at: null,
-      head_complete: false,
-      opencode_session_id: null,
-      message_count: 0,
-      newest_message_at: null,
-    };
-  }
-
-  const [stats] = await db
-    .select({
-      messages: count(),
-      newest: max(sessionTranscriptMessages.messageCreatedAt),
-    })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, sessionId));
-
-  return {
-    known: true,
-    present: true,
-    captured_at: mirror.capturedAt ? mirror.capturedAt.toISOString() : null,
-    head_complete: mirror.headComplete,
-    opencode_session_id: mirror.opencodeSessionId ?? null,
-    message_count: stats?.messages ?? 0,
-    newest_message_at: stats?.newest ? new Date(stats.newest).toISOString() : null,
-  };
-}
-
-export interface AuditWatermark {
-  known: true;
-  /** Unresolved connector-gated approvals awaiting a human decision. This is
-   *  the number the sidebar nudge and the composer notice render. */
-  pending: number;
-  /** The newest connector-call CREATE instant — advances when a gated action
-   *  appears, so a fresh row bumps the watermark even if nothing resolves. */
-  latest_at: string | null;
-  /** The newest RESOLVE instant — advances when an approval is approved/denied,
-   *  so a resolution bumps the watermark even if the pending count is unchanged
-   *  by a concurrent new row. */
-  latest_resolved_at: string | null;
-}
-
-/**
- * The audit surface's change-detection watermark.
- *
- * Two aggregate reads on `connector_calls` (the connector-gated action log the
- * `GET .../audit` `actions` list is built from), never the rows. It captures
- * every state change the audit surface cares about: a new gated action
- * (`latest_at` moves), a resolution (`latest_resolved_at` moves and `pending`
- * falls), so `emit`'s fingerprint fires on each. The heavy row read stays where
- * it was — a human opens it; liveness only needs to know WHEN it changed.
- */
-async function readSessionAuditWatermark(sessionId: string): Promise<AuditWatermark> {
-  const [pendingRow] = await db
-    .select({ pending: count() })
-    .from(connectorCalls)
-    .where(
-      and(
-        eq(connectorCalls.sessionId, sessionId),
-        eq(connectorCalls.status, 'pending_approval'),
-        isNull(connectorCalls.resolvedAt),
-      ),
-    );
-  const [stamps] = await db
-    .select({
-      latest: max(connectorCalls.createdAt),
-      latestResolved: max(connectorCalls.resolvedAt),
-    })
-    .from(connectorCalls)
-    .where(eq(connectorCalls.sessionId, sessionId));
-  return {
-    known: true,
-    pending: pendingRow?.pending ?? 0,
-    latest_at: stamps?.latest ? new Date(stamps.latest).toISOString() : null,
-    latest_resolved_at: stamps?.latestResolved
-      ? new Date(stamps.latestResolved).toISOString()
-      : null,
-  };
 }
 
 /** Test-only: stop and forget every reconciler. */

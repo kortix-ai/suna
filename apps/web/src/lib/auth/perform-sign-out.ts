@@ -1,7 +1,8 @@
 'use client';
 
-import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
 import { finalizeServerSignOut } from '@/lib/auth/sign-out-actions';
+import { stashSignOutNotice } from '@/lib/auth/sign-out-notice';
+import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
 import { createClient } from '@/lib/supabase/client';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { resetClientState } from '@/lib/utils/reset-client-state';
@@ -69,6 +70,9 @@ export async function performSignOut(): Promise<void> {
       endSession: (scope) => (scope ? supabase.auth.signOut({ scope }) : supabase.auth.signOut()),
       resetClientState,
       dropAuthCookie: expireSupabaseAuthCookie,
+      // The toast cannot live in THIS document (`leave` replaces it), so the
+      // notice is stashed for the `/auth` document that follows.
+      notifySignOutIncomplete: stashSignOutNotice,
       leave: (destination) => {
         left = true;
         // `@next/next/no-location-assign-relative-destination` inspects string

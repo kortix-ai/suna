@@ -5,7 +5,7 @@
  * and onto the gateway's runtime view. Pure mapping + diff here (unit-tested);
  * the DB upsert + network catalog sync (fetch spec/introspection/listTools →
  * normalize → connector_actions) is the connector layer that calls
- * these. See docs/specs/connector.md §3, §7, §8.
+ * these.
  */
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
@@ -62,14 +62,10 @@ export function connectorConfig(
         };
       case 'computer':
         // No credential and no base URL — the gateway routes `tunnel` bindings
-        // through the shared tunnel RPC core, not executeCall. Carry explicit
+        // through the shared tunnel RPC core, not executeCall. The machine is
+        // on each account (`connector_connections.tunnel_id`). Carry explicit
         // `none` auth so authOf() resolves hasAuth=false.
-        return {
-          tunnel_ids: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : []),
-          tunnel_account_ids: spec.tunnelAccountIds ?? [],
-          computer_profile: true,
-          auth: { type: 'none', in: 'header', name: null, prefix: null },
-        };
+        return { auth: { type: 'none', in: 'header', name: null, prefix: null } };
       default:
         return {};
     }

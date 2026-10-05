@@ -23,9 +23,12 @@
 # Enable once per clone:  git config core.hooksPath .githooks
 set -e
 
-# Resolve dotenvx: global, then workspace, then npx.
-if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
-elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+# Resolve dotenvx: the repo-pinned workspace binary first, then global, then
+# npx. Pinned first on purpose: a global dotenvx 2.14 answers `encrypt -f …
+# --no-armor` with "no change" and leaves a plaintext value in place, so the
+# auto-encrypt below depended on whatever happened to be installed.
+if [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+elif command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
 ENV_RE='(^|/)\.env($|\.[A-Za-z0-9_-]+$)'
@@ -40,6 +43,23 @@ for f in $staged_envs; do
   $DX encrypt -f "$f" --no-armor >/dev/null 2>&1 || true
   git add "$f"
 done
+
+# (1b) Verify, independent of any dotenvx version: every non-empty value in a
+#      staged .env must now be `encrypted:…`. `encrypt` above swallows its own
+#      failure, so this is what actually stops a plaintext secret.
+plaintext=$(for f in $staged_envs; do
+  git show ":$f" 2>/dev/null \
+    | grep -E '^[A-Za-z_][A-Za-z0-9_]*=.+' \
+    | grep -vE '^DOTENV_PUBLIC_KEY[A-Za-z0-9_]*=' \
+    | grep -vE '^[A-Za-z_][A-Za-z0-9_]*="?encrypted:' \
+    | sed -e 's/=.*//' -e "s|^|  $f: |"
+done)
+if [ -n "$plaintext" ]; then
+  echo "pre-commit: these staged .env values are not encrypted:" >&2
+  printf '%s\n' "$plaintext" >&2
+  echo "  Store them with: dotenvx set KEY value -f <file>   (the dotenvx-secrets skill)" >&2
+  exit 1
+fi
 
 # (2) Any OTHER committable .env present but unstaged (modified) or untracked →
 #     encrypt IN PLACE only. Not re-staged: encryption is the default, but we
@@ -70,5 +90,65 @@ if [ -n "$starter_templates" ]; then
   fi
 fi
 
-# (3) Backstop: block any remaining unencrypted, committable .env.
+# No top-level docs/ tree. Skills hold durable knowledge, the learnings ledger
+# holds incident rules, and the PR body holds detail. tests/unit/no-docs-tree.test.ts
+# and pre-push enforce the same rule.
+new_docs=$(git diff --cached --name-only --diff-filter=AR | grep -E '^docs/' || true)
+if [ -n "$new_docs" ]; then
+  echo "pre-commit: the repository has no docs/ tree. Refusing:" >&2
+  printf '  %s\n' $new_docs >&2
+  echo "  Put runbooks and specs in a skill (.agents/skills/<name>/references/)," >&2
+  echo "  incident rules in .agents/skills/learnings/entries/, and detail in the PR body." >&2
+  exit 1
+fi
+
+# Translation catalogs keep their key order (apps/web/scripts/i18n-catalogs.mjs).
+# A conflict resolution that rebuilt them reordered every catalog twice
+# (2026-09-22, and #7337 on 2026-09-28), and CI only saw it after the merge to
+# main. A merge commit may take either parent's order. The check reads the
+# working tree. Set I18N_REORDER=1 for an intentional reorder.
+if [ -z "$I18N_REORDER" ] && git rev-parse --verify --quiet HEAD >/dev/null \
+  && git diff --cached --name-only | grep -qE '^apps/web/translations/[^/]+\.json$'; then
+  i18n_bases="--base=HEAD"
+  git rev-parse --verify --quiet MERGE_HEAD >/dev/null && i18n_bases="$i18n_bases --base=MERGE_HEAD"
+  if ! i18n_out=$(node apps/web/scripts/i18n-catalogs.mjs check $i18n_bases 2>&1); then
+    printf '%s\n' "$i18n_out" >&2
+    echo "pre-commit: set I18N_REORDER=1 only when the reorder is intentional." >&2
+    exit 1
+  fi
+fi
+
+# A `pnpm worktree` checkout commits only on its own branch (AGENTS.md).
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
+
+# (3) No customer data: refuse added lines with a blocked term (AGENTS.md).
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
+
+# No crash dumps or files over 20 MB: a core dump carries every secret in the
+# process environment.
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-binary-dumps.sh" staged
+
+# (4) Backstop: block any remaining unencrypted, committable .env.
+#
+# `dotenvx protect`, not the deprecated `ext precommit` (dotenvx 2.29.0 prints
+# "[DEPRECATED] dotenvx precommit. fix: run [dotenvx protect]" and points here).
+# The deprecated check also flags `apps/api/scripts/test.env`, which is
+# plaintext ON PURPOSE with fake values — read its header: the unit suite runs
+# off it with no decryption key, and encrypting it hands CI
+# `SUPABASE_URL=encrypted:…`. `protect` guards the `.env*` files that hold real
+# secrets and leaves that one alone, so the guard keeps its job and stops
+# refusing a file the repo is required to keep readable.
+#
+# `protect` exists only from dotenvx 2.29. An older dotenvx — the repo pins
+# 1.x, and a global install is often older — prints "unknown command
+# 'protect'" and EXITS 0, which turned this backstop into a silent pass. So
+# pick by version: `protect` from 2.29, otherwise the deprecated
+# `ext precommit` this hook ran before (it blocks a staged plaintext .env; its
+# one false positive is a staged apps/api/scripts/test.env).
+dx_version=$($DX --version 2>/dev/null | tr -dc '0-9.')
+dx_major=${dx_version%%.*}
+dx_minor=${dx_version#*.}; dx_minor=${dx_minor%%.*}
+if [ "${dx_major:-0}" -gt 2 ] 2>/dev/null || { [ "${dx_major:-0}" -eq 2 ] && [ "${dx_minor:-0}" -ge 29 ]; } 2>/dev/null; then
+  exec $DX protect
+fi
 exec $DX ext precommit

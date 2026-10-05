@@ -1,3 +1,7 @@
+import { AGENTS_LANDING_TRANSLATION_KEYS } from '@/i18n/agents-landing-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/agents-and-skills` copy.
  *
@@ -5,31 +9,34 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * ACCURACY GATE for this page specifically — verified against the tree, not the
  * pitch. Re-check before editing a claim:
- *  - An agent is `.kortix/opencode/agents/<name>.md` (behavior) PLUS an
- *    `agents.<name>` block in `kortix.yaml` (governance). Two homes, one agent.
+ *  - An agent is `agents/<name>.md` (behavior) PLUS an `agents.<name>` block
+ *    in `kortix.yaml` (governance, whose `file` names the `.md`). Two homes,
+ *    one agent.
  *  - MARKDOWN IS THE FLOOR, NOT THE CEILING. Do not write "an agent is a
  *    markdown persona" and stop. The `.md` is a STOCK OpenCode agent file —
  *    `compile-agent-config.ts` passes its frontmatter straight through
  *    (description, mode, model, variant, temperature, top_p, prompt, disable,
  *    hidden, options, color, steps, permission), so Kortix adds no dialect. The
  *    rest of the OpenCode surface sits in the same repo and is editable:
- *    `tools/` (real TypeScript, auto-discovered), `plugins/` (the starter ships
- *    a PTY plugin), `skills/`, `opencode.jsonc` (models/providers) and a
- *    `package.json` OpenCode `bun install`s at startup.
+ *    `skills/` at the root, and under `harnesses/opencode/`: `tools/` (real
+ *    TypeScript, auto-discovered), `plugins/` (the starter ships a PTY plugin),
+ *    `opencode.jsonc` (models/providers) and a `package.json` OpenCode
+ *    `bun install`s at startup.
  *  - THE GRANT COVERS MORE THAN TOOLS. `AgentBlockV2` (`index.v2.ts`):
  *    `sandbox` (which machine it boots), `connectors` + `connectors_required`,
- *    `secrets`, `skills`, `kortix_cli`, `workspace`, `enabled`. Channels fall
+ *    `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. Channels fall
  *    under `connectors` because a connected channel IS a connector with
  *    `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
- *  - Depth is not a harness menu. OpenCode is the only shipped runtime; ACP and
- *    the other harnesses are behind `KORTIX_ACP_RUNTIME`, default false.
+ *  - Depth is not a harness menu. OpenCode is the default harness. pi is an
+ *    experimental, opt-in harness (`pi_harness` flag or `runtime: pi`) and is
+ *    not named here: brand decision D9 is open.
  *  - The scoping field is `permission`. It is NOT called `tools` —
  *    `packages/manifest-schema/src/index.v2.ts` raises a hard error on `tools`:
- *    "`tools` is deprecated upstream — use `permission` instead."
+ *    "`tools` is not an agent setting — use `permission` instead."
  *    Values are exactly `allow` | `ask` | `deny`.
  *  - Governance is deny-by-default. `packages/starter/templates/base/kortix.yaml`:
  *    "Omitted grants resolve to `none` in this schema version. Grant explicitly."
@@ -42,7 +49,7 @@
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
  *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
  *  - MARKETPLACE: ships, labelled beta, ON by default. But the deterministic
- *    installer WAS REMOVED (`apps/api/src/projects/routes/r10.ts`): "The
+ *    installer WAS REMOVED (`apps/api/src/projects/routes/marketplace-install-session.ts`): "The
  *    deterministic install/lock/update/remove engine … has been removed …
  *    Adding a marketplace item to an existing project is now always an agent
  *    import." So: one click to ADD, and what happens next is an agent session
@@ -77,7 +84,7 @@ export const agent = {
   title: 'Two files. No hidden object behind them.',
   sub: 'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.',
   md: {
-    title: '.kortix/opencode/agents/kortix.md',
+    title: 'agents/kortix.md',
     caption: 'Excerpt of the default agent in every new Kortix project.',
     lines: [
       '---',
@@ -121,13 +128,13 @@ export const agent = {
       '    connectors: all',
       '    secrets: all',
       '    skills: all',
-      '    kortix_cli: all',
+      '    kortix_permissions: all',
       '',
       '  release-bot:',
       '    # this one gets almost nothing, on purpose',
       '    connectors: [github]',
       '    secrets: [GITHUB_AGENT_TOKEN]',
-      '    kortix_cli: [project.cr.open]',
+      '    kortix_permissions: [project.cr.open]',
       '',
       '# a grant you leave out resolves to none.',
       '# there is no implicit access. grant explicitly.',
@@ -147,12 +154,12 @@ export const reach = {
   title: 'Deny by default. Never above the human.',
   sub: 'The grant block covers the whole surface, not just tools: which sandbox image the agent boots, which connectors and channels it may call, which secrets it may receive, which skills it may invoke, and what it may do to Kortix itself. An agent with no grants gets none of it. You grant explicitly, or the answer is no — and on top of that sits a ceiling nothing in the config can lift.',
   md: {
-    title: '.kortix/opencode/agents/memory-reflector.md',
+    title: 'agents/memory-reflector.md',
     caption: 'A real permission tree, from a real agent that ships.',
     lines: [
       '---',
       'description: "Reflects on recent project activity and',
-      '  curates .kortix/memory/ — the project brain. Runs on a',
+      '  curates memory/ — the project brain. Runs on a',
       '  cron and ends every run by opening a single change',
       '  request."',
       'mode: primary',
@@ -202,7 +209,7 @@ export const skill = {
   title: 'How your company does one job, written down once.',
   sub: 'A skill is a directory with a SKILL.md at its root. Frontmatter names it and says when to reach for it; the body is the procedure. Every session can load it, so the thing you explained to one agent in March is still true for every agent in November.',
   md: {
-    title: '.kortix/opencode/skills/agent-browser/SKILL.md',
+    title: 'skills/agent-browser/SKILL.md',
     caption: 'Excerpt of a skill that ships in every new project.',
     lines: [
       '---',
@@ -265,12 +272,12 @@ export const repo = {
   tree: [
     { path: 'your-company/', note: '', depth: 0 },
     { path: 'kortix.yaml', note: 'governance: what each agent may touch', depth: 1 },
-    { path: '.kortix/opencode/', note: 'the runtime your agents think in', depth: 1 },
-    { path: 'agents/', note: 'one OpenCode agent per file', depth: 2 },
-    { path: 'kortix.md', note: 'the generalist, in every project', depth: 3 },
-    { path: 'memory-reflector.md', note: 'curates the project brain on a cron', depth: 3 },
-    { path: 'skills/', note: 'one directory per skill', depth: 2 },
-    { path: 'agent-browser/SKILL.md', note: 'how this company drives a browser', depth: 3 },
+    { path: 'agents/', note: 'one OpenCode agent per file', depth: 1 },
+    { path: 'kortix.md', note: 'the generalist, in every project', depth: 2 },
+    { path: 'memory-reflector.md', note: 'curates the project brain on a cron', depth: 2 },
+    { path: 'skills/', note: 'one directory per skill', depth: 1 },
+    { path: 'agent-browser/SKILL.md', note: 'how this company drives a browser', depth: 2 },
+    { path: 'harnesses/opencode/', note: 'the runtime your agents think in', depth: 1 },
   ],
   rows: [
     {
@@ -332,3 +339,11 @@ export const closing = {
   ctaSecondary: 'Read the agent docs',
   ctaSecondaryHref: '/docs/project/agents',
 } as const;
+
+export function getLocalizedAgentsAndSkillsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, agent, reach, skill, repo, marketplace, closing },
+    tI18nComplete,
+    AGENTS_LANDING_TRANSLATION_KEYS,
+  );
+}

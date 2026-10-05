@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
@@ -219,7 +219,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
             {canDismiss && (
               <button
                 type="button"
-                aria-label="Dismiss"
+                aria-label={tHardcodedUi.raw('i18nComplete.text48845bff334a')}
                 onClick={handleDismiss}
                 className="text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 absolute top-2.5 right-2.5 flex size-7 items-center justify-center rounded-md transition-colors active:scale-[0.96]"
               >

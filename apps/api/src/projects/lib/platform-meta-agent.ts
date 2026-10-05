@@ -15,19 +15,23 @@ import type { ProjectConfigSummary } from '../git/types';
 export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {
   return {
     ...config,
+    default_agent: META_AGENT_NAME,
     open_code_default_agent: META_AGENT_NAME,
     agents: [
       {
         name: META_AGENT_NAME,
         path: '/workspace/AGENTS.md',
-        description: 'Starts specialized Kortix sessions and coordinates their work.',
+        description: 'Runs your other agents for you. Hands every task to the right session.',
         mode: 'primary',
         source: 'opencode',
+        platform: true,
         enabled: true,
         sandbox: META_SANDBOX_SLUG,
         scope: {
           env: [],
           connectors: [],
+          kortix_permissions: 'all',
+          // Deprecated wire alias of kortix_permissions (pre-rename clients).
           kortix_cli: 'all',
         },
       },
@@ -40,7 +44,7 @@ export function buildPlatformMetaOpenCodeConfig(): string {
   return JSON.stringify({
     agent: {
       [META_AGENT_NAME]: {
-        description: 'Starts specialized Kortix sessions and coordinates their work.',
+        description: 'Runs your other agents for you. Hands every task to the right session.',
         mode: 'primary',
         prompt:
           'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',
@@ -59,7 +63,7 @@ export function buildPlatformMetaOpenCodeConfig(): string {
 export function platformMetaAgentGrant(): AgentGrant {
   return {
     agent: META_AGENT_NAME,
-    kortixCli: 'all',
+    permissions: 'all',
     connectors: [],
     env: [],
   };

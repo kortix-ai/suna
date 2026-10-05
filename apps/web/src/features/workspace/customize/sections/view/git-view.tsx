@@ -2,9 +2,21 @@
 
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import {
+  CommandEmpty,
+  CommandFooter,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPopover,
+  CommandPopoverContent,
+  CommandPopoverTrigger,
+} from '@/components/ui/command';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -15,11 +27,14 @@ import {
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE, triggerVariants } from '@/components/ui/trigger-variants';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Github as GithubIcon } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { useProjectCans } from '@/lib/use-project-can';
@@ -29,7 +44,10 @@ import {
   inviteRepoCollaborator,
   isManagedGithubProject,
   listProjectBranches,
+  listLinkableGitHubInstallations,
+  replaceProjectRepository,
   updateProject,
+  type LinkableGitHubInstallation,
   type KortixProject,
   type ProjectDetail,
   type ProjectGitConnection,
@@ -37,6 +55,7 @@ import {
 import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretDownIcon,
+  CheckIcon,
   ArrowSquareOutIcon as ExternalLink,
   GitForkIcon as GitFork,
   GithubLogoIcon as Github,
@@ -44,11 +63,12 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import Link from '@/components/site-link';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
+  filterBranchNames,
   connectionStatusLabel,
   providerLabel,
   providerSentence,
@@ -145,10 +165,10 @@ function CommandLine({
 }) {
   return (
     <div className="bg-muted group/command-line -mx-2 flex min-w-0 items-center gap-2 rounded-sm px-3 py-1.5 transition-colors">
-      <code className="text-foreground scrollbar-hide min-w-0 flex-1 overflow-x-auto font-mono text-[12px] whitespace-nowrap">
+      <code className="text-foreground scrollbar-hide min-w-0 flex-1 overflow-x-auto font-mono text-xs whitespace-nowrap">
         {value}
       </code>
-      <span className="shrink-0 opacity-0 transition-opacity duration-200 group-hover/command-line:opacity-100">
+      <span className="shrink-0 opacity-0 transition-opacity duration-moderate group-hover/command-line:opacity-100">
         <CopyButton code={value} size="sm" />
       </span>
     </div>
@@ -264,7 +284,97 @@ export function RepositoryValue({
 }
 
 function SaveStatus() {
-  return <span className="text-muted-foreground shrink-0 text-xs tabular-nums">Saving…</span>;
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  return (
+    <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+      {tI18nComplete.raw('text23e39291d613')}
+    </span>
+  );
+}
+
+/**
+ * The default-branch picker: a searchable list, not a `<Select>`.
+ *
+ * A long-lived project's remote holds one branch per session, thousands of
+ * refs. A Radix `<Select>` mounts every option, so opening this pane on such
+ * a project froze the tab and then crashed it. This list renders at most
+ * `BRANCH_PICKER_LIMIT` rows (`filterBranchNames`) and filters as the person
+ * types. The current value always renders, also before `/branches` answers.
+ */
+function BranchPicker({
+  value,
+  branches,
+  loading,
+  onChange,
+  disabled,
+  label,
+}: {
+  value: string;
+  branches: readonly string[];
+  loading: boolean;
+  onChange: (branch: string) => void;
+  disabled: boolean;
+  label: string;
+}) {
+  const t = useI18nTranslations('repositoryChange');
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const { visible, hidden } = useMemo(
+    () => filterBranchNames(branches, value, search),
+    [branches, value, search],
+  );
+
+  return (
+    <CommandPopover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearch('');
+      }}
+    >
+      <CommandPopoverTrigger disabled={disabled}>
+        <button
+          type="button"
+          aria-label={label}
+          className={cn(triggerVariants(), 'h-8 w-44 font-mono text-xs')}
+        >
+          <span className="min-w-0 truncate">{value}</span>
+          <CaretDownIcon className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE.sm)} />
+        </button>
+      </CommandPopoverTrigger>
+      <CommandPopoverContent side="bottom" align="end" className="w-72">
+        <CommandInput
+          compact
+          placeholder={t('searchBranches')}
+          value={search}
+          onValueChange={setSearch}
+        />
+        <CommandList>
+          <CommandEmpty>{loading ? t('loadingBranches') : t('noBranches')}</CommandEmpty>
+          <CommandGroup>
+            {visible.map((branch) => (
+              <CommandItem
+                key={branch}
+                value={branch}
+                onSelect={() => {
+                  onChange(branch);
+                  setOpen(false);
+                  setSearch('');
+                }}
+                className="font-mono text-xs"
+              >
+                <span className="min-w-0 flex-1 truncate">{branch}</span>
+                {branch === value ? <CheckIcon className="size-3.5 shrink-0" /> : null}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+        {hidden > 0 ? (
+          <CommandFooter>{t('moreBranches', { count: hidden })}</CommandFooter>
+        ) : null}
+      </CommandPopoverContent>
+    </CommandPopover>
+  );
 }
 
 /**
@@ -292,21 +402,25 @@ function RepositoryGroup({
   connection: ProjectGitConnection | null | undefined;
   canManage: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tRepo = useI18nTranslations('repositoryChange');
   const queryClient = useQueryClient();
   const branchesQuery = useQuery({
     queryKey: qk.project.branches(project.project_id),
-    queryFn: () => listProjectBranches(project.project_id),
+    // A default branch is never a session's own branch: skip the thousands.
+    queryFn: () => listProjectBranches(project.project_id, { includeSessionBranches: false }),
     ...contract('config'),
   });
-  const branchNames = Array.from(
-    new Set([
-      project.default_branch,
-      ...(branchesQuery.data?.branches.map((branch) => branch.name) ?? []),
-    ]),
-  );
+  const branchNames = branchesQuery.data?.branches.map((branch) => branch.name) ?? [];
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
   const [manifestPath, setManifestPath] = useState(project.manifest_path);
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [targetRepo, setTargetRepo] = useState('');
+  const [installations, setInstallations] = useState<LinkableGitHubInstallation[]>([]);
+  const [installationId, setInstallationId] = useState('');
+  const [githubProof, setGithubProof] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const { debouncedValue: debouncedBranch, isLoading: isDebouncingBranch } = useDebounce(
     defaultBranch,
     500,
@@ -337,7 +451,7 @@ function RepositoryGroup({
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('textc25bdcabc47d')),
   });
 
   const { mutate, isPending } = mutation;
@@ -362,6 +476,47 @@ function RepositoryGroup({
   ]);
 
   const saving = isDebouncingBranch || isDebouncingManifest || isPending;
+  const targetOwner = targetRepo.trim().match(/^https:\/\/github\.com\/([^/]+)\/[^/]+\/?$/i)?.[1]?.toLowerCase();
+  const availableInstallations = installations.filter((installation) =>
+    installation.owner_login?.toLowerCase() === targetOwner,
+  );
+  const changeRepository = useMutation({
+    mutationFn: () => replaceProjectRepository({
+      project_id: project.project_id,
+      repo_url: targetRepo.trim(),
+      expected_repo_url: project.repo_url,
+      installation_id: installationId,
+      github_user_token: githubProof,
+    }),
+    onSuccess: () => {
+      setChangeOpen(false);
+      setGithubProof('');
+      setInstallations([]);
+      setTargetRepo('');
+      queryClient.invalidateQueries({ queryKey: qk.project.detail(project.project_id) });
+      queryClient.invalidateQueries({ queryKey: qk.project.summary(project.project_id) });
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
+      successToast(tRepo('changedToast'));
+    },
+    onError: (error: Error) => errorToast(error.message),
+  });
+  const verifyGitHub = async () => {
+    setVerifying(true);
+    try {
+      const proof = await requestGitHubUserProof();
+      const result = await listLinkableGitHubInstallations({ account_id: project.account_id, github_user_token: proof });
+      setGithubProof(proof);
+      setInstallations(result.installations);
+      setInstallationId(result.installations.find((installation) =>
+        installation.owner_login?.toLowerCase() === targetOwner,
+      )?.installation_id ?? '');
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : tRepo('verifyError'));
+    } finally {
+      setVerifying(false);
+    }
+  };
   const repositoryProvider =
     connection?.provider ??
     (connection ? undefined : projectRepoFallback(project.repo_url)?.provider);
@@ -369,7 +524,7 @@ function RepositoryGroup({
   return (
     <section className="space-y-3">
       {connection?.last_error_message ? (
-        <InfoBanner tone="warning" icon={WarningIcon} title="Kortix can't reach this repository">
+        <InfoBanner tone="warning" icon={WarningIcon} title={tI18nComplete.raw('textcb25ff313d81')}>
           {connection.last_error_message}
         </InfoBanner>
       ) : null}
@@ -380,49 +535,44 @@ function RepositoryGroup({
             project's own address — so this reads the same fallback the value
             does rather than saying a flat "Hosted on Git." beside a GitHub
             link. */}
-        <SettingsRow label="Repository" description={providerSentence(repositoryProvider)}>
+        <SettingsRow
+          label={tI18nComplete.raw('text13d6ff07b8a5')}
+          description={providerSentence(repositoryProvider)}
+        >
           <RepositoryValue connection={connection} repoUrl={project.repo_url} />
+          {canManage ? <Button variant="outline" size="sm" onClick={() => setChangeOpen(true)}>{tRepo('change')}</Button> : null}
         </SettingsRow>
 
-        <SettingsRow label="Status">
+        <SettingsRow label={tI18nComplete.raw('text920e413c7d41')}>
           <StatusValue status={connection?.status} />
         </SettingsRow>
 
         <SettingsRow
-          label="Base branch"
-          description="New sessions and change requests start from this branch."
+          label={tI18nComplete.raw('text9acbb9ebea63')}
+          description={tI18nComplete.raw('text4ea9e9ad1d10')}
         >
           {saving ? <SaveStatus /> : null}
-          <Select
+          <BranchPicker
             value={defaultBranch}
-            onValueChange={setDefaultBranch}
+            branches={branchNames}
+            loading={branchesQuery.isLoading}
+            onChange={setDefaultBranch}
             disabled={!canManage || isPending}
-          >
-            <SelectTrigger aria-label="Base branch" className="h-8 w-44 font-mono text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              {branchNames.map((branch) => (
-                <SelectItem key={branch} value={branch} className="font-mono text-xs">
-                  {branch}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            label={tI18nComplete.raw('text9acbb9ebea63')}
+          />
         </SettingsRow>
 
         <SettingsRow
-          label="Manifest file"
+          label={tI18nComplete.raw('textcef30be178a6')}
           description={
             <>
-              The file in your repository that tells Kortix how to run this workspace.{' '}
-              <DocsLink href={DOCS_MANIFEST} />
+              {tI18nComplete.raw('text0ec4cd70d04c')} <DocsLink href={DOCS_MANIFEST} />
             </>
           }
         >
           <Input
             id="manifest-path"
-            aria-label="Manifest file"
+            aria-label={tI18nComplete.raw('textcef30be178a6')}
             value={manifestPath}
             onChange={(e) => setManifestPath(e.target.value)}
             disabled={!canManage || isPending}
@@ -430,6 +580,49 @@ function RepositoryGroup({
           />
         </SettingsRow>
       </SettingsRowGroup>
+      <Modal open={changeOpen} onOpenChange={(open) => {
+        if (changeRepository.isPending) return;
+        setChangeOpen(open);
+        if (!open) { setGithubProof(''); setInstallations([]); setInstallationId(''); setTargetRepo(''); }
+      }}>
+        <ModalContent className="flex flex-col overflow-hidden sm:max-w-md">
+          <ModalHeader className="shrink-0">
+            <ModalTitle>{tRepo('title')}</ModalTitle>
+            <ModalDescription>{tRepo('description')}</ModalDescription>
+          </ModalHeader>
+          <ModalBody className="min-h-0 space-y-4 overflow-y-auto">
+            <div className="space-y-1 text-sm">
+              <p className="text-muted-foreground">{tRepo('current')}</p>
+              <p className="break-all font-mono text-xs">{project.repo_url}</p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="replacement-repo-url" className="text-sm font-medium">{tRepo('newUrl')}</label>
+              <Input id="replacement-repo-url" value={targetRepo} onChange={(event) => setTargetRepo(event.target.value)} placeholder="https://github.com/owner/repository" autoComplete="off" />
+            </div>
+            <div className="space-y-2">
+              <Button variant="outline" size="sm" onClick={verifyGitHub} disabled={verifying || changeRepository.isPending}>
+                {verifying ? tRepo('verifying') : githubProof ? tRepo('verifyAgain') : tRepo('verify')}
+              </Button>
+              {githubProof && availableInstallations.length === 0 ? <p className="text-muted-foreground text-xs">{tRepo('noInstallation')}</p> : null}
+              {availableInstallations.length > 0 ? (
+                <Select value={installationId} onValueChange={setInstallationId}>
+                  <SelectTrigger aria-label={tRepo('installation')}><SelectValue placeholder={tRepo('selectInstallation')} /></SelectTrigger>
+                  <SelectContent>{availableInstallations.map((installation) => (
+                    <SelectItem key={installation.installation_id} value={installation.installation_id}>{installation.owner_login ?? installation.installation_id}</SelectItem>
+                  ))}</SelectContent>
+                </Select>
+              ) : null}
+            </div>
+            <p className="text-muted-foreground text-xs">{tRepo('manifestRequirement', { manifest: project.manifest_path })}</p>
+          </ModalBody>
+          <ModalFooter className="shrink-0 bg-sidebar py-3">
+            <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changeRepository.isPending}>{tRepo('cancel')}</Button>
+            <Button onClick={() => changeRepository.mutate()} disabled={!targetOwner || targetRepo.trim() === project.repo_url || !availableInstallations.some((installation) => installation.installation_id === installationId) || !githubProof || changeRepository.isPending}>
+              {changeRepository.isPending ? tRepo('changing') : tRepo('title')}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </section>
   );
 }
@@ -457,7 +650,7 @@ function Step({
 }) {
   return (
     <li className="flex gap-3 px-4 py-3.5">
-      <span className="bg-muted text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium tabular-nums">
+      <span className="bg-muted text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums">
         {index}
       </span>
       <div className="min-w-0 flex-1 space-y-2.5">
@@ -482,13 +675,15 @@ function Step({
  * match that assertion and would silently un-pin the order.
  */
 function LocalSetup({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tGit = useI18nTranslations('settings.git');
   const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
 
   return (
     <section className="space-y-3">
       <SettingsSubsectionHeader
-        title="Work on this locally"
-        description="Put a copy of this workspace on your own computer and edit it in your own editor."
+        title={tI18nComplete.raw('text17635feb9ad5')}
+        description={tI18nComplete.raw('text80e155d7b8e5')}
         action={<DocsLink href={DOCS_CLI} />}
       />
       {/* Carries `SettingsRowGroup`'s exact classes on an `<ol>` rather than
@@ -498,27 +693,18 @@ function LocalSetup({ projectId }: { projectId: string }) {
           Everything visual matches the groups above it, so the pane still reads
           as one system. */}
       <ol className="bg-popover divide-border divide-y overflow-hidden rounded-md border">
-        <Step
-          index={1}
-          title="Install the Kortix command line"
-          hint="A one-time setup on macOS or Linux. Skip this if you already have it."
-        >
-          <CommandLine value={installCommand} label="Install command" />
+        <Step index={1} title={tI18nComplete.raw('text81fbecb138f6')} hint={tGit('installHint')}>
+          <CommandLine value={installCommand} label={tI18nComplete.raw('text1ae97542051d')} />
         </Step>
-        <Step
-          index={2}
-          title="Copy the workspace to your computer"
-          hint="Downloads the code into a new folder and links that folder to this workspace."
-        >
-          <CommandLine value={`kortix projects clone ${projectId}`} label="Clone command" />
+        <Step index={2} title={tI18nComplete.raw('text7114f5d2fafa')} hint={tGit('cloneHint')}>
+          <CommandLine
+            value={`kortix projects clone ${projectId}`}
+            label={tI18nComplete.raw('text6264f3bfdd91')}
+          />
         </Step>
-        <Step
-          index={3}
-          title="Finish setup inside the new folder"
-          hint="Writes the local config, then fetches this workspace's secrets so the code can run."
-        >
-          <CommandLine value="kortix init --force" label="Setup command" />
-          <CommandLine value="kortix env pull" label="Secrets command" />
+        <Step index={3} title={tI18nComplete.raw('texte7f187cbe20d')} hint={tGit('setupHint')}>
+          <CommandLine value="kortix init --force" label={tI18nComplete.raw('text6300595b1dfd')} />
+          <CommandLine value="kortix env pull" label={tI18nComplete.raw('text68269b6f8874')} />
         </Step>
       </ol>
     </section>
@@ -537,6 +723,7 @@ function LocalSetup({ projectId }: { projectId: string }) {
  * the credential.
  */
 function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
 
   return (
@@ -564,16 +751,16 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
           >
             <span className="min-w-0 flex-1 space-y-0.5">
               <span className="text-foreground block text-sm font-medium">
-                Use your own Git client
+                {tI18nComplete.raw('textd29222de0472')}
               </span>
               <span className="text-muted-foreground block text-xs font-normal text-pretty">
-                Clone with plain <code className="font-mono">git</code> instead of the Kortix
-                command line.
+                {tI18nComplete.raw('text7760401b25c7')}
+                <code className="font-mono">git</code> {tI18nComplete.raw('text2f72fafe0ce1')}
               </span>
             </span>
             <CaretDownIcon
               className={cn(
-                'text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform duration-200',
+                'text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform duration-moderate',
                 open && 'rotate-180',
               )}
             />
@@ -582,11 +769,14 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
         <DisclosureContent variant="outline" contentClassName="border-border border-t">
           <div className="space-y-2 px-4 py-3.5">
             <p className="text-muted-foreground text-xs text-pretty">
-              Clone from this address with any Git client. When git asks, enter any username and a
-              Kortix API key as the password — the Kortix command line does this for you through its
-              credential helper, plain <code className="font-mono">git</code> does not.
+              {tI18nComplete.raw('texte327e6c1348b')}
+              <code className="font-mono">git</code> {tI18nComplete.raw('textb74106e21108')}
             </p>
-            <CommandLine value={gitCloneUrl(project)} label="Clone address" kind="address" />
+            <CommandLine
+              value={gitCloneUrl(project)}
+              label={tI18nComplete.raw('textac830bd3c755')}
+              kind="address"
+            />
           </div>
         </DisclosureContent>
       </Disclosure>
@@ -607,7 +797,7 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
  * Two things the old gate got wrong, both fixed here:
  *
  * 1. It read `project.write`. The route asserts `project.members.manage`
- *    (`apps/api/src/projects/routes/r1.ts`, "Inviting a git collaborator
+ *    (`apps/api/src/projects/routes/project-git.ts`, "Inviting a git collaborator
  *    grants a human standing access to the repo — membership-tier, not plain
  *    write"). A custom role holding write-but-not-members.manage saw the form
  *    and got a 403 on submit; the reverse role saw nothing though the API
@@ -626,6 +816,7 @@ function RepoAccessSection({
   managed: boolean;
   canManageMembers: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // Still gated on the capability — someone who cannot grant repository access
   // has no use for either the form or an explanation of where to grant it.
   if (!canManageMembers) return null;
@@ -633,11 +824,9 @@ function RepoAccessSection({
   return (
     <section className="space-y-3">
       <SettingsSubsectionHeader
-        title="People with access"
+        title={tI18nComplete.raw('text6ecf05a928e8')}
         description={
-          managed
-            ? 'Invite someone by their GitHub username. GitHub emails them an invite to accept.'
-            : 'Who can read and write this workspace’s repository.'
+          managed ? tI18nComplete.raw('text51df486e7027') : tI18nComplete.raw('text6ce403f96404')
         }
       />
       {managed ? (
@@ -670,6 +859,7 @@ function ExternallyManagedRepoAccess({
 }: {
   connection: ProjectGitConnection | null | undefined;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const provider = connection?.provider;
   // GitHub only. `repositoryWebUrl` also answers for GitLab, but the deep link
   // below is `/settings/access`, which is GitHub's path — GitLab's is
@@ -684,14 +874,14 @@ function ExternallyManagedRepoAccess({
     <div className="bg-popover rounded-md border px-4 py-3">
       <p className="text-muted-foreground text-xs text-pretty">
         {provider === 'github'
-          ? 'Kortix did not create this repository, so it cannot add collaborators to it. Manage access from the repository settings on GitHub.'
-          : `This workspace’s repository is hosted on ${providerLabel(provider)}, which does not support collaborator invites from Kortix. Manage access where the repository lives.`}
+          ? tI18nComplete.raw('text6e5a03445559')
+          : tI18nComplete('textdfa16aeaca13', { value0: providerLabel(provider) })}
       </p>
       {webUrl ? (
         <Button asChild variant="outline" size="sm" className="mt-3 gap-1.5">
           <a href={`${webUrl}/settings/access`} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="size-3.5 shrink-0" />
-            Manage on GitHub
+            {tI18nComplete.raw('text03298bf58cdb')}
           </a>
         </Button>
       ) : null}
@@ -700,6 +890,7 @@ function ExternallyManagedRepoAccess({
 }
 
 function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [username, setUsername] = useState('');
   const [permission, setPermission] = useState<'read' | 'write'>('write');
 
@@ -707,13 +898,13 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
     mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), permission),
     onSuccess: (res) => {
       if (res.alreadyCollaborator) {
-        successToast(`@${res.username} already has access to this repo`);
+        successToast(tI18nComplete('text4ece196e2346', { value0: res.username }));
       } else {
-        successToast(`Invite sent to @${res.username} — they accept it on GitHub to get access`);
+        successToast(tI18nComplete('text1283bae259c2', { value0: res.username }));
       }
       setUsername('');
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add collaborator'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('textc6c23265e620')),
   });
 
   const submit = (e: FormEvent) => {
@@ -737,10 +928,10 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
             <GithubIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
             <Input
               id="repo-collaborator-username"
-              aria-label="GitHub username"
+              aria-label={tI18nComplete.raw('text64477e38cfb5')}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="GitHub username"
+              placeholder={tI18nComplete.raw('text64477e38cfb5')}
               // NOT `variant="popover"`. That variant is `bg-popover`, the same
               // fill as the panel around it, so the input dissolved into its own
               // container. The default `bg-input` is what makes it read as
@@ -756,14 +947,14 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
           <Select value={permission} onValueChange={(v) => setPermission(v as 'read' | 'write')}>
             <SelectTrigger
               id="repo-collaborator-permission"
-              aria-label="Access level"
+              aria-label={tI18nComplete.raw('text86da9c960cf9')}
               className="h-8 w-full rounded-sm"
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
-              <SelectItem value="write">Can edit</SelectItem>
-              <SelectItem value="read">Can view</SelectItem>
+              <SelectItem value="write">{tI18nComplete.raw('text5abe9e1fbc5b')}</SelectItem>
+              <SelectItem value="read">{tI18nComplete.raw('text151dc282a69e')}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -774,7 +965,7 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
             disabled={!username.trim() || inviteMutation.isPending}
           >
             {inviteMutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-            Invite
+            {tI18nComplete.raw('text1fd9ae1607aa')}
           </Button>
         </form>
       </div>
@@ -783,6 +974,7 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
 }
 
 export function GitView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const detail = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
@@ -795,7 +987,7 @@ export function GitView({ projectId }: { projectId: string }) {
   // Two leaves, one roundtrip. This used to be a single `project.write` probe
   // reused for BOTH the repository settings and the collaborator invite — but
   // the invite route asserts `project.members.manage`
-  // (`apps/api/src/projects/routes/r1.ts`), a strictly different leaf, so the
+  // (`apps/api/src/projects/routes/project-git.ts`), a strictly different leaf, so the
   // one probe was answering a question the server never asked. `GIT_VIEW_ACTIONS`
   // is module-level and stable because the action-list identity is part of the
   // SDK query key.
@@ -837,12 +1029,12 @@ export function GitView({ projectId }: { projectId: string }) {
       {detail.isError ? (
         <ErrorState
           size="sm"
-          title="Could not load this workspace's repository"
+          title={tI18nComplete.raw('text6c07047e9e83')}
           description={(detail.error as Error).message}
           action={
             <Button variant="outline" size="sm" onClick={() => detail.refetch()}>
               <RefreshCw className="size-3.5" />
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />

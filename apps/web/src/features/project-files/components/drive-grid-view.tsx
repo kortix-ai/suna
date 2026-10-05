@@ -17,14 +17,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
-import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   ClipboardIcon as ClipboardCopy,
   CopyIcon as Copy,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   DotsThreeVerticalIcon as MoreVertical,
@@ -32,12 +30,13 @@ import {
   ScissorsIcon as Scissors,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { rowDragIntent } from '../upload-batch';
+import { useTranslations } from '@/i18n/use-translations';
+import { type ComponentType, type ReactNode } from 'react';
+import { useDriveRowInteractions } from './use-drive-row-interactions';
 import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
+import { Download } from '@/features/icon/icons/download';
 
 interface DriveGridItemProps {
   node: FileNode;
@@ -96,6 +95,7 @@ export function FolderDriveMenuItems({
   openFolderLabel,
   copyPathLabel,
 }: FolderDriveMenuProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const hasEditActions = Boolean(onRename || onDelete);
 
   return (
@@ -107,20 +107,20 @@ export function FolderDriveMenuItems({
       {onDownload && (
         <Item onClick={() => onDownload(node)} disabled={isDownloadingItem}>
           <Download />
-          {isDownloadingItem ? 'Zipping...' : 'Download as zip'}
+          {isDownloadingItem ? 'Zipping...' : tI18nComplete.raw('textdda839b13617')}
         </Item>
       )}
       <Separator />
       {onCopy && (
         <Item onClick={() => onCopy(node)}>
           <ClipboardCopy />
-          Copy
+          {tI18nComplete.raw('texte21f935f11d7')}
         </Item>
       )}
       {onCut && (
         <Item onClick={() => onCut(node)}>
           <Scissors />
-          Cut
+          {tI18nComplete.raw('text1f45f02561f4')}
         </Item>
       )}
       <Item onClick={() => navigator.clipboard.writeText(node.path)}>
@@ -133,13 +133,13 @@ export function FolderDriveMenuItems({
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
               <PencilSimpleIcon />
-              Rename
+              {tI18nComplete.raw('text3064d79a295c')}
             </Item>
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
               <TrashIcon />
-              Remove
+              {tI18nComplete.raw('textc3812fc4acb8')}
             </Item>
           )}
         </>
@@ -179,18 +179,19 @@ export function FileDriveMenuItems({
   checkpointHistoryLabel,
   copyPathLabel,
 }: FileDriveMenuProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const hasEditActions = Boolean(onRename || onDelete);
 
   return (
     <>
       <Item onClick={onClick}>
         <Eye />
-        Preview
+        {tI18nComplete.raw('text324b134f57c7')}
       </Item>
       {onDownload && (
         <Item onClick={() => onDownload(node)}>
           <Download />
-          Download
+          {tI18nComplete.raw('textd6eafe823591')}
         </Item>
       )}
       {onHistory && (
@@ -203,13 +204,13 @@ export function FileDriveMenuItems({
       {onCopy && (
         <Item onClick={() => onCopy(node)}>
           <ClipboardCopy />
-          Copy
+          {tI18nComplete.raw('texte21f935f11d7')}
         </Item>
       )}
       {onCut && (
         <Item onClick={() => onCut(node)}>
           <Scissors />
-          Cut
+          {tI18nComplete.raw('text1f45f02561f4')}
         </Item>
       )}
       <Item onClick={() => navigator.clipboard.writeText(node.path)}>
@@ -222,19 +223,30 @@ export function FileDriveMenuItems({
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
               <PencilSimpleIcon />
-              Rename
+              {tI18nComplete.raw('text3064d79a295c')}
             </Item>
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
               <TrashIcon />
-              Remove
+              {tI18nComplete.raw('textc3812fc4acb8')}
             </Item>
           )}
         </>
       )}
     </>
   );
+}
+
+function selectFolderRenameInput(el: HTMLInputElement) {
+  el.focus();
+  el.select();
+}
+
+function selectFileRenameInput(el: HTMLInputElement) {
+  el.focus();
+  const dotIdx = el.value.lastIndexOf('.');
+  el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
 }
 
 function FolderCard({
@@ -251,106 +263,13 @@ function FolderCard({
   isCut,
 }: DriveGridItemProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameName, setRenameName] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const dragCounterRef = useRef(0);
-
-  const handleDragStart = useCallback(
-    (e: React.DragEvent) => {
-      e.dataTransfer.setData(DRAG_MIME, node.path);
-      e.dataTransfer.setData('text/plain', node.name);
-      e.dataTransfer.effectAllowed = 'move';
-      setIsDragging(true);
-    },
-    [node.path, node.name],
-  );
-
-  const handleDragEnd = useCallback(() => setIsDragging(false), []);
-
-  /** `move` (internal drag), `upload` (external files), or null (ignore). */
-  const intentOf = useCallback(
-    (e: React.DragEvent) =>
-      rowDragIntent(Array.from(e.dataTransfer.types), {
-        isDirectory: true,
-        canMove: Boolean(onDropMove),
-        canUpload: Boolean(onDropUpload),
-        moveMime: DRAG_MIME,
-      }),
-    [onDropMove, onDropUpload],
-  );
-
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      const intent = intentOf(e);
-      if (!intent) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = intent === 'upload' ? 'copy' : 'move';
-    },
-    [intentOf],
-  );
-
-  const handleDragEnter = useCallback(
-    (e: React.DragEvent) => {
-      if (!intentOf(e)) return;
-      e.preventDefault();
-      dragCounterRef.current++;
-      setIsDragOver(true);
-    },
-    [intentOf],
-  );
-
-  const handleDragLeave = useCallback(() => {
-    dragCounterRef.current--;
-    if (dragCounterRef.current <= 0) {
-      dragCounterRef.current = 0;
-      setIsDragOver(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      const intent = intentOf(e);
-      if (!intent) return;
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current = 0;
-      setIsDragOver(false);
-
-      if (intent === 'upload') {
-        // Always notify, even for an empty transfer: this drop is stopped
-        // before the page handler, which owns the drop overlay's reset.
-        onDropUpload?.(Array.from(e.dataTransfer.files ?? []), node.path);
-        return;
-      }
-
-      const sourcePath = e.dataTransfer.getData(DRAG_MIME);
-      if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
-      onDropMove?.(sourcePath, node.path);
-    },
-    [intentOf, node.path, onDropMove, onDropUpload],
-  );
-
-  const startRenaming = useCallback(() => {
-    setRenameName(node.name);
-    setIsRenaming(true);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        renameInputRef.current?.focus();
-        renameInputRef.current?.select();
-      });
-    });
-  }, [node.name]);
-
-  const confirmRename = useCallback(() => {
-    const trimmed = renameName.trim();
-    if (trimmed && trimmed !== node.name) {
-      onRename?.(node, trimmed);
-    }
-    setIsRenaming(false);
-  }, [renameName, node, onRename]);
+  const {
+    isDragOver, isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
+    renameInputRef, handleDragStart, handleDragEnd, handleDragOver, handleDragEnter,
+    handleDragLeave, handleDrop, startRenaming, confirmRename,
+  } = useDriveRowInteractions({
+    node, onRename, onDropMove, onDropUpload, selectRenameInput: selectFolderRenameInput,
+  });
 
   const openFolderLabel = tHardcodedUi.raw(
     'featuresProjectFilesComponentsDriveGridView.line209JsxTextOpenFolder',
@@ -466,45 +385,12 @@ function FileCard({
   isCut,
 }: DriveGridItemProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [isDragging, setIsDragging] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameName, setRenameName] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
-
-  const handleDragStart = useCallback(
-    (e: React.DragEvent) => {
-      e.dataTransfer.setData(DRAG_MIME, node.path);
-      e.dataTransfer.setData('text/plain', node.name);
-      e.dataTransfer.effectAllowed = 'move';
-      setIsDragging(true);
-    },
-    [node.path, node.name],
-  );
-
-  const handleDragEnd = useCallback(() => setIsDragging(false), []);
-
-  const startRenaming = useCallback(() => {
-    setRenameName(node.name);
-    setIsRenaming(true);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = renameInputRef.current;
-        if (el) {
-          el.focus();
-          const dotIdx = el.value.lastIndexOf('.');
-          el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
-        }
-      });
-    });
-  }, [node.name]);
-
-  const confirmRename = useCallback(() => {
-    const trimmed = renameName.trim();
-    if (trimmed && trimmed !== node.name) {
-      onRename?.(node, trimmed);
-    }
-    setIsRenaming(false);
-  }, [renameName, node, onRename]);
+  const {
+    isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
+    renameInputRef, handleDragStart, handleDragEnd, startRenaming, confirmRename,
+  } = useDriveRowInteractions({
+    node, onRename, selectRenameInput: selectFileRenameInput,
+  });
 
   const copyPathLabel = tHardcodedUi.raw(
     'featuresProjectFilesComponentsDriveGridView.line420JsxTextCopyPath',
@@ -659,6 +545,7 @@ export function DriveGridView({
   isDirDownloading,
   readOnly = false,
 }: DriveGridViewProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onRename = readOnly ? undefined : rawOnRename;
   const onDelete = readOnly ? undefined : rawOnDelete;
   const onHistory = rawOnHistory;
@@ -670,18 +557,26 @@ export function DriveGridView({
     <div className="space-y-7 p-5">
       {elevatedDirs.length > 0 && (
         <section className="space-y-2">
-          <SectionHeader label="System" count={elevatedDirs.length} />
+          <SectionHeader
+            label={tI18nComplete.raw('text6725e7bbcd28')}
+            count={elevatedDirs.length}
+          />
           <div
             className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
           >
             {elevatedDirs.map((node) => {
               const meta = ELEVATED_DIR_META[node.name];
+              const description = meta
+                ? tI18nComplete.raw(
+                    node.name === '.kortix' ? 'text85231c543c71' : 'text96ef9c0ac0c9',
+                  )
+                : undefined;
               return (
                 <div
                   key={node.path}
                   onClick={() => onNavigateToDir(node)}
-                  title={meta?.description}
+                  title={description}
                   className={cn(
                     'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border transition-colors select-none',
                   )}
@@ -704,10 +599,10 @@ export function DriveGridView({
 
       {dirs.length > 0 && (
         <section className="space-y-2">
-          <SectionHeader label="Folders" count={dirs.length} />
+          <SectionHeader label={tI18nComplete.raw('textc4d6bb200f4c')} count={dirs.length} />
           <div
             className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
           >
             {dirs.map((node) => (
               <FolderCard
@@ -731,10 +626,10 @@ export function DriveGridView({
 
       {files.length > 0 && (
         <section className="space-y-2">
-          <SectionHeader label="Files" count={files.length} />
+          <SectionHeader label={tI18nComplete.raw('textabc7e9892806')} count={files.length} />
           <div
             className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
           >
             {files.map((node) => (
               <FileCard

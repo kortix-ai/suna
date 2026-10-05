@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Shared connect-account surface for chat identity binding (Slack, Teams).
  * The bot DMs the user a short-lived signed link; after a normal Kortix
@@ -21,7 +22,9 @@ import {
   DetailRow,
 } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { MFA_VERIFIED_EVENT } from '@/features/auth/mfa-step-up';
 import { useAuth } from '@/features/providers/auth-provider';
+import type { ChatIdentityPreview } from '@kortix/sdk';
 
 interface BindResult {
   workspaceName?: string | null;
@@ -33,28 +36,58 @@ type Phase = 'idle' | 'binding' | 'success' | 'error';
 
 export function ChatIdentityConnect({
   service,
+  icon: ServiceIcon,
   token,
   loginPath,
   bind,
+  preview,
   missingLinkMessage,
   disconnectNote,
 }: {
   /** Display name used in titles and success copy ("Slack", "Teams"). */
   service: string;
+  /** The service's mark, shown beside the chat account it identifies. */
+  icon?: React.ComponentType<{ className?: string }>;
   token: string;
   /** Path back to this page, used as the sign-in redirect target. */
   loginPath: string;
   bind: (token: string) => Promise<BindResult>;
+  /** Reads which chat account the token would link, before Connect. */
+  preview: (token: string) => Promise<ChatIdentityPreview>;
   missingLinkMessage: string;
   /** Small note under the actions ("disconnect anytime with …"). */
   disconnectNote: React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BindResult | null>(null);
+  // The chat account this link would link. Connect stays disabled until it is
+  // known, so nobody links an account they were not shown.
+  const [identity, setIdentity] = useState<ChatIdentityPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isLoading || !user || !token) return;
+    let cancelled = false;
+    setIdentity(null);
+    setPreviewError(null);
+    preview(token).then(
+      (value) => {
+        if (!cancelled) setIdentity(value);
+      },
+      (err: unknown) => {
+        if (!cancelled) setPreviewError(err instanceof Error ? err.message : String(err));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, user, token, preview]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -69,7 +102,10 @@ export function ChatIdentityConnect({
 
   if (!token) {
     return (
-      <AuthStatusScreen title={`Open this page from ${service}`} description={missingLinkMessage} />
+      <AuthStatusScreen
+        title={tI18nComplete('text15b2fcddefb6', { value0: service })}
+        description={missingLinkMessage}
+      />
     );
   }
 
@@ -82,6 +118,12 @@ export function ChatIdentityConnect({
     } catch (err) {
       setError((err as Error).message);
       setPhase('error');
+      // Refused because the account requires MFA: the step-up dialog opens
+      // (mfa-step-up.tsx). Once the code verifies, connect again without a
+      // second click.
+      if ((err as { code?: string }).code === 'account_mfa_required') {
+        window.addEventListener(MFA_VERIFIED_EVENT, () => void connect(), { once: true });
+      }
     }
   }
 
@@ -92,23 +134,37 @@ export function ChatIdentityConnect({
         title={`${service} connected`}
         description={
           !result?.hasAccess
-            ? `Your Kortix account is connected${workspace}. Head back to ${service} and request project access to continue.`
+            ? tI18nComplete('textf76a7d5990d1', { value0: workspace, value1: service })
             : result?.resumed
-              ? `Your Kortix account is connected${workspace}. Kortix is picking up your ${service} message now.`
-              : `Your Kortix account is connected${workspace}. Head back to ${service} and mention Kortix with a task.`
+              ? tI18nComplete('text92a089d9e543', { value0: workspace, value1: service })
+              : tI18nComplete('texta66d28de63ae', { value0: workspace, value1: service })
         }
       />
     );
   }
 
+  if (previewError) {
+    return (
+      <AuthStatusScreen
+        title={tI18nComplete('text15b2fcddefb6', { value0: service })}
+        description={previewError}
+      />
+    );
+  }
+
   const busy = phase === 'binding';
+  const chatAccount = identity
+    ? identity.chatUserName
+      ? `${identity.chatUserName} (${identity.chatUserId})`
+      : identity.chatUserId
+    : tHardcodedUi.raw('chatIdentityConnect.checking');
 
   return (
     <AuthFrame>
       <Rise>
         <StepHeader
-          title={`Connect ${service} to Kortix`}
-          description={`The Kortix bot in ${service} will run as you, with your own credentials, secrets, and connected apps instead of the installer's.`}
+          title={tI18nComplete('text1867c0243aad', { value0: service })}
+          description={tI18nComplete('text7e68dda8f4ed', { value0: service })}
         />
       </Rise>
 
@@ -116,12 +172,31 @@ export function ChatIdentityConnect({
         {phase === 'error' && error ? <ErrorStrip message={error} /> : null}
 
         <DetailPanel>
-          <DetailRow label="Account" value={user.email ?? 'You'} />
+          <DetailRow
+            label={tHardcodedUi('chatIdentityConnect.chatAccount', { service })}
+            value={
+              ServiceIcon ? (
+                <span className="inline-flex max-w-full items-center gap-2">
+                  <ServiceIcon className="size-4 shrink-0" />
+                  <span className="truncate">{chatAccount}</span>
+                </span>
+              ) : (
+                chatAccount
+              )
+            }
+          />
+          {identity?.workspaceName ? (
+            <DetailRow
+              label={tHardcodedUi('chatIdentityConnect.chatWorkspace', { service })}
+              value={identity.workspaceName}
+            />
+          ) : null}
+          <DetailRow label={tI18nComplete.raw('text7e1b0d5641f2')} value={user.email ?? 'You'} />
         </DetailPanel>
 
-        <Button size="lg" className="mt-5 w-full" onClick={connect} disabled={busy}>
+        <Button size="lg" className="mt-5 w-full" onClick={connect} disabled={busy || !identity}>
           {busy ? <Loading className="size-4 shrink-0" /> : null}
-          Connect account
+          {tI18nComplete.raw('textf7d845186faa')}
         </Button>
 
         <div className="text-muted-foreground mt-8 space-y-2 text-sm">
@@ -131,7 +206,7 @@ export function ChatIdentityConnect({
               href="/"
               className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Link>
           </p>
         </div>

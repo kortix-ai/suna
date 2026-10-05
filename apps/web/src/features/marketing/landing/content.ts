@@ -1,3 +1,7 @@
+import { AGENTS_LANDING_TRANSLATION_KEYS } from '@/i18n/agents-landing-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * Landing page copy.
  *
@@ -5,20 +9,20 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. Category = "AI Management System". Never name
+ * Voice rules: the `kortix-brand` skill. Category = "AI Operating System". Never name
  * a licence. Never claim a certification we do not hold.
  */
 
 /**
  * Hero variants. The product pitch — what Kortix IS — not a use-case pitch.
- * Anchored on the README's opening: "The open-source AI Management System".
+ * Anchored on the README's opening: "The open-source AI Operating System".
  *
  * Append `?hero=1` (or 2, 3, 4) to the URL to preview an alternative; the
  * selector is dev-only and renders nothing in production.
  */
 export const hero = {
-  title: 'The open-source AI Management System',
-  sub: 'Your agents, their skills, your company memory and every connector in one platform. Any model, your keys, self-hosted or managed cloud.',
+  title: 'The open-source AI Operating System',
+  sub: 'Your agents, their skills, your company memory and every connector in one git repo you own. Any model, your keys, self-hosted or managed cloud.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Request demo',
   trust: 'Open source · Any model, your keys · Self-host, VPC, or on-prem',
@@ -57,7 +61,7 @@ export const cta = {
  * ACCURACY GATE: SOC 2 Type I is held — its badge renders bare (no state), like
  * GDPR, which is a compliance posture the company holds. SOC 2 Type II is NOT
  * held and carries an explicit "In progress" state. Never write "compliant",
- * "certified", or "we are SOC 2" here — the `comms` skill forbids claiming a
+ * "certified", or "we are SOC 2" here — the `kortix-brand` skill forbids claiming a
  * certification we do not hold. Adding a badge without holding it, or clearing
  * a SOC 2 `state` before the report lands, is a copy bug.
  */
@@ -66,7 +70,7 @@ export const trust = {
   /**
    * ACCURACY: do NOT restore "the model never sees them". A granted runtime
    * secret is a real env value inside the session and is readable by any
-   * command the agent runs — see docs/ENV_SECRET_EXPOSURE_BASELINE.md. The
+   * command the agent runs. The
    * true, narrower claim is the one below: CONNECTOR credentials are brokered
    * server-side and never enter the machine.
    * Do NOT restore "scoped per person and group" either — retired by migration
@@ -295,7 +299,7 @@ export const useCases = {
       href: '/solutions/marketing',
       role: 'Marketing',
       tag: 'Marketing',
-      headline: 'Runs the SEO programme week after week.',
+      headline: 'Runs the SEO program week after week.',
       body: 'It tracks the queries you care about, finds the pages losing ground, rewrites them against the brief, and opens each rewrite as a change request.',
       artifact: {
         kind: 'sheet',
@@ -324,7 +328,7 @@ export const useCases = {
       artifact: {
         kind: 'sheet',
         file: 'finance/fy26-budget.xlsx',
-        columns: ['Cost centre', 'H1 plan', 'Actual', 'Variance'],
+        columns: ['Cost center', 'H1 plan', 'Actual', 'Variance'],
         widths: ['36%', '22%', '22%', '20%'],
         aligns: ['left', 'right', 'right', 'right'],
         rows: [
@@ -334,7 +338,7 @@ export const useCases = {
           { cells: ['Brand & content', '240,000', '219,400', '+20,600'], tone: 'up' },
           { cells: ['Total', '2,455,000', '2,343,200', '+111,800'], total: true },
         ],
-        footer: '9 receipts chased and attached · 1 centre over plan',
+        footer: '9 receipts chased and attached · 1 center over plan',
       },
     },
     {
@@ -365,7 +369,7 @@ export const useCases = {
       href: '/solutions/product',
       role: 'Product',
       tag: 'Product',
-      headline: 'Turns what users say into what ships.',
+      headline: 'Turns what customers say into what ships.',
       body: 'It reads every piece of feedback that came in, groups it into themes you can act on, and takes the top one all the way to a change request.',
       artifact: {
         kind: 'checks',
@@ -402,83 +406,10 @@ export const useCases = {
   ] satisfies readonly UseCase[],
 } as const;
 
-export type StackLayerId =
-  'models' | 'harness' | 'computer' | 'context' | 'control' | 'security' | 'kortix';
-
-/**
- * Every icon module `stack.layers[].logos` is allowed to name. Narrowed (not
- * `string`) so a typo'd or unmapped name fails here, at the data, instead of
- * silently rendering a blank slot in `StackSection`'s `LAYER_ICONS` lookup.
- */
-export type StackLogoKey =
-  | 'Claude'
-  | 'OpenAI'
-  | 'Gemini'
-  | 'OpenCode'
-  | 'Slack'
-  | 'Notion'
-  | 'Linear'
-  | 'Github'
-  | 'MicrosoftTeams'
-  | 'Gmail';
-
-export type StackLayer = {
-  id: StackLayerId;
-  name: string;
-  body: string;
-  /** Logo chips shown beside the layer. Keys map to `features/icon`. */
-  logos?: readonly StackLogoKey[];
-  /** Plain text chips where no logo exists. */
-  chips?: readonly string[];
-};
-
-export const stack = {
-  eyebrow: 'One platform',
-  title: 'Every layer an AI workforce needs — unified.',
-  sub: 'Most tools hand you one layer and rent you the rest. Kortix is all of them, open source, running wherever you put it.',
-  layers: [
-    {
-      id: 'models',
-      name: 'Large Language Models',
-      body: 'Run any frontier model and switch between them as they improve. Bring your own API keys, the subscription you already pay for, or your own models running on your hardware. Kortix stays model-agnostic, so every agent uses the best model for the job.',
-      logos: ['Claude', 'OpenAI', 'Gemini'],
-      chips: ['Bedrock', 'OpenRouter', 'Your own, on-prem'],
-    },
-    {
-      id: 'harness',
-      name: 'Agentic Harness',
-      body: 'The layer that turns a model into an agent: planning, tool use, and multi-step runs it actually finishes. Fully customizable and powered by OpenCode, so the way your agents think is yours to edit.',
-      logos: ['OpenCode'],
-    },
-    {
-      id: 'computer',
-      name: 'Agent Computer',
-      body: 'Every agent gets its own computer — its own isolated Linux machine, pre-set-up with your repo, tools and dependencies. It can install, run and break anything. Nothing to configure, no local machine required.',
-      chips: ['One machine per session', 'Pre-configured', 'Thousands in parallel'],
-    },
-    {
-      id: 'context',
-      name: 'Context & Connections',
-      body: 'Every tool your company runs on, connected once and shared across agents and people, so everyone works from the same picture. 3,000+ apps in a click, plus MCP, OpenAPI, GraphQL and raw HTTP.',
-      logos: ['Slack', 'Notion', 'Linear', 'Github', 'MicrosoftTeams', 'Gmail'],
-    },
-    {
-      id: 'control',
-      name: 'Product / Control Plane',
-      body: 'The control plane that ties every layer together: one place to configure, deploy, observe and operate every agent across your whole organization — from the web, Slack, mobile or the CLI.',
-      chips: ['Web', 'Slack', 'Teams', 'Mobile', 'CLI', 'API'],
-    },
-    {
-      id: 'security',
-      name: 'Security & Governance',
-      body: 'SSO, members, groups and role-based access come built in, with per-resource permissions for people and agents, encrypted secrets and a full audit trail. Self-host so the entire platform runs inside your own environment.',
-      chips: ['SSO', 'RBAC', 'Secrets vault', 'Audit trail', 'SOC 2 Type II in progress'],
-    },
-    {
-      id: 'kortix',
-      name: 'Kortix',
-      body: 'Every layer above brought together in one platform your team owns, deploys and scales end to end — from the model to the finished work. That’s Kortix.',
-      chips: ['Open source', 'Self-hostable', 'Yours down to the metal'],
-    },
-  ] satisfies readonly StackLayer[],
-} as const;
+export function getLocalizedLandingContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, heroEyebrow, cta, trust, useCases },
+    tI18nComplete,
+    AGENTS_LANDING_TRANSLATION_KEYS,
+  );
+}

@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   SSE_SILENT_MARK_MAX_AGE_MS,
   recordSseStreamEnd,
-  resetSseStallRegistryForTests,
   shouldBypassIngressCache,
   trackSseBytes,
 } from './sse-stall';
@@ -97,29 +96,14 @@ describe('trackSseBytes', () => {
   });
 });
 
-describe('preview proxy wiring', () => {
-  test('the proxy counts /global/event bytes and consumes the mark before ingress resolution', async () => {
-    // Source pins, matching the repo's guard-pinning convention — the forward
-    // path has no unit seam (it needs a live provider + sandbox). Semantics
-    // are unit-tested above; these assert the proxy actually participates.
-    const source = await Bun.file(
-      new URL('./routes/preview.ts', import.meta.url).pathname,
-    ).text();
-    expect(source).toContain("remainingPath.endsWith('/global/event')");
-    expect(source).toContain('trackSseBytes(upstream.body');
-    expect(source).toContain('recordSseStreamEnd(sseStallKey, bytes)');
-    // The bypass consumes BEFORE resolveSandboxIngress, so the re-resolve is
-    // what this very connect uses.
-    const bypass = source.indexOf('shouldBypassIngressCache(sseStallKey)');
-    const resolve = source.indexOf('await resolveSandboxIngress(record, ingressRequest)');
-    expect(bypass).toBeGreaterThan(-1);
-    expect(resolve).toBeGreaterThan(bypass);
-  });
-});
+// The proxy's participation (count /global/event bytes, consume the mark
+// before resolving ingress) is proven through forwardToSandbox in
+// __tests__/e2e-preview-proxy.test.ts.
 
+// The registry is module state by design (one per API process); every case
+// below uses its own sandbox key.
 describe('silent-stream registry', () => {
   test('a zero-byte stream marks its sandbox; the next connect consumes the mark once', () => {
-    resetSseStallRegistryForTests();
     const nowMs = 1_000_000;
     recordSseStreamEnd('sb-1:4096', 0, nowMs);
 
@@ -130,7 +114,6 @@ describe('silent-stream registry', () => {
   });
 
   test('a stream that delivered bytes clears any prior mark — the path is proven', () => {
-    resetSseStallRegistryForTests();
     const nowMs = 1_000_000;
     recordSseStreamEnd('sb-2:4096', 0, nowMs);
     recordSseStreamEnd('sb-2:4096', 512, nowMs + 500);
@@ -138,12 +121,10 @@ describe('silent-stream registry', () => {
   });
 
   test('an unmarked sandbox never bypasses', () => {
-    resetSseStallRegistryForTests();
     expect(shouldBypassIngressCache('sb-3:4096', 1_000_000)).toBe(false);
   });
 
   test('a mark expires — stale evidence must not trigger provider calls later', () => {
-    resetSseStallRegistryForTests();
     const nowMs = 1_000_000;
     recordSseStreamEnd('sb-4:4096', 0, nowMs);
     expect(

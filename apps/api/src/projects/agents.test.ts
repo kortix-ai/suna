@@ -38,7 +38,7 @@ const {
   manifestHashForAgent,
   resolveGovernedAgentGrant,
   requiredConnectorsForAgent,
-  workspaceFromLoadedAgents,
+  repositoryAccessFromLoadedAgents,
 } =
   await import('./agents');
 
@@ -63,9 +63,12 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
       name: 'kortix',
       enabled: true,
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
+      // KRTX-165: no human declared it, so it keeps the project checkout.
+      repositoryAccess: true,
     });
+    expect(repositoryAccessFromLoadedAgents('kortix', loaded)).toBe(true);
   });
 
   // GAP 1 (dev-live repro): sessions.ts resolves the launching agent through
@@ -89,7 +92,7 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
     expect(governed.grant).toEqual({
       agent: 'kortix',
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
     });
   });
@@ -256,9 +259,9 @@ describe('workspace — v2 agent workspace declaration', () => {
     const loaded = await loadProjectAgents(fakeProject());
 
     expect(loaded.errors).toEqual([]);
-    expect(workspaceFromLoadedAgents('support', loaded)).toBe('runtime');
-    expect(workspaceFromLoadedAgents(DEFAULT_AGENT_SENTINEL, loaded)).toBe('runtime');
-    expect(workspaceFromLoadedAgents('engineer', loaded)).toBe('branch');
-    expect(workspaceFromLoadedAgents('missing', loaded)).toBeNull();
+    expect(repositoryAccessFromLoadedAgents('support', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents(DEFAULT_AGENT_SENTINEL, loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(true);
   });
 });

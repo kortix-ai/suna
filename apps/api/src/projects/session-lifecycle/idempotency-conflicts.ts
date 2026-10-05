@@ -14,19 +14,6 @@ export function runtimeContextConflicts(existing: unknown, requested: unknown): 
   return canonicalRuntimeContext(existing) !== canonicalRuntimeContext(requested);
 }
 
-/**
- * Order-independent, deduped canonical form of a `require_connectors` alias list.
- * An absent field and an empty list both normalize to "" (no requirements), so a
- * benign retry never conflicts; a genuinely different required set does.
- */
-function canonicalRequireConnectors(value: unknown): string {
-  if (!Array.isArray(value)) return '';
-  const aliases = Array.from(
-    new Set(value.filter((a): a is string => typeof a === 'string' && a.length > 0)),
-  ).sort();
-  return aliases.length === 0 ? '' : JSON.stringify(aliases);
-}
-
-export function requireConnectorsConflicts(existing: unknown, requested: unknown): boolean {
-  return canonicalRequireConnectors(existing) !== canonicalRequireConnectors(requested);
+export function providerPoolConflicts(existing: unknown, requested: unknown): boolean {
+  return JSON.stringify(existing ?? null) !== JSON.stringify(requested ?? null);
 }

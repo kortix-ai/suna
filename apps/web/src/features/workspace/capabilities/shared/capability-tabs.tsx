@@ -1,19 +1,24 @@
 'use client';
 
+import { hubTarget } from '@/stores/account-panel-store';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
+import { receivedDenial } from './capability-access-gate';
 import {
   CAPABILITY_TABS,
   PRIMARY_TABS,
@@ -21,59 +26,6 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from './capability-tab-routes';
-
-/**
- * Every leaf this bar probes, in one batched request: the surface gate
- * (`project.customize.read`) plus each tab's own read leaf, taken from
- * `TAB_PREFERENCE` so the bar and the sidebar's Customize row can never
- * disagree about which action a tab costs.
- *
- * Module-level and frozen — `useProjectCans` keys its query on the action
- * list, so a fresh array per render would refetch forever.
- */
-export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
-  ...new Set([PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, ...TAB_PREFERENCE.map((t) => t.action)]),
-];
-
-/**
- * Which tabs to draw for this caller.
- *
- * Two gates, the same two the sidebar's Customize row applies, because this
- * bar IS that row's destination:
- *
- *  1. `project.customize.read` — the whole Customize surface. It moved out of
- *     the member floor role in #6522 (`apps/api/src/iam/role-perms.ts`), so a
- *     plain project member gets NO tabs here. They had none of the entry
- *     points either, but a direct URL still renders this layout, and a bar of
- *     seven tabs that every one of them 403s on is exactly the "shown but not
- *     openable" surface this gate exists to remove.
- *  2. Each tab's own read leaf — a custom role can hold the surface and still
- *     have one capability deactivated.
- *
- * Optimistic while a probe is in flight: a tab disappears only on a denial we
- * actually received, so a slow `/effective` never blanks the bar for a
- * manager mid-navigation.
- *
- * Review is additionally flag-gated on `review_center` — the same gate the
- * retired config page's Review section carried, so a flag that hides the
- * inbox hides every way in. Flags default OFF here, unlike permissions: a
- * flag is a fact the project detail already holds, not a probe in flight.
- */
-export interface CapabilityTabFlags {
-  reviewEnabled: boolean;
-}
-
-export function visibleCapabilityTabs(
-  caps: Record<string, { allowed: boolean }>,
-  flags: CapabilityTabFlags = { reviewEnabled: false },
-): readonly CapabilityTab[] {
-  if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
-  return CAPABILITY_TABS.filter((tab) => {
-    if (tab.key === 'review' && !flags.reviewEnabled) return false;
-    const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
-    return pref ? caps[pref.action]?.allowed !== false : true;
-  });
-}
 
 /**
  * "Members" — the tab-shaped row-item that launches the account-level Access
@@ -96,37 +48,56 @@ export function visibleCapabilityTabs(
  * probes `members.manage` itself for every write control it offers
  * (`components/iam/access-projects-tab.tsx`). Gating this launcher on manage
  * would hide a page a member can legitimately open.
+ *
+ * It holds its place from the first frame. While the account id or the probe
+ * is still in flight it renders as inert text of the same size, so the row
+ * never reflows when they land; it leaves only on a denial the engine
+ * returned. The probe rides the shared `PROJECT_PAGE_ACTIONS` batch, which the
+ * sidebar has usually cached already.
  */
+const MEMBERS_LINK_CLASS =
+  'text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors';
+
 function MembersLaunchLink({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data } = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     ...contract('config'),
   });
-  const canReadMembers = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
+  const canReadMembers = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_MEMBERS_READ];
   const accountId = data?.project?.account_id;
-  if (canReadMembers.allowed === false) return null;
-  if (!accountId) return null;
+  if (receivedDenial(canReadMembers)) return null;
+
+  const label = (
+    <>
+      {tI18nComplete.raw('text1044a4c056d0')}
+      <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
+    </>
+  );
+  if (!accountId) return <span className={MEMBERS_LINK_CLASS}>{label}</span>;
 
   return (
-    <Link
+    <HubLink
       /* `from=customize` is what earns the project panel a "Back to Customize"
          breadcrumb instead of the hub's own "All projects". This link is the
          ONLY way that marker gets set, so the panel can rely on there being a
-         Customize entry in history to go back to. */
-      href={`/accounts/${accountId}?tab=access-projects&project=${projectId}&from=customize`}
-      /* `prefetch={false}` disabled every prefetch path, not just the viewport
-         one: `next/dist/client/app-dir/link.js:108` derives `prefetchEnabled`
-         from it, and both `onMouseEnter` and `onTouchStart` return early when
-         it is off. The segment cache was therefore empty at click time and the
-         click ran the RSC fetch cold — the fetch that degrades into a full
-         document load on an auth bounce, a build-id skew, or a network blip. */
-      prefetch
-      className="text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors"
+         Customize entry in history to go back to.
+
+         The hub opens as a modal over this very page now, which is most of
+         what that marker was compensating for. The history entry it relies on
+         is still exactly one — the one the modal pushes — so
+         `BackToCustomizeOverlay`'s `router.back()` lands on the Customize tab
+         the person left, same as before. */
+      to={hubTarget(accountId, {
+        tab: 'access-projects',
+        project: projectId,
+        from: 'customize',
+      })}
+      className={MEMBERS_LINK_CLASS}
     >
-      Members
-      <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
-    </Link>
+      {label}
+    </HubLink>
   );
 }
 
@@ -148,13 +119,13 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  *
  * `shrink-0` keeps the bar pinned at full height inside the layout's `h-svh`
  * column; the page body below is the flex-1 scroller.
- */
-/**
- * No trailing Settings tab any more. It trailed the row on the right until
- * 2026-09-02, when `/projects/<id>/config` was retired: its sections are the
- * Settings overlay's Workspace group now, and Review took a place in the row
- * proper. `MembersLaunchLink` keeps its `ml-auto` and is the only trailing
- * element.
+ *
+ * **Static on purpose.** Every tab paints on the first frame, from
+ * `CAPABILITY_TABS`, with no permission probe. The bar used to filter on the
+ * probe, and a pending probe reads `allowed: false`, so it painted empty and
+ * the tabs flew in when `/effective` answered. Access is now decided in the
+ * content area (`CapabilityAccessGate`): a tab the caller may not read still
+ * shows, and opening it shows a no-access state instead of the page.
  */
 /**
  * The hairline between Agents and everything an agent draws on (Skills
@@ -184,9 +155,7 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // shell it starts at y=0 and shares the band with the OS window controls.
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
-  const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const tabs = visibleCapabilityTabs(caps, { reviewEnabled });
+  const tabs = useLocalizedUiCatalog(CAPABILITY_TABS);
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
@@ -202,26 +171,30 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
 
   return (
     <div
-      className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
+      className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 border-b px-2"
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
-      <Tabs value={activeKey ?? ''} className="min-w-0 flex-1">
-        <TabsList
-          type="underline"
-          underlineSize="md"
-          size="lg"
-          className="h-auto w-full justify-start gap-5 border-b-0 px-2"
-        >
-          {primary.map(renderTab)}
-          {/* The seam only earns its pixel when both groups are drawn — a
-              role that holds only Agents gets no dangling bar. */}
-          {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
-          {library.map(renderTab)}
-          <MembersLaunchLink projectId={projectId} />
-          {trailing.map(renderTab)}
-        </TabsList>
-      </Tabs>
+      <FadedScrollArea
+        orientation="horizontal"
+        fadeColor="from-background"
+        rootClassName="min-w-0 flex-1"
+      >
+        <Tabs value={activeKey ?? ''} className="w-max min-w-full">
+          <TabsList
+            type="underline"
+            underlineSize="md"
+            size="lg"
+            className="kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2"
+          >
+            {primary.map(renderTab)}
+            <GroupSeam />
+            {library.map(renderTab)}
+            <MembersLaunchLink projectId={projectId} />
+            {trailing.map(renderTab)}
+          </TabsList>
+        </Tabs>
+      </FadedScrollArea>
     </div>
   );
 }

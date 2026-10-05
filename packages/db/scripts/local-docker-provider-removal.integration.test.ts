@@ -1,9 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
-
-const dockerAvailable =
-  Bun.spawnSync(['docker', 'version'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+import { dockerAvailable } from './docker-available';
 
 const container = `kortix-retired-provider-migration-${crypto.randomUUID().slice(0, 8)}`;
 

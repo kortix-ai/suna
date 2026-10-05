@@ -6,16 +6,19 @@
 import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
+import { errorSqlstate } from '../shared/error-cause';
+import { createLastUsedTracker } from '../shared/throttled-last-used';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   generateServiceAccountSecret,
   hashSecretKey,
-  candidateSecretKeyHashes,
   isApiKeySecretConfigured,
   isServiceAccountToken,
 } from '../shared/crypto';
 
-const THROTTLE_MS = 15 * 60 * 1000;
-const lastUsedCache = new Map<string, number>();
+const updateLastUsedThrottled = createLastUsedTracker((saId) =>
+  db.update(serviceAccounts).set({ lastUsedAt: new Date() }).where(eq(serviceAccounts.serviceAccountId, saId)),
+);
 
 export type ServiceAccount = {
   serviceAccountId: string;
@@ -192,7 +195,8 @@ export async function ensureAgentServiceAccount(args: {
     if (row) return row.id;
   } catch (err) {
     // Lost a concurrent create race (unique violation) — fall through to re-read.
-    if ((err as { code?: string })?.code !== '23505') throw err;
+    // drizzle wraps the PostgresError, so read the SQLSTATE through the cause.
+    if (errorSqlstate(err) !== '23505') throw err;
   }
   const [winner] = await db
     .select({ id: serviceAccounts.serviceAccountId })
@@ -279,7 +283,7 @@ export async function validateServiceAccountToken(
     return { isValid: false, error: 'Invalid SA format — expected kortix_sa_ prefix' };
   }
   try {
-    const secretHashes = candidateSecretKeyHashes(secret);
+    const secretHashes = await candidateSecretKeyHashesAsync(secret);
     const [row] = await db
       .select({
         serviceAccountId: serviceAccounts.serviceAccountId,
@@ -297,6 +301,7 @@ export async function validateServiceAccountToken(
       return { isValid: false, error: 'Service account expired' };
     }
 
+    markTokenValidated(secret);
     updateLastUsedThrottled(row.serviceAccountId).catch(() => {});
 
     return {
@@ -307,26 +312,5 @@ export async function validateServiceAccountToken(
   } catch (err) {
     console.error('SA validation error:', err);
     return { isValid: false, error: 'Validation error' };
-  }
-}
-
-async function updateLastUsedThrottled(saId: string): Promise<void> {
-  const now = Date.now();
-  const last = lastUsedCache.get(saId) || 0;
-  if (now - last < THROTTLE_MS) return;
-  lastUsedCache.set(saId, now);
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) lastUsedCache.delete(k);
-    }
-  }
-  try {
-    await db
-      .update(serviceAccounts)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(serviceAccounts.serviceAccountId, saId));
-  } catch (err) {
-    console.warn('Failed to update service_accounts.last_used_at:', err);
   }
 }

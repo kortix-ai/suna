@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type * as GlideDataGrid from '@glideapps/glide-data-grid';
 import type {
   DataEditorRef,
@@ -20,19 +21,11 @@ import {
   CaretRightIcon as ChevronRight,
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
-  DownloadIcon as Download,
-  DotsThreeIcon as Ellipsis,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 import Papa from 'papaparse';
 
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -44,13 +37,17 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { gridSelectionToTsv } from '@/features/file-renderers/csv/csv-copy';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { useViewerSearch } from '@/features/file-renderers/shared/use-viewer-search';
+import { ViewerCopyMenu } from '@/features/file-renderers/shared/viewer-copy-menu';
+import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 
 const ZOOM_OPTIONS = [0.75, 1, 1.25, 1.5, 2] as const;
 const CSV_SEARCH_BATCH_ROW_COUNT = 500;
-const CSV_SEARCH_DEBOUNCE_MS = 300;
 
 type GlideDataGridModule = typeof GlideDataGrid;
 type CsvViewerProps = {
@@ -59,9 +56,12 @@ type CsvViewerProps = {
   fileName?: string;
   search?: boolean;
   showToolbar?: boolean;
+  /** False when the host's own toolbar already has the Download button, so this
+   *  viewer does not show a second one. */
+  showDownload?: boolean;
   /** Extra controls rendered in this toolbar, after zoom/search and before the
-   *  file menu — the same slot pdf/docx/xlsx expose, so a caller adds actions
-   *  to the ONE header this viewer already draws. */
+   *  Download button — the same slot pdf/docx/xlsx expose, so a caller adds
+   *  actions to the ONE header this viewer already draws. */
   toolbarActions?: React.ReactNode;
 };
 
@@ -237,36 +237,6 @@ function downloadTextFile(text: string, fileName: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function CsvFileActionsMenu({
-  downloadDisabled,
-  onDownload,
-}: {
-  downloadDisabled: boolean;
-  onDownload: () => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="transition-transform active:scale-[0.96]"
-          aria-label="Open CSV actions"
-        >
-          <Ellipsis className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
-          <Download className="size-4" />
-          Download
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function ToolbarTooltip({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <Tooltip>
@@ -293,13 +263,27 @@ function CsvSearchPopover({
   controlsDisabled: boolean;
   onGridSelectionChange: (selection: GridSelection) => void;
 }) {
-  const [searchDraft, setSearchDraft] = React.useState('');
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [searchResults, setSearchResults] = React.useState<CsvSearchResult[]>([]);
-  const [activeResultIndex, setActiveResultIndex] = React.useState(0);
-  const [isSearching, setIsSearching] = React.useState(false);
-  const searchRequestIdRef = React.useRef(0);
-  const appliedResultKeyRef = React.useRef('');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const findResults = React.useCallback(
+    (query: string) => findCsvSearchResults(headers, rows, query),
+    [headers, rows],
+  );
+  const clearSelection = React.useCallback(
+    () => onGridSelectionChange(emptyGridSelection),
+    [onGridSelectionChange],
+  );
+  const {
+    searchDraft,
+    setSearchDraft,
+    searchQuery,
+    searchResults,
+    activeResultIndex,
+    isSearching,
+    appliedResultKeyRef,
+    runSearch,
+    clearSearch,
+    goToRelativeResult,
+  } = useViewerSearch(findResults, dataIdentity, clearSelection, clearSelection);
   const activeResult = searchResults[activeResultIndex] ?? null;
   const activeResultKey = activeResult ? `${activeResult.row}:${activeResult.col}` : '';
   const hasActiveQuery = Boolean(searchQuery.trim());
@@ -310,88 +294,6 @@ function CsvSearchPopover({
       : searchResults.length
         ? `${activeResultIndex + 1} / ${searchResults.length}`
         : 'No results';
-
-  const runSearch = React.useCallback(
-    (rawQuery: string) => {
-      const nextQuery = rawQuery.trim();
-      const requestId = searchRequestIdRef.current + 1;
-      searchRequestIdRef.current = requestId;
-      appliedResultKeyRef.current = '';
-      setSearchQuery(nextQuery);
-      setActiveResultIndex(0);
-
-      if (!nextQuery) {
-        setSearchResults([]);
-        setIsSearching(false);
-        return;
-      }
-
-      setIsSearching(true);
-      void findCsvSearchResults(headers, rows, nextQuery)
-        .then((nextResults) => {
-          if (searchRequestIdRef.current !== requestId) return;
-          setSearchResults(nextResults);
-        })
-        .catch(() => {
-          if (searchRequestIdRef.current !== requestId) return;
-          setSearchResults([]);
-        })
-        .finally(() => {
-          if (searchRequestIdRef.current !== requestId) return;
-          setIsSearching(false);
-        });
-    },
-    [headers, rows],
-  );
-
-  React.useEffect(() => {
-    const trimmedDraft = searchDraft.trim();
-
-    if (!trimmedDraft) {
-      runSearch('');
-      return;
-    }
-
-    setIsSearching(true);
-    const timeoutId = window.setTimeout(() => {
-      runSearch(searchDraft);
-    }, CSV_SEARCH_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [runSearch, searchDraft]);
-
-  const clearSearch = React.useCallback(() => {
-    searchRequestIdRef.current += 1;
-    setSearchDraft('');
-    setSearchQuery('');
-    setSearchResults([]);
-    setActiveResultIndex(0);
-    setIsSearching(false);
-    appliedResultKeyRef.current = '';
-    onGridSelectionChange(emptyGridSelection);
-  }, [onGridSelectionChange]);
-
-  const goToRelativeResult = React.useCallback(
-    (direction: 1 | -1) => {
-      if (!searchResults.length) return;
-
-      setActiveResultIndex((currentIndex) => {
-        return (currentIndex + direction + searchResults.length) % searchResults.length;
-      });
-    },
-    [searchResults.length],
-  );
-
-  React.useEffect(() => {
-    searchRequestIdRef.current += 1;
-    setSearchDraft('');
-    setSearchQuery('');
-    setSearchResults([]);
-    setActiveResultIndex(0);
-    setIsSearching(false);
-    appliedResultKeyRef.current = '';
-    onGridSelectionChange(emptyGridSelection);
-  }, [dataIdentity, onGridSelectionChange]);
 
   React.useEffect(() => {
     if (!activeResult) return;
@@ -410,18 +312,18 @@ function CsvSearchPopover({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [activeResult, activeResultKey, gridRef, onGridSelectionChange]);
+  }, [activeResult, activeResultKey, appliedResultKeyRef, gridRef, onGridSelectionChange]);
 
   return (
     <Popover>
-      <ToolbarTooltip label="Search CSV">
+      <ToolbarTooltip label={tI18nComplete.raw('textca3ff6018449')}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             className="transition-transform active:scale-[0.96]"
-            aria-label="Search CSV"
+            aria-label={tI18nComplete.raw('textca3ff6018449')}
             disabled={controlsDisabled}
           >
             <Search className="size-4" />
@@ -431,7 +333,7 @@ function CsvSearchPopover({
       <PopoverContent align="end" className="w-72">
         <div className="space-y-3">
           <Input
-            placeholder="Search CSV"
+            placeholder={tI18nComplete.raw('textca3ff6018449')}
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -471,7 +373,7 @@ function CsvSearchPopover({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Previous result"
+                aria-label={tI18nComplete.raw('text965bc32426d7')}
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
               >
@@ -482,7 +384,7 @@ function CsvSearchPopover({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Next result"
+                aria-label={tI18nComplete.raw('textbf56a193cb9f')}
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
               >
@@ -492,7 +394,7 @@ function CsvSearchPopover({
           </div>
           <div className="flex justify-end">
             <Button type="button" variant="outline" size="sm" onClick={clearSearch}>
-              Clear
+              {tI18nComplete.raw('text83b12c2216ef')}
             </Button>
           </div>
         </div>
@@ -535,8 +437,10 @@ export function CsvViewer({
   fileName,
   search = false,
   showToolbar = true,
+  showDownload = true,
   toolbarActions,
 }: CsvViewerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const gridRef = React.useRef<DataEditorRef | null>(null);
   const isDark = useIsDarkTheme();
   const [glide, setGlide] = React.useState<GlideDataGridModule | null>(null);
@@ -589,6 +493,28 @@ export function CsvViewer({
   }, []);
 
   const columnCount = Math.max(1, parsed.headers.length);
+  const gridContainerRef = React.useRef<HTMLDivElement>(null);
+  const selectionText = React.useCallback(
+    () => gridSelectionToTsv(gridSelection, parsed.rows, columnCount),
+    [columnCount, gridSelection, parsed.rows],
+  );
+
+  // Glide copies from a window listener and also writes an HTML table. This
+  // capture listener runs first, writes plain tab-separated text only, and
+  // stops Glide's. Focus in the cell overlay (outside this box) copies natively.
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (!gridContainerRef.current?.contains(document.activeElement)) return;
+      const text = selectionText();
+      if (text === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.clipboardData) event.clipboardData.setData('text/plain', text);
+      else void copyToClipboard(text);
+    };
+    document.addEventListener('copy', handleCopy, true);
+    return () => document.removeEventListener('copy', handleCopy, true);
+  }, [selectionText]);
   const scale = React.useCallback((value: number) => Math.round(value * zoom), [zoom]);
   const searchDisabled = Boolean(parsed.error) || parsed.rows.length === 0;
 
@@ -671,12 +597,12 @@ export function CsvViewer({
           <TooltipProvider>
             <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
               <div className="flex flex-none items-center gap-1">
-                <ToolbarTooltip label="Zoom out">
+                <ToolbarTooltip label={tI18nComplete.raw('textbc7b631a689b')}>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="transition-transform active:scale-[0.96]"
-                    aria-label="Zoom out"
+                    aria-label={tI18nComplete.raw('textbc7b631a689b')}
                     disabled={zoom <= ZOOM_OPTIONS[0]}
                     onClick={() => stepZoom(-1)}
                   >
@@ -690,7 +616,7 @@ export function CsvViewer({
                   <SelectTrigger
                     size="sm"
                     className="w-[84px] min-w-[84px] tabular-nums"
-                    aria-label="Zoom level"
+                    aria-label={tI18nComplete.raw('text3926ced4e6c4')}
                   >
                     <SelectValue>{Math.round(zoom * 100)}%</SelectValue>
                   </SelectTrigger>
@@ -702,12 +628,12 @@ export function CsvViewer({
                     ))}
                   </SelectContent>
                 </Select>
-                <ToolbarTooltip label="Zoom in">
+                <ToolbarTooltip label={tI18nComplete.raw('text0e47f09a748f')}>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="transition-transform active:scale-[0.96]"
-                    aria-label="Zoom in"
+                    aria-label={tI18nComplete.raw('text0e47f09a748f')}
                     disabled={zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
                     onClick={() => stepZoom(1)}
                   >
@@ -734,13 +660,18 @@ export function CsvViewer({
                   />
                 </>
               ) : null}
-              <Separator orientation="vertical" className="mx-1 h-4 self-center" />
-              <CsvFileActionsMenu
-                downloadDisabled={
-                  Boolean(parsed.error) || (parsed.headers.length === 0 && parsed.rows.length === 0)
-                }
-                onDownload={handleDownload}
-              />
+              {showDownload ? (
+                <>
+                  <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                  <ViewerDownloadButton
+                    disabled={
+                      Boolean(parsed.error) ||
+                      (parsed.headers.length === 0 && parsed.rows.length === 0)
+                    }
+                    onDownload={handleDownload}
+                  />
+                </>
+              ) : null}
             </div>
           </TooltipProvider>
         </div>
@@ -753,9 +684,10 @@ export function CsvViewer({
         ) : parsed.rows.length === 0 ? (
           <div className="bg-muted/30 grid h-full place-items-center p-4">
             <div className="bg-background max-w-md rounded-lg border p-4 text-center text-sm shadow-xs">
-              <p className="font-medium">No data to preview</p>
+              <p className="font-medium">{tI18nComplete.raw('textcf5bca2b2046')}</p>
               <p className="text-muted-foreground mt-1">
-                Pass delimited text with the <code>data</code> prop.
+                {tI18nComplete.raw('text16e6c9d96191')} <code>data</code>{' '}
+                {tI18nComplete.raw('text4089e67b1111')}
               </p>
             </div>
           </div>
@@ -764,27 +696,36 @@ export function CsvViewer({
             <Spinner className="size-4" />
           </div>
         ) : (
-          <glide.DataEditor
-            ref={search ? gridRef : undefined}
-            key={zoom}
-            columns={columns}
-            rows={parsed.rows.length}
-            getCellContent={getCellContent}
-            rowMarkers="number"
-            rowSelectionMode="multi"
-            gridSelection={search ? gridSelection : undefined}
-            onGridSelectionChange={search ? handleGridSelectionChange : undefined}
-            scrollToActiveCell={search}
-            keybindings={{ search: true }}
-            smoothScrollX
-            smoothScrollY
-            getCellsForSelection
-            width="100%"
-            height="100%"
-            theme={theme}
-            rowHeight={scale(34)}
-            headerHeight={scale(36)}
-          />
+          <ViewerCopyMenu
+            onCopy={() => {
+              const text = selectionText();
+              if (text !== null) void copyToClipboard(text);
+            }}
+          >
+            <div ref={gridContainerRef} className="h-full">
+              <glide.DataEditor
+                ref={search ? gridRef : undefined}
+                key={zoom}
+                columns={columns}
+                rows={parsed.rows.length}
+                getCellContent={getCellContent}
+                rowMarkers="number"
+                rowSelectionMode="multi"
+                gridSelection={gridSelection}
+                onGridSelectionChange={handleGridSelectionChange}
+                scrollToActiveCell={search}
+                keybindings={{ search: true }}
+                smoothScrollX
+                smoothScrollY
+                getCellsForSelection
+                width="100%"
+                height="100%"
+                theme={theme}
+                rowHeight={scale(34)}
+                headerHeight={scale(36)}
+              />
+            </div>
+          </ViewerCopyMenu>
         )}
       </div>
     </div>

@@ -1,19 +1,16 @@
-import { Button } from '@/components/ui/button';
-import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
-import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
+import { errorToast, warningToast } from '@/components/ui/toast';
+import type { UiTranslator } from '@/i18n/translator';
+import {
+  isGitMirrorUnavailableNoiseMessage,
+  isServerDeadlineNoiseMessage,
+} from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
-import {
-  buildAccountSettingsHref,
-  useAccountSettingsModalStore,
-} from '@/stores/account-settings-modal-store';
+import { openAccountSettings } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import type { BillingState } from '@kortix/sdk';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 import * as Sentry from '@sentry/nextjs';
-import Link from 'next/link';
-
-const MANAGE_PLAN_LABEL = 'Manage plan';
 
 export interface ApiError extends Error {
   status?: number;
@@ -155,7 +152,11 @@ const formatErrorMessage = (message: string, context?: ErrorContext): string => 
   return `${prefix}: ${message}`;
 };
 
-export const handleApiError = (error: any, context?: ErrorContext): void => {
+export const handleApiError = (
+  error: any,
+  context: ErrorContext | undefined,
+  tI18nComplete: UiTranslator,
+): void => {
   const status = error?.status || error?.response?.status;
   // Expected 4xx (auth, validation, forbidden, not-found, etc.) should not
   // light up the Next.js dev overlay — they're user-facing business outcomes
@@ -214,7 +215,22 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // `RequestDeadlineHTTPException` emits is excluded.
   const errorMessage = typeof error?.message === 'string' ? error.message : '';
   const isServerDeadline503 = status === 503 && isServerDeadlineNoiseMessage(errorMessage);
-  if ((status >= 500 && !isServerDeadline503) || error?.code === 'NETWORK_ERROR') {
+  // The API's transient git-mirror 503 (`code: 'git_mirror_unavailable'`,
+  // message `git mirror is temporarily unavailable`) is the SAME expected,
+  // retryable degradation class as the server deadline above: the API already
+  // classifies the cause out of its OWN Sentry and answers a clean 503 +
+  // Retry-After; a session start that cold-clones the project mirror simply
+  // got a transient GitHub-edge/credential blip. Capturing it here pages the
+  // FRONTEND Sentry (app 2346967) for noise — Better Stack pattern `b4d05df2…`.
+  // The telemetry-side backstop for leak paths lives in browser-error-noise.ts
+  // (`isGitMirrorUnavailableNoiseMessage`); a genuine 503 with another
+  // message/code still reports.
+  const isGitMirrorUnavailable503 =
+    status === 503 && isGitMirrorUnavailableNoiseMessage(errorMessage);
+  if (
+    (status >= 500 && !isServerDeadline503 && !isGitMirrorUnavailable503) ||
+    error?.code === 'NETWORK_ERROR'
+  ) {
     Sentry.captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {
@@ -285,34 +301,6 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     return;
   }
 
-  // Concurrent session limit — single clean toast with usage + an Open Settings
-  // action. The dedup key (status, message) suppresses any duplicate the call
-  // site might also emit with the same body.
-  if (v2Status === 429 && v2Code === 'concurrent_session_limit') {
-    const limit = typeof v2Detail?.limit === 'number' ? v2Detail.limit : undefined;
-    const active =
-      typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
-    const title =
-      limit !== undefined
-        ? `You've reached your plan's concurrent-session limit (${active ?? limit}/${limit})`
-        : 'Concurrent-session limit reached';
-    if (!shouldSuppressDuplicate(v2Status, title)) {
-      warningToast(title, {
-        description:
-          'Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.',
-        duration: 6000,
-        button: (
-          <Button size="sm" asChild>
-            <Link href={buildAccountSettingsHref({ tab: 'billing' })} prefetch>
-              {MANAGE_PLAN_LABEL}
-            </Link>
-          </Button>
-        ),
-      });
-    }
-    return;
-  }
-
   if (!shouldShowError(error, context)) {
     return;
   }
@@ -329,7 +317,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     const isCreditsExhausted = errorUI.alertTitle === 'You ran out of credits';
 
     if (isCreditsExhausted) {
-      useAccountSettingsModalStore.getState().openAccountSettings({
+      openAccountSettings({
         tab: 'billing',
         highlight: 'credits',
       });
@@ -355,17 +343,17 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
 
   if (error?.status >= 500) {
     errorToast(formattedMessage, {
-      description: 'Our team has been notified and is working on a fix.',
+      description: tI18nComplete.raw('text75aec78d2ee8'),
       duration: 6000,
     });
   } else if (error?.status === 403) {
     errorToast(formattedMessage, {
-      description: 'Contact support if you believe this is an error.',
+      description: tI18nComplete.raw('textb3ffc83852a3'),
       duration: 6000,
     });
   } else if (error?.status === 429) {
     warningToast(formattedMessage, {
-      description: 'Please wait a moment before trying again.',
+      description: tI18nComplete.raw('textdbe0414753c1'),
       duration: 5000,
     });
   } else {
@@ -373,53 +361,6 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
       duration: 5000,
     });
   }
-};
-
-export const handleNetworkError = (error: any, context?: ErrorContext): void => {
-  const isNetworkError =
-    error?.message?.includes('fetch') ||
-    error?.message?.includes('network') ||
-    error?.message?.includes('connection') ||
-    error?.code === 'NETWORK_ERROR' ||
-    !navigator.onLine;
-
-  if (isNetworkError) {
-    // Report network errors to Sentry — these indicate connectivity issues
-    Sentry.captureException(
-      error instanceof Error ? error : new Error(error?.message || 'Network error'),
-      {
-        tags: { errorType: 'network_error', operation: context?.operation },
-        level: 'warning',
-      },
-    );
-    errorToast('Connection error', {
-      description: 'Please check your internet connection and try again.',
-      duration: 6000,
-    });
-  } else {
-    handleApiError(error, context);
-  }
-};
-
-export const handleApiSuccess = (message: string, description?: string): void => {
-  successToast(message, {
-    description,
-    duration: 3000,
-  });
-};
-
-export const handleApiWarning = (message: string, description?: string): void => {
-  warningToast(message, {
-    description,
-    duration: 4000,
-  });
-};
-
-export const handleApiInfo = (message: string, description?: string): void => {
-  infoToast(message, {
-    description,
-    duration: 3000,
-  });
 };
 
 /**
@@ -432,11 +373,11 @@ export { isBillingError };
  * Returns true if error was handled, false otherwise.
  * Use this in mutation onError callbacks.
  */
-export const handleBillingError = (error: any): boolean => {
+export const handleBillingError = (error: any, tI18nComplete: UiTranslator): boolean => {
   if (!isBillingError(error)) {
     return false;
   }
 
-  handleApiError(error);
+  handleApiError(error, undefined, tI18nComplete);
   return true;
 };

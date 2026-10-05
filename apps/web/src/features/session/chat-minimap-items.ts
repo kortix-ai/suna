@@ -1,3 +1,4 @@
+import { parseChannelMessage } from '@/features/session/turn/channel-message';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { isFilePart, isTextPart, type FilePart, type TextPart, type Turn } from '@/ui';
@@ -7,8 +8,8 @@ import {
   parseFileMentionReferences,
   parseFileReferences,
   parseProjectReferences,
-  parseReplyContext,
   parseSessionReferences,
+  stripReplyContexts,
   stripSystemPtyText,
 } from './message-parsing';
 
@@ -146,11 +147,12 @@ export function buildSegments(text: string, mentions: Mention[]): MinimapSegment
   for (const mention of byLongestName) {
     if (!mention.name) continue;
     const needle = `@${mention.name}`;
-    for (let from = 0; ; ) {
+    for (let from = 0; ;) {
       const start = text.indexOf(needle, from);
       if (start === -1) break;
       const end = start + needle.length;
-      if (!overlaps(start, end)) ranges.push({ start, end, name: mention.name, kind: mention.kind });
+      if (!overlaps(start, end))
+        ranges.push({ start, end, name: mention.name, kind: mention.kind });
       from = end;
     }
   }
@@ -212,8 +214,14 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
   ) as TextPart[];
   const fileParts = parts.filter(isFilePart) as FilePart[];
 
-  const raw = stripSystemPtyText(textParts.map((p) => p.text ?? '').join('\n'));
-  const { cleanText: afterReply } = parseReplyContext(raw);
+  const prompt = stripSystemPtyText(textParts.map((p) => p.text ?? '').join('\n'));
+  // A Slack, Teams or Telegram turn is a scaffold around a person's words: the
+  // preview is the sender and the words, as the message card shows them.
+  const channel = parseChannelMessage(prompt);
+  const raw = channel
+    ? [channel.userName, channel.messageText].filter(Boolean).join(': ')
+    : prompt;
+  const afterReply = stripReplyContexts(raw);
   const { cleanText: afterFiles, files: uploads } = parseFileReferences(afterReply);
   const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
   const { cleanText: afterFileMentions, files: fileMentions } =

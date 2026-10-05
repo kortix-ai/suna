@@ -13,8 +13,8 @@
  * for the same call.
  */
 
-import type { ToolPart } from '@/ui';
 import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
+import type { ToolPart } from '@/ui';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
@@ -26,13 +26,14 @@ import {
   type WebSearchSource,
 } from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
-import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
+import { extractReadableHtml } from '@kortix/shared';
 import {
   contextLabelForTool,
   createArtifactKind,
   familyForTool,
   humanizeToolName,
 } from './narration';
+import { toolKind } from '@kortix/sdk';
 
 interface OutputItemBase {
   callID: string;
@@ -209,10 +210,7 @@ function statusOf(part: ToolPart): string | undefined {
   return (part.state as { status?: string } | undefined)?.status;
 }
 
-export function deriveOutputs(
-  parts: ToolPart[],
-  opts?: { latestRun?: Set<string> },
-): OutputItem[] {
+export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string> }): OutputItem[] {
   const out: OutputItem[] = [];
   // key → index into `out`. Later occurrences of a key REPLACE the row in
   // place (last-write-wins): a file rewritten in run 5 is the run-5 file, and
@@ -253,7 +251,7 @@ export function deriveOutputs(
     if (family === 'edit') {
       // apply_patch has no name in its input at all — its per-file paths
       // live only in output metadata, and one call can produce several files.
-      if (normalizeName(part.tool) === 'apply_patch') {
+      if (toolKind(part.tool) === 'apply_patch') {
         for (const item of applyPatchOutputs(part)) push(item);
         continue;
       }
@@ -328,7 +326,8 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
   if (!path) return null;
 
   const name = basename(path) || path;
-  const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : undefined;
+  const title =
+    typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : undefined;
   const description =
     typeof payload.description === 'string' && payload.description.trim()
       ? payload.description.trim()
@@ -413,9 +412,7 @@ function appOutput(
 ): AppOutputItem {
   const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
   const description =
-    typeof rawDescription === 'string' && rawDescription.trim()
-      ? rawDescription.trim()
-      : undefined;
+    typeof rawDescription === 'string' && rawDescription.trim() ? rawDescription.trim() : undefined;
 
   let fallback = url;
   try {
@@ -476,10 +473,9 @@ function titleFromFetchOutput(part: ToolPart): string | undefined {
  * - A search with no parseable result falls back to its query text.
  */
 function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
-  const t = normalizeName(part.tool);
   const input = (part.state?.input ?? {}) as Record<string, unknown>;
 
-  if (t === 'web_search' || t === 'websearch' || t === 'image_search') {
+  if (toolKind(part.tool) === 'web_search') {
     const results: WebSearchSource[] = [];
     for (const parsed of parseWebSearchOutput(rawOutputOf(part))) {
       for (const source of parsed.sources) {
@@ -525,13 +521,16 @@ export function deriveContext(parts: ToolPart[]): {
     const family = familyForTool(part.tool);
     if (family === 'hidden') continue; // context-engine bookkeeping — never shown
 
-    const tool = normalizeName(part.tool);
-
-    if (tool === 'read') {
+    if (toolKind(part.tool) === 'read') {
       const path = filePathOf(part) ?? getToolPrimaryArg(part);
       if (!path || seenFiles.has(path)) continue;
       seenFiles.add(path);
-      files.push({ callID: part.callID, label: getToolPrimaryArg(part) || path, kind: 'file', path });
+      files.push({
+        callID: part.callID,
+        label: getToolPrimaryArg(part) || path,
+        kind: 'file',
+        path,
+      });
       continue;
     }
 

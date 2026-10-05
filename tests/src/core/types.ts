@@ -45,6 +45,7 @@ export interface CreatedProject {
   id: string;
   name: string;
   slug?: string;
+  accountId?: string;
 }
 
 export interface CreatedSession {
@@ -65,6 +66,9 @@ export interface TeamFixture {
     name?: string;
     seed?: boolean;
     managedGit?: boolean;
+    allowAllSecrets?: boolean;
+    /** Seeded manifest grants the default agent every connector. */
+    allowAllConnectors?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
 }
@@ -83,6 +87,9 @@ export interface Fixtures {
     accountId?: string;
     seed?: boolean;
     managedGit?: boolean;
+    allowAllSecrets?: boolean;
+    /** Seeded manifest grants the default agent every connector. */
+    allowAllConnectors?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
   /**
@@ -94,13 +101,15 @@ export interface Fixtures {
   sharedProject(): Promise<CreatedProject>;
   /**
    * A single seeded project for flows that create isolated sessions but do not
-   * mutate the project's base branch or project-wide Git configuration.
+   * mutate the project's base branch or project-wide Git configuration. One per
+   * harness: the `pi` project has the `pi_harness` feature flag on, so every
+   * session in it boots pi.
    */
-  sharedSeededProject(): Promise<CreatedProject>;
+  sharedSeededProject(harness?: Harness): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
   session(
     project: CreatedProject,
-    opts?: { prompt?: string; opencodeModel?: string },
+    opts?: { prompt?: string; opencodeModel?: string; agentName?: string },
   ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
@@ -146,6 +155,11 @@ export interface FlowMeta {
   /** Registers as a tracked skip (yellow in the report) instead of running. */
   todo?: string;
   /**
+   * The spec id this flow implements when it is a harness variant of another
+   * flow (`harnessFlow`): `RUN-1-pi` implements `RUN-1`. Absent: the flow id.
+   */
+  specId?: string;
+  /**
    * Quarantined: registered and reported, never run — the API-flow mirror of
    * the browser lane's `@quarantine` tag. Only for a flow whose failure is a
    * NAMED pre-existing defect that cannot be fixed from this tree (edge infra,
@@ -171,3 +185,6 @@ export interface FlowContext {
 }
 
 export type FlowFn = (ctx: FlowContext) => Promise<void>;
+
+/** The session runtime a flow boots. `KORTIX_HARNESS` in kortixd. */
+export type Harness = 'opencode' | 'pi';

@@ -6,8 +6,11 @@ import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@phosphor-ic
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import * as React from 'react';
 import {
+  MENU_INDICATOR,
+  MENU_INDICATOR_ICON,
+  MENU_INSET,
+  MENU_INSET_END,
   MENU_LABEL,
-  MENU_PANEL,
   MENU_PANEL_STATIC,
   MENU_SEPARATOR,
   MENU_SHORTCUT,
@@ -25,20 +28,20 @@ import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
  * A dropdown is anchored to a trigger, so its panel is at least as wide as a
  * typical trigger. A right-click menu has no trigger width to match and floors
  * itself lower.
- */
-const DROPDOWN_PANEL = cn(MENU_PANEL, 'min-w-[14rem] overflow-hidden');
-
-/**
- * The submenu panel: the same surface, with the enter/exit animation removed.
  *
- * A submenu is the one panel that opens INTO the pointer's path — you are
- * already moving right, toward the first row, when it mounts. `animate-in`
- * (fade + `zoom-in-95` + a 2-unit slide, ~150ms) spent that whole window
- * moving the rows away from the cursor, which reads as the menu lagging behind
- * the hand. The root menu keeps its animation: it opens where you clicked, not
- * where you are heading.
+ * No enter/exit animation on the root panel or the submenu. The root panel
+ * used to `animate-in` (fade + `zoom-in-95` + a 2-unit slide, ~150ms). Radix
+ * Presence also keeps the node mounted until `animate-out` fires
+ * `animationend`, so every open AND every close waited on the animation. People
+ * open these menus tens of times a day; the project sidebar's workspace
+ * switcher is the worst case. The motion read as the menu lagging behind the
+ * click, and it dropped frames under load. The panel now paints on the frame it
+ * mounts and unmounts on the frame it closes.
+ *
+ * The submenu lost its animation earlier for a second reason: it opens INTO the
+ * pointer's path, so the slide moved its rows away from the cursor.
  */
-const DROPDOWN_SUB_PANEL = cn(MENU_PANEL_STATIC, 'min-w-[14rem] overflow-hidden');
+const DROPDOWN_PANEL = cn(MENU_PANEL_STATIC, 'min-w-[14rem] overflow-hidden');
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
@@ -61,7 +64,9 @@ const DropdownMenuGroup = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Group>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Group>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Group ref={ref} className={cn('p-1', className)} {...props} />
+  // No padding of its own: the panel's `p-1` is the only inset, so a grouped
+  // row is exactly as wide as an ungrouped one.
+  <DropdownMenuPrimitive.Group ref={ref} className={className} {...props} />
 ));
 DropdownMenuGroup.displayName = DropdownMenuPrimitive.Group.displayName;
 
@@ -88,7 +93,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
 >(({ className, inset, size = 'sm', children, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
-    className={cn('group', menuRow(size, 'default'), inset && 'pl-8', className)}
+    className={cn('group', menuRow(size, 'default'), inset && MENU_INSET, className)}
     {...props}
   >
     {children}
@@ -107,7 +112,7 @@ const DropdownMenuSubContent = React.forwardRef<
   // places itself (a submenu always opens on the inline edge of its trigger)
   // and does not take either prop, so they are destructured only to keep them
   // off the DOM node. They previously selected a `slide-in-from-*` class; that
-  // was the enter animation, which this panel no longer has.
+  // was the enter animation, which no dropdown panel has any more.
 >(({ className, side: _side, align: _align, sideOffset = 5, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
@@ -115,7 +120,7 @@ const DropdownMenuSubContent = React.forwardRef<
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       sideOffset={sideOffset}
-      className={cn(DROPDOWN_SUB_PANEL, className)}
+      className={cn(DROPDOWN_PANEL, className)}
       style={{ zIndex: floatingZ(depth), ...style }}
       {...props}
     />
@@ -153,7 +158,7 @@ const DropdownMenuItem = React.forwardRef<
 >(({ className, inset, variant = 'default', size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
-    className={cn(menuRow(size, variant), inset && 'pl-8', className)}
+    className={cn(menuRow(size, variant), inset && MENU_INSET, className)}
     {...props}
   />
 ));
@@ -168,21 +173,16 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 >(({ className, children, checked, reverse, size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    // The check sits in the row's own padding rather than pushing the label
-    // across, so a checkbox row's text starts on the same line as a plain
-    // item's — `pl-8` on top of `px-2.5` would indent it past every neighbour.
-    className={cn(menuRow(size, 'default'), reverse ? 'pr-7' : 'pl-7', 'relative', className)}
+    // The check sits in the row's leading slot (absolute, so an unchecked row
+    // keeps the same label x as a checked one) and the label starts at
+    // `MENU_INSET` — the same x as an `inset` item or an icon row's label.
+    className={cn(menuRow(size, 'default'), reverse ? MENU_INSET_END : MENU_INSET, className)}
     checked={checked}
     {...props}
   >
-    <span
-      className={cn(
-        'absolute flex size-3.5 items-center justify-center',
-        reverse ? 'right-2.5' : 'left-2.5',
-      )}
-    >
+    <span className={cn(MENU_INDICATOR, 'absolute', reverse ? 'right-2' : 'left-2')}>
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="text-muted-foreground size-3.5" />
+        <Check className={MENU_INDICATOR_ICON} />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -229,9 +229,9 @@ const DropdownMenuRadioItem = React.forwardRef<
    * hollow ring. No consumer had ever rendered a RadioItem, so nobody saw it.
    */
   const indicator = (
-    <span className="flex size-3.5 shrink-0 items-center justify-center">
+    <span className={MENU_INDICATOR}>
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="text-muted-foreground size-3.5" />
+        <Check className={MENU_INDICATOR_ICON} />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
   );
@@ -266,7 +266,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn(MENU_LABEL, inset && 'pl-8', className)}
+    className={cn(MENU_LABEL, inset && MENU_INSET, className)}
     {...props}
   />
 ));

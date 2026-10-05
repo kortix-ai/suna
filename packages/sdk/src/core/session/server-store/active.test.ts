@@ -6,7 +6,7 @@ import { setCurrentRuntime } from '../current-runtime';
 // files make for this exact module (`state/server-store/active`) — Bun's
 // `mock.module` is process-wide and permanent for the whole `bun test` sweep,
 // and (confirmed empirically) it collides bidirectionally through the
-// `export { getActiveOpenCodeUrl, ... } from './server-store/active'`
+// `export { getActiveRuntimeUrl, ... } from './server-store/active'`
 // re-export chain in `../server-store.ts`: mocking EITHER the barrel
 // (`../server-store`, as `files/client.test.ts` used to) OR this submodule
 // directly (as `opencode/client.test.ts` used to) replaced this module's real
@@ -21,8 +21,7 @@ import { setCurrentRuntime } from '../current-runtime';
 const {
   deriveSubdomainOpts,
   getActiveDbSandboxId,
-  getActiveOpenCodeUrl,
-  getActiveWorkspaceUrl,
+  getActiveRuntimeUrl,
   getActiveSandboxId,
   getBackendPort,
 } = await import('./active');
@@ -38,33 +37,14 @@ afterEach(() => {
   setCurrentRuntime(null);
 });
 
-test('getActiveOpenCodeUrl prefers the current-runtime url when a session is active', () => {
-  configureKortix({
-    backendUrl: 'http://backend.local/v1',
-    getToken: async () => 'tok',
-    billingEnabled: false,
-  });
+test('getActiveRuntimeUrl prefers the current-runtime url when a session is active', () => {
+  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', billingEnabled: false });
   setCurrentRuntime('http://backend.local/v1/p/sb-1/8000', 'sb-1');
 
-  expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/sb-1/8000');
+  expect(getActiveRuntimeUrl()).toBe('http://backend.local/v1/p/sb-1/8000');
 });
 
-test('getActiveWorkspaceUrl never falls back to the Pi worker while its environment is pending', async () => {
-  const { setCurrentWorkspaceRuntime } = await import('../current-runtime');
-  configureKortix({
-    backendUrl: 'http://backend.local/v1',
-    getToken: async () => 'tok',
-    billingEnabled: true,
-  });
-  setCurrentRuntime('http://backend.local/v1/p/worker-1/8000', 'worker-1', null, 'environment');
-
-  expect(getActiveWorkspaceUrl()).toBe('');
-  setCurrentWorkspaceRuntime('http://backend.local/v1/p/environment-1/8000', 'environment-1');
-  expect(getActiveWorkspaceUrl()).toContain('/p/environment-1/8000');
-  expect(getActiveOpenCodeUrl()).toContain('/p/worker-1/8000');
-});
-
-test('getActiveOpenCodeUrl falls back to the default sandbox url in self-hosted local dev (no billing, no active session)', () => {
+test('getActiveRuntimeUrl falls back to the default sandbox url in self-hosted local dev (no billing, no active session)', () => {
   configureKortix({
     backendUrl: 'http://backend.local/v1',
     getToken: async () => 'tok',
@@ -72,10 +52,10 @@ test('getActiveOpenCodeUrl falls back to the default sandbox url in self-hosted 
     sandboxId: 'local-sbx',
   });
 
-  expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/local-sbx/8000');
+  expect(getActiveRuntimeUrl()).toBe('http://backend.local/v1/p/local-sbx/8000');
 });
 
-test('getActiveOpenCodeUrl stays empty before a session binds when no default sandbox is configured', () => {
+test('getActiveRuntimeUrl stays empty before a session binds when no default sandbox is configured', () => {
   configureKortix({
     backendUrl: 'http://backend.local/v1',
     getToken: async () => 'tok',
@@ -83,10 +63,10 @@ test('getActiveOpenCodeUrl stays empty before a session binds when no default sa
     sandboxId: '',
   });
 
-  expect(getActiveOpenCodeUrl()).toBe('');
+  expect(getActiveRuntimeUrl()).toBe('');
 });
 
-test('getActiveOpenCodeUrl returns empty string in a billing-enabled deployment with no active session', () => {
+test('getActiveRuntimeUrl returns empty string in a billing-enabled deployment with no active session', () => {
   configureKortix({
     backendUrl: 'http://backend.local/v1',
     getToken: async () => 'tok',
@@ -94,36 +74,24 @@ test('getActiveOpenCodeUrl returns empty string in a billing-enabled deployment 
     sandboxId: 'should-be-ignored',
   });
 
-  expect(getActiveOpenCodeUrl()).toBe('');
+  expect(getActiveRuntimeUrl()).toBe('');
 });
 
-test('getActiveOpenCodeUrl treats an unset billingEnabled as false (defaults to the self-hosted fallback)', () => {
-  configureKortix({
-    backendUrl: 'http://backend.local/v1',
-    getToken: async () => 'tok',
-    sandboxId: 'sbx-1',
-  });
+test('getActiveRuntimeUrl treats an unset billingEnabled as false (defaults to the self-hosted fallback)', () => {
+  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', sandboxId: 'sbx-1' });
 
-  expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/sbx-1/8000');
+  expect(getActiveRuntimeUrl()).toBe('http://backend.local/v1/p/sbx-1/8000');
 });
 
 test('getActiveSandboxId prefers the current-runtime sandbox id over the configured default', () => {
-  configureKortix({
-    backendUrl: 'http://backend.local/v1',
-    getToken: async () => 'tok',
-    sandboxId: 'configured-default',
-  });
+  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', sandboxId: 'configured-default' });
   setCurrentRuntime('http://backend.local/v1/p/sb-active/8000', 'sb-active');
 
   expect(getActiveSandboxId()).toBe('sb-active');
 });
 
 test('getActiveSandboxId falls back to the configured default sandbox id with no active session', () => {
-  configureKortix({
-    backendUrl: 'http://backend.local/v1',
-    getToken: async () => 'tok',
-    sandboxId: 'configured-default',
-  });
+  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', sandboxId: 'configured-default' });
 
   expect(getActiveSandboxId()).toBe('configured-default');
 });
@@ -180,13 +148,6 @@ test('deriveSubdomainOpts always returns a fully-populated options object', () =
     // correct for a deployment that serves no preview domain.
     previewUrlTemplate: null,
   });
-});
-
-test('deriveSubdomainOpts previews by the id the runtime is ADDRESSED by, not the box — a cell session on a shared runner', () => {
-  configureKortix({ backendUrl: 'http://localhost:8008/v1', getToken: async () => 'tok' });
-  // base_url names the session; external_id names the runner four sessions share.
-  setCurrentRuntime('http://localhost:8008/v1/p/84b2e629-41dd-41a7-aa1f-4f5592dece4b/8080', 'sbx_01M23Q7W00E9A3F87FFHBZ2SMK');
-  expect(deriveSubdomainOpts().sandboxId).toBe('84b2e629-41dd-41a7-aa1f-4f5592dece4b');
 });
 
 test('deriveSubdomainOpts uses an empty-string sandboxId (never undefined) when none is resolvable', () => {

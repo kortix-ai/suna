@@ -41,11 +41,13 @@
  */
 
 import {
+  type SessionAudit,
   type SessionOpenBundle,
   type SessionPrompt,
   type SessionTranscriptSyncEnvelope,
   type SessionTurn,
   type SessionTurnEnded,
+  type SessionTurnFailure,
   getSessionOpenBundle,
 } from '../rest/projects-client/sessions';
 
@@ -77,6 +79,8 @@ interface BundleEntry {
    *  (always claimable) from "resolved a while ago" (claimable only inside the
    *  share window). */
   settledAtMs: number | null;
+  /** What `promise` resolved to. Unset while it is in flight. */
+  bundle?: SessionOpenBundle | null;
 }
 
 interface TranscriptStash {
@@ -86,6 +90,8 @@ interface TranscriptStash {
 
 const entries = new Map<string, BundleEntry>();
 const transcripts = new Map<string, TranscriptStash>();
+/** When an open's bundle answered its transcript leg with NO saved copy. */
+const absentTranscripts = new Map<string, number>();
 
 function scopeKey(projectId: string, sessionId: string): string {
   return `${projectId}/${sessionId}`;
@@ -96,6 +102,7 @@ function scopeKey(projectId: string, sessionId: string): string {
 export function resetSessionOpenBundles(): void {
   entries.clear();
   transcripts.clear();
+  absentTranscripts.clear();
 }
 
 export interface OpenSessionBundleOptions {
@@ -140,6 +147,7 @@ export function openSessionBundle(
   };
   entry.promise = entry.promise.then((bundle) => {
     entry.settledAtMs = now();
+    entry.bundle = bundle;
     return bundle;
   });
   entries.set(key, entry);
@@ -175,12 +183,27 @@ export function claimOpenBundle(
   return entry.promise;
 }
 
+/**
+ * The bundle this session's open has ALREADY received, inside the share window.
+ * `null` while it is in flight: for a reader that must not wait for the
+ * snapshot. It asks its own route instead.
+ */
+export function settledOpenBundle(
+  projectId: string,
+  sessionId: string,
+  nowMs: number = Date.now(),
+): SessionOpenBundle | null {
+  const entry = entries.get(scopeKey(projectId, sessionId));
+  return entry && entry.settledAtMs !== null && claimable(entry, nowMs) ? (entry.bundle ?? null) : null;
+}
+
 /** One `GET .../turn` answer plus the instant the SERVER took it. Structurally
  *  the observation `useSessionWorking` stamps for itself — the ranking rule it
  *  feeds only works if the stamp is the read's own instant, never arrival. */
 export interface OpenBundleTurnObservation {
   turns: SessionTurn[];
   last_ended: SessionTurnEnded | undefined;
+  recent_failures?: SessionTurnFailure[];
   atMs: number;
 }
 
@@ -195,6 +218,7 @@ export function openBundleTurn(bundle: SessionOpenBundle): OpenBundleTurnObserva
   return {
     turns: turn.turns ?? [],
     last_ended: turn.last_ended,
+    recent_failures: turn.recent_failures,
     atMs: Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
   };
 }
@@ -207,12 +231,54 @@ export function openBundleQueue(bundle: SessionOpenBundle): SessionPrompt[] | nu
   return queue.prompts ?? [];
 }
 
+/** Project the audit leg onto the exact shape `getSessionAudit(...,
+ *  { includeEvents: false })` returns — `events`/`next_cursor` simply absent,
+ *  which `SessionAudit` already declares optional. `null` for an unknown leg
+ *  — never `{ actions: [] }`, which would read as "nothing pending" for a
+ *  leg that could not answer. */
+export function openBundleAudit(bundle: SessionOpenBundle): SessionAudit | null {
+  const audit = bundle.audit;
+  if (!audit || audit.known !== true) return null;
+  return {
+    session_id: audit.session_id,
+    agent: audit.agent,
+    audit_access: audit.audit_access,
+    count: audit.count,
+    actions: audit.actions,
+  };
+}
+
+/**
+ * Project the transcript leg onto what the saved-history read
+ * (`GET .../transcript?shape=sync&history=true`) answers: the same window, served
+ * only for the session's CURRENT root. `null` when the leg is unknown or
+ * pointer-only, and when a saved copy's root is not the root the session row
+ * names. The route decides those.
+ *
+ * Reads the leg, never the one-shot stash: the stash is the mirror paint's.
+ */
+export function openBundleHistory(bundle: SessionOpenBundle): SessionTranscriptSyncEnvelope | null {
+  const transcript = bundle.transcript;
+  if (!transcript || transcript.known !== true || transcript.requested !== true) return null;
+  const { known: _known, requested: _requested, ...envelope } = transcript;
+  // "No saved copy" is the same answer with or without the root check.
+  if (!envelope.available) return envelope;
+  const root = bundle.session?.runtime_session_id ?? bundle.session?.opencode_session_id;
+  const savedRoot = envelope.runtime_session_id ?? envelope.opencode_session_id;
+  return root && savedRoot === root ? envelope : null;
+}
+
 function stashTranscript(key: string, bundle: SessionOpenBundle, nowMs: number): void {
   const transcript = bundle.transcript;
   if (!transcript || transcript.known !== true || transcript.requested !== true) return;
   // An unavailable mirror is not a transcript. Stashing it would let a hydrate
-  // paint an empty thread as a complete one.
-  if (!transcript.available || transcript.messages.length === 0) return;
+  // paint an empty thread as a complete one. It IS an answer, though: the
+  // server holds no saved copy. Recorded separately, so the mirror read does
+  // not spend a second round trip asking the transcript route the same thing.
+  if (!transcript.available || transcript.messages.length === 0) {
+    absentTranscripts.set(key, nowMs);
+    return;
+  }
   const { known: _known, requested: _requested, ...envelope } = transcript;
   transcripts.set(key, { envelope, stashedAtMs: nowMs });
 }
@@ -224,6 +290,23 @@ function stashTranscript(key: string, bundle: SessionOpenBundle, nowMs: number):
  * paint a snapshot, and a second paint over a store the runtime has already
  * filled is how a transcript grows ghosts.
  */
+/**
+ * Did this open's bundle answer "the server holds no saved copy"? ONCE, like
+ * the stash: a later read asks the server again, since a turn may have ended
+ * and written one since.
+ */
+export function takeOpenBundleTranscriptAbsence(
+  projectId: string,
+  sessionId: string,
+  nowMs: number = Date.now(),
+): boolean {
+  const key = scopeKey(projectId, sessionId);
+  const answeredAtMs = absentTranscripts.get(key);
+  if (answeredAtMs === undefined) return false;
+  absentTranscripts.delete(key);
+  return nowMs - answeredAtMs <= OPEN_BUNDLE_TRANSCRIPT_TTL_MS;
+}
+
 export function takeOpenBundleTranscript(
   projectId: string,
   sessionId: string,

@@ -1,8 +1,8 @@
 import type { KortixProject } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { stripTags } from '@/test-utils/strip-tags';

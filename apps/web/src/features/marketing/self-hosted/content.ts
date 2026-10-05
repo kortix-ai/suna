@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SECURITY_SELFHOST_TRANSLATION_KEYS } from '@/i18n/security-selfhost-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/self-hosted` copy.
  *
@@ -5,7 +9,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. Never name a licence — "open source" and stop.
+ * Voice rules: the `kortix-brand` skill. Never name a licence — "open source" and stop.
  * Say "cloud computer" / "sandbox", never "container". No invented numbers.
  *
  * ACCURACY GATE — everything below is checked against the shipped CLI
@@ -75,7 +79,7 @@ export const yours = {
       'Agent sandboxes, which run on the provider you configure',
       'The image registry the stack pulls from, which needs no credentials',
     ],
-    note: 'Sandbox compute is a provider choice: Daytona by default, or Platinum or E2B. Air-gapped and other fully isolated topologies are scoped with us rather than self-served.',
+    note: 'Sandbox compute is a provider choice: Daytona by default, or Platinum or E2B. Fully isolated topologies are scoped with us rather than self-served.',
   },
 } as const;
 
@@ -149,7 +153,7 @@ export const firstRun = {
       },
       {
         n: '03',
-        k: 'Whether you hold an Enterprise licence',
+        k: 'Whether you hold an Enterprise license',
         v: 'Unlocks SAML SSO, SCIM directory sync, custom roles, groups and audit read on this instance.',
       },
       {
@@ -258,7 +262,7 @@ export const parity = {
     {
       id: 'enterprise',
       k: 'One honest exception',
-      v: 'SAML SSO, SCIM directory sync, custom roles, groups and reading the audit log are Enterprise entitlements. On a self-hosted instance they switch on with an Enterprise licence. The built-in owner, admin, member, manager and editor roles are there on every install, and the audit record is written on every install whether or not you can read it back yet.',
+      v: 'SAML SSO, SCIM directory sync, custom roles, groups and reading the audit log are Enterprise entitlements. On a self-hosted instance they switch on with an Enterprise license. The built-in owner, admin, member, manager and editor roles are there on every install, and the audit record is written on every install whether or not you can read it back yet.',
     },
     {
       id: 'billing',
@@ -325,7 +329,7 @@ export const targets = {
     {
       id: 'network',
       k: 'Your own VPC or on-prem',
-      v: 'The same stack inside your network. Isolated and air-gapped topologies need the sandbox tier moved inside with it, which we scope with you.',
+      v: 'The same stack inside your network. Isolated topologies need the sandbox tier moved inside with it, which we scope with you.',
     },
   ],
   sizing: {
@@ -347,7 +351,15 @@ export const closing = {
   ctaPrimaryHref: '/docs/host',
   ctaSecondary: 'Use Kortix Cloud',
   ctaSecondaryHref: '/auth',
-  tertiary: 'Need it inside your own network, with SSO and a licence? Talk to us.',
+  tertiary: 'Need it inside your own network, with SSO and a license? Talk to us.',
   tertiaryLabel: 'Talk to us',
   tertiaryHref: '/enterprise',
 } as const;
+
+export function getLocalizedSelfHostedContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, yours, commands, firstRun, stack, parity, models, targets, closing },
+    tI18nComplete,
+    SECURITY_SELFHOST_TRANSLATION_KEYS,
+  );
+}

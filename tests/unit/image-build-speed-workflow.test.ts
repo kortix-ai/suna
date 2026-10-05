@@ -23,7 +23,7 @@ const DOCKERFILE: Record<(typeof IMAGES)[number], string> = {
 // `${{ vars.CI_RUNNER_<tier> || '<blacksmith label>' }}`. Setting the variable
 // (e.g. to `ubuntu-latest`) moves that tier back to GitHub-hosted runners with
 // no code change — the only rollback that still works when Blacksmith itself
-// is what is broken, since a PR needs runners to merge. docs/runbooks/ci-runners.md
+// is what is broken, since a PR needs runners to merge.
 const RUNNER_L = "${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}";
 const RUNNER_L_ARM = "${{ vars.CI_RUNNER_L_ARM || 'blacksmith-8vcpu-ubuntu-2404-arm' }}";
 
@@ -142,12 +142,31 @@ describe('every Linux job keeps the Blacksmith runner kill switch', () => {
   );
   const tiered =
     /^\$\{\{ vars\.CI_RUNNER_(S|M|L|L_ARM|M_2204) \|\| 'blacksmith-(2|4|8)vcpu-ubuntu-2(2|4)04(-arm)?' \}\}$/;
+  const githubHostedRunnerJobs = new Set([
+    'deploy-prod.yml:publish-llm-catalog',
+    'deploy-prod.yml:publish-sdk',
+    'deploy-prod.yml:publish-agent-tunnel',
+  ]);
 
   it.each(workflows)('%s', (name) => {
     const source = read(name);
-    for (const [, value] of source.matchAll(/^ {4}runs-on: (.+)$/gm)) {
+    const seenGithubHostedRunnerJobs = new Set<string>();
+    for (const match of source.matchAll(/^ {4}runs-on: (.+)$/gm)) {
+      const value = match[1];
       if (value === '${{ matrix.runner }}') continue;
+      const job = Array.from(source.slice(0, match.index).matchAll(/^ {2}([a-z0-9-]+):$/gm)).at(
+        -1,
+      )?.[1];
+      const key = `${name}:${job}`;
+      if (githubHostedRunnerJobs.has(key)) {
+        expect(value, `runs-on in ${key}`).toBe('ubuntu-latest');
+        seenGithubHostedRunnerJobs.add(key);
+        continue;
+      }
       expect(value, `runs-on in ${name}`).toMatch(tiered);
+    }
+    if (name === 'deploy-prod.yml') {
+      expect(seenGithubHostedRunnerJobs).toEqual(githubHostedRunnerJobs);
     }
     for (const [, value] of source.matchAll(/^ {12}runner: (.+)$/gm)) {
       // macOS and Windows stay GitHub-hosted: free on this public repo, and

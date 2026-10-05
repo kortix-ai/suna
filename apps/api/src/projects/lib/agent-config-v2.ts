@@ -1,27 +1,25 @@
 /**
- * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (spec
- * docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
+ * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (redirected
  * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
- * ONLY: connectors/secrets/skills/kortix_cli/workspace/enabled. OpenCode
- * BEHAVIOR (mode/model/temperature/top_p/steps/variant/color/hidden/
- * permission/prompt) lives entirely in the agent's own native
- * `.kortix/opencode/agents/<name>.md` frontmatter + body — see
- * `./agent-markdown.ts` (parse/serialize) and `./compile-agent-config.ts`
- * (`agentMarkdownPath`, the conventional-path join). The dashboard's agent
+ * ONLY: connectors/secrets/skills/kortix_permissions/repository_access/enabled, plus
+ * `file` (the path of the agent's `.md`). Agent BEHAVIOR (mode/model/
+ * temperature/top_p/steps/variant/color/hidden/permission/prompt) lives
+ * entirely in that `.md` frontmatter + body — see `./agent-markdown.ts`
+ * (parse/serialize) and `./compile-agent-config.ts` (`agentMarkdownPath`,
+ * `readAgentMarkdownFile`). The dashboard's agent
  * editor route (`../routes/agent-config.ts`) is what merges this governance
  * half with the `.md` behavior half into one wire response/request — this
  * module only ever touches kortix.yaml.
  *
  * Distinct from `../agents.ts` (`AgentSpec` / `extractAgents`): that module
  * resolves the platform GRANT the session token carries (a narrower view —
- * connectors/secrets/kortix_cli reduced to the wire `AgentGrant` shape).
+ * connectors/secrets/kortix_permissions reduced to the wire `AgentGrant` shape).
  * This module instead reads/writes the agent's declared governance block
  * verbatim so the editor can present (and persist) the complete governance
  * field space, not just the grant subset. Pure — no I/O; callers own
  * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
  */
 import {
-  manifestUsesAgentMap,
   type AgentBlockV2,
   resolveGrantSet,
   SLUG_RE,
@@ -29,18 +27,68 @@ import {
   type ManifestIssue,
 } from '@kortix/manifest-schema';
 import type { ParsedManifest } from '../triggers';
+import { isDeepStrictEqual } from 'node:util';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
  *  `@kortix/manifest-schema`'s exported `SLUG_RE` directly (it used to be
  *  re-derived here as a local copy under the mistaken assumption that the
  *  regex wasn't exported). */
-export function isValidAgentName(name: string): boolean {
+function isValidAgentName(name: string): boolean {
   return SLUG_RE.test(name);
 }
 
-export type NormalizeRequiredConnectorsResult =
+type NormalizeRequiredConnectorsResult =
   | { ok: true; block: Record<string, unknown> }
   | { ok: false; error: string };
+
+/** The raw `agents` map, or the one malformed-map rejection every reader and
+ *  writer shares. `map: undefined` means the manifest has no `agents:` yet. */
+function agentsMapOf(
+  manifest: ParsedManifest,
+): { ok: true; map: Record<string, unknown> | undefined } | { ok: false; error: string } {
+  const raw = manifest.raw.agents;
+  if (raw === undefined || raw === null) return { ok: true, map: undefined };
+  if (Array.isArray(raw) || typeof raw !== 'object') {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  return { ok: true, map: raw as Record<string, unknown> };
+}
+
+/** One agent's raw block: null when the roster does not name it or names it
+ *  with a YAML null (the writers treat both as absent — the read path pins a
+ *  null entry as malformed, see `readAgentBlockV2`), the plain object when
+ *  not — and the one malformed-entry rejection. */
+function agentBlockOf(
+  agentName: string,
+  entry: unknown,
+): { ok: true; block: Record<string, unknown> | null } | { ok: false; error: string } {
+  if (entry === undefined || entry === null) return { ok: true, block: null };
+  if (typeof entry !== 'object' || Array.isArray(entry)) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
+  return { ok: true, block: entry as Record<string, unknown> };
+}
+
+/** Canonicalize both legacy alias pairs in one pass: connectors_personal →
+ *  connectors_required, then kortix_cli → kortix_permissions. */
+function normalizeGovernanceAliases(block: Record<string, unknown>): NormalizeRequiredConnectorsResult {
+  const connectors = normalizeRequiredConnectorAliases(block);
+  if (!connectors.ok) return connectors;
+  return normalizeKortixPermissionAliases(connectors.block);
+}
+
+/** One grant-set write: `all` writes the keyword, `[]` writes deny-by-default
+ *  by omitting the key (v2 is deny-by-default), a list writes verbatim. */
+function writeGrantSet(
+  block: Record<string, unknown>,
+  key: string,
+  value: readonly string[] | 'all' | undefined,
+): void {
+  if (value === undefined) return;
+  if (value === 'all') block[key] = 'all';
+  else if (value.length === 0) delete block[key];
+  else block[key] = value;
+}
 
 function normalizeConnectorList(value: unknown, field: string): string[] | string {
   if (!Array.isArray(value)) return `${field} must be a list of connector slugs`;
@@ -91,6 +139,61 @@ export function normalizeRequiredConnectorAliases(
   return { ok: true, block };
 }
 
+/**
+ * Canonicalize the deprecated `kortix_cli` key to `kortix_permissions` (same
+ * value). Both present with different values is an error — the manifest
+ * validator rejects that too. Mirrors `normalizeRequiredConnectorAliases`.
+ */
+function normalizeKortixPermissionAliases(
+  source: Record<string, unknown>,
+): NormalizeRequiredConnectorsResult {
+  const legacy = source.kortix_cli;
+  if (legacy === undefined) return { ok: true, block: source };
+  const canonical = source.kortix_permissions;
+  const block = { ...source };
+  delete block.kortix_cli;
+  if (canonical === undefined || canonical === null) {
+    block.kortix_permissions = legacy;
+    return { ok: true, block };
+  }
+  const key = (v: unknown) => {
+    const r = resolveGrantSet(v, 'none');
+    return Array.isArray(r) ? JSON.stringify([...new Set(r)].sort()) : r;
+  };
+  if (key(canonical) !== key(legacy)) {
+    return {
+      ok: false,
+      error: 'kortix_cli must match kortix_permissions when both fields are present (kortix_cli is the deprecated alias)',
+    };
+  }
+  return { ok: true, block };
+}
+
+/**
+ * The agent's behavior draft from a PUT body that may name it `behavior` or,
+ * before W4, `opencode`.
+ *
+ * GET answers both names with one value, so a round-trip client sends both
+ * back and edits ONE: an older client edits `opencode`, a newer one
+ * `behavior`. When they differ, the draft is the one that differs from what
+ * GET served (`stored`). Two different edits are refused, never guessed.
+ */
+export function resolveBehaviorDraft<T extends Record<string, unknown>>(
+  names: { behavior?: T; opencode?: T },
+  stored: Record<string, unknown>,
+): { ok: true; draft: T | undefined } | { ok: false; error: string } {
+  const { behavior, opencode } = names;
+  if (behavior === undefined || opencode === undefined || isDeepStrictEqual(behavior, opencode)) {
+    return { ok: true, draft: behavior ?? opencode };
+  }
+  if (isDeepStrictEqual(behavior, stored)) return { ok: true, draft: opencode };
+  if (isDeepStrictEqual(opencode, stored)) return { ok: true, draft: behavior };
+  return {
+    ok: false,
+    error: 'behavior and opencode differ; send the agent behavior once, as behavior (opencode is its deprecated name)',
+  };
+}
+
 function pruneRequiredConnectors(block: Record<string, unknown>): void {
   const required = block.connectors_required;
   if (!Array.isArray(required)) return;
@@ -104,46 +207,68 @@ function pruneRequiredConnectors(block: Record<string, unknown>): void {
   else delete block.connectors_required;
 }
 
-export type ReadAgentBlockResult =
+type ReadAgentBlockResult =
   | { ok: true; schemaVersion: number; block: AgentBlockV2 | null; defaultAgent: string | null }
   | { ok: false; error: string };
 
 /**
  * Read one agent's raw v2 block out of an already-loaded manifest. Never
- * throws. `block` is `null` for a v1 manifest (no `agents:` map) or when
+ * throws. `block` is `null` for a v1 manifest (schemaVersion !== 2) or when
  * the named agent isn't declared yet (a brand-new agent the editor is about
  * to create) — both are valid, non-error states the caller (the GET route)
  * surfaces distinctly via `schemaVersion`/`ok`.
  */
 export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): ReadAgentBlockResult {
-  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
+  if (manifest.schemaVersion !== 2) {
     return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent: null };
   }
-  const rawAgents = manifest.raw.agents;
   const defaultAgentRaw = manifest.raw.default_agent;
   const defaultAgent =
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
-  if (rawAgents === undefined || rawAgents === null) {
-    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
-  }
-  if (Array.isArray(rawAgents) || typeof rawAgents !== 'object') {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const entry = (rawAgents as Record<string, unknown>)[agentName];
-  if (entry === undefined) {
-    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
-  }
-  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+  const agents = agentsMapOf(manifest);
+  if (!agents.ok) return agents;
+  // A YAML null entry parses past the manifest validator: the read path pins it
+  // as malformed — the editor must show the broken shape, not a blank agent.
+  if (agents.map?.[agentName] === null) {
     return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
   }
-  const normalized = normalizeRequiredConnectorAliases(entry as Record<string, unknown>);
-  if (!normalized.ok) return normalized;
+  const entry = agentBlockOf(agentName, agents.map?.[agentName]);
+  if (!entry.ok) return entry;
+  if (!entry.block) {
+    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
+  }
+  const aliases = normalizeGovernanceAliases(entry.block);
+  if (!aliases.ok) return aliases;
+  const repository = normalizeRepositoryAccess(aliases.block, true);
+  if (!repository.ok) return repository;
   return {
     ok: true,
     schemaVersion: 2,
-    block: normalized.block as AgentBlockV2,
+    block: repository.block as AgentBlockV2,
     defaultAgent,
   };
+}
+
+/** Canonicalize supported legacy modes without granting access or enabling legacy read. */
+function normalizeRepositoryAccess(block: Record<string, unknown>, reading = false): NormalizeRequiredConnectorsResult {
+  const next = { ...block };
+  if (next.repository_access !== undefined && typeof next.repository_access !== 'boolean') {
+    return { ok: false, error: 'repository_access must be a boolean' };
+  }
+  if (next.workspace !== undefined) {
+    if (!['runtime', 'read', 'branch'].includes(String(next.workspace))) {
+      return { ok: false, error: 'workspace must be runtime, read, or branch' };
+    }
+    const access = next.workspace === 'branch';
+    if (next.repository_access !== undefined && next.repository_access !== access) {
+      return { ok: false, error: 'repository_access conflicts with workspace' };
+    }
+    if (next.workspace !== 'read' || next.repository_access !== undefined || reading) {
+      next.repository_access ??= access;
+      delete next.workspace;
+    }
+  }
+  return { ok: true, block: next };
 }
 
 export type ApplyAgentBlockResult =
@@ -161,21 +286,17 @@ function applyAgentMapBlock(
       error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
     };
   }
-  const rawAgents = manifest.raw.agents;
-  if (
-    rawAgents !== undefined &&
-    rawAgents !== null &&
-    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
-  ) {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const normalized = normalizeRequiredConnectorAliases(block);
-  if (!normalized.ok) return normalized;
-  pruneRequiredConnectors(normalized.block);
-  const nextAgents: Record<string, unknown> = {
-    ...(rawAgents as Record<string, unknown> | undefined),
-  };
-  nextAgents[agentName] = normalized.block;
+  const agents = agentsMapOf(manifest);
+  if (!agents.ok) return agents;
+  const aliases = normalizeGovernanceAliases(block);
+  if (!aliases.ok) return aliases;
+  pruneRequiredConnectors(aliases.block);
+  const nextAgents: Record<string, unknown> = { ...agents.map };
+  const repository = normalizeRepositoryAccess(aliases.block);
+  if (!repository.ok) return repository;
+  // Older API replicas ignore repository_access. Keep their deny signal during rollout and rollback.
+  if (repository.block.repository_access === false) repository.block.workspace = 'runtime';
+  nextAgents[agentName] = repository.block;
   const nextRaw = { ...manifest.raw, agents: nextAgents };
 
   const result = validateManifest(nextRaw, manifest.format);
@@ -199,11 +320,11 @@ export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
+  if (manifest.schemaVersion !== 2) {
     return {
       ok: false,
       error:
-        'This project must use kortix_version 2 or later (kortix.yaml) to set a project default agent.',
+        'This project must use kortix_version 2 (kortix.yaml) to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {
@@ -231,25 +352,24 @@ export function applyDefaultAgentV2(
  * replace, upsert-by-name — same "read whole file, mutate one entry,
  * validate, commit" shape as `applyAgentScope`), and shape-validate the
  * RESULT through the real `validateManifest` before the caller commits —
- * a malformed permission tree, unknown enum, or ungrantable `kortix_cli`
+ * a malformed permission tree, unknown enum, or ungrantable `kortix_permissions`
  * action is a clean rejection here, never a broken manifest on disk.
  *
  * Refuses outright on a v1 manifest — the full v2 field space (permission
  * trees, per-field governance) has no v1 representation to fall back to;
  * the caller degrades in the UI instead of ever reaching this function for
- * a v1 project (see docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.7 — v2-only feature).
+ * a v1 project.
  */
 export function applyAgentBlockV2(
   manifest: ParsedManifest,
   agentName: string,
   block: AgentBlockV2,
 ): ApplyAgentBlockResult {
-  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
+  if (manifest.schemaVersion !== 2) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 or later (kortix.yaml) to edit the full agent configuration.',
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to edit the full agent configuration.',
     };
   }
   return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
@@ -277,13 +397,15 @@ export function applyAgentScopeV2(
     env?: string[] | 'all';
     connectors?: string[] | 'all';
     connectorsRequired?: string[];
+    /** Kortix App slugs, same grant-set shape as `connectors`. */
+    apps?: string[] | 'all';
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
-  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
+  if (manifest.schemaVersion !== 2) {
     return {
       ok: false,
       error:
-        'This project must use kortix_version 2 or later (kortix.yaml) to edit agent scope.',
+        'This project must use kortix_version 2 (kortix.yaml) to edit agent scope.',
     };
   }
   const rawAgents = manifest.raw.agents;
@@ -291,29 +413,21 @@ export function applyAgentScopeV2(
     rawAgents && typeof rawAgents === 'object' && !Array.isArray(rawAgents)
       ? (rawAgents as Record<string, unknown>)[agentName]
       : undefined;
-  if (existing === undefined || existing === null) {
+  const entry = agentBlockOf(agentName, existing);
+  if (!entry.ok) return entry;
+  if (!entry.block) {
     return {
       ok: false,
       notFound: true,
       error: `No agent "${agentName}" declared in ${manifest.path || 'kortix.yaml'}`,
     };
   }
-  if (typeof existing !== 'object' || Array.isArray(existing)) {
-    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
-  }
-  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  const normalized = normalizeRequiredConnectorAliases(entry.block);
   if (!normalized.ok) return normalized;
   const merged: Record<string, unknown> = normalized.block;
-  if (scope.env !== undefined) {
-    if (scope.env === 'all') merged.secrets = 'all';
-    else if (scope.env.length === 0) delete merged.secrets;
-    else merged.secrets = scope.env;
-  }
-  if (scope.connectors !== undefined) {
-    if (scope.connectors === 'all') merged.connectors = 'all';
-    else if (scope.connectors.length === 0) delete merged.connectors;
-    else merged.connectors = scope.connectors;
-  }
+  writeGrantSet(merged, 'secrets', scope.env);
+  writeGrantSet(merged, 'connectors', scope.connectors);
+  writeGrantSet(merged, 'apps', scope.apps);
   if (scope.connectorsRequired !== undefined) {
     const required = Array.from(new Set(scope.connectorsRequired));
     if (required.length === 0) delete merged.connectors_required;
@@ -344,7 +458,7 @@ function listAdmits(list: readonly string[], identifier: string): boolean {
   return list.some((entry) => entry.toUpperCase() === target);
 }
 
-export type GrantSecretToAgentResult =
+type GrantSecretToAgentResult =
   | {
       ok: true;
       raw: Record<string, unknown>;
@@ -385,35 +499,26 @@ export function grantSecretToAgentV2(
   identifier: string,
   projectIdentifiers: readonly string[] = [],
 ): GrantSecretToAgentResult {
-  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
+  if (manifest.schemaVersion !== 2) {
     return {
       ok: false,
       unsupportedV1: true,
       error:
-        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 or later (kortix.yaml) to grant a secret to an agent.',
+        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 (kortix.yaml) to grant a secret to an agent.',
     };
   }
-  const rawAgents = manifest.raw.agents;
-  if (
-    rawAgents !== undefined &&
-    rawAgents !== null &&
-    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
-  ) {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const agentsMap = (rawAgents ?? undefined) as Record<string, unknown> | undefined;
+  const agents = agentsMapOf(manifest);
+  if (!agents.ok) return agents;
   const adoptedGovernance =
-    (manifest.revision ?? null) === null || !agentsMap || Object.keys(agentsMap).length === 0;
+    (manifest.revision ?? null) === null || !agents.map || Object.keys(agents.map).length === 0;
 
-  const existing = agentsMap?.[agentName];
-  if (existing === undefined || existing === null) {
+  const entry = agentBlockOf(agentName, agents.map?.[agentName]);
+  if (!entry.ok) return entry;
+  if (!entry.block) {
     const applied = applyAgentBlockV2(manifest, agentName, { secrets: [identifier] });
     return applied.ok ? { ...applied, alreadyGranted: false, adoptedGovernance } : applied;
   }
-  if (typeof existing !== 'object' || Array.isArray(existing)) {
-    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
-  }
-  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  const normalized = normalizeRequiredConnectorAliases(entry.block);
   if (!normalized.ok) return normalized;
   const merged = normalized.block;
 

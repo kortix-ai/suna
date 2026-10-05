@@ -1,11 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   CheckCircleIcon as CheckCircle2,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
@@ -30,19 +30,13 @@ import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import {
-  listProjectSecrets,
-  pollProjectProviderOAuth,
-  startProjectProviderOAuth,
-} from '@kortix/sdk';
+import { listProjectSecrets, runProjectProviderOAuthFlow } from '@kortix/sdk';
 import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
 const DEFAULT_PROJECT_SHARING: SharingSelection = { mode: 'project', memberIds: [], groupIds: [] };
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 type ChatGptPhase = 'idle' | 'waiting' | 'done';
 type ChatGptChallenge = { url: string; code: string | null };
@@ -138,12 +132,18 @@ export function useChatGptConnectFlow({
   sharing = DEFAULT_PROJECT_SHARING,
   autoStart = false,
   onConnected,
+  provider = 'openai',
+  successMessage,
 }: {
   projectId: string;
   sharing?: SharingSelection;
   autoStart?: boolean;
   onConnected?: () => void;
+  /** The OAuth provider route: `openai` (ChatGPT), `opencode`, or `opencode-go`. */
+  provider?: string;
+  successMessage?: string;
 }): ChatGptConnectFlow {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -175,57 +175,43 @@ export function useChatGptConnectFlow({
     setChallenge(null);
     setPhase('waiting');
     try {
-      const start = await startProjectProviderOAuth(projectId, 'openai', {
-        sharing: selectionToIntent(sharing),
+      // The SDK drives the device flow (start, poll cadence, deadlines,
+      // cancellation); this hook owns what a React host does with each
+      // outcome: the challenge view, the translated success toast, and the
+      // query invalidations.
+      const result = await runProjectProviderOAuthFlow({
+        projectId,
+        provider,
+        input: { sharing: selectionToIntent(sharing) },
+        onChallenge: (challenge) =>
+          setChallenge({ url: challenge.verification_url, code: challenge.user_code }),
+        isCancelled: () => cancelledRef.current,
       });
-      if (cancelledRef.current) return;
-      setChallenge({ url: start.verification_url, code: start.user_code });
-
-      const interval = Math.max(2000, start.interval_ms || 3000);
-      const deadline = start.expires_at || Date.now() + 10 * 60_000;
-      while (!cancelledRef.current && Date.now() < deadline) {
-        await sleep(interval);
-        if (cancelledRef.current) return;
-        let res;
-        try {
-          res = await pollProjectProviderOAuth(projectId, 'openai', start.flow_id);
-        } catch {
-          continue;
-        }
-        if (cancelledRef.current) return;
-        if (res.status === 'success') {
-          setPhase('done');
-          successToast('ChatGPT subscription connected to this project');
-          queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-          refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
-          onConnected?.();
-          return;
-        }
-        if (res.status === 'failed') {
-          setChallenge(null);
-          setPhase('idle');
-          setError(res.error || 'Authorization failed');
-          return;
-        }
-        if (res.status === 'expired') {
-          setChallenge(null);
-          setPhase('idle');
-          setError('Authorization timed out. Try again.');
-          return;
-        }
+      if (result.status === 'cancelled') return;
+      if (result.status === 'success') {
+        setPhase('done');
+        successToast(successMessage ?? tI18nComplete.raw('text5630381eeca0'));
+        queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+        refreshProjectProviderState(queryClient, projectId, {
+          expectProviderId: provider === 'openai' ? 'codex' : provider,
+        });
+        onConnected?.();
+        return;
       }
-      if (!cancelledRef.current) {
-        setChallenge(null);
-        setPhase('idle');
-        setError('Authorization timed out. Try again.');
-      }
+      setChallenge(null);
+      setPhase('idle');
+      setError(
+        result.status === 'expired'
+          ? 'Authorization timed out. Try again.'
+          : result.error || 'Authorization failed',
+      );
     } catch (err) {
       if (cancelledRef.current) return;
       setChallenge(null);
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }, [projectId, sharing, queryClient, onConnected]);
+  }, [projectId, sharing, queryClient, onConnected, tI18nComplete, provider, successMessage]);
 
   useEffect(() => {
     if (!autoStart || autoStartedRef.current || phase !== 'idle') return;
@@ -264,6 +250,7 @@ export function ChatGptConnectButton({
   /** Overrides the default label; useful where the surrounding row already says "ChatGPT". */
   label?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (flow.isWaiting) return null;
   const fallback = flow.error || flow.isDone ? 'Reconnect ChatGPT' : 'Connect ChatGPT';
   return (
@@ -291,10 +278,11 @@ export function ChatGptCancelButton({
   variant?: 'outline' | 'secondary' | 'default';
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!flow.isWaiting) return null;
   return (
     <Button type="button" size={size} variant={variant} className={className} onClick={flow.cancel}>
-      Cancel
+      {tI18nComplete.raw('text19766ed6ccb2')}
     </Button>
   );
 }
@@ -317,6 +305,7 @@ export function ChatGptAuthChallenge({
   bare?: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!flow.isWaiting) return null;
   return (
     <div
@@ -328,11 +317,15 @@ export function ChatGptAuthChallenge({
       {flow.challenge ? (
         <ChatGptDeviceChallenge url={flow.challenge.url} code={flow.challenge.code} />
       ) : (
-        <div className="text-foreground text-xs font-medium">Starting authorization…</div>
+        <div className="text-foreground text-xs font-medium">
+          {tI18nComplete.raw('texta467f30ca4f9')}
+        </div>
       )}
       <div className="text-muted-foreground flex items-center gap-2 text-xs">
         <Loading className="size-3.5 shrink-0" />
-        {flow.challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
+        {flow.challenge
+          ? tI18nComplete.raw('text2f938f9b118b')
+          : tI18nComplete.raw('textf29674479db4')}
       </div>
     </div>
   );
@@ -414,7 +407,7 @@ export function ChatGptSubscriptionConnect({
 
       {showSharingPicker ? null : (
         <p className="text-muted-foreground mt-3 text-xs">
-          Saved for everyone on this project. Restart a running session sandbox to pick it up.
+          {tI18nHardcoded.raw('i18nComplete.textee4ae993730d')}
         </p>
       )}
     </div>
@@ -430,6 +423,7 @@ export function ChatGptSubscriptionConnectDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const handleConnected = useCallback(() => {
     onOpenChange(false);
   }, [onOpenChange]);
@@ -438,9 +432,9 @@ export function ChatGptSubscriptionConnectDialog({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="gap-0 space-y-0 overflow-hidden p-0 lg:max-w-md">
         <ModalHeader className="space-y-1 pb-3">
-          <ModalTitle>Connect GPT subscription</ModalTitle>
+          <ModalTitle>{tI18nComplete.raw('textd037eecb4dc8')}</ModalTitle>
           <ModalDescription className="text-xs">
-            Use your ChatGPT Plus or Pro subscription for premium models on the free plan.
+            {tI18nComplete.raw('text33a97dd943f4')}
           </ModalDescription>
         </ModalHeader>
         <div className="px-5 pb-5">

@@ -130,6 +130,16 @@ export function MessageTimeLabel({ timestamp, className }: MessageTimeLabelProps
     <Hint label={rendered.exact} side="top" align="center">
       <time
         dateTime={rendered.iso}
+        // "45 minutes ago" is true only while you are looking at it. A printed
+        // transcript outlives that — it is filed, mailed, attached to a ticket
+        // — so paper gets the exact instant the hover label already carries.
+        //
+        // An ATTRIBUTE, not a second hidden span. `print.css` materializes it as
+        // generated content, which keeps the rendered text of this element one
+        // string: the accessible name stays the relative form, a copied
+        // transcript does not gain a doubled date, and a long thread does not
+        // pay an extra element and an extra date string per message.
+        data-print-exact={rendered.exact}
         suppressHydrationWarning
         className={cn('tabular-nums select-none', className)}
       >

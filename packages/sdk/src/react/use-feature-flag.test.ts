@@ -38,7 +38,7 @@ function withDetail(experimental: Record<string, unknown> | undefined) {
 
 describe('useFeatureFlag', () => {
   test('reads the shared project-detail cache entry, not a private key', () => {
-    useFeatureFlag('proj-1', 'review_center');
+    useFeatureFlag('proj-1', 'apps');
 
     // Built through the factory on purpose: the guard in
     // `query-key-literals.test.ts` forbids hand-typed key literals here, and
@@ -82,7 +82,7 @@ describe('useFeatureFlag', () => {
 
   test('reports the loading state so callers can gate on it', () => {
     nextResult = { data: undefined, isLoading: true };
-    const flag = useFeatureFlag('p', 'review_center');
+    const flag = useFeatureFlag('p', 'apps');
 
     expect(flag.isLoading).toBe(true);
     // Loading is NOT enabled — the surface stays dark until the server answers.
@@ -90,9 +90,59 @@ describe('useFeatureFlag', () => {
   });
 
   test('one flag never reads another flag`s slot', () => {
-    withDetail({ apps: true, review_center: false });
+    withDetail({ apps: true, monitors: false });
 
     expect(useFeatureFlag('p', 'apps').enabled).toBe(true);
-    expect(useFeatureFlag('p', 'review_center').enabled).toBe(false);
+    expect(useFeatureFlag('p', 'monitors').enabled).toBe(false);
+  });
+
+  test('a graduated flag is enabled for every project, whatever the map says', () => {
+    // `review_center` graduated: Review Center is on for every project and the
+    // API no longer serves the key. A host still gating on it must see the
+    // surface, not lose it to the fail-closed `=== true` read.
+    withDetail({ review_center: false });
+    expect(useFeatureFlag('p', 'review_center').enabled).toBe(true);
+
+    withDetail({});
+    expect(useFeatureFlag('p', 'review_center').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'review_center').enabled).toBe(true);
+
+    nextResult = { data: undefined, isLoading: true };
+    expect(useFeatureFlag('p', 'review_center').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'review_center').enabled).toBe(true);
+  });
+
+  test('agent_tunnel graduated: computers are on for every project', () => {
+    withDetail({ agent_tunnel: false });
+    expect(useFeatureFlag('p', 'agent_tunnel').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'agent_tunnel').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'agent_tunnel').enabled).toBe(true);
+  });
+
+  test('session_transcript_history graduated: saved history is on for every project', () => {
+    withDetail({ session_transcript_history: false });
+    expect(useFeatureFlag('p', 'session_transcript_history').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'session_transcript_history').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'session_transcript_history').enabled).toBe(true);
+  });
+
+  test('teams graduated: Microsoft Teams is on for every project', () => {
+    // A `false` a project stored while Teams was a flag is inert.
+    withDetail({ teams: false });
+    expect(useFeatureFlag('p', 'teams').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'teams').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'teams').enabled).toBe(true);
   });
 });

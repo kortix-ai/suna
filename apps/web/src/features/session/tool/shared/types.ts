@@ -1,5 +1,5 @@
-import type { ComponentType } from 'react';
 import type { ToolPart } from '@/ui';
+import type { ComponentType } from 'react';
 
 export interface ToolProps {
   part: ToolPart;
@@ -42,10 +42,4 @@ export interface BasicToolProps {
   triggerAction?: React.ReactNode;
 }
 
-export interface ParsedJsonFailure {
-  errorSummary: string;
-  hint?: string;
-  status?: number;
-  nestedMessage?: string;
-  nestedError?: boolean;
-}
+export type { ParsedJsonFailure } from '@kortix/sdk';

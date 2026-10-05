@@ -17,7 +17,7 @@
  * `Result.err` rather than letting them escape.
  */
 
-import { makeTransport, type RpcTransport } from './rpc-transport.ts';
+import { makeTransport, ResponseError, type RpcTransport } from './rpc-transport.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
@@ -25,18 +25,6 @@ type Result<T, E> = Ok<T> | Err<E>;
 
 const ok = <T,>(value: T): Ok<T> => ({ ok: true, value });
 const err = <E,>(error: E): Err<E> => ({ ok: false, error });
-
-const REPLAY_SAFE_RPC_OPERATIONS: ReadonlySet<string> = new Set([
-  'absolutePath',
-  'joinPath',
-  'readTextFile',
-  'readTextLines',
-  'readBinaryFile',
-  'fileInfo',
-  'listDir',
-  'canonicalPath',
-  'exists',
-]);
 
 /** Mirrors pi's FileError shape without importing it, so this file stays dependency-light. */
 class FileErrorLike extends Error {
@@ -51,41 +39,24 @@ class FileErrorLike extends Error {
 }
 
 /**
- * OS errno -> pi's FileError code.
- *
- * The daemon's env-rpc is a thin fs proxy: it reports the real errno
- * (`ENOENT`), and this client is the adapter that has to speak pi's
- * vocabulary. Passing the errno through unmapped BROKE EVERY FILE CREATION.
- * `withFileMutationQueue` canonicalises the target before any mutation and
- * tolerates a path that does not exist yet — but only for code `not_found`;
- * anything else it rethrows. So `write` on a new file died on its own
- * pre-flight with "ENOENT: no such file or directory, lstat '/workspace/x'",
- * and the agent fell back to `bash` heredocs, ten times in one turn, on
- * pi.kortix.com.
- *
- * Mirrors pi's own mapping in `harness/env/nodejs.js` exactly — including its
- * spellings `not_directory` / `is_directory` — because pi's tools compare
- * against those strings.
+ * A failure of the transport itself — `transport.call` threw before any
+ * response was received, so the operation never reached the daemon and
+ * retrying cannot repeat it. A FileErrorLike subclass keeps the
+ * caller-visible error shape; rpc() retries it once. A failure AFTER a
+ * response was received (`ResponseError`) is delivered, may have executed,
+ * and never retries.
  */
-const FILE_ERROR_CODES: Record<string, string> = {
-  ABORT_ERR: 'aborted',
-  ENOENT: 'not_found',
-  EACCES: 'permission_denied',
-  EPERM: 'permission_denied',
-  ENOTDIR: 'not_directory',
-  EISDIR: 'is_directory',
-  EINVAL: 'invalid',
-};
-
-/** Codes pi already understands pass through; unknown errnos become 'unknown'. */
-export function toFileErrorCode(code: unknown): string {
-  if (typeof code !== 'string' || !code) return 'unknown';
-  const mapped = FILE_ERROR_CODES[code];
-  if (mapped) return mapped;
-  // Anything still shaped like an errno is one we have not mapped; do not hand
-  // pi a string it cannot match.
-  return /^E[A-Z]+$/.test(code) ? 'unknown' : code;
+class TransportErrorLike extends FileErrorLike {
+  constructor(message: string) {
+    super('unknown', message);
+  }
 }
+
+/**
+ * The per-call timeout rejection, identity-checked in rpcOnce. A timeout is
+ * not a transport failure: the call may still land, so it never retries.
+ */
+const RPC_TIMEOUT = new Error('rpc timeout');
 
 class ExecutionErrorLike extends Error {
   code: string;
@@ -96,34 +67,21 @@ class ExecutionErrorLike extends Error {
   }
 }
 
-export type TransportKind = 'fetch' | 'keepalive' | 'ws' | 'auto';
+export type TransportKind = 'fetch' | 'keepalive' | 'ws';
 
 export interface KortixEnvOptions {
   /** Base URL of the environment's RPC endpoint. In production this is the Kortix sandbox proxy. */
   baseUrl: string;
   /** Working directory inside the environment. */
   cwd: string;
-  /** Legacy direct-environment token. New sessions use signed headers. */
+  /** Bearer token for the environment. Optional for the local stub. */
   token?: string;
   /** Extra headers sent with every RPC (provider preview tokens, tracing). */
   headers?: Record<string, string>;
   /** Per-call timeout. */
   timeoutMs?: number;
-  /** Which transport carries the RPC. See src/rpc-transport.ts and the gate. */
-  transport?: TransportKind;
-}
-
-/**
- * pi hands `exec` a timeout in SECONDS; the daemon expects milliseconds.
- *
- * Anything that is not a positive finite number becomes `undefined` so the
- * daemon falls back to its own default — passing 0 or NaN through would be
- * read as "kill immediately".
- */
-export function toExecTimeoutMs(timeoutSeconds: unknown): number | undefined {
-  if (typeof timeoutSeconds !== 'number') return undefined;
-  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) return undefined;
-  return Math.round(timeoutSeconds * 1000);
+  /** Which transport carries the RPC. See src/rpc-transport.ts and the gate. A prebuilt transport overrides the kind — tests inject a stub. */
+  transport?: TransportKind | RpcTransport;
 }
 
 export class KortixExecutionEnv {
@@ -142,55 +100,50 @@ export class KortixExecutionEnv {
     this.cwd = opts.cwd;
     this.token = opts.token;
     this.headers = opts.headers ?? {};
-    // Default: NEGOTIATE. Prefer the multiplexed socket (G0: 16.0ms p50 vs
-    // 19.2ms pooled keep-alive), fall back to keep-alive when the daemon has no
-    // `/rpc-ws` — which every sandbox baked before that endpoint existed does
-    // not, permanently. See NegotiatingTransport.
-    this.transport = makeTransport(opts.transport ?? 'auto', this.baseUrl, this.headers);
+    // Default to keepalive: one pooled connection, handshake paid once per
+    // session rather than once per tool call. See the RPC-tax gate.
+    this.transport =
+      typeof opts.transport === 'object'
+        ? opts.transport
+        : makeTransport(opts.transport ?? 'keepalive', this.baseUrl, this.headers);
     this.timeoutMs = opts.timeoutMs ?? 120_000;
   }
 
   /**
    * The single boundary crossing. One persistent-friendly POST per operation.
    *
-   * This is where the per-turn RPC tax lives. The default transport negotiates
-   * one multiplexed WebSocket and falls back to pooled HTTP for older images.
+   * NOTE for the real implementation: this is where the per-turn RPC tax lives.
+   * A 200-tool-call turn makes 200 of these. It must become one multiplexed
+   * connection before this ships — see the latency budget in the plan.
    */
   private async rpc<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
     this.calls.push({ op, args });
-    // One retry for reads: a pooled keep-alive socket retired by the peer
-    // between calls is a transport artifact, not a tool failure. Mutations
-    // cannot be replayed because the daemon may commit the side effect before
-    // the response disappears.
+    // One retry, on transport failures only: a pooled keep-alive socket retired
+    // by the peer between calls is a transport artifact, not a tool failure —
+    // the operation never reached the daemon. A daemon error Result is an
+    // answer, and the operation may already have applied, so it never retries.
     const first = await this.rpcOnce<T>(op, args);
-    if (first.ok) return first;
-    const msg = String((first.error as any)?.message ?? '');
-    if (
-      REPLAY_SAFE_RPC_OPERATIONS.has(op) &&
-      /socket|ECONNRESET|closed|EPIPE/i.test(msg)
-    ) {
-      return this.rpcOnce<T>(op, args);
-    }
+    if (!first.ok && first.error instanceof TransportErrorLike) return this.rpcOnce<T>(op, args);
     return first;
   }
 
   private async rpcOnce<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
     const timer = new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error('rpc timeout')), this.timeoutMs).unref?.(),
+      setTimeout(() => rej(RPC_TIMEOUT), this.timeoutMs).unref?.(),
     );
     try {
       const body: any = await Promise.race([this.transport.call(op, args, this.cwd), timer]);
       if (body?.ok) return ok(body.value as T);
-      return err(
-        new FileErrorLike(
-          toFileErrorCode(body?.error?.code),
-          body?.error?.message ?? 'environment error',
-          body?.error?.path,
-        ),
-      );
+      return err(new FileErrorLike(body?.error?.code ?? 'unknown', body?.error?.message ?? 'environment error', body?.error?.path));
     } catch (e: any) {
-      // Never throw. A dead environment is a Result, not an exception.
-      return err(new FileErrorLike('unknown', String(e?.message ?? e)));
+      // Never throw. A dead environment is a Result, not an exception. A
+      // transport throw is classified here, at the boundary, so rpc() can
+      // retry exactly the failures that never received a response. A
+      // response-received failure (HTTP status, malformed body) means the
+      // request was delivered and the operation may have run — never retried.
+      if (e === RPC_TIMEOUT) return err(new FileErrorLike('unknown', RPC_TIMEOUT.message));
+      if (e instanceof ResponseError) return err(new FileErrorLike('unknown', String(e?.message ?? e)));
+      return err(new TransportErrorLike(String(e?.message ?? e)));
     }
   }
 
@@ -246,17 +199,7 @@ export class KortixExecutionEnv {
       command,
       cwd: options?.cwd,
       env: options?.env,
-      // SECONDS -> MILLISECONDS. The two sides of this call disagreed on the
-      // unit: pi's ExecutionEnvironment contract is "Timeout in seconds"
-      // (@earendil-works/pi-agent-core harness/types.d.ts:205) and the Kortix
-      // daemon reads the field as `timeoutMs` and SIGKILLs on it
-      // (kortix-sandbox-agent-server routes/env-rpc.ts `case 'exec'`).
-      // Forwarding it unconverted killed every model-supplied timeout ~1000x
-      // early: `bash({ command: 'pnpm install', timeout: 600 })` — ten minutes
-      // — died after 600ms with exit code 124, and the model was told the
-      // command had timed out. Undefined stays undefined so the daemon applies
-      // its own default rather than 0.
-      timeout: toExecTimeoutMs(options?.timeout),
+      timeout: options?.timeout,
     });
     if (!r.ok) return err(new ExecutionErrorLike((r.error as any)?.code ?? 'unknown', String((r.error as any)?.message)));
     // Streaming callbacks are honoured after the fact for the spike; the real
@@ -266,7 +209,5 @@ export class KortixExecutionEnv {
     return r;
   }
 
-  async cleanup(): Promise<void> {
-    await this.transport.close();
-  }
+  async cleanup(): Promise<void> { /* nothing local to release — that is the point */ }
 }

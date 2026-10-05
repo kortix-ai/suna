@@ -37,10 +37,11 @@ function intFromEnv(name: string, fallback: number): number {
  * the Supavisor pooler. Every client connection consumes one real backend.
  * PostgreSQL exposes 237 non-reserved slots. ECS can overlap 10 old tasks and
  * 10 new tasks during a rolling deployment. The API also owns an audit pool,
- * a leader-election connection, and a transient startup schema probe. The
- * capacity invariant in apps/api/src/shared/database-capacity.test.ts accounts
- * for all four sources and preserves a non-API reserve. If replica count or
- * pool size grows, update that invariant before changing this default.
+ * a leader-election connection, a base-move LISTEN/NOTIFY connection, and a
+ * transient startup schema probe. The capacity invariant in
+ * apps/api/src/shared/database-capacity.test.ts accounts for all five sources
+ * and preserves a non-API reserve. If replica count or pool size grows, update
+ * that invariant before changing this default.
  *
  * All knobs are env-overridable so prod can tune without a code change. The
  * app's background workers (maintenance sweeps, migration workers) only ever run
@@ -58,26 +59,151 @@ const MAX_LIFETIME_S = intFromEnv('DB_MAX_LIFETIME_S', 60 * 30); // 30 min
 // enormous for any single OLTP statement; background jobs that legitimately need
 // longer should `SET LOCAL statement_timeout` inside their own transaction.
 const STATEMENT_TIMEOUT_MS = intFromEnv('DB_STATEMENT_TIMEOUT_MS', 25_000);
+/**
+ * Opt-in: send Drizzle statements as server-side prepared statements.
+ *
+ * Two switches have to agree, and each alone is a no-op. postgres.js prepares a
+ * statement only when the CONNECTION option `prepare` is true and the query's
+ * own option is not false. Drizzle calls `client.unsafe(query, params)`, whose
+ * query option defaults to false. `createDb` sets both (`preparedSql` for the
+ * second). Unprepared, every parameterized statement costs two round trips
+ * (Parse/Describe, then Bind/Execute). Prepared, a statement a connection has
+ * seen costs one.
+ *
+ * Off by default, and a per-environment decision:
+ *  - it needs a direct or session-mode connection. A transaction pooler
+ *    (Supavisor port 6543) multiplexes connections and breaks it;
+ *  - after ~5 executions PostgreSQL may switch a prepared statement to a
+ *    generic plan, which cannot use a partial index whose predicate arrives as
+ *    a parameter. Prepared connections therefore set `plan_cache_mode =
+ *    force_custom_plan`: every execution is planned for its own parameters, as
+ *    an unprepared one is, and only the extra round trip goes;
+ *  - the per-connection statement cache has no size limit. `DB_MAX_LIFETIME_S`
+ *    (30 min) bounds it.
+ */
+const PREPARE_STATEMENTS = process.env.DB_PREPARE_STATEMENTS === 'true';
+
+/**
+ * Observability hooks for {@link createDb}.
+ *
+ * `onQuery` runs when a statement is dispatched (including the wait for a pool
+ * connection) and returns the function called when it settles. A transaction
+ * is reported as one operation spanning BEGIN..COMMIT, plus one per statement
+ * inside it. Hooks must never throw; they run on every query.
+ */
+export interface DbHooks {
+  onQuery?: () => () => void;
+}
+
+type AnySql = postgres.Sql<{}>;
+
+const QUERY_SETTLE_METHODS = ['then', 'catch', 'finally'] as const;
+
+/**
+ * Report a lazily-executed postgres.js query to `onQuery`. A postgres.js
+ * `Query` only starts on its first `then`/`catch`/`finally`, so the clock
+ * starts there. The settle observer uses the base `Promise.prototype.then`,
+ * which neither starts the query a second time nor leaves a rejection unhandled.
+ */
+function observeQuery<Q extends object>(query: Q, onQuery: () => () => void): Q {
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    const end = onQuery();
+    Promise.prototype.then.call(query, end, end);
+  };
+  const target = query as Record<string, unknown>;
+  for (const method of QUERY_SETTLE_METHODS) {
+    const original = target[method];
+    if (typeof original !== 'function') continue;
+    target[method] = function (this: unknown, ...args: unknown[]) {
+      start();
+      return (original as (...a: unknown[]) => unknown).apply(query, args);
+    };
+  }
+  return query;
+}
+
+/**
+ * Wrap the three postgres.js entry points Drizzle uses — `unsafe` (every
+ * statement), `begin` (transactions) and `savepoint` (nested transactions) —
+ * so `onQuery` sees every round trip. Everything else passes through.
+ */
+export function instrumentSql<S extends object>(sql: S, onQuery: () => () => void): S {
+  return new Proxy(sql, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'unsafe') {
+        return (...args: unknown[]) => observeQuery((value as (...a: unknown[]) => object).apply(target, args), onQuery);
+      }
+      if (property === 'begin' || property === 'savepoint') {
+        return (...args: unknown[]) => {
+          const last = args.length - 1;
+          const callback = args[last];
+          if (typeof callback === 'function') {
+            args[last] = (inner: object) => callback(instrumentSql(inner, onQuery));
+          }
+          const end = onQuery();
+          const pending = (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+          pending.then(end, end);
+          return pending;
+        };
+      }
+      return value;
+    },
+  });
+}
+
+/**
+ * Make every Drizzle statement on `sql` a prepared one: `unsafe(query, params)`
+ * gets `{ prepare: true }` unless the caller passed options of its own. Applies
+ * inside `begin` and `savepoint` too. Everything else passes through.
+ */
+export function preparedSql<S extends object>(sql: S): S {
+  return new Proxy(sql, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'unsafe') {
+        return (query: unknown, params: unknown = [], options: unknown = { prepare: true }) =>
+          (value as (...a: unknown[]) => unknown).call(target, query, params, options);
+      }
+      if (property === 'begin' || property === 'savepoint') {
+        return (...args: unknown[]) => {
+          const last = args.length - 1;
+          const callback = args[last];
+          if (typeof callback === 'function') {
+            args[last] = (inner: object) => callback(preparedSql(inner));
+          }
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return value;
+    },
+  });
+}
 
 /**
  * Create a Drizzle database client.
  *
  * @param databaseUrl - PostgreSQL connection string
  * @param options - Additional postgres.js options (override the defaults below)
+ * @param hooks - Optional observability hooks (see {@link DbHooks})
  * @returns Drizzle database client with full schema
  */
-export function createDb(databaseUrl: string, options?: postgres.Options<{}>) {
+export function createDb(databaseUrl: string, options?: postgres.Options<{}>, hooks?: DbHooks) {
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is required');
   }
 
+  // Off unless `DB_PREPARE_STATEMENTS=true` or the caller asks. Off keeps us
+  // compatible with the Supabase transaction pooler (Supavisor multiplexes
+  // connections, so server-side prepared statements can't be reused). Prod
+  // uses the DIRECT connection, where prepared statements work.
+  const prepare = options?.prepare ?? PREPARE_STATEMENTS;
   const client = postgres(databaseUrl, {
-    // prepare: false keeps us compatible with the Supabase transaction pooler
-    // (Supavisor multiplexes connections, so server-side prepared statements
-    // can't be reused). Prod currently uses the DIRECT connection where prepared
-    // statements would be fine, but leaving this off keeps a pooler switch a
-    // pure connection-string change with no code impact.
-    prepare: false,
     max: POOL_MAX,
     idle_timeout: IDLE_TIMEOUT_S,
     connect_timeout: CONNECT_TIMEOUT_S,
@@ -87,11 +213,15 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>) {
     // pinning a pooled connection forever and starving the whole fleet.
     connection: {
       statement_timeout: STATEMENT_TIMEOUT_MS,
+      ...(prepare ? { plan_cache_mode: 'force_custom_plan' } : {}),
     },
     ...options,
+    prepare,
   });
 
-  return drizzle(client, { schema });
+  const statements = prepare ? preparedSql(client as AnySql) : client;
+  const observed = hooks?.onQuery ? instrumentSql(statements as AnySql, hooks.onQuery) : statements;
+  return drizzle(observed as typeof client, { schema });
 }
 
 export type Database = ReturnType<typeof createDb>;

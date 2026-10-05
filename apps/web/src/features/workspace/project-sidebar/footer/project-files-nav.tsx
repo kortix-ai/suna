@@ -1,13 +1,17 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
+import { getProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { FoldersIcon } from '@phosphor-icons/react';
 
 /**
@@ -35,6 +39,7 @@ import { FoldersIcon } from '@phosphor-icons/react';
  * replaced them and moved to the top of the panel, under New session.
  */
 export function ProjectFilesNavItem() {
+  const t = useTranslations('sidebar');
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
@@ -42,10 +47,31 @@ export function ProjectFilesNavItem() {
   const { setOpenMobile } = useSidebar();
   const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
+  const queryClient = useQueryClient();
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
+
+  // The Files view cannot pick a git ref (`resolveFilesRef`,
+  // `project-layout/resolve-files-ref.ts`) until it knows the project's
+  // default branch — one request, `qk.project.summary(id)` — unless a
+  // per-project version selection is already persisted. Cold, that read
+  // alone gates every other read on the page (branches, the file list,
+  // change requests, file-content previews) behind ~1s nobody needed to
+  // spend: this same intent signal already arms the ROUTE prefetch above
+  // (`HoverPrefetchLink`), so arming the DATA prefetch alongside it means
+  // `ref` is usually already resolvable by the time `ProjectFilesView`
+  // mounts. Same key + same `contract('config')` options as that view's own
+  // query, so this warms one cache slot rather than issuing a second fetch.
+  const prefetchSummary = useCallback(() => {
+    if (!projectId) return;
+    void queryClient.prefetchQuery({
+      queryKey: qk.project.summary(projectId),
+      queryFn: () => getProject(projectId),
+      ...contract('config'),
+    });
+  }, [projectId, queryClient]);
 
   if (!canReadFiles.allowed && !canReadFiles.isLoading) return null;
   // No project id means no valid href. The old onClick already no-op'd in this
@@ -57,12 +83,19 @@ export function ProjectFilesNavItem() {
       <SidebarMenuButton
         asChild
         isActive={isActive}
-        tooltip="Files"
+        tooltip={t('files')}
         className="group/menu-button text-sidebar-foreground relative"
       >
-        <HoverPrefetchLink href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
+        <HoverPrefetchLink
+          href={`/projects/${projectId}/files`}
+          prefetch
+          onClick={handleClick}
+          onMouseEnter={prefetchSummary}
+          onFocus={prefetchSummary}
+          onTouchStart={prefetchSummary}
+        >
           <FoldersIcon />
-          Files
+          {t('files')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

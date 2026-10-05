@@ -132,7 +132,7 @@ describe('resolveGrantedSecretEnv', () => {
 });
 
 describe('agentMayUseEnv — the sole agent secret-access gate, by identifier', () => {
-  const grant = (env: AgentGrant['env']): AgentGrant => ({ agent: 'a', kortixCli: [], connectors: [], env });
+  const grant = (env: AgentGrant['env']): AgentGrant => ({ agent: 'a', permissions: [], connectors: [], env });
 
   test('no grant (non-agent token) → unrestricted', () => {
     expect(agentMayUseEnv(null, 'GMAPS-primary')).toBe(true);

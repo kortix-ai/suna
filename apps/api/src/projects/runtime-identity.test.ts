@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { parkMetadataPatch, runtimeLossVerdict } from './runtime-identity';
 
 /**
- * Incident 2026-08-14 (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+ * Incident 2026-08-14.
  *
  * Two healthy sandboxes were shown as "This session's computer was lost": a
  * dead local tunnel kept them from booting, the on-open path preserved both as

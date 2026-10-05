@@ -18,17 +18,23 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
 import {
-  DEPRECATED_KORTIX_CLI_ALIASES,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
+  GRANTABLE_KORTIX_PERMISSIONS,
   type ManifestIssue,
+  ManifestImportError,
   formatIssues,
+  hasManifestImports,
   manifestFormatForPath,
   validateManifest,
 } from '@kortix/manifest-schema';
 import { extractSandboxTemplates } from '@kortix/shared/sandbox';
 import { lintDockerfile } from '../dockerfile-lint.ts';
+import { lintWiring } from '../wiring-lint.ts';
+import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { resolveLocalManifest } from '../manifest.ts';
 import { C, help, status } from '../style.ts';
+import { takeFlags } from '../command-argv.ts';
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 
 const HELP = help`Usage: kortix validate [options]
 
@@ -40,30 +46,9 @@ Options:
   --file <path>          Validate this file instead of ./kortix.yaml.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
   --json                 Emit a machine-readable JSON report (no color).
-  --scopes               Print the full grantable kortix_cli action enum and exit.
+  --scopes               Print the full grantable kortix_permissions enum and exit.
   -h, --help             Show this help.
 `;
-
-interface Flags {
-  file?: string;
-  json: boolean;
-  help: boolean;
-  scopes: boolean;
-  dockerfileLint: boolean;
-}
-
-function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { json: false, help: false, scopes: false, dockerfileLint: true };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === '--file' && argv[i + 1]) flags.file = argv[++i];
-    else if (arg === '--json') flags.json = true;
-    else if (arg === '--scopes') flags.scopes = true;
-    else if (arg === '--no-dockerfile-lint') flags.dockerfileLint = false;
-    else if (arg === '-h' || arg === '--help') flags.help = true;
-  }
-  return flags;
-}
 
 /**
  * Lint each `sandbox.templates[].dockerfile` that exists on disk, resolved
@@ -99,7 +84,7 @@ function lintSandboxDockerfiles(
   return issues;
 }
 
-/** One line per agent: its assigned connectors + Kortix-CLI powers. */
+/** One line per agent: its assigned connectors + Kortix permissions. */
 function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!Array.isArray(agents) || agents.length === 0) return '';
@@ -110,23 +95,25 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
     // `env` omitted == 'all' (the parser's default), so render it that way rather
     // than as default-deny — otherwise the summary misreports an unscoped agent.
     const env = a?.env === undefined || a?.env === null ? 'all' : a?.env;
-    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]  env=[${show(env)}]`;
+    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_permissions=[${show(a?.kortix_permissions ?? a?.kortix_cli)}]  env=[${show(env)}]`;
   });
   return `\n${C.dim}Per-agent scope (kortix.yaml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
 }
 
 export function runValidate(argv: string[]): number {
-  const flags = parseFlags(argv);
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(argv, HELP, (rest) => ({
+    file: takeFlagValue(rest, ['--file']),
+    json: takeFlagBool(rest, ['--json']),
+    scopes: takeFlagBool(rest, ['--scopes']),
+    dockerfileLint: !takeFlagBool(rest, ['--no-dockerfile-lint']),
+  }));
+  if (typeof flags === 'number') return flags;
   if (flags.scopes) {
     process.stdout.write(
-      `${C.dim}Grantable kortix_cli actions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
+      `${C.dim}Grantable kortix_permissions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
     );
-    for (const a of GRANTABLE_KORTIX_CLI_ACTIONS) process.stdout.write(`  ${a}\n`);
-    const renamed = Object.entries(DEPRECATED_KORTIX_CLI_ALIASES);
+    for (const a of GRANTABLE_KORTIX_PERMISSIONS) process.stdout.write(`  ${a}\n`);
+    const renamed = Object.entries(DEPRECATED_KORTIX_PERMISSION_ALIASES);
     if (renamed.length > 0) {
       // Not grantable any more, but still ACCEPTED in a manifest that has one.
       // This list is what an agent reads to decide what to write, so it has to
@@ -135,7 +122,7 @@ export function runValidate(argv: string[]): number {
         `\n${C.dim}Renamed — still accepted, but write the new name:${C.reset}\n`,
       );
       for (const [was, now] of renamed) {
-        process.stdout.write(`  ${was}${C.dim} → ${now}${C.reset}\n`);
+        process.stdout.write(`  ${was}${C.dim} → ${now.join(', ')}${C.reset}\n`);
       }
     }
     return 0;
@@ -174,7 +161,23 @@ export function runValidate(argv: string[]): number {
     return 2;
   }
 
-  const result = validateManifest(raw, manifestFormatForPath(filePath));
+  let result = validateManifest(raw, manifestFormatForPath(filePath));
+  // `imports:` — validate the MERGED document, the one the platform runs. A
+  // broken import (missing file, duplicate name, cycle, root-only key in an
+  // imported file) is an error here, the same one the CR-merge gate returns.
+  if (result.parsed && hasManifestImports(result.parsed) && manifestFormatForPath(filePath) === 'yaml') {
+    try {
+      const merged = resolveLocalManifestImports(filePath, 'yaml');
+      result = validateManifest(merged.raw, 'yaml');
+    } catch (err) {
+      if (!(err instanceof ManifestImportError)) throw err;
+      result = {
+        ...result,
+        valid: false,
+        issues: [...result.issues, { path: 'imports', message: err.message, severity: 'error' }],
+      };
+    }
+  }
 
   // Manifest issues first, then the Dockerfile lint — one merged report, one
   // exit code. A Dockerfile `error` fails `validate` exactly like a schema
@@ -183,6 +186,7 @@ export function runValidate(argv: string[]): number {
   const issues = [
     ...result.issues,
     ...(flags.dockerfileLint ? lintSandboxDockerfiles(result.parsed, filePath) : []),
+    ...lintWiring(result.parsed, dirname(filePath)),
   ];
   const valid = !issues.some((i) => i.severity === 'error');
 

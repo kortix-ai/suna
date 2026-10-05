@@ -40,8 +40,9 @@ export type {
 export async function fetchChangeRequests(
   projectId: string,
   status?: ChangeRequestStatus | 'all',
+  options?: { originSessionId?: string },
 ) {
-  return listChangeRequests(projectId, status);
+  return listChangeRequests(projectId, status, options);
 }
 
 export async function fetchChangeRequest(projectId: string, crId: string) {
@@ -52,10 +53,7 @@ export async function fetchChangeRequestDiff(projectId: string, crId: string) {
   return getChangeRequestDiff(projectId, crId);
 }
 
-export async function fetchChangeRequestMergePreview(
-  projectId: string,
-  crId: string,
-) {
+export async function fetchChangeRequestMergePreview(projectId: string, crId: string) {
   return getChangeRequestMergePreview(projectId, crId);
 }
 
@@ -88,10 +86,7 @@ export async function performRequestChanges(projectId: string, crId: string, fee
   return requestChangesOnChangeRequest(projectId, crId, feedback);
 }
 
-export async function fetchVersionDiff(
-  projectId: string,
-  input: { from: string; into: string },
-) {
+export async function fetchVersionDiff(projectId: string, input: { from: string; into: string }) {
   return getVersionDiff(projectId, input);
 }
 

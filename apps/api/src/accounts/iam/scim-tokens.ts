@@ -14,7 +14,9 @@ import {
   revokeScimToken,
 } from '../../repositories/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
-import { auditIam, readBody, requireEntitlement } from './helpers';
+import { auditIam, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../shared/validate';
 
 iamRouter.openapi(
   createRoute({
@@ -32,6 +34,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
+  if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const tokens = await listScimTokens(accountId);
@@ -66,11 +69,14 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
+  // A connected app's revocable `kortix_oat_` token must not mint a durable credential.
+  if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot mint SCIM tokens.' }, 403);
+  if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const denied = await requireEntitlement(c, accountId, 'scim');
   if (denied) return denied;
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return c.json({ error: 'name is required' }, 400);
   if (name.length > 128) return c.json({ error: 'name too long (max 128 chars)' }, 400);
@@ -139,12 +145,13 @@ iamRouter.openapi(
     request: { params: z.object({ accountId: z.string(), tokenId: z.string() }) },
     responses: {
       200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
-      ...errors(401, 403, 404),
+      ...errors(401, 403),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
+  if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
   const tokenId = c.req.param('tokenId');
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   // Revocation must never 402 — a lapsed/downgraded entitlement can't be the

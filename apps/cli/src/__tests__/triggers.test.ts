@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 /**
- * `kortix triggers` as a real process, for the third trigger type
- * (docs/specs/2026-08-12-monitors.md). `add` edits the LOCAL kortix.yaml, so
+ * `kortix triggers` as a real process, for the third trigger type.
+ * `add` edits the LOCAL kortix.yaml, so
  * those cases assert the file on disk; `ls`/`info` read the cloud, so those
  * cases assert the rendering of a served listing.
  */
@@ -227,8 +227,17 @@ describe('kortix triggers — monitors', () => {
 
   test('add rejects a monitor with no --run', async () => {
     const result = await runCli([
-      'triggers', 'add', 'no-run', '--type', 'monitor', '--mode', 'poll',
-      '--interval', '60s', '--prompt', 'x',
+      'triggers',
+      'add',
+      'no-run',
+      '--type',
+      'monitor',
+      '--mode',
+      'poll',
+      '--interval',
+      '60s',
+      '--prompt',
+      'x',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('--run');
@@ -237,8 +246,17 @@ describe('kortix triggers — monitors', () => {
 
   test('add rejects a monitor with an unknown --mode', async () => {
     const result = await runCli([
-      'triggers', 'add', 'bad-mode', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'tail', '--prompt', 'x',
+      'triggers',
+      'add',
+      'bad-mode',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'tail',
+      '--prompt',
+      'x',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('poll');
@@ -247,8 +265,17 @@ describe('kortix triggers — monitors', () => {
 
   test('add rejects a poll monitor with no --interval', async () => {
     const result = await runCli([
-      'triggers', 'add', 'no-interval', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'poll', '--prompt', 'x',
+      'triggers',
+      'add',
+      'no-interval',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'poll',
+      '--prompt',
+      'x',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('interval');
@@ -256,8 +283,19 @@ describe('kortix triggers — monitors', () => {
 
   test('add rejects --interval on a stream monitor', async () => {
     const result = await runCli([
-      'triggers', 'add', 'stream-interval', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'stream', '--interval', '60s', '--prompt', 'x',
+      'triggers',
+      'add',
+      'stream-interval',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'stream',
+      '--interval',
+      '60s',
+      '--prompt',
+      'x',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('poll');
@@ -265,15 +303,39 @@ describe('kortix triggers — monitors', () => {
 
   test('add enforces the platform duration floors', async () => {
     const shortInterval = await runCli([
-      'triggers', 'add', 'fast-poll', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'poll', '--interval', '10s', '--prompt', 'x',
+      'triggers',
+      'add',
+      'fast-poll',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'poll',
+      '--interval',
+      '10s',
+      '--prompt',
+      'x',
     ]);
     expect(shortInterval.code).toBe(2);
     expect(shortInterval.stderr).toContain('30s');
 
     const shortWatchdog = await runCli([
-      'triggers', 'add', 'twitchy', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'poll', '--interval', '60s', '--expect-event-within', '1m', '--prompt', 'x',
+      'triggers',
+      'add',
+      'twitchy',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'poll',
+      '--interval',
+      '60s',
+      '--expect-event-within',
+      '1m',
+      '--prompt',
+      'x',
     ]);
     expect(shortWatchdog.code).toBe(2);
     expect(shortWatchdog.stderr).toContain('5m');
@@ -281,8 +343,19 @@ describe('kortix triggers — monitors', () => {
 
   test('add rejects a bare number where a duration literal is required', async () => {
     const result = await runCli([
-      'triggers', 'add', 'bare-number', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'poll', '--interval', '60', '--prompt', 'x',
+      'triggers',
+      'add',
+      'bare-number',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'poll',
+      '--interval',
+      '60',
+      '--prompt',
+      'x',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('30s');
@@ -290,15 +363,37 @@ describe('kortix triggers — monitors', () => {
 
   test('add rejects cron/webhook flags on a monitor', async () => {
     const withCron = await runCli([
-      'triggers', 'add', 'cron-monitor', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'stream', '--cron', '0 0 9 * * 1-5', '--prompt', 'x',
+      'triggers',
+      'add',
+      'cron-monitor',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'stream',
+      '--cron',
+      '0 0 9 * * 1-5',
+      '--prompt',
+      'x',
     ]);
     expect(withCron.code).toBe(2);
     expect(withCron.stderr).toContain('monitor');
 
     const withSecret = await runCli([
-      'triggers', 'add', 'secret-monitor', '--type', 'monitor', '--run', './m.ts',
-      '--mode', 'stream', '--secret-env', 'HOOK', '--prompt', 'x',
+      'triggers',
+      'add',
+      'secret-monitor',
+      '--type',
+      'monitor',
+      '--run',
+      './m.ts',
+      '--mode',
+      'stream',
+      '--secret-env',
+      'HOOK',
+      '--prompt',
+      'x',
     ]);
     expect(withSecret.code).toBe(2);
     expect(withSecret.stderr).toContain('monitor');
@@ -306,8 +401,17 @@ describe('kortix triggers — monitors', () => {
 
   test('add rejects monitor flags on a cron trigger', async () => {
     const result = await runCli([
-      'triggers', 'add', 'cron-with-run', '--type', 'cron', '--cron', '0 0 9 * * 1-5',
-      '--run', './m.ts', '--prompt', 'x',
+      'triggers',
+      'add',
+      'cron-with-run',
+      '--type',
+      'cron',
+      '--cron',
+      '0 0 9 * * 1-5',
+      '--run',
+      './m.ts',
+      '--prompt',
+      'x',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('monitor');
@@ -357,15 +461,55 @@ describe('kortix triggers — monitors', () => {
     });
   });
 
+  test('subcommand --help prints usage and exits 0 (splitHelp)', async () => {
+    for (const args of [['--help'], ['ls', '--help'], ['add', 'x', '-h'], ['rm', 'x', '--help']]) {
+      const result = await runCli(['triggers', ...args]);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('Usage: kortix triggers');
+      expect(result.stderr).not.toContain('unknown subcommand');
+    }
+  });
+
+  test('a missing slug is the shared arg error: exit 2, no HTTP call', async () => {
+    for (const args of [['add'], ['rm'], ['fire'], ['enable'], ['disable'], ['info']]) {
+      const result = await runCli(['triggers', ...args]);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('Pass a trigger slug.');
+    }
+    expect(manifestText()).not.toContain('slug:');
+  });
+
+  test('rm of an unknown local slug exits 1 with the manifest error', async () => {
+    const result = await runCli(['triggers', 'rm', 'nope']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('No [[triggers]] "nope" in kortix.yaml.');
+  });
+
   test('cron and webhook adds are unchanged', async () => {
     const cron = await runCli([
-      'triggers', 'add', 'daily-digest', '--type', 'cron', '--cron', '0 0 9 * * 1-5',
-      '--timezone', 'America/Los_Angeles', '--prompt', 'Summarize yesterday.',
+      'triggers',
+      'add',
+      'daily-digest',
+      '--type',
+      'cron',
+      '--cron',
+      '0 0 9 * * 1-5',
+      '--timezone',
+      'America/Los_Angeles',
+      '--prompt',
+      'Summarize yesterday.',
     ]);
     expect(cron.code).toBe(0);
     const hook = await runCli([
-      'triggers', 'add', 'new-lead', '--type', 'webhook', '--secret-env', 'WEBHOOK_SECRET',
-      '--prompt', 'A new lead arrived.',
+      'triggers',
+      'add',
+      'new-lead',
+      '--type',
+      'webhook',
+      '--secret-env',
+      'WEBHOOK_SECRET',
+      '--prompt',
+      'A new lead arrived.',
     ]);
     expect(hook.code).toBe(0);
 

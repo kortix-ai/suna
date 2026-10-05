@@ -14,9 +14,9 @@
  */
 
 import { track } from '@/lib/track';
-import { useKortixComputerStore, useIsSidePanelOpen } from '@/stores/kortix-computer-store';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
+import { useIsSidePanelOpen, useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
+import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { useEffect, useMemo, useRef } from 'react';
 import { deriveIsRunning } from '../easy/easy-panel-logic';
 import { collectAllToolParts } from './collect-tool-parts';
@@ -118,7 +118,10 @@ export function useDeliverableReadiness(
         track('ready_chip_shown', { outcome: 'needs_input' });
       }
       store.setReadyChip({ sessionId, outcome: 'needs_input', count: 0 });
-    } else if (store.readyChip?.outcome === 'needs_input' && store.readyChip.sessionId === sessionId) {
+    } else if (
+      store.readyChip?.outcome === 'needs_input' &&
+      store.readyChip.sessionId === sessionId
+    ) {
       store.clearReadyChip();
     }
   }, [pendingForSession, isPanelOpen, sessionId]);

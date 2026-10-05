@@ -1,9 +1,10 @@
 'use client';
 
-import { favicon } from '@/components/home/interactive-demo/data';
+import { faviconUrlForHostname } from '@/lib/favicon';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
 
@@ -17,7 +18,7 @@ import { useStepShowcaseStart } from '../use-step-showcase';
  * Order matters visually, not semantically: adjacent tiles are kept different
  * in color and weight so no two neighbours read as one blob.
  */
-const APPS: string[] = [
+export const APPS: string[] = [
   'slack.com',
   'notion.so',
   'github.com',
@@ -129,6 +130,7 @@ function tileDelay(row: number, col: number): number {
  * rescales the whole thing — tiles, offsets and the center mark together.
  */
 export function StepConnectors(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduced = useReducedMotion();
   const [started, setStarted] = useState(false);
   const rootRef = useStepShowcaseStart(useCallback(() => setStarted(true), []));
@@ -146,8 +148,7 @@ export function StepConnectors(): ReactNode {
             className="flex flex-none gap-[var(--gap)]"
             // Brick offset: odd rows shift by half a pitch (tile + gap).
             style={{
-              transform:
-                rowIndex % 2 === 1 ? 'translateX(calc((var(--tile) + var(--gap)) / 2))' : undefined,
+              transform: rowIndex % 2 === 1 ? "translateX(calc((var(--tile) + var(--gap)) / 2))" : undefined,
             }}
           >
             {row.map((domain, colIndex) => (
@@ -163,7 +164,7 @@ export function StepConnectors(): ReactNode {
                 className="border-border bg-popover flex size-[var(--tile)] flex-none items-center justify-center rounded-[calc(var(--tile)*0.26)] border"
               >
                 <img
-                  src={favicon(domain)}
+                  src={faviconUrlForHostname(domain)}
                   alt=""
                   aria-hidden
                   loading="lazy"

@@ -2,7 +2,9 @@
  * Accounts & identity — authenticated. Maps to spec §4 (ME-*, ACCT-*, MEM-*, TOK-*).
  * Needs OWNER + NONMEMBER principals (provisioned per run).
  */
+import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 flow(
   'ME-1',
@@ -20,10 +22,24 @@ flow(
 );
 
 flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx) => {
-  await ctx.step('list memberships', async () => {
+  await ctx.step('list memberships; every row matches the contract AccountSummary', async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
-    r.status(200);
+    r.status(200).body().schema(AccountSummarySchema.array());
   });
+  await ctx.step(
+    "the personal account is named, never after the email (KRTX-638: no \"<email>'s Account\")",
+    async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
+      r.status(200);
+      const personal = r
+        .json<Array<{ account_id: string; name: string }>>()
+        .find((account) => account.account_id === ctx.P.OWNER.userId);
+      if (!personal) throw new Error('OWNER has no personal account in GET /v1/accounts');
+      if (!personal.name.trim()) throw new Error('personal account has an empty name');
+      if (personal.name.includes('@') || personal.name.endsWith("'s Account"))
+        throw new Error(`personal account is still named after the email: ${personal.name}`);
+    },
+  );
 });
 
 flow(
@@ -222,15 +238,66 @@ flow(
 
 flow(
   'MEM-4',
-  { domain: 'accounts', routes: ['DELETE /v1/accounts/:accountId/members/:userId'] },
+  { domain: 'accounts', routes: [
+    'DELETE /v1/accounts/:accountId/members/:userId',
+    'POST /v1/accounts/:accountId/iam/groups',
+    'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'POST /v1/accounts/:accountId/iam/scim/tokens',
+    'GET /scim/v2/accounts/:accountId/Users/:userId',
+  ] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    let groupId = '';
+    let scim: ReturnType<typeof ctx.client.withBearer>;
+    await ctx.step('enable groups and add the member to one', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const created = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name('offboard') },
+        { params: { accountId: team.id } },
+      );
+      created.status(201);
+      groupId = created.json<any>().group_id;
+      const added = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userIds: [member.userId!] },
+        { params: { accountId: team.id, groupId } },
+      );
+      added.status(200).body().has('$.added', 1);
+      const token = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/scim/tokens',
+        { name: ctx.fixtures.name('offboard') },
+        { params: { accountId: team.id } },
+      );
+      token.status(201);
+      scim = ctx.client.withBearer(token.json<any>().secret, 'SCIM');
+    });
+    await ctx.step('OWNER removes a malformed user id → 400, not 500', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: 'not-a-uuid' },
+      });
+      r.status(400).body().has('$.message', 'Validation failed');
+    });
     await ctx.step('OWNER removes member → ok', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
         params: { accountId: team.id, userId: member.userId! },
       });
       r.status(200).body().has('$.ok', true);
+    });
+    await ctx.step('removed member has no residual group grant', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+        params: { accountId: team.id, groupId },
+      });
+      r.status(200);
+      if (r.json<any>().members.some((row: any) => row.user_id === member.userId)) {
+        throw new Error('Removed account member remains in the group');
+      }
+      const directoryUser = await scim.get('/scim/v2/accounts/:accountId/Users/:userId', {
+        params: { accountId: team.id, userId: member.userId! },
+      });
+      directoryUser.status(200).body().has('$.active', false);
     });
   },
 );
@@ -548,14 +615,18 @@ flow(
 // mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
-// deleteAccountImmediately() zeroes the credit account (balance/tier/status)
-// but does not remove the Supabase auth identity — the world fixture tears
-// that down via the admin API regardless of what this flow does to it.
+// Immediate self-deletion removes the auth identity, invalidates its token and
+// removes the account row itself: the account answers 404 to a nonmember.
 flow(
   'DEL-4',
   {
     domain: 'accounts',
-    routes: ['DELETE /v1/account/delete-immediately', 'GET /v1/account/deletion-status'],
+    routes: [
+      'DELETE /v1/account/delete-immediately',
+      'GET /v1/account/deletion-status',
+      'GET /v1/accounts/me',
+      'GET /v1/accounts/:accountId',
+    ],
   },
   async (ctx) => {
     const victim = await ctx.fixtures.user({ label: 'DEL-4' });
@@ -577,21 +648,36 @@ flow(
         .has('$.deletion_scheduled_for', null)
         .has('$.can_cancel', false);
     });
+    let victimAccountId = '';
+    await ctx.step('a nonmember is forbidden from the throwaway account → 403', async () => {
+      // The personal account is the victim's first (and only) membership.
+      const me = await asVictim.get('/v1/accounts/me');
+      me.status(200).body().exists('$.accounts[0].account_id');
+      victimAccountId = me.json().accounts[0].account_id;
+      (
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
+      ).status(403);
+    });
     await ctx.step('throwaway account deletes itself immediately → 200', async () => {
       const r = await asVictim.del('/v1/account/delete-immediately');
       r.status(200).body().has('$.success', true).has('$.message', 'Account deleted');
     });
-    await ctx.step('deletion-status is still readable after immediate delete', async () => {
-      // No deletion REQUEST was ever scheduled, so the immediate delete doesn't
-      // flip has_pending_deletion — it just proves the account (and its token)
-      // are still usable, i.e. delete-immediately zeroes credits rather than
-      // hard-deleting the identity.
-      const r = await asVictim.get('/v1/account/deletion-status');
-      r.status(200).body().has('$.has_pending_deletion', false);
+    await ctx.step('old token cannot read account or deletion status → 401', async () => {
+      (await asVictim.get('/v1/accounts/me')).status(401);
+      (await asVictim.get('/v1/account/deletion-status')).status(401);
     });
-    await ctx.step('delete-immediately is idempotent → 200 again', async () => {
-      const r = await asVictim.del('/v1/account/delete-immediately');
-      r.status(200).body().has('$.success', true);
+    await ctx.step('the deleted account is gone for a nonmember → 404', async () => {
+      (
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
+      ).status(404);
+    });
+    await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
+      (await asVictim.del('/v1/account/delete-immediately')).status(401);
+      (await asVictim.get('/v1/accounts/me')).status(401);
     });
   },
 );
@@ -664,6 +750,123 @@ flow(
     await ctx.step('revoked secret on any route → 401', async () => {
       const r = await ctx.client.withBearer(secret).get('/v1/accounts/me');
       r.status(401);
+    });
+  },
+);
+
+// TOK-6 — a plain account member runs `kortix login`: the sign-in page mints a
+// PAT on `token.personal.create`, which every system account role holds. The
+// PAT acts as the member and carries only the member's roles; revoking it needs
+// only `token.personal.revoke`. Another person's token and OAuth-client
+// registration stay behind the admin `token.revoke` / `token.create` leaves.
+flow(
+  'TOK-6',
+  {
+    domain: 'accounts',
+    serial: true,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+      'GET /v1/accounts/me',
+      'PATCH /v1/accounts/:accountId',
+      'POST /v1/accounts/:accountId/iam/oauth-clients',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const account_id = team.id;
+    let memberTokenId = '';
+    let memberSecret = '';
+    let ownerTokenId = '';
+    let ownerSecret = '';
+
+    await ctx.step('MEMBER mints a personal token in the team account → 201 with the secret once', async () => {
+      const r = await ctx.client
+        .as(member)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('member-cli'), account_id });
+      r.status(201).body().exists('$.secret_key').exists('$.token_id').has('$.project_id', null);
+      const j = r.json<any>();
+      memberTokenId = j.token_id;
+      memberSecret = j.secret_key;
+    });
+
+    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat', async () => {
+      const r = await ctx.client.withBearer(memberSecret).get('/v1/accounts/me');
+      r.status(200).body().has('$.token_context.auth_type', 'pat');
+    });
+
+    await ctx.step('the member token carries only member rights → renaming the account 403', async () => {
+      const r = await ctx.client
+        .withBearer(memberSecret)
+        .patch('/v1/accounts/:accountId', { name: 'nope' }, { params: { accountId: account_id } });
+      r.status(403);
+    });
+
+    await ctx.step('the unscoped member token mints and revokes another personal token (kortix tokens new) → 201, 200', async () => {
+      const minted = await ctx.client
+        .withBearer(memberSecret)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('member-cli-2'), account_id });
+      minted.status(201).body().exists('$.token_id');
+      const revoked = await ctx.client.withBearer(memberSecret).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: minted.json<any>().token_id },
+        query: { account_id },
+      });
+      revoked.status(200).body().has('$.ok', true);
+    });
+
+    await ctx.step('MEMBER cannot register an OAuth client → 403 (token.create stays admin)', async () => {
+      const r = await ctx.client.as(member).post(
+        '/v1/accounts/:accountId/iam/oauth-clients',
+        { name: ctx.fixtures.name('app'), redirect_uris: ['https://app.example.test/cb'] },
+        { params: { accountId: account_id } },
+      );
+      r.status(403);
+    });
+
+    await ctx.step("OWNER mints a token; MEMBER cannot revoke the owner's token → 403", async () => {
+      const minted = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('owner-cli'), account_id });
+      minted.status(201);
+      ownerTokenId = minted.json<any>().token_id;
+      ownerSecret = minted.json<any>().secret_key;
+      const r = await ctx.client.as(member).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: ownerTokenId },
+        query: { account_id },
+      });
+      r.status(403);
+    });
+
+    await ctx.step("the owner's token still authenticates after the refused revoke → 200", async () => {
+      const r = await ctx.client.withBearer(ownerSecret).get('/v1/accounts/me');
+      r.status(200);
+    });
+
+    await ctx.step('MEMBER revoking an unknown token id → 403, not 404 (no existence oracle)', async () => {
+      const r = await ctx.client.as(member).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: '00000000-0000-0000-0000-000000000000' },
+        query: { account_id },
+      });
+      r.status(403);
+    });
+
+    await ctx.step('MEMBER revokes their own token → 200; the secret then fails → 401', async () => {
+      const r = await ctx.client.as(member).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: memberTokenId },
+        query: { account_id },
+      });
+      r.status(200).body().has('$.ok', true);
+      const after = await ctx.client.withBearer(memberSecret).get('/v1/accounts/me');
+      after.status(401);
+    });
+
+    await ctx.step("cleanup: OWNER revokes the owner's token → 200", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: ownerTokenId },
+        query: { account_id },
+      });
+      r.status(200);
     });
   },
 );

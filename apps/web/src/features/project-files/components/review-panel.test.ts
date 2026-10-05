@@ -48,10 +48,7 @@ describe('groupByDate', () => {
     const noon = noonToday();
     const old = new Date();
     old.setMonth(old.getMonth() - 3);
-    const groups = groupByDate(
-      [{ ts: noon }, { ts: old.getTime() }, { ts: noon - 60_000 }],
-      ts,
-    );
+    const groups = groupByDate([{ ts: noon }, { ts: old.getTime() }, { ts: noon - 60_000 }], ts);
     expect(groups[0].label).toBe('Today');
     expect(groups[0].items).toHaveLength(2);
     expect(groups).toHaveLength(2);

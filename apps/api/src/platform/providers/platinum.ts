@@ -7,9 +7,12 @@
  *   - create boots from a per-project TEMPLATE (opts.snapshot = a Platinum
  *     template id/name) with `?wait_for_state=running` so create returns a
  *     running sandbox synchronously (provisioning.async = false, like Daytona).
- *   - the agent port (8000) is reached through Platinum's edge via a PUBLIC
- *     expose URL; the sandbox itself is gated by the KORTIX serviceKey bearer
- *     (added as a header in resolveEndpoint, same effective auth as Daytona).
+ *   - every port is reached through Platinum's edge via a PRIVATE expose: the
+ *     edge requires the HMAC preview token, which the proxy carries in the
+ *     `x-pt-preview-token` header (see resolveIngress). The agent port is also
+ *     gated by the KORTIX serviceKey bearer (added in resolveEndpoint). Other
+ *     ports, such as the static-file listener, have no in-box authentication,
+ *     so the edge token is their only gate outside the Kortix proxy.
  *
  * S1 (idempotent create): a retry after an AMBIGUOUS transport failure
  * (timeout / dropped response) on the create POST must never blindly
@@ -34,17 +37,28 @@
  *     Platinum's CP separately enforces per-org NAME uniqueness (409
  *     `name_taken`) — a human-debuggable belt-and-suspenders in case an
  *     idempotency record ever expires while the name index hasn't; see the
- *     409 handling in provisionFromTemplate.
+ *     409 handling in provisionFromTemplate. A name_taken that PERSISTS past
+ *     the replay retry (the idempotency record really did expire, or
+ *     `template` changed — buildIdempotencyKey folds it in, the name does
+ *     not) advances to the NEXT attempt — a fresh name/key, exactly the
+ *     transition heal/failover/id-boot-fallback already use in
+ *     session-sandbox.ts — instead of throwing. The old box is NEVER touched:
+ *     a prod org can carry tens of thousands of sandboxes (most `archived`,
+ *     holding names indefinitely), so a by-name lookup is not viable on this
+ *     path, and removing/starting a box this call cannot prove is
+ *     unreferenced elsewhere is the orphan reaper's job. See provisionFromTemplate
+ *     for the incident this closes.
  * Gated by KORTIX_PLATINUM_CREATE_DEDUP (default ON) for instant rollback —
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
-import { currentInstanceId, sandboxBelongsToThisInstance } from '../../projects/instance-scope';
+import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
-import { platinumJson } from '../../shared/platinum';
+import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import type {
@@ -58,29 +72,67 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
   SandboxProvider,
+  SandboxStartOptions,
   SandboxStatus,
-} from './index';
+} from './contract';
 import {
   SandboxTemplateNotFoundError,
+  SnapshotStillBuildingError,
   assertWorkloadCredential,
   sandboxWorkloadType,
-} from './index';
-import { providerAutoStopBackstopMinutes } from './index';
+} from './contract';
+import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
 const START_CONFLICT_POLL_MS = 250;
+/**
+ * How long `stop()` waits for Platinum to confirm the VM actually powered
+ * off, and the poll interval. Read per-call (not a module-load constant) so
+ * tests can shrink both without an env var set before this module is first
+ * imported.
+ */
+function stopConfirmDeadlineMs(): number {
+  return Number(process.env.PLATINUM_STOP_CONFIRM_DEADLINE_MS) || 10_000;
+}
+function stopConfirmPollMs(): number {
+  return Number(process.env.PLATINUM_STOP_CONFIRM_POLL_MS) || 500;
+}
+// Platinum holds /start on an archived box for up to 45 s while it restores the
+// disk (UNARCHIVE_INLINE_WAIT_MS). The client's 20 s default abandoned that
+// call before its 202 could arrive; give it the server's wait plus margin, as
+// create() does for its 60 s long-poll.
+export const START_CALL_TIMEOUT_MS = 60_000;
+// How long start() carries a box through a restore from cold storage. A 6 GB
+// session box restores in ~100 s alone on dev; observed slow restores take
+// 546 s. Allow those restores to finish before the bounded wake expires.
+export const START_RESTORE_BUDGET_MS = 10 * 60_000;
+// How often a caller's lease is renewed (opts.onProgress) while a restore is
+// seen in progress. The wake and restart leases run 240 s.
+export const START_PROGRESS_INTERVAL_MS = 30_000;
+const START_RESTORE_POLL_MS = 1_000;
 
 interface PlatinumSandbox {
   id: string;
   state?: string;
   name?: string;
+  /** Absent on Platinum builds before #1335. */
+  autoResume?: boolean;
+  /** Public region the box was placed in (e.g. 'eu-west', 'us-east'). */
+  region?: string | null;
+  /** The control plane that owns this box. shared/platinum.ts learns it from
+   *  this field (and from `x-pt-served-by`) and sends every later call by id
+   *  straight there instead of through `PLATINUM_API_URL`'s forwarding hop. */
+  api_url?: string;
   /** Set true by Platinum's CP when an Idempotency-Key replay resolved this
    *  response to an already-committed sandbox rather than a fresh create. */
   replayed?: boolean;
   backupState?: string | null;
   backup_state?: string | null;
+  startedAt?: string | null;
+  started_at?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string | null;
   createdAt?: string | null;
@@ -92,7 +144,81 @@ interface PlatinumSandboxPage {
   total?: number;
   has_more?: boolean;
 }
+/**
+ * A box created before `auto_resume: false` shipped (see create) still lets any
+ * stray request wake it. The stop that parks it closes that, once, so no
+ * backfill is needed: every box Kortix stops from now on is covered. Only when
+ * Platinum reports the field — an older build reads a PATCH naming no field it
+ * knows as "clear the name". Best effort: the stop itself already succeeded.
+ */
+async function disableAutoResume(externalId: string, sandbox: PlatinumSandbox | null): Promise<void> {
+  if (sandbox?.autoResume !== true || sandbox.metadata?.['kortix.workload'] === 'app') return;
+  await platinumJson(`/v1/sandboxes/${externalId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ auto_resume: false }),
+  }).catch((err) =>
+    console.warn(`[platinum] could not turn auto-resume off for ${externalId}:`, err instanceof Error ? err.message : err),
+  );
+}
+
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
+
+/**
+ * The header Platinum's edge reads the HMAC preview token from
+ * (`apps/edge/src/previewToken.ts` in the Platinum repo: `?t=`, then
+ * `x-pt-token`, then `x-pt-preview-token`). A header composes with the proxy
+ * appending a path and query; the `?t=` form in the expose URL does not.
+ */
+export const PLATINUM_PREVIEW_TOKEN_HEADER = 'x-pt-preview-token';
+
+/**
+ * Lifetime of a minted preview token. The proxy caches a resolved ingress for
+ * five minutes (sandbox-proxy/backend.ts), so every cached token has a day of
+ * validity left. Equal to Platinum's own default.
+ */
+const PREVIEW_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * Split a private expose response into the bare edge origin and its token.
+ * Platinum appends `?t=<token>` to a private URL; the proxy must not forward a
+ * query of its own on every request, so the token moves to a header.
+ */
+export function privateEdgeIngress(exposed: PlatinumExposedPort): { url: string; token: string } {
+  const raw = (exposed.url ?? '').trim();
+  if (!raw) throw new Error(`[platinum] expose returned no URL for port ${exposed.port}`);
+  const parsed = new URL(raw);
+  const token = exposed.token || parsed.searchParams.get('t') || '';
+  if (!token) {
+    throw new Error(`[platinum] private expose returned no preview token for port ${exposed.port}`);
+  }
+  parsed.searchParams.delete('t');
+  parsed.hash = '';
+  const url = parsed.toString().replace(/\?$/, '').replace(/\/$/, '');
+  return { url, token };
+}
+
+/** Ports a Platinum sandbox row records as exposed without a token. */
+export function publicExposedPorts(sandbox: {
+  metadata?: Record<string, unknown> | null;
+}): number[] {
+  const exposures = (sandbox.metadata?.exposures ?? null) as
+    | Record<string, { public?: unknown } | null>
+    | null;
+  if (!exposures || typeof exposures !== 'object') return [];
+  const ports: number[] = [];
+  for (const [key, value] of Object.entries(exposures)) {
+    const port = Number(key);
+    if (Number.isInteger(port) && port > 0 && value?.public === true) ports.push(port);
+  }
+  return ports.sort((a, b) => a - b);
+}
+
+/**
+ * Sandboxes whose public exposures this process has already converted to
+ * private. Bounded: an entry only saves one GET, so eviction is harmless.
+ */
+const hardenedExposureSandboxes = new Set<string>();
+const HARDENED_EXPOSURE_CACHE_MAX = 20_000;
 type PlatinumExecResponse = {
   result?: {
     stdout?: string;
@@ -107,33 +233,32 @@ type PlatinumExecResponse = {
  * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
  * POST (the template id doesn't exist / was GC'd). ONLY a 404 qualifies: a 400
  * (bad request) or 5xx (transient outage) is NOT a GC'd pin and must NOT trigger
- * a name-boot fallback. Matches the `platinum <method> <path> -> 404 …` shape
- * platinumJson throws.
+ * a name-boot fallback.
  */
 function isDefinitiveTemplateNotFound(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  return / -> 404\b/.test(message);
+  return platinumHttp(error).status === 404;
 }
 
-function isMissingSandboxError(error: unknown): boolean {
-  const err = error as
-    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
-    | null
-    | undefined;
-  if (err?.status === 404 || err?.statusCode === 404) return true;
-  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
-  if (code === 'not_found' || code === 'notfound') return true;
-  const message =
-    typeof err?.message === 'string'
-      ? err.message.toLowerCase()
-      : String(error ?? '').toLowerCase();
-  return (
-    message.includes('-> 404') ||
-    message.includes('"code":"not_found"') ||
-    message.includes('not found') ||
-    message.includes('no such sandbox') ||
-    message.includes('sandbox does not exist')
-  );
+/** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
+function platinumHttp(error: unknown): Partial<Pick<PlatinumHttpError, 'status' | 'code' | 'body'>> {
+  return error instanceof Error ? (error as Partial<PlatinumHttpError>) : {};
+}
+
+/**
+ * Whether the orphan-box reaper may treat a listed provider box as this
+ * instance's. Stricter than `sandboxBelongsToThisInstance`, which keeps an
+ * UNSTAMPED database row everyone's: that rule is safe for a row, because the
+ * row is in this instance's own database. A provider box is not. Every PR
+ * preview shares one Platinum org and one `kortix.env=preview` tag, each with
+ * its own database, and a box a preview created before the stamp existed has
+ * no row here. Counting it as ours would let one preview's orphan reaper stop
+ * another preview's live sessions. So, when this instance has an id, only a box
+ * that carries exactly that id is ours.
+ */
+export function providerBoxBelongsToThisInstance(stamped: unknown): boolean {
+  const mine = currentInstanceId();
+  if (!mine) return stamped === undefined || stamped === null;
+  return typeof stamped === 'string' && stamped === mine;
 }
 
 /**
@@ -175,8 +300,35 @@ function buildDeterministicSandboxName(sandboxId: string, attempt: number): stri
  * attempt number). Always a 64-char hex string, comfortably inside Platinum's
  * 8-255 char bound.
  */
-function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: number): string {
-  return createHash('sha256').update(`${sandboxId}|${templateId}|a${attempt}`).digest('hex');
+function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: number, region?: string): string {
+  // The region joins the key only when one is asked for, so every existing
+  // no-region session keeps the exact key it had before regions existed.
+  const regionPart = region ? `|r${region}` : '';
+  return createHash('sha256').update(`${sandboxId}|${templateId}|a${attempt}${regionPart}`).digest('hex');
+}
+
+/**
+ * Platinum refuses a create in a region that does not hold the template yet:
+ * `409 template_not_resident`, with `state` 'absent', 'replicating' or
+ * 'failed'. Platinum copies the template there on its own (the copy's progress
+ * is what `state` reports), so this is the "image still building" condition in
+ * another form, and it gets the same patient retry window: it throws the
+ * `SnapshotStillBuildingError` that sandbox-init-state.ts waits out.
+ */
+function regionalTemplateNotReady(error: unknown, template: string): Error | null {
+  const http = platinumHttp(error);
+  if (http.status !== 409 || http.code !== 'template_not_resident') return null;
+  let body: { region?: unknown; state?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON; keep the defaults if not
+  }
+  const region = typeof body.region === 'string' ? body.region : 'the requested region';
+  const state = typeof body.state === 'string' ? body.state : 'absent';
+  return new SnapshotStillBuildingError(
+    `Sandbox image snapshot ${template} is building in ${region}: Platinum is copying the template there (state=${state})`,
+  );
 }
 
 /**
@@ -190,55 +342,8 @@ function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: num
  * key, which the CP replays to the already-committed box).
  */
 function isNameTakenConflict(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  if (!/ -> 409\b/.test(message)) return false;
-  return /name_taken|name[_ ]?already|name.{0,24}(exists|conflict|taken)/i.test(message);
-}
-
-
-/** The worker a pi cell boots. One per deployment; celld serves every session from it. */
-export const CELL_WORKER_NAME = 'pi-agent';
-/** The template that runs celld itself. A cell is an isolate INSIDE one of these. */
-export const CELL_TEMPLATE = 'pt-celld';
-/** The port the cell's worker listens on (the microVM agent's is 8000). */
-export const CELL_PORT = 8080;
-/** The daemon's static file server (see sandbox-proxy/session-data-ports.ts). */
-const STATIC_FILE_PORT = 3211;
-/** Where a cell serves that server's routes, on its one port (pi-worker-js cell-static.js). */
-export const CELL_STATIC_PREFIX = '/static';
-
-/**
- * The create body for a session that runs as a CELL.
- *
- * Two things differ from a microVM create and both are load-bearing. The
- * runtime is `cell` with a worker name, because Platinum refuses a worker-less
- * cell as malformed. And every session variable is prefixed `CELLD_VAR_`,
- * because celld passes exactly those into the isolate — an unprefixed variable
- * reaches the node and never the worker, which looks like an agent that booted
- * with no configuration at all.
- */
-export function buildCellCreateBody(input: {
-  name: string;
-  envVars: Record<string, string>;
-  cpu?: number;
-  ramMb?: number;
-  metadata?: Record<string, unknown>;
-}): Record<string, unknown> {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(input.envVars ?? {})) env[`CELLD_VAR_${k}`] = String(v);
-  return {
-    template: CELL_TEMPLATE,
-    runtime: 'cell',
-    worker: CELL_WORKER_NAME,
-    name: input.name,
-    ...(input.cpu ? { cpu: input.cpu } : {}),
-    ...(input.ramMb ? { ram_mb: input.ramMb } : {}),
-    // Inline expose, not `exposed_ports`: the create only opens a port under
-    // `expose`, and the other spelling is refused (platinum api #924).
-    expose: [{ port: CELL_PORT, public: true }],
-    env,
-    metadata: { 'kortix.managed': 'true', 'kortix.runtime': 'cell', ...(input.metadata ?? {}) },
-  };
+  const http = platinumHttp(error);
+  return http.status === 409 && http.code === 'name_taken';
 }
 
 export class PlatinumProvider implements SandboxProvider {
@@ -298,13 +403,6 @@ export class PlatinumProvider implements SandboxProvider {
   private async provisionFromTemplate(
     template: string,
     opts: CreateSandboxOpts,
-    /**
-     * A ready-made create body. A cell needs a different body (runtime, worker,
-     * CELLD_VAR_ env) but the SAME everything else — dedup name, idempotency
-     * key, retry classification, eager expose, baseUrl — so it overrides the
-     * body rather than forking the method.
-     */
-    bodyOverride?: Record<string, unknown>,
   ): Promise<ProvisionResult> {
     const _t0 = Date.now();
     const workloadType = sandboxWorkloadType(opts);
@@ -345,69 +443,51 @@ export class PlatinumProvider implements SandboxProvider {
       platinumCreateDedupEnabled() && opts.sandboxId
         ? {
             name: buildDeterministicSandboxName(opts.sandboxId, dedupAttempt),
-            idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt),
+            idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt, opts.location),
+            sandboxId: opts.sandboxId,
           }
         : null;
-
-    // A pi session runs as a CELL: an isolate on a celld node, not a microVM of
-    // its own. Everything below this point (dedup name, idempotency key, expose,
-    // baseUrl) is identical — only the body differs, because the lifecycle a
-    // cell takes is the same four host commands a microVM takes.
-    // `!bodyOverride` is what makes this terminate. The recursive call carries
-    // the SAME opts, so `opts.piWorker` is still true on the way back in — and
-    // without this second condition the branch takes itself, forever. Measured
-    // on dev 2026-09-06: every pi session failed with `RangeError: Maximum call
-    // stack size exceeded` before the sandbox was created, which surfaced to
-    // the user as a session stuck at `failed` with no box and no explanation.
-    if (opts.piWorker && !bodyOverride) {
-      const cellBody = buildCellCreateBody({
-        // A SHARED HOST IS NAMED FOR ITS PROJECT, not for the session that
-        // happened to create it — that name is how the next session finds it,
-        // and Platinum has no other mutable field to register one under.
-        name: opts.cellHostName ?? dedup?.name ?? `kortix-cell-${opts.sandboxId ?? Date.now()}`,
-        envVars,
-        cpu: opts.resourceSpec?.cpuCores,
-        ramMb: opts.resourceSpec ? Math.round(opts.resourceSpec.memoryGb * 1024) : undefined,
-        metadata: {
-          'kortix.env': config.INTERNAL_KORTIX_ENV,
-          'kortix.workload': workloadType,
-          ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
-        },
-      });
-      return this.provisionFromTemplate(CELL_TEMPLATE, opts, cellBody);
-    }
 
     const createBody: Record<string, unknown> = {
       template,
       envVars,
       type: autoStop === 0 ? 'persistent' : 'ephemeral',
       auto_stop_minutes: autoStop,
-      // OWNERSHIP MARKER, not decoration. The Platinum org is shared across
-      // prod/dev/local, and `listManagedRunningSandboxes` (the orphan-box
-      // reaper's input) filters on exactly these two keys. Without them the
-      // reaper would enumerate every environment's boxes and stop them.
-      // Boxes created before this landed carry no metadata and are
-      // therefore never reaped — the safe fail direction.
-      //
-      // S1 adds `kortix.sandbox_id` alongside them when the dedup identity is
-      // on — the logical sandbox id behind the deterministic name, so an
-      // operator can map a box back to its session without parsing the name.
-      // The reaper's filter is unaffected (it reads the two keys above only).
+      // Only Kortix wakes a session box. Platinum's edge resumes a stopped VM on
+      // ANY inbound request, and Kortix keeps sending some after a stop (5-min
+      // cached edge URLs, an SSE reconnect, a retry). The VM then ran while our
+      // row said `stopped`, its session credential refused: 68 prod boxes in
+      // one day, one left serving nothing for 18 h (2026-09-28). Apps keep the
+      // default: a visitor's request is supposed to wake them. Platinum builds
+      // before #1335 drop the unknown field (non-strict schema).
+      auto_resume: workloadType === 'app',
+      // The project's `us_region` flag (platform/services/sandbox-region.ts).
+      // Absent ⇒ Platinum places the box in its home region, exactly as
+      // before. A create for a region this process has already seen a box in
+      // goes straight to that region's control plane; otherwise
+      // PLATINUM_API_URL forwards it there. The answer names the owner
+      // (`api_url`), and every later call by id goes straight to it
+      // (shared/platinum.ts).
+      ...(opts.location ? { region: opts.location } : {}),
+      // Database + instance ownership. The versioned marker also excludes
+      // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
-        'kortix.managed': 'true',
+        'kortix.managed': await sandboxOwnershipMarker(),
         'kortix.env': config.INTERNAL_KORTIX_ENV,
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
-        // Instance scope for local dev on a shared DB (projects/instance-scope.ts):
-        // `listManagedRunningSandboxes` skips another instance's boxes. Absent
-        // in deployed environments.
+        // Instance scope (projects/instance-scope.ts): `listManagedRunningSandboxes`
+        // skips another instance's boxes. Set by local dev worktrees and by PR
+        // previews, where it names the preview host that owns this session box
+        // (tests/src/core/preview-session-reaper.ts). Absent in deployed
+        // environments.
         ...(currentInstanceId() ? { 'kortix.instance': currentInstanceId()! } : {}),
       },
     };
     if (dedup) {
       createBody.name = dedup.name;
     }
-    const createBodyJson = JSON.stringify(bodyOverride ?? createBody);
+    const createBodyJson = JSON.stringify(createBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
     // This asks Platinum to long-poll server-side for up to 60s
     // (wait_timeout_ms) — platinumJson's default 20s client-side abort budget
@@ -423,23 +503,75 @@ export class PlatinumProvider implements SandboxProvider {
 
     const _tCreate0 = Date.now();
     let sandbox: PlatinumSandbox;
+    // S1 FOLLOW-UP (prod incident 2026-09-27): the attempt actually committed,
+    // for the caller to persist. Equals `dedupAttempt` unless the advance
+    // branch below fires. Never touched when `dedup` is off.
+    let committedAttempt = dedupAttempt;
     try {
       sandbox = await postCreate();
     } catch (err) {
-      if (dedup && isNameTakenConflict(err)) {
-        // See isNameTakenConflict + the module doc: the name is exclusively
-        // ours, so this can only be our own prior commit under this same
-        // attempt. Re-issue the IDENTICAL body under the SAME key once — the
-        // CP resolves it to a replay of the already-committed box rather than
-        // a second create.
-        console.warn(
-          `[platinum] name_taken for ${dedup.name} (sandboxId=${opts.sandboxId}, attempt=${dedupAttempt}) — ` +
-          `retrying under the SAME Idempotency-Key to replay the committed box instead of a fresh create:`,
-          err,
-        );
+      const notYetInRegion = regionalTemplateNotReady(err, template);
+      if (notYetInRegion) throw notYetInRegion;
+      if (!dedup || !isNameTakenConflict(err)) throw err;
+      // See isNameTakenConflict + the module doc: the name is exclusively
+      // ours, so this can only be our own prior commit under this same
+      // attempt. Re-issue the IDENTICAL body under the SAME key once — the
+      // CP resolves it to a replay of the already-committed box rather than
+      // a second create.
+      console.warn(
+        `[platinum] name_taken for ${dedup.name} (sandboxId=${opts.sandboxId}, attempt=${dedupAttempt}) — ` +
+        `retrying under the SAME Idempotency-Key to replay the committed box instead of a fresh create:`,
+        err,
+      );
+      try {
         sandbox = await postCreate();
-      } else {
-        throw err;
+      } catch (err2) {
+        if (!isNameTakenConflict(err2)) throw err2;
+        // The replay assumption above just failed — the SAME Idempotency-Key
+        // still hit a genuine conflict, which only happens when Platinum's
+        // idempotency record for it expired, or `template` changed since the
+        // box under this name was first committed (buildIdempotencyKey folds
+        // template in, the name does not — see the module doc). The box
+        // holding `dedup.name` is NEVER touched here — a prod org can carry
+        // tens of thousands of sandboxes (most `archived`, holding names
+        // indefinitely under Platinum's `deleted_at IS NULL` uniqueness
+        // predicate), so a by-name lookup is not a viable create-path
+        // operation, and removing/starting a box this call cannot prove is
+        // unreferenced elsewhere is the orphan reaper's job, not create()'s.
+        //
+        // Advance to the NEXT attempt instead — a fresh deterministic name +
+        // Idempotency-Key, exactly the transition heal/provider-failover/
+        // id-boot-fallback already use in session-sandbox.ts. Bounded to ONE
+        // advance per call: if that also 409s name_taken, throw rather than
+        // ever advancing again. The caller persists `committedAttempt` via
+        // this method's return metadata, so the NEXT top-level `/start`
+        // reads the ADVANCED attempt (restorePlatinumCreateAttempt) and never
+        // re-hits this same stuck name — closing the prod incident where
+        // nothing ever advanced the counter and the identical name/key
+        // 409'd forever on a ~15-minute retry cadence.
+        const advancedAttempt = dedupAttempt + 1;
+        const advancedName = buildDeterministicSandboxName(dedup.sandboxId, advancedAttempt);
+        const advancedKey = buildIdempotencyKey(dedup.sandboxId, template, advancedAttempt, opts.location);
+        console.warn(
+          `[platinum] name_taken PERSISTED for ${dedup.name} after the replay retry — ` +
+          `advancing to attempt ${advancedAttempt} (fresh name ${advancedName}), never touching the old box:`,
+          err2,
+        );
+        try {
+          sandbox = await platinumJson<PlatinumSandbox>(CREATE_PATH, {
+            method: 'POST',
+            signal: AbortSignal.timeout(70_000),
+            body: JSON.stringify({ ...createBody, name: advancedName }),
+            headers: { 'Idempotency-Key': advancedKey },
+          });
+        } catch (err3) {
+          if (!isNameTakenConflict(err3)) throw err3;
+          throw new Error(
+            `[platinum] name_taken persisted for ${dedup.name} even after advancing to attempt ` +
+            `${advancedAttempt} (${advancedName}) — refusing to advance again`,
+          );
+        }
+        committedAttempt = advancedAttempt;
       }
     }
     const _vmMs = Date.now() - _tCreate0;
@@ -452,7 +584,7 @@ export class PlatinumProvider implements SandboxProvider {
     // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
     // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
     // an intermittent guest-boot stall surfaced as a "running" session that was
-    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // actually failed-start (proven 2026-07-07 on one session: Platinum
     // state=failed-start, comp status=active). Throw on a non-running terminal
     // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
     // another host) instead of silently returning an unusable sandbox. The
@@ -473,17 +605,8 @@ export class PlatinumProvider implements SandboxProvider {
       );
     }
 
-    const ingressPort = bodyOverride ? CELL_PORT : (workloadType === 'app' ? 8080 : AGENT_PORT);
-    // A CELL'S BASE NAMES THE SESSION, NOT THE BOX. `bodyOverride` is the cell
-    // create, and `opts.sandboxId` is the session's own id. The session that
-    // CREATES a shared runner is its first tenant, and it must be addressed
-    // like every session that adopts it later (cell-host-platinum.ts
-    // sharedCellBaseUrl) — measured on dev 2026-09-09: the creator got the box
-    // URL, the adopter got a session URL, and only one of them could be told
-    // apart from its neighbours. The proxy resolves a session id first and
-    // still routes ingress to the box (sandbox-proxy/backend.ts loadSandbox).
-    const baseId = bodyOverride && opts.sandboxId ? opts.sandboxId : externalId;
-    const baseUrl = `${sandboxApiBase}/v1/p/${baseId}/${ingressPort}`;
+    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
+    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
     // the sandbox is running — before the FE connects. Expose is otherwise lazy
@@ -498,7 +621,11 @@ export class PlatinumProvider implements SandboxProvider {
         `/v1/sandboxes/${externalId}/expose`,
         {
           method: 'POST',
-          body: JSON.stringify({ port: ingressPort, public: true }),
+          body: JSON.stringify({
+            port: ingressPort,
+            public: false,
+            ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS,
+          }),
         },
       );
       exposedUrl = (exposed.url ?? '').replace(/\/$/, '');
@@ -541,6 +668,17 @@ export class PlatinumProvider implements SandboxProvider {
         template,
         version: SANDBOX_VERSION,
         workloadType,
+        // Where Platinum actually placed the box, from its answer — not what
+        // we asked for — so an operator reading the session row sees the truth.
+        ...(sandbox.region ? { platinumRegion: sandbox.region } : {}),
+        ...(sandbox.api_url ? { platinumApiUrl: sandbox.api_url } : {}),
+        // Persisted into session_sandboxes.metadata by the caller
+        // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
+        // LATER top-level provisioning call's restorePlatinumCreateAttempt
+        // reads the attempt actually committed here — not the pre-create
+        // value session-sandbox.ts's onAttemptStart hook persisted, which the
+        // advance-on-persistent-name_taken branch above may have superseded.
+        ...(dedup ? { platinumCreateAttempt: committedAttempt } : {}),
       },
     };
   }
@@ -562,13 +700,37 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
-  async start(externalId: string): Promise<void> {
-    const deadline = Date.now() + START_CONFLICT_GRACE_MS;
+  async start(externalId: string, opts: SandboxStartOptions = {}): Promise<void> {
+    let deadline = Date.now() + START_CONFLICT_GRACE_MS;
+    const restoreDeadline = Date.now() + START_RESTORE_BUDGET_MS;
     let firstConflict: unknown = null;
+    // true = the box is back on disk and gets a fresh /start. That /start
+    // gets a fresh stop grace too: another waiter may win the race to it, and
+    // this one must then see the box through `starting`, not fail at once.
+    const restored = async () => {
+      if (!(await this.waitForRestore(externalId, restoreDeadline, opts.onProgress))) return false;
+      deadline = Date.now() + START_CONFLICT_GRACE_MS;
+      return true;
+    };
 
-    for (;;) {
+    attempt: for (;;) {
       try {
-        await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
+        const started = await platinumJsonResponse<PlatinumSandbox>(
+          `/v1/sandboxes/${externalId}/start`,
+          {
+            method: 'POST',
+            signal: AbortSignal.timeout(START_CALL_TIMEOUT_MS),
+          },
+        );
+        // 202 {state:'unarchiving'}: Platinum is restoring the disk from cold
+        // storage, waited its 45 s inline budget, and will NOT boot the box
+        // when the restore lands — its contract is "call /start again". This
+        // returned on the 202, so nothing ever sent that second /start and
+        // the wake fence gave up at 90 s with start_timeout (KRTX-197; 162 of
+        // 241 prod unarchives on 2026-09-25 outran the inline wait).
+        const state = String(started.body?.state ?? '').toLowerCase();
+        if (started.status !== 202 && !state.includes('archiv')) return;
+        if (await restored()) continue;
         return;
       } catch (error) {
         // Platinum acknowledges stop before the VM always reaches `stopped`.
@@ -576,8 +738,13 @@ export class PlatinumProvider implements SandboxProvider {
         // 409. Keep the provider call inside this adapter until the accepted
         // stop settles, then retry start. The control plane remains stopped and
         // unbilled until its separate provider-running confirmation succeeds.
-        const message = error instanceof Error ? error.message : String(error ?? '');
-        if (!/ -> 409\b/.test(message)) throw error;
+        // The CALL gave up, not Platinum: a restore it started keeps going
+        // server-side. Wait on the box's real state instead of failing the wake.
+        if (error instanceof Error && error.name === 'TimeoutError' && Date.now() < restoreDeadline) {
+          if (await restored()) continue;
+          return;
+        }
+        if (platinumHttp(error).status !== 409) throw error;
         firstConflict ??= error;
       }
 
@@ -585,7 +752,14 @@ export class PlatinumProvider implements SandboxProvider {
         const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
         const state = String(sandbox.state ?? '').toLowerCase();
         if (state === 'running') return;
-        if (state === 'stopped' || state.includes('archiv')) break;
+        if (state === 'stopped' || state === 'archived') break;
+        // Another caller's /start is restoring this box, or its archive is
+        // still being written. Either outlasts the stop grace, and re-posting
+        // /start meanwhile only collects 409s: wait on the box instead.
+        if (state.includes('archiv')) {
+          if (await restored()) continue attempt;
+          return;
+        }
         if (!['starting', 'stopping', 'pending'].includes(state) || Date.now() >= deadline) {
           throw firstConflict;
         }
@@ -594,6 +768,38 @@ export class PlatinumProvider implements SandboxProvider {
 
       if (Date.now() >= deadline) throw firstConflict;
     }
+  }
+
+  /**
+   * Wait out an archive or restore. true = the box is on disk (or back to
+   * `archived`) and needs its /start now; false = it moved on without one
+   * (someone else started it, or it failed) and status polling takes over.
+   * Throws when `until` passes first: the box is not coming up on this call.
+   * `onProgress` fires on the first in-progress read, then every
+   * START_PROGRESS_INTERVAL_MS while it lasts.
+   */
+  private async waitForRestore(
+    externalId: string,
+    until: number,
+    onProgress?: () => Promise<void>,
+  ): Promise<boolean> {
+    let reportedAt = Number.NEGATIVE_INFINITY;
+    while (Date.now() < until) {
+      await Bun.sleep(START_RESTORE_POLL_MS);
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(
+        () => null,
+      );
+      const state = String(sandbox?.state ?? '').toLowerCase();
+      if (state === 'stopped' || state === 'archived') return true;
+      if (state && !state.includes('archiv')) return false;
+      if (state && onProgress && Date.now() - reportedAt >= START_PROGRESS_INTERVAL_MS) {
+        reportedAt = Date.now();
+        await onProgress().catch(() => undefined);
+      }
+    }
+    throw new Error(
+      `platinum sandbox ${externalId} still restoring from archive after ${START_RESTORE_BUDGET_MS / 1000}s`,
+    );
   }
 
   async exec(
@@ -634,8 +840,56 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
+  /**
+   * Stop AND CONFIRM. Platinum acknowledges the stop request before the VM
+   * always reaches `stopped` — the same fact `start()`'s comment names for the
+   * reopen race. Returning right after the ACK let the control plane mark the
+   * session/sandbox row stopped (which kills the token — see
+   * `account-tokens.ts`'s `isValid` check) while the VM was still up and
+   * still calling `turn-stream`/`audit/events`/`runtime-assets/manifest` with
+   * that now-dead token. PROD 76h window: 404,982 `401 Session token is not
+   * active` rejections across 95 projects, one box for a full 12h
+   * (`autoStopMinutes: 720`) — exactly its own idle timeout, because nothing
+   * had confirmed the stop and nothing was watching that box again.
+   *
+   * Poll bounded to `stopConfirmDeadlineMs()`: long enough for an ordinary
+   * power-off, short enough not to serialize a reaper batch pass (stops run
+   * with bounded concurrency — see `REAP_CONCURRENCY` in box-reaper.ts). A
+   * timeout throws instead of returning silently, so the caller
+   * (`stopExpiredBox`/`stopSession`) treats it as a real failure: it releases
+   * its claim and leaves the DB row `active`, so the token stays valid and the
+   * NEXT pass retries the same box — never a false "stopped" for a VM that is
+   * still on.
+   */
   async stop(externalId: string): Promise<void> {
+    // Auto-resume off BEFORE the stop: Platinum resumed a box on a stray request
+    // 1.3 s after `stop.done`, with its row already stopped and its token dead.
+    await disableAutoResume(
+      externalId,
+      await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(() => null),
+    );
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
+    const deadlineMs = stopConfirmDeadlineMs();
+    const pollMs = stopConfirmPollMs();
+    const deadline = Date.now() + deadlineMs;
+    for (;;) {
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(
+        // A box that vanished mid-poll (archived, deleted) is stopped for our
+        // purposes — nothing left to confirm against.
+        () => null,
+      );
+      const state = String(sandbox?.state ?? '').toLowerCase();
+      if (!sandbox || state === 'stopped' || state.includes('archiv') || state === 'failed') {
+        await disableAutoResume(externalId, sandbox);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Platinum stop for ${externalId} did not reach stopped within ${deadlineMs}ms (last state: ${state || 'unknown'})`,
+        );
+      }
+      await Bun.sleep(pollMs);
+    }
   }
 
   /**
@@ -654,6 +908,7 @@ export class PlatinumProvider implements SandboxProvider {
   async listManagedRunningSandboxes(): Promise<
     Array<{ externalId: string; createdAt: Date | null }>
   > {
+    const owner = await sandboxOwnershipMarker();
     const out: Array<{ externalId: string; createdAt: Date | null }> = [];
     const limit = 100;
     // Bounded page count as well as page size: a paginator that never reports
@@ -666,12 +921,10 @@ export class PlatinumProvider implements SandboxProvider {
       for (const sandbox of rows) {
         if (!sandbox.id) continue;
         const metadata = sandbox.metadata ?? {};
-        if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
+        if (metadata['kortix.managed'] !== owner) continue;
         if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
-        // Instance scope beside the env scope: another local instance's box is
-        // not ours to stop. Unstamped boxes stay everyone's. No-op when
-        // KORTIX_INSTANCE_ID is unset.
-        if (!sandboxBelongsToThisInstance({ instanceId: metadata['kortix.instance'] })) continue;
+        // An unset local instance must not claim an explicitly scoped box.
+        if (!providerBoxBelongsToThisInstance(metadata['kortix.instance'])) continue;
         if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
         const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
         const createdAt = rawCreatedAt ? new Date(rawCreatedAt) : null;
@@ -689,8 +942,8 @@ export class PlatinumProvider implements SandboxProvider {
 
   async remove(externalId: string): Promise<void> {
     // No credential replicas to erase first: Kortix stopped registering secrets
-    // at the Platinum edge when one mechanism took over every provider
-    // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). The value is
+    // at the Platinum edge when one mechanism took over every provider.
+    // The value is
     // substituted server-side per request and never leaves the API.
     await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
   }
@@ -700,7 +953,9 @@ export class PlatinumProvider implements SandboxProvider {
       const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
       const state = String(sandbox.state ?? '').toLowerCase();
       if (state === 'running') return 'running';
-      if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
+      // A stop ACK is not power-off. Keep the token and compute row alive
+      // until the provider confirms a terminal state.
+      if (state === 'stopped' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
       // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
       // reported as `unknown` is a box `decideReconcile` never acts on, and
@@ -708,7 +963,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'error' || state === 'failed') return 'terminal';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
     } catch (err) {
-      if (isMissingSandboxError(err)) return 'removed';
+      if (isProviderNotFound(err)) return 'removed';
       return 'unknown';
     }
   }
@@ -718,10 +973,10 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
     } catch (err) {
-      if (!isMissingSandboxError(err)) return 'recovering';
+      if (!isProviderNotFound(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // already backed up to S3 (incident 2026-08-12, one Platinum sandbox:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:
@@ -754,6 +1009,17 @@ export class PlatinumProvider implements SandboxProvider {
       return (await this.tryRestoreFromBackup(externalId)) ? 'recovering' : 'unavailable';
     }
 
+    // failed-start is a start that failed, not a box that is gone. Platinum
+    // keeps the disk of a box that ever booted and takes /start again from it
+    // (re-restoring the archive when there is one). 2026-09-25: a Platinum
+    // reconciler race failed 17 prod starts mid-boot with every disk intact on
+    // its host; this answered 'unavailable' for each and the sessions were
+    // reported lost. A refused /start throws, which callers read as unavailable.
+    if (state === 'failed-start' && (sandbox.startedAt ?? sandbox.started_at)) {
+      await this.start(externalId);
+      return 'recovering';
+    }
+
     if (['failed-start', 'lost', 'deleted'].includes(state)) return 'unavailable';
     return 'recovering';
   }
@@ -781,75 +1047,66 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
-  /**
-   * WHICH PORT THE AGENT IS ON, which depends on what the box IS.
-   *
-   * A cell's worker listens on 8080; a microVM's agent listens on 8000. Every
-   * ingress here routed to 8000 unconditionally, so for a session running as a
-   * cell the readiness poll, the runtime-asset refresh and every proxied agent
-   * call were exposed on a port nothing serves. Measured on dev 2026-09-06,
-   * session afe59171: its cell answered /kortix/health with runtime "ready" on
-   * 8080 the whole time, while the session sat in `open-session:starting` for
-   * 167 s and logged `runtime-asset refresh not delivered / unreachable`.
-   *
-   * The runtime is immutable for the life of a box, so one lookup is cached.
-   * A failed lookup falls back to the microVM port — the answer that was
-   * always given before, so a Platinum outage cannot make this worse.
-   */
-  private readonly agentPortCache = new Map<string, number>();
-
-  private async agentPortFor(externalId: string): Promise<number> {
-    const cached = this.agentPortCache.get(externalId);
-    if (cached) return cached;
-    let port = AGENT_PORT;
-    try {
-      const row = await platinumJson<{ runtime?: string }>(`/v1/sandboxes/${externalId}`);
-      if (String(row?.runtime ?? '') === 'cell') port = CELL_PORT;
-    } catch {
-      /* fall back to the microVM agent port */
-    }
-    this.agentPortCache.set(externalId, port);
-    return port;
-  }
-
   async resolveIngress(
     externalId: string,
     request: SandboxIngressRequest,
   ): Promise<ResolvedSandboxIngress> {
     const route = this.routeIngress(request);
-    // routeIngress is synchronous and knows only the request, so it answers
-    // with the microVM agent port. Only here is the box's identity available.
-    let effectivePort =
-      route.effectivePort === AGENT_PORT ? await this.agentPortFor(externalId) : route.effectivePort;
-    // THE PREVIEW SERVER ON A CELL. The file viewer frames an HTML file from
-    // the sandbox's static file server on 3211 (`/open?path=…` after
-    // `/health`). A cell has ONE port, so that traffic was exposed on a port
-    // nothing serves and the viewer read "Starting preview server…" for its
-    // 30 s bound (measured on the dev stack, 2026-09-10). A cell serves the
-    // same routes under `/static` on its own port: the ingress for a cell's
-    // 3211 is its 8080 with that prefix. The proxy keeps 3211 as the gated,
-    // client-addressed port; only where the bytes go changes.
-    let pathPrefix = '';
-    if (request.port === STATIC_FILE_PORT && (await this.agentPortFor(externalId)) === CELL_PORT) {
-      effectivePort = CELL_PORT;
-      pathPrefix = CELL_STATIC_PREFIX;
-    }
+    const effectivePort = route.effectivePort;
     // Expose the requested port through Platinum's edge → https://<port>-<id>.sbx…
-    // No preview token: the sandbox is gated by the serviceKey bearer the proxy
-    // already adds. Idempotent — re-exposing returns the same URL.
+    // PRIVATE: the edge refuses a request without the HMAC token, so the edge
+    // hostname alone grants nothing. The token rides in a header on every
+    // proxied request. Re-exposing is idempotent and turns a port an older
+    // build exposed publicly back into a private one.
     const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
       method: 'POST',
-      body: JSON.stringify({ port: effectivePort, public: true }),
+      body: JSON.stringify({
+        port: effectivePort,
+        public: false,
+        ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS,
+      }),
     });
-    const url = (exposed.url ?? '').replace(/\/$/, '');
-    if (!url)
-      throw new Error(`[platinum] expose returned no URL for ${externalId}:${effectivePort}`);
+    const { url, token } = privateEdgeIngress({ ...exposed, port: exposed.port ?? effectivePort });
+    this.hardenLegacyPublicExposures(externalId);
     return {
-      url: url + pathPrefix,
-      headers: {},
+      url,
+      headers: { [PLATINUM_PREVIEW_TOKEN_HEADER]: token },
+      queryToken: { name: 't', value: token },
       effectivePort,
       websocket: route.websocket,
     };
+  }
+
+  /**
+   * Convert every port an older build exposed PUBLICLY on this sandbox to a
+   * private exposure. Runs once per sandbox per process, detached from the
+   * request: a public exposure outlives the request that created it, so a port
+   * nobody opens again would otherwise stay reachable without Kortix
+   * authorization until the sandbox is deleted.
+   */
+  private hardenLegacyPublicExposures(externalId: string): void {
+    if (hardenedExposureSandboxes.has(externalId)) return;
+    if (hardenedExposureSandboxes.size >= HARDENED_EXPOSURE_CACHE_MAX) {
+      hardenedExposureSandboxes.clear();
+    }
+    hardenedExposureSandboxes.add(externalId);
+    void (async () => {
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
+      for (const port of publicExposedPorts(sandbox)) {
+        await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
+          method: 'POST',
+          body: JSON.stringify({ port, public: false, ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS }),
+        });
+        console.log(`[platinum] converted public exposure ${externalId}:${port} to private`);
+      }
+    })().catch((err) => {
+      // Retry on a later request: the next resolveIngress re-runs the pass.
+      hardenedExposureSandboxes.delete(externalId);
+      console.warn(
+        `[platinum] public-exposure conversion failed for ${externalId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    });
   }
 
   routeIngress(request: SandboxIngressRequest) {
@@ -871,12 +1128,10 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
-    // Expose the agent port through Platinum's edge. PUBLIC (no HMAC ?t= token)
-    // because Platinum's edge reads the token from the query string only, which
-    // doesn't compose with the Kortix proxy appending a path — and the sandbox
-    // is already gated by the KORTIX serviceKey bearer below (same effective
-    // auth as Daytona's preview link + serviceKey). Idempotent: re-exposing an
-    // already-exposed port returns the same URL.
+    // Expose the agent port through Platinum's edge, privately: the preview
+    // token travels in the header resolveIngress returns, and the daemon also
+    // checks the KORTIX serviceKey bearer below (the same two layers as
+    // Daytona's preview token + serviceKey).
     // POST /:id/expose takes a SINGLE {port,public} and returns a single
     // {url,port,...} — the array {expose:[...]} shape is only valid on the
     // create route's inline expose. Sending the array here 400s.

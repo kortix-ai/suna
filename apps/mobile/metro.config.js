@@ -1,6 +1,7 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const { withNativeWind } = require('nativewind/metro');
 const path = require('path');
+const fs = require('fs');
 
 // Project root and monorepo root
 const projectRoot = __dirname;
@@ -21,18 +22,27 @@ const mobileNodeModules = path.resolve(projectRoot, 'node_modules');
 // This prevents duplicate React instances when bundling shared packages
 const forcedModules = ['react', 'react-native', 'react/jsx-runtime', 'react/jsx-dev-runtime'];
 
-// Node.js built-ins that leak into the bundle graph via third-party packages
-// but have no React Native equivalent and are never exercised at runtime.
-// `readline` is pulled in by expensify-common's CLI helper (referenced through
-// @expensify/react-native-live-markdown). Metro cannot resolve it, so we stub
-// it to an empty module. Without this the EAS "Bundle JavaScript" phase fails
-// with "Unable to resolve module readline".
-const emptyModulePath = path.resolve(projectRoot, 'metro-empty-module.js');
-const stubbedNodeBuiltins = new Set(['readline']);
+// `@kortix/sdk/react` is bundled from `packages/sdk`, which has its own copies of
+// these in `packages/sdk/node_modules`. A second React Query never sees this
+// app's `QueryClientProvider`, so they resolve exactly as an import written in
+// this app does (same file, same instance). Mirrored for `bun test` in
+// `lib/testing/sdk-single-instance.ts`.
+const appSingletons = new Set(['@tanstack/react-query', 'zustand', 'zustand/middleware']);
+const appOrigin = path.join(projectRoot, 'package.json');
+
+// MathJax 4 (`lib/math/tex-to-svg.ts`) imports its default font through the
+// package `imports` map (`#default-font/*` -> @mathjax/mathjax-newcm-font).
+// The app renders with the TeX font instead, so the alias points there: the
+// NewCM font never enters the bundle, and without an alias Metro cannot
+// resolve the import at all.
+const DEFAULT_FONT_PREFIX = '#default-font/';
+const mathjaxTexFontDir = fs.realpathSync(path.resolve(mobileNodeModules, '@mathjax/mathjax-tex-font/mjs'));
 
 config.resolver = {
   ...config.resolver,
-  assetExts: config.resolver.assetExts.filter((ext) => ext !== 'svg'),
+  // `webjs`: JavaScript that runs inside a WebView, shipped as a file and never
+  // parsed by Metro (the Mermaid renderer, `assets/mermaid/`).
+  assetExts: [...config.resolver.assetExts.filter((ext) => ext !== 'svg'), 'webjs'],
   sourceExts: [...config.resolver.sourceExts, 'svg'],
   // Watch additional paths in monorepo
   nodeModulesPaths: [mobileNodeModules, path.resolve(monorepoRoot, 'node_modules')],
@@ -48,10 +58,9 @@ config.resolver = {
   // Custom resolver to force React resolution from mobile's node_modules
   // This is critical for monorepo setups where shared packages use React hooks
   resolveRequest: (context, moduleName, platform) => {
-    // Stub Node.js built-ins that have no React Native equivalent.
-    if (stubbedNodeBuiltins.has(moduleName)) {
+    if (moduleName.startsWith(DEFAULT_FONT_PREFIX)) {
       return {
-        filePath: emptyModulePath,
+        filePath: path.join(mathjaxTexFontDir, moduleName.slice(DEFAULT_FONT_PREFIX.length)),
         type: 'sourceFile',
       };
     }
@@ -62,14 +71,8 @@ config.resolver = {
         type: 'sourceFile',
       };
     }
-    // Deterministic mapping for the SDK turns subpath — does not depend on
-    // Metro's package-exports support. The module is framework-free TS with
-    // zero runtime imports, so this single file is the whole subgraph.
-    if (moduleName === '@kortix/sdk/turns') {
-      return {
-        filePath: path.resolve(monorepoRoot, 'packages/sdk/src/turns/index.ts'),
-        type: 'sourceFile',
-      };
+    if (appSingletons.has(moduleName) && context.originModulePath !== appOrigin) {
+      return context.resolveRequest({ ...context, originModulePath: appOrigin }, moduleName, platform);
     }
     // Fall back to default resolution
     return context.resolveRequest(context, moduleName, platform);

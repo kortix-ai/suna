@@ -1,3 +1,4 @@
 export * from './dockerfile-layer';
-export * from './fast-dockerfile';
 export * from './meta-dockerfile';
+export * from './platform-binaries';
+export * from './shell-tools';

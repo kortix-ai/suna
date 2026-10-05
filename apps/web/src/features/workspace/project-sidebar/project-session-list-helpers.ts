@@ -1,4 +1,5 @@
-import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
+import { stripChatMentionMarkup } from '@/components/projects/session-label';
+import { type ChangeRequest, type ProjectSession, type ProjectSessionStatus } from '@kortix/sdk';
 
 /**
  * Pure helpers extracted from `project-session-list.tsx` so every decision the
@@ -12,7 +13,7 @@ import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
  * - what a row is titled, and how its timestamp is abbreviated
  *   (`getSessionDisplayTitle`, `shortRelative`);
  * - which of loading/error/empty/no-matches/content renders
- *   (`resolveSessionListViewState`).
+ *   (`resolveSessionListViewState`, also read by the Sessions page).
  *
  * Display status itself is NOT decided here — `sessionDisplayStatus` in
  * `components/projects/session-label` owns that mapping, and this file reads it.
@@ -24,10 +25,69 @@ export const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = [
   'provisioning',
 ];
 
+/**
+ * Index every change-request state by the session that created it.
+ *
+ * New records use `origin_session_id`. Older records can lack that field, so a
+ * unique `head_ref` → `branch_name` match restores the association. Ambiguous
+ * branches stay unassigned instead of showing a change request on the wrong
+ * session.
+ */
+export function groupChangeRequestsBySession(
+  changeRequests: readonly ChangeRequest[],
+  sessions: readonly ProjectSession[],
+): Map<string, ChangeRequest[]> {
+  const sessionIds = new Set(sessions.map((session) => session.session_id));
+  const sessionIdsByBranch = new Map<string, string[]>();
+
+  for (const session of sessions) {
+    const branch = session.branch_name?.trim();
+    if (!branch) continue;
+    const matches = sessionIdsByBranch.get(branch) ?? [];
+    matches.push(session.session_id);
+    sessionIdsByBranch.set(branch, matches);
+  }
+
+  const grouped = new Map<string, ChangeRequest[]>();
+  for (const changeRequest of changeRequests) {
+    let sessionId: string | undefined;
+    if (changeRequest.origin_session_id && sessionIds.has(changeRequest.origin_session_id)) {
+      sessionId = changeRequest.origin_session_id;
+    } else if (!changeRequest.origin_session_id) {
+      const branchMatches = sessionIdsByBranch.get(changeRequest.head_ref) ?? [];
+      if (branchMatches.length === 1) sessionId = branchMatches[0];
+    }
+
+    if (!sessionId) continue;
+    const requests = grouped.get(sessionId) ?? [];
+    requests.push(changeRequest);
+    grouped.set(sessionId, requests);
+  }
+
+  for (const requests of grouped.values()) {
+    requests.sort((left, right) => {
+      const createdDifference = Date.parse(right.created_at) - Date.parse(left.created_at);
+      return createdDifference || right.number - left.number;
+    });
+  }
+
+  return grouped;
+}
+
 /** Whether the session list should keep polling — true while any session is
- *  still mid-provisioning (queued/branching/provisioning). */
+ *  still mid-provisioning (queued/branching/provisioning).
+ *
+ *  A warm row (pre-created, never prompted) is skipped: the API reports its
+ *  idle, billed shell as `provisioning` for as long as the box lives
+ *  (KRTX-1466), and polling that static status 5s-fast for up to the warm
+ *  grant would buy nothing — the next real change is the marker drop at the
+ *  first accepted turn, which the open-session interval covers. */
 export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
-  return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
+  return (sessions ?? []).some(
+    (session) =>
+      LIVE_SESSION_STATUSES.includes(session.status) &&
+      (session.metadata as Record<string, unknown> | null)?.warm !== true,
+  );
 }
 
 /** Fast poll: a provisioning session changes status within seconds. */
@@ -97,12 +157,12 @@ function promptActivityMs(session: ProjectSession): number | null {
   return activityMs((session.metadata as Record<string, unknown> | null)?.last_activity_at);
 }
 
-/** Newest conversation update in OpenCode's scoped session snapshot, or null
+/** Newest conversation update in the runtime's scoped session snapshot, or null
  *  when the session carries no usable snapshot. */
 function conversationActivityMs(session: ProjectSession): number | null {
   let latest: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const parsed = activityMs(openCodeSession.updated_at);
+  for (const runtimeSession of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+    const parsed = activityMs(runtimeSession.updated_at);
     if (parsed === null) continue;
     latest = latest === null ? parsed : Math.max(latest, parsed);
   }
@@ -116,7 +176,7 @@ function conversationActivityMs(session: ProjectSession): number | null {
  * runs, and the conversation snapshot keeps advancing while the agent replies.
  *
  *   1. `metadata.last_activity_at` — the API's prompt stamp.
- *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
+ *   2. `runtime_sessions[].updated_at` — the runtime's conversation snapshot.
  *      Real activity, but a LAGGING cache: it is written only by a deferred,
  *      best-effort sandbox read (`opencode-session-snapshot.ts`), so a session
  *      whose sandbox was unreachable at that moment has no snapshot at all.
@@ -173,8 +233,13 @@ function resolveSessionTitle(session: ProjectSession): string | null {
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
+  // Teams wraps a channel @-mention of the bot in `<at>…</at>`; sessions titled
+  // from such a message before the API stripped it still carry the tag.
   return (
-    session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null
+    stripChatMentionMarkup(session.custom_name ?? '') ||
+    stripChatMentionMarkup(session.name ?? '') ||
+    stripChatMentionMarkup(legacyMetadataName ?? '') ||
+    null
   );
 }
 
@@ -223,9 +288,7 @@ const TITLE_WAIT_WINDOW_MS = 2 * 60_000;
  */
 export function isAwaitingTitle(session: ProjectSession, now: number): boolean {
   if (sessionTitleHasLanded(session)) return false;
-  const createdAt = Date.parse(
-    (session as { created_at?: string | null }).created_at ?? '',
-  );
+  const createdAt = Date.parse((session as { created_at?: string | null }).created_at ?? '');
   if (!Number.isFinite(createdAt)) return false;
   const windowStart = Math.max(createdAt, promptActivityMs(session) ?? createdAt);
   return now - windowStart <= TITLE_WAIT_WINDOW_MS;
@@ -275,56 +338,44 @@ export function shortRelative(input: string): string {
   return `${n}${suffix}`;
 }
 
-/** Which of the sidebar's mutually-exclusive render states applies. Mirrors
- *  the early-return ladder in `ProjectSessionList`: loading and error both
- *  win outright (independent of data), then "no sessions at all" wins over
+/** Which of a session list's mutually-exclusive render states applies (the
+ *  sidebar and the Sessions page).
+ *
+ *  Data wins. A failed refetch or "Load more" keeps the rows it had (TanStack
+ *  v5 keeps `data` and sets `status: 'error'`), so an error decides the view
+ *  only while there is nothing to show. Without data and without an error the
+ *  list is still loading: a first load that is paused offline, or not enabled
+ *  yet, is not "no sessions". With data, "no sessions at all" wins over
  *  "sessions exist but none match the active filter". */
 export type SessionListViewState = 'loading' | 'error' | 'empty' | 'no-matches' | 'content';
 
 export function resolveSessionListViewState(params: {
-  isLoading: boolean;
+  hasData: boolean;
   isError: boolean;
   totalCount: number;
   visibleCount: number;
+  /** The server already applied a filter (labels): zero rows is "no matches". */
+  serverFiltered?: boolean;
 }): SessionListViewState {
-  if (params.isLoading) return 'loading';
-  if (params.isError) return 'error';
-  if (params.totalCount === 0) return 'empty';
+  if (!params.hasData) return params.isError ? 'error' : 'loading';
+  if (params.totalCount === 0) return params.serverFiltered ? 'no-matches' : 'empty';
   if (params.visibleCount === 0) return 'no-matches';
   return 'content';
 }
 
-/** A coordinator (or standalone) session plus the sessions it spawned. */
-export interface SessionGroup {
-  session: ProjectSession;
-  children: ProjectSession[];
-}
+export type StarterSection = 'shared' | 'automated';
 
 /**
- * Fold a flat, already-sorted session list into coordinator groups: a session
- * spawned by another session in the list (metadata.spawned_by_session) nests
- * under it — the sidebar renders the coordinator as a folder and its children
- * as files. A child whose coordinator is absent (deleted, other project, or a
- * stale stamp) stays top-level rather than disappearing.
+ * Which sidebar section a session's RUN lives in, from its `initiator`: another
+ * member's run is Shared, an automated run (trigger, channel, API, platform) is
+ * Automated, and the viewer's own run (or an unclassified row) is neither.
  */
-export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionGroup[] {
-  const present = new Set(sessions.map((s) => s.session_id));
-  const parentOf = (session: ProjectSession): string | null => {
-    const meta = (session.metadata ?? {}) as Record<string, unknown>;
-    const parent = typeof meta.spawned_by_session === 'string' ? meta.spawned_by_session : null;
-    return parent && present.has(parent) && parent !== session.session_id ? parent : null;
-  };
-  const groups = new Map<string, SessionGroup>();
-  const order: SessionGroup[] = [];
-  for (const session of sessions) {
-    if (parentOf(session)) continue;
-    const group = { session, children: [] as ProjectSession[] };
-    groups.set(session.session_id, group);
-    order.push(group);
-  }
-  for (const session of sessions) {
-    const parent = parentOf(session);
-    if (parent) groups.get(parent)?.children.push(session);
-  }
-  return order;
+export function starterSectionOf(
+  session: Pick<ProjectSession, 'initiator' | 'is_owner'>,
+  viewerId: string | null,
+): StarterSection | null {
+  const initiator = session.initiator;
+  if (!initiator) return session.is_owner === false ? 'shared' : null;
+  if (initiator.type !== 'member') return 'automated';
+  return initiator.id && viewerId && initiator.id !== viewerId ? 'shared' : null;
 }

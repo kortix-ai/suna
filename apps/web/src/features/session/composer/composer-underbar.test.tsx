@@ -31,10 +31,19 @@ import { ComposerUnderbar } from './composer-underbar';
  */
 
 const noop = () => {};
+const messages = {
+  threads: {
+    attachFiles: 'Attach files',
+    selectAgent: 'Select agent',
+  },
+};
 
-function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): string {
+function render(props?: {
+  noAccessibleAgents?: boolean;
+  agents?: Agent[];
+}): string {
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={{}} onError={noop}>
+    <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
       {/* Both providers live higher up the tree in the app than this
           component: the row's own tooltips need one, and a descendant
           selector reads through TanStack Query. Neither needs a DOM. Retries
@@ -47,7 +56,6 @@ function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): str
             onAttachClick={noop}
             agents={props?.agents ?? []}
             selectedAgent={props?.agents?.[0]?.name ?? null}
-            agentSelectorLocked={false}
             noAccessibleAgents={props?.noAccessibleAgents}
             messages={[]}
             models={[]}
@@ -236,6 +244,39 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
   });
 });
 
+/** The full markup of the <button> whose accessible name starts with `name`. */
+function buttonMarkup(html: string, name: string): string {
+  const at = html.indexOf(`aria-label="${name}`);
+  expect(at).toBeGreaterThan(-1);
+  const start = html.lastIndexOf('<button', at);
+  return html.slice(start, html.indexOf('</button>', at));
+}
+
+/**
+ * A started session keeps agent switching (KRTX-1290). The picker must read as
+ * a live dropdown even when the session already has an agent — the pre-2026-09
+ * lock (`agentSelectorLocked`) used to render this trigger inert with a
+ * "you can't switch" tooltip, which is the exact restriction this issue
+ * removes. A populated roster renders the enabled trigger, caret included.
+ */
+describe('ComposerUnderbar — the session picker stays switchable', () => {
+  const KORTIX = [{ name: 'kortix', mode: 'primary' } as unknown as Agent];
+
+  test('the trigger for a populated roster is enabled and carries the caret', () => {
+    const inner = buttonMarkup(render({ agents: KORTIX }), 'Select agent');
+    expect(inner).toContain('<svg');
+    expect(inner).not.toMatch(/\sdisabled=""/);
+    expect(inner).toContain('Kortix');
+  });
+
+  test('no locked-session tooltip exists anywhere in the row', () => {
+    // The lock used to speak through a hover hint naming started sessions.
+    // Its words must not survive the lock anywhere on this rail.
+    const html = render({ agents: KORTIX });
+    expect(html).not.toContain('switch agents in an already started session');
+  });
+});
+
 /*
  * There is deliberately NO test pinning this row's horizontal padding to a
  * value. It is an optical figure tuned against the card above it, and a test
@@ -261,11 +302,10 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
  * an `AuthProvider` for `useRuntimeSessions`). The constant is the single thing
  * the shell `<div>` reads, so editing it is the only way to reintroduce this.
  *
- * The line these draw is ZERO, not "responsive". A breakpoint that TRIMS the
- * gutter is a legitimate optical call — `md:pr-1` compensates for the
- * action-panel chevron rail on desktop, see `COMPOSER_SHELL_CLASS`'s comment —
- * and a test that banned every breakpoint would simply be deleted the next time
- * someone needs one. A breakpoint that zeroes it is the bug, every time.
+ * The line these draw is ZERO, not "responsive". A breakpoint that TRIMS one
+ * side can be a legitimate optical call against a known asymmetry, and a test
+ * that banned every breakpoint would simply be deleted the next time someone
+ * needs one. A breakpoint that zeroes it is the bug, every time.
  */
 describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () => {
   const classes = COMPOSER_SHELL_CLASS.split(/\s+/).filter(Boolean);
@@ -293,8 +333,8 @@ describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () =>
   });
 
   test('a breakpoint may trim a side, never both sides at once', () => {
-    // `md:pr-1` trims one edge against a known asymmetry in the layout (the
-    // chevron rail). A breakpoint-scoped `px-*` overrides BOTH edges, which is
+    // A one-side trim (`md:pr-*`) may answer a known asymmetry in the layout.
+    // A breakpoint-scoped `px-*` overrides BOTH edges, which is
     // the shape that hid the whole gutter last time — if a future change needs
     // that, it needs a container query, not a media query.
     const bothSides = classes.filter((c) => /^(max-)?(sm|md|lg|xl|2xl):px-/.test(c));

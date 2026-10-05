@@ -25,7 +25,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
-import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 import { useFilesStore, type SortField } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
@@ -37,9 +36,8 @@ import {
   FolderIcon as FolderCog,
   DotsThreeVerticalIcon as MoreVertical,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import { useCallback, useRef, useState } from 'react';
-import { rowDragIntent } from '../upload-batch';
+import { useTranslations } from '@/i18n/use-translations';
+import { useDriveRowInteractions } from './use-drive-row-interactions';
 import { FileDriveMenuItems, FolderDriveMenuItems } from './drive-grid-view';
 import { getFileIcon } from './file-icon';
 
@@ -100,117 +98,23 @@ function ListRow({
   isCut,
 }: ListRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameName, setRenameName] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const dragCounterRef = useRef(0);
-
   const isDir = node.type === 'directory';
-
-  const handleDragStart = useCallback(
-    (e: React.DragEvent) => {
-      e.dataTransfer.setData(DRAG_MIME, node.path);
-      e.dataTransfer.setData('text/plain', node.name);
-      e.dataTransfer.effectAllowed = 'move';
-      setIsDragging(true);
-    },
-    [node.path, node.name],
-  );
-
-  const handleDragEnd = useCallback(() => setIsDragging(false), []);
-
-  /** `move` (internal drag), `upload` (external files), or null (ignore). */
-  const intentOf = useCallback(
-    (e: React.DragEvent) =>
-      rowDragIntent(Array.from(e.dataTransfer.types), {
-        isDirectory: isDir,
-        canMove: Boolean(onDropMove),
-        canUpload: Boolean(onDropUpload),
-        moveMime: DRAG_MIME,
-      }),
-    [isDir, onDropMove, onDropUpload],
-  );
-
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      const intent = intentOf(e);
-      if (!intent) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = intent === 'upload' ? 'copy' : 'move';
-    },
-    [intentOf],
-  );
-
-  const handleDragEnter = useCallback(
-    (e: React.DragEvent) => {
-      if (!intentOf(e)) return;
-      e.preventDefault();
-      dragCounterRef.current++;
-      setIsDragOver(true);
-    },
-    [intentOf],
-  );
-
-  const handleDragLeave = useCallback(() => {
-    if (!isDir) return;
-    dragCounterRef.current--;
-    if (dragCounterRef.current <= 0) {
-      dragCounterRef.current = 0;
-      setIsDragOver(false);
-    }
-  }, [isDir]);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      const intent = intentOf(e);
-      if (!intent) return;
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current = 0;
-      setIsDragOver(false);
-
-      if (intent === 'upload') {
-        // Always notify, even for an empty transfer: this drop is stopped
-        // before the page handler, which owns the drop overlay's reset.
-        onDropUpload?.(Array.from(e.dataTransfer.files ?? []), node.path);
-        return;
+  const {
+    isDragOver, isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
+    renameInputRef, handleDragStart, handleDragEnd, handleDragOver, handleDragEnter,
+    handleDragLeave, handleDrop, startRenaming, confirmRename,
+  } = useDriveRowInteractions({
+    node, onRename, onDropMove, onDropUpload,
+    selectRenameInput: (el) => {
+      el.focus();
+      if (isDir) {
+        el.setSelectionRange(0, el.value.length);
+      } else {
+        const dotIdx = el.value.lastIndexOf('.');
+        el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
       }
-
-      const sourcePath = e.dataTransfer.getData(DRAG_MIME);
-      if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
-      onDropMove?.(sourcePath, node.path);
     },
-    [intentOf, node.path, onDropMove, onDropUpload],
-  );
-
-  const startRenaming = useCallback(() => {
-    setRenameName(node.name);
-    setIsRenaming(true);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = renameInputRef.current;
-        if (el) {
-          el.focus();
-          if (isDir) {
-            el.setSelectionRange(0, el.value.length);
-          } else {
-            const dotIdx = el.value.lastIndexOf('.');
-            el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
-          }
-        }
-      });
-    });
-  }, [node.name, isDir]);
-
-  const confirmRename = useCallback(() => {
-    const trimmed = renameName.trim();
-    if (trimmed && trimmed !== node.name) {
-      onRename?.(node, trimmed);
-    }
-    setIsRenaming(false);
-  }, [renameName, node, onRename]);
+  });
 
   const extLower =
     !isDir && node.name.includes('.') ? node.name.split('.').pop()?.toLowerCase() || '' : '';
@@ -316,7 +220,7 @@ function ListRow({
           </TableCell>
           <TableCell>
             {isDir ? (
-              <ChalkBadge label="Folder" />
+              <ChalkBadge label={tHardcodedUi.raw('i18nComplete.text74ccd4330384')} />
             ) : ext ? (
               <ChalkBadge label={ext} />
             ) : (
@@ -378,6 +282,7 @@ function ListRow({
 }
 
 function ElevatedDirRow({ node, onNavigate }: { node: FileNode; onNavigate: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <TableRow onClick={onNavigate} className="cursor-pointer select-none">
       <TableCell>
@@ -392,7 +297,7 @@ function ElevatedDirRow({ node, onNavigate }: { node: FileNode; onNavigate: () =
         </div>
       </TableCell>
       <TableCell>
-        <ChalkBadge label="System" />
+        <ChalkBadge label={tI18nComplete.raw('text6725e7bbcd28')} />
       </TableCell>
       <TableCell />
     </TableRow>
@@ -445,6 +350,7 @@ export function DriveListView({
   isDirDownloading,
   readOnly = false,
 }: DriveListViewProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onRename = readOnly ? undefined : rawOnRename;
   const onDelete = readOnly ? undefined : rawOnDelete;
   const onHistory = rawOnHistory;
@@ -485,7 +391,7 @@ export function DriveListView({
                 variant="transparent"
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >
-                Name
+                {tI18nComplete.raw('textdcd1d5223f73')}
                 <SortIcon field="name" />
               </Button>
             </TableHead>
@@ -495,12 +401,12 @@ export function DriveListView({
                 variant="transparent"
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >
-                Type
+                {tI18nComplete.raw('textbaaddf70fb5d')}
                 <SortIcon field="type" />
               </Button>
             </TableHead>
             <TableHead className="w-[52px]">
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
             </TableHead>
           </TableRow>
         </TableHeader>

@@ -117,7 +117,10 @@ describe('buildSlashSections', () => {
 
   test('filters commands by description too', () => {
     const sections = buildSlashSections({
-      commands: [cmd('build', undefined, 'Compiles the project'), cmd('lint', undefined, 'Checks style')],
+      commands: [
+        cmd('build', undefined, 'Compiles the project'),
+        cmd('lint', undefined, 'Checks style'),
+      ],
       query: 'compile',
     });
     const commandRows = sections.flatMap((s) => s.rows).filter((r) => r.type === 'command');
@@ -226,18 +229,28 @@ describe('buildSlashSections — an action carries its current value', () => {
   test('value is NOT searched — typing an agent name does not surface Switch agent', () => {
     // Guards a tempting "improvement": adding `value` to the filter would
     // make `/orchestrator` rank a composer action above real commands.
-    const sections = buildSlashSections({ commands: [], actions: withAgent, query: 'orchestrator' });
+    const sections = buildSlashSections({
+      commands: [],
+      actions: withAgent,
+      query: 'orchestrator',
+    });
 
     expect(sections).toEqual([]);
   });
 });
 
-describe('buildSlashSections — the session\'s own files', () => {
+describe("buildSlashSections — the session's own files", () => {
   const file = (
     path: string,
     origin: 'output' | 'context' = 'output',
     name = path.split('/').pop() ?? path,
-  ) => ({ path, name, folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '', origin }) as const;
+  ) =>
+    ({
+      path,
+      name,
+      folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '',
+      origin,
+    }) as const;
 
   test('outputs and context render as their own sections, between Actions and the commands', () => {
     // The order the palette must have: the fixed rows, then THIS session's

@@ -1,3 +1,7 @@
+import { AGENT_AUTOMATION_TRANSLATION_KEYS } from '@/i18n/agent-automation-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/automations` copy.
  *
@@ -5,7 +9,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  * ACCURACY GATE for this page specifically — every claim below traces to
  * `apps/web/content/docs/connect/triggers.mdx` and
  * `apps/web/content/docs/project/manifest.mdx`:
@@ -275,3 +279,11 @@ export const closing = {
   ctaSecondary: 'Read the trigger docs',
   ctaSecondaryHref: '/docs/connect/triggers',
 } as const;
+
+export function getLocalizedAutomationsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, types, schedule, declared, webhook, session, review, closing },
+    tI18nComplete,
+    AGENT_AUTOMATION_TRANSLATION_KEYS,
+  );
+}

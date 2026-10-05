@@ -3,21 +3,27 @@
 import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import {
+  dialogContentZ,
+  DialogDepthProvider,
+  dialogOverlayZ,
+  useDialogLayerDepth,
+} from '@/lib/z-stack';
+import {
+  ArrowClockwiseIcon,
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   CodeIcon as Code,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   ArrowsOutSimpleIcon as Maximize2,
   ArrowsInSimpleIcon as Minimize2,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import {
   useCallback,
   useEffect,
@@ -28,8 +34,11 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
-import { FileSourceProvider, type FileSource } from './file-source';
+import { FileContentRenderer } from './file-content-renderer';
+import { FileSourceProvider, type FileRefreshResult, type FileSource } from './file-source';
+import { getLanguageFromExt } from './preview-policy';
+import { SaveAsPdfButton } from './save-as-pdf-button';
+import { Download } from '@/features/icon/icons/download';
 
 /** Tabbable elements used by the focus trap below. */
 const FOCUSABLE_SELECTOR = [
@@ -76,6 +85,12 @@ export interface FilePreviewModalProps extends FilePreviewState {
   embedded?: boolean;
 }
 
+/** A fixed source (a git ref) has nothing to re-read. */
+function useNoRefresh(_filePath: string | null): FileRefreshResult {
+  return NO_REFRESH;
+}
+const NO_REFRESH: FileRefreshResult = { refresh: () => {}, refreshing: false, reloadKey: 0 };
+
 /**
  * The single full-screen file preview modal shared by every surface (the
  * session Files tab and the Customize Files section). Feature wrappers
@@ -113,21 +128,32 @@ export function FilePreviewModal({
   embedded = false,
 }: FilePreviewModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const dialogDepth = useDialogDepth();
   const isOpen = panelMode === 'viewer' && !!selectedFilePath;
 
   // Embedded viewers start inline (in the side panel); "Expand" pops them to
   // the full-screen overlay. Non-embedded viewers are always full-screen.
   const [expanded, setExpanded] = useState(false);
   const fullscreen = !embedded || expanded;
+  // Only the full-screen overlay is a layer; the inline panel sits in flow.
+  const dialogDepth = useDialogLayerDepth(isOpen && fullscreen);
 
   const fileName = selectedFilePath?.split('/').pop() || '';
   const hasNext = currentFileIndex < filePathList.length - 1;
   const hasPrev = currentFileIndex > 0;
 
   const [historyPath, setHistoryPath] = useState<string | null>(null);
+  // Module-stable per source, so the hook identity never changes between
+  // renders — the same pattern `FileContentRenderer` uses for `useFileContent`.
+  const useRefresh = source.useRefresh ?? useNoRefresh;
+  const { refresh, refreshing, reloadKey } = useRefresh(selectedFilePath);
+  const refreshLabel = tI18nHardcoded.raw('i18nComplete.text0e9161011702');
   const [markdownPreview, setMarkdownPreview] = useState(true);
-  const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
+  // Markdown and Mermaid files both open rendered, with a Source toggle.
+  const isMarkdownFile = ['markdown', 'mermaid'].includes(getLanguageFromExt(fileName));
+  // Markdown alone also exports to PDF. Only its text is read here — the query
+  // `FileContentRenderer` already runs for the same path, so no second fetch.
+  const exportsPdf = getLanguageFromExt(fileName) === 'markdown';
+  const { data: pdfSource } = source.useFileContent(exportsPdf ? selectedFilePath : null);
   const shareInput = useMemo(() => {
     if (!selectedFilePath || !shareContext) return null;
     return {
@@ -264,11 +290,11 @@ export function FilePreviewModal({
     if (!selectedFilePath) return;
     try {
       await source.download(selectedFilePath, fileName);
-      successToast(`Downloaded ${fileName}`);
+      successToast(tI18nHardcoded('i18nComplete.text7eca5e05f915', { value0: fileName }));
     } catch {
-      errorToast(`Failed to download ${fileName}`);
+      errorToast(tI18nHardcoded('i18nComplete.textc85c359673e0', { value0: fileName }));
     }
-  }, [selectedFilePath, fileName, source]);
+  }, [selectedFilePath, source, fileName, tI18nHardcoded]);
 
   if (!isOpen) return null;
   // Portal to <body>: this fixed overlay is rendered inside constrained
@@ -279,11 +305,11 @@ export function FilePreviewModal({
   const toolbar = (
     <>
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Hint label="Back" side="bottom">
+        <Hint label={tI18nHardcoded.raw('i18nComplete.text76900f1bfd16')} side="bottom">
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Back"
+            aria-label={tI18nHardcoded.raw('i18nComplete.text76900f1bfd16')}
             className="text-muted-foreground hover:text-foreground h-8 w-8 shrink-0 active:scale-[0.96]"
             onClick={onClose}
           >
@@ -309,11 +335,18 @@ export function FilePreviewModal({
 
       <div className="flex shrink-0 items-center gap-0.5">
         {isMarkdownFile && (
-          <Hint label={markdownPreview ? 'View source' : 'Preview'} side="bottom">
+          <Hint
+            label={
+              markdownPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+            }
+            side="bottom"
+          >
             <Button
               variant="ghost"
               size="icon"
-              aria-label={markdownPreview ? 'View source' : 'Preview'}
+              aria-label={
+                markdownPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+              }
               aria-pressed={!markdownPreview}
               className={cn(
                 'h-8 w-8 active:scale-[0.96]',
@@ -324,6 +357,25 @@ export function FilePreviewModal({
               onClick={() => setMarkdownPreview((v) => !v)}
             >
               {markdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </Hint>
+        )}
+        {source.useRefresh && (
+          <Hint label={refreshLabel} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={refreshLabel}
+              aria-busy={refreshing}
+              disabled={refreshing}
+              className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
+              onClick={refresh}
+            >
+              {refreshing ? (
+                <Loading className="text-muted-foreground size-4 motion-reduce:animate-none" />
+              ) : (
+                <ArrowClockwiseIcon className="h-4 w-4" />
+              )}
             </Button>
           </Hint>
         )}
@@ -344,15 +396,23 @@ export function FilePreviewModal({
             <History className="h-4 w-4" />
           </Button>
         </Hint>
+        {exportsPdf && (
+          <SaveAsPdfButton
+            fileName={fileName}
+            content={pdfSource?.type === 'text' ? pdfSource.content : undefined}
+            className="text-muted-foreground hover:text-foreground h-8 w-8"
+            iconClassName="h-4 w-4"
+          />
+        )}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 px-3 text-xs font-medium"
           onClick={handleDownload}
-          aria-label="Download"
+          aria-label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
         >
           <Download className="h-3.5 w-3.5" />
-          Download
+          {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
         </Button>
         {shareContext && (
           <PublicShareLinkButton
@@ -367,11 +427,14 @@ export function FilePreviewModal({
         )}
         {extraActions}
         {embedded && (
-          <Hint label={expanded ? 'Collapse to panel' : 'Expand'} side="bottom">
+          <Hint
+            label={expanded ? tI18nHardcoded.raw('i18nComplete.textde12e3c7c7a8') : 'Expand'}
+            side="bottom"
+          >
             <Button
               variant="ghost"
               size="icon"
-              aria-label={expanded ? 'Collapse to panel' : 'Expand'}
+              aria-label={expanded ? tI18nHardcoded.raw('i18nComplete.textde12e3c7c7a8') : 'Expand'}
               aria-pressed={expanded}
               className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
               onClick={() => setExpanded((v) => !v)}
@@ -438,6 +501,7 @@ export function FilePreviewModal({
         <FileSourceProvider value={source}>
           <FileContentRenderer
             filePath={selectedFilePath!}
+            reloadKey={reloadKey}
             showHeader={false}
             readOnly
             markdownPreview={markdownPreview}
@@ -473,7 +537,9 @@ export function FilePreviewModal({
         ref={surfaceRef}
         data-file-preview-embedded=""
         role="dialog"
-        aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
+        aria-label={tI18nHardcoded('i18nComplete.text4a7346d46cf6', {
+          value0: fileName ? `: ${fileName}` : '',
+        })}
         tabIndex={-1}
         className="bg-background animate-in fade-in-0 absolute inset-0 z-20 flex flex-col overflow-hidden duration-150 outline-none"
       >
@@ -483,11 +549,11 @@ export function FilePreviewModal({
   }
 
   const node = (
-    <>
+    <DialogDepthProvider depth={dialogDepth}>
       <div
         data-file-preview-overlay=""
         className="animate-in fade-in-0 pointer-events-auto fixed inset-0 bg-black/50 backdrop-blur-sm duration-150"
-        style={{ zIndex: dialogOverlayZ(dialogDepth + 1) }}
+        style={{ zIndex: dialogOverlayZ(dialogDepth) }}
         onClick={embedded ? () => setExpanded(false) : onClose}
       />
       <div
@@ -495,14 +561,16 @@ export function FilePreviewModal({
         data-file-preview-overlay=""
         role="dialog"
         aria-modal="true"
-        aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
+        aria-label={tI18nHardcoded('i18nComplete.text4a7346d46cf6', {
+          value0: fileName ? `: ${fileName}` : '',
+        })}
         tabIndex={-1}
         className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-xl border shadow-lg duration-150 outline-none sm:inset-4"
-        style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
+        style={{ zIndex: dialogContentZ(dialogDepth) }}
       >
         {panelInner}
       </div>
-    </>
+    </DialogDepthProvider>
   );
 
   return createPortal(node, document.body);

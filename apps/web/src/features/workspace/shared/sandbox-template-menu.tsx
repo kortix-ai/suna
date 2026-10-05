@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { SandboxTemplate } from '@kortix/sdk';
 import {
@@ -52,12 +53,13 @@ export function SandboxTemplateMenu({
   trigger: ReactNode;
   align?: 'start' | 'end';
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const resolved = resolvedSlug ? items.find((t) => t.slug === resolvedSlug) : undefined;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-80">
-        <DropdownMenuLabel>Sandbox template</DropdownMenuLabel>
+        <DropdownMenuLabel>{tI18nComplete.raw('textb94b96f978cd')}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="flex items-start gap-2" onSelect={() => onSelect(null)}>
           <RobotIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
@@ -66,14 +68,15 @@ export function SandboxTemplateMenu({
               <span className="text-sm font-medium">{inherit.label}</span>
               {selectedSlug === null && (
                 <Badge variant="outline" size="xs">
-                  selected
+                  {tI18nComplete.raw('textd7cbbb688b2e')}
                 </Badge>
               )}
             </div>
             <div className="text-muted-foreground text-xs">{inherit.description}</div>
             {resolved ? (
               <div className="text-muted-foreground mt-0.5 text-xs">
-                Currently <span className="text-foreground">{resolved.name}</span>
+                {tI18nComplete.raw('text7188838c37b5')}
+                <span className="text-foreground">{resolved.name}</span>
               </div>
             ) : null}
           </div>
@@ -93,7 +96,7 @@ export function SandboxTemplateMenu({
                   <span className="text-sm font-medium">{tpl.name}</span>
                   {tpl.slug === selectedSlug && (
                     <Badge variant="outline" size="xs">
-                      selected
+                      {tI18nComplete.raw('textd7cbbb688b2e')}
                     </Badge>
                   )}
                 </div>

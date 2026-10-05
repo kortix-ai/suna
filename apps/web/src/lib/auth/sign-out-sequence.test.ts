@@ -57,6 +57,9 @@ function recorder(
       dropAuthCookie: () => {
         calls.push('dropAuthCookie');
       },
+      notifySignOutIncomplete: () => {
+        calls.push('notifySignOutIncomplete');
+      },
       endSession: async (scope) => {
         calls.push(scope ? `endSession:${scope}` : 'endSession');
         scopes.push(scope);
@@ -94,9 +97,7 @@ describe('runSignOut, happy path', () => {
     // running it second would silently stop revoking anything.
     const r = recorder();
     return runSignOut(r.steps, FAST).then(() => {
-      expect(r.calls.indexOf('finalizeServerSession')).toBeLessThan(
-        r.calls.indexOf('endSession'),
-      );
+      expect(r.calls.indexOf('finalizeServerSession')).toBeLessThan(r.calls.indexOf('endSession'));
     });
   });
 });
@@ -148,6 +149,8 @@ describe('runSignOut, the signOut ERROR path', () => {
       // auth-js still holds it in memory with `autoRefreshToken` ticking, and a
       // refresh in the reset window writes it straight back into the cookie.
       'dropAuthCookie',
+      // The server never confirmed the revocation — say so on `/auth`.
+      'notifySignOutIncomplete',
       'leave',
     ]);
   });
@@ -207,6 +210,89 @@ describe('runSignOut, the signOut ERROR path', () => {
   });
 });
 
+describe('runSignOut, the user-visible failure notice', () => {
+  // The one trace a user can read. Every other failure trace in the sequence
+  // is `console.error`, and the sign-out ends on a document load to `/auth`,
+  // so the notice has to be raised for THAT document — the caller stashes it
+  // and the auth screen raises the toast.
+  test('an unconfirmed server sign-out notifies once, after the reset, before the leave', async () => {
+    const r = recorder({ endSession: async () => ({ error: { message: 'nope' } }) });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toEqual([
+      'finalizeServerSession',
+      'endSession',
+      'endSession:local',
+      'dropAuthCookie',
+      'resetClientState',
+      'dropAuthCookie',
+      // After `resetClientState`: its storage sweep runs synchronously inside
+      // that step, and the notice must be written after the sweep to survive
+      // it. Before `leave`: the navigation is the last thing that happens.
+      'notifySignOutIncomplete',
+      'leave',
+    ]);
+  });
+
+  test('a network-class failure notifies without a retry', async () => {
+    // Offline is the common real case: the request never lands, no retry can
+    // land either, and the user is dropped on `/auth` with no word about it.
+    const r = recorder({
+      endSession: async () => ({ error: { message: 'fetch failed', name: 'AuthRetryableFetchError' } }),
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toContain('notifySignOutIncomplete');
+    expect(r.calls.filter((call) => call === 'notifySignOutIncomplete')).toHaveLength(1);
+    expect(r.calls).not.toContain('endSession:local');
+  });
+
+  test('a hung sign-out notifies', async () => {
+    const r = recorder({ endSession: () => new Promise(() => {}) });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toContain('notifySignOutIncomplete');
+  });
+
+  test('the happy path stays silent', async () => {
+    // The paired negative: the normal logout already ends cleanly, and a
+    // false alarm on every logout would train users to ignore the notice.
+    const r = recorder();
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).not.toContain('notifySignOutIncomplete');
+  });
+
+  test('a retry that succeeds stays silent', async () => {
+    // The server CONFIRMED the revocation on the second attempt — nothing
+    // failed from the user's point of view.
+    const r = recorder({
+      endSession: async (scope) =>
+        scope === 'local' ? { error: null } : { error: { message: 'network down' } },
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).not.toContain('notifySignOutIncomplete');
+  });
+
+  test('a second press never notifies again', async () => {
+    // The re-entry branch runs no steps; a second notify would read as a
+    // second failure that never happened.
+    const r = recorder({ endSession: async () => ({ error: { message: 'nope' } }) });
+
+    await runSignOut(r.steps, FAST);
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls.filter((call) => call === 'notifySignOutIncomplete')).toHaveLength(1);
+    expect(r.destinations).toEqual([SIGN_OUT_DESTINATION, SIGN_OUT_DESTINATION]);
+  });
+});
+
 describe('runSignOut, nothing can strand a signed-out user', () => {
   test('a failed SERVER-side sign-out does not skip the client sign-out', async () => {
     // The API revoke and the audit are best effort. A backend that is down must
@@ -245,6 +331,7 @@ describe('runSignOut, nothing can strand a signed-out user', () => {
       finalizeServerSession: async () => {},
       endSession: async () => ({ error: null }),
       dropAuthCookie: () => {},
+      notifySignOutIncomplete: () => {},
       resetClientState: () =>
         new Promise<void>((resolve) => {
           resolveReset = () => {
@@ -306,6 +393,8 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
       'dropAuthCookie',
       'resetClientState',
       'dropAuthCookie',
+      // The request never settled — the server was never asked. Say so.
+      'notifySignOutIncomplete',
       'leave',
     ]);
   });
@@ -365,6 +454,7 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
       'dropAuthCookie',
       'resetClientState',
       'dropAuthCookie',
+      'notifySignOutIncomplete',
       'leave',
     ]);
     expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
@@ -378,7 +468,9 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
     });
 
     const started = Date.now();
-    await runSignOut(r.steps, { budgets: { finalizeServerSession: 20, endSession: 20, resetClientState: 20 } });
+    await runSignOut(r.steps, {
+      budgets: { finalizeServerSession: 20, endSession: 20, resetClientState: 20 },
+    });
     const elapsed = Date.now() - started;
 
     // Four bounded steps at 20ms. Generous ceiling so a loaded CI box does not

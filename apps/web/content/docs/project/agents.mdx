@@ -1,41 +1,84 @@
 ---
 title: Agents
-description: An agent is a markdown file that OpenCode runs; the manifest only governs its access.
+description: An agent is a markdown file that the session harness runs; the manifest only governs its access.
 ---
 
-An agent is a markdown file that defines how OpenCode acts in a
+An agent is a markdown file that defines how the harness acts in a
 [session](/docs/work/sessions). This page covers agent files, skills, and
 how a session picks an agent.
 
-## OpenCode runs every session
+## A harness runs every session
 
-OpenCode, the open-source coding-agent runtime, runs every session. The
-`kortix-agent` daemon starts it as `opencode serve`, with its config
-directory pointed at the project's `.kortix/opencode/` folder.
+A session runs one agent harness: OpenCode (the default) or pi.
+[Harnesses](/docs/work/harnesses) lists how a project selects one and what
+each one supports.
+
+- **OpenCode** — the open-source coding-agent runtime. The `kortix-agent`
+  daemon starts it as `opencode serve`.
+- **pi** — runs in-process in the `kortix-agent` daemon. Select it with
+  `runtime: pi` in `kortix.yaml` or the `pi_harness` feature flag.
+
+Both read the project's agents from `agents/` and its skills from `skills/`.
+OpenCode also reads the files only it uses from `harnesses/opencode/`. pi
+reads its own from `harnesses/pi/`.
+
+Projects created before 2026-09 keep agents and skills under
+`.kortix/opencode/`. Kortix reads both layouts.
 
 ## An agent is two files
 
 Each agent has two parts:
 
-- **Behavior** — a markdown file at `.kortix/opencode/agents/<name>.md`. Its
+- **Behavior** — a markdown file, `agents/<name>.md` by default. Its
   frontmatter sets the model, mode, and tools. Its body is the system prompt.
-- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
+- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the agent
   name. It sets what the agent may access on Kortix: connectors, secrets,
-  skills, and CLI actions.
+  skills, Apps, and Kortix permissions. Its `file` field names the behavior
+  file.
+  The map can live in a file the manifest lists under
+  [`imports:`](/docs/project/manifest#imports); `default_agent` stays in `kortix.yaml`.
 
 The manifest never sets a prompt, mode, or tool. The `.md` file never sets
 platform access. See [the manifest reference](/docs/project/manifest) for
 every governance field.
 
+### Where the agent file lives
+
+```yaml
+agents:
+  support:
+    file: agents/support.md
+```
+
+- `file` is a repo-relative path. It must end in `.md`.
+- It must not start with `/`. It must not contain a `.` or `..` segment.
+- Without `file`, Kortix reads `agents/<name>.md`, then
+  `.kortix/opencode/agents/<name>.md`.
+- When the dashboard saves an agent that has a `.md`, it writes `file` with that path.
+- The API refuses to change `file`. To move an agent, move its `.md` and
+  update `file` in `kortix.yaml` in the same commit.
+
+The full path rules are in
+[the manifest reference](/docs/project/manifest#the-agent-file).
+
 ## Governance is deny-by-default
 
-An agent with no `connectors`, `secrets`, `skills`, or `kortix_cli` key gets
-none of that access. This grant is the second of the two bindings: the agent
-also holds roles as a `service_account` principal, and a session can only do
-what both allow — see
+An agent with no `connectors`, `secrets`, `skills`, `apps`, or `kortix_permissions` key gets
+none of that access. `apps` lists the [Kortix Apps](/docs/feature-flags/apps#agents-and-apps)
+the agent may open when an App is restricted or private. This grant is the second of the two bindings: the agent
+also holds a role as a `service_account` principal — its ceiling — and a
+session can only do what both allow. See
+[Agent permissions](/docs/project/permissions) and
 [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). Set a field to `all` to grant full access, or list
 specific names. `default_agent` in `kortix.yaml` names the agent a session
 starts when you request no agent.
+
+Set each grant from the dashboard — Customize → Agents → the agent, one page
+per grant set on the Access rail: Skills, Connectors, Secrets, Apps, Kortix
+permissions — or from the CLI with `kortix agents scope <agent>`
+(`--secrets`, `--connectors`, `--apps`). The Apps page appears only when the
+project has the [Apps](/docs/feature-flags/apps) feature flag on. Every path
+writes the same `agents.<name>` block in `kortix.yaml`.
 
 Legacy `kortix.toml` (v1) projects list agents in an array, not a map, and
 grant full access by default. Set specific grants to restrict access. See
@@ -43,9 +86,11 @@ grant full access by default. Set specific grants to restrict access. See
 
 ## Skills give an agent know-how
 
-A skill is a markdown file at `.kortix/opencode/skills/<name>/SKILL.md`.
-OpenCode loads a skill on demand when the agent calls it — Kortix does not
-inject skills into every prompt. An agent's `skills` grant in `kortix.yaml`
+A skill is a markdown file at `skills/<name>/SKILL.md`.
+The harness loads a skill on demand — Kortix does not inject skill bodies
+into every prompt. On OpenCode the agent calls the `skill` tool. On pi the
+system prompt lists each skill's name and description, and the agent reads
+the file. An agent's `skills` grant in `kortix.yaml`
 controls which skills it may load.
 
 ## How a session picks its agent
@@ -56,8 +101,9 @@ Set the default agent from the dashboard, the API, or the SDK. Each writes
 `default_agent` to `kortix.yaml` and commits the change to the project's
 default branch.
 
-An agent never exceeds the access of the person or token that started the
-session.
+An agent acts as itself: its Kortix permissions within its ceiling role,
+whoever runs it. Starting a session does not lend the agent your own role.
+See [Agent permissions](/docs/project/permissions).
 
 New or changed agents and skills reach future sessions only after a
 [change request](/docs/work/change-requests) merges them into the default

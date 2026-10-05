@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Pure logic for the unified email-first auth flow ("one system"): the visitor
  * types an email, Continue resolves whether that address already has an
@@ -54,6 +55,36 @@ export function resolveEmailFlowMode(check: unknown): EmailFlowMode {
   return 'unknown';
 }
 
+/**
+ * Human copy for a rate-limited auth request. GoTrue surfaces its own error
+ * strings ("Email rate limit exceeded") and the auth screen used to show one
+ * raw as the toast heading; this maps the rate-limit codes to guidance
+ * instead. Null when the error is not a rate limit — the caller keeps its
+ * existing handling for everything else.
+ *
+ * ponytail: the wait copy assumes GoTrue's default hourly email-send quota;
+ * reword if a deployment tunes RATE_LIMIT_EMAIL_SENT.
+ */
+export function authRateLimitCopy(
+  error: { code?: string | null; message?: string | null } | null | undefined,
+  tI18nComplete: UiTranslator,
+): string | null {
+  if (!error) return null;
+  const code = (error.code || '').toLowerCase();
+  const message = (error.message || '').toLowerCase();
+  if (code === 'over_email_send_rate_limit' || message.includes('email rate limit')) {
+    return tI18nComplete.raw('authEmailRateLimit');
+  }
+  if (
+    code === 'over_request_rate_limit' ||
+    code === 'over_sms_send_rate_limit' ||
+    message.includes('rate limit')
+  ) {
+    return tI18nComplete.raw('authRequestRateLimit');
+  }
+  return null;
+}
+
 export interface CredentialsCopy {
   title: string;
   description: string | null;
@@ -68,11 +99,14 @@ export interface CredentialsCopy {
   submitsAs: 'signin' | 'signup';
 }
 
-export function credentialsCopy(mode: CredentialsMode): CredentialsCopy {
+export function credentialsCopy(
+  mode: CredentialsMode,
+  tI18nComplete: UiTranslator,
+): CredentialsCopy {
   if (mode === 'signin') {
     return {
-      title: 'Welcome back',
-      description: 'Enter your password to continue.',
+      title: tI18nComplete.raw('text6621249514b7'),
+      description: tI18nComplete.raw('text5c0cb6434704'),
       passwordPlaceholder: 'Your password',
       passwordAutoComplete: 'current-password',
       showForgotPassword: true,
@@ -81,8 +115,8 @@ export function credentialsCopy(mode: CredentialsMode): CredentialsCopy {
   }
   if (mode === 'signup') {
     return {
-      title: 'Create your account',
-      description: 'Choose a password to get started.',
+      title: tI18nComplete.raw('text9e709348f582'),
+      description: tI18nComplete.raw('text04ff975e82db'),
       passwordPlaceholder: 'Create a password',
       passwordAutoComplete: 'new-password',
       showForgotPassword: false,
@@ -90,7 +124,7 @@ export function credentialsCopy(mode: CredentialsMode): CredentialsCopy {
     };
   }
   return {
-    title: 'Enter your password',
+    title: tI18nComplete.raw('textc06bf9670174'),
     description: null,
     passwordPlaceholder: 'Your password',
     passwordAutoComplete: 'current-password',
@@ -113,22 +147,25 @@ export interface PasswordFailure {
  * adaptive signup path likewise proves existence, so the step flips to
  * sign-in and the copy explains what happened.
  */
-export function passwordFailureCopy({
-  mode,
-  code,
-  fallback,
-}: {
-  mode: CredentialsMode;
-  code?: string | null;
-  fallback?: string | null;
-}): PasswordFailure {
+export function passwordFailureCopy(
+  {
+    mode,
+    code,
+    fallback,
+  }: {
+    mode: CredentialsMode;
+    code?: string | null;
+    fallback?: string | null;
+  },
+  tI18nComplete: UiTranslator,
+): PasswordFailure {
   if (code === 'invalid_credentials' && mode === 'signin') {
     return { message: WRONG_PASSWORD_MESSAGE };
   }
   if (code === 'existing_account_wrong_password') {
     if (mode === 'signup') {
       return {
-        message: 'You already have an account — enter your existing password to sign in.',
+        message: tI18nComplete.raw('textfdb7b2463da5'),
         switchToSignin: true,
       };
     }

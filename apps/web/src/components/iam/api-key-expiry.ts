@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * The expiry choice offered when creating a key, derived from the workspace's
  * own key rules.
@@ -27,11 +28,12 @@ export interface ExpiryOption {
 export const NEVER_EXPIRES = 'never';
 
 /** The shelf we offer from, shortest first. */
-const OFFERED_DAYS = [30, 90, 365] as const;
+const OFFERED_DAYS = [1, 30, 90, 365] as const;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function dayLabel(days: number): string {
+  if (days === 1) return '1 day';
   if (days === 365) return '1 year';
   if (days % 365 === 0) return `${days / 365} years`;
   return `${days} days`;
@@ -50,13 +52,19 @@ function dayLabel(days: number): string {
  *   is still legal under a cap (`createAccountToken` checks `requireExpiry`
  *   and the cap independently).
  */
-export function expiryOptions(policy?: PatPolicy | null): ExpiryOption[] {
+export function expiryOptions(
+  policy: PatPolicy | null | undefined,
+  tI18nComplete: UiTranslator,
+): ExpiryOption[] {
   const cap = policy?.max_lifetime_days ?? null;
   const withinCap = cap == null ? [...OFFERED_DAYS] : OFFERED_DAYS.filter((d) => d <= cap);
-  const days = withinCap.length > 0 ? withinCap : cap != null ? [cap] : [];
+  const days = cap != null && cap < 30 && cap !== 1
+    ? [...withinCap, cap]
+    : withinCap;
 
   const options: ExpiryOption[] = days.map((d) => ({ value: String(d), label: dayLabel(d) }));
-  if (!policy?.require_expiry) options.unshift({ value: NEVER_EXPIRES, label: 'Never' });
+  if (!policy?.require_expiry)
+    options.unshift({ value: NEVER_EXPIRES, label: tI18nComplete.raw('text6300ef800bb8') });
   return options;
 }
 
@@ -66,8 +74,11 @@ export function expiryOptions(policy?: PatPolicy | null): ExpiryOption[] {
  * never set a rule sees no change. Otherwise 90 days, or the longest the cap
  * allows.
  */
-export function defaultExpiryOption(policy?: PatPolicy | null): ExpiryOptionValue {
-  const options = expiryOptions(policy);
+export function defaultExpiryOption(
+  policy: PatPolicy | null | undefined,
+  tI18nComplete: UiTranslator,
+): ExpiryOptionValue {
+  const options = expiryOptions(policy, tI18nComplete);
   const never = options.find((o) => o.value === NEVER_EXPIRES);
   if (never) return never.value;
   const preferred = options.find((o) => o.value === '90');

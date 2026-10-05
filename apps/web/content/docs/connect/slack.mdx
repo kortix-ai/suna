@@ -3,8 +3,6 @@ title: Slack & channels
 description: Connect Slack to a project and control sessions from a channel.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-
 A channel connects a chat platform to a project. A message in a connected
 channel starts a [session](/docs/work/sessions). The agent replies in the
 same thread.
@@ -42,20 +40,37 @@ them. Run `/kortix login` in Slack and follow the link to sign in. Teams uses
 the same requirement. An unlinked sender gets a prompt to link instead of a
 session run.
 
+A sign-in link works once and expires after 10 minutes. A Slack account that is
+connected to one Kortix account cannot be connected to another: run
+`/kortix logout` first. If your organization requires two-factor
+authentication, Kortix asks for your second factor before it connects you, and
+the chat runs on the factor you connected with.
+
+Every action runs as the linked account of the person who took it, with that
+account's project role. Account owners and admins count as project managers.
+
+| Action | Who may do it |
+|---|---|
+| Mention the bot, reply in its thread | A linked account with access to the project, within the channel's policy |
+| Stop a run | The person who sent the message being answered, or anyone approved into that session, who can still use the project |
+| Change the channel's project, agent, model or policy | A project manager; in a DM with the bot, any project member |
+| Act on a review | A project manager |
+| Approve or deny a connector call | A project manager, or the person who started the session |
+| Approve someone into an `owner_approval` thread | The session owner |
+| `link-bot` | A project manager |
+
 ## Where credentials live
 
 A connected channel's bot token is a connector-scoped
 [secret](/docs/project/secrets). It does not appear on the project's Secrets
 page. Kortix never injects it into a sandbox. Kortix resolves the token
-server-side when the agent sends a chat message.
+server-side when the agent sends or reads a chat message.
 
 ## Connect Slack
 
 <Steps>
 
-<Step>
-### Start the connection
-
+<Step title="Start the connection">
 From the CLI, run:
 
 ```
@@ -71,9 +86,7 @@ From the dashboard, open the project's Channels page and connect Slack there
 instead. It uses the same install flow.
 </Step>
 
-<Step>
-### Use your own Slack app
-
+<Step title="Use your own Slack app">
 On a self-hosted deployment with no shared Slack app configured, `kortix
 channels connect` falls back to manual mode automatically. Run `kortix
 channels manifest` to print an app manifest. Create the app at
@@ -85,9 +98,7 @@ kortix channels connect --manual --bot-token xoxb-... --signing-secret ...
 ```
 </Step>
 
-<Step>
-### Check the connection
-
+<Step title="Check the connection">
 ```
 kortix channels status
 ```
@@ -107,6 +118,69 @@ Mention the bot with a task, in any channel it has joined, or open a direct
 message. The thread keeps its session as described above. A bare mention with
 no task gets a reminder to add one instead of starting a session.
 
+## What the agent can read
+
+The agent reads Slack through the project's Slack
+[connector](/docs/connect/connectors) (`kortix_slack`, or the `slack` command
+in the sandbox). Every project connected to the same Slack workspace uses the
+same bot, so Kortix keeps each read inside the project's own conversations:
+
+| Conversation | Read |
+|---|---|
+| A channel or DM connected to this project | Allowed |
+| A thread that a session of this project started or joined, in any channel | Allowed |
+| A channel, DM or thread of another project | Refused |
+| A conversation no project is connected to | Allowed only while no other project is connected to the workspace |
+
+A refused read answers `403` with the reason `conversation_not_in_project` and
+a message that names the conversation. To read a conversation that no project
+is connected to, connect it first: run `/kortix switch` in it and pick this
+project.
+
+- Channel history leaves out the messages of another project's thread.
+- `get_history` and `get_thread` add `user_name` to each message whose author
+  Slack can name, beside the `user` id. Up to 25 people are named per read;
+  a name Slack does not return within 2 seconds is left out.
+- `list_channels` lists every public channel, and the private channels and DMs
+  the agent may read.
+- `channel_info` answers for any public channel. A private channel or DM
+  follows the table above.
+- `file_info` answers when the file is shared in a conversation the agent may
+  read.
+- `search_messages` runs only while no other project is connected to the
+  workspace, because a search cannot be limited to one project's
+  conversations.
+- `list_users`, `user_info` and `auth_test` read the workspace directory and are
+  not limited.
+
+Writes follow their own rule, below.
+
+## What the agent can post
+
+Posting, sending a file, editing, deleting, reacting, joining a channel and
+binding a thread follow one rule: the agent never acts inside another
+project's channel or thread.
+
+| Target | Write |
+|---|---|
+| A channel of this project, or a thread one of its sessions started or joined | Allowed |
+| A channel no project is connected to | Allowed. A new message starts this project's thread, so replies come back to the session |
+| A direct message with a person | Allowed, also when that person's DM with the bot runs another project |
+| A channel or group DM of another project | Refused |
+| A thread of another project, in any conversation | Refused: no reply, edit, delete or reaction |
+
+A refused write answers `403` with the reason `conversation_not_in_project`
+and a message that names the conversation. `slack send --file` and
+`slack bind-thread` follow the same rule.
+
+`channel` must be the conversation or user id, such as `C0123ABCD` or
+`U0123ABCD`, not a channel name. Slack posts to a name, and a name cannot be
+checked against the rule. If Slack still posts a message anywhere but the
+conversation that was checked, Kortix deletes the message and refuses the post.
+
+To post in a channel that another project runs, run `/kortix switch` in it and
+pick this project, or post from that project.
+
 ## Control a session with slash commands
 
 Type these as `/kortix <command>` in Slack, or as plain text in a DM. Slash
@@ -120,6 +194,7 @@ words from plain text there.
 | `projects` | List projects you can bind to |
 | `sessions` | List recent sessions started in this workspace |
 | `whoami` | Show the channel panel: project, agent, model, policy, and your linked identity |
+| `models` | Pick the model for this channel — see [Models and keys](#models-and-keys) |
 | `agent <name>`, `model <id>` | Set the agent or model this channel uses |
 | `policy <mode>` | Set who can start sessions here |
 | `help` | List all commands |
@@ -129,6 +204,72 @@ the bot gets a session), `owner_approval`, or `owner_only`. This is a
 per-resource setting on one channel, not a role. It grants no permission the
 role verdict denies — see
 [Accounts & access](/docs/accounts#per-feature-access-settings).
+
+## Models and keys
+
+`/kortix models` lists every model you can run here, as the web picker does:
+Kortix models, and models you reach through a provider API key or a ChatGPT
+subscription. Each one says how it is paid for. A long list is one select you
+can type into. Pick one, or type `/kortix model <id>`; `/kortix model default`
+goes back to the project default.
+
+Which keys count depends on the conversation:
+
+- **A DM with the bot** — your own keys and ChatGPT subscription, plus keys
+  shared with the project. Its sessions are private to you.
+- **A channel or group DM** — only keys shared with the whole project. Pick a
+  model that runs on your own keys in a DM instead.
+
+A model that runs on keys uses every key you may use for its provider, and
+they rotate on rate limits. The channel's model starts every new thread; a
+thread keeps the model it started with. A model a thread can no longer run is
+replaced for that message instead of failing it. See
+[Provider keys and member access](/docs/project/models#provider-keys-and-member-access).
+
+## Channel and people names
+
+Slack sends ids, such as `C0123ABCD` and `U0123ABCD`. Kortix shows the names
+people read in Slack and keeps the ids for operations.
+
+| Where | What it shows |
+|---|---|
+| The Channels page, `kortix channels bindings` | `#channel` for a public or private channel, the person for a DM, the members for a group DM |
+| A Slack message in a session | The sender's name and `#channel` |
+| A `slack send` reply in a session | `#channel`, or the person of a DM |
+| The session title | Mentions as Slack shows them: `@Kortix`, not `<@U0123ABCD>` |
+| The agent's prompt | Names beside ids: `Sam Rivera (U0123ABCD)`, `#general (C0123ABCD)` |
+| The agent's plan steps in Slack | A person as `@Sam Rivera`, a channel as `#general`. A step never notifies anyone |
+| An approval card in Slack | A channel parameter as a channel link, which Slack names by your own access. A user parameter with the person's name |
+
+A channel that Slack cannot find reads **Unavailable channel** and keeps its
+id. This happens when the channel was deleted or the bot was removed from it.
+A name that Slack does not return within 2 seconds is left out of that
+message. The prompt then carries the ids alone, and the turn does not wait.
+
+## Approvals
+
+When an agent needs a human decision before it proceeds, it files a review item.
+If the session was started from this thread, the decision lands here as a card:
+the title, a summary, a risk level, and **Approve**, **Request changes** and
+**Deny**.
+
+**Request changes** opens a box for what should change. Whatever you type is
+stored with the decision and passed to the agent with it, so it does not have to
+ask you a second time. It is optional — send it empty and the agent is told to
+ask. Approve and Deny stay one click.
+
+Acting on a review needs a linked Kortix account that manages the project.
+The decision resumes the agent whatever the thread's policy is.
+
+## Stopping a run
+
+While the agent works, its live message carries a **Stop** button. It ends the
+run at the runtime, not just on the message — a run left open swallows the next
+message in the thread instead of answering it.
+
+The person who sent the message being answered can stop it, as can anyone
+approved into that session, while they can still use the project. A bystander
+in the channel cannot; they get a private note saying so.
 
 ## What does not work
 

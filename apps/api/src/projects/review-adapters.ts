@@ -5,8 +5,7 @@
  * so the act endpoint can route a verdict back to the right source.
  *
  * This pass adapts Change Requests for VISIBILITY (read-only in the inbox); the
- * act dispatch (merge/close) routes through the existing CR flow. See
- * docs/REVIEW_CENTER_DESIGN.md.
+ * act dispatch (merge/close) routes through the existing CR flow.
  */
 
 import type { changeRequests, connectorCalls } from '@kortix/db';
@@ -74,6 +73,10 @@ export function connectorCallToReviewItem(
       request_digest: ex.requestDigest,
       risk: ex.risk,
       ...(includeArgsPreview ? { args_preview: argsPreview } : {}),
+      // Same gate as the args: the agent's description can quote the payload.
+      ...(includeArgsPreview && typeof summary.approval_context === 'string'
+        ? { approval_context: summary.approval_context }
+        : {}),
       args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
       args_preview_authorized: includeArgsPreview,
     },

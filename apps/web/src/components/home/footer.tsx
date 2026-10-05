@@ -1,9 +1,11 @@
 'use client';
 
 import { CtaSection } from '@/features/marketing/landing/cta-section';
+import { FOOTER_TRANSLATION_KEYS } from '@/i18n/footer-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
-import Link from 'next/link';
+import { useTranslations } from '@/i18n/use-translations';
+import Link from '@/components/site-link';
 import { ThemeToggle } from './theme-toggle';
 
 type FooterLinkItem = {
@@ -31,6 +33,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Self-hosted', href: '/self-hosted' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Pricing', href: '/pricing' },
+      { label: 'Download', href: '/download' },
     ],
   },
   {
@@ -54,6 +57,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       // /docs/reference/cli 404s — there is no reference/ directory. The page
       // is content/docs/cli.mdx, routed at /docs/cli.
       { label: 'Documentation', href: '/docs' },
+      { label: 'AI Operating System', href: '/docs/ai-operating-system' },
       { label: 'CLI', href: '/docs/cli' },
       { label: 'SDK', href: '/docs/sdk' },
       { label: 'Quickstart', href: '/docs/quickstart' },
@@ -109,17 +113,19 @@ function FooterLink({ label, href, external }: FooterLinkItem) {
 
 const Footer = () => {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const footerSections = localizeUiCatalog(FOOTER_SECTIONS, tI18nComplete, FOOTER_TRANSLATION_KEYS);
   const currentYear = new Date().getFullYear();
 
   return (
-    <section className="from-card to-background relative overflow-hidden border-t bg-linear-to-b from-30% to-90% pt-12 pb-12 md:pb-16">
+    <section className="from-card to-background relative overflow-hidden border-t bg-linear-to-b from-30% to-90% pt-12">
       <CtaSection />
 
       <footer id="site-footer" className="relative z-10">
         <div className="mx-auto mb-12 max-w-7xl px-6">
           <nav>
             <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-5">
-              {FOOTER_SECTIONS.map((section) => (
+              {footerSections.map((section) => (
                 <div key={section.title} className="min-w-0 space-y-2">
                   <h3 className="text-foreground text-sm">{section.title}</h3>
                   <ul className="space-y-0">
@@ -142,13 +148,29 @@ const Footer = () => {
           <div className="text-muted-foreground flex items-center gap-3 text-base">
             <small>
               {tI18nHardcoded.raw('autoComponentsHomeFooterJsxTextCopye99743e8')}
-              {currentYear} Kortix
+              {currentYear} {tI18nHardcoded.raw('i18nComplete.textab54cf5e1d9d')}
             </small>
           </div>
 
           <ThemeToggle variant="compact" systemTheme={false} />
         </div>
       </footer>
+
+      {/* Dithered wordmark: an alpha mask painted with the foreground token, so it follows the theme. */}
+      <div
+        aria-hidden
+        className="bg-foreground mx-auto mt-6 aspect-[1440/381] w-full max-w-7xl opacity-15"
+        style={{
+          maskImage: 'url(/marketing/dither-wordmark.png)',
+          WebkitMaskImage: 'url(/marketing/dither-wordmark.png)',
+          maskSize: 'contain',
+          WebkitMaskSize: 'contain',
+          maskRepeat: 'no-repeat',
+          WebkitMaskRepeat: 'no-repeat',
+          maskPosition: 'bottom',
+          WebkitMaskPosition: 'bottom',
+        }}
+      />
     </section>
   );
 };

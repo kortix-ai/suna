@@ -2,12 +2,10 @@
  * Auth Hooks
  */
 export {
-  useEnrollPhoneNumber,
   useCreateChallenge,
-  useVerifyChallenge,
-  useChallengeAndVerify,
+  useEnrollPhoneNumber,
+  useGetAAL,
   useListFactors,
   useUnenrollFactor,
-  useUnenrollPhoneFactor,
-  useGetAAL,
+  useVerifyChallenge,
 } from './phone-verification';

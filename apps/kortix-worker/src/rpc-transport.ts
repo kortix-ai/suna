@@ -38,6 +38,14 @@ export interface RpcTransport {
   readonly kind: string;
 }
 
+/**
+ * A failure after a server response was received — the request was delivered,
+ * so the operation may have run (a proxy 502/504 after forwarding, a body
+ * that failed to parse). The environment surfaces this as a plain error
+ * Result and never retries it.
+ */
+export class ResponseError extends Error {}
+
 export class FetchTransport implements RpcTransport {
   readonly kind = 'fetch';
   constructor(private readonly baseUrl: string, private readonly headers: Record<string, string> = {}) {}
@@ -47,7 +55,7 @@ export class FetchTransport implements RpcTransport {
       headers: { 'content-type': 'application/json', ...this.headers },
       body: JSON.stringify({ op, args, cwd }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new ResponseError(`HTTP ${res.status}`);
     return res.json();
   }
   async close() {}
@@ -81,7 +89,7 @@ export class KeepAliveTransport implements RpcTransport {
           res.setEncoding('utf8');
           res.on('data', (c) => (body += c));
           res.on('end', () => {
-            try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+            try { resolve(JSON.parse(body)); } catch (e) { reject(new ResponseError('malformed JSON body', { cause: e })); }
           });
         },
       );
@@ -146,64 +154,10 @@ export class WebSocketTransport implements RpcTransport {
   }
 }
 
-/**
- * Prefer the multiplexed socket; fall back once, permanently, if it is absent.
- *
- * Daemons are IMAGE-BAKED. A sandbox created before `/rpc-ws` existed will
- * never serve it, so the worker cannot assume the endpoint — but it also must
- * not pay a failed connect on every tool call. One probe per session: if the
- * socket answers, it is used for the rest of the session; if it does not, the
- * fallback is used for the rest of the session.
- *
- * A failure AFTER the socket has served a call is a REAL failure — a dropped
- * connection — and is rethrown so the caller's own retry can reconnect.
- * Quietly switching to HTTP there would hide a broken environment behind a
- * slower one.
- */
-export class NegotiatingTransport implements RpcTransport {
-  readonly kind = 'auto';
-  private proven = false;
-  private fellBack = false;
-
-  constructor(
-    private readonly preferred: RpcTransport,
-    private readonly fallback: RpcTransport,
-  ) {}
-
-  async call(op: string, args: Record<string, unknown>, cwd: string): Promise<any> {
-    if (this.fellBack) return this.fallback.call(op, args, cwd);
-    try {
-      const result = await this.preferred.call(op, args, cwd);
-      this.proven = true;
-      return result;
-    } catch (e) {
-      if (this.proven) throw e;
-      this.fellBack = true;
-      try {
-        await this.preferred.close();
-      } catch {
-        // nothing to release
-      }
-      return this.fallback.call(op, args, cwd);
-    }
-  }
-
-  async close(): Promise<void> {
-    await Promise.allSettled([this.preferred.close(), this.fallback.close()]);
-  }
-}
-
 export function makeTransport(kind: string, baseUrl: string, headers: Record<string, string> = {}): RpcTransport {
   switch (kind) {
     case 'ws': return new WebSocketTransport(baseUrl, headers);
     case 'fetch': return new FetchTransport(baseUrl, headers);
-    case 'keepalive': return new KeepAliveTransport(baseUrl, headers);
-    // Default: try the socket, fall back to pooled keep-alive. See
-    // NegotiatingTransport for why this cannot simply be 'ws'.
-    default:
-      return new NegotiatingTransport(
-        new WebSocketTransport(baseUrl, headers),
-        new KeepAliveTransport(baseUrl, headers),
-      );
+    default: return new KeepAliveTransport(baseUrl, headers);
   }
 }

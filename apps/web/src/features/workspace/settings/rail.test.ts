@@ -19,6 +19,17 @@ const tabsOf = (): string[] => railGroups().flatMap((g) => g.items.map((i) => i.
  * they arrived THERE.
  */
 describe('railGroups', () => {
+  test('translates every group, item label, and item description from stable message keys', () => {
+    const translated = railGroups((key) => `translated:${key}`);
+
+    expect(translated[0]?.label).toBe('translated:groups.personal');
+    expect(translated[0]?.items[0]?.label).toBe('translated:items.profile.label');
+    expect(translated[0]?.items[0]?.description).toBe('translated:items.profile.description');
+    expect(translated[0]?.items.find((entry) => entry.tab === 'tokens')?.description).toBe(
+      'translated:items.tokens.description',
+    );
+  });
+
   // Workspace FIRST. The overlay is entered from a row labelled "User
   // Settings", but that row names its default TAB, not the rail's order — so
   // leading with the workspace's own identity costs the personal tabs nothing
@@ -141,6 +152,13 @@ describe('isRailItemActive', () => {
 });
 
 describe('railItemForTab', () => {
+  test('returns translated copy when a translator is supplied', () => {
+    expect(railItemForTab('preferences', (key) => `translated:${key}`)).toMatchObject({
+      label: 'translated:items.preferences.label',
+      description: 'translated:items.preferences.description',
+    });
+  });
+
   test('resolves every live tab to its row', () => {
     for (const tab of SETTINGS_TABS) {
       expect(railItemForTab(tab)?.tab).toBe(tab);

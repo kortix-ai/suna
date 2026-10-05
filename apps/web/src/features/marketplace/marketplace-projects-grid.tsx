@@ -1,13 +1,12 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
-
-import { CubeIcon as Boxes } from '@phosphor-icons/react';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
-import { MarketplaceProjectCard } from './marketplace-project-card';
+import { MarketplaceExploreCard } from './marketplace-explore-card';
 
 function matches(item: MarketplaceItem, q: string): boolean {
   return `${item.name} ${item.title} ${item.description ?? ''} ${item.categories.join(' ')}`
@@ -28,40 +27,39 @@ function matches(item: MarketplaceItem, q: string): boolean {
 export function MarketplaceProjectsGrid({
   items,
   query,
-  size = 'featured',
+  gridClassName = 'sm:grid-cols-2',
 }: {
   items: MarketplaceItem[];
   query?: string;
-  size?: 'default' | 'featured';
+  /** Column classes — matches the skills grid it sits above. */
+  gridClassName?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const q = (query ?? '').trim().toLowerCase();
   const visible = useMemo(() => (q ? items.filter((item) => matches(item, q)) : items), [items, q]);
 
   if (items.length === 0) {
     return (
       <EmptyState
-        icon={Boxes}
-        title="No projects yet"
-        description="Ready-to-clone Kortix projects will show up here."
+        title={tI18nComplete.raw('textf83c80652286')}
+        description={tI18nComplete.raw('texte42e30cead8d')}
       />
     );
   }
 
   if (visible.length === 0) {
     return (
-      <EmptyState icon={Boxes} title="No matches" description={`No projects match "${query}".`} />
+      <EmptyState
+        title={tI18nComplete.raw('text2df01a03ff43')}
+        description={tI18nComplete('text7591d1f3fb17', { value0: query ?? '' })}
+      />
     );
   }
 
   return (
-    <div
-      className={cn(
-        'grid gap-4',
-        size === 'featured' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3',
-      )}
-    >
+    <div className={cn('grid gap-3', gridClassName)}>
       {visible.map((item) => (
-        <MarketplaceProjectCard key={item.id} item={item} size={size} />
+        <MarketplaceExploreCard key={item.id} item={item} showSource={false} />
       ))}
     </div>
   );

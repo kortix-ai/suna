@@ -13,7 +13,11 @@
 
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { type Icon as IconType, type Icon as LucideIcon, type Icon as MynaIcon } from '@phosphor-icons/react';
+import {
+  type Icon as IconType,
+  type Icon as LucideIcon,
+  type Icon as MynaIcon,
+} from '@phosphor-icons/react';
 
 interface NotificationToggleProps {
   icon: LucideIcon | MynaIcon | IconType;
@@ -63,4 +67,3 @@ export function NotificationToggle({
     </div>
   );
 }
-

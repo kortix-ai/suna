@@ -1,28 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { createFakeWallet } from './helpers/fake-wallet';
 
-// Trial-admin touches the DB (sweep queries) and the credits RPC. Stub both so
-// the grant semantics are exercised without a database.
-const grantCalls: Array<{
-  accountId: string;
-  amount: number;
-  type: string;
-  isExpiring: boolean | undefined;
-  opts: { expiresAt?: string | null; idempotencyKey?: string | null } | undefined;
-}> = [];
-mock.module('../billing/services/credits', () => ({
-  grantCredits: async (
-    accountId: string,
-    amount: number,
-    type: string,
-    _description: string,
-    isExpiring?: boolean,
-    _stripeEventId?: string,
-    opts?: { expiresAt?: string | null; idempotencyKey?: string | null },
-  ) => {
-    grantCalls.push({ accountId, amount, type, isExpiring, opts });
-    return { success: true };
-  },
-}));
+// Trial-admin touches the DB (sweep queries) and the wallet. Stub both so the
+// grant semantics are exercised without a database.
+const fake = createFakeWallet();
+const grantCalls = fake.calls.grant;
+mock.module('../billing/wallet', () => ({ wallet: fake.wallet }));
 
 let storedRow: Record<string, unknown> | null = null;
 mock.module('../billing/repositories/credit-accounts', () => ({
@@ -80,11 +63,11 @@ describe('grantTrial credit grant', () => {
     expect(grantCalls).toHaveLength(1);
     const call = grantCalls[0]!;
     expect(call.amount).toBe(150);
-    expect(call.type).toBe(TRIAL_GRANT_LEDGER_TYPE);
-    expect(call.isExpiring).toBe(true);
-    expect(call.opts?.expiresAt).toBeTruthy();
+    expect(call.kind).toBe(TRIAL_GRANT_LEDGER_TYPE);
+    expect(call.expiring).toBe(true);
+    expect(call.expiresAt).toBeTruthy();
     // expiresAt ≈ now + 50d (grantTrial uses wall clock; assert the day).
-    const expires = new Date(call.opts!.expiresAt!).getTime();
+    const expires = new Date(call.expiresAt!).getTime();
     expect(Math.abs(expires - (Date.now() + 50 * DAY_MS))).toBeLessThan(60_000);
   });
 });
@@ -104,7 +87,7 @@ describe('temporaryAccessOverrides (pure)', () => {
     expect(o.auditAccess).toEqual({ value: true, expires_at: END });
     expect(o.branding).toEqual({ value: true, expires_at: END });
     expect(o.managedModels).toEqual({ value: true, expires_at: END });
-    expect(o.maxConcurrentSessions).toEqual({ value: 5000, expires_at: END });
+    expect('maxConcurrentSessions' in o).toBe(false);
   });
 
   test('a non-enterprise plan grants none of them — a Team pilot is not SSO', () => {
@@ -114,7 +97,7 @@ describe('temporaryAccessOverrides (pure)', () => {
     expect(o.rbac).toBeUndefined();
     expect(o.auditAccess).toBeUndefined();
     expect(o.branding).toBeUndefined();
-    expect(o.maxConcurrentSessions).toEqual({ value: 200, expires_at: END });
+    expect('maxConcurrentSessions' in o).toBe(false);
   });
 
   test('managedModels is always stated, including when the plan withholds it', () => {
@@ -148,7 +131,7 @@ describe('grantTemporaryAccess', () => {
     // Overrides: the whole plan, every entry stamped with the window's end.
     const stored = storedRow!.entitlementOverrides as Record<string, unknown>;
     expect((stored.sso as { expires_at: string }).expires_at).toBe(result.endsAt);
-    expect((stored.maxConcurrentSessions as { value: number }).value).toBe(5000);
+    expect(stored.maxConcurrentSessions).toBeUndefined();
 
     // Legacy trial columns, unchanged — the overlay and the console still read them.
     expect(storedRow!.trialStatus).toBe('active');
@@ -160,8 +143,8 @@ describe('grantTemporaryAccess', () => {
     expect(result.creditGranted).toBe(100);
     expect(grantCalls).toHaveLength(1);
     expect(grantCalls[0]!.amount).toBe(100);
-    expect(grantCalls[0]!.isExpiring).toBe(true);
-    expect(grantCalls[0]!.opts?.expiresAt).toBe(result.endsAt);
+    expect(grantCalls[0]!.expiring).toBe(true);
+    expect(grantCalls[0]!.expiresAt).toBe(result.endsAt);
   });
 
   test('the grant lapses by arithmetic — every entry is dead one ms after the end', async () => {
@@ -211,7 +194,7 @@ describe('grantTemporaryAccess', () => {
     expect(stored.sso).toBeUndefined();
     expect(stored.scim).toBeUndefined();
     expect(stored.computeRateMultiplier).toEqual({ value: 0 });
-    expect((stored.maxConcurrentSessions as { value: number }).value).toBe(200);
+    expect(stored.maxConcurrentSessions).toBeUndefined();
     expect((stored.managedModels as { expires_at: string }).expires_at).toBe(second.endsAt);
   });
 

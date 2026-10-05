@@ -19,8 +19,7 @@ export KORTIX_PROJECT_ID=...                      # the project your agent lives
 
 - The API key is a `kortix_pat_…` token. Every session it starts is recorded
   with `origin: backend`, which is what unlocks the backend-only overrides
-  (`secrets`) — see the [Kortix-as-a-Backend
-  guide](../../../docs/KORTIX_AS_A_BACKEND_GUIDE.md).
+  (`secrets`).
 - Some examples read extra env vars (a session id, a connector URL); each file's
   header comment lists what it needs.
 
@@ -39,6 +38,7 @@ export KORTIX_PROJECT_ID=...                      # the project your agent lives
 | 09 | [`09-kaab-backend-wrapper.ts`](09-kaab-backend-wrapper.ts) | **Kortix as a Backend, end to end**: mint a connector → per-user connection → backend-origin session (`secrets` + `connector_bindings`) → **stream**. One-shot CLI **and** a multi-tenant SSE service. | `bun run examples/09-kaab-backend-wrapper.ts "Summarize my signups"` |
 | 10 | [`10-deploy-app.ts`](10-deploy-app.ts) | Create a stable App URL and deploy a public OCI image through the provider-neutral Apps API. | `bun run examples/10-deploy-app.ts` |
 | 11 | [`11-sign-in-with-kortix.ts`](11-sign-in-with-kortix.ts) | **Sign in with Kortix**: gate your own app behind Kortix identity with `createKortixAuth` — one catch-all route, `viewer()`, and a request-scoped client acting as the viewer. | `bun run examples/11-sign-in-with-kortix.ts` |
+| 12 | [`12-session-labels.ts`](12-session-labels.ts) | **Session labels and metadata**: set labels and metadata at create, update them (`null` removes a metadata key), list by label server-side, and render conditionally. | `bun run examples/12-session-labels.ts` |
 
 ## Kortix as a Backend
 
@@ -47,8 +47,7 @@ their connectors, model, secrets, and identity **by reference** — is examples
 **03** (the multi-tenant client seam) and **09** (the complete flow). Read them
 alongside:
 
-- [`docs/KORTIX_AS_A_BACKEND_GUIDE.md`](../../../docs/KORTIX_AS_A_BACKEND_GUIDE.md) — the concepts, overrides, errors, and security model.
-- [`KORTIX-AS-A-BACKEND.pdf`](KORTIX-AS-A-BACKEND.pdf) — the same, as a printable one-pager.
+- [`KORTIX-AS-A-BACKEND.pdf`](KORTIX-AS-A-BACKEND.pdf) — the concepts, overrides, errors, and security model, as a printable one-pager.
 
 ### `09` env knobs
 

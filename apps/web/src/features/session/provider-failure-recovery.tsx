@@ -1,14 +1,11 @@
 'use client';
 
-import {
-  ArrowCounterClockwiseIcon,
-  CopyIcon,
-  TrashIcon,
-} from '@phosphor-icons/react';
+import { ArrowCounterClockwiseIcon, CopyIcon, TrashIcon } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import type { PendingSessionPrompt } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 
 interface ProviderFailureRecoveryProps {
   pendingPrompt: PendingSessionPrompt | null;
@@ -26,24 +23,25 @@ export function ProviderFailureRecovery({
   onCopy,
   onDelete,
 }: ProviderFailureRecoveryProps) {
+  const t = useTranslations('sessionUi.providerRecovery');
   const attachmentNames = pendingPrompt?.attachment_names ?? [];
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-3">
       {pendingPrompt ? (
         <div className="border-border/60 bg-muted/40 w-full rounded-md border px-3 py-2.5 text-left">
-          <p className="text-muted-foreground mb-1 text-xs font-medium">Saved prompt</p>
+          <p className="text-muted-foreground mb-1 text-xs font-medium">{t('savedPrompt')}</p>
           {pendingPrompt.text ? (
-            <p className="text-foreground/90 max-h-40 overflow-y-auto whitespace-pre-wrap wrap-break-word text-xs leading-relaxed">
+            <p className="text-foreground max-h-40 overflow-y-auto text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
               {pendingPrompt.text}
             </p>
           ) : (
-            <p className="text-muted-foreground/70 text-xs">No text prompt was attached.</p>
+            <p className="text-muted-foreground text-xs">{t('noText')}</p>
           )}
           {attachmentNames.length > 0 ? (
             <div className="border-border/60 mt-2 border-t pt-2">
               <p className="text-muted-foreground mb-1 text-xs font-medium">
-                {attachmentNames.length === 1 ? 'Attachment' : 'Attachments'}
+                {t('attachments', { count: attachmentNames.length })}
               </p>
               <ul className="text-muted-foreground/70 space-y-0.5 text-xs">
                 {attachmentNames.map((name, index) => (
@@ -52,14 +50,12 @@ export function ProviderFailureRecovery({
                   </li>
                 ))}
               </ul>
-              <p className="text-muted-foreground/70 mt-1 text-xs">
-                Reattach these files after a reload.
-              </p>
+              <p className="text-muted-foreground/70 mt-1 text-xs">{t('reattach')}</p>
             </div>
           ) : null}
         </div>
       ) : (
-        <p className="text-muted-foreground text-xs">No saved prompt is available.</p>
+        <p className="text-muted-foreground text-xs">{t('unavailable')}</p>
       )}
 
       <div className="flex flex-wrap items-center justify-center gap-2">
@@ -76,7 +72,7 @@ export function ProviderFailureRecovery({
           ) : (
             <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
           )}
-          {isRetrying ? 'Retrying…' : 'Retry'}
+          {isRetrying ? t('retrying') : t('retry')}
         </Button>
         <Button
           type="button"
@@ -86,11 +82,11 @@ export function ProviderFailureRecovery({
           disabled={!pendingPrompt?.text}
         >
           <CopyIcon className="size-3.5 shrink-0" />
-          Copy prompt
+          {t('copy')}
         </Button>
         <Button type="button" size="sm" variant="destructive" onClick={onDelete}>
           <TrashIcon className="size-3.5 shrink-0" />
-          Delete
+          {t('delete')}
         </Button>
       </div>
     </div>

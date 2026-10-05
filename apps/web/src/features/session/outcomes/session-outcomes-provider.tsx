@@ -39,11 +39,12 @@
  * parameter. Task 5 mounts it.
  */
 
+import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
-// NOT `@kortix/sdk/react`'s hook of the same name. See the note below — this is
+// NOT `@kortix/sdk/react`'s change-request hook. See the note above — this is
 // a cache-coherence requirement, not a style preference.
-import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
+import { useSessionChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 
 import { anchorOutcomes, type TurnSpan } from './anchor-outcomes';
 import { changeRequestOutcomes } from './change-request-outcomes';
@@ -69,19 +70,22 @@ export function SessionOutcomesProvider({
   onOpen: (outcome: Outcome) => void;
   children: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // No `projectId` argument: this hook reads it from `ProjectFilesProvider`,
   // which is what keeps it on the same cache entry the dialog invalidates.
   // `'all'` because a merged or closed change request is still an outcome of
   // the turn that produced it — it just reads "Applied" or "Closed".
-  const { data } = useChangeRequests('all', { refetchInterval: 60_000 });
+  // Only THIS session's change requests, filtered by the server; the key sits
+  // under the project-files list scope the dialog's mutations invalidate.
+  const { data } = useSessionChangeRequests(projectSessionId, { refetchInterval: 60_000 });
 
   const all = useMemo(
     // Change requests are the only outcome a turn produces. The derived
     // pipeline (files, schedules, background tasks, connector links) was built
     // and removed — see `OutcomeKind` for why each one could not be tied to the
     // turn that showed it.
-    () => changeRequestOutcomes(data?.change_requests ?? [], projectSessionId),
-    [data?.change_requests, projectSessionId],
+    () => changeRequestOutcomes(data?.change_requests ?? [], projectSessionId, tI18nComplete),
+    [data?.change_requests, projectSessionId, tI18nComplete],
   );
 
   const byTurn = useMemo(() => anchorOutcomes(all, turnSpans), [all, turnSpans]);

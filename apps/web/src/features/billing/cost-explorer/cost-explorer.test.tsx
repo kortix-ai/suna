@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from 'next-intl';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+import enMessages from '../../../../translations/en.json';
 
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared-runtime';
@@ -13,13 +16,14 @@ import {
 
 import { resolvePreset, type CostRange } from '@/components/ui/date-range-picker';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { buildCostByProjectQuery, buildCostSummaryQuery } from '@/hooks/billing/use-cost-explorer';
 import {
   buildSessionCostDetailQuery,
   buildSessionCostsListQuery,
 } from '@/hooks/billing/use-session-costs';
+import { BillingAccountProvider } from '@/stores/billing-account-context';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   buildBreadcrumbCrumbs,
   CostExplorer,
@@ -105,7 +109,9 @@ describe('parseExplorerState', () => {
       new URLSearchParams('range=7d'),
       new Date(NOW.getTime() + 86_400_000),
     );
-    expect(later.range.to).not.toBe(parseExplorerState(new URLSearchParams('range=7d'), NOW).range.to);
+    expect(later.range.to).not.toBe(
+      parseExplorerState(new URLSearchParams('range=7d'), NOW).range.to,
+    );
   });
 
   // A custom range never consults `now` at all — it reads both bounds off the
@@ -272,7 +278,6 @@ describe('clock reads across a navigation sequence', () => {
       windows: 1,
     });
   });
-
 });
 
 // ── The hook itself, actually rendered ─────────────────────────────────────
@@ -336,7 +341,7 @@ describe('useExplorerClockAnchor (rendered)', () => {
   test('resolves a usable instant for the default landing URL', () => {
     const { windows } = renderAnchor('');
     expect(windows[0]).toBeInstanceOf(Date);
-    expect(Number.isNaN(windows[0]!.getTime())) .toBe(false);
+    expect(Number.isNaN(windows[0]!.getTime())).toBe(false);
   });
 
   // The hook derives its own key from the params it is handed, so a caller
@@ -448,12 +453,14 @@ describe('serializeExplorerState', () => {
   });
 
   test('round-trips a custom range', () => {
-    const range = { preset: 'custom', from: '2026-07-01T00:00:00.000Z', to: '2026-07-08T00:00:00.000Z' } as const;
+    const range = {
+      preset: 'custom',
+      from: '2026-07-01T00:00:00.000Z',
+      to: '2026-07-08T00:00:00.000Z',
+    } as const;
     expect(
-      parseExplorerState(
-        serializeExplorerState({ range, projectId: 'p1', sessionId: null }),
-        NOW,
-      ).range,
+      parseExplorerState(serializeExplorerState({ range, projectId: 'p1', sessionId: null }), NOW)
+        .range,
     ).toEqual(range);
   });
 
@@ -483,7 +490,11 @@ describe('serializeExplorerState', () => {
   });
 
   test('project and session both round-trip together', () => {
-    const state: ExplorerState = { range: resolvePreset('30d', NOW), projectId: 'p1', sessionId: 's1' };
+    const state: ExplorerState = {
+      range: resolvePreset('30d', NOW),
+      projectId: 'p1',
+      sessionId: 's1',
+    };
     const parsed = parseExplorerState(serializeExplorerState(state), NOW);
     expect(parsed.projectId).toBe('p1');
     expect(parsed.sessionId).toBe('s1');
@@ -501,13 +512,21 @@ const range = resolvePreset('30d', NOW);
 
 describe('buildBreadcrumbCrumbs', () => {
   test('at the projects level, renders a single current Usage crumb', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: null, sessionId: null }, null);
+    const crumbs = buildBreadcrumbCrumbs(
+      { range, projectId: null, sessionId: null },
+      null,
+      testUiTranslator,
+    );
     expect(crumbs).toHaveLength(1);
     expect(crumbs[0]).toMatchObject({ key: 'usage', label: 'Usage', current: true });
   });
 
   test('at the sessions level, Usage is a clickable crumb that clears the project', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: null }, 'Alpha');
+    const crumbs = buildBreadcrumbCrumbs(
+      { range, projectId: 'p1', sessionId: null },
+      'Alpha',
+      testUiTranslator,
+    );
     expect(crumbs).toHaveLength(2);
 
     const usage = crumbs[0]!;
@@ -522,6 +541,7 @@ describe('buildBreadcrumbCrumbs', () => {
     const crumbs = buildBreadcrumbCrumbs(
       { range, projectId: 'p1', sessionId: 'session-abcdefgh-long-tail' },
       'Alpha',
+      testUiTranslator,
     );
     expect(crumbs).toHaveLength(3);
 
@@ -544,6 +564,7 @@ describe('buildBreadcrumbCrumbs', () => {
     const crumbs = buildBreadcrumbCrumbs(
       { range: customRange, projectId: 'p1', sessionId: 's1' },
       'Alpha',
+      testUiTranslator,
     );
     for (const crumb of crumbs) {
       expect(crumb.target.range).toEqual(customRange);
@@ -551,7 +572,11 @@ describe('buildBreadcrumbCrumbs', () => {
   });
 
   test('falls back to a truncated project id when no label has loaded yet', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'project-without-a-loaded-name', sessionId: null }, null);
+    const crumbs = buildBreadcrumbCrumbs(
+      { range, projectId: 'project-without-a-loaded-name', sessionId: null },
+      null,
+      testUiTranslator,
+    );
     expect(crumbs[1]!.label).toBe('project-w');
   });
 });
@@ -566,12 +591,20 @@ describe('buildBreadcrumbCrumbs', () => {
 
 describe('firstClickableCrumbIndex', () => {
   test('at the projects level there is nowhere up, so no crumb carries the chevron', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: null, sessionId: null }, null);
+    const crumbs = buildBreadcrumbCrumbs(
+      { range, projectId: null, sessionId: null },
+      null,
+      testUiTranslator,
+    );
     expect(firstClickableCrumbIndex(crumbs)).toBe(-1);
   });
 
   test('at the sessions level the Usage crumb carries it', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: null }, 'Alpha');
+    const crumbs = buildBreadcrumbCrumbs(
+      { range, projectId: 'p1', sessionId: null },
+      'Alpha',
+      testUiTranslator,
+    );
     expect(firstClickableCrumbIndex(crumbs)).toBe(0);
     expect(crumbs[0]!.key).toBe('usage');
   });
@@ -579,7 +612,11 @@ describe('firstClickableCrumbIndex', () => {
   // Two crumbs are clickable at the session level. Only the shallowest gets
   // the chevron — one "go up" target, not a row of them.
   test('at the session level only the shallowest clickable crumb carries it', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: 's1' }, 'Alpha');
+    const crumbs = buildBreadcrumbCrumbs(
+      { range, projectId: 'p1', sessionId: 's1' },
+      'Alpha',
+      testUiTranslator,
+    );
     expect(crumbs.filter((crumb) => !crumb.current)).toHaveLength(2);
     expect(firstClickableCrumbIndex(crumbs)).toBe(0);
   });
@@ -711,7 +748,9 @@ async function countRequests(
     scheduled = false;
     if (stopped) return;
     const range = parse();
-    observers.forEach((observer, index) => observer.setOptions(options(queries[index]!, range) as never));
+    observers.forEach((observer, index) =>
+      observer.setOptions(options(queries[index]!, range) as never),
+    );
   };
 
   const unsubscribes = observers.map((observer) =>
@@ -769,7 +808,15 @@ describe('cost explorer request count', () => {
         name: 'owner-catalog',
         build: (range) =>
           buildSessionCostsListQuery(
-            { accountId: 'acct', projectId: 'p1', limit: 100, offset: 0, from: range.from, to: range.to, sort: 'total_desc' },
+            {
+              accountId: 'acct',
+              projectId: 'p1',
+              limit: 100,
+              offset: 0,
+              from: range.from,
+              to: range.to,
+              sort: 'total_desc',
+            },
             sessionSources,
           ),
       },
@@ -777,7 +824,15 @@ describe('cost explorer request count', () => {
         name: 'session-list',
         build: (range) =>
           buildSessionCostsListQuery(
-            { accountId: 'acct', projectId: 'p1', limit: 25, offset: 0, from: range.from, to: range.to, sort: 'total_desc' },
+            {
+              accountId: 'acct',
+              projectId: 'p1',
+              limit: 25,
+              offset: 0,
+              from: range.from,
+              to: range.to,
+              sort: 'total_desc',
+            },
             sessionSources,
           ),
       },
@@ -824,7 +879,10 @@ describe('cost explorer request count', () => {
         {
           name: 'cost-summary',
           build: (range) =>
-            buildCostSummaryQuery({ accountId: 'acct', from: range.from, to: range.to }, costSources),
+            buildCostSummaryQuery(
+              { accountId: 'acct', from: range.from, to: range.to },
+              costSources,
+            ),
         },
       ],
     );
@@ -847,7 +905,12 @@ describe('cost explorer request count', () => {
 // which is the shape the original defect took between renders.
 
 const staticRouter = {
-  push() {}, replace() {}, refresh() {}, back() {}, forward() {}, prefetch() {},
+  push() {},
+  replace() {},
+  refresh() {},
+  back() {},
+  forward() {},
+  prefetch() {},
 } as never;
 
 /** Static-render the explorer at `search`; return the query keys it built. */
@@ -855,19 +918,21 @@ function renderExplorer(search: string): { key: readonly unknown[]; window: stri
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   renderToStaticMarkup(
-    <QueryClientProvider client={client}>
-      <AppRouterContext.Provider value={staticRouter}>
-        <PathnameContext.Provider value="/accounts/acct">
-          <SearchParamsContext.Provider value={new URLSearchParams(search) as never}>
-            <TooltipProvider>
-              <BillingAccountProvider accountId="acct">
-                <CostExplorer />
-              </BillingAccountProvider>
-            </TooltipProvider>
-          </SearchParamsContext.Provider>
-        </PathnameContext.Provider>
-      </AppRouterContext.Provider>
-    </QueryClientProvider>,
+    <NextIntlClientProvider locale="en" messages={enMessages}>
+      <QueryClientProvider client={client}>
+        <AppRouterContext.Provider value={staticRouter}>
+          <PathnameContext.Provider value="/accounts/acct">
+            <SearchParamsContext.Provider value={new URLSearchParams(search) as never}>
+              <TooltipProvider>
+                <BillingAccountProvider accountId="acct">
+                  <CostExplorer />
+                </BillingAccountProvider>
+              </TooltipProvider>
+            </SearchParamsContext.Provider>
+          </PathnameContext.Provider>
+        </AppRouterContext.Provider>
+      </QueryClientProvider>
+    </NextIntlClientProvider>,
   );
 
   return client
@@ -894,7 +959,11 @@ const CUSTOM_WINDOW = '2026-07-01T00:00:00.000Z|2026-07-08T00:00:00.000Z';
 const LEVELS = [
   { name: 'projects', drill: '', keys: ['projects', 'summary', 'by-project'] },
   { name: 'sessions', drill: 'project=p1', keys: ['projects', 'summary', 'list', 'list'] },
-  { name: 'session ledger', drill: 'project=p1&session=s1', keys: ['projects', 'summary', 'detail'] },
+  {
+    name: 'session ledger',
+    drill: 'project=p1&session=s1',
+    keys: ['projects', 'summary', 'detail'],
+  },
 ] as const;
 
 for (const level of LEVELS) {
@@ -946,19 +1015,21 @@ function renderExplorerHtml(search: string): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   try {
     return renderToStaticMarkup(
-      <QueryClientProvider client={client}>
-        <AppRouterContext.Provider value={staticRouter}>
-          <PathnameContext.Provider value="/accounts/acct">
-            <SearchParamsContext.Provider value={new URLSearchParams(search) as never}>
-              <TooltipProvider>
-                <BillingAccountProvider accountId="acct">
-                  <CostExplorer />
-                </BillingAccountProvider>
-              </TooltipProvider>
-            </SearchParamsContext.Provider>
-          </PathnameContext.Provider>
-        </AppRouterContext.Provider>
-      </QueryClientProvider>,
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <QueryClientProvider client={client}>
+          <AppRouterContext.Provider value={staticRouter}>
+            <PathnameContext.Provider value="/accounts/acct">
+              <SearchParamsContext.Provider value={new URLSearchParams(search) as never}>
+                <TooltipProvider>
+                  <BillingAccountProvider accountId="acct">
+                    <CostExplorer />
+                  </BillingAccountProvider>
+                </TooltipProvider>
+              </SearchParamsContext.Provider>
+            </PathnameContext.Provider>
+          </AppRouterContext.Provider>
+        </QueryClientProvider>
+      </NextIntlClientProvider>,
     );
   } finally {
     client.clear();
@@ -1106,22 +1177,43 @@ function stripComments(source: string): string {
     const next = source[i + 1];
 
     if (mode === 'line') {
-      if (char === '\n') { mode = 'code'; out += char; }
+      if (char === '\n') {
+        mode = 'code';
+        out += char;
+      }
       continue;
     }
     if (mode === 'block') {
-      if (char === '*' && next === '/') { mode = 'code'; i += 1; }
+      if (char === '*' && next === '/') {
+        mode = 'code';
+        i += 1;
+      }
       continue;
     }
     if (mode === 'string') {
-      if (char === '\\') { out += char + (next ?? ''); i += 1; continue; }
+      if (char === '\\') {
+        out += char + (next ?? '');
+        i += 1;
+        continue;
+      }
       if (char === quote) mode = 'code';
       out += char;
       continue;
     }
-    if (char === '/' && next === '/') { mode = 'line'; i += 1; continue; }
-    if (char === '/' && next === '*') { mode = 'block'; i += 1; continue; }
-    if (char === '"' || char === "'" || char === '`') { mode = 'string'; quote = char; }
+    if (char === '/' && next === '/') {
+      mode = 'line';
+      i += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      mode = 'block';
+      i += 1;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      mode = 'string';
+      quote = char;
+    }
     out += char;
   }
 

@@ -13,6 +13,7 @@ import { useBillingAccountId } from '@/stores/billing-account-context';
 import { purchaseCredits } from '@kortix/sdk';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { m } from 'motion/react';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 /**
  * One-time credit purchase.
@@ -64,26 +65,60 @@ const CUSTOM_MAX_USD = 10000;
 export function describeTopup(
   amount: number | null,
   isPurchasing = false,
+  copy: TopupCopy = DEFAULT_TOPUP_COPY,
 ): { canBuy: boolean; hint: string; actionLabel: string } {
   const tooLow = amount !== null && amount < CUSTOM_MIN_USD;
   const tooHigh = amount !== null && amount > CUSTOM_MAX_USD;
   const canBuy = amount !== null && !tooLow && !tooHigh && !isPurchasing;
 
   const hint = tooLow
-    ? `Minimum top-up is $${CUSTOM_MIN_USD}.`
+    ? copy.minimum(formatWholeUsd(CUSTOM_MIN_USD, copy.locale))
     : tooHigh
-      ? `For more than $${CUSTOM_MAX_USD.toLocaleString()}, contact sales.`
+      ? copy.contactSales(formatWholeUsd(CUSTOM_MAX_USD, copy.locale))
       : amount !== null
-        ? `${formatCredits(dollarsToCredits(Math.round(amount)))} credits · added as soon as you pay.`
-        : 'Credits never expire. $1 = 100 credits.';
+        ? copy.creditHint(
+            formatCredits(dollarsToCredits(Math.round(amount)), { locale: copy.locale }),
+          )
+        : copy.noExpiry;
 
   const actionLabel = isPurchasing
-    ? 'Processing'
+    ? copy.processing
     : canBuy && amount !== null
-      ? `Add $${Math.round(amount)}`
-      : 'Add credits';
+      ? copy.addAmount(formatWholeUsd(Math.round(amount), copy.locale))
+      : copy.addCredits;
 
   return { canBuy, hint, actionLabel };
+}
+
+export interface TopupCopy {
+  minimum: (amount: string) => string;
+  contactSales: (amount: string) => string;
+  creditHint: (credits: string) => string;
+  noExpiry: string;
+  processing: string;
+  addAmount: (amount: string) => string;
+  addCredits: string;
+  locale: string;
+}
+
+const DEFAULT_TOPUP_COPY: TopupCopy = {
+  minimum: (amount) => `Minimum top-up is ${amount}.`,
+  contactSales: (amount) => `For more than ${amount}, contact sales.`,
+  creditHint: (credits) => `${credits} credits · added as soon as you pay.`,
+  noExpiry: 'Credits never expire. $1 = 100 credits.',
+  processing: 'Processing',
+  addAmount: (amount) => `Add ${amount}`,
+  addCredits: 'Add credits',
+  locale: 'en-US',
+};
+
+function formatWholeUsd(amount: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 interface CreditTopupSectionProps {
@@ -95,6 +130,8 @@ interface CreditTopupSectionProps {
 }
 
 export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditTopupSectionProps) {
+  const t = useTranslations('billing.topup');
+  const locale = useLocale();
   const billingAccountId = useBillingAccountId();
   const billingReturnUrl = useBillingReturnUrl();
   // The sliding indicator is a shared layout animation. Two of these can be
@@ -118,7 +155,16 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
     return selectedPrice;
   }, [isCustom, customValue, selectedPrice]);
 
-  const { canBuy, hint, actionLabel } = describeTopup(amount, isPurchasing);
+  const { canBuy, hint, actionLabel } = describeTopup(amount, isPurchasing, {
+    minimum: (value) => t('minimum', { amount: value }),
+    contactSales: (value) => t('contactSales', { amount: value }),
+    creditHint: (credits) => t('creditHint', { credits }),
+    noExpiry: t('noExpiry'),
+    processing: t('processing'),
+    addAmount: (value) => t('addAmount', { amount: value }),
+    addCredits: t('addCredits'),
+    locale,
+  });
 
   const select = (price: number) => {
     setSelectedPrice(price);
@@ -142,11 +188,11 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
       if (response.checkout_url) {
         window.location.href = response.checkout_url;
       } else {
-        throw new Error('No checkout URL received');
+        throw new Error(t('noCheckoutUrl'));
       }
     } catch (err: unknown) {
       const error = err as { details?: { detail?: string }; message?: string };
-      const msg = error?.details?.detail || error?.message || 'Failed to create checkout session';
+      const msg = error?.details?.detail || error?.message || t('checkoutFailed');
       setPurchaseError(msg);
       errorToast(msg);
     } finally {
@@ -159,7 +205,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div
           role="radiogroup"
-          aria-label="Top-up amount"
+          aria-label={t('amountGroup')}
           className="bg-muted/60 flex items-center gap-0.5 rounded-md border p-0.5"
         >
           {CREDIT_PRESETS.map((price) => {
@@ -172,7 +218,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
                 disabled={isPurchasing}
                 onClick={() => select(price)}
               >
-                ${price}
+                {formatWholeUsd(price, locale)}
               </AmountCell>
             );
           })}
@@ -184,7 +230,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
               <m.span
                 layoutId={indicatorId}
                 transition={spring.moderate}
-                className="bg-background shadow-2xs absolute inset-0 rounded-sm"
+                className="bg-background absolute inset-0 rounded-sm shadow-2xs"
               />
               <span className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 z-10 -translate-y-1/2 text-xs">
                 $
@@ -196,7 +242,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
                 max={CUSTOM_MAX_USD}
                 step={1}
                 inputMode="numeric"
-                aria-label="Custom amount in dollars"
+                aria-label={t('customAmount')}
                 value={customValue}
                 placeholder={String(CUSTOM_MIN_USD)}
                 disabled={isPurchasing}
@@ -204,7 +250,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
                   setCustomValue(e.target.value);
                   setPurchaseError(null);
                 }}
-                className="text-foreground placeholder:text-muted-foreground/60 relative z-10 h-7 w-[4.5rem] bg-transparent pr-2 pl-5 text-xs font-medium tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="text-foreground placeholder:text-muted-foreground/60 relative z-10 h-7 w-[4.5rem] [appearance:textfield] bg-transparent pr-2 pl-5 text-xs font-medium tabular-nums outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
             </div>
           ) : (
@@ -217,7 +263,7 @@ export function CreditTopupSection({ successUrl, cancelUrl, className }: CreditT
                 setPurchaseError(null);
               }}
             >
-              Custom
+              {t('custom')}
             </AmountCell>
           )}
         </div>
@@ -265,7 +311,7 @@ function AmountCell({
       onClick={onClick}
       className={cn(
         'relative h-7 cursor-pointer rounded-sm px-2.5 text-xs font-medium tabular-nums',
-        'transition-[color,transform] duration-150 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50',
+        'duration-normal transition-[color,transform] active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50 motion-reduce:transform-none',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
       )}
@@ -274,7 +320,7 @@ function AmountCell({
         <m.span
           layoutId={indicatorId}
           transition={spring.moderate}
-          className="bg-background shadow-2xs absolute inset-0 rounded-sm"
+          className="bg-background absolute inset-0 rounded-sm shadow-2xs"
         />
       ) : null}
       <span className="relative z-10">{children}</span>

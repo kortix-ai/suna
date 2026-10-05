@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import {
@@ -11,10 +12,10 @@ import {
 
 import { Button } from '@/components/ui/button';
 import type { CostRange } from '@/components/ui/date-range-picker';
-import { IconDownload } from '@/components/ui/kortix-icons';
 import Loading from '@/components/ui/loading';
 import { errorToast, warningToast } from '@/components/ui/toast';
 import { useBillingAccountId } from '@/stores/billing-account-context';
+import { Download } from '@/features/icon/icons/download';
 
 /** Which list route the export runs against — the same discriminant
  *  `fetchCostExportCsv` overloads on. */
@@ -199,14 +200,15 @@ export interface CostExportButtonViewProps {
 /** The presentational half — no fetch, no state — so the in-flight rendering
  *  is assertable without driving a click. */
 export function CostExportButtonView({ isExporting, onExport }: CostExportButtonViewProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Button type="button" variant="outline" size="sm" disabled={isExporting} onClick={onExport}>
       {isExporting ? (
         <Loading className="size-3.5 shrink-0" />
       ) : (
-        <IconDownload className="size-3.5 shrink-0" />
+        <Download className="size-3.5 shrink-0" />
       )}
-      Export CSV
+      {tI18nComplete.raw('text91f71c14c8d6')}
     </Button>
   );
 }
@@ -269,6 +271,7 @@ export function buildCostExportOptions<Filters extends object>(
  * so a plain link 401s.
  */
 export function CostExportButton(props: CostExportButtonProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [isExporting, setIsExporting] = useState(false);
   // Read here rather than passed in: every query on these levels reads the
   // same context, so taking it from the same place is what keeps the export's
@@ -297,7 +300,7 @@ export function CostExportButton(props: CostExportButtonProps) {
       saveBlob(blob, buildExportFilename(props.kind, props.range));
       if (warning) warningToast(warning);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Failed to export CSV');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text061ea77f739e'));
     } finally {
       setIsExporting(false);
     }

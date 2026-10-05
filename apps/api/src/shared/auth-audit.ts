@@ -16,14 +16,9 @@
 
 import type { Context } from 'hono';
 import { recordAuditEvent } from './audit';
-
-function clientIp(c: Context): string | null {
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-    c.req.header('x-real-ip') ||
-    null
-  );
-}
+import { credentialFromContext } from './audit-credential';
+import { createFirstInWindow } from './audit-dedupe';
+import { requestClientIp } from './client-ip';
 
 function userAgent(c: Context): string | null {
   return c.req.header('user-agent') || null;
@@ -39,8 +34,19 @@ function fireAndForget(promise: Promise<void>): void {
   });
 }
 
+// Before 2026-10-01 every authenticated request wrote a row: 13% of prod
+// audit_events volume, all repeats of the same credential. The inbound request
+// row already carries credential_kind and credential_id for every request.
+const firstLoginInWindow = createFirstInWindow();
+
 /** Successful credential verification. Called from auth middleware
- *  right after a token (JWT, PAT, SA, Kortix key) passes validation. */
+ *  right after a token (JWT, PAT, SA, Kortix key) passes validation.
+ *
+ *  Compliance semantics: the FIRST use of a credential per hour (per API
+ *  replica) is recorded; repeated uses within the hour are not. A new
+ *  credential, or one unseen for an hour, is always recorded. A login failure
+ *  (`auditLoginFail`) is never deduplicated. In-memory state: a replica restart
+ *  records each credential once more. */
 export function auditLoginSuccess(args: {
   c: Context;
   userId: string;
@@ -48,13 +54,16 @@ export function auditLoginSuccess(args: {
   authType: 'supabase' | 'pat' | 'apiKey' | 'service_account' | 'oauth';
   metadata?: Record<string, unknown>;
 }): void {
+  const credential = credentialFromContext((key) => args.c.get(key));
+  if (!firstLoginInWindow(`${args.userId}|${args.authType}|${credential.credentialId ?? ''}`)) return;
   fireAndForget(
     recordAuditEvent({
       accountId: args.accountId ?? null,
       actorUserId: args.userId,
       action: 'auth.login.success',
+      ...credential,
       resourceType: 'session',
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
       metadata: {
         auth_type: args.authType,
@@ -84,7 +93,7 @@ export function auditLoginFail(args: {
       actorUserId: args.userId ?? null,
       action: 'auth.login.fail',
       resourceType: 'session',
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
       metadata: {
         reason: args.reason,
@@ -110,7 +119,7 @@ export function auditLogout(args: {
       action: 'auth.logout',
       resourceType: 'session',
       resourceId: args.sessionId ?? null,
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
       metadata: { reason: args.reason ?? 'user_action' },
     }),
@@ -133,7 +142,7 @@ export function auditSessionFirstSight(args: {
       action: 'auth.session.first_sight',
       resourceType: 'session',
       resourceId: args.sessionId,
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
     }),
   );

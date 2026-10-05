@@ -38,16 +38,50 @@ describe('ProjectOnboardingWizard: completion wiring', () => {
     expect(code).not.toMatch(/const complete = useCallback\(\(\) => onboarding\.complete\(\)/);
   });
 
-  test('skipSurvey is untouched — it is step navigation, not an exit', () => {
-    expect(code).toContain('const skipSurvey = useCallback(');
-    expect(code).not.toContain('completeThenNotify(skipSurvey');
+  // The stamp is optimistic, so `isPending` flips in the same tick as the
+  // last click. On `/new` the wizard must hold the screen until the route
+  // swaps, or it uncovers the "Creating …" loader. On the project shell (no
+  // callbacks) it still disappears in place.
+  test('an exit that navigates keeps the wizard up until the route swaps', () => {
+    expect(code).toContain('if (onSkip) setLeaving(true);');
+    expect(code).toContain('if (onCompleted) setLeaving(true);');
+    expect(code).toContain('if (!isPending && !leaving) return null;');
+  });
+
+  // `/new` has no effects by contract, so the wizard prefetches the project
+  // route it is about to open.
+  // The exit opens the first chat (`firstChatHref`), so that is the address
+  // worth warming.
+  test('prefetches the first chat when an exit navigates', () => {
+    expect(code).toContain('if (navigatesOnExit) router.prefetch(firstChatHref(projectId));');
+  });
+
+  test('both exits start the first chat', () => {
+    expect(code).toMatch(/const skip = useCallback\(\(\) => \{\s*startFirstChat\(\);/);
+    expect(code).toMatch(/const openProject = useCallback\(\(\) => \{\s*startFirstChat\(\);/);
+  });
+
+  // The popup must open inside the click. Any await before `connectApp` would
+  // let the browser block it.
+  test('a tile click reaches the popup with no await in between', () => {
+    const connect = code.slice(
+      code.indexOf('const connect = useCallback'),
+      code.indexOf('const connectionStateOf'),
+    );
+    expect(connect).toContain('connectApp({ projectId, app, connectorSlug, created }');
+    expect(connect.slice(0, connect.indexOf('connectApp('))).not.toContain('await');
+  });
+
+  // A second click on a tile that is connecting or connected does nothing.
+  test('ignores a click on a tile that is not idle', () => {
+    expect(code).toContain("if (current && current.state !== 'idle') return;");
   });
 });
 
 describe('ProjectOnboardingWizard: the skip control is opt-in', () => {
   test('the control renders only when onSkip is supplied', () => {
     expect(code).toContain('{onSkip && (');
-    expect(code).toContain('Skip for now');
+    expect(code).toContain("t('skipForNow')");
   });
 
   test('both new props are optional', () => {
@@ -86,7 +120,7 @@ describe('ProjectOnboardingWizard: the skip control is opt-in', () => {
 describe('ProjectOnboardingWizard: skipping stamps, exactly like finishing', () => {
   test('skip routes through the same completeThenNotify path as finishing', () => {
     expect(code).toMatch(
-      /const skip = useCallback\(\s*\(\)\s*=>\s*completeThenNotify\(\(\)\s*=>\s*onboarding\.complete\(\),\s*onSkip\),/,
+      /const skip = useCallback\(\(\)\s*=>\s*\{[^}]*return completeThenNotify\(\(\)\s*=>\s*onboarding\.complete\(\),\s*onSkip\);/,
     );
   });
 
@@ -117,9 +151,45 @@ describe('ProjectOnboardingWizard: skipping stamps, exactly like finishing', () 
  * visual collision that no functional test could see. These pin the flow layout
  * that makes the overlap unrepresentable.
  */
+/**
+ * The desktop shell has no browser toolbar, and the project shell's wizard has
+ * no Skip. Before this control, the only way out on desktop was to finish
+ * every step.
+ */
+describe('ProjectOnboardingWizard: desktop Close', () => {
+  test('renders unconditionally, so the project shell gets it too', () => {
+    expect(code).toContain("from '@/components/desktop/desktop-close-button'");
+    const closeAt = code.indexOf('<DesktopCloseButton');
+    expect(closeAt).toBeGreaterThan(-1);
+    // Not nested inside the opt-in Skip block, which ends with its Button.
+    const skipAt = code.indexOf('{onSkip && (');
+    expect(skipAt).toBeGreaterThan(-1);
+    expect(closeAt).toBeGreaterThan(code.indexOf('</Button>', skipAt));
+  });
+
+  test('closing stamps onboarding, exactly like Skip', () => {
+    // An unstamped close reopens the wizard on the next project load.
+    const close = code.match(/<DesktopCloseButton[\s\S]*?\/>/)?.[0];
+    expect(close).toContain('onClose={skip}');
+    expect(code.match(/completeThenNotify\(/g)?.length).toBe(2);
+  });
+
+  test('the chrome bar sits below the title-bar band on desktop', () => {
+    // The bar is in flow, so it takes the shared spacer rather than a `top`.
+    const spacerAt = code.indexOf('<div className="kx-titlebar-spacer" aria-hidden />');
+    const barAt = code.indexOf('grid h-14');
+    expect(spacerAt).toBeGreaterThan(-1);
+    expect(barAt).toBeGreaterThan(spacerAt);
+    // Nothing between them: the spacer is the bar's own offset.
+    expect(code.slice(spacerAt, barAt)).not.toContain('</div>');
+    expect(code).not.toContain('kx-desktop-band-row');
+  });
+});
+
 describe('wizard chrome: the skip control is mobile-safe', () => {
   const chromeStart = code.indexOf('grid h-14');
-  const chrome = chromeStart < 0 ? '' : code.slice(chromeStart, code.indexOf('</div>', chromeStart));
+  const chrome =
+    chromeStart < 0 ? '' : code.slice(chromeStart, code.indexOf('</div>', chromeStart));
 
   test('the scan found the chrome bar', () => {
     // Guard the guard: an empty slice passes every `.not.toContain` below.
@@ -145,9 +215,9 @@ describe('wizard chrome: the skip control is mobile-safe', () => {
 
   test('the label shortens on mobile but assistive tech keeps the full phrase', () => {
     const skipBlock = code.slice(code.indexOf('{onSkip && ('));
-    expect(skipBlock).toContain('aria-label="Skip for now"');
-    expect(skipBlock).toContain('<span className="sm:hidden">Skip</span>');
-    expect(skipBlock).toContain('<span className="hidden sm:inline">Skip for now</span>');
+    expect(skipBlock).toContain("aria-label={t('skipForNow')}");
+    expect(skipBlock).toContain('<span className="sm:hidden">{t(\'skip\')}</span>');
+    expect(skipBlock).toContain('<span className="hidden sm:inline">{t(\'skipForNow\')}</span>');
   });
 
   test('the progress bar itself narrows on mobile', () => {

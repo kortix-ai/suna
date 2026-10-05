@@ -52,7 +52,7 @@ describe('isSandboxResumable', () => {
  * dead-end card "session <id> is stopped — open a new session to continue"…
  * moments before the box came up and the session loaded fine.
  *
- * Reported exactly that way (essentia, 2026-08-24): "ALL OF THEM WILL SHOW ME
+ * Reported exactly that way (sampleco, 2026-08-24): "ALL OF THEM WILL SHOW ME
  * THE ERROR AFTER TRYING TO CONNECT FOR A WHILE & THEN THEY WILL CONNECT".
  *
  * A count cannot express "how long is it reasonable to wait for a machine to
@@ -89,7 +89,7 @@ describe('isAutoResuming', () => {
   });
 });
 
-// Regression for prod session ad4b63ac (2026-08-13). Its Platinum box was lost
+// Regression for a prod session (2026-08-13). Its Platinum box was lost
 // provider-side; the server answered `/start` with `stage: 'failed'`,
 // `retriable: false`, `reason: 'runtime_identity_unavailable'` — and a
 // SERIALIZED sandbox row that still reads `status: 'stopped'` + an
@@ -103,10 +103,10 @@ describe('isSandboxResumable — a preserved-unavailable identity is never resum
     expect(
       isSandboxResumable({
         status: 'stopped',
-        external_id: 'sbx_01KZP370WDB8DGYNAQM1B875VR',
+        external_id: 'sbx_01SYNTHETIC0000000000000',
         metadata: {
           runtimeIdentityState: 'unavailable',
-          preservedExternalId: 'sbx_01KZP370WDB8DGYNAQM1B875VR',
+          preservedExternalId: 'sbx_01SYNTHETIC0000000000000',
           runtimeUnavailableReason: 'runtime_removed',
         },
       }),
@@ -126,9 +126,9 @@ describe('isSandboxResumable — a preserved-unavailable identity is never resum
   });
 
   test('an ordinary parked box (no identity state) stays resumable', () => {
-    expect(
-      isSandboxResumable({ status: 'stopped', external_id: 'sbx_1', metadata: {} }),
-    ).toBe(true);
+    expect(isSandboxResumable({ status: 'stopped', external_id: 'sbx_1', metadata: {} })).toBe(
+      true,
+    );
   });
 
   test('auto-resume never fires against an unavailable identity', () => {

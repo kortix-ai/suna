@@ -1,0 +1,86 @@
+'use client';
+
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import { CalendarIcon } from '@phosphor-icons/react';
+import { format } from 'date-fns';
+import { useTranslations } from '@/i18n/use-translations';
+import { useState } from 'react';
+
+interface DateTimePickerProps {
+  date: Date | undefined;
+  setDate: (date: Date | undefined) => void;
+  label: string;
+}
+
+export function DateTimePicker({ date, setDate, label }: DateTimePickerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const [timeValue, setTimeValue] = useState<string>(date ? format(date, 'HH:mm') : '00:00');
+
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const handleDateSelect = (selectedDate: Date | undefined) => {
+    if (selectedDate) {
+      const [hours, minutes] = timeValue.split(':').map(Number);
+      selectedDate.setHours(hours, minutes);
+      setDate(selectedDate);
+    } else {
+      setDate(undefined);
+    }
+  };
+
+  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = e.target.value;
+    setTimeValue(newTime);
+    if (date) {
+      const [hours, minutes] = newTime.split(':').map(Number);
+      const newDate = new Date(date);
+      newDate.setHours(hours, minutes);
+      setDate(newDate);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>{label}</Label>
+        <span className="text-muted-foreground text-xs">{timezone}</span>
+      </div>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            className={cn(
+              'w-full justify-start text-left font-normal',
+              !date && 'text-muted-foreground',
+            )}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {date
+              ? format(date, tI18nComplete.raw('text1f95658b1ee9'))
+              : tI18nComplete.raw('text29241ab2d244')}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="z-[200] w-auto p-0"
+          align="center"
+          side="bottom"
+          sideOffset={8}
+          collisionPadding={40}
+        >
+          <Calendar mode="single" selected={date} onSelect={handleDateSelect} initialFocus />
+          <div className="border-t p-3">
+            <Label className="text-muted-foreground text-xs">
+              {tI18nComplete.raw('text33b93476cf59')}
+            </Label>
+            <Input type="time" value={timeValue} onChange={handleTimeChange} className="mt-1" />
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}

@@ -1,0 +1,752 @@
+/**
+ * What a user already saw renders again without waiting on the backend.
+ *
+ * A reload used to start every surface from nothing: the project gate showed
+ * the Kortix mark, the sidebar showed skeleton rows, and the session showed
+ * skeleton rows or the boot screen, each until its read answered. On a slow
+ * backend that was the whole wait. Now the device keeps the last answers per
+ * user: the query cache (project, session list) and the last saved copy of the
+ * conversation. They render in the first frame, and the reads reconcile in
+ * place.
+ *
+ * The first arm opens a session once, then HOLDS every read the page makes on
+ * a reload — the project, the session list, the session-open snapshot, the
+ * saved copy and `/start` — and reloads. The project shell, the session's row
+ * in the sidebar and the conversation must all show while nothing answers.
+ *
+ * The second arm opens a stopped session that has no computer. It used to be a
+ * full-screen "This session is stopped" card over a conversation the user
+ * could read; now the conversation shows, under a banner that says the same
+ * thing and offers the same Restart.
+ *
+ * The third arm saves a turn with a tool call and opens it while the computer
+ * never answers, then reloads with every read held. Saved history used to drop
+ * each tool call's input and output, so the card was a bare icon until the
+ * computer woke; now the saved copy and the copy this device kept both draw
+ * the command and its output exactly as the live transcript does.
+ *
+ * The fourth arm saves a turn that dispatched a sub-agent. A sub-agent runs in
+ * its own OpenCode session, and its row opens that transcript, which only the
+ * running computer could answer: while it was off, the view waited. Now saved
+ * history holds the sub-agent's transcript too, and the view draws its steps.
+ *
+ * The fifth arm stores a tool call the way saved history stored it before it
+ * kept tool calls 1:1: no input, no output, only the title (OpenCode titles a
+ * command with the command) and the metadata (which keeps its output). The row
+ * drew a bare icon; the server now serves it with what it kept.
+ *
+ * The sixth arm opens a session whose saved copy proves it empty: a complete
+ * read of its runtime found no messages. It opened on the boot screen for the
+ * whole wake; it now opens on its composer.
+ *
+ * The seventh arm opens a session, so this device keeps its saved copy, then
+ * saves a newer turn on the server and reloads while the computer and the
+ * session-open snapshot never answer. The copy the device kept painted first,
+ * and the newer saved copy from the history read never replaced it, so the
+ * reload showed an older last message until the computer woke. The newer turn
+ * now shows at once.
+ */
+import { type Page, expect, test } from '@playwright/test';
+import { loadEnv } from '../../src/core/env';
+import { createDatabaseSession } from '../../src/fixtures/database-project';
+import { seedSessionTranscript } from '../../src/fixtures/session-transcript';
+import { runDatabaseSql } from '../helpers/database';
+import { createApiJsonClient } from '../helpers/http';
+import { createManifestProject, fundAccount } from '../helpers/manifest-project';
+import { createAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+
+// Always recorded: the video of the held-network reload is the PR's demo.
+test.use({ video: 'on' });
+
+const api = createApiJsonClient(process.env.E2E_API_URL!);
+const authOptions = {
+  supabaseUrl: process.env.E2E_SUPABASE_URL!,
+  password: 'InstantSessionLoads123!',
+};
+
+const SAVED_REPLY = 'This reply is stored in the database.';
+const SAVED_PROMPT = 'Show my saved conversation.';
+const BOOT_HEADING = 'Starting your session';
+
+/** The API's path prefix (`/v1`), so a held route never matches the page's own URL. */
+const API_PATH = new URL(process.env.E2E_API_URL!).pathname.replace(/\/+$/, '');
+
+/** First moment each surface is PAINTED after the reload: hit-testable at its center. */
+async function installFirstShown(page: Page, sessionId: string) {
+  await page.addInitScript(
+    ({ reply, heading, sessionHref }) => {
+      const state = { from: performance.now(), marks: {} as Record<string, number> };
+      (window as unknown as { __firstShown: typeof state }).__firstShown = state;
+      const mark = (key: string) => {
+        if (!(key in state.marks)) state.marks[key] = performance.now() - state.from;
+      };
+      const shown = (el: Element) => {
+        if (el.closest('[aria-hidden="true"], [inert]')) return false;
+        const box = el.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return false;
+        const x = box.left + box.width / 2;
+        const y = box.top + box.height / 2;
+        if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return false;
+        const hit = document.elementFromPoint(x, y);
+        return !!hit && (hit === el || el.contains(hit));
+      };
+      // A PLACEHOLDER counts once any trace of it is painted: a dismissed
+      // overlay fading out is `aria-hidden`, `inert` and click-through, yet the
+      // user watches its skeleton rows dissolve over the conversation.
+      const painted = (el: Element) => {
+        const box = el.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return false;
+        if (box.bottom < 0 || box.right < 0 || box.top > window.innerHeight || box.left > window.innerWidth) {
+          return false;
+        }
+        let opacity = 1;
+        for (let node: Element | null = el; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          opacity *= Number.parseFloat(style.opacity || '1');
+        }
+        return opacity > 0.05;
+      };
+      const scan = () => {
+        for (const el of Array.from(document.querySelectorAll('[data-testid="saved-session-skeleton"]'))) {
+          if (painted(el)) mark('skeleton');
+        }
+        for (const h2 of Array.from(document.querySelectorAll('h2'))) {
+          if (h2.textContent?.trim() === heading && painted(h2)) mark('bootScreen');
+        }
+        for (const link of Array.from(document.querySelectorAll(`a[href$="${sessionHref}"]`))) {
+          if (shown(link)) mark('sidebarRow');
+        }
+        const replies = document.evaluate(
+          `//*[text()[contains(., "${reply}")]]`,
+          document,
+          null,
+          XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+          null,
+        );
+        for (let i = 0; i < replies.snapshotLength; i++) {
+          const node = replies.snapshotItem(i);
+          if (node instanceof Element && shown(node)) mark('reply');
+        }
+      };
+      // Sampled once per frame, not on every mutation: a placeholder that a
+      // layout effect replaces inside the same task is never painted, and a
+      // mutation observer would still count it.
+      const frame = () => {
+        scan();
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    },
+    { reply: SAVED_REPLY, heading: BOOT_HEADING, sessionHref: `/sessions/${sessionId}` },
+  );
+}
+
+async function firstShown(page: Page): Promise<Record<string, number>> {
+  return page.evaluate(
+    () => (window as unknown as { __firstShown: { marks: Record<string, number> } }).__firstShown.marks,
+  );
+}
+
+type SavedMessages = Parameters<typeof seedSessionTranscript>[1]['messages'];
+
+async function setup(page: Page, label: string, messages?: SavedMessages) {
+  const env = loadEnv();
+  const email = `instant-${label}-${Date.now()}@example.test`;
+  const user = await createAuthUser(email, authOptions);
+  const auth = await signIn(email, authOptions);
+  const accounts = await api<Array<{ account_id: string; personal_account?: boolean }>>(
+    auth.access_token,
+    'GET',
+    '/accounts',
+  );
+  const accountId = (accounts.find((a) => a.personal_account) ?? accounts[0]).account_id;
+  await fundAccount(env.databaseUrl!, accountId);
+  const project = await createManifestProject({
+    api,
+    accessToken: auth.access_token,
+    databaseUrl: env.databaseUrl!,
+    accountId,
+    userId: user.id,
+    name: `Instant loads ${label}`,
+  });
+  const sessionId = await createDatabaseSession(env, {
+    projectId: project.id,
+    accountId,
+    userId: user.id,
+  });
+  await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId, messages });
+  await runDatabaseSql(
+    "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
+    [sessionId],
+    env.databaseUrl ?? undefined,
+  );
+  // The recordings are PR demos: keep the personal welcome card a new account
+  // gets off the session pages they show.
+  await page.addInitScript(() => localStorage.setItem('kortix:marko-welcome-dismissed', '1'));
+  await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
+  await selectAccountForUi(page, accountId);
+  await dismissOnboarding(page);
+  return { user, project, sessionId, root: `ses_${sessionId.replaceAll('-', '')}` };
+}
+
+test('34 — a reload with every read held shows the project, its session list and the conversation', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { user, project, sessionId } = await setup(page, 'reload');
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holding = false;
+  const hold = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    if (holding) await held;
+    await route.continue().catch(() => {});
+  };
+  try {
+    // The computer never comes up: the conversation can only come from a saved copy.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    // Once `holding`, every read the reload depends on waits for the end of the test.
+    for (const path of ['snapshot', 'transcript']) {
+      await page.route(`**/sessions/${sessionId}/${path}*`, hold);
+    }
+    await page.route(
+      (url) =>
+        url.pathname === `${API_PATH}/projects/${project.id}` ||
+        url.pathname === `${API_PATH}/projects/${project.id}/sessions`,
+      hold,
+    );
+
+    // First open, with nothing held: the device keeps what it was shown.
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect(page.locator(`a[href$="/sessions/${sessionId}"]`).first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            ({ userId, projectId, session }) => {
+              const keys = Object.keys(localStorage);
+              return {
+                savedCopy: keys.includes(`kortix.saved-copy:${userId}:${projectId}/${session}`),
+                queryCache: keys.includes(`kortix.query-cache:${userId}`),
+              };
+            },
+            { userId: user.id, projectId: project.id, session: sessionId },
+          ),
+        { timeout: 30_000, message: 'the device keeps the saved copy and the query cache' },
+      )
+      .toEqual({ savedCopy: true, queryCache: true });
+
+    // Reload with every read held.
+    holding = true;
+    await installFirstShown(page, sessionId);
+    await page.reload({ waitUntil: 'commit' });
+
+    await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(SAVED_PROMPT, { exact: true })).toBeVisible();
+    await expect(page.locator(`a[href$="/sessions/${sessionId}"]`).first()).toBeVisible();
+    const marks = await firstShown(page);
+    await testInfo.attach('first shown after reload (every read held)', {
+      body: JSON.stringify(marks, null, 2),
+      contentType: 'application/json',
+    });
+    expect(marks.bootScreen, 'the boot screen must not appear').toBeUndefined();
+    expect(marks.skeleton, 'no placeholder rows: the kept copy paints at once').toBeUndefined();
+    // One story about the computer: the page's own start is waking it, so the
+    // composer says so too, never "idle — your next message wakes it".
+    await expect(page.getByText("Waking this session's computer.", { exact: false })).toBeVisible();
+    await expect(page.getByText('This session is idle', { exact: false })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('reload-held.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+test('34 — a stopped session with no computer shows its conversation under a banner, not a card', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId, root } = await setup(page, 'dormant');
+  try {
+    // A session whose computer was released: `/start` answers stopped, no
+    // sandbox row, not retriable — the state that painted a full-screen card.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 200,
+        json: {
+          stage: 'stopped',
+          agent_name: 'kortix',
+          retriable: false,
+          sandbox: null,
+          opencode_session_id: root,
+          failure: null,
+        },
+      });
+    });
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+
+    await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    const banner = page.locator('[data-session-notice-banner]');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('This session is stopped');
+    await expect(banner.getByRole('button', { name: /restart/i })).toBeVisible();
+    // Nothing can be sent until the Restart: no composer promises otherwise.
+    await expect(page.getByText('This session is idle', { exact: false })).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('stopped-banner.png') });
+  } finally {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+const TOOL_COMMAND = 'ls -la dist';
+// Only in the tool's output: the reply never names the file, so seeing it
+// proves the output itself was drawn.
+const TOOL_OUTPUT = 'bundle.min.js';
+const TOOL_REPLY = 'The build produced one file.';
+
+/** One saved turn with a finished bash call, exactly as OpenCode stores it. */
+const savedToolTurn: SavedMessages = (root) => {
+  const created = Date.now() - 60_000;
+  const user = 'msg_000000000000000000000001';
+  const call = 'msg_000000000000000000000002';
+  const reply = 'msg_000000000000000000000003';
+  const assistant = (id: string, at: number) => ({
+    id,
+    sessionID: root,
+    parentID: user,
+    role: 'assistant',
+    time: { created: at, completed: at + 1 },
+    agent: 'kortix',
+    mode: 'build',
+    providerID: 'kortix',
+    modelID: 'openai/gpt-5.6-sol',
+    path: { cwd: '/workspace', root: '/workspace' },
+    cost: 0,
+    tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    finish: 'stop',
+  });
+  return [
+    {
+      info: { id: user, sessionID: root, role: 'user', time: { created }, agent: 'kortix' },
+      parts: [
+        { id: 'prt_tool_prompt', sessionID: root, messageID: user, type: 'text', text: 'Build the app and list the output.' },
+      ],
+    },
+    {
+      info: assistant(call, created + 1),
+      parts: [
+        {
+          id: 'prt_tool_call',
+          sessionID: root,
+          messageID: call,
+          type: 'tool',
+          tool: 'bash',
+          callID: 'call_list_output',
+          state: {
+            status: 'completed',
+            input: { command: TOOL_COMMAND, description: 'List the build output' },
+            output: `total 8\n-rw-r--r--  1 kortix  staff  42 ${TOOL_OUTPUT}\n`,
+            title: 'List the build output',
+            metadata: { exit: 0, description: 'List the build output' },
+            time: { start: created + 1, end: created + 2 },
+          },
+        },
+      ],
+    },
+    {
+      info: assistant(reply, created + 3),
+      parts: [{ id: 'prt_tool_reply', sessionID: root, messageID: reply, type: 'text', text: TOOL_REPLY }],
+    },
+  ];
+};
+
+test('34 — a saved tool call shows its command and output, from the server and from this device', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId } = await setup(page, 'tools', savedToolTurn);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holding = false;
+  const hold = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    if (holding) await held;
+    await route.continue().catch(() => {});
+  };
+  const commandRow = () => page.getByText(TOOL_COMMAND, { exact: true }).first();
+  try {
+    // The computer never comes up: every tool detail can only come from a saved copy.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    for (const path of ['snapshot', 'transcript']) {
+      await page.route(`**/sessions/${sessionId}/${path}*`, hold);
+    }
+    await page.route(
+      (url) =>
+        url.pathname === `${API_PATH}/projects/${project.id}` ||
+        url.pathname === `${API_PATH}/projects/${project.id}/sessions`,
+      hold,
+    );
+
+    // From the server's saved copy.
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect(commandRow()).toBeVisible();
+    await commandRow().click();
+    await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
+    await page.waitForTimeout(500); // the card's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('saved-tool-call.png') });
+
+    // From the copy this device kept, with every read held.
+    holding = true;
+    await page.reload({ waitUntil: 'commit' });
+    await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(commandRow()).toBeVisible();
+    await commandRow().click();
+    await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
+    await page.waitForTimeout(500); // the card's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('kept-tool-call.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+const SUBAGENT_TASK = 'Explore the source tree';
+const SUBAGENT_COMMAND = 'ls src';
+const SUBAGENT_REPLY = 'The sub-agent found two files.';
+
+/** One saved turn that dispatched a sub-agent, and the sub-agent's own transcript. */
+const savedSubagentTurn: SavedMessages = (root) => {
+  const created = Date.now() - 60_000;
+  const child = `ses_sub${root.slice(4, 20)}`;
+  const assistant = (session: string, id: string, parent: string, at: number) => ({
+    id,
+    sessionID: session,
+    parentID: parent,
+    role: 'assistant',
+    time: { created: at, completed: at + 1 },
+    agent: 'kortix',
+    mode: 'build',
+    providerID: 'kortix',
+    modelID: 'openai/gpt-5.6-sol',
+    path: { cwd: '/workspace', root: '/workspace' },
+    cost: 0,
+    tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    finish: 'stop',
+  });
+  const text = (session: string, message: string, id: string, value: string) => ({
+    id,
+    sessionID: session,
+    messageID: message,
+    type: 'text',
+    text: value,
+  });
+  return [
+    {
+      info: { id: 'msg_000000000000000000000001', sessionID: root, role: 'user', time: { created }, agent: 'kortix' },
+      parts: [text(root, 'msg_000000000000000000000001', 'prt_sub_prompt', 'Delegate the exploration.')],
+    },
+    {
+      info: assistant(root, 'msg_000000000000000000000002', 'msg_000000000000000000000001', created + 1),
+      parts: [
+        {
+          id: 'prt_sub_reasoning',
+          sessionID: root,
+          messageID: 'msg_000000000000000000000002',
+          type: 'reasoning',
+          text: 'The tree is large, so a helper lists it.',
+          time: { start: created + 1, end: created + 1 },
+        },
+        {
+          id: 'prt_sub_task',
+          sessionID: root,
+          messageID: 'msg_000000000000000000000002',
+          type: 'tool',
+          tool: 'task',
+          callID: 'call_explore',
+          state: {
+            status: 'completed',
+            input: { description: SUBAGENT_TASK, prompt: 'List the source files.', subagent_type: 'general' },
+            output: 'Found two files.',
+            title: SUBAGENT_TASK,
+            metadata: { sessionId: child },
+            time: { start: created + 1, end: created + 5 },
+          },
+        },
+      ],
+    },
+    {
+      info: assistant(root, 'msg_000000000000000000000003', 'msg_000000000000000000000001', created + 6),
+      parts: [text(root, 'msg_000000000000000000000003', 'prt_sub_reply', SUBAGENT_REPLY)],
+    },
+    // The sub-agent's own session.
+    {
+      info: { id: 'msg_000000000000000000000101', sessionID: child, role: 'user', time: { created: created + 2 }, agent: 'general' },
+      parts: [text(child, 'msg_000000000000000000000101', 'prt_child_prompt', 'List the source files.')],
+    },
+    {
+      info: assistant(child, 'msg_000000000000000000000102', 'msg_000000000000000000000101', created + 3),
+      parts: [
+        {
+          id: 'prt_child_call',
+          sessionID: child,
+          messageID: 'msg_000000000000000000000102',
+          type: 'tool',
+          tool: 'bash',
+          callID: 'call_list_src',
+          state: {
+            status: 'completed',
+            input: { command: SUBAGENT_COMMAND, description: 'List the source files' },
+            output: 'main.ts\nutil.ts\n',
+            title: 'List the source files',
+            metadata: { exit: 0, description: 'List the source files' },
+            time: { start: created + 3, end: created + 4 },
+          },
+        },
+      ],
+    },
+  ];
+};
+
+test("34 — a saved sub-agent's steps open while the computer is off", async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId } = await setup(page, 'subagent', savedSubagentTurn);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    // The computer never comes up: the sub-agent's steps can only come from saved history.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(SUBAGENT_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+
+    // A finished turn folds its steps; the sub-agent row is one of them.
+    await page.getByText(/^Completed \d+ steps?$/).first().click();
+    await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
+    const view = page.getByRole('dialog');
+    await expect(view).toBeVisible();
+    await expect(view.getByText(SUBAGENT_COMMAND, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(view.getByText('List the source files.', { exact: true })).toBeVisible();
+    await page.waitForTimeout(400); // the view's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('saved-subagent.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+/** The same turn, as saved history stored it before it kept tool calls 1:1. */
+const strippedToolTurn: SavedMessages = (root) =>
+  savedToolTurn(root).map((message) => ({
+    ...message,
+    parts: message.parts.map((part) =>
+      part.type === 'tool'
+        ? {
+            ...part,
+            state: {
+              status: 'completed',
+              title: TOOL_COMMAND,
+              metadata: { output: `total 8\n-rw-r--r--  1 kortix  staff  42 ${TOOL_OUTPUT}\n`, exit: 0, truncated: false },
+              time: (part.state as { time: unknown }).time,
+            },
+          }
+        : part,
+    ),
+  }));
+
+test('34 — a tool call saved before tool calls were kept 1:1 shows its command and output', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId } = await setup(page, 'stripped', strippedToolTurn);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const commandRow = () => page.getByText(TOOL_COMMAND, { exact: true }).first();
+  try {
+    // The computer never comes up: the command can only come from saved history.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect(commandRow()).toBeVisible();
+    await commandRow().click();
+    await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
+    await page.waitForTimeout(500); // the card's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('stripped-tool-call.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+test('34 — a session proven empty opens on its composer, not the boot screen', async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  // A head-complete saved copy with no messages: what a complete read of an
+  // empty runtime stores.
+  const { project, sessionId } = await setup(page, 'empty', () => []);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    // The computer never comes up: nothing but the saved copy can answer.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    await installFirstShown(page, sessionId);
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({ timeout: 120_000 });
+    await page.waitForTimeout(1_000); // long enough for a boot screen to paint, were it coming
+    // Never painted in any frame since the navigation. (The collapsed side
+    // panel mounts its own hidden loader, as it does for a new session.)
+    expect((await firstShown(page)).bootScreen).toBeUndefined();
+    await expect(page.getByText(BOOT_HEADING, { exact: true })).toBeHidden();
+    await page.screenshot({ path: testInfo.outputPath('empty-session-composer.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+test("34 — a reload shows the server's newer saved copy, not only the one this device kept", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const env = loadEnv();
+  const { user, project, sessionId, root } = await setup(page, 'newer-copy');
+  const newerPrompt = 'How many tasks are in progress?';
+  const newerReply = 'Three tasks are in progress.';
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holding = false;
+  try {
+    // The computer never comes up: the conversation can only come from a saved copy.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    // After the first open, the session-open snapshot never answers either, so
+    // only the saved-history read can bring the newer copy.
+    await page.route(`**/sessions/${sessionId}/snapshot*`, async (route) => {
+      if (holding) await held;
+      await route.continue().catch(() => {});
+    });
+
+    // First open: the device keeps the saved copy it was shown.
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            (key) => localStorage.getItem(key)?.includes('This reply is stored in the database.') === true,
+            `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`,
+          ),
+        { timeout: 30_000, message: 'the device keeps the saved copy' },
+      )
+      .toBe(true);
+
+    // A later turn ends while this page is closed: the server saves it.
+    const created = Date.now();
+    const turn = [
+      {
+        info: { id: 'msg_000000000000000000000003', sessionID: root, role: 'user', time: { created } },
+        parts: [{ id: 'prt_newer_user', type: 'text', text: newerPrompt }],
+      },
+      {
+        info: {
+          id: 'msg_000000000000000000000004',
+          sessionID: root,
+          parentID: 'msg_000000000000000000000003',
+          role: 'assistant',
+          time: { created: created + 1, completed: created + 2 },
+          finish: 'stop',
+        },
+        parts: [{ id: 'prt_newer_reply', type: 'text', text: newerReply }],
+      },
+    ];
+    for (const message of turn) {
+      await runDatabaseSql(
+        'INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [
+          sessionId,
+          message.info.id,
+          root,
+          message.info.role,
+          new Date(message.info.time.created),
+          JSON.stringify(message.info),
+          JSON.stringify(message.parts),
+        ],
+        env.databaseUrl ?? undefined,
+      );
+    }
+    await runDatabaseSql(
+      'UPDATE kortix.session_transcript_mirrors SET captured_at = now(), updated_at = now() WHERE session_id = $1',
+      [sessionId],
+      env.databaseUrl ?? undefined,
+    );
+
+    holding = true;
+    const history = page.waitForResponse(
+      (r) => r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
+    );
+    await page.reload({ waitUntil: 'commit' });
+    // The newer turn shows while the computer and the snapshot are still held.
+    expect((await history).status()).toBe(200);
+    await expect(page.getByText(newerReply, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(newerPrompt, { exact: true })).toBeVisible();
+    await expect(page.getByText(SAVED_REPLY, { exact: true })).toHaveCount(1);
+    await page.screenshot({ path: testInfo.outputPath('reload-newer-copy.png') });
+    // And the device keeps the newer copy for the next open.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            ({ key, reply }) => localStorage.getItem(key)?.includes(reply) === true,
+            { key: `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`, reply: newerReply },
+          ),
+        { timeout: 15_000, message: 'the device keeps the newer copy' },
+      )
+      .toBe(true);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});

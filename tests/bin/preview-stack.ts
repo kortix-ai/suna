@@ -20,32 +20,24 @@ const origin = required('PREVIEW_ORIGIN');
 const sha = required('PREVIEW_SHA');
 const secretsFile = resolve(required('PREVIEW_SECRETS_FILE'));
 const secrets = JSON.parse(await readFile(secretsFile, 'utf8')) as Record<string, string>;
-// The images are normally built from the very commit being deployed. A hand
-// deploy iterating on the TOOLING (tests/, .github/) may point at images built
-// from an earlier commit whose product code is identical — PREVIEW_IMAGE_SHA —
-// and at another Docker Hub namespace — PREVIEW_IMAGE_REPO. The API reports
-// KORTIX_COMMIT from its environment (apps/api/src/index.ts), so the deploy's
-// health check still sees the checkout's SHA. Both default to the CI shape.
-const imageSha = process.env.PREVIEW_IMAGE_SHA?.trim() || sha;
-if (!/^[0-9a-f]{40}$/.test(imageSha)) throw new Error('PREVIEW_IMAGE_SHA must be a full Git SHA');
-const imageRepo = process.env.PREVIEW_IMAGE_REPO?.trim() || 'kortix';
-if (!/^[a-z0-9][a-z0-9._/-]*$/.test(imageRepo)) {
-  throw new Error('PREVIEW_IMAGE_REPO must be a registry namespace such as kortix');
-}
 const envPath = join(instanceDir, '.env');
+// Optional: the Platinum URL pairs with a PLATINUM_API_KEY in the secrets file.
+const platinumApiUrl = process.env.PLATINUM_API_URL?.trim() || undefined;
+// Optional: the host sandbox's name, from the bootstrap. An older bootstrap
+// does not export it, and the stack then keeps its background workers off.
+const instanceId = process.env.PREVIEW_INSTANCE_ID?.trim() || undefined;
 const configured = applyPreviewEnvironment(
   await readFile(envPath, 'utf8'),
   {
     origin,
     sha,
-    apiImage: `${imageRepo}/kortix-api:pr-${imageSha}`,
-    gatewayImage: `${imageRepo}/kortix-gateway:pr-${imageSha}`,
-    frontendImage: `${imageRepo}/kortix-frontend:pr-${imageSha}`,
+    apiImage: `kortix/kortix-api:pr-${sha}`,
+    gatewayImage: `kortix/kortix-gateway:pr-${sha}`,
+    frontendImage: `kortix/kortix-frontend:pr-${sha}`,
+    ...(platinumApiUrl ? { platinumApiUrl } : {}),
+    ...(instanceId ? { instanceId } : {}),
   },
   secrets,
-  // A gate keeps the default (fail before boot); the bootstrap sets 0 for a
-  // branch environment, which is a place to work, not a gate.
-  { requireManagedGit: process.env.PREVIEW_REQUIRE_MANAGED_GIT?.trim() !== '0' },
 );
 
 await mkdir(stateDir, { recursive: true });
@@ -64,4 +56,6 @@ await writeFile(
   { mode: 0o644 },
 );
 
-console.log(`[preview-stack] configured origin=${origin} sha=${sha}`);
+console.log(
+  `[preview-stack] configured origin=${origin} sha=${sha} instance=${instanceId ?? 'none (workers off)'}`,
+);

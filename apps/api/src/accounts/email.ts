@@ -2,7 +2,8 @@
 // shared Kortix email shell (lib/email/template.ts); delivery goes through the
 // one platform transport (lib/email/transport.ts).
 import { config } from '../config';
-import { escapeHtml, renderEmail, renderText, actionButton, S } from '../lib/email/template';
+import { renderEmail, renderText, actionButton, S } from '../lib/email/template';
+import { escapeHtml } from '../shared/html';
 import { isEmailConfigured, sendEmail, type EmailSendResult } from '../lib/email/transport';
 
 export type EmailDeliveryResult = EmailSendResult;
@@ -58,15 +59,15 @@ export async function sendAccountInviteEmail(opts: {
   projectName?: string | null;
 }): Promise<EmailDeliveryResult> {
   const url = buildInviteUrl(opts.inviteId);
+  // Brand voice 5.5: name the inviter. A request without a user email (a
+  // service token) names the account that sent it instead.
+  const inviter = opts.inviterEmail || opts.accountName;
+  const inviterLine = `<span style="${S.strong}">${escapeHtml(inviter)}</span> invited you`;
+  // Sentence case, never uppercase (brand voice 5.5).
+  const role = opts.role ? opts.role.charAt(0).toUpperCase() + opts.role.slice(1).toLowerCase() : null;
 
-  const inviterLine = opts.inviterEmail
-    ? `<span style="${S.strong}">${escapeHtml(opts.inviterEmail)}</span> invited you`
-    : `You've been invited`;
-
-  const roleChip = opts.role
-    ? `<div style="${S.chipWrap}"><span style="${S.chip}">${escapeHtml(
-        opts.role.toUpperCase(),
-      )}</span></div>`
+  const roleChip = role
+    ? `<div style="${S.chipWrap}"><span style="${S.chip}">${escapeHtml(role)}</span></div>`
     : '';
 
   const target = opts.projectName
@@ -76,6 +77,9 @@ export async function sendAccountInviteEmail(opts: {
   const signupTail = opts.projectName
     ? 'the project will appear in your account automatically.'
     : 'the team will appear in your accounts list automatically.';
+  // Accepting requires the invited address (email_matches_caller), so say which
+  // one. Brand voice 5.5: one closing note, ending with the ignore line.
+  const note = `This invitation is for ${opts.email}. Sign in with that address, or sign up with it if you don't have a Kortix account yet — ${signupTail} If you were not expecting this invitation, you can ignore this email.`;
 
   const body = `
     <p style="${S.p}">
@@ -83,10 +87,7 @@ export async function sendAccountInviteEmail(opts: {
     </p>
     ${roleChip}
     ${actionButton(url, 'Review invite')}
-    <p style="${S.smallNote}">
-      Don't have a Kortix account yet? You'll be prompted to sign up first —
-      ${signupTail}
-    </p>
+    <p style="${S.smallNote}">${escapeHtml(note)}</p>
   `;
 
   const subjectTarget = opts.projectName
@@ -101,7 +102,6 @@ export async function sendAccountInviteEmail(opts: {
     body,
   });
 
-  const inviterText = opts.inviterEmail ? `${opts.inviterEmail} invited you` : "You've been invited";
   const targetText = opts.projectName
     ? `the ${opts.projectName} project`
     : `the ${opts.accountName} team`;
@@ -115,11 +115,11 @@ export async function sendAccountInviteEmail(opts: {
         ? `Join ${opts.projectName} on Kortix`
         : `Join ${opts.accountName} on Kortix`,
       paragraphs: [
-        `${inviterText} to join ${targetText} on Kortix.`,
-        ...(opts.role ? [`Role: ${opts.role.toUpperCase()}`] : []),
+        `${inviter} invited you to join ${targetText} on Kortix.`,
+        ...(role ? [`Role: ${role}`] : []),
       ],
       cta: { url, label: 'Review invite' },
-      note: `Don't have a Kortix account yet? You'll be prompted to sign up first — ${signupTail}`,
+      note,
     }),
     category: 'account-invite',
   });

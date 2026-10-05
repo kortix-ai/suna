@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Custom frontend-URL prompt for the desktop app (self-hosting).
  *
@@ -96,7 +96,7 @@ export function DesktopUrlPrompt() {
 
         <DialogFooter className="gap-2 sm:gap-2">
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
-            Cancel
+            {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
           </Button>
           <Button type="button" onClick={apply} disabled={busy || !value.trim()}>
             {tI18nHardcoded.raw('autoComponentsDesktopDesktopUrlPromptJsxTextApplyReload0eff0716')}

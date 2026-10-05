@@ -3,26 +3,22 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   addMarketplaceSource,
   getMarketplaceItem,
-  getMarketplaceItemFile,
   getPublicMarketplaceItem,
-  getPublicMarketplaceItemFile,
   installMarketplaceItemAsSession,
   listFeaturedMarketplaces,
   listMarketplaceItems,
   listMarketplaces,
-  listMarketplaceSources,
   listPublicMarketplaceItems,
   listPublicMarketplaces,
-  removeMarketplaceSource,
   type AddSourceInput,
   type ItemsPage,
 } from '@/lib/marketplace-client';
+import { MARKETPLACE_ITEMS_PAGE_SIZE } from '@/lib/marketplace-public';
 
 // Default page size for `useInfiniteMarketplaceItems`. Re-exported from the
 // server-safe module so it stays coupled to the SSR first-page limits (a future
 // change can't silently misalign the company page's seeded offset math).
 export { MARKETPLACE_ITEMS_PAGE_SIZE } from '@/lib/marketplace-public';
-import { MARKETPLACE_ITEMS_PAGE_SIZE } from '@/lib/marketplace-public';
 
 /** Pure paging step for `useInfiniteMarketplaceItems`'s `getNextPageParam`,
  *  extracted so it's unit-testable without spinning up react-query. Advances
@@ -140,23 +136,6 @@ export function useMarketplaceItem(id: string | null, opts?: { publicOnly?: bool
   });
 }
 
-export function useMarketplaceItemFile(
-  id: string | null,
-  target: string | null,
-  opts?: { publicOnly?: boolean },
-) {
-  const publicOnly = opts?.publicOnly ?? false;
-  return useQuery({
-    queryKey: [publicOnly ? 'marketplace-item-file-public' : 'marketplace-item-file', id, target],
-    queryFn: () =>
-      publicOnly
-        ? getPublicMarketplaceItemFile(id!, target!)
-        : getMarketplaceItemFile(id!, target!),
-    enabled: !!id && !!target,
-    staleTime: 5 * 60_000,
-  });
-}
-
 /** Merge a `registry:project` item into an existing project via an agent
  *  session — no lock/installed-item cache to invalidate here, the agent's
  *  own commits (skills, kortix.yaml edit, CR) drive those separately once
@@ -170,32 +149,10 @@ export function useInstallMarketplaceItemAsSession() {
 
 // ── "Add a marketplace" sources ─────────────────────────────────────────────
 
-export function useMarketplaceSources(opts?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: ['marketplace-sources'],
-    queryFn: listMarketplaceSources,
-    enabled: opts?.enabled ?? true,
-    staleTime: 60_000,
-  });
-}
-
 export function useAddMarketplaceSource() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: AddSourceInput) => addMarketplaceSource(input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['marketplace-sources'] });
-      qc.invalidateQueries({ queryKey: ['marketplace-items'] });
-      qc.invalidateQueries({ queryKey: ['marketplaces'] });
-      qc.invalidateQueries({ queryKey: ['marketplaces-featured'] });
-    },
-  });
-}
-
-export function useRemoveMarketplaceSource() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => removeMarketplaceSource(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['marketplace-sources'] });
       qc.invalidateQueries({ queryKey: ['marketplace-items'] });

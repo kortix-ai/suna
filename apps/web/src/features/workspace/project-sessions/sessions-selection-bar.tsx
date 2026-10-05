@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { TrashIcon, XIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function SessionsSelectionBar({
   selectedCount,
@@ -25,10 +26,11 @@ export function SessionsSelectionBar({
   onDelete: () => void;
   deleting: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex items-center gap-3">
       <span className="text-sm font-medium tabular-nums" aria-live="polite">
-        {selectedCount} selected
+        {selectedCount} {tI18nComplete.raw('textd7cbbb688b2e')}
       </span>
 
       <div className="ml-auto flex items-center gap-2">
@@ -40,7 +42,7 @@ export function SessionsSelectionBar({
           disabled={deleting || selectableCount === 0}
           className="h-8 transition-[scale] duration-150 active:scale-[0.96]"
         >
-          {allSelected ? 'Clear' : `Select all`}
+          {allSelected ? 'Clear' : tI18nComplete.raw('text1fc9a387654d')}
         </Button>
 
         {selectedCount > 0 && (
@@ -58,16 +60,16 @@ export function SessionsSelectionBar({
             ) : (
               <TrashIcon className="size-3.5 shrink-0" />
             )}
-            Delete {selectedCount > 0 ? selectedCount : ''}
+            {tI18nComplete.raw('texte2d0a54968ea')} {selectedCount > 0 ? selectedCount : ''}
           </Button>
         )}
 
-        <Hint label="Exit selection" side="bottom">
+        <Hint label={tI18nComplete.raw('text22206bc67806')} side="bottom">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            aria-label="Exit selection"
+            aria-label={tI18nComplete.raw('text22206bc67806')}
             onClick={onExit}
             disabled={deleting}
             className="size-8 transition-[scale] duration-150 active:scale-[0.96]"

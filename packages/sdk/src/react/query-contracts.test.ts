@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { FRESHNESS, contract, type FreshnessTier } from './query-contracts';
 
-const TIERS: FreshnessTier[] = ['live', 'config', 'inventory', 'volatile'];
+const TIERS: FreshnessTier[] = ['live', 'config', 'inventory', 'volatile', 'directory'];
 
 describe('freshness contracts', () => {
   // The whole point of a tier is that a call site cannot disagree with it.
@@ -79,5 +79,39 @@ describe('freshness contracts', () => {
     // keep — add a `volatile` entity and this goes red.
     const tiers = Object.entries(FRESHNESS) as [string, FreshnessTier][];
     expect(tiers.filter(([, tier]) => tier === 'volatile')).toEqual([]);
+  });
+});
+
+
+describe('external directory updates', () => {
+  test('refreshes visible directory data every ten seconds and when focus returns', () => {
+    expect(contract('directory')).toMatchObject({
+      staleTime: 10_000,
+      refetchInterval: 10_000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: 'always',
+      refetchOnReconnect: 'always',
+      refetchOnMount: true,
+    });
+  });
+
+  // The Connectors page stayed stale until a browser reload (prod, 2026-09-26):
+  // connectors change from outside the page — an agent adding one in chat, a
+  // setup link, an OAuth return in another tab, a teammate — and `config`
+  // refetches only on mount, which the page's top-level query never repeats.
+  test('connectors refresh while the Connectors page stays open', () => {
+    expect(FRESHNESS.connectors).toBe('directory');
+    expect(contract(FRESHNESS.connectors)).toMatchObject({
+      refetchInterval: 10_000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: 'always',
+    });
+  });
+
+  test('does not introduce polling for other freshness tiers', () => {
+    for (const tier of ['live', 'config', 'inventory', 'volatile'] as const) {
+      expect(contract(tier)).not.toHaveProperty('refetchInterval');
+      expect(contract(tier)).not.toHaveProperty('refetchOnWindowFocus');
+    }
   });
 });

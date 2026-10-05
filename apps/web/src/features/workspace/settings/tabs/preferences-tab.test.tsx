@@ -1,7 +1,8 @@
 import { locales } from '@/i18n/config';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PreferencesTabView } from './preferences-tab';
+import englishMessages from '../../../../../translations/en.json';
+import { PreferencesTabView, type PreferencesCopy } from './preferences-tab';
 
 /**
  * Every heading in document order, as `h<level>:<text>`. The LEVEL is the
@@ -10,7 +11,8 @@ import { PreferencesTabView } from './preferences-tab';
 const headings = (html: string): string[] =>
   [...html.matchAll(/<(h[23])[^>]*>([^<]*)<\/\1>/g)].map((m) => `${m[1]}:${m[2]}`);
 
-const html = () => renderToStaticMarkup(<PreferencesTabView />);
+const englishCopy = englishMessages.settings.preferences as PreferencesCopy;
+const html = () => renderToStaticMarkup(<PreferencesTabView copy={englishCopy} />);
 
 /**
  * Two sections since 2026-09-02. Theme, density and wallpaper went to
@@ -70,5 +72,45 @@ describe('PreferencesTabView', () => {
     // `SelectContent` portals its items and renders nothing statically, so the
     // list is asserted through the prop default rather than the markup.
     expect(locales.length).toBeGreaterThan(1);
+  });
+
+  test('renders every user-facing label from localized copy', () => {
+    const out = renderToStaticMarkup(
+      <PreferencesTabView
+        copy={{
+          title: 'Језик и пречице',
+          description: 'Језик и пречице на тастатури.',
+          languageTitle: 'Језик',
+          languageDescription: 'Језик који Кортикс приказује у целој апликацији.',
+          keyboardTitle: 'Пречице на тастатури',
+          keyboardDescription: 'Тастер за измену картица и све пречице у апликацији.',
+          modifierKey: 'Тастер модификатора',
+          shortcuts: {
+            newTab: 'Нова картица',
+            closeActiveTab: 'Затвори активну картицу',
+            reopenClosedTab: 'Поново отвори затворену картицу',
+            nextTab: 'Следећа картица',
+            previousTab: 'Претходна картица',
+            nextTabAlt: 'Следећа картица (друга пречица)',
+            previousTabAlt: 'Претходна картица (друга пречица)',
+            switchToTabRange: 'Пређи на картицу 1–8',
+            switchToLastTab: 'Пређи на последњу картицу',
+            newSession: 'Нова сесија',
+            commandPalette: 'Палета команди',
+            switchWorkspace: 'Промени радни простор',
+            settings: 'Подешавања',
+            toggleLeftSidebar: 'Прикажи или сакриј леву бочну траку',
+            toggleRightSidebar: 'Прикажи или сакриј десну бочну траку',
+            toggleSessionActionPanel: 'Прикажи или сакриј панел радњи сесије',
+          },
+        }}
+      />,
+    );
+
+    expect(headings(out)).toEqual(['h2:Језик и пречице', 'h3:Језик', 'h3:Пречице на тастатури']);
+    expect(out).toContain('Тастер модификатора');
+    expect(out).toContain('Нова картица');
+    expect(out).not.toContain('>Keyboard shortcuts<');
+    expect(out).not.toContain('>New tab<');
   });
 });

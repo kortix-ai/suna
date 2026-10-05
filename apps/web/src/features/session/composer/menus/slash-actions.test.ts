@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SLASH_ACTIONS, filterSlashActions, controlToOpenFor } from './slash-actions';
+import { SLASH_ACTIONS, controlToOpenFor, filterSlashActions } from './slash-actions';
 
 describe('SLASH_ACTIONS', () => {
   test('every action has a unique id', () => {

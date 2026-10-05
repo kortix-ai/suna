@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
@@ -12,7 +13,7 @@ import { FlagIcon } from '@phosphor-icons/react';
  *
  * It never offers to enable the feature. Activation happens in exactly one
  * place — Customize → Settings → Feature flags — so there is a single
- * control, a single permission leaf (`project.customize.write`), and no
+ * control, a single permission leaf (`project.settings.write`), and no
  * per-feature switch to hunt for. The button here just takes you there.
  *
  * The destination has moved twice and the content never has: the legacy
@@ -36,6 +37,7 @@ export function FeatureGateScreen({
   /** One sentence: what turning it on would give this project. */
   description: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
 
@@ -48,14 +50,16 @@ export function FeatureGateScreen({
           </span>
           <div className="min-w-0 space-y-1">
             <p className="text-foreground text-sm font-medium">
-              {featureName} is off for this project
+              {featureName} {tI18nComplete.raw('text26965989cce5')}
             </p>
             <p className="text-muted-foreground max-w-xl text-xs text-pretty">{description}</p>
           </div>
         </div>
         {projectId ? (
           <Button asChild size="sm" variant="secondary" className="shrink-0">
-            <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>Feature flags</Link>
+            <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>
+              {tI18nComplete.raw('text20a2e59ba129')}
+            </Link>
           </Button>
         ) : null}
       </div>

@@ -1,22 +1,22 @@
 import { describe, expect, mock, test } from 'bun:test';
-import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus } from '../core/runtime/runtime-types';
 import { useSyncStore } from '../browser/stores/sync-store';
-import { configureKortix } from '../core/http/config';
-import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import {
   SERVER_OBSERVATION_MAX_MS,
   STREAM_OBSERVATION_MAX_MS,
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
+import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
+import { configureKortix } from '../core/http/config';
 import {
   WORKING_POLL_ACTIVE_MS,
+  readSessionTurnObservation,
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
-  readSessionTurnObservation,
+  workingPollMs,
   streamObservationStamp,
   streamTurnPhase,
-  workingPollMs,
 } from './use-session-working';
 
 const T0 = Date.parse('2026-08-18T10:00:00.000Z');
@@ -26,13 +26,7 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }
 describe('workingPollMs', () => {
   test('a working session is polled fast — the end of the turn is the news', () => {
     expect(
-      workingPollMs({
-        state: 'working',
-        source: 'server',
-        turnId: 'msg_1',
-        since: T0,
-        serverOpenTurnToken: 'tt-1',
-      }),
+      workingPollMs({ state: 'working', source: 'server', turnId: 'msg_1', since: T0, serverOpenTurnToken: 'tt-1' }),
     ).toBe(WORKING_POLL_ACTIVE_MS);
   });
 
@@ -40,15 +34,9 @@ describe('workingPollMs', () => {
     // A trigger, a second device, or the inbox delivering a queued prompt all
     // start turns nobody here asked for. `false` would mean only a reload
     // ever shows them.
-    expect(
-      workingPollMs({
-        state: 'idle',
-        source: 'server',
-        turnId: null,
-        since: T0,
-        serverOpenTurnToken: null,
-      }),
-    ).toBe(WORKING_POLL_IDLE_MS);
+    expect(workingPollMs({ state: 'idle', source: 'server', turnId: null, since: T0, serverOpenTurnToken: null })).toBe(
+      WORKING_POLL_IDLE_MS,
+    );
     expect(WORKING_POLL_IDLE_MS).toBeGreaterThan(WORKING_POLL_ACTIVE_MS);
   });
 
@@ -56,79 +44,12 @@ describe('workingPollMs', () => {
     // It is the one state that MUST resolve quickly: the projection is
     // running on this tab's own word until a server source answers.
     expect(
-      workingPollMs({
-        state: 'working',
-        source: 'optimistic',
-        turnId: 'msg_1',
-        since: T0,
-        serverOpenTurnToken: null,
-      }),
+      workingPollMs({ state: 'working', source: 'optimistic', turnId: 'msg_1', since: T0, serverOpenTurnToken: null }),
     ).toBe(WORKING_POLL_ACTIVE_MS);
   });
 });
 
 describe('buildWorkingInputs', () => {
-  // A runtime status this build does not recognise must never read as IDLE.
-  //
-  // `buildWorkingInputs` mapped everything except `busy`/`retry` to `idle`,
-  // while `streamTurnPhase` in the same file maps everything except `idle` to
-  // `active` — opposite defaults for the same unknown word. The pi runtime
-  // emits `{type:'running'}` (not one of OpenCode's `idle|busy|retry`), so for
-  // the WHOLE of every pi turn the projection was told the session was idle:
-  // the working indicator and the Stop button vanished while the agent was
-  // still generating. Observed on pi.kortix.com with the worker reporting
-  // `turn_in_flight: true` and the UI showing idle.
-  //
-  // Unknown is not idle. The escape hatch fails safe: if the runtime said
-  // something we cannot read, assume it is working.
-  test('an UNRECOGNISED status is treated as working, never as idle', () => {
-    const inputs = buildWorkingInputs({
-      turn: undefined,
-      inbox: undefined,
-      status: { type: 'running' } as never,
-      statusAtMs: T0,
-      optimistic: null,
-      nowMs: T0,
-    });
-
-    expect(inputs.stream?.type).toBe('busy');
-    expect(projectWorking(inputs).state).not.toBe('idle');
-  });
-
-  test('it agrees with streamTurnPhase on what counts as active', () => {
-    // These two live in the same file and answer the same question. They
-    // disagreeing is what produced the bug above.
-    for (const type of ['running', 'compacting', 'whatever-comes-next']) {
-      const status = { type } as never;
-      expect(streamTurnPhase(status)).toBe('active');
-      expect(
-        buildWorkingInputs({
-          turn: undefined,
-          inbox: undefined,
-          status,
-          statusAtMs: T0,
-          optimistic: null,
-          nowMs: T0,
-        }).stream?.type,
-      ).toBe('busy');
-    }
-  });
-
-  test('the KNOWN statuses are still mapped exactly', () => {
-    const build = (type: string) =>
-      buildWorkingInputs({
-        turn: undefined,
-        inbox: undefined,
-        status: { type } as never,
-        statusAtMs: T0,
-        optimistic: null,
-        nowMs: T0,
-      }).stream?.type;
-    expect(build('idle')).toBe('idle');
-    expect(build('busy')).toBe('busy');
-    expect(build('retry')).toBe('retry');
-  });
-
   test('a first /turn read that never succeeded contributes NOTHING', () => {
     // A 404/500 with no prior success leaves `turn` undefined. The old machine
     // answered silence with a busy latch; this one answers it with nothing.
@@ -221,7 +142,7 @@ describe('buildWorkingInputs', () => {
     expect(inputs.server).toEqual({ turns: [], lastEnded: undefined, atMs: T0 - 500 });
   });
 
-  test('busy and retry frames are working; every other status is idle', () => {
+  test('only an explicit idle frame is idle; unknown runtime states fail safe as working', () => {
     const at = (status: { type: string } | undefined) =>
       buildWorkingInputs({
         turn: undefined,
@@ -238,9 +159,44 @@ describe('buildWorkingInputs', () => {
     expect(at({ type: 'busy' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
     expect(at({ type: 'retry' })).toEqual({ type: 'retry', origin: 'wire', atMs: T0 });
     expect(at({ type: 'idle' })).toEqual({ type: 'idle', origin: 'wire', atMs: T0 });
+    // Runtime adapters must speak the OpenCode vocabulary, but a newer or
+    // malformed active state must not hide the user's Stop control.
+    expect(at({ type: 'running' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
+    expect(at({ type: 'compacting' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
     // No status frame observed at all is NOT an idle frame — silence is not
     // an observation, and treating it as one is how a live turn got unmasked.
     expect(at(undefined)).toBeNull();
+  });
+
+  test('an unknown active status cannot hide a long server-authorized turn', () => {
+    const nowMs = T0 + STREAM_OBSERVATION_MAX_MS + 1;
+    const inputs = buildWorkingInputs({
+      turn: {
+        turns: [
+          {
+            turn_token: 'tt-pi',
+            state: 'active' as const,
+            message_id: 'msg-pi',
+            opencode_session_id: 'ses-pi',
+            started_at: new Date(T0).toISOString(),
+            accepted_at: null,
+          },
+        ],
+        atMs: nowMs,
+      },
+      inbox: undefined,
+      status: { type: 'running' } as never,
+      statusAtMs: T0,
+      activityAtMs: T0,
+      optimistic: null,
+      nowMs,
+    });
+
+    expect(projectWorking(inputs)).toMatchObject({
+      state: 'working',
+      source: 'server',
+      serverOpenTurnToken: 'tt-pi',
+    });
   });
 
   test('a local origin is threaded through to the stream input', () => {
@@ -480,12 +436,34 @@ describe('readSessionTurnObservation', () => {
     expect(observation.atMs).toBe(Date.parse(BUNDLE_AT));
   });
 
+  test('a repeat read asks /turn even while a bundle is claimable', async () => {
+    // Same window as the inbox reader's: a bundle stays claimable for seconds,
+    // and a read issued BECAUSE something changed — the drain-floor
+    // invalidation, a status frame — must not be answered by the snapshot
+    // taken before the change. Only the open burst (no read held yet) shares.
+    resetSessionOpenBundles();
+    const urls = mockFetch((url) =>
+      url.includes('/snapshot')
+        ? {
+            observed_at: BUNDLE_AT,
+            turn: { known: true, turns: [] },
+            queue: { known: true, prompts: [], held: false },
+            transcript: { known: true, requested: false },
+            config: { known: true },
+            models: { known: false, reason: 'x' },
+            session: { session_id: 'S1' },
+          }
+        : { turns: [{ turn_token: 'tt-3', state: 'active' }] },
+    );
+    openSessionBundle('P1', 'S1');
+    const observation = await readSessionTurnObservation('P1', 'S1', { bundle: false });
+    expect(urls.some((u) => u.endsWith('/turn'))).toBe(true);
+    expect(observation.turns[0]?.turn_token).toBe('tt-3');
+  });
+
   test('reads /turn when no bundle is in flight — the steady-state poll', async () => {
     resetSessionOpenBundles();
-    const urls = mockFetch(() => ({
-      turns: [],
-      last_ended: { turn_token: 'tt-0', end_reason: 'completed', ended_at: null },
-    }));
+    const urls = mockFetch(() => ({ turns: [], last_ended: { turn_token: 'tt-0', end_reason: 'completed', ended_at: null } }));
     const observation = await readSessionTurnObservation('P1', 'S1');
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain('/sessions/S1/turn');

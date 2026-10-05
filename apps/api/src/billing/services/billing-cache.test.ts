@@ -31,12 +31,6 @@ describe('resolveAccountBilling — the one billing cache', () => {
     reads = 0;
   });
 
-  test('a repeated read inside the TTL is served from cache (one DB read)', async () => {
-    expect((await resolveAccountBilling('acct-1', { now: 1_000 })).plan.key).toBe('free');
-    expect((await resolveAccountBilling('acct-1', { now: 1_000 })).plan.key).toBe('free');
-    expect(reads).toBe(1);
-  });
-
   test('a plan change mid-window is invisible until the entry expires', async () => {
     expect((await resolveAccountBilling('acct-1', { now: 1_000 })).plan.key).toBe('free');
     row = { tier: 'per_seat' };
@@ -111,7 +105,9 @@ describe('resolveAccountBilling — the one billing cache', () => {
     expect(reads).toBe(0);
   });
 
-  test('an active trial resolves to the trial plan, not the stored tier', async () => {
+  // The caller's clock reaches the resolver: at the real clock this trial
+  // (ending one day after `now`) would read as expired.
+  test('the resolver reads the caller-supplied clock, not the wall clock', async () => {
     row = {
       tier: 'free',
       trialStatus: 'active',

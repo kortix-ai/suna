@@ -1,3 +1,5 @@
+import { accountPanelUrl, hubTarget } from '@/stores/account-panel-store';
+
 /**
  * Settings tab identifiers + helpers.
  *
@@ -29,6 +31,7 @@
 import {
   capabilityTabHref,
   channelsHref,
+  reviewHref,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 
 export type SettingsTab =
@@ -173,11 +176,10 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   agent: (p) => capabilityTabHref(p, 'agent'),
   agents: (p) => capabilityTabHref(p, 'agent'),
   connectors: (p) => capabilityTabHref(p, 'connectors'),
-  // Computers graduated out of settings on `main` (#6313): device pairing and
-  // per-capability grants are a connector now (`ComputerTunnelManager` in
-  // `capabilities/connectors/`), so a bookmarked `/customize/computers` or
-  // `/settings/computers` lands on the Connectors page instead of a tab that
-  // no longer exists.
+  // Computers graduated out of settings on `main` (#6313): a paired computer
+  // is an account of the project's `computer` connector now, so a bookmarked
+  // `/customize/computers` or `/settings/computers` lands on the Connectors
+  // page instead of a tab that no longer exists.
   computers: (p) => capabilityTabHref(p, 'connectors'),
   skills: (p) => capabilityTabHref(p, 'skills'),
   // Schedules and Webhooks graduated out of the overlay, merged into one
@@ -212,7 +214,7 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   upgrades: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
   // `upgrade`, singular, is the old Customize id for the Upgrades pane.
   upgrade: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
-  review: (p) => capabilityTabHref(p, 'review'),
+  review: reviewHref,
   // Secrets, Channels, and Models graduated a SECOND time — off the Settings
   // sub-nav entirely and onto their own top-level Customize tab. `models` and
   // every `llm-*` sub-section (the old Models pane's own sub-tabs) all land
@@ -249,7 +251,7 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
  * Sections that graduated out of the settings overlay onto the ACCOUNT
  * settings page, `/accounts/[id]` — keyed by legacy section id, valued by the
  * `?tab=` segment that page reads (`VALID_TABS` in
- * `app/(app)/accounts/[id]/page.tsx`).
+ * `features/accounts/hub/account-hub-content.tsx`).
  *
  * **Why these are a separate map from `GRADUATED`.** Every entry above is
  * project-scoped, so a project id is all it needs. Every entry here is
@@ -387,15 +389,26 @@ export function legacySectionRedirect(
   // `/accounts/<id>?tab=function Object() { [native code] }`. The helper uses
   // `Object.hasOwn`.
   if (accountId && isAccountGraduatedSection(rawSection)) {
-    const base = `/accounts/${accountId}?tab=${ACCOUNT_GRADUATED[rawSection]}`;
+    // The destination is the account hub, which has no route: it is a modal
+    // over a page (`stores/account-panel-store.ts`). So the redirect lands on
+    // the PROJECT the bookmark came from, with the hub's params on it — which
+    // is strictly better than the `/accounts/<id>` page this used to produce,
+    // because closing the hub leaves the person on their project instead of on
+    // a screen they never chose.
+    //
     // `members` is scoped, every other account-graduated id is not: a stale
     // `/projects/<id>/members` bookmark should open the account's Access ›
-    // Projects tab pre-filtered to the project it was a bookmark for, not
+    // Projects pane pre-filtered to the project it was a bookmark for, not
     // every project the account can see. No other legacy id carries a
-    // project-specific destination on the account page, so this stays a
-    // narrow special case rather than a second parameter every entry pays for.
-    if (rawSection === 'members') return `${base}&project=${projectId}`;
-    return base;
+    // project-specific destination, so this stays a narrow special case rather
+    // than a second parameter every entry pays for.
+    return accountPanelUrl(
+      projectId ? `/projects/${projectId}` : '/projects',
+      hubTarget(accountId, {
+        tab: ACCOUNT_GRADUATED[rawSection],
+        project: rawSection === 'members' ? projectId : undefined,
+      }),
+    );
   }
 
   // Guarded for the same reason as the account map above — a plain object

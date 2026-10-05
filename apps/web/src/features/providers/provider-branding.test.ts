@@ -17,6 +17,7 @@ describe('providerIconSrc', () => {
     expect(providerIconSrc('google-vertex')).toBe('/provider-icons/google.svg');
     expect(providerIconSrc('google-vertex-anthropic')).toBe('/provider-icons/anthropic.svg');
     expect(providerIconSrc('cohere-platform')).toBe('/provider-icons/cohere.svg');
+    expect(providerIconSrc('opencode-go')).toBe('/provider-icons/opencode.svg');
   });
 
   test('renders the three distinct Moonshot providers with the Moonshot mark', () => {
@@ -33,7 +34,13 @@ describe('providerIconSrc', () => {
     expect(providerIconSrc('fireworks')).toBe('/provider-icons/fireworks-ai.svg');
   });
 
-  test('returns undefined for an unmapped id (caller falls back to initials)', () => {
+  // A catalog provider without a bundled asset (hpc-ai, and ~150 others)
+  // rendered initials built from the synthetic "Kortix" name: a "K" avatar.
+  test('falls back to the models.dev logo for a catalog provider without a bundled asset', () => {
+    expect(providerIconSrc('hpc-ai')).toBe('https://models.dev/logos/hpc-ai.svg');
+  });
+
+  test('returns undefined for an id outside the catalog (caller falls back to initials)', () => {
     expect(providerIconSrc('some-brand-new-provider')).toBeUndefined();
   });
 });

@@ -4,11 +4,13 @@ import {
   OPEN_BUNDLE_SHARE_MS,
   OPEN_BUNDLE_TRANSCRIPT_TTL_MS,
   claimOpenBundle,
+  openBundleAudit,
   openBundleQueue,
   openBundleTurn,
   openSessionBundle,
   resetSessionOpenBundles,
   takeOpenBundleTranscript,
+  takeOpenBundleTranscriptAbsence,
 } from './open-bundle';
 
 const PID = 'P1';
@@ -40,6 +42,14 @@ function bundleBody(overrides: Record<string, unknown> = {}) {
     },
     config: { known: true, base_ref: 'main', agent_name: 'kortix', llm_gateway_enabled: true },
     models: { known: true, resolvedForCaller: 'anthropic/claude-sonnet-4-6' },
+    audit: {
+      known: true,
+      session_id: SID,
+      agent: 'kortix',
+      audit_access: false,
+      count: 0,
+      actions: [{ execution_id: 'exec-1', status: 'pending_approval' }],
+    },
     ...overrides,
   };
 }
@@ -179,6 +189,32 @@ describe('the bundle legs — every one is tri-state', () => {
     const degraded = await claimOpenBundle(PID, SID);
     expect(openBundleQueue(degraded!)).toBeNull();
   });
+
+  test('audit projects onto the pending-approvals shape GET .../audit answers, and an unknown leg is null', async () => {
+    openSessionBundle(PID, SID);
+    const bundle = await claimOpenBundle(PID, SID);
+    // Byte-identical to what `getSessionAudit(..., { includeEvents: false })`
+    // returns, minus `known` — a consumer can hand this straight to code that
+    // reads `SessionAudit.actions`.
+    expect(openBundleAudit(bundle!)).toEqual({
+      session_id: SID,
+      agent: 'kortix',
+      audit_access: false,
+      count: 0,
+      actions: [{ execution_id: 'exec-1', status: 'pending_approval' }],
+    } as never);
+
+    resetSessionOpenBundles();
+    respond = () => ({
+      status: 200,
+      body: bundleBody({ audit: { known: false, reason: 'leg_failed' } }),
+    });
+    openSessionBundle(PID, SID);
+    const degraded = await claimOpenBundle(PID, SID);
+    // null means "ask the endpoint" — never a fabricated empty actions list,
+    // which would read as "nothing pending" for a leg that could not answer.
+    expect(openBundleAudit(degraded!)).toBeNull();
+  });
 });
 
 describe('the transcript stash', () => {
@@ -242,5 +278,59 @@ describe('the transcript stash', () => {
     openSessionBundle(PID, SID);
     await claimOpenBundle(PID, SID);
     expect(takeOpenBundleTranscript(PID, SID)).toBeNull();
+  });
+});
+
+describe('the transcript answer "no saved copy"', () => {
+  const unavailable = {
+    known: true,
+    requested: true,
+    available: false,
+    reason: 'no server-side transcript has been captured for this session yet',
+    source: 'none',
+    complete: false,
+    captured_at: null,
+    opencode_session_id: null,
+    message_count: 0,
+    messages: [],
+  };
+
+  test('is recorded once, so the mirror read need not ask the question again', async () => {
+    respond = () => ({ status: 200, body: bundleBody({ transcript: unavailable }) });
+    openSessionBundle(PID, SID);
+    await claimOpenBundle(PID, SID);
+    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(true);
+    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
+    expect(takeOpenBundleTranscript(PID, SID)).toBeNull();
+  });
+
+  test('is not recorded for a saved copy, a pointer-only read, or a failed bundle', async () => {
+    openSessionBundle(PID, SID);
+    await claimOpenBundle(PID, SID);
+    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
+
+    resetSessionOpenBundles();
+    respond = () => ({
+      status: 200,
+      body: bundleBody({ transcript: { known: true, requested: false } }),
+    });
+    openSessionBundle(PID, SID, { transcript: 0 });
+    await claimOpenBundle(PID, SID);
+    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
+
+    resetSessionOpenBundles();
+    respond = () => ({ status: 500, body: { error: 'boom' } });
+    openSessionBundle(PID, SID);
+    await claimOpenBundle(PID, SID);
+    expect(takeOpenBundleTranscriptAbsence(PID, SID)).toBe(false);
+  });
+
+  test('expires with the transcript TTL', async () => {
+    let now = 1_000;
+    respond = () => ({ status: 200, body: bundleBody({ transcript: unavailable }) });
+    openSessionBundle(PID, SID, { now: () => now });
+    await claimOpenBundle(PID, SID, now);
+    now += OPEN_BUNDLE_TRANSCRIPT_TTL_MS + 1;
+    expect(takeOpenBundleTranscriptAbsence(PID, SID, now)).toBe(false);
   });
 });

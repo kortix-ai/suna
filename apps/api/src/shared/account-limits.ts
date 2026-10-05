@@ -1,12 +1,7 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
-import {
-  activeTrialSeatLimit,
-  coercePerSeatTier,
-  type SubscriptionFields,
-} from '../billing/services/effective-tier';
-import { accountMayUseManagedModels } from '../billing/services/entitlements';
+import { activeTrialSeatLimit } from '../billing/services/resolve-billing';
 import { getPlanRecord } from '../billing/services/plan-catalog';
 import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
@@ -24,8 +19,6 @@ export const FREE_TIER_PROJECT_LIMIT = 1;
 
 type AccountLimitInfo = {
   tier: string | null;
-  /** Operator-set credit_accounts.max_concurrent_sessions; null = no override. */
-  sessionOverride: number | null;
 };
 
 function positiveInt(value: unknown, fallback: number) {
@@ -45,7 +38,7 @@ function positiveInt(value: unknown, fallback: number) {
  *
  * The effective plan = active trial overlay > per-seat self-heal > stored tier.
  * The self-heal keeps stale tier='free' per-seat rows from mis-gating paying
- * teams; the trial overlay lets an admin-issued trial lift project/session/rate
+ * teams; the trial overlay lets an admin-issued trial lift project/rate
  * limits for exactly the trial window.
  */
 async function resolveAccountLimitInfo(
@@ -60,44 +53,14 @@ async function resolveAccountLimitInfo(
       // fail-closing it out of its one project. Entitlement gates fail closed
       // to 'none' instead — a different question, deliberately.
       tier: resolved.source === 'no_account' ? 'free' : resolved.plan.key,
-      sessionOverride:
-        resolved.limits.concurrentSessions.source === 'account_override'
-          ? resolved.limits.concurrentSessions.value
-          : null,
     };
   } catch {
-    return { tier: 'free', sessionOverride: null };
+    return { tier: 'free' };
   }
 }
 
 export async function resolveAccountTier(accountId: string): Promise<string | null> {
   return (await resolveAccountLimitInfo(accountId)).tier;
-}
-
-/**
- * Whether to mount the premium LLM gateway (the `kortix` provider, with
- * Claude/GPT/Gemini/…) for an account at sandbox-provision time. When false the
- * sandbox boots with only OpenCode's built-in Zen catalog.
- *
- * This is purely the *entitlement* layer — "is this account allowed to SEE
- * premium models". Per-request affordability (active seat sub / wallet balance)
- * is enforced separately by the gateway itself (assertBillingActive +
- * deductForLlmUsage), so we deliberately do NOT re-check credits here: a paid
- * account that has run dry still sees the models and gets a clear "top up" 402
- * on use, rather than silently being shown a stripped-down Zen-only list.
- *
- * - billing off (local / self-hosted): always entitled — the gateway
- *   records-but-never-debits there.
- * - billing on: entitled iff the resolved tier grants all models. This covers
- *   per-seat teams AND every legacy paid tier (pro, tier_*), all of which carry
- *   models:['all']. resolveAccountTier already self-heals stale per-seat rows and
- *   falls back to 'free' on error, so the safe default is "no gateway".
- */
-export async function accountEntitledToLlmGateway(accountId: string): Promise<boolean> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
-  // Single source of truth for "may this account use managed models" — trial
-  // overlay and the operator managed_models_override included (entitlements.ts).
-  return accountMayUseManagedModels(accountId);
 }
 
 export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {
@@ -120,56 +83,13 @@ export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLi
   };
 }
 
-export function maxConcurrentSessionsForTier(tier: string | null | undefined) {
-  // When billing isn't active (local / self-hosted), the tier system is
-  // a no-op — return an effectively-unlimited cap so a missing
-  // subscription doesn't kneecap session creation.
-  if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
-    return Number.MAX_SAFE_INTEGER;
-  }
-  // Tier definition is the source of truth for concurrent session caps.
-  // Fall back to free-tier cap for unknown tiers.
-  return getTier(tier ?? 'free').concurrentSessionLimit;
-}
-
-export type AccountSessionLimit = {
-  tier: string | null;
-  limit: number;
-  /** Where the limit came from — drives audit metadata and support triage. */
-  source: 'tier' | 'account_override' | 'billing_disabled';
-};
-
-/**
- * Concurrent-session cap for an account. Resolution order:
- *   1. billing off (local / self-hosted) → effectively unlimited;
- *   2. credit_accounts.max_concurrent_sessions (operator-set per-account
- *      override, e.g. enterprise deals or our own dogfood account) → wins over
- *      the tier in both directions;
- *   3. the plan tier's TierConfig.concurrentSessionLimit.
- * This path reads FRESH (`useCache: false`), deliberately bypassing the shared
- * 30s billing cache. Session requests can reach different API tasks, so local
- * cache invalidation cannot make an operator override consistent across the
- * deployment.
- */
-export async function resolveAccountSessionLimit(accountId: string): Promise<AccountSessionLimit> {
-  if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
-    return { tier: null, limit: Number.MAX_SAFE_INTEGER, source: 'billing_disabled' };
-  }
-  const { tier, sessionOverride } = await resolveAccountLimitInfo(accountId, { useCache: false });
-  if (sessionOverride !== null) {
-    return { tier, limit: sessionOverride, source: 'account_override' };
-  }
-  return { tier, limit: maxConcurrentSessionsForTier(tier), source: 'tier' };
-}
-
 /**
  * Maximum number of projects an account may own, by plan:
  *   Free        → FREE_TIER_PROJECT_LIMIT (1)
  *   Team/legacy → MAX_PROJECTS_PER_ACCOUNT (200)
  *   Enterprise  → uncapped (negotiated)
  * When billing isn't active (local / self-hosted) the cap is lifted entirely,
- * mirroring maxConcurrentSessionsForTier so a missing subscription can't
- * kneecap project creation.
+ * so a missing subscription can't kneecap project creation.
  */
 export async function maxProjectsForAccount(accountId: string): Promise<number> {
   if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -178,8 +98,7 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
   // Project creation can land on a different API task than the checkout that
   // upgraded the account. A per-process cached free-tier answer must not reject
   // a just-funded account on that other task, so quota enforcement reads the
-  // shared billing source fresh, matching the cross-task consistency contract
-  // already used by session limits above.
+  // shared billing source fresh.
   const tier = (await resolveAccountLimitInfo(accountId, { useCache: false })).tier ?? 'free';
   // Exact plan-KEY equality, matching what this code did before the resolver
   // landed. `PLAN_CATALOG.enterprise` is the only key in the `enterprise`
@@ -199,22 +118,6 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
  */
 export function clearAccountLimitCache() {
   invalidateAccountBilling();
-}
-
-/**
- * The tier the LIMIT layer will actually use, given possibly-stale tier data.
- *
- * `resolveAccountSessionLimit` coerces a paying per-seat account whose stored
- * `tier` is not a paid one to `per_seat`, so stale tier data cannot gate a
- * paying team as free. Anything that DISPLAYS a tier-derived limit has to apply
- * the same rule or it shows a different number than the server enforces —
- * exported here so there is one derivation instead of two.
- */
-export function effectiveTierForLimits(
-  tier: string | null | undefined,
-  subscription: SubscriptionFields | null | undefined,
-): string {
-  return coercePerSeatTier(tier ?? 'free', subscription);
 }
 
 /**

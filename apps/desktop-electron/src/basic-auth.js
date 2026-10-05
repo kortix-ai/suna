@@ -21,6 +21,13 @@
 const REJECT_WINDOW_MS = 60_000;
 const DEFAULT_USER = 'kortix';
 
+function challengeKey(authInfo) {
+  const scope = authInfo?.isProxy ? 'proxy' : 'origin';
+  const host = String(authInfo?.host || '').toLowerCase();
+  const port = Number(authInfo?.port) || 0;
+  return `${scope}:${host}:${port}`;
+}
+
 /**
  * Decide how to answer one Basic challenge.
  *
@@ -127,6 +134,7 @@ function removeHost(store, host) {
 module.exports = {
   DEFAULT_USER,
   REJECT_WINDOW_MS,
+  challengeKey,
   decideChallenge,
   parseStore,
   serializeStore,

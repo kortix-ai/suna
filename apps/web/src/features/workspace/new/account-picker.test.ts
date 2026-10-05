@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { KortixAccount } from '@kortix/sdk';
 import { resolveAccountPickerIdentity } from './account-picker';
 import { shouldShowAccountLine } from './new-workspace-form';
-import type { KortixAccount } from '@kortix/sdk';
 
 const source = readFileSync(join(import.meta.dir, 'account-picker.tsx'), 'utf8');
 
@@ -44,7 +44,7 @@ describe('AccountPicker: collapses below two accounts', () => {
     // interpolated into the same string as the identity label.
     expect(code).not.toMatch(/identityLabel\s*\+/);
     expect(code).not.toMatch(/\$\{identityLabel\}.*\$\{accountLabel\}/);
-    expect(code).toContain('Create in');
+    expect(code).toContain("t('account.createIn', { account: accountLabel })");
     // Two independently-conditioned spans, not one branch painting either
     // value into a shared slot.
     expect(code).toContain('{identityLabel ? (');
@@ -82,19 +82,21 @@ describe('AccountPicker: quiet header trigger, not a form field', () => {
   });
 
   test('exposes "Account" as the trigger aria-label — never Organization or Team', () => {
-    expect(code).toContain('aria-label="Account"');
+    expect(code).toContain("aria-label={t('account.label')}");
     expect(code).not.toContain('Organization');
     expect(code).not.toContain('Team');
   });
 
-  test('uses the transparent SelectTrigger so it reads as a span click, not a boxed field', () => {
-    expect(code).toContain('variant="transparent"');
-    expect(code).toContain('text-muted-foreground hover:text-foreground');
+  test('renders a full-width md SelectTrigger that fills the form column', () => {
+    // 2a55f7a56c replaced the transparent header link with a full-width field.
+    expect(code).toContain('className="w-full"');
+    expect(code).toContain('size="md"');
+    expect(code).not.toContain('variant="transparent"');
   });
 });
 
-describe('AccountPicker: EntityAvatar matches AccountSwitcher header scale', () => {
-  test('sizes every account avatar "xs" — same tile as account-switcher.tsx', () => {
+describe('AccountPicker: EntityAvatar size contract', () => {
+  test('renders every account avatar at size xs', () => {
     expect(code).toContain('<EntityAvatar');
     const avatars = code.match(/<EntityAvatar[\s\S]*?\/>/g) ?? [];
     expect(avatars.length).toBeGreaterThan(0);
@@ -199,9 +201,21 @@ describe('AccountPicker + shouldShowAccountLine: the rendered (identity, account
   // (`new-workspace-form.ts`) decides the prop, `resolveAccountPickerIdentity`
   // (this file) decides what renders — exactly as `new-workspace-page.tsx`
   // wires them.
-  const own: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
-  const foreignSole: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
-  const foreignSecond: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+  const own: KortixAccount = {
+    account_id: 'me',
+    name: "me@x.com's Account",
+    account_role: 'owner',
+  };
+  const foreignSole: KortixAccount = {
+    account_id: 'org-1',
+    name: 'Acme Inc',
+    account_role: 'admin',
+  };
+  const foreignSecond: KortixAccount = {
+    account_id: 'org-2',
+    name: 'Widgets Co',
+    account_role: 'admin',
+  };
   const fallbackLabel = 'me@x.com';
 
   test('sole own account: identity line only, account line suppressed (A2.2)', () => {

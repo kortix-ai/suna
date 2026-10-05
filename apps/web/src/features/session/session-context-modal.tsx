@@ -1,24 +1,8 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
-import { CopyButton } from '@/components/markdown/copy-button';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure';
-import {
-  InputGroupSearch,
-  InputGroupSearchClear,
-  InputGroupSearchIcon,
-  InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
 import {
   Modal,
   ModalBody,
@@ -27,128 +11,24 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { Close } from '@/features/icon/icons/close';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@/ui/types';
-import { PROVIDER_LABELS } from '@kortix/llm-catalog';
 import {
-  allDescendantIds,
-  type AssistantMessage,
-  childMapByParent,
   formatCost,
-  getSessionCost,
-  type Message,
-  type ModelPricingLookup,
-  type Part,
+  isAgentPart,
+  isFilePart,
+  isReasoningPart,
+  isTextPart,
+  isToolPart,
   type Session,
 } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
-import { useSessionStateStore } from '@kortix/sdk/react';
-import {
-  CaretDownIcon,
-  CaretRightIcon,
-  CheckIcon,
-  MagnifyingGlassIcon,
-} from '@phosphor-icons/react';
-import {
-  memo,
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { Copy } from '../icon/icons/copy';
-
-// ============================================================================
-// Context metrics
-// ============================================================================
-
-interface ContextMetrics {
-  message: AssistantMessage;
-  providerLabel: string;
-  modelLabel: string;
-  limit: number | undefined;
-  input: number;
-  output: number;
-  reasoning: number;
-  cacheRead: number;
-  cacheWrite: number;
-  total: number;
-  usage: number | null;
-}
-
-interface Metrics {
-  totalCost: number;
-  context: ContextMetrics | undefined;
-}
-
-function tokenTotal(msg: AssistantMessage) {
-  if (!msg.tokens) return 0;
-  const t = msg.tokens;
-  return (
-    (t.input ?? 0) +
-    (t.output ?? 0) +
-    (t.reasoning ?? 0) +
-    ((t.cache?.read ?? 0) + (t.cache?.write ?? 0))
-  );
-}
-
-function getSessionContextMetrics(
-  messages: MessageWithParts[],
-  providers: ProviderListResponse | undefined,
-  pricingLookup: ModelPricingLookup,
-): Metrics {
-  const totalCost = getSessionCost(messages, pricingLookup);
-  const rawMessages = messages.map((m) => m.info);
-
-  // Find last assistant with tokens
-  let last: AssistantMessage | undefined;
-  for (let i = rawMessages.length - 1; i >= 0; i--) {
-    const msg = rawMessages[i];
-    if (msg.role !== 'assistant') continue;
-    if (tokenTotal(msg) <= 0) continue;
-    last = msg;
-    break;
-  }
-  if (!last) return { totalCost, context: undefined };
-
-  const provider = (providers as any)?.all?.find((p: any) => p.id === last!.providerID);
-  const model = provider?.models?.[last.modelID] as any;
-  const limit = model?.limit?.context as number | undefined;
-  const total = tokenTotal(last);
-
-  // The gateway registers every model under the single synthetic `kortix`
-  // opencode provider, so `provider.name` is always "Kortix" — even for a
-  // BYOK Anthropic/Bedrock/OpenAI model. The gateway separately serves the
-  // REAL upstream provider on the model itself (`model.provider`, e.g.
-  // "anthropic"); prefer that for display, same fallback order as
-  // `pickerGroupId`/`pickerGroupLabel` in ./model-grouping.ts.
-  const upstreamProviderId =
-    last.providerID === 'kortix' && model?.provider ? model.provider : last.providerID;
-
-  return {
-    totalCost,
-    context: {
-      message: last,
-      providerLabel:
-        PROVIDER_LABELS[upstreamProviderId] ?? (provider as any)?.name ?? last.providerID,
-      modelLabel: model?.name ?? last.modelID,
-      limit,
-      input: last.tokens?.input ?? 0,
-      output: last.tokens?.output ?? 0,
-      reasoning: last.tokens?.reasoning ?? 0,
-      cacheRead: last.tokens?.cache?.read ?? 0,
-      cacheWrite: last.tokens?.cache?.write ?? 0,
-      total,
-      usage: limit ? Math.round((total / limit) * 100) : null,
-    },
-  };
-}
+import { useMemo } from 'react';
+import { CopyAllButton, SessionContextMessageExplorer } from './session-context-message-explorer';
+import { getSessionContextMetrics } from './session-context-metrics';
+import { SubSessionSection } from './session-context-sub-sessions';
 
 // ============================================================================
 // Context breakdown estimation
@@ -185,7 +65,8 @@ function estimateTokens(chars: number) {
   return Math.ceil(chars / 4);
 }
 
-function estimateBreakdown(
+/** Pure context-breakdown estimation — exported for characterization tests. */
+export function estimateBreakdown(
   messages: MessageWithParts[],
   input: number,
   systemPrompt?: string,
@@ -196,9 +77,9 @@ function estimateBreakdown(
     (acc, msg) => {
       if (msg.info.role === 'user') {
         const user = msg.parts.reduce((sum, part) => {
-          if (part.type === 'text') return sum + (part as any).text.length;
-          if (part.type === 'file') return sum + ((part as any).source?.text?.value?.length ?? 0);
-          if (part.type === 'agent') return sum + ((part as any).source?.value?.length ?? 0);
+          if (isTextPart(part)) return sum + part.text.length;
+          if (isFilePart(part)) return sum + (part.source?.text?.value?.length ?? 0);
+          if (isAgentPart(part)) return sum + (part.source?.value?.length ?? 0);
           return sum;
         }, 0);
         return { ...acc, user: acc.user + user };
@@ -206,12 +87,10 @@ function estimateBreakdown(
       if (msg.info.role !== 'assistant') return acc;
       const result = msg.parts.reduce(
         (sum, part) => {
-          if (part.type === 'text')
-            return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
-          if (part.type === 'reasoning')
-            return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
-          if (part.type === 'tool') {
-            const state = (part as any).state;
+          if (isTextPart(part) || isReasoningPart(part))
+            return { assistant: sum.assistant + part.text.length, tool: sum.tool };
+          if (isToolPart(part)) {
+            const state = part.state;
             const inputLen = Object.keys(state?.input ?? {}).length * 16;
             let toolLen = inputLen;
             if (state?.status === 'pending') toolLen += state.raw?.length ?? 0;
@@ -321,294 +200,6 @@ function OverviewStat({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="text-foreground truncate text-xs font-medium tabular-nums">{value}</div>
-    </div>
-  );
-}
-
-// ============================================================================
-// Copy-all button (header action)
-// ============================================================================
-
-function CopyAllButton({
-  messages,
-  copyLabel,
-  copiedLabel,
-}: {
-  messages: MessageWithParts[] | undefined;
-  copyLabel: string;
-  copiedLabel: string;
-}) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleCopy = useCallback(() => {
-    // Stringify on click only — never during render.
-    navigator.clipboard.writeText(JSON.stringify(messages ?? [], null, 2));
-    setCopied(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), 2000);
-  }, [messages]);
-
-  return (
-    <Button
-      onClick={handleCopy}
-      variant="outline"
-      size="sm"
-      className="gap-1.5 transition-colors active:scale-[0.97]"
-    >
-      <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
-        {copied ? <CheckIcon className="text-kortix-green size-4" /> : <Copy className="size-4" />}
-      </span>
-      {copied ? copiedLabel : copyLabel}
-    </Button>
-  );
-}
-
-// ============================================================================
-// Raw message accordion item
-// ============================================================================
-
-/** Stringifies only while its accordion item is open — Radix unmounts closed content. */
-function RawMessageJson({ message, parts }: { message: Message; parts: Part[] }) {
-  const json = useMemo(() => JSON.stringify({ message, parts }, null, 2), [message, parts]);
-  return (
-    <div className="relative">
-      <pre className="bg-muted/40 max-h-[400px] overflow-x-auto overflow-y-auto rounded-md p-3 font-mono text-xs break-all whitespace-pre-wrap select-text">
-        {json}
-      </pre>
-      <div className="absolute top-2 right-2">
-        <CopyButton code={json} size="sm" />
-      </div>
-    </div>
-  );
-}
-
-const RawMessage = memo(function RawMessage({
-  message,
-  parts,
-  formatTime,
-}: {
-  message: Message;
-  parts: Part[];
-  formatTime: Formatter['time'];
-}) {
-  return (
-    <AccordionItem
-      value={message.id}
-      className="border-b-0 [contain-intrinsic-size:auto_37px] [content-visibility:auto]"
-    >
-      <AccordionTrigger className="hover:bg-muted/40 rounded-md px-3 py-2 text-xs hover:no-underline">
-        <div className="flex w-full items-center justify-between gap-2 pr-2">
-          <div className="min-w-0 truncate font-mono">
-            <Badge
-              variant={message.role === 'user' ? 'info' : 'success'}
-              size="sm"
-              className="mr-2 font-semibold uppercase"
-            >
-              {message.role}
-            </Badge>
-            <span className="text-muted-foreground">{message.id}</span>
-          </div>
-          <div className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">
-            {formatTime(message.time?.created)}
-          </div>
-        </div>
-      </AccordionTrigger>
-      <AccordionContent className="px-3 pb-2">
-        <RawMessageJson message={message} parts={parts} />
-      </AccordionContent>
-    </AccordionItem>
-  );
-});
-
-// ============================================================================
-// Sub-session aggregate types & helpers
-// ============================================================================
-
-interface SubSessionCostInfo {
-  id: string;
-  title: string;
-  cost: number;
-  messages: number;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  children: SubSessionCostInfo[];
-}
-
-/**
- * Compute cost info for a sub-session from its raw messages in the sync store.
- */
-function computeSubSessionCost(
-  sessionId: string,
-  title: string,
-  storeMessages: Record<string, Message[]>,
-  storeParts: Record<string, Part[]>,
-  childMap: Map<string, string[]>,
-  allSessions: Session[],
-  pricingLookup: ModelPricingLookup,
-): SubSessionCostInfo {
-  const msgs = storeMessages[sessionId] ?? [];
-  const cost = getSessionCost(
-    msgs.map((info) => ({ info, parts: storeParts[info.id] ?? [] })),
-    pricingLookup,
-  );
-
-  // Sum tokens across all assistant messages (cumulative, not just last)
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let reasoningTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheWriteTokens = 0;
-  for (const msg of msgs) {
-    if (msg.role !== 'assistant') continue;
-    const t = (msg as AssistantMessage).tokens;
-    if (!t) continue;
-    inputTokens += t.input ?? 0;
-    outputTokens += t.output ?? 0;
-    reasoningTokens += t.reasoning ?? 0;
-    cacheReadTokens += t.cache?.read ?? 0;
-    cacheWriteTokens += t.cache?.write ?? 0;
-  }
-
-  const directChildren = childMap.get(sessionId) ?? [];
-  const children = directChildren.map((childId) => {
-    const childSession = allSessions.find((s) => s.id === childId);
-    return computeSubSessionCost(
-      childId,
-      childSession?.title ?? childId.slice(0, 12),
-      storeMessages,
-      storeParts,
-      childMap,
-      allSessions,
-      pricingLookup,
-    );
-  });
-
-  return {
-    id: sessionId,
-    title,
-    cost,
-    messages: msgs.length,
-    inputTokens,
-    outputTokens,
-    reasoningTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    children,
-  };
-}
-
-/**
- * Recursively sum all costs from a SubSessionCostInfo tree.
- */
-function sumTreeCosts(node: SubSessionCostInfo): {
-  cost: number;
-  messages: number;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-} {
-  let cost = node.cost;
-  let messages = node.messages;
-  let inputTokens = node.inputTokens;
-  let outputTokens = node.outputTokens;
-  let reasoningTokens = node.reasoningTokens;
-  let cacheReadTokens = node.cacheReadTokens;
-  let cacheWriteTokens = node.cacheWriteTokens;
-  for (const child of node.children) {
-    const sub = sumTreeCosts(child);
-    cost += sub.cost;
-    messages += sub.messages;
-    inputTokens += sub.inputTokens;
-    outputTokens += sub.outputTokens;
-    reasoningTokens += sub.reasoningTokens;
-    cacheReadTokens += sub.cacheReadTokens;
-    cacheWriteTokens += sub.cacheWriteTokens;
-  }
-  return {
-    cost,
-    messages,
-    inputTokens,
-    outputTokens,
-    reasoningTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-  };
-}
-
-// ============================================================================
-// Sub-session tree component
-// ============================================================================
-
-function SubSessionTreeNode({
-  node,
-  depth = 0,
-  messagesSuffix,
-}: {
-  node: SubSessionCostInfo;
-  depth?: number;
-  messagesSuffix: string;
-}) {
-  const [expanded, setExpanded] = useState(depth < 1);
-  const hasChildren = node.children.length > 0;
-
-  return (
-    <div className={cn('flex flex-col', depth > 0 && 'border-border/30 ml-4 border-l pl-3')}>
-      <button
-        onClick={() => hasChildren && setExpanded(!expanded)}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
-          hasChildren && 'hover:bg-muted/40 cursor-pointer',
-          !hasChildren && 'cursor-default',
-        )}
-      >
-        {hasChildren ? (
-          expanded ? (
-            <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
-          ) : (
-            <CaretRightIcon className="text-muted-foreground size-3 shrink-0" />
-          )
-        ) : (
-          <div className="size-3 shrink-0" />
-        )}
-        <span className="text-foreground min-w-0 truncate font-medium">{node.title}</span>
-        <span className="text-muted-foreground/60 ml-auto shrink-0 text-xs tabular-nums">
-          {node.messages} {messagesSuffix}
-        </span>
-        <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(node.cost)}</span>
-      </button>
-      {expanded && hasChildren && (
-        <div className="flex flex-col">
-          {node.children.map((child) => (
-            <SubSessionTreeNode
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              messagesSuffix={messagesSuffix}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ============================================================================
 // Modal body — mounted only while the modal is open, so the store
 // subscriptions and metric computations cost nothing during streaming.
@@ -620,23 +211,9 @@ function SessionContextModalBody({
   providers,
   allSessions,
 }: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const pricingLookup = useModelPricingLookup(providers);
-  const [rawOpen, setRawOpen] = useState(false);
-  // Sticky: once true, the row list stays mounted so reopening is instant.
-  const [rawMounted, setRawMounted] = useState(false);
-  const handleRawOpenChange = useCallback((open: boolean) => {
-    setRawOpen(open);
-    // Mount the heavy row list in a non-urgent render so the trigger's own
-    // state flip paints first and the click never feels stuck.
-    if (open) startTransition(() => setRawMounted(true));
-  }, []);
-
-  const [rawQuery, setRawQuery] = useState('');
-  // Keystrokes stay urgent; filtering the full message list runs deferred.
-  const deferredRawQuery = useDeferredValue(rawQuery);
-  const [rawRole, setRawRole] = useState<'all' | 'user' | 'assistant'>('all');
-
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
     [messages, providers, pricingLookup],
@@ -656,57 +233,6 @@ function SessionContextModalBody({
     if (!ctx?.input || !messages) return [];
     return estimateBreakdown(messages, ctx.input);
   }, [ctx, messages]);
-
-  // ---- Sub-session aggregation ----
-  const storeMessages = useSessionStateStore((s) => s.messages);
-  const storeParts = useSessionStateStore((s) => s.parts);
-
-  const childMap = useMemo(
-    () => (allSessions ? childMapByParent(allSessions) : new Map<string, string[]>()),
-    [allSessions],
-  );
-
-  const descendantIds = useMemo(
-    () => (session ? allDescendantIds(childMap, session.id) : []),
-    [childMap, session],
-  );
-
-  const hasSubSessions = descendantIds.length > 0;
-
-  const subSessionTree = useMemo(() => {
-    if (!session || !hasSubSessions || !allSessions) return null;
-    return computeSubSessionCost(
-      session.id,
-      session.title ?? session.id,
-      storeMessages,
-      storeParts,
-      childMap,
-      allSessions,
-      pricingLookup,
-    );
-  }, [session, hasSubSessions, allSessions, storeMessages, storeParts, childMap, pricingLookup]);
-
-  const aggregateTotals = useMemo(
-    () => (subSessionTree ? sumTreeCosts(subSessionTree) : null),
-    [subSessionTree],
-  );
-
-  const filteredRawMessages = useMemo(() => {
-    let list = messages ?? [];
-    if (rawRole !== 'all') list = list.filter((m) => m.info.role === rawRole);
-    const query = deferredRawQuery.trim().toLowerCase();
-    if (query) {
-      list = list.filter(
-        (m) =>
-          m.info.id.toLowerCase().includes(query) ||
-          m.parts.some(
-            (p) =>
-              typeof (p as any).text === 'string' && (p as any).text.toLowerCase().includes(query),
-          ),
-      );
-    }
-    return list;
-  }, [messages, rawRole, deferredRawQuery]);
 
   const usageFraction = ctx?.limit ? Math.min(1, ctx.total / ctx.limit) : null;
 
@@ -753,7 +279,7 @@ function SessionContextModalBody({
             <ModalClose asChild>
               <Button variant="ghost" className="size-8 p-0">
                 <Close className="text-primary size-4 stroke-1" />
-                <span className="sr-only">Close</span>
+                <span className="sr-only">{tI18nComplete.raw('text7d9eb7acb13e')}</span>
               </Button>
             </ModalClose>
           </div>
@@ -867,119 +393,18 @@ function SessionContextModalBody({
           </section>
         </div>
 
-        {/* Sub-agents — combined totals + per-session tree */}
-        {hasSubSessions && subSessionTree && aggregateTotals && (
-          <section className="space-y-3">
-            <div className="space-y-1">
-              <Label>{t.raw('subAgentsLabel')}</Label>
-              <p className="text-muted-foreground text-xs">{t.raw('subAgentsNote')}</p>
-            </div>
-            <div className="bg-popover rounded-md border">
-              <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-4">
-                <Stat label={t.raw('combinedCost')} value={formatCost(aggregateTotals.cost)} />
-                <Stat
-                  label={t.raw('combinedMessages')}
-                  value={aggregateTotals.messages.toLocaleString()}
-                />
-                <Stat label={t.raw('tokensIn')} value={fmt.number(aggregateTotals.inputTokens)} />
-                <Stat label={t.raw('tokensOut')} value={fmt.number(aggregateTotals.outputTokens)} />
-              </div>
-              {subSessionTree.children.length > 0 && (
-                <div className="border-t px-2 py-2">
-                  {subSessionTree.children.map((child) => (
-                    <SubSessionTreeNode
-                      key={child.id}
-                      node={child}
-                      messagesSuffix={t.raw('treeMessages')}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
+        <SubSessionSection
+          session={session}
+          allSessions={allSessions}
+          pricingLookup={pricingLookup}
+          fmt={fmt}
+        />
 
-        {/* Raw message data — collapsed by default, paginated. The content is a
-            plain hidden div rather than an animated DisclosureContent: animating
-            height over 30 fresh accordion rows is what caused the open lag, and
-            keeping the rows mounted after the first open makes reopening a pure
-            display flip. */}
-        <Disclosure
-          variant="outline"
-          className="overflow-hidden"
-          open={rawOpen}
-          onOpenChange={handleRawOpenChange}
-        >
-          <DisclosureTrigger variant="outline">
-            <Button
-              variant="popover"
-              className="flex w-full items-center justify-between rounded-none px-4"
-            >
-              <span className="flex items-center gap-2">
-                <span className="text-sm font-medium">{t.raw('rawLabel')}</span>
-                <Badge variant="muted" size="sm" className="tabular-nums">
-                  {counts.all}
-                </Badge>
-              </span>
-              <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-            </Button>
-          </DisclosureTrigger>
-          <div hidden={!rawOpen} className="border-border border-t">
-            {rawMounted ? (
-              <>
-                <p className="text-muted-foreground px-4 pt-3 text-xs">{t.raw('rawDescription')}</p>
-                <div className="flex flex-col gap-2 px-4 pt-3 sm:flex-row sm:items-center">
-                  <InputGroupSearch className="flex-1">
-                    <InputGroupSearchIcon>
-                      <MagnifyingGlassIcon />
-                    </InputGroupSearchIcon>
-                    <InputGroupSearchInput
-                      placeholder={t.raw('rawSearchPlaceholder')}
-                      value={rawQuery}
-                      onChange={(e) => setRawQuery(e.target.value)}
-                      variant="popover"
-                    />
-                    <InputGroupSearchClear onClick={() => setRawQuery('')} />
-                  </InputGroupSearch>
-                  <Tabs
-                    value={rawRole}
-                    onValueChange={(value) => setRawRole(value as typeof rawRole)}
-                    className="w-fit"
-                  >
-                    <TabsListCompact type="default">
-                      <TabsTriggerCompact value="all">{t.raw('rawFilterAll')}</TabsTriggerCompact>
-                      <TabsTriggerCompact value="user">{t.raw('rawFilterUser')}</TabsTriggerCompact>
-                      <TabsTriggerCompact value="assistant">
-                        {t.raw('rawFilterAssistant')}
-                      </TabsTriggerCompact>
-                    </TabsListCompact>
-                  </Tabs>
-                </div>
-                {filteredRawMessages.length === 0 ? (
-                  <p className="text-muted-foreground px-4 py-6 text-center text-xs">
-                    {t.raw('rawNoMatches')}
-                  </p>
-                ) : (
-                  // Every matching message, not a first page behind a "Show
-                  // more" click — each closed row is `content-visibility:auto`
-                  // (see RawMessage below), so the browser skips layout/paint
-                  // for whatever is off-screen and rendering the full list up
-                  // front costs nothing more than rendering 30 of it did.
-                  <Accordion type="multiple" className="px-2 py-2">
-                    {filteredRawMessages.map((msg) => (
-                      <RawMessage
-                        key={msg.info.id}
-                        message={msg.info}
-                        parts={msg.parts}
-                        formatTime={fmt.time}
-                      />
-                    ))}
-                  </Accordion>
-                )}
-              </>
-            ) : null}
-          </div>
-        </Disclosure>
+        <SessionContextMessageExplorer
+          messages={messages}
+          formatTime={fmt.time}
+          count={counts.all}
+        />
       </ModalBody>
     </>
   );

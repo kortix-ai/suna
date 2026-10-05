@@ -18,6 +18,7 @@ import {
 } from './access';
 import { authorizeAppRequest } from './public-proxy';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
+import { deleteFromView, insertIntoView } from '../__tests__/helpers/compat-views';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
@@ -163,7 +164,7 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
   test('restricted principals must belong to the App account', async () => {
     await seedApp();
     const database = testDb();
-    await database.insert(accountMembers).values({
+    await insertIntoView(database, accountMembers, {
       accountId: ACCOUNT_ID,
       userId: MEMBER_ID,
       accountRole: 'member',
@@ -177,7 +178,7 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       accountId: FOREIGN_ACCOUNT_ID,
       name: 'Foreign App access test',
     });
-    await database.insert(accountMembers).values({
+    await insertIntoView(database, accountMembers, {
       accountId: FOREIGN_ACCOUNT_ID,
       userId: FOREIGN_MEMBER_ID,
       accountRole: 'member',
@@ -212,7 +213,7 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
 
   test('Kortix App cookies stop working after account access is revoked', async () => {
     const app = await seedApp();
-    await testDb().insert(accountMembers).values({
+    await insertIntoView(testDb(), accountMembers, {
       accountId: ACCOUNT_ID,
       userId: OWNER_ID,
       accountRole: 'owner',
@@ -231,7 +232,7 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
 
     expect(await authorizeAppRequest(request, new URL(request.url), app)).toBeNull();
 
-    await testDb().delete(accountMembers).where(eq(accountMembers.userId, OWNER_ID));
+    await deleteFromView(testDb(), accountMembers, eq(accountMembers.userId, OWNER_ID));
     invalidateIamCacheForUser(OWNER_ID);
 
     const denied = await authorizeAppRequest(request, new URL(request.url), app);

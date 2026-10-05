@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-async function builderSource(): Promise<string> {
-  return Bun.file(new URL('./builder.ts', import.meta.url)).text();
+async function runtimeImagesSource(): Promise<string> {
+  return Bun.file(new URL('./runtime-images.ts', import.meta.url)).text();
 }
 
 // ensurePiWorkerImage caches a verified-active snapshot result: the name is
@@ -12,7 +12,7 @@ async function builderSource(): Promise<string> {
 // which breaks sibling suites when co-run — so the shape is pinned instead.
 describe('pi worker image ready-cache', () => {
   test('the cache is consulted before the single-flight map and written after prepare', async () => {
-    const source = await builderSource();
+    const source = await runtimeImagesSource();
     const fn = source.indexOf('export async function ensurePiWorkerImage');
     expect(fn).toBeGreaterThan(-1);
     const lookup = source.indexOf('piWorkerImageReady.get(buildKey)', fn);
@@ -23,15 +23,15 @@ describe('pi worker image ready-cache', () => {
     expect(singleFlight).toBeGreaterThan(lookup);
     expect(write).toBeGreaterThan(singleFlight);
     expect(write).toBeLessThan(fnEnd);
-    // TTL-guarded read, and only a PREPARED result is ever cached.
+    // TTL-guarded read; the cache stores the resolved image result.
     const readBlock = source.slice(lookup, singleFlight);
     expect(readBlock).toContain('PI_WORKER_IMAGE_READY_TTL_MS');
-    const writeBlock = source.slice(singleFlight, write);
-    expect(writeBlock).toContain('prepareSnapshotForReuse(provider, snapshotName, result');
+    const writeBlock = source.slice(singleFlight, write + 80);
+    expect(writeBlock).toContain('piWorkerImageReady.set(buildKey, { at: Date.now(), result })');
   });
 
   test('a fresh build is never served from the ready-cache path uninitialized', async () => {
-    const source = await builderSource();
+    const source = await runtimeImagesSource();
     const fn = source.indexOf('export async function ensurePiWorkerImage');
     const fnEnd = source.indexOf('export async function ensureMetaSandboxImage', fn);
     const body = source.slice(fn, fnEnd);

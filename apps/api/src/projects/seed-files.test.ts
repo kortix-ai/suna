@@ -7,7 +7,7 @@ import { buildProjectSeedFilesFromItem, defaultAgentFromSeedFiles } from './seed
 // with it — every session then stored the non-binding 'default' sentinel
 // (see sessions.ts createProjectSession), and an agent-scope model pin set on
 // 'kortix' was never looked up. This helper extracts the seeded manifest's
-// declared default agent so r1.ts's provision route can mirror it into
+// declared default agent so projects.ts's provision route can mirror it into
 // project.metadata at creation time, same as PUT /:projectId/default-agent.
 describe('defaultAgentFromSeedFiles', () => {
   test('extracts a declared default_agent from the seeded kortix.yaml', () => {
@@ -79,8 +79,8 @@ describe('buildProjectSeedFilesFromItem', () => {
     // The pack's own README wins over the minimal scaffold's.
     expect(seed.files.find((f) => f.path === 'README.md')?.content).toContain('Use-case pack');
     // Runbook skills + persona agents land where the runtime loads them.
-    expect(paths.some((p) => p.startsWith('.kortix/opencode/skills/') && p.endsWith('/SKILL.md'))).toBe(true);
-    expect(paths.some((p) => p.startsWith('.kortix/opencode/agents/') && p.endsWith('.md'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('skills/') && p.endsWith('/SKILL.md'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('agents/') && p.endsWith('.md'))).toBe(true);
     // No template-internal `runtime/` paths leak into a cloned repo.
     expect(paths.every((p) => !p.startsWith('runtime/'))).toBe(true);
     // The scaffold still provides the manifest with a declared default agent.

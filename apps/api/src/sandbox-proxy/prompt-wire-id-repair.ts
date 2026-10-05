@@ -10,7 +10,7 @@
  * session, CHILD sessions included, from any client (web sub-session view,
  * whitelabel, CLI, mobile).
  *
- * The 2026-08-18 Essentia incident is the case: a steering prompt into a
+ * The 2026-08-18 SampleCo incident is the case: a steering prompt into a
  * spawned child session that was mid-turn. The tab's store held none of that
  * child's messages, so the client mint had nothing to lift against and fell
  * back to its 2-minute backdate; the id sorted below the child's streaming
@@ -28,7 +28,15 @@
  * actually exists.
  */
 
-import { WIRE_MESSAGE_ID, mintWireMessageId, newestWireIdTime, wireIdTime } from '../projects/wire-message-id';
+import { classifyRuntimeRequest } from './runtime-request';
+import {
+  WIRE_MESSAGE_ID,
+  isWireIdAheadOf,
+  mintWireMessageId,
+  newestWireIdTime,
+  wireIdClockDelta,
+  wireIdTime,
+} from '../projects/wire-message-id';
 
 /** Newest-N messages read before a delivery. Small on purpose: this sits on the
  *  delivery path of every direct send, and only the tip decides placement. */
@@ -39,18 +47,27 @@ export const EFFECTIVE_MESSAGE_ID_HEADER = 'X-Kortix-Effective-Message-Id';
  *  transcript; the proxy then skips its own read. Stripped from the forward. */
 export const WIRE_ID_PLACED_HEADER = 'X-Kortix-Wire-Id-Placed';
 
-const PROMPT_PATH = /^(\/proxy\/\d+)?\/session\/([^/?#]+)\/(?:prompt_async|message)$/;
+/**
+ * Only OpenCode's two prompt routes need the proxy to place the id: a direct
+ * client sends them. The Kortix prompt route is the API's own delivery, which
+ * the inbox placed already.
+ */
+function promptRoute(path: string) {
+  const request = classifyRuntimeRequest('POST', path);
+  return request.kind === 'turn-start' && (request.verb === 'prompt_async' || request.verb === 'message')
+    ? request
+    : null;
+}
 
-/** Only the two prompt routes carry a client-minted wire id. */
 export function isPromptWireIdRepairPath(path: string): boolean {
-  return PROMPT_PATH.test(path);
+  return promptRoute(path) !== null;
 }
 
 /** The same session's newest-N read, with any `/proxy/<port>` prefix kept. */
 export function promptTranscriptReadPath(path: string, limit: number): string {
-  const match = PROMPT_PATH.exec(path);
-  if (!match) throw new Error(`not a prompt path: ${path}`);
-  return `${match[1] ?? ''}/session/${match[2]}/message?limit=${limit}`;
+  const route = promptRoute(path);
+  if (!route) throw new Error(`not a prompt path: ${path}`);
+  return `${route.prefix}/session/${encodeURIComponent(route.runtimeSessionId)}/message?limit=${limit}`;
 }
 
 export interface PromptWireIdRepairResult {
@@ -99,9 +116,16 @@ export function repairPromptWireId(input: {
 
   const wellFormed = WIRE_MESSAGE_ID.test(clientId);
   const clientTime = wellFormed ? wireIdTime(clientId) : null;
+  // At-or-below the newest on record, measured on the 48-bit ring: a pre-wrap
+  // id is BELOW a post-wrap one although its number is larger.
   const stale =
-    input.newestKnownTime !== null && clientTime !== null && clientTime <= input.newestKnownTime;
-  if (wellFormed && !stale) {
+    input.newestKnownTime !== null &&
+    clientTime !== null &&
+    wireIdClockDelta(clientTime, input.newestKnownTime) <= BigInt(0);
+  // Positive evidence without any read: no transcript placed an id this far
+  // ahead of the clock (the pre-fix CLI minted the HIGH bits, ~40 days out).
+  const farAhead = wellFormed && isWireIdAheadOf(clientId, input.nowMs);
+  if (wellFormed && !stale && !farAhead) {
     return { body, effectiveMessageId: clientId, outcome: 'kept' };
   }
 
@@ -145,6 +169,7 @@ export async function readNewestWireIdTime(input: {
     if (!Array.isArray(messages)) return null;
     return newestWireIdTime(
       messages.map((message) => (typeof message?.info?.id === 'string' ? message.info.id : null)),
+      Date.now(),
     );
   } catch {
     return null;

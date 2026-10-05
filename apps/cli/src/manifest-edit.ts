@@ -1,11 +1,11 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { parseDocument, stringify as stringifyYaml } from 'yaml';
 import {
   type ManifestFormat,
   manifestCandidatePaths,
-  parseManifestText,
 } from '@kortix/manifest-schema';
+import { resolveLocalManifestImports } from './manifest-imports.ts';
 
 type YamlDocument = ReturnType<typeof parseDocument>;
 
@@ -55,11 +55,26 @@ function readParsedManifest(cwd?: string): Record<string, unknown> {
   if (!m.exists) {
     throw new Error('No kortix manifest here — run `kortix init` first (config is file-based).');
   }
-  return parseManifestText(readFileSync(m.path, 'utf8'), m.format);
+  // Merged with `imports:`, so an existence check sees an entry declared in an
+  // imported file and `add` cannot create a second one with the same name.
+  return resolveLocalManifestImports(m.path, m.format).raw;
 }
 
 function writeManifestText(text: string, cwd?: string): void {
   writeFileSync(manifestFile(cwd), text, 'utf8');
+}
+
+/**
+ * The file an existing array entry is declared in: an imported file when
+ * `imports:` brought it in, else the root manifest. Edits and removals go to
+ * that file; `append` always writes the root.
+ */
+function declaringFile(section: string, value: string, cwd?: string): string {
+  const m = resolveManifest(cwd);
+  if (!m.exists || m.format !== 'yaml') return m.path;
+  if (section !== 'triggers' && section !== 'connectors') return m.path;
+  const origin = resolveLocalManifestImports(m.path, m.format).origins[section][value];
+  return origin ? resolve(dirname(m.path), origin) : m.path;
 }
 
 /**
@@ -375,7 +390,8 @@ function appendArrayBlockYaml(section: string, fields: Record<string, unknown>, 
 }
 
 function removeArrayBlockYaml(section: string, field: string, value: string, cwd?: string): boolean {
-  const doc = readYamlDocument(cwd);
+  const file = declaringFile(section, value, cwd);
+  const doc = parseDocument(readFileSync(file, 'utf8'));
   const path = section.split('.');
   const idx = findYamlArrayIndex(doc, path, field, value);
   if (idx < 0) return false;
@@ -383,10 +399,10 @@ function removeArrayBlockYaml(section: string, field: string, value: string, cwd
   const range = seq.items?.[idx]?.range;
   if (!range) {
     doc.deleteIn([...path, idx]);
-    writeYamlDocument(doc, cwd);
+    writeFileSync(file, doc.toString(), 'utf8');
     return true;
   }
-  const text = readManifestText(cwd);
+  const text = readFileSync(file, 'utf8');
   let start = text.lastIndexOf('\n', range[0] - 1) + 1;
   // A comment immediately above a sequence item belongs to that item. Remove
   // it with the item, but do not consume a blank separator or prior content.
@@ -400,7 +416,7 @@ function removeArrayBlockYaml(section: string, field: string, value: string, cwd
   }
   let end = range[2];
   if (end < text.length && text[end] === '\n') end += 1;
-  writeManifestText(`${text.slice(0, start)}${text.slice(end)}`, cwd);
+  writeFileSync(file, `${text.slice(0, start)}${text.slice(end)}`, 'utf8');
   return true;
 }
 
@@ -412,7 +428,8 @@ function setScalarInArrayBlockYaml(
   value: string | number | boolean,
   cwd?: string,
 ): boolean {
-  const doc = readYamlDocument(cwd);
+  const file = declaringFile(section, idValue, cwd);
+  const doc = parseDocument(readFileSync(file, 'utf8'));
   const path = section.split('.');
   const idx = findYamlArrayIndex(doc, path, field, idValue);
   if (idx < 0) return false;
@@ -420,12 +437,16 @@ function setScalarInArrayBlockYaml(
     | { range?: [number, number, number] }
     | undefined;
   if (valueNode?.range) {
-    const text = readManifestText(cwd);
+    const text = readFileSync(file, 'utf8');
     const [start, end] = valueNode.range;
-    writeManifestText(`${text.slice(0, start)}${renderYamlScalar(value)}${text.slice(end)}`, cwd);
+    writeFileSync(
+      file,
+      `${text.slice(0, start)}${renderYamlScalar(value)}${text.slice(end)}`,
+      'utf8',
+    );
   } else {
     doc.setIn([...path, idx, key], value);
-    writeYamlDocument(doc, cwd);
+    writeFileSync(file, doc.toString(), 'utf8');
   }
   return true;
 }

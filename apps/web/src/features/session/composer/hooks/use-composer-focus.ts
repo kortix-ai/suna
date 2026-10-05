@@ -1,6 +1,7 @@
 'use client';
 
-import { type RefObject, useEffect, useRef } from 'react';
+import { type RefObject, useEffect } from 'react';
+import { useLatestRef } from './use-latest-ref';
 
 /**
  * True for elements the type-ahead redirect must leave alone.
@@ -27,6 +28,12 @@ function isTextEditingElement(el: Element | null): boolean {
 /** Only the composer inside the visible tab should answer a global event. */
 function isVisible(el: HTMLElement | null): el is HTMLElement {
   return !!el && el.offsetParent !== null;
+}
+
+function hasOpenFocusOverlay(): boolean {
+  return Array.from(document.querySelectorAll<HTMLElement>(
+    '[data-slot="popover-content"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]',
+  )).some((element) => element.getClientRects().length > 0);
 }
 
 export interface UseComposerFocusOptions {
@@ -59,18 +66,14 @@ export function useComposerFocus({
   disabled = false,
   onTypeAhead,
 }: UseComposerFocusOptions) {
-  const shouldAutoFocus =
-    autoFocus ?? (typeof window !== 'undefined' && window.innerWidth >= 640);
+  const shouldAutoFocus = autoFocus ?? (typeof window !== 'undefined' && window.innerWidth >= 640);
 
   // Mirror the latest onTypeAhead into a ref so the keydown listener effect
   // below doesn't need it as a dependency — a consumer passing an inline
   // callback (the intended usage) would otherwise tear down and re-add both
   // window listeners on every render, which matters here since the composer
   // re-renders on every streamed token.
-  const onTypeAheadRef = useRef(onTypeAhead);
-  useEffect(() => {
-    onTypeAheadRef.current = onTypeAhead;
-  }, [onTypeAhead]);
+  const onTypeAheadRef = useLatestRef(onTypeAhead);
 
   // 1 — focus on mount, or when revealed.
   useEffect(() => {
@@ -78,13 +81,13 @@ export function useComposerFocus({
     const el = ref.current;
     if (!el) return;
     if (isVisible(el)) {
-      el.focus();
+      if (!hasOpenFocusOverlay()) el.focus();
       return;
     }
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          ref.current?.focus();
+          if (!hasOpenFocusOverlay()) ref.current?.focus();
           observer.disconnect();
         }
       },
@@ -110,6 +113,10 @@ export function useComposerFocus({
         rafId = null;
       }
       const tryFocus = (retries: number) => {
+        if (hasOpenFocusOverlay()) {
+          rafId = null;
+          return;
+        }
         const el = ref.current;
         if (isVisible(el)) {
           el.focus();
@@ -153,5 +160,5 @@ export function useComposerFocus({
       window.removeEventListener('focus-session-textarea', onFocusRequest);
       window.removeEventListener('keydown', onGlobalKeyDown);
     };
-  }, [ref, disabled]);
+  }, [onTypeAheadRef, ref, disabled]);
 }

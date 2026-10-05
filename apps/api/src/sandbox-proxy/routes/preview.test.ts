@@ -1,18 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 
+import { config } from '../../config';
 import { getRequestContext, runWithContext } from '../../lib/request-context';
-import { SecretGrantResolutionError } from '../../projects/lib/secret-grant';
-import { SessionGrantRemintError } from '../../projects/lib/session-token-grant';
-import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../proxy-hop';
 import {
   STRIP_FORWARD_HEADERS,
   bindSandboxRequestContext,
+  clientResponseHeaders,
+  isConnectionRefusedError,
   isProxiedBaseReset,
   longTurnTimeoutResponse,
   portUnreachableResponse,
-  secretGrantErrorResponse,
+  sanitizeRedirectLocation,
   shouldAutoResumeStoppedSandbox,
+  stripFrameAncestors,
 } from './preview';
 
 describe('sandbox proxy audit context', () => {
@@ -110,98 +111,37 @@ describe('shouldAutoResumeStoppedSandbox', () => {
     ).toBe(false);
   });
 
-  test('non-user (service / share) access never resumes', () => {
-    expect(shouldAutoResumeStoppedSandbox('stopped', 8000, 'service')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('stopped', 8000, 'share')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('stopped', 8000, '')).toBe(false);
+  // Each row below is one that DOES resume for a principal on a stopped box
+  // (a POST on the daemon port, a page load on an app port). Only the access
+  // kind or the status differs, so the row fails when that guard goes.
+  const RESUMING_REQUESTS = [
+    [8000, { method: 'POST' }],
+    [3000, { browserNavigation: true }],
+  ] as const;
+
+  test.each(RESUMING_REQUESTS)('a public share never resumes (port %p)', (port, opts) => {
+    expect(shouldAutoResumeStoppedSandbox('stopped', port, 'principal', opts)).toBe(true);
+    expect(shouldAutoResumeStoppedSandbox('stopped', port, 'public_share', opts)).toBe(false);
   });
 
-  test('only a STOPPED record is a resume candidate (error/archived/active are not)', () => {
-    expect(shouldAutoResumeStoppedSandbox('error', 8000, 'principal')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('archived', 8000, 'principal')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('active', 8000, 'principal')).toBe(false);
-    expect(shouldAutoResumeStoppedSandbox('provisioning', 8000, 'principal')).toBe(false);
-  });
+  test.each(['error', 'archived', 'active', 'provisioning'])(
+    'only a STOPPED record is a resume candidate: %s is not',
+    (status) => {
+      for (const [port, opts] of RESUMING_REQUESTS) {
+        expect(shouldAutoResumeStoppedSandbox(status, port, 'principal', opts)).toBe(false);
+      }
+    },
+  );
 });
 
-// A long reasoning+tool turn on the blocking `POST /session/:id/message` path
-// can legitimately outrun the proxy's retry budget while the sandbox is
-// perfectly healthy. That must surface as a distinct, honest signal — never
-// the generic "sandbox unreachable" 502 (which implies the box is dead and
-// invites the caller to retry the exact same non-idempotent request).
+// The 504 LONG_TURN_PROXY_TIMEOUT answer itself (code, no-store, the way out)
+// is proven at the route in __tests__/e2e-preview-proxy.test.ts.
 describe('longTurnTimeoutResponse', () => {
-  test('reports 504 with a distinct machine-readable code, not a generic 502', async () => {
-    const res = longTurnTimeoutResponse('');
-    expect(res.status).toBe(504);
-    const body = (await res.json()) as { code: string; error: string };
-    expect(body.code).toBe('LONG_TURN_PROXY_TIMEOUT');
-    expect(body.error).toMatch(/prompt_async/);
-  });
-
-  test('is never cached — a retry must always re-evaluate the upstream', () => {
-    const res = longTurnTimeoutResponse('');
-    expect(res.headers.get('Cache-Control')).toBe('no-store');
-  });
-
-  test('reflects CORS origin like every other proxy response', () => {
+  test('reflects CORS origin like every other proxy response, and omits it with no Origin', () => {
     const res = longTurnTimeoutResponse('https://app.kortix.ai');
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
     expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
-  });
-
-  test('omits CORS headers when there is no Origin', () => {
-    const res = longTurnTimeoutResponse('');
-    expect(res.headers.has('Access-Control-Allow-Origin')).toBe(false);
-  });
-});
-
-describe('secretGrantErrorResponse', () => {
-  // The agent-switch 409 is GONE. A prompt naming a different agent is
-  // re-scoped, never refused, so no error this function handles may map to a
-  // permanent conflict — every one is "we could not APPLY the re-scope", which
-  // the client must retry. This test is the guard against a 409 creeping back.
-  test('no grant failure maps to a 409 — a switch is never refused', async () => {
-    for (const err of [
-      new SecretGrantResolutionError('kortix', new Error('git unreachable')),
-      new SessionGrantRemintError('ses_1', new Error('db down')),
-    ]) {
-      const res = secretGrantErrorResponse(err, '');
-      expect(res).not.toBeNull();
-      expect(res?.status).not.toBe(409);
-      expect(res?.status).toBe(503);
-      const body = (await res?.json()) as { code: string };
-      expect(body.code).not.toBe('AGENT_SWITCH_REQUIRES_NEW_SESSION');
-    }
-  });
-
-  test('a failed grant re-mint is a 503, so the prompt is retried rather than dropped', async () => {
-    const res = secretGrantErrorResponse(new SessionGrantRemintError('ses_1', new Error('db')), '');
-    expect(res?.status).toBe(503);
-    const body = (await res?.json()) as { code: string };
-    expect(body.code).toBe('AGENT_SWITCH_GRANT_UNAPPLIED');
-  });
-
-  test('an unresolvable grant is a 503, not the generic unreachable 502', async () => {
-    const res = secretGrantErrorResponse(
-      new SecretGrantResolutionError('kortix', new Error('git unreachable')),
-      '',
-    );
-    expect(res?.status).toBe(503);
-    const body = (await res?.json()) as { code: string };
-    expect(body.code).toBe('AGENT_SECRET_GRANT_UNRESOLVED');
-  });
-
-  test('an ordinary env-sync failure is left to the existing retry path', () => {
-    expect(secretGrantErrorResponse(new Error('env sync failed: 502'), '')).toBeNull();
-    expect(secretGrantErrorResponse(undefined, '')).toBeNull();
-  });
-
-  test('reflects CORS origin like every other proxy response', () => {
-    const res = secretGrantErrorResponse(
-      new SecretGrantResolutionError('a', new Error('git unreachable')),
-      'https://app.kortix.ai',
-    );
-    expect(res?.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
+    expect(longTurnTimeoutResponse('').headers.has('Access-Control-Allow-Origin')).toBe(false);
   });
 });
 
@@ -258,13 +198,9 @@ describe('isProxiedBaseReset', () => {
 });
 
 // The daemon distinguishes a direct platform call from a proxied one by a header
-// this proxy strips. If that name ever falls out of the strip list, a caller can
-// set it themselves and the daemon's gate opens.
-describe('the service-call header cannot be injected through the proxy', () => {
-  test('it is stripped from forwarded requests', () => {
-    expect(STRIP_FORWARD_HEADERS.has(KORTIX_SERVICE_CALL_HEADER.toLowerCase())).toBe(true);
-  });
-
+// this proxy strips; that strip is proven at the route in
+// __tests__/e2e-preview-proxy.test.ts.
+describe('the forward strip list', () => {
   test('the strip list is matched case-insensitively, as headers are', () => {
     // Headers arrive in whatever case the client sent; the forward loop
     // lowercases before testing membership, so the entry must be lowercase.
@@ -279,46 +215,12 @@ describe('the service-call header cannot be injected through the proxy', () => {
 // painted "Waking this session up…" over a session whose dev server was simply
 // not listening. The hop is that missing fact, on the header AND in the body so
 // a browser probe that never reads the body still gets it.
+//
+// Hop attribution on real route responses (control plane, daemon, user port,
+// provider ingress) is proven in __tests__/e2e-preview-proxy.test.ts, and the
+// browser page and CORS exposure in preview-response-contract.test.ts.
 describe('portUnreachableResponse carries hop attribution', () => {
   const jsonHeaders = new Headers({ accept: 'application/json' });
-
-  test('the control plane answering "this row is not active" says so', async () => {
-    const res = portUnreachableResponse({
-      port: 8000,
-      status: 503,
-      origin: 'https://app.kortix.test',
-      incomingHeaders: jsonHeaders,
-      reason: 'sandbox not ready (status: stopped)',
-      hop: 'control_plane',
-    });
-    expect(res.status).toBe(503);
-    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('control_plane');
-    expect(res.headers.get(PROXY_UPSTREAM_STATUS_HEADER)).toBeNull();
-    expect(await res.json()).toEqual({
-      error: 'sandbox not ready (status: stopped)',
-      port: 8000,
-      status: 503,
-      hop: 'control_plane',
-      upstream_status: null,
-    });
-  });
-
-  test('a readiness 503 carries the stable machine code and retry flag', async () => {
-    // Clients branch on `code`, not on the human-readable `reason` — and
-    // `retry: true` says the same request succeeds once the box is up.
-    const res = portUnreachableResponse({
-      port: 8000,
-      status: 503,
-      origin: 'https://app.kortix.test',
-      incomingHeaders: jsonHeaders,
-      reason: 'sandbox not ready (status: stopped)',
-      hop: 'control_plane',
-      code: 'sandbox_not_ready',
-      retry: true,
-    });
-    expect(res.status).toBe(503);
-    expect(await res.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
-  });
 
   test('a dead daemon reports the upstream status it actually saw', async () => {
     const res = portUnreachableResponse({
@@ -334,68 +236,195 @@ describe('portUnreachableResponse carries hop attribution', () => {
     expect(res.headers.get(PROXY_UPSTREAM_STATUS_HEADER)).toBe('502');
     expect(await res.json()).toMatchObject({ hop: 'daemon', upstream_status: 502 });
   });
+});
 
-  test("a dead app port is the user's own process, and says so", async () => {
-    const res = portUnreachableResponse({
-      port: 3000,
-      status: 502,
-      origin: '',
-      incomingHeaders: jsonHeaders,
-      reason: 'sandbox port unreachable',
-      hop: 'upstream_port',
-      upstreamStatus: 502,
-    });
-    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('upstream_port');
-    expect(await res.json()).toMatchObject({ hop: 'upstream_port' });
+// Phase 2 of the preview.ts split (KRTX-328) moves the response/header helpers
+// into ../preview-response.ts. These pins read them off ./preview — the path
+// every existing importer uses — so the move cannot change what they do.
+describe('stripFrameAncestors', () => {
+  test('removes the frame-ancestors directive and keeps the rest of the CSP', () => {
+    expect(
+      stripFrameAncestors(
+        "default-src 'self'; frame-ancestors 'none'; script-src 'wasm-unsafe-eval'",
+      ),
+    ).toBe("default-src 'self'; script-src 'wasm-unsafe-eval'");
   });
 
-  test('a provider ingress that never resolved is its own hop', async () => {
-    const res = portUnreachableResponse({
-      port: 8000,
-      status: 502,
-      origin: '',
-      incomingHeaders: jsonHeaders,
-      reason: 'sandbox upstream unreachable',
-      hop: 'provider_ingress',
-    });
-    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('provider_ingress');
+  test('a CSP that is only frame-ancestors leaves nothing to keep', () => {
+    expect(stripFrameAncestors("frame-ancestors 'self'")).toBeNull();
   });
 
-  test('a browser navigation still gets the friendly HTML — and the hop headers with it', async () => {
-    const res = portUnreachableResponse({
-      port: 3000,
-      status: 502,
-      origin: 'https://app.kortix.test',
-      incomingHeaders: new Headers({ accept: 'text/html' }),
-      reason: 'sandbox port unreachable',
-      hop: 'upstream_port',
-      upstreamStatus: 502,
-    });
-    expect(res.headers.get('Content-Type')).toContain('text/html');
-    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('upstream_port');
-    expect(await res.text()).toContain('<!doctype html>');
+  test('the directive match is case-insensitive and tolerates surrounding whitespace', () => {
+    expect(stripFrameAncestors('  FRAME-ANCESTORS * ; img-src data:')).toBe('img-src data:');
   });
 
-  // The probe runs cross-origin (dev.kortix.com → dev-api.kortix.com). Without
-  // this the browser hides both headers from JS and every failure reads as an
-  // unattributed one — the exact ambiguity this step removes.
-  test('both hop headers are CORS-exposed so a cross-origin probe can read them', () => {
-    const res = portUnreachableResponse({
-      port: 8000,
-      status: 502,
-      // The web app — the ONLY cross-origin caller a preview answers now. An
-      // arbitrary origin gets no headers at all (see previewCorsHeaders), which
-      // is what makes the ambient preview cookie safe.
-      origin: 'http://localhost:3000',
-      incomingHeaders: jsonHeaders,
-      reason: 'sandbox upstream unreachable',
-      hop: 'daemon',
-      upstreamStatus: 502,
-    });
-    const exposed = (res.headers.get('Access-Control-Expose-Headers') ?? '')
-      .split(',')
-      .map((name) => name.trim().toLowerCase());
-    expect(exposed).toContain(PROXY_HOP_HEADER.toLowerCase());
-    expect(exposed).toContain(PROXY_UPSTREAM_STATUS_HEADER.toLowerCase());
+  test('a lookalike directive is not eaten', () => {
+    expect(stripFrameAncestors('frame-ancestors-src *')).toBe('frame-ancestors-src *');
   });
+
+  test('an empty CSP leaves nothing', () => {
+    expect(stripFrameAncestors('')).toBeNull();
+  });
+});
+
+describe('clientResponseHeaders', () => {
+  test('deletes X-Frame-Options and rewrites a CSP that frames the app', () => {
+    const upstream = new Headers({
+      'x-frame-options': 'DENY',
+      'content-security-policy': "default-src 'self'; frame-ancestors 'self'",
+    });
+    const headers = clientResponseHeaders(upstream, '');
+    expect(headers.has('x-frame-options')).toBe(false);
+    expect(headers.get('content-security-policy')).toBe("default-src 'self'");
+  });
+
+  test('a CSP reduced to nothing by the strip is deleted, not left empty', () => {
+    const headers = clientResponseHeaders(
+      new Headers({ 'content-security-policy': "frame-ancestors 'none'" }),
+      '',
+    );
+    expect(headers.has('content-security-policy')).toBe(false);
+  });
+
+  test('the report-only CSP is rewritten too', () => {
+    const headers = clientResponseHeaders(
+      new Headers({ 'content-security-policy-report-only': "frame-ancestors 'self'" }),
+      '',
+    );
+    expect(headers.has('content-security-policy-report-only')).toBe(false);
+  });
+
+  test('a CSP without frame-ancestors passes through untouched', () => {
+    const csp = "default-src 'self'; script-src 'wasm-unsafe-eval'";
+    const headers = clientResponseHeaders(new Headers({ 'content-security-policy': csp }), '');
+    expect(headers.get('content-security-policy')).toBe(csp);
+  });
+
+  test('the CORS grant follows the same allowlist as every preview response', () => {
+    const granted = clientResponseHeaders(new Headers(), config.FRONTEND_URL);
+    expect(granted.get('Access-Control-Allow-Origin')).toBe(config.FRONTEND_URL);
+    expect(granted.get('Access-Control-Allow-Credentials')).toBe('true');
+    expect(granted.get('Vary')).toBe('Origin');
+    const arbitrary = clientResponseHeaders(new Headers(), 'https://arbitrary.example');
+    expect(arbitrary.has('Access-Control-Allow-Origin')).toBe(false);
+    expect(arbitrary.has('Access-Control-Allow-Credentials')).toBe(false);
+  });
+
+  test('forwarded app cookies keep their host-only scope; ours are dropped', () => {
+    const upstream = new Headers();
+    upstream.append('set-cookie', 'app_sid=abc; Domain=kortix.com; Path=/');
+    upstream.append('set-cookie', 'theme=dark');
+    upstream.append('set-cookie', '__kortix_preview=tamper; Path=/');
+    const headers = clientResponseHeaders(upstream, '');
+    expect(headers.getSetCookie()).toEqual(['app_sid=abc; Path=/', 'theme=dark']);
+  });
+
+  test('a lone preview cookie of ours is dropped entirely', () => {
+    const upstream = new Headers({ 'set-cookie': '__kortix_preview_chips=a; Path=/' });
+    const headers = clientResponseHeaders(upstream, '');
+    expect(headers.getSetCookie()).toEqual([]);
+  });
+});
+
+describe('sanitizeRedirectLocation', () => {
+  const previewUrl = 'https://p.example/v1/p/sbx_ext/3000';
+  const prefix = '/v1/p/sbx_ext/3000';
+
+  test('a root-relative location rides the preview prefix', () => {
+    expect(sanitizeRedirectLocation(previewUrl, '/login?next=/x', prefix)).toBe(
+      `${prefix}/login?next=/x`,
+    );
+  });
+
+  test('an absolute URL back to the preview origin is re-rooted onto the prefix', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'https://p.example/dashboard#top', prefix)).toBe(
+      `${prefix}/dashboard#top`,
+    );
+  });
+
+  test('a loopback host is treated as the app itself', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'http://localhost:3000/callback', prefix)).toBe(
+      `${prefix}/callback`,
+    );
+  });
+
+  test('an external redirect passes through unchanged', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'https://idp.example/oauth?client=1', prefix)).toBe(
+      'https://idp.example/oauth?client=1',
+    );
+  });
+
+  test('a protocol-relative location is an external URL and passes through', () => {
+    expect(sanitizeRedirectLocation(previewUrl, '//evil.example/x', prefix)).toBe(
+      '//evil.example/x',
+    );
+  });
+
+  test('no location means no rewrite', () => {
+    expect(sanitizeRedirectLocation(previewUrl, null, prefix)).toBeNull();
+  });
+
+  test('an unparseable location yields null instead of throwing', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'http://[::1', prefix)).toBeNull();
+  });
+});
+
+describe('isConnectionRefusedError', () => {
+  test('a refused code on the error or its cause proves nothing reached the box', () => {
+    expect(isConnectionRefusedError(Object.assign(new Error('x'), { code: 'ECONNREFUSED' }))).toBe(
+      true,
+    );
+    expect(isConnectionRefusedError({ cause: { code: 'ECONNREFUSED' } })).toBe(true);
+  });
+
+  test('the message alone can prove it', () => {
+    for (const message of [
+      'connect ECONNREFUSED 127.0.0.1:3000',
+      'connection refused',
+      'Failed to connect',
+      'Unable to connect',
+    ]) {
+      expect(isConnectionRefusedError(new Error(message))).toBe(true);
+    }
+  });
+
+  test('any other failure stays ambiguous and must not gate the delivery retry', () => {
+    expect(
+      isConnectionRefusedError(Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })),
+    ).toBe(false);
+    expect(isConnectionRefusedError(new Error('connection reset mid-flight'))).toBe(false);
+    expect(isConnectionRefusedError(new Error('The operation was aborted'))).toBe(false);
+  });
+
+  test('non-error garbage is not a refused connection', () => {
+    expect(isConnectionRefusedError(null)).toBe(false);
+    expect(isConnectionRefusedError(undefined)).toBe(false);
+    expect(isConnectionRefusedError('ECONNREFUSED')).toBe(false);
+  });
+});
+
+// The unreachable-port page reconstructs the address the browser is on from the
+// preview host headers (the sign-in hand-off carries it), falling back to ''.
+test('the unreachable-port page carries the reconstructed browser address', async () => {
+  const res = portUnreachableResponse({
+    port: 3000,
+    status: 502,
+    origin: '',
+    incomingHeaders: new Headers({ accept: 'text/html', 'x-kortix-preview-host': 'p.example' }),
+    reason: 'x',
+    hop: 'upstream_port',
+  });
+  expect(await res.text()).toContain('https://p.example');
+});
+
+test('without host headers the page simply omits the address', async () => {
+  const res = portUnreachableResponse({
+    port: 3000,
+    status: 502,
+    origin: '',
+    incomingHeaders: new Headers({ accept: 'text/html' }),
+    reason: 'x',
+    hop: 'upstream_port',
+  });
+  expect(await res.text()).not.toContain('https://');
 });

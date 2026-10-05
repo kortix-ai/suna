@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSandboxReaper from './sandbox-reaper';
+import * as realArchivedBoxRemoval from './reaping/archived-box-removal';
+import * as realStuckProvisioning from './reaping/stuck-provisioning';
 import * as realAttachments from '../connectors/attachments';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
@@ -11,10 +13,26 @@ import { mockConfigModule } from './reaping/test-support/mock-config';
 // function with none of that runtime surface, so everything below is purely
 // to let the module load in isolation.
 mock.module('../config', () => mockConfigModule());
+
+// How many sweeps are in flight at once. A tracked sweep holds its slot for one
+// timer turn, so sweeps that start together are counted together.
+let sweepsInFlight = 0;
+let maxSweepsInFlight = 0;
+let trackedSweepCalls = 0;
+function tracked<T>(result: T): () => Promise<T> {
+  return async () => {
+    trackedSweepCalls += 1;
+    sweepsInFlight += 1;
+    maxSweepsInFlight = Math.max(maxSweepsInFlight, sweepsInFlight);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    sweepsInFlight -= 1;
+    return result;
+  };
+}
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
 mock.module('../connectors/attachments', () => ({
   ...realAttachments,
-  cleanupExpiredConnectorAttachments: async () => ({ deleted: 0, errors: 0 }),
+  cleanupExpiredConnectorAttachments: tracked({ deleted: 0, errors: 0 }),
 }));
 // sweepExpiredSessionBranches() (unlike the other maintenance subtasks) isn't
 // wrapped in its own .catch() and makes a real chained db.select(...) call —
@@ -50,11 +68,11 @@ mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
 mock.module('../billing/services/compute-metering', () => ({
   ...realComputeMetering,
   reopenComputeForSandbox: async () => undefined,
-  tickRunningComputeCharges: async () => ({ settled: 0, reconciled: 0 }),
+  tickRunningComputeCharges: tracked({ settled: 0, reconciled: 0 }),
 }));
 mock.module('../snapshots/builder', () => ({
   ensurePiWorkerImage: async () => undefined,
-  reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }),
+  reconcileStaleBuilds: tracked({ checked: 0, closedReady: 0, closedFailed: 0 }),
 }));
 mock.module('../snapshots/quota-gc', () => ({
   reconcileSnapshotQuota: async () => ({
@@ -82,25 +100,41 @@ let reapAndReconcileSandboxesImpl = async () => ({
 // The prompt-delivery backstop lives with the command queue it drains, not with
 // the sandbox reaper — maintenance.ts is simply the tick that calls both.
 mock.module('./session-lifecycle/undelivered-prompts', () => ({
-  reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
+  reconcileUndeliveredPrompts: tracked({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
 }));
 
 mock.module('./session-lifecycle/runtime-wake-maintenance', () => ({
-  reconcileRuntimeWakeFences: async () => ({ checked: 0, stopped: 0, removed: 0, errors: 0 }),
+  reconcileRuntimeWakeFences: tracked({ checked: 0, stopped: 0, removed: 0, errors: 0 }),
+}));
+
+mock.module('./reaping/archived-box-removal', () => ({
+  ...realArchivedBoxRemoval,
+  removeArchivedProviderBoxes: tracked({ examined: 0, removed: 0, failed: 0 }),
+}));
+
+mock.module('./reaping/stuck-provisioning', () => ({
+  ...realStuckProvisioning,
+  convergeStuckProvisioningRuntimes: async () => ({
+    examined: 0,
+    activated: 0,
+    parked: 0,
+    lost: 0,
+    archived: 0,
+    errors: 0,
+  }),
 }));
 
 mock.module('./sandbox-reaper', () => ({
   ...realSandboxReaper,
   reapAndReconcileSandboxes: () => reapAndReconcileSandboxesImpl(),
-  reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
+  reconcileOrphanComputeSessions: tracked({ checked: 0, closed: 0, errors: 0 }),
   reconcileStuckActiveSessions: async () => ({
     candidates: 0,
     reconciled: 0,
     billingClosed: 0,
     errors: 0,
   }),
-  reapOrphanProviderBoxes: async () => ({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
-  reapOrphanEnvironments: async () => ({ scanned: 0, stopped: 0, deleted: 0, errors: 0 }),
+  reapOrphanProviderBoxes: tracked({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
   countBillingInvariantViolations: async () => 0,
   // The mirror monitor: evidence-gated billing under-bills SILENTLY when the
   // reaper is starved, where wall-clock billing over-billed loudly.
@@ -121,8 +155,46 @@ mock.module('./sandbox-reaper', () => ({
   },
 }));
 
-const { shouldForceResetStaleLock, runProjectMaintenance, __isMaintenanceRunningForTest } =
-  await import('./maintenance');
+const {
+  shouldForceResetStaleLock,
+  runProjectMaintenance,
+  runSweepsBounded,
+  __isMaintenanceRunningForTest,
+} = await import('./maintenance');
+
+// R1.11: the sweeps of one cycle share the request pool (5 connections per
+// process). Started together in one Promise.all, they held the whole pool and
+// request traffic queued behind them.
+describe('maintenance sweeps run with bounded concurrency', () => {
+  test('one cycle never runs more than 3 sweeps at once, and runs every sweep', async () => {
+    sweepsInFlight = 0;
+    maxSweepsInFlight = 0;
+    trackedSweepCalls = 0;
+    await runProjectMaintenance();
+    // 8 of the cycle's sweeps are tracked; before the change all 8 overlapped.
+    expect(trackedSweepCalls).toBe(8);
+    expect(maxSweepsInFlight).toBeLessThanOrEqual(3);
+    expect(maxSweepsInFlight).toBeGreaterThan(1);
+  });
+
+  test('a rejecting sweep does not stop the others, results keep their order, and the rejection surfaces', async () => {
+    const ran: number[] = [];
+    const sweep = (id: number, fail = false) => async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      ran.push(id);
+      if (fail) throw new Error(`sweep ${id} failed`);
+      return id;
+    };
+    expect(await runSweepsBounded([sweep(1), sweep(2), sweep(3), sweep(4), sweep(5)], 2)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    ran.length = 0;
+    await expect(
+      runSweepsBounded([sweep(1), sweep(2, true), sweep(3), sweep(4), sweep(5)], 2),
+    ).rejects.toThrow('sweep 2 failed');
+    expect(ran.sort()).toEqual([1, 2, 3, 4, 5]);
+  });
+});
 
 // Regression coverage for the 2026-07-02 incident: an unbounded Daytona SDK
 // call inside a maintenance cycle left `maintenanceRunning` stuck `true`

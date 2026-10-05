@@ -1,9 +1,9 @@
 'use client';
 
+import type { FileNode } from '@/features/file-browser/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listFiles } from '../api/runtime-files';
 import { useProjectContext } from '../context';
-import type { FileNode } from '@/features/file-browser/types';
 
 export const fileListKeys = {
   all: ['project-files', 'list'] as const,
@@ -17,10 +17,7 @@ export const fileListKeys = {
  * Uses GET /v1/projects/:projectId/files (recursive list, filtered client-side
  * down to immediate children of `dirPath`).
  */
-export function useFileList(
-  dirPath: string,
-  options?: { enabled?: boolean },
-) {
+export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const ref = ctx?.ref ?? '';

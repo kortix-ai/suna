@@ -25,6 +25,10 @@ case ":${PATH:-}:" in
 esac
 export PATH
 
+# No core dumps: a crash dump carries the process environment, secrets included.
+# Set before the privilege drop so the hard limit binds every descendant.
+ulimit -c 0 2>/dev/null || true
+
 if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
   # TEMPORARY: Platinum starts with /dev/shm as a plain directory and low
   # nofile limits. Both settings must be repaired before the privilege drop.
@@ -34,6 +38,14 @@ if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
   chmod 1777 /dev/shm 2>/dev/null || true
   ulimit -Hn 1048576 2>/dev/null || true
   ulimit -Sn 1048576 2>/dev/null || true
+  # kortix.yaml `container_runtime: true` sets KORTIX_CONTAINER_RUNTIME=1 in the
+  # image. A stock dockerd then gets bridge + overlay + netfilter: the provider
+  # baked the kernel modules and the guest kernel loads them through kmod. The
+  # runtime user reaches the socket through the docker group.
+  if [ "${KORTIX_CONTAINER_RUNTIME:-}" = 1 ] && command -v dockerd >/dev/null 2>&1 \
+      && ! pgrep -x dockerd >/dev/null 2>&1; then
+    nohup dockerd >/var/log/dockerd.log 2>&1 </dev/null &
+  fi
   export HOME=/home/kortix USER=kortix LOGNAME=kortix SHELL=/bin/bash
   if command -v setpriv >/dev/null 2>&1; then
     exec setpriv --reuid kortix --regid kortix --init-groups "$0" "$@"
@@ -117,8 +129,7 @@ cd /
 #
 # A process cannot safely overwrite its own running binary, so the daemon never
 # replaces itself. It STAGES ${AGENT_NEXT} (+ .sha256) and exits ${SWAP_CODE}
-# to ask for the swap. This loop performs it. See
-# docs/specs/2026-08-20-convergent-runtime.md.
+# to ask for the swap. This loop performs it.
 #
 # Everything here is failure-biased toward "keep running the binary that
 # worked": a bad artifact, a bad digest, or a new binary that will not stay up
@@ -239,7 +250,7 @@ mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 # and exits ${SWAP_CODE} for this loop to install, instead of self-swapping its
 # own running binary — which is unsafe and which warm-fork/resume/restart would
 # not re-run anyway. Export the resolved state dir so it stages into the exact
-# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/cli.ts.
+# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/app/cli.ts.
 export KORTIX_SUPERVISED=1
 export KORTIX_AGENT_STATE_DIR="${AGENT_STATE_DIR}"
 
@@ -354,6 +365,19 @@ while :; do
       continue
     fi
     echo "[entrypoint] agent SIGKILLed ${sigkill_exits} times without a healthy run; giving up" >&2
+  fi
+
+  # On Platinum nothing that reaches this line is a deliberate stop: a stop
+  # there is a memory snapshot, never a signal to this script, and PID 1
+  # (`pt-init`) never relaunches us. Exiting leaves a VM that answers nothing
+  # on :8000 forever, and every resume of its snapshot resumes the corpse.
+  # Prod 2026-09-28: `agent exited 0 after 6000s; exiting`, dead for 18 h.
+  # So relaunch always. A daemon that dies on start loops at most every 5 s,
+  # still repairable from outside, which a corpse is not.
+  if grep -q pt-init "${PID1_CMDLINE:-/proc/1/cmdline}" 2>/dev/null; then
+    echo "[entrypoint] agent exited ${status} after ${ran}s; pt-init never relaunches, relaunching" >&2
+    [ "${ran}" -lt "${HEALTHY_AFTER_S}" ] && sleep 5
+    continue
   fi
 
   echo "[entrypoint] agent exited ${status} after ${ran}s; exiting" >&2

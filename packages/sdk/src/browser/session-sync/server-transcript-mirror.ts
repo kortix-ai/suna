@@ -31,12 +31,17 @@
  * on the runtime).
  */
 
-import type { Message, Part } from "@opencode-ai/sdk/v2/client";
+import type { Message, Part } from "../../core/runtime/runtime-types";
 import {
 	type SessionTranscriptSyncEnvelope,
 	getSessionTranscriptSync,
 } from "../../core/rest/projects-client/sessions";
-import { claimOpenBundle, takeOpenBundleTranscript } from "../../core/session/open-bundle";
+import {
+	claimOpenBundle,
+	takeOpenBundleTranscript,
+	takeOpenBundleTranscriptAbsence,
+} from "../../core/session/open-bundle";
+import type { SavedCopyStore } from "../../core/session-sync/saved-copy-store";
 
 /** How many mirrored messages a first paint asks for. Matches the sync
  *  controller's own initial tail, so the mirror and the read that replaces it
@@ -49,6 +54,7 @@ export interface MirrorHydrateDecision {
 	runtimeSessionId: string;
 	/** The store already holds messages for that root. */
 	hasMessages: boolean;
+	hasLoadedTranscript?: boolean;
 }
 
 /**
@@ -59,7 +65,7 @@ export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	const { envelope, runtimeSessionId, hasMessages } = input;
 	if (!envelope) return false;
 	// A live read outranks a snapshot, always.
-	if (hasMessages) return false;
+	if (hasMessages || input.hasLoadedTranscript) return false;
 	// No root yet means no identity to match against, so nothing can be proven
 	// about the ids in the payload.
 	if (!runtimeSessionId) return false;
@@ -69,7 +75,7 @@ export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	if (envelope.messages.length === 0) return false;
 	// THE IDENTITY GUARD: ids from another OpenCode root can never be settled by
 	// this root's runtime read.
-	if (envelope.opencode_session_id !== runtimeSessionId) return false;
+	if ((envelope.runtime_session_id ?? envelope.opencode_session_id) !== runtimeSessionId) return false;
 	return true;
 }
 
@@ -125,9 +131,24 @@ export async function loadSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
 	limit?: number;
 	signal?: AbortSignal;
+	/** A sub-agent's OpenCode session inside the scope: its own saved window. */
+	child?: string;
 }): Promise<SessionTranscriptSyncEnvelope | null> {
 	const scope = parseKortixSessionScope(input.kortixSessionScope);
 	if (!scope) return null;
+	// A sub-agent's window is never the open bundle's: that one is the
+	// conversation, and it is claimed once, by the conversation.
+	if (input.child) {
+		try {
+			return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+				limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
+				signal: input.signal,
+				child: input.child,
+			});
+		} catch {
+			return null;
+		}
+	}
 	// The SESSION-OPEN BUNDLE fetches this mirror in the same round trip that
 	// answers the turn and the queue. This hydrate runs at MOUNT, while that
 	// read is still in flight, so it waits for the read it is riding rather
@@ -141,6 +162,10 @@ export async function loadSessionTranscriptMirror(input: {
 	if (claimed) await claimed;
 	const stashed = takeOpenBundleTranscript(scope.projectId, scope.sessionId);
 	if (stashed) return stashed;
+	// The bundle already answered that there is no saved copy. The transcript
+	// route would answer the same, one round trip later — and a host waiting
+	// on this answer shows placeholder rows until it lands.
+	if (takeOpenBundleTranscriptAbsence(scope.projectId, scope.sessionId)) return null;
 	try {
 		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
 			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
@@ -148,5 +173,69 @@ export async function loadSessionTranscriptMirror(input: {
 		});
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * The mirror window OLDER than `before`.
+ *
+ * Deliberately NOT `loadSessionTranscriptMirror` with an extra argument: that
+ * function rides the session-open bundle's one-shot stash, which holds the
+ * FIRST window and must never be handed back for a second request. This is
+ * always a fresh read.
+ *
+ * `history: true` is not sent. It only adds the server's current-root check,
+ * and `shouldHydrateFromMirror` already applies that guard client-side — the
+ * rows are the same either way.
+ *
+ * Never throws, for the same reason the first window does not: paging further
+ * back is an accelerator, and its absence costs only the page the user cannot
+ * see yet.
+ */
+export async function loadOlderSessionTranscriptMirror(input: {
+	kortixSessionScope: string | undefined;
+	before: string;
+	limit?: number;
+	signal?: AbortSignal;
+	/** A sub-agent's OpenCode session inside the scope. */
+	child?: string;
+}): Promise<SessionTranscriptSyncEnvelope | null> {
+	const scope = parseKortixSessionScope(input.kortixSessionScope);
+	if (!scope) return null;
+	try {
+		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
+			before: input.before,
+			signal: input.signal,
+			child: input.child,
+		});
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * How long after a turn ends the device's copy is re-read. The server writes
+ * its saved copy on the turn-end relay, a moment after the runtime goes idle;
+ * reading at once would return the copy from the turn before.
+ */
+export const SAVED_COPY_REFRESH_DELAY_MS = 3_000;
+
+/**
+ * Replace the device's copy of one session with the server's current one.
+ * Never throws: a failed read leaves the kept copy as it was.
+ */
+export async function refreshSavedCopy(
+	store: SavedCopyStore,
+	projectId: string,
+	sessionId: string,
+): Promise<void> {
+	try {
+		const envelope = await getSessionTranscriptSync(projectId, sessionId, {
+			limit: MIRROR_HYDRATE_LIMIT,
+		});
+		if (envelope) await store.write(projectId, sessionId, envelope);
+	} catch {
+		// The kept copy stays; the next open reconciles anyway.
 	}
 }

@@ -15,7 +15,7 @@ let ephemeralCalls = 0;
 let openDmCalls = 0;
 function makeChain(): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'values', 'returning', 'onConflictDoNothing', 'onConflictDoUpdate', 'set']) {
+  for (const m of ['from', 'innerJoin', 'where', 'limit', 'values', 'returning', 'onConflictDoNothing', 'onConflictDoUpdate', 'set']) {
     chain[m] = () => chain;
   }
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
@@ -69,12 +69,14 @@ mock.module('../channels/slack-api', () => ({
 const {
   connectAccountBlocks,
   requestAccessBlocks,
-  createSlackAccessRequest,
   notifyAdminsOfAccessRequest,
   postIdentityPrompt,
 } = await import(
   '../channels/slack/identity'
 );
+const { chatUser, createChatAccessRequest } = await import('../channels/core/identity');
+const createSlackAccessRequest = (input: { teamId: string; slackUserId: string; projectId: string }) =>
+  createChatAccessRequest(chatUser('slack', input.teamId, input.slackUserId), input.projectId);
 
 afterAll(() => mock.restore());
 beforeEach(() => {
@@ -139,27 +141,29 @@ describe('createSlackAccessRequest — file (or find) a project access request',
     expect(r.status).toBe('no-identity');
   });
 
-  test('unknown project → no-project', async () => {
-    dbResults = [[{ userId: 'u1' }], []]; // identity ok, project missing
+  test('a project not connected to this workspace → no-project', async () => {
+    dbResults = [[{ userId: 'u1' }], []]; // identity ok, no project installed for this team
     const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
     expect(r.status).toBe('no-project');
   });
 
-  test('already project-write-capable → already-member (no request filed)', async () => {
+  test('already able to run sessions → already-member (no request filed)', async () => {
     dbResults = [
       [{ userId: 'u1' }], // identity
-      [{ accountId: 'a1' }], // project
+      [{ accountId: 'a1' }], // project, installed for this team
+      [{ userId: 'u1' }], // resolveChatActor: identity
       [{ userId: 'u1' }], // isAccountMember → member
     ];
     const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
     expect(r).toEqual({ status: 'already-member', requesterUserId: 'u1', accountId: 'a1' });
   });
 
-  test('org member without project write can still request Slack access', async () => {
+  test('org member without project access can still request Slack access', async () => {
     authorizeAllowed = false;
     dbResults = [
       [{ userId: 'u1' }], // identity
       [{ accountId: 'a1' }], // project
+      [{ userId: 'u1' }], // resolveChatActor: identity
       [{ userId: 'u1' }], // isAccountMember → member
       [], // no existing pending
       [], // insert
@@ -172,6 +176,7 @@ describe('createSlackAccessRequest — file (or find) a project access request',
     dbResults = [
       [{ userId: 'u1' }], // identity
       [{ accountId: 'a1' }], // project
+      [{ userId: 'u1' }], // resolveChatActor: identity
       [], // not a member
       [{ requestId: 'r1' }], // existing pending request
     ];
@@ -183,6 +188,7 @@ describe('createSlackAccessRequest — file (or find) a project access request',
     dbResults = [
       [{ userId: 'u1' }], // identity
       [{ accountId: 'a1' }], // project
+      [{ userId: 'u1' }], // resolveChatActor: identity
       [], // not a member
       [], // no existing pending
       [], // insert
@@ -196,7 +202,7 @@ describe('notifyAdminsOfAccessRequest', () => {
   test('links admins directly to the project Members review surface', async () => {
     dbResults = [
       [{ name: 'Slack Auth' }], // email notification project lookup
-      [{ slackUserId: 'UADMIN' }], // lookupSlackUserIdForKortixUser
+      [{ platformUserId: 'UADMIN' }], // lookupChatUserForKortixUser
     ];
 
     await notifyAdminsOfAccessRequest({

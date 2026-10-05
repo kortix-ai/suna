@@ -8,7 +8,7 @@
  * `handleSend`. Both paths:
  *
  *   1. Add an optimistic user message to the sync store (`beginOptimisticSend`).
- *   2. Send via `promptOpenCodeMessage` (which already owns network retry —
+ *   2. Send via `promptRuntimeMessage` (which already owns network retry —
  *      this module never re-wraps that).
  *   3. On failure, classify the error, release the send receipt, and either keep the
  *      optimistic message and rehydrate real messages from the server (some
@@ -34,25 +34,31 @@
  *    pure functions directly instead, as apps/web's `session-chat.tsx` does.
  */
 
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '../core/runtime/runtime-types';
 import { useCallback, useState } from 'react';
 import { getClient } from '../core/runtime/client';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { SESSION_SYNC_PAGE_SIZE } from '../core/session-sync/session-sync-controller';
-import { holdSessionPrompts } from '../core/rest/projects-client';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
-import type { MessageError } from '../browser/stores/sync-store/types';
 import { classifySendError, type KortixSendError } from './use-session';
 import {
-  abortInFlightDeliveries,
-  awaitAbortSettlement,
-  promptOpenCodeMessage,
-  useAbortOpenCodeSession,
+  promptRuntimeMessage,
+  useAbortRuntimeSession,
   type AbortSettlement,
   type PromptPart,
   type SendMessageOptions,
 } from './use-opencode-sessions';
 import { readStartStash, writeStartStash, type StartStash } from './session-start-stash';
+// The Stop primitives live in `session-stop.ts` so `useSession().cancel()` can
+// share them without importing this module (which imports FROM `use-session`).
+// Re-exported here: these names are part of the public `./react` surface.
+import { stopWithReceipt } from './session-stop';
+export {
+  applyOptimisticAbort,
+  STOP_HOLD_DEADLINE_MS,
+  stopWithReceipt,
+  type StopWithReceiptOptions,
+} from './session-stop';
 
 // ============================================================================
 // Optimistic-send bookkeeping — pure sync-store mechanics, shared by every
@@ -145,7 +151,7 @@ export function markOptimisticSendInboxBacked(sessionId: string, messageId: stri
 
 /**
  * A send that never reached the network at all (e.g. building the outgoing
- * parts — file uploads — threw before `promptOpenCodeMessage` was even
+ * parts — file uploads — threw before `promptRuntimeMessage` was even
  * called). There is nothing to rehydrate from the server since it never saw
  * this message, so drop the optimistic message outright — unlike
  * `recoverFromSendFailure`, which keeps it pending a rehydrate.
@@ -166,14 +172,14 @@ export function abandonOptimisticSend(sessionId: string, messageId: string): voi
 // ============================================================================
 
 /** The minimal slice of `OpencodeClient` the recovery rehydrate needs. */
-export interface OpenCodeMessagesClient {
+export interface RuntimeMessagesClient {
   session: {
     messages: (args: { sessionID: string; limit?: number }) => Promise<{ data?: unknown }>;
   };
 }
 
 /** Shape `useSyncStore.getState().hydrate()` actually needs. `data` on
- *  `OpenCodeMessagesClient['session']['messages']` is deliberately `unknown`
+ *  `RuntimeMessagesClient['session']['messages']` is deliberately `unknown`
  *  (hosts inject their own stub client in tests) — narrow at the one real
  *  call site below instead of widening that public interface. */
 type HydrateInput = Array<{ info: Message; parts: Part[] }>;
@@ -182,7 +188,7 @@ export interface SendRecoveryOptions {
   /** Resolve the client used to rehydrate messages on failure. Defaults to
    * the SDK's `getClient` — inject a stub in tests, or a different client in
    * a host that doesn't use the singleton runtime client. */
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   /** Classify the raw error into a `KortixSendError`. Defaults to
    * `classifySendError` — a host with richer message formatting (e.g.
    * apps/web's `ProviderModelNotFoundError` special-casing) injects its own
@@ -230,7 +236,7 @@ export function recoverFromSendFailure(
   options: SendRecoveryOptions = {},
 ): KortixSendError {
   const classify = options.classify ?? classifySendError;
-  const resolveClient = options.getClient ?? (getClient as unknown as () => OpenCodeMessagesClient);
+  const resolveClient = options.getClient ?? (getClient as unknown as () => RuntimeMessagesClient);
   const classified = classify(error);
 
   // NAMED: a slow failure must not drop the receipt of a send submitted after
@@ -262,7 +268,7 @@ export function recoverFromSendFailure(
     return classified;
   }
 
-  let client: OpenCodeMessagesClient;
+  let client: RuntimeMessagesClient;
   try {
     client = resolveClient();
   } catch {
@@ -304,10 +310,10 @@ export interface SendAndRecoverArgs {
    * Stable name for the submission, so re-dispatching a failed send keeps one
    * wire `messageID` and the proxy's duplicate protection still absorbs it.
    * Distinct from `messageId` above, which is the LOCAL optimistic message and
-   * never goes on the wire. See `SendOpenCodeMessageArgs.clientMessageId`.
+   * never goes on the wire. See `SendRuntimeMessageArgs.clientMessageId`.
    */
   clientMessageId?: string;
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
 }
 
@@ -316,7 +322,7 @@ export type SendAndRecoverResult =
   | { ok: false; error: KortixSendError; cause: unknown };
 
 /**
- * Send already-built parts via `promptOpenCodeMessage` (which owns network
+ * Send already-built parts via `promptRuntimeMessage` (which owns network
  * retry — this never re-wraps it) and run `recoverFromSendFailure` on
  * failure. Assumes the optimistic message was already added by the caller
  * (via `beginOptimisticSend`) — callers add it at different points relative
@@ -329,7 +335,7 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
     // `pending`, and `hydrate` refuses to let a pending message be superseded
     // by an ordinal match — see `markOptimisticDispatched`.
     useSyncStore.getState().markOptimisticDispatched(args.sessionId, args.messageId);
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: args.sessionId,
       parts: args.parts,
       options: args.options,
@@ -350,65 +356,10 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
 // sync-store manipulation (no web-specific concepts), so it's extracted; the
 // abort mutation itself stays a shared per-host instance (apps/web fans it
 // out to multiple call sites beyond stop, so `useSessionSend` deliberately
-// does NOT own a second competing `useAbortOpenCodeSession()` instance for
+// does NOT own a second competing `useAbortRuntimeSession()` instance for
 // hosts that already have one — see `useSessionSend.stop` below for a host
 // that doesn't).
 // ============================================================================
-
-/**
- * Patch an "aborted" error onto the last assistant message that doesn't
- * already have one, so an "Interrupted" label can render instantly instead of
- * waiting for the SSE `session.error` round-trip. Call this immediately
- * before issuing the actual abort request.
- *
- * This deliberately writes NO status frame. It used to fabricate an idle
- * frame here, and `projectWorking` cannot tell a fabricated frame from a real
- * one — the fabrication outranked the control plane's own `/turn` answer for
- * the whole abort round-trip. The same intent now travels as an
- * `AbortReceipt` (`noteAbortReceipt`), which carries provenance and a bound
- * (`OPTIMISTIC_ABORT_MAX_MS`). The transcript-side patch below stays: it is a
- * designed optimistic echo about a MESSAGE, not a status.
- */
-export function applyOptimisticAbort(sessionId: string): void {
-  const store = useSyncStore.getState();
-  const msgs = store.messages[sessionId];
-  if (!msgs) return;
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const msg = msgs[i];
-    if (msg.role !== 'assistant') continue;
-    // STOP at the newest assistant message, whatever state it is in. The abort
-    // belongs to the turn the user just stopped, and that is the last one.
-    //
-    // This used to be `msg.role === 'assistant' && !msg.error`, which SKIPPED
-    // an already-errored newest message and kept walking — so stopping a turn
-    // whose assistant message already carried an error (an earlier interrupt,
-    // or a turn that failed) stamped "Interrupted" onto a COMPLETED turn
-    // further up the transcript. The marker appeared detached, above the turn
-    // it belonged to, instead of at the end of it.
-    if (msg.error) break;
-    {
-      // Typed as the wider `MessageError` (not just the literal shape below)
-      // so the assertion further down overlaps with `AssistantMessage.error`'s
-      // real union — see `MessageError` in the sync store.
-      // `reason: 'user'` — a REAL user stop, as opposed to
-      // `markSessionAbortedLocally`'s `'runtime-disposed'`. Read via the
-      // SDK's `abortErrorReason` (`core/http/abort-error.ts`); apps/web
-      // renders this reason as the "Interrupted" checkpoint row.
-      const error: MessageError = {
-        name: 'AbortError',
-        data: { message: 'The operation was aborted.', reason: 'user' },
-      };
-      // `error`'s shape (`SyntheticAbortError`) isn't part of the SDK's
-      // `AssistantMessage.error` union — see `MessageError` in the sync
-      // store. TS flags the direct assertion as an insufficient-overlap
-      // mistake because it narrows the literal's `error` field back down to
-      // `SyntheticAbortError`; route through `unknown` as TS itself suggests.
-      const patched = { ...msg, error } as unknown as Message;
-      store.upsertMessage(sessionId, patched);
-      break;
-    }
-  }
-}
 
 // ============================================================================
 // Stash-replay orchestration — framework-free write-race retry + readiness
@@ -484,7 +435,7 @@ export interface StartStashReplayOptions<TReady> {
   onFailure?: (stash: StartStash, error: unknown, classified: KortixSendError) => void;
   /** Called after the runtime acknowledges the prompt. */
   onSuccess?: (stash: StartStash) => void;
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
   timers?: StashReplayTimers;
 }
@@ -549,7 +500,7 @@ export function replayStartStash<TReady>(
       }
       try {
         useSyncStore.getState().markOptimisticDispatched(sessionId, prepared.messageId);
-        await promptOpenCodeMessage({ sessionId, parts, options: prepared.sendOptions });
+        await promptRuntimeMessage({ sessionId, parts, options: prepared.sendOptions });
         if (!cancelled) onSuccess?.(stash);
       } catch (err) {
         if (!cancelled) fail(stash, prepared.messageId, err);
@@ -651,113 +602,6 @@ export async function sendWithReceipt(args: SendWithReceiptArgs): Promise<SendAn
   return result;
 }
 
-/**
- * How long `stopWithReceipt` waits for the server-side prompt-inbox hold
- * (below) before issuing the abort anyway. Mirrors apps/web's
- * `STOP_HOLD_DEADLINE_MS` (`session-chat.tsx`) — kept as the same value for
- * the same reason: the hold call carries no client timeout of its own, and a
- * stalled socket must not delay the abort by more than a bounded amount.
- */
-export const STOP_HOLD_DEADLINE_MS = 1_500;
-
-export interface StopWithReceiptOptions {
-  workingSessionId?: string;
-  /**
-   * Kortix project id. Required to hold the session's server-side prompt
-   * inbox before the abort goes out (see below). Omit only for a host with
-   * no prompt inbox for this session — the hold is skipped entirely, matching
-   * this function's behavior before the inbox existed.
-   */
-  projectId?: string;
-  /**
-   * Kortix session id whose inbox to hold. The inbox is keyed by the same
-   * Kortix session `GET .../turn` answers about, so this defaults to
-   * `workingSessionId` (or `sessionId`), never to the OpenCode runtime id.
-   */
-  inboxSessionId?: string;
-  /** Injectable, defaults to `holdSessionPrompts`. Lets a host or a test
-   * substitute its own inbox client. */
-  holdInboxPrompts?: (projectId: string, sessionId: string, held: boolean) => Promise<unknown>;
-  /** Default {@link STOP_HOLD_DEADLINE_MS}. */
-  holdDeadlineMs?: number;
-}
-
-/**
- * Stop, with this tab's own abort receipt filed around it.
- *
- * The mirror of `sendWithReceipt`, for the mirror-image failure: the cancel
- * needs a round trip through the control plane and the daemon (~1.6s measured)
- * before turn authority is released, so every `/turn` read issued inside that
- * window still reports the doomed turn — including the one the optimistic idle
- * frame itself triggers. Without the receipt the composer swapped Send back to
- * Stop about 120ms after the click and stayed there for the whole abort. See
- * `AbortReceipt`.
- *
- * It also holds the session's server-side prompt inbox BEFORE issuing the
- * abort, the same pairing apps/web's `handleStop` does by hand
- * (`session-chat.tsx`). A prompt sent mid-turn is forwarded into OpenCode's
- * live queue the moment it is admitted, so at stop time the inbox can hold a
- * row OpenCode already has. The abort drops OpenCode's in-memory queue; the
- * reaper then sees that row unanswered and redelivers it — due now — unless
- * the hold already marked it stop-paused. AWAITED (bounded by
- * `holdDeadlineMs`) so the ordering is a fact, not a race: without it, Stop
- * aborts the turn and is followed a beat later by exactly the message the
- * user pressed Stop to get ahead of. A failed hold is caught, never
- * rethrown — it must not cost the user their abort — and skipped entirely
- * when no `projectId` is given.
- *
- * `runAbort` is taken as a callback (normally `() =>
- * abortMutation.mutateAsync(sessionId)`) so the pairing is testable without
- * rendering a hook — the same shape `awaitAbortSettlement` already uses.
- */
-export async function stopWithReceipt(
-  sessionId: string,
-  runAbort: () => Promise<void>,
-  options: StopWithReceiptOptions = {},
-): Promise<AbortSettlement> {
-  const workingSessionId = options.workingSessionId ?? sessionId;
-  const store = useSessionWorkingStore.getState();
-  // Nothing is coming for ANY send once the user has pressed Stop — the one
-  // place the unnamed clear is the correct one.
-  store.clearSendReceipt(workingSessionId);
-  store.noteAbortReceipt(workingSessionId, Date.now());
-  applyOptimisticAbort(sessionId);
-  // T9: stop a delivery still retrying its boot/wake backoff BEFORE the abort
-  // request goes out, so it can never land after this point.
-  abortInFlightDeliveries(sessionId);
-
-  if (options.projectId) {
-    const inboxSessionId = options.inboxSessionId ?? workingSessionId;
-    const hold = options.holdInboxPrompts ?? holdSessionPrompts;
-    const deadlineMs = options.holdDeadlineMs ?? STOP_HOLD_DEADLINE_MS;
-    await Promise.race([
-      hold(options.projectId, inboxSessionId, true).catch((error) => {
-        // Caught, never rethrown — see the doc comment above.
-        console.warn('[useSessionSend] failed to hold the prompt inbox on stop', error);
-      }),
-      new Promise((resolve) => setTimeout(resolve, deadlineMs)),
-    ]);
-  }
-
-  const settlement = awaitAbortSettlement(runAbort);
-  // `awaitAbortSettlement` never rejects — it resolves with how the abort ended:
-  // acknowledged, failed, or TIMED OUT. Only the first two are answers.
-  //
-  // `settledAtMs` means "the instant from which a server read can see this
-  // abort's effect", and a timeout is precisely the case where nobody said that.
-  // Settling on it wrote 5s of clock into an evidence field: `abortFloor` in
-  // `projectWorking` dropped from Infinity to a real instant, the next `/turn`
-  // read — issued while the cancel was still in flight, `abortOpenCodeSession`
-  // retries twice — cleared it, and the Stop button came back mid-cancel. The
-  // receipt is left unsettled instead and `OPTIMISTIC_ABORT_MAX_MS` bounds it,
-  // which is the bound that exists for exactly this case.
-  void settlement.then((result) => {
-    if (result?.status === 'timed-out') return;
-    useSessionWorkingStore.getState().settleAbortReceipt(workingSessionId, Date.now());
-  });
-  return settlement;
-}
-
 // ============================================================================
 // useSessionSend — convenience hook for a host that just wants "send this
 // text" (mirrors `useSession`'s `send`/`sendError` ergonomics). A host with
@@ -767,7 +611,7 @@ export async function stopWithReceipt(
 // ============================================================================
 
 export interface UseSessionSendOptions {
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
   /**
    * The KORTIX session id, when it differs from the hook's `sessionId`.
@@ -828,7 +672,7 @@ export function useSessionSend(
   const { getClient: getClientOpt, classify, workingSessionId, projectId } = options;
   const [sendError, setSendError] = useState<KortixSendError | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const abortMutation = useAbortOpenCodeSession();
+  const abortMutation = useAbortRuntimeSession();
 
   const send = useCallback(
     async (
@@ -868,3 +712,7 @@ export function useSessionSend(
 
   return { send, stop, isSending, isStopping: abortMutation.isPending, sendError };
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `RuntimeMessagesClient`. Removed in the next major. */
+export type OpenCodeMessagesClient = RuntimeMessagesClient;

@@ -10,8 +10,10 @@ describe('frontend browser report artifact contract', () => {
   test('runs browser journeys through the canonical root test command', () => {
     expect(workflow).toContain('- lane: browser-1');
     expect(workflow).toContain('- lane: browser-2');
-    expect(workflow).toContain('args: --browser-only --browser-shard=1/2');
-    expect(workflow).toContain('args: --browser-only --browser-shard=2/2');
+    // Four browser shards since 2026-09-18 (see tests.yml's matrix comment).
+    for (const n of [1, 2, 3, 4]) {
+      expect(workflow).toContain(`args: --browser-only --browser-shard=${n}/4`);
+    }
     expect(workflow).toContain('pnpm test -- $TEST_ARGS');
     expect(workflow).toContain('pnpm --dir tests exec playwright install --with-deps chromium');
   });

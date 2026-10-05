@@ -118,27 +118,12 @@ const EDGE_TLS_CHECK_URL = 'http://kortix-api:8008/v1/apps/edge/tls-check';
 const CADDY_GLOBAL_CLOSE = 'email {$KORTIX_ACME_EMAIL}\n}';
 
 /**
- * The wildcard App-serving site block. Every deployed App publishes on
- * <env>-<slug>-<route-key>.{$KORTIX_APPS_BASE_DOMAIN}; the API matches the real
- * Host header (KORTIX_APPS_ALLOW_DIRECT_EDGE=true — see resolveAppHost in
- * apps/hostnames.ts) and resolves it to exactly one App. A 2nd-level wildcard
- * certificate is impractical, so TLS is issued PER-APP on first request via
- * ACME HTTP-01 (`on_demand`). kortix-api is reached the SAME way as the
- * api/gateway blocks (dynamic a upstream re-resolved every refresh + an active
- * health check). Caddy's reverse_proxy preserves the inbound Host header and
- * sets X-Forwarded-Proto by default (both verified with `caddy validate` —
- * adding an explicit `header_up X-Forwarded-Proto` warns "Unnecessary"), so
- * resolveAppHost(Host) still names the right App on the API side without any
- * header_up override.
+ * The 21 lines both wildcard site blocks share, byte for byte: HSTS, per-host
+ * on-demand TLS and the same dynamic-a reverse_proxy to kortix-api. Rendered
+ * bytes stay identical — only the site address and the leading comment above
+ * each block differ (they stay per-family below).
  */
-const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, served over per-App
-# on-demand TLS. Only present when KORTIX_APPS_BASE_DOMAIN is configured — see
-# renderCaddyfile() in compose-assets.ts. The global on_demand_tls \`ask\` above
-# bounds certificate issuance to real App hosts. The inbound Host header is
-# preserved (Caddy's reverse_proxy default) so the API's resolveAppHost(Host)
-# names the right App.
-*.{$KORTIX_APPS_BASE_DOMAIN} {
-	header Strict-Transport-Security "max-age=2592000"
+const WILDCARD_SITE_BODY = `	header Strict-Transport-Security "max-age=2592000"
 
 	tls {
 		on_demand
@@ -159,6 +144,29 @@ const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, serv
 		health_timeout 2s
 	}
 }`;
+
+/**
+ * The wildcard App-serving site block. Every deployed App publishes on
+ * <env>-<slug>-<route-key>.{$KORTIX_APPS_BASE_DOMAIN}; the API matches the real
+ * Host header (KORTIX_APPS_ALLOW_DIRECT_EDGE=true — see resolveAppHost in
+ * apps/hostnames.ts) and resolves it to exactly one App. A 2nd-level wildcard
+ * certificate is impractical, so TLS is issued PER-APP on first request via
+ * ACME HTTP-01 (`on_demand`). kortix-api is reached the SAME way as the
+ * api/gateway blocks (dynamic a upstream re-resolved every refresh + an active
+ * health check). Caddy's reverse_proxy preserves the inbound Host header and
+ * sets X-Forwarded-Proto by default (both verified with `caddy validate` —
+ * adding an explicit `header_up X-Forwarded-Proto` warns "Unnecessary"), so
+ * resolveAppHost(Host) still names the right App on the API side without any
+ * header_up override.
+ */
+const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, served over per-App
+# on-demand TLS. Only present when KORTIX_APPS_BASE_DOMAIN is configured — see
+# renderCaddyfile() in compose-assets.ts. The global on_demand_tls \`ask\` above
+# bounds certificate issuance to real App hosts. The inbound Host header is
+# preserved (Caddy's reverse_proxy default) so the API's resolveAppHost(Host)
+# names the right App.
+*.{$KORTIX_APPS_BASE_DOMAIN} {
+${WILDCARD_SITE_BODY}`;
 
 /**
  * The wildcard preview-serving site block. Every sandbox port a browser can
@@ -185,27 +193,7 @@ const PREVIEW_SITE_BLOCK = `# *.<preview base domain>: one origin per sandbox po
 # configured — see renderCaddyfile() in compose-assets.ts. The global
 # on_demand_tls \`ask\` above bounds certificate issuance to real preview hosts.
 *.{$KORTIX_PREVIEW_BASE_DOMAIN} {
-	header Strict-Transport-Security "max-age=2592000"
-
-	tls {
-		on_demand
-	}
-
-	reverse_proxy {
-		dynamic a {
-			name kortix-api
-			port 8008
-			refresh 2s
-		}
-		lb_policy round_robin
-		lb_try_duration 5s
-		lb_try_interval 250ms
-		fail_duration 30s
-		health_uri /v1/health
-		health_interval 3s
-		health_timeout 2s
-	}
-}`;
+${WILDCARD_SITE_BODY}`;
 
 export interface RenderCaddyfileOptions {
   /**
@@ -440,7 +428,7 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       retries: 20,
       start_period: '10s',
     };
-    // Connection headroom for horizontal scaling (Essentia scale work,
+    // Connection headroom for horizontal scaling (SampleCo scale work,
     // 2026-08-21). Each kortix-api replica opens DB_POOL_MAX (15) main +
     // DB_AUDIT_POOL_MAX (3) audit = 18 DIRECT Postgres backends; the Supabase
     // data plane adds ~30. The image default of 100 caps the stack at ~4 api
@@ -655,7 +643,7 @@ const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   // 2 GiB default so a big image-heavy turn never OOM-kills the gateway; small
   // boxes can dial it back via KORTIX_GATEWAY_MEMORY_LIMIT.
   'llm-gateway': { limit: '${KORTIX_GATEWAY_MEMORY_LIMIT:-2048m}', reservation: '256m' },
-  frontend: { limit: '512m', reservation: '128m' },
+  frontend: { limit: '${KORTIX_FRONTEND_MEMORY_LIMIT:-512m}', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
   'kortix-updater': { limit: '256m', reservation: '64m' },
   'supabase-kong': { limit: '384m', reservation: '128m' },

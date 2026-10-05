@@ -1,19 +1,18 @@
-import { describe, expect, test } from 'bun:test';
 import type { OAuth2ResourceDiscovery } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
+import { EMPTY_OAUTH2_APPLICATION_FORM } from './connector-oauth2';
 import {
   autoConnectPlan,
   buildClientRegistrationInput,
   mergeResourceDiscoveryIntoForm,
 } from './connector-oauth2-auto';
-import { EMPTY_OAUTH2_APPLICATION_FORM } from './connector-oauth2';
 
 const FULL: OAuth2ResourceDiscovery = {
   resource_url: 'https://api.read.ai/mcp',
   requires_authorization: true,
   resource: 'https://api.read.ai/mcp',
   resource_name: 'Read AI MCP Server',
-  protected_resource_metadata_url:
-    'https://api.read.ai/.well-known/oauth-protected-resource/mcp',
+  protected_resource_metadata_url: 'https://api.read.ai/.well-known/oauth-protected-resource/mcp',
   authorization_server: 'https://authn.read.ai/',
   metadata: {
     discovery_url: 'https://authn.read.ai/.well-known/oauth-authorization-server',
@@ -94,11 +93,7 @@ describe('buildClientRegistrationInput', () => {
       token_url: 'https://authn.read.ai/oauth2/token',
       device_authorization_url: 'https://authn.read.ai/oauth2/device/auth',
       revocation_url: 'https://authn.read.ai/oauth2/revoke',
-      token_endpoint_auth_methods_supported: [
-        'client_secret_post',
-        'client_secret_basic',
-        'none',
-      ],
+      token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
       scopes: ['openid', 'offline_access', 'mcp:execute', 'meeting:read'],
       resource: 'https://api.read.ai/mcp',
     });

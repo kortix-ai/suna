@@ -5,8 +5,9 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, FRESHNESS, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -55,7 +56,7 @@ import {
 } from './connector-identity';
 import { providerLabel } from './provider-label';
 
-import { ComputersAddFlow } from '@/features/workspace/capabilities/connectors/add/computers-add-flow';
+import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
 import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
@@ -74,6 +75,8 @@ import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catal
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
+import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { catalogSource } from './catalog/catalog-source';
 import {
   connectorDisplayName,
   connectorSummary,
@@ -94,8 +97,7 @@ import {
  *
  *   • `ConnectorModal` reaches it via `connector-accounts.tsx`
  *     (`ConnectionRoster`/`ConnectionSection`/…) and its own
- *     `SetCredentialModal`, and owns the only `usePipedreamConnect` call on
- *     the route.
+ *     `SetCredentialModal`, and owns the account connection flow on the route.
  *   • `CustomConnectorForm` is the Add modal's body.
  *
  * Neither can render before a click, so neither needs to be parsed before
@@ -263,6 +265,7 @@ type Panel = 'custom';
  * because the redirect URL is built from the current one.
  */
 export function ConnectorsPage({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // `accountId` comes off the detail this page already loads. Without it
   // `useProjectCan` fetches the project a second time under its own key AND
   // holds the IAM probe disabled until that lands — so Add and every write
@@ -349,8 +352,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
-    ...contract('config'),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
+    ...contract(FRESHNESS.connectors),
   });
   const projectQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -376,21 +379,13 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
-  // Whether this deployment has a catalogue to browse at all.
-  //
-  // `useCatalog` falls back to Easy Connect (Pipedream) whenever
-  // `connectors_api_discover` is off, which is the default — so with the flag
-  // off and Pipedream unconfigured, Discovery and All have no backend and every
-  // request they make answers `501`. The probe is read HERE rather than off
-  // `catalog`, because it decides `enabled` for the very hook that would
-  // otherwise report it.
-  //
-  // Only a confirmed `absent` closes the tabs. While the probe is in flight the
-  // page renders exactly as it always has: the overwhelming majority of
-  // deployments do have Pipedream, and removing two tabs for a beat on every
-  // load to spare a minority one is the wrong trade.
-  const connectStatus = useConnectProviderStatus(!discoverEnabled);
-  const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';
+  // Managed remains the landing source even after direct discovery is enabled.
+  // Keep the provider probe independent of the active scope so an absent
+  // provider cannot oscillate the catalog between enabled and disabled.
+  const directSelected =
+    catalogSource(search?.get('source') ?? null, discoverEnabled) === 'discover';
+  const connectStatus = useConnectProviderStatus(!directSelected);
+  const catalogueAvailable = directSelected || connectStatus.state !== 'absent';
 
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),
@@ -411,14 +406,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const oauth2Error = search?.get('oauth2_error');
   useEffect(() => {
     if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
-    if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
-    else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
+    if (oauth2Result === 'connected') successToast(tI18nComplete.raw('text75586c42e862'));
+    else errorToast(oauth2Error || tI18nComplete.raw('texta6fac795d6d6'));
     invalidate();
     replaceParams((params) => {
       params.delete('oauth2');
       params.delete('oauth2_error');
     });
-  }, [invalidate, oauth2Error, oauth2Result, replaceParams]);
+  }, [invalidate, oauth2Error, oauth2Result, replaceParams, tI18nComplete]);
 
   // Both queries gate what this page can offer, so both have to be able to
   // report a failure and both have to be retried.
@@ -475,9 +470,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // there is no catalogue to browse — see `catalogueAvailable` above and this
   // component's header comment. Connected and Channels are never filtered:
   // every deployment has its own connectors and its own inbound channels.
-  const visibleScopes = catalogueAvailable
-    ? SCOPES
-    : SCOPES.filter((s) => s !== 'discover' && s !== 'all');
+  const visibleScopes =
+    catalogueAvailable
+      ? SCOPES
+      : SCOPES.filter((s) => s !== 'discover' && s !== 'all');
 
   // The category the catalogue should FILTER by, server-side. `null` while
   // browsing everything and while a search runs — the search is server-side
@@ -490,10 +486,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const focusCategory =
     catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
 
+  // The machine list answers 503 on a deployment with computers disabled, so
+  // the Computer card shows only where a computer can be connected.
+  const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
-    discoverEnabled,
+    discoverEnabled: directSelected,
     focusCategory,
+    computers: computersEnabled,
   });
 
   // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
@@ -573,6 +573,17 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
 
+  // The Computer card opens the existing computer connector's accounts once
+  // there is one: adding a computer is adding an account to it.
+  const computerConnector = connectors.find((connector) => connector.provider === 'computer');
+  const selectCatalogEntry = useCallback(
+    (entry: CatalogEntry) => {
+      if (entry.source === 'computer' && computerConnector) setDetailSlug(computerConnector.slug);
+      else setCatalogTarget(entry);
+    },
+    [computerConnector, setDetailSlug],
+  );
+
   const onCatalogAdded = useCallback(
     (slug?: string) => {
       setCatalogTarget(null);
@@ -587,7 +598,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   return (
     <CapabilityPageShell
-      title="Connectors"
+      title={tI18nComplete.raw('textc3d2e79ebdd0')}
       description={SCOPE_DESCRIPTION[scope]}
       search={
         channelsActive ? undefined : (
@@ -596,7 +607,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               <MagnifyingGlassIcon />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
-              placeholder="Search all connectors"
+              placeholder={tI18nComplete.raw('textc386cb852691')}
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               variant="popover"
@@ -615,12 +626,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            so the accessible name still contains the visible label. */
         canWrite && !channelsActive ? (
           <NewEntityMenu
-            label="New"
+            label={tI18nComplete.raw('text18fdd549b2ed')}
             pending={configure.pending}
             onChat={() => configure.start(newConfigPrompt('connector'))}
             manual={{
-              label: 'Add a custom connector',
-              description: 'OpenAPI, Postman, GraphQL, MCP or HTTP.',
+              label: tI18nComplete.raw('text90ccaee30bdc'),
+              description: tI18nComplete.raw('textb0fbe9dc1fcc'),
               onSelect: () => setPanel('custom'),
             }}
           />
@@ -651,6 +662,28 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 ))}
               </TabsList>
             </Tabs>
+            {discoverEnabled && !channelsActive && (
+              <Tabs
+                value={directSelected ? 'direct' : 'managed'}
+                onValueChange={(value) =>
+                  replaceParams((params) => {
+                    if (value === 'direct') params.set('source', value);
+                    else params.delete('source');
+                    params.delete('scope');
+                  })
+                }
+                aria-label={tI18nComplete.raw('connectorSourceLabel')}
+              >
+                <TabsList>
+                  <TabsTrigger value="managed">
+                    {tI18nComplete.raw('connectorSourceManaged')}
+                  </TabsTrigger>
+                  <TabsTrigger value="direct">
+                    {tI18nComplete.raw('connectorSourceDirect')}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
             {/* Global rules — connector approval policy, so it belongs on this
                 page and not on the shared capability bar, which also rides over
                 Agents, Skills and Triggers.
@@ -678,7 +711,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               onClick={() => setRulesOpen(true)}
               className="ml-auto px-0 transition-colors"
             >
-              Global rules
+              {tI18nComplete.raw('text1d59a5e09714')}
             </Button>
             {/* The category filter is NOT here. It is a rail of chips rendered
                 by `ConnectorBrowse` directly above the grid it filters — this
@@ -701,9 +734,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           mode={scope === 'discover' ? 'sectioned' : 'flat'}
           category={category}
           onCategoryChange={setCategory}
-          onSelect={setCatalogTarget}
-          emptyTitle="Catalogue unavailable"
-          emptyDescription="The connector catalogue returned nothing. Try again shortly."
+          onSelect={selectCatalogEntry}
+          emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+          emptyDescription={tI18nComplete.raw('textf652a621153e')}
         />
       ) : (
         <CatalogGrid
@@ -721,15 +754,15 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               <EmptyState
                 icon={PlugIcon}
                 size="sm"
-                title="No connectors yet"
-                description="Connect an outside tool and your agents can use it in a session."
+                title={tI18nComplete.raw('text51ae0a7e3783')}
+                description={tI18nComplete.raw('texta3487dfc2132')}
                 // The CTA goes with the tab it opens. With no catalogue on this
                 // deployment it would be a button to a tab that is not there;
                 // `+` is the remaining way in, and it is already in the header.
                 action={
                   catalogueAvailable ? (
                     <Button size="sm" variant="secondary" onClick={() => setScope('discover')}>
-                      Browse the catalogue
+                      {tI18nComplete.raw('text45bfe4f17af7')}
                     </Button>
                   ) : undefined
                 }
@@ -776,13 +809,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         onClose={() => setCatalogTarget(null)}
         onAdded={onCatalogAdded}
       />
-      <ComputersAddFlow
+      {/* Computers are accounts, not profiles: the card pairs the caller's own
+          machine. The `computer` connector is built into every project, so
+          the card opens it when listed and pairs a machine otherwise. */}
+      <ComputerConnectModal
         projectId={projectId}
         open={catalogTarget?.source === 'computer'}
-        existingSlugs={existingSlugs}
-        canWrite={canWrite}
-        onClose={() => setCatalogTarget(null)}
-        onAdded={onCatalogAdded}
+        onOpenChange={(open) => !open && setCatalogTarget(null)}
+        onConnected={(connection) => onCatalogAdded(connection.connector_alias)}
       />
 
       {/* Custom upload only. `CustomConnectorForm` prints no heading of its
@@ -794,11 +828,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       <Modal open={panel === 'custom'} onOpenChange={(open) => !open && setPanel(null)}>
         <ModalContent className="lg:max-w-3xl">
           <ModalHeader>
-            <ModalTitle>Add a custom connector</ModalTitle>
-            <ModalDescription>
-              Point Kortix at an OpenAPI, Postman, GraphQL, MCP or HTTP source and it becomes a
-              connector your agents can call.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('text90ccaee30bdc')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('textd2f3be0047c4')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[75vh] overflow-y-auto">
             <CustomConnectorForm
@@ -827,9 +858,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           {/* `pr-12` clears the sheet's own close button, which is absolutely
               positioned at `top-4 right-4`. */}
           <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
-            <SheetTitle className="text-base font-medium">Global rules</SheetTitle>
+            <SheetTitle className="text-base font-medium">
+              {tI18nComplete.raw('text1d59a5e09714')}
+            </SheetTitle>
             <SheetDescription className="text-xs text-pretty">
-              Approval rules that apply to every connector in this project.
+              {tI18nComplete.raw('text014d10bd3c64')}
             </SheetDescription>
           </SheetHeader>
           <SheetBody className="min-h-0 gap-0 px-5 py-5">

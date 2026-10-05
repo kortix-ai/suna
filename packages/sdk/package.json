@@ -1,7 +1,7 @@
 {
   "name": "@kortix/sdk",
   "version": "0.3.0",
-  "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
+  "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix API. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
   "type": "module",
   "license": "Elastic-2.0",
   "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/sdk",
@@ -10,11 +10,10 @@
     "url": "git+https://github.com/kortix-ai/suna.git",
     "directory": "packages/sdk"
   },
-  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "opencode"],
+  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming"],
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
-    "@opencode-ai/sdk": "1.18.23",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {
@@ -36,6 +35,8 @@
     "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
     "./internal/opencode-pending-store": "./src/internal/opencode-pending-store.ts",
     "./internal/idb-sync-cache": "./src/internal/idb-sync-cache.ts",
+    "./internal/diagnostics-store": "./src/internal/diagnostics-store.ts",
+    "./internal/managed-storage": "./src/internal/managed-storage.ts",
     "./opencode-client": "./src/deprecated/opencode-client.ts",
     "./config": "./src/deprecated/config.ts",
     "./auth": "./src/deprecated/auth.ts",
@@ -51,12 +52,14 @@
     "./session": "./src/deprecated/session.ts",
     "./session/url": "./src/deprecated/session-url.ts",
     "./message-queue": "./src/core/session/message-queue.ts",
+    "./wire-message-id": "./src/core/session/wire-message-id.ts",
     "./turns": "./src/deprecated/turns.ts",
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
     "./sandbox-connection-store": "./src/deprecated/sandbox-connection-store.ts",
     "./opencode-pending-store": "./src/deprecated/opencode-pending-store.ts",
-    "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts"
+    "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts",
+    "./workspace-search": "./src/workspace-search/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -85,6 +88,14 @@
       "./internal/idb-sync-cache": {
         "types": "./dist/internal/idb-sync-cache.d.ts",
         "import": "./dist/internal/idb-sync-cache.js"
+      },
+      "./internal/diagnostics-store": {
+        "types": "./dist/internal/diagnostics-store.d.ts",
+        "import": "./dist/internal/diagnostics-store.js"
+      },
+      "./internal/managed-storage": {
+        "types": "./dist/internal/managed-storage.d.ts",
+        "import": "./dist/internal/managed-storage.js"
       },
       "./opencode-client": {
         "types": "./dist/deprecated/opencode-client.d.ts",
@@ -134,6 +145,10 @@
         "types": "./dist/core/session/message-queue.d.ts",
         "import": "./dist/core/session/message-queue.js"
       },
+      "./wire-message-id": {
+        "types": "./dist/core/session/wire-message-id.d.ts",
+        "import": "./dist/core/session/wire-message-id.js"
+      },
       "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
       "./sync-store": {
         "types": "./dist/deprecated/sync-store.d.ts",
@@ -154,6 +169,10 @@
       "./idb-sync-cache": {
         "types": "./dist/deprecated/idb-sync-cache.d.ts",
         "import": "./dist/deprecated/idb-sync-cache.js"
+      },
+      "./workspace-search": {
+        "types": "./dist/workspace-search/index.d.ts",
+        "import": "./dist/workspace-search/index.js"
       }
     },
     "browser": "./dist/kortix.esm.min.js",

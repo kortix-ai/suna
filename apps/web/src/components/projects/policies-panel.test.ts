@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 import { seedDraft, toPayloadRule } from './policies-panel';
@@ -122,7 +122,7 @@ describe('PoliciesPanel source guard — design-system primitives', () => {
     // Comments are stripped first — the prose above ACTION_META names the old
     // `min-w-[16rem]` on purpose, and must not satisfy the guard.
     const code = panelSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-    expect(code).toContain('description={ACTION_META[a].description}');
+    expect(code).toContain('description={actionMeta[a].description}');
     expect(code).not.toContain('min-w-[16rem]');
   });
 });

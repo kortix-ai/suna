@@ -5,14 +5,8 @@
  * (one owner, shared by every host). This module only adds the browser-only
  * download helpers (DOM + JSZip), which consume the SDK's data ops.
  */
-import {
-  authorizePreviewUrl,
-  isInternalLocalhostUrl,
-  listFiles,
-  readBlob,
-} from '@kortix/sdk';
+import { authorizePreviewUrl, isInternalLocalhostUrl, listFiles, readBlob } from '@kortix/sdk';
 import { getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
-import JSZip from 'jszip';
 import { readRuntimeFileWithRetry } from './runtime-file-read';
 
 // Data operations — single source of truth in the SDK. Aliased to the names the
@@ -42,6 +36,13 @@ export {
 export type { UploadResult } from '@kortix/sdk';
 
 // ── browser-only helpers (DOM/JSZip) — not data-layer, stay in the host UI ──
+
+// JSZip (~100 KB) loads only when a zip download starts. A static import put it
+// in every route: session-browser-store → kortix-computer-store → this file.
+async function createZip() {
+  const { default: JSZip } = await import('jszip');
+  return new JSZip();
+}
 
 /** Formats that are inert as a top-level document, so opening one can never run
  * author script. HTML and SVG stay excluded even though a browser tab renders
@@ -169,7 +170,7 @@ export async function downloadFilesAsZip(
   files: Array<{ path: string; name: string }>,
   zipName: string,
 ): Promise<void> {
-  const zip = new JSZip();
+  const zip = await createZip();
   const names = uniqueZipNames(files.map((f) => f.name));
   await Promise.all(
     files.map(async (f, i) =>
@@ -193,7 +194,7 @@ export async function downloadDirectory(
   dirName?: string,
   onProgress?: (progress: number) => void,
 ): Promise<void> {
-  const zip = new JSZip();
+  const zip = await createZip();
   const name = dirName || dirPath.split('/').filter(Boolean).pop() || 'directory';
   const allFiles = await listAllFilesRecursive(dirPath);
 

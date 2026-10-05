@@ -1,5 +1,63 @@
 import { describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
+import { act, create } from 'react-test-renderer';
+import { getSessionSyncController } from '../browser/session-sync/session-sync-registry';
+import { useSessionSync } from './use-session-sync';
 import { livenessBusy, sessionSyncBusy } from './use-session-sync';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+test('an empty detached session does not start idle transcript verification', () => {
+  const controller = getSessionSyncController('', undefined, 'none');
+  const original = controller.setBusy;
+  const calls: Array<[boolean, boolean | undefined]> = [];
+  controller.setBusy = (busy, watchIdle) => {
+    calls.push([busy, watchIdle]);
+  };
+  function Detached() {
+    useSessionSync('');
+    return null;
+  }
+  try {
+    let renderer: ReturnType<typeof create> | undefined;
+    act(() => {
+      renderer = create(createElement(Detached));
+    });
+    expect(calls).toContainEqual([false, false]);
+    act(() => renderer?.unmount());
+  } finally {
+    controller.setBusy = original;
+  }
+});
+
+// `useSession({ chatEngine: false })` mounts `useSessionSync('')` and still
+// passes its working projection. The empty controller must never go busy: a
+// busy -> idle step starts a turn-end tail read, and a read for no session is a
+// `GET /session//message` 400 that retries every 15 s for the life of the view.
+test('a session with no runtime id never marks its controller busy, so no turn-end read starts', () => {
+  const controller = getSessionSyncController('', undefined, 'none');
+  const original = controller.setBusy;
+  const calls: Array<[boolean, boolean | undefined]> = [];
+  controller.setBusy = (busy, watchIdle) => {
+    calls.push([busy, watchIdle]);
+  };
+  function Detached({ working }: { working: boolean }) {
+    useSessionSync('', { working, networkEnabled: true });
+    return null;
+  }
+  try {
+    let renderer: ReturnType<typeof create> | undefined;
+    act(() => {
+      renderer = create(createElement(Detached, { working: true }));
+    });
+    act(() => renderer?.update(createElement(Detached, { working: false })));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.filter(([busy]) => busy)).toEqual([]);
+    act(() => renderer?.unmount());
+  } finally {
+    controller.setBusy = original;
+  }
+});
 
 /**
  * WHICH signal switches the transcript liveness poll.

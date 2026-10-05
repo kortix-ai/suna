@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -8,7 +8,6 @@ import { Slider } from '@/components/ui/slider';
 import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import {
-  DownloadIcon as Download,
   InfoIcon as Info,
   CornersOutIcon as Maximize,
   CornersInIcon as Minimize,
@@ -19,6 +18,7 @@ import {
   SpeakerSlashIcon as VolumeX,
 } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 interface VideoRendererProps {
   url: string;
@@ -48,6 +48,10 @@ const VIDEO_SLIDER = cn(
   '[&_[data-slot=slider-thumb]]:hover:ring-white/25 [&_[data-slot=slider-thumb]]:active:ring-white/35',
   '[&_[data-slot=slider-thumb]]:focus:ring-offset-black/60',
 );
+
+export async function requestVideoFullscreen(element: { requestFullscreen?: () => Promise<void> }) {
+  await element.requestFullscreen?.();
+}
 
 export function VideoRenderer({
   url,
@@ -168,7 +172,11 @@ export function VideoRenderer({
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        // An unhandled play() rejection pages Better Stack as
+        // `NotAllowedError: The play method is not allowed…` (the UA's
+        // autoplay policy). On rejection the element stays paused — keep the
+        // toggle state truthful instead of letting the promise escape.
+        void videoRef.current.play().catch(() => setIsPlaying(false));
       }
       setIsPlaying(!isPlaying);
     }
@@ -202,7 +210,9 @@ export function VideoRenderer({
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       setCurrentTime(0);
-      videoRef.current.play();
+      // Same play() rejection guard as togglePlay: the restart attempt stays
+      // paused when the UA denies playback, so keep the state truthful.
+      void videoRef.current.play().catch(() => setIsPlaying(false));
       setIsPlaying(true);
     }
   };
@@ -213,7 +223,7 @@ export function VideoRenderer({
     if (isFullscreen) {
       await document.exitFullscreen();
     } else {
-      await containerRef.current.requestFullscreen();
+      await requestVideoFullscreen(containerRef.current);
     }
   };
 
@@ -364,7 +374,7 @@ export function VideoRenderer({
                   onClick={onDownload}
                 >
                   <Download className="h-4 w-4" />
-                  Download
+                  {tHardcodedUi.raw('i18nComplete.textd6eafe823591')}
                 </Button>
               )}
             </div>
@@ -375,13 +385,17 @@ export function VideoRenderer({
             <div className="absolute top-14 right-4 z-10 min-w-[180px] rounded-2xl bg-black/80 p-4 text-sm text-white">
               <div className="space-y-2">
                 <div className="flex justify-between gap-6">
-                  <span className="text-white/60">Resolution</span>
+                  <span className="text-white/60">
+                    {tHardcodedUi.raw('i18nComplete.textd4055fafa379')}
+                  </span>
                   <span className="font-medium">
                     {videoInfo.width} × {videoInfo.height}
                   </span>
                 </div>
                 <div className="flex justify-between gap-6">
-                  <span className="text-white/60">Duration</span>
+                  <span className="text-white/60">
+                    {tHardcodedUi.raw('i18nComplete.text4fc52a3c4c55')}
+                  </span>
                   <span className="font-medium">{formatTime(videoInfo.duration)}</span>
                 </div>
               </div>
@@ -402,7 +416,7 @@ export function VideoRenderer({
                 max={duration || 100}
                 step={0.1}
                 onValueChange={handleSeek}
-                thumbLabel="Seek"
+                thumbLabel={tHardcodedUi.raw('i18nComplete.text67ae3405bcd4')}
                 formatValue={(value) => formatTime(value)}
                 className={VIDEO_SLIDER}
               />
@@ -454,7 +468,7 @@ export function VideoRenderer({
                   max={1}
                   step={0.1}
                   onValueChange={handleVolumeChange}
-                  thumbLabel="Volume"
+                  thumbLabel={tHardcodedUi.raw('i18nComplete.textb10fb966d720')}
                   formatValue={(value) => `${Math.round(value * 100)}%`}
                   className={cn('w-20', VIDEO_SLIDER)}
                 />
@@ -474,20 +488,5 @@ export function VideoRenderer({
         </>
       )}
     </div>
-  );
-}
-
-// Compact video player for inline tool views
-export function InlineVideoPlayer({ url, className }: { url: string; className?: string }) {
-  return (
-    <VideoRenderer
-      url={url}
-      className={cn(
-        'aspect-video w-80 rounded-2xl border border-neutral-200 dark:border-neutral-700/50',
-        className,
-      )}
-      compact
-      loop
-    />
   );
 }

@@ -5,7 +5,7 @@ import type {
   Agent,
   Command,
   ProviderListResponse as SdkProviderListResponse,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 
 // ============================================================================
 // Query Keys
@@ -65,7 +65,12 @@ export function unwrap<T>(result: {
       (typeof err === 'string' ? err : null) ||
       (typeof err === 'object' ? JSON.stringify(err) : null) ||
       (status ? `Server returned ${status}` : 'SDK request failed');
-    throw new Error(String(msg));
+    // Carry the HTTP status on the thrown error. Every retry policy in this
+    // directory (and the web QueryClient's default) classifies on `error.status`:
+    // a status-less throw made a dead-token 401 look retryable and produced an
+    // 11-request warn storm on the picker queries (prod, 2026-10-02). The SSE
+    // transport throws the same shape (`Object.assign(new Error, { status })`).
+    throw status ? Object.assign(new Error(String(msg)), { status }) : new Error(String(msg));
   }
   return result.data as T;
 }
@@ -149,34 +154,8 @@ export function cachedRuntimeList<T>(family: string, scope?: string): T[] | unde
 const PROJECT_SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/**
- * Runtime roots the SERVER pinned for a session (`/start`'s
- * `opencode_session_id`, the sessions list, or a persisted pin of either).
- *
- * The UUID rule below exists to tell the transient boot shell — whose layout
- * id IS the Kortix project-session UUID — from a real OpenCode root, which a
- * daemon names `ses_…`. A CELL breaks that assumption on purpose: its root is
- * the Kortix session id by construction (apps/api opencode-root-pin.ts), so the
- * rule read every cell session as "still the shell" and skipped every runtime
- * read. The page painted only while live SSE frames arrived, and a cold refresh
- * sat on "Connecting" forever: measured 2026-09-09 in Chromium against
- * pi-js.kortix.com — 24 s+, every in-box call 200, and never one
- * `GET /session/<id>/message`.
- *
- * A root the server pinned is a root, whatever it looks like. Registered
- * during render by `useCanonicalOpenCodeSession`, which resolves before the
- * hooks that ask — so the same render sees it.
- */
-const serverPinnedRuntimeRoots = new Set<string>();
-
-export function markRuntimeRootPinned(rootSessionId: string | null | undefined): void {
-  if (rootSessionId) serverPinnedRuntimeRoots.add(rootSessionId);
-}
-
-export function canQueryOpenCodeSession(sessionId: string | null | undefined): sessionId is string {
-  if (!sessionId) return false;
-  if (serverPinnedRuntimeRoots.has(sessionId)) return true;
-  return !PROJECT_SESSION_UUID_RE.test(sessionId);
+export function canQueryRuntimeSession(sessionId: string | null | undefined): sessionId is string {
+  return !!sessionId && !PROJECT_SESSION_UUID_RE.test(sessionId);
 }
 
 export function clearProjectProviderCache(projectId: string): void {
@@ -195,3 +174,7 @@ export function clearProjectProviderCache(projectId: string): void {
  * the first frame, before the sandbox is even up — killing the visible pop-in.
  */
 export const CACHE_SCOPE_GLOBAL = 'global';
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `canQueryRuntimeSession`. Removed in the next major. */
+export const canQueryOpenCodeSession = canQueryRuntimeSession;

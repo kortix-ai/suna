@@ -16,14 +16,16 @@ const packageJson = JSON.parse(read('apps/api/package.json')) as {
 const laneJob = workflow.slice(workflow.indexOf('\n  lane:'));
 
 describe('the kortix-api suite actually runs on pull requests', () => {
-  test('the reusable workflow runs every root lane natively at the exact PR head SHA', () => {
+  test('the test workflow runs every root lane natively at the exact PR head SHA', () => {
     expect(laneJob).toContain('matrix:');
     expect(laneJob).toContain('- lane: core');
     expect(laneJob).toContain('- lane: browser-1');
     expect(laneJob).toContain('- lane: browser-2');
     expect(laneJob).toContain('- lane: packages');
-    expect(laneJob).toContain('args: --browser-only --browser-shard=1/2');
-    expect(laneJob).toContain('args: --browser-only --browser-shard=2/2');
+    // Four browser shards since 2026-09-18 (see tests.yml's matrix comment).
+    for (const n of [1, 2, 3, 4]) {
+      expect(laneJob).toContain(`args: --browser-only --browser-shard=${n}/4`);
+    }
     expect(laneJob).toContain('args: --packages-only');
     expect(laneJob).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     expect(laneJob).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
@@ -36,8 +38,15 @@ describe('the kortix-api suite actually runs on pull requests', () => {
   });
 
   test('the lane job always stops its local Supabase and always uploads results', () => {
-    expect(laneJob).toContain("if: always() && matrix.mode == 'browser'");
-    expect(laneJob).toContain('pnpm exec supabase stop --no-backup || true');
+    // On EVERY lane. The stop used to be `if: always() && matrix.mode ==
+    // 'browser'`, but core and packages start Supabase too (through
+    // `pnpm test`), so a lane that skipped the stop stranded 54321-54324 on
+    // the reused Blacksmith runner and the next `supabase start` died with
+    // `address already in use` — four runs on 2026-09-21.
+    const stop = laneJob.slice(laneJob.indexOf('- name: Stop the local Supabase stack'));
+    expect(stop).toContain('pnpm exec supabase stop --no-backup || true');
+    expect(stop.slice(0, stop.indexOf('- name: Guard'))).toContain('if: always()');
+    expect(laneJob).not.toContain("if: always() && matrix.mode == 'browser'");
     expect(laneJob).toContain('actions/upload-artifact@v7');
   });
 
@@ -48,7 +57,7 @@ describe('the kortix-api suite actually runs on pull requests', () => {
   });
 
   test('the unit suite runs off the committed fake env, not dotenvx', () => {
-    const runLine = testScript.split('\n').find((line) => line.trim().startsWith('exec bun test'));
+    const runLine = testScript.split('\n').find((line) => line.trim().startsWith('if bun test'));
     expect(runLine).toContain('--env-file=scripts/test.env');
     expect(runLine).not.toContain('dotenvx');
   });

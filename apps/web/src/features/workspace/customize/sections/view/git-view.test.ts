@@ -7,7 +7,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { projectRepoFallback, RepositoryValue } from './git-view';
 import {
+  BRANCH_PICKER_LIMIT,
   connectionStatusLabel,
+  filterBranchNames,
   providerLabel,
   providerSentence,
   repositoryWebUrl,
@@ -133,7 +135,7 @@ test('does not name internal mechanisms in user-facing copy', () => {
   expect(code).not.toContain('proxy origin');
   expect(code).not.toContain('Proxy URL');
   expect(code).not.toContain('Connection health');
-  expect(code).toContain('Use your own Git client');
+  expect(code).toContain("raw('textd29222de0472')");
 });
 
 test('every technical setting carries a docs link', () => {
@@ -279,7 +281,7 @@ test('the provider sentence follows the same fallback the value does', () => {
 test('the invite gate asks for the leaf the route asserts, not project.write', () => {
   // `POST /:projectId/git/collaborators` asserts
   // `PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE` (apps/api/src/projects/routes/
-  // r1.ts). Gating the UI on `project.write` meant a custom role with
+  // routes/project-git.ts). Gating the UI on `project.write` meant a custom role with
   // write-but-not-members.manage saw the form and got a 403 on submit, and the
   // reverse role saw nothing though the API would have accepted it.
   expect(code).toContain('PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE');
@@ -309,7 +311,7 @@ test('a non-managed repository explains itself instead of hiding the section', (
     code.indexOf('function RepoAccessSection'),
     code.indexOf('function ExternallyManagedRepoAccess'),
   );
-  expect(section).toContain('title="People with access"');
+  expect(section).toContain("title={tI18nComplete.raw('text6ecf05a928e8')}");
   expect(section).toContain('managed ? (');
 });
 
@@ -329,4 +331,30 @@ test('nothing on this path is gated on billing', () => {
   expect(code).not.toContain('Entitlement');
   expect(code).not.toContain('openUpgrade');
   expect(code).not.toContain('isBillingEnabled');
+});
+
+test('the branch picker renders at most BRANCH_PICKER_LIMIT rows of thousands', () => {
+  const names = Array.from({ length: 5000 }, (_, i) => `kortix/session-${i}`);
+  const { visible, hidden } = filterBranchNames(['main', ...names], 'main', '');
+  expect(visible).toHaveLength(BRANCH_PICKER_LIMIT);
+  expect(visible[0]).toBe('main');
+  expect(hidden).toBe(5001 - BRANCH_PICKER_LIMIT);
+});
+
+test('the branch picker keeps the current branch first and filters case-insensitively', () => {
+  const names = ['develop', 'main', 'Release/1.0', 'release/2.0'];
+  expect(filterBranchNames(names, 'release/2.0', 'RELEASE')).toEqual({
+    visible: ['release/2.0', 'Release/1.0'],
+    hidden: 0,
+  });
+  expect(filterBranchNames(names, 'main', 'nope')).toEqual({ visible: [], hidden: 0 });
+});
+
+test('the branch picker shows the current branch before /branches answers', () => {
+  expect(filterBranchNames([], 'main', '')).toEqual({ visible: ['main'], hidden: 0 });
+});
+
+test('the default branch is never a Radix <Select> of every remote branch', () => {
+  expect(code).toContain('<BranchPicker');
+  expect(code).not.toMatch(/branchNames\.map\(\(branch\) => \(\s*<SelectItem/);
 });

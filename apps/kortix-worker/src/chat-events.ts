@@ -19,17 +19,7 @@
  * Deltas are available at the Agent layer. No pi-ai tapping is required.
  */
 
-type Wire = {
-  type: string;
-  properties: Record<string, unknown>;
-  /**
-   * Fold into the transcript but do NOT put on the event bus. Used for the
-   * cumulative text snapshot that accompanies a `message.part.delta`: the
-   * transcript needs the full string, subscribers need the append, and a
-   * subscriber that got both would render the text twice.
-   */
-  transcriptOnly?: boolean;
-};
+type Wire = { type: string; properties: Record<string, unknown> };
 
 const now = () => Date.now();
 
@@ -91,20 +81,16 @@ export class ChatEventAdapter {
     const sessionID = this.sessionID;
     switch (event.type) {
       case 'agent_start':
-        // `busy`, not `running`. OpenCode's SessionStatus union is exactly
-        // `idle | busy | retry`, and this adapter's whole job is to make pi
-        // look like OpenCode. `running` is not in that union, so every
-        // consumer switching on it fell through to its default: the SDK read
-        // it as IDLE and hid the working indicator and the Stop button for the
-        // entire turn while the agent was still generating.
+        // OpenCode accepts only idle, busy, and retry. Emitting another value
+        // makes strict consumers report an active session as idle.
         return [{ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }];
 
       case 'message_start': {
         // Only ASSISTANT messages translate. The worker publishes the USER
         // message itself at prompt time (pi's user message_start rendered an
-        // empty duplicate bubble — dev session ae3a07fc), and pi's 'toolResult'
+        // empty duplicate bubble on a dev session), and pi's 'toolResult'
         // messages are already carried as tool PARTS on the assistant message
-        // (dev session 7f218b0a rendered a stray toolResult row).
+        // (a dev session rendered a stray toolResult row).
         if ((event.message?.role ?? 'assistant') !== 'assistant') return [];
         this.currentMessageId = this.mint ? this.mint() : `msg-${++this.messageSeq}`;
         this.partCount = 0;
@@ -139,14 +125,15 @@ export class ChatEventAdapter {
           const prev = this.accum.get(id) ?? '';
           const next = inner.type === 'text_delta' ? prev + (inner.delta ?? '') : (inner.text ?? prev);
           this.accum.set(id, next);
-          return this.streamingTextFrames({
-            id,
-            sessionID,
-            partType: 'text',
-            field: 'text',
-            full: next,
-            delta: inner.type === 'text_delta' ? (inner.delta ?? '') : null,
-          });
+          return [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID,
+                part: { id, messageID: this.currentMessageId, sessionID, type: 'text', text: next },
+              },
+            },
+          ];
         }
         // thinking ---------------------------------------------------------
         if (inner.type === 'thinking_start' || inner.type === 'thinking_delta' || inner.type === 'thinking_end') {
@@ -156,14 +143,15 @@ export class ChatEventAdapter {
           const prev = this.accum.get(id) ?? '';
           const next = inner.type === 'thinking_delta' ? prev + (inner.delta ?? '') : (inner.thinking ?? prev);
           this.accum.set(id, next);
-          return this.streamingTextFrames({
-            id,
-            sessionID,
-            partType: 'reasoning',
-            field: 'text',
-            full: next,
-            delta: inner.type === 'thinking_delta' ? (inner.delta ?? '') : null,
-          });
+          return [
+            {
+              type: 'message.part.updated',
+              properties: {
+                sessionID,
+                part: { id, messageID: this.currentMessageId, sessionID, type: 'reasoning', text: next },
+              },
+            },
+          ];
         }
         return [];
       }
@@ -235,70 +223,6 @@ export class ChatEventAdapter {
       default:
         return [];
     }
-  }
-
-  /**
-   * One streamed text chunk, as BOTH shapes — because they are for different
-   * consumers and must not be applied by the same one.
-   *
-   * pi hands us a true `text_delta` (its documented streaming contract:
-   * `message_update` -> `assistantMessageEvent.text_delta.delta`). We used to
-   * throw the delta away and republish the whole accumulated string as a
-   * cumulative `message.part.updated`. That is correct but it is the SNAPSHOT
-   * path, and the web client only re-renders eagerly off `message.part.delta`
-   * (`applyPartDelta` / `deltaActiveParts` in packages/sdk sync-store) — the
-   * path OpenCode drives. So a pi answer arrived as one lump at the end:
-   * measured on pi.kortix.com 2026-08-29, the worker emitted 183 incremental
-   * frames over 31 s while the browser painted the block ONCE, already 94%
-   * complete.
-   *
-   * Emitting both onto the bus would double-count: the snapshot REPLACES the
-   * part text and the delta APPENDS to it. So they are split by destination —
-   * `transcriptOnly` frames never reach the bus:
-   *
-   *   bus        <- message.part.delta   (append; drives incremental paint)
-   *   transcript <- message.part.updated (authoritative full text for REST
-   *                                       reads and for `since=` resync)
-   *
-   * A chunk with no delta (text_start / text_end) carries no append, so it
-   * publishes the snapshot normally — which also repairs any drift if a delta
-   * was ever dropped, since `upsertPart` accepts prefix growth.
-   */
-  private streamingTextFrames(input: {
-    id: string;
-    sessionID: string;
-    partType: 'text' | 'reasoning';
-    field: string;
-    full: string;
-    delta: string | null;
-  }): Wire[] {
-    const snapshot: Wire = {
-      type: 'message.part.updated',
-      properties: {
-        sessionID: input.sessionID,
-        part: {
-          id: input.id,
-          messageID: this.currentMessageId,
-          sessionID: input.sessionID,
-          type: input.partType,
-          text: input.full,
-        },
-      },
-    };
-    if (!input.delta) return [snapshot];
-    return [
-      { ...snapshot, transcriptOnly: true },
-      {
-        type: 'message.part.delta',
-        properties: {
-          sessionID: input.sessionID,
-          messageID: this.currentMessageId,
-          partID: input.id,
-          field: input.field,
-          delta: input.delta,
-        },
-      },
-    ];
   }
 
   private toolPart(id: string, tool: string, state: Record<string, unknown>): Wire {

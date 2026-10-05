@@ -12,8 +12,6 @@ interface ProviderModalState {
 export const useProviderModalStore = create<ProviderModalState>((set) => ({
   isOpen: false,
   defaultTab: 'providers',
-  openProviderModal: (tab = 'providers') =>
-    set({ isOpen: true, defaultTab: tab }),
-  closeProviderModal: () =>
-    set({ isOpen: false }),
+  openProviderModal: (tab = 'providers') => set({ isOpen: true, defaultTab: tab }),
+  closeProviderModal: () => set({ isOpen: false }),
 }));

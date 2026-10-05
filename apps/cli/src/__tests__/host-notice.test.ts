@@ -97,7 +97,7 @@ function seedTokenIdentity(token: string, agent: string): void {
             agent,
             projectId: 'proj_123',
             sessionId: 'sess_123',
-            kortixCli: ['project.secret.read', 'project.secret.write'],
+            permissions: ['project.secret.read', 'project.secret.write'],
             userId: 'user_123',
             userEmail: 'agent@example.com',
           },
@@ -223,19 +223,19 @@ describe('host notice', () => {
   // a missing grant.
   test('linked directory does not override sandbox env auth', () => {
     const configDir = writeConfig(LOGGED_OUT_CLOUD);
-    const projectDir = enterLinkedProject('cloud', 'acct_3b1fc472', 'proj_508bccdd');
+    const projectDir = enterLinkedProject('cloud', 'acct_ac5a1e01', 'proj_9a5a1e02');
     try {
       process.env.KORTIX_API_URL = 'https://api.kortix.com';
       process.env.KORTIX_TOKEN = 'kortix_pat_session';
-      process.env.KORTIX_SESSION_ID = 'sess_ea985b87';
+      process.env.KORTIX_SESSION_ID = 'sess_5e5a1e03';
 
-      const notice = renderHostNotice(['sessions', 'restart', 'sess_ea985b87']);
+      const notice = renderHostNotice(['sessions', 'restart', 'sess_5e5a1e03']);
       expect(notice).toContain('authenticated (session token)');
       expect(notice).not.toContain('not logged in');
       // The link still supplies account + project; only the auth state moved.
-      expect(notice).toContain('account acct_3b1');
-      expect(notice).toContain('project proj_508');
-      expect(notice).toContain('session sess_ea9');
+      expect(notice).toContain('account acct_ac5');
+      expect(notice).toContain('project proj_9a5');
+      expect(notice).toContain('session sess_5e5');
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
       rmSync(configDir, { recursive: true, force: true });
@@ -244,11 +244,11 @@ describe('host notice', () => {
 
   test('names the agent a minted session token belongs to', () => {
     const configDir = writeConfig(LOGGED_OUT_CLOUD);
-    const projectDir = enterLinkedProject('cloud', 'acct_3b1fc472', 'proj_508bccdd');
+    const projectDir = enterLinkedProject('cloud', 'acct_ac5a1e01', 'proj_9a5a1e02');
     try {
       process.env.KORTIX_API_URL = 'https://api.kortix.com';
       process.env.KORTIX_TOKEN = 'kortix_pat_session';
-      process.env.KORTIX_SESSION_ID = 'sess_ea985b87';
+      process.env.KORTIX_SESSION_ID = 'sess_5e5a1e03';
       seedTokenIdentity('kortix_pat_session', 'osp-vision-route-agent');
 
       expect(renderHostNotice(['sessions', 'restart', 'x'])).toContain(
@@ -269,7 +269,7 @@ describe('host notice', () => {
     try {
       process.env.KORTIX_API_URL = 'https://api.kortix.com';
       process.env.KORTIX_TOKEN = 'kortix_pat_session';
-      process.env.KORTIX_SESSION_ID = 'sess_ea985b87';
+      process.env.KORTIX_SESSION_ID = 'sess_5e5a1e03';
 
       const notice = renderHostNotice(['sessions', 'ls']);
       expect(notice).toContain('authenticated (session token)');

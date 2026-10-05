@@ -1,5 +1,6 @@
 import {
   DEFAULT_HOST_NAME,
+  DEFAULT_INTERNAL_DEV_API_BASE,
   type Host,
   activeHostName,
   getHost,
@@ -9,7 +10,8 @@ import {
   useHost,
   validateHostName,
 } from '../api/config.ts';
-import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { splitHelp } from '../command-argv.ts';
+import { emitJson, fail, missing, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { confirm, prompt } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -28,7 +30,7 @@ Built-in hosts (always exist):
   cloud                Kortix Cloud (https://api.kortix.com)
   selfhost             Your self-hosted stack (kortix self-host)
   local-dev            Local dev server (http://localhost:8008)
-  kortix-internal-dev  Kortix-internal hosted dev (http://dev-api.kortix.com)
+  kortix-internal-dev  Kortix-internal hosted dev (${DEFAULT_INTERNAL_DEV_API_BASE})
 
 Authentication:
   login [<name>]                      Sign in to a host (browser flow or
@@ -114,22 +116,20 @@ Options:
   -h, --help        Show this help.
 `;
 
-export async function runHosts(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 0 : 0;
-  }
+/** Subcommands with their own help text (LOGIN_HELP / LOGOUT_HELP /
+ *  WHOAMI_HELP) that parse `--help` themselves. */
+const OWNS_HELP = new Set(['login', 'logout', 'whoami']);
 
-  const sub = argv[0];
-  const rest = argv.slice(1);
-  // The root help promises `kortix hosts <subcommand> --help`. login/logout/
-  // whoami own their own help text (LOGIN_HELP / LOGOUT_HELP / WHOAMI_HELP)
-  // and parse the flag themselves, so the fallback must not swallow it.
-  const OWNS_HELP = new Set(['login', 'logout', 'whoami']);
-  if ((rest.includes('-h') || rest.includes('--help')) && !OWNS_HELP.has(sub)) {
+export async function runHosts(argv: string[]): Promise<number> {
+  // A bare `kortix hosts` prints the help and exits 0, not 2.
+  if (argv.length === 0) {
     process.stdout.write(HELP);
     return 0;
   }
+  const sub = argv[0];
+  const rest = argv.slice(1);
+  const helpCode = OWNS_HELP.has(sub) ? null : splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   switch (sub) {
     case 'ls':
@@ -183,9 +183,7 @@ function hostsLs(json = false): number {
   // Auth-status column: "✓ signed in as <user/email>" vs "○ not signed in".
   // Width is measured on the visible text (glyph + label), ANSI stripped.
   const statusText = (r: (typeof rows)[number]): string =>
-    r.host.token
-      ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}`
-      : '○ not signed in';
+    r.host.token ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}` : '○ not signed in';
   const statusW = Math.max(...rows.map((r) => statusText(r).length), 8);
 
   process.stdout.write('\n');
@@ -272,8 +270,7 @@ async function hostsLogin(args: string[]): Promise<number> {
     account = takeFlagValue(rest, ['--account']);
     noProject = takeFlagBool(rest, ['--no-project']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.find((a) => !a.startsWith('-'));
   const hostName = positional ?? activeHostName() ?? DEFAULT_HOST_NAME;
@@ -312,23 +309,18 @@ async function hostsAdd(args: string[]): Promise<number> {
   try {
     url = takeFlagValue(args, ['--url', '--api']);
     dashboardUrl = takeFlagValue(args, ['--dashboard-url']);
-    runLoginFlow = removeBoolFlag(args, ['--login']);
+    runLoginFlow = takeFlagBool(args, ['--login']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   name = args[0];
 
-  if (!name) {
-    process.stderr.write(`${status.err('Pass a host name.')}\n`);
-    return 2;
-  }
+  if (!name) return missing('a host name');
 
   try {
     validateHostName(name);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   if (getHost(name)) {
@@ -400,16 +392,12 @@ async function hostsAdd(args: string[]): Promise<number> {
 async function hostsRm(args: string[]): Promise<number> {
   let force = false;
   try {
-    force = removeBoolFlag(args, ['--force', '-f']);
+    force = takeFlagBool(args, ['--force', '-f']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const name = args[0];
-  if (!name) {
-    process.stderr.write(`${status.err('Pass a host name.')}\n`);
-    return 2;
-  }
+  if (!name) return missing('a host name');
   const host = getHost(name);
   if (!host) {
     process.stderr.write(`${status.err(`Unknown host "${name}".`)}\n`);
@@ -519,14 +507,4 @@ function hostJson(name: string, host: Host, active: boolean) {
     logged_in_at: host.logged_in_at || null,
     active,
   };
-}
-
-function removeBoolFlag(argv: string[], names: string[]): boolean {
-  for (let i = 0; i < argv.length; i += 1) {
-    if (names.includes(argv[i])) {
-      argv.splice(i, 1);
-      return true;
-    }
-  }
-  return false;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,18 +36,19 @@ export function CreateAccountModal({
   const mutation = useMutation({
     mutationFn: createAccount,
     onSuccess: (account) => {
-      successToast('Account created');
+      successToast(tHardcodedUi.raw('i18nComplete.text6e0267412c1a'));
       onCreated?.(account);
       setName('');
       onOpenChange(false);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to create account'),
+    onError: (error: Error) =>
+      errorToast(error.message || tHardcodedUi.raw('i18nComplete.textd1890b442952')),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = name.trim();
-    if (!trimmed) return errorToast('Account name is required');
+    if (!trimmed) return errorToast(tHardcodedUi.raw('i18nComplete.text75b62a7daa4c'));
     mutation.mutate({ name: trimmed });
   }
 
@@ -99,7 +100,7 @@ export function CreateAccountModal({
               onClick={() => onOpenChange(false)}
               disabled={mutation.isPending}
             >
-              Cancel
+              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
             </Button>
             <Button type="submit" className="gap-1.5" disabled={mutation.isPending}>
               {mutation.isPending ? <Loading /> : <Plus />}

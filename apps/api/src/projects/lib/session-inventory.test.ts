@@ -3,6 +3,11 @@ import type { projectSessions } from '@kortix/db';
 
 import {
   mergeSessionOwnerIdentities,
+  SESSION_PAGE_DEFAULT_LIMIT,
+  SESSION_PAGE_MAX_LIMIT,
+  cursorForRow,
+  decodeSessionCursor,
+  encodeSessionCursor,
   selectSessionRowsForViewer,
 } from './session-inventory';
 
@@ -22,7 +27,7 @@ function row(
     sandboxProvider: 'daytona',
     sandboxId: sessionId,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'running',
     error: null,
@@ -30,10 +35,14 @@ function row(
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: {},
     createdAt: new Date('2026-07-21T00:00:00.000Z'),
     updatedAt: new Date('2026-07-21T00:00:00.000Z'),
@@ -44,6 +53,41 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
+  test('account session oversight widens the manager inventory to other members\' private sessions', () => {
+    const privateOther = row('private-other', { createdBy: OTHER_ID });
+    const restrictedOther = row('restricted-other', { createdBy: OTHER_ID, visibility: 'restricted' });
+    const base = {
+      rows: [privateOther, restrictedOther],
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    };
+
+    const withOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: true });
+    expect(withOversight.items.map((item) => item.row.sessionId)).toEqual(['private-other', 'restricted-other']);
+
+    const withoutOversight = selectSessionRowsForViewer({ ...base, scope: 'project', accountSessionOversight: false });
+    expect(withoutOversight.items).toEqual([]);
+  });
+
+  test('account session oversight never widens the default sidebar scope', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('private-other', { createdBy: OTHER_ID })],
+      scope: 'visible',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+      accountSessionOversight: true,
+    });
+    expect(selected.items).toEqual([]);
+  });
+
   test('manager project scope hides inaccessible rows and keeps accessible unavailable and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
@@ -77,6 +121,50 @@ describe('selectSessionRowsForViewer', () => {
     });
     expect(selected.items[1]).toMatchObject({
       canAccess: true,
+      deletedAt: '2026-07-20T10:00:00.000Z',
+      deletedBy: VIEWER_ID,
+    });
+  });
+
+  test('manager project scope drops a soft-deleted warm draft and keeps a soft-deleted real session', () => {
+    // A deleted "New session" row was never prompted, so its tombstone carries
+    // no conversation or work to audit — keeping it is what left the Sessions
+    // page unable to ever reach its empty state on a fresh project. A deleted
+    // real session keeps its tombstone row for the manager's audit.
+    const deletedWarmDraft = row('deleted-warm-draft', {
+      status: 'stopped',
+      metadata: {
+        warm: true,
+        deletedAt: '2026-07-20T10:00:00.000Z',
+        deletedBy: VIEWER_ID,
+      },
+    });
+    const deletedReal = row('deleted-real', {
+      status: 'completed',
+      metadata: { deletedAt: '2026-07-20T10:00:00.000Z', deletedBy: VIEWER_ID },
+    });
+    const liveWarmDraft = row('live-warm-draft', {
+      status: 'stopped',
+      metadata: { warm: true },
+    });
+
+    const selected = selectSessionRowsForViewer({
+      rows: [deletedWarmDraft, deletedReal, liveWarmDraft],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'deleted-real',
+      'live-warm-draft',
+    ]);
+    expect(selected.items[0]).toMatchObject({
       deletedAt: '2026-07-20T10:00:00.000Z',
       deletedBy: VIEWER_ID,
     });
@@ -146,9 +234,16 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.items).toEqual([]);
   });
 
-  test('visible scope preserves the existing visibility and resumability filters', () => {
+  test('visible scope keeps the visibility filters and lists every stopped session', () => {
     const own = row('own');
     const privateOther = row('private-other', { createdBy: OTHER_ID });
+    // A session migrated from the old runtime: status `completed`, no runtime
+    // row. An allowlist of live statuses would drop it from the list.
+    const migrated = row('migrated', {
+      status: 'completed',
+      createdBy: OTHER_ID,
+      visibility: 'project',
+    });
     const stoppedLost = row('stopped-lost', { status: 'stopped' });
     const stoppedResumable = row('stopped-resumable', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -156,7 +251,7 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     const selected = selectSessionRowsForViewer({
-      rows: [own, privateOther, stoppedLost, stoppedResumable, deleted],
+      rows: [own, privateOther, migrated, stoppedLost, stoppedResumable, deleted],
       scope: 'visible',
       canManageProject: false,
       subject,
@@ -169,7 +264,34 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'own',
+      'migrated',
+      'stopped-lost',
       'stopped-resumable',
+    ]);
+    expect(selected.items.find((item) => item.row.sessionId === 'migrated')?.canAccess).toBe(true);
+  });
+
+  // The KRTX-1452 regression (see the filter's comment): a stopped session
+  // whose runtime row is missing or still `active` must list.
+  test('visible scope lists a stopped session the runtime row does not confirm', () => {
+    const parkedAfterTurnError = row('parked-turn-error', { status: 'stopped' });
+    const stoppedWithoutRuntime = row('stopped-no-runtime', { status: 'stopped' });
+
+    const selected = selectSessionRowsForViewer({
+      rows: [parkedAfterTurnError, stoppedWithoutRuntime],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map([['parked-turn-error', 'active']]),
+    });
+
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'parked-turn-error',
+      'stopped-no-runtime',
     ]);
   });
 });
@@ -194,8 +316,29 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
     }).items.map((item) => item.row.sessionId);
   }
 
-  test('visible scope hides a warm session', () => {
-    expect(visible([row('own'), row('warm', { metadata: { warm: true } })])).toEqual(['own']);
+  test('visible scope hides an idle warm session', () => {
+    expect(visible([
+      row('own'),
+      row('warm', { status: 'stopped', metadata: { warm: true } }),
+    ])).toEqual(['own']);
+  });
+
+  // A warm box bills compute from creation (sandbox-deadline-policy.ts
+  // warmPoolGrantMs) until the reaper or the user stops it. A billed session
+  // the list hides is money its owner cannot see, open or stop, so a warm row
+  // that is still provisioning or running lists in the `visible` scope like
+  // any other session. The marker keeps hiding the row once nothing bills —
+  // stopped, failed, completed.
+  test('a warm session that is up and billing lists in the visible scope', () => {
+    expect(visible([row('billed-warm', { metadata: { warm: true } })])).toEqual(['billed-warm']);
+  });
+
+  test('a warm session still provisioning lists too — its box is about to bill', () => {
+    expect(visible([row('warming-up', { status: 'provisioning', metadata: { warm: true } })])).toEqual(['warming-up']);
+  });
+
+  test('a warm session that failed before its box came up stays hidden', () => {
+    expect(visible([row('failed-warm', { status: 'failed', metadata: { warm: true } })])).toEqual([]);
   });
 
   test('a used session lists like any other — the first prompt drops the marker', () => {
@@ -203,7 +346,8 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   });
 
   // The reaper flips `project_sessions.status` to stopped and leaves the marker
-  // in place. That row must not surface through the resumable-stopped branch.
+  // in place. That row must stay hidden through the warm-marker check, not
+  // resurface as an ordinary stopped session.
   test('a reaped warm session stays hidden even though it looks resumable', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
@@ -265,7 +409,7 @@ describe('mergeSessionOwnerIdentities', () => {
     const identities = mergeSessionOwnerIdentities({
       ownerIds: [humanId, agentId, staleId],
       users: new Map([
-        [humanId, { exists: true, email: 'ari@kortix.ai', displayName: 'Ari' }],
+        [humanId, { exists: true, email: 'ari@kortix.ai', displayName: 'Ari', avatarUrl: 'https://img.example.test/ari.png' }],
         [agentId, { exists: false, email: null, displayName: null }],
         [staleId, { exists: false, email: null, displayName: null }],
       ]),
@@ -282,16 +426,19 @@ describe('mergeSessionOwnerIdentities', () => {
       type: 'user',
       name: 'Ari',
       email: 'ari@kortix.ai',
+      avatarUrl: 'https://img.example.test/ari.png',
     });
     expect(identities.get(agentId)).toEqual({
       type: 'service_account',
       name: 'backend-debugger',
       email: null,
+      avatarUrl: null,
     });
     expect(identities.get(staleId)).toEqual({
       type: 'unknown',
       name: null,
       email: null,
+      avatarUrl: null,
     });
   });
 });
@@ -304,11 +451,17 @@ describe('backend credential session isolation', () => {
     createdBy: WRAPPER,
     origin: 'backend',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
   });
   const bob = row('bbbb2222-2222-4222-8222-222222222222', {
     createdBy: WRAPPER,
     origin: 'backend',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
   });
 
   const select = (callerSessionId: string | null) =>
@@ -429,5 +582,165 @@ describe('runtime status map tolerates a superset', () => {
 
     expect(selected.items).toHaveLength(1);
     expect(selected.items[0]!.runtimeStatus).toBeNull();
+  });
+});
+
+const SCOPE = { projectId: 'P1', viewerId: 'U1' };
+
+describe('session list cursor', () => {
+  test('round-trips a position through the sealed encoding', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'S1' }, SCOPE);
+    const decoded = decodeSessionCursor(encoded, SCOPE);
+    expect(decoded?.sessionId).toBe('S1');
+    expect(decoded?.updatedAt.toISOString()).toBe(updatedAt.toISOString());
+  });
+
+  test('is URL-safe — it travels in a query string', () => {
+    const encoded = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T10:11:12.345Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    expect(encoded).toBe(encodeURIComponent(encoded));
+  });
+
+  test('carries neither the session id nor the timestamp in the clear', () => {
+    // The scan position can name a row the viewer may NOT see — that is the
+    // whole point of sealing it. A cursor that merely base64-encoded the tuple
+    // disclosed a private session's id and last-activity time to anyone who
+    // could read their own URL.
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'HIDDEN-SESSION' }, SCOPE);
+    expect(encoded).not.toContain('HIDDEN-SESSION');
+    expect(encoded).not.toContain('2026-09-16');
+    // …and not after an undo of every encoding a client could try.
+    const decodedText = Buffer.from(encoded, 'base64url').toString('latin1');
+    expect(decodedText).not.toContain('HIDDEN-SESSION');
+  });
+
+  test('a cursor does not open for another viewer or another project', () => {
+    const encoded = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    expect(decodeSessionCursor(encoded, { projectId: 'P1', viewerId: 'U2' })).toBeNull();
+    expect(decodeSessionCursor(encoded, { projectId: 'P2', viewerId: 'U1' })).toBeNull();
+    expect(decodeSessionCursor(encoded, SCOPE)?.sessionId).toBe('S1');
+  });
+
+  test('an activity-order cursor does not open under updated-at ordering', () => {
+    const activityScope = { ...SCOPE, ordering: 'activity' as const };
+    const cursor = encodeSessionCursor(
+      { updatedAt: new Date('2026-06-22T15:13:07.896Z'), sessionId: 'LEGACY-1' },
+      activityScope,
+    );
+    expect(decodeSessionCursor(cursor, activityScope)?.sessionId).toBe('LEGACY-1');
+    expect(decodeSessionCursor(cursor, SCOPE)).toBeNull();
+  });
+
+  test('a session id containing the separator survives the round trip', () => {
+    // The payload is split on the FIRST separator, so only the timestamp half
+    // is bounded by it. A split on the last one would truncate this id.
+    const sessionId = 'weird|id|with|pipes';
+    const decoded = decodeSessionCursor(
+      encodeSessionCursor({ updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId }, SCOPE),
+      SCOPE,
+    );
+    expect(decoded?.sessionId).toBe(sessionId);
+  });
+
+  test('anything this scope did not seal decodes to null, never a throw', () => {
+    // A bad cursor starts the list from the top. It must not fail the request:
+    // the value reaches us from a client and is not trusted input.
+    expect(decodeSessionCursor(null, SCOPE)).toBeNull();
+    expect(decodeSessionCursor(undefined, SCOPE)).toBeNull();
+    expect(decodeSessionCursor('', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('not-sealed-at-all!!', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('v1.aaa.bbb.ccc', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('v2.aaa.bbb.ccc', SCOPE)).toBeNull();
+    // A tampered ciphertext fails the GCM tag rather than yielding a position.
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    expect(decodeSessionCursor([v, iv, tag, `${ct}AA`].join('.'), SCOPE)).toBeNull();
+  });
+
+  test('a truncated GCM tag is refused, not merely unlikely to verify', () => {
+    // `setAuthTag` accepts 4, 8 and 12..15-byte tags — all legal GCM lengths.
+    // The tag comes from the client, so without an explicit length check a
+    // forged cursor with a 4-byte tag needs ~2^32 attempts rather than 2^128.
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    const full = Buffer.from(tag, 'base64url');
+    expect(full.length).toBe(16);
+    for (const shortLen of [4, 8, 12, 15]) {
+      const truncated = full.subarray(0, shortLen).toString('base64url');
+      expect(decodeSessionCursor([v, iv, truncated, ct].join('.'), SCOPE)).toBeNull();
+    }
+  });
+
+  test('a nonce of the wrong length is refused', () => {
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    expect(Buffer.from(iv, 'base64url').length).toBe(12);
+    const shortIv = Buffer.from(iv, 'base64url').subarray(0, 8).toString('base64url');
+    expect(decodeSessionCursor([v, shortIv, tag, ct].join('.'), SCOPE)).toBeNull();
+  });
+
+  test('cursorForRow names the row it is given', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    expect(
+      decodeSessionCursor(cursorForRow({ updatedAt, sessionId: 'S9' }, SCOPE), SCOPE)?.sessionId,
+    ).toBe('S9');
+  });
+
+  test('the page ceiling is at or above the default', () => {
+    // A default above the ceiling would clamp every unparameterized request.
+    expect(SESSION_PAGE_DEFAULT_LIMIT).toBeLessThanOrEqual(SESSION_PAGE_MAX_LIMIT);
+    expect(SESSION_PAGE_DEFAULT_LIMIT).toBeGreaterThan(0);
+  });
+});
+
+describe('selectSessionRowsForViewer — agent principal (spec §2)', () => {
+  test("an agent session lists its own session, its children and project sessions, never the launcher's private ones", () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [
+        row('agent-own'),
+        row('agent-child', { metadata: { spawned_by_session: 'agent-own' } }),
+        row('launcher-private'),
+        row('shared', { visibility: 'project' }),
+      ],
+      scope: 'visible',
+      canManageProject: false,
+      subject: { userId: VIEWER_ID, groupIds: [] },
+      grantsBySession: new Map(),
+      callerSessionId: 'agent-own',
+      boundCredentialSessionId: 'agent-own',
+      runtimeStatusBySession: new Map(),
+      agentPrincipal: true,
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['agent-own', 'agent-child', 'shared']);
+  });
+
+  test('the same credential without the flag keeps the launcher-keyed listing', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('agent-own'), row('launcher-private')],
+      scope: 'visible',
+      canManageProject: false,
+      subject: { userId: VIEWER_ID, groupIds: [] },
+      grantsBySession: new Map(),
+      callerSessionId: 'agent-own',
+      boundCredentialSessionId: 'agent-own',
+      runtimeStatusBySession: new Map(),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['agent-own', 'launcher-private']);
   });
 });

@@ -61,7 +61,11 @@ describe('buildZipTree', () => {
   test('derives folders from path prefixes, with no directory entries present', () => {
     // The case that matters: archives written by libraries carry no directory
     // records at all, and without this every row reads `src/lib/util.ts`.
-    const root = buildZipTree([entry('src/lib/util.ts'), entry('src/index.ts'), entry('readme.md')]);
+    const root = buildZipTree([
+      entry('src/lib/util.ts'),
+      entry('src/index.ts'),
+      entry('readme.md'),
+    ]);
 
     expect(root.files.map((f) => f.name)).toEqual(['readme.md']);
     expect(root.folders.map((f) => f.name)).toEqual(['src']);

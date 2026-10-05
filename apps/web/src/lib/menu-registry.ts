@@ -20,9 +20,12 @@
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import type { UiTranslator } from '@/i18n/translator';
+import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { FeatureFlagKey } from '@kortix/sdk';
+import type { RuntimeCapability } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
@@ -50,7 +53,6 @@ import {
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
   PaintBrushIcon as PaintBrush,
-  SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
   PlusIcon as Plus,
   QuestionIcon as QuestionMark,
@@ -67,6 +69,7 @@ import {
   ImagesSquareIcon as WallpaperIcon,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
+import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
 
 // ============================================================================
 // Types
@@ -86,7 +89,20 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
 export type MenuItemKind =
-  'navigate' | 'action' | 'settings' | 'theme' | 'wallpaper' | 'sandboxService';
+  | 'navigate'
+  | 'action'
+  | 'settings'
+  | 'theme'
+  | 'wallpaper'
+  | 'sandboxService'
+  /**
+   * Opens the account hub modal. NOT `navigate`: the hub has no route — it is
+   * `?accountId=` on whatever page you are already on
+   * (`stores/account-panel-store.ts`), so there is no href to give. The
+   * destination is `accountTab` below, and the account is whichever one is
+   * selected at the moment the row is chosen.
+   */
+  | 'account';
 
 export type SettingsTabId =
   | 'general'
@@ -127,6 +143,19 @@ export const navSubGroupLabels: Record<NavSubGroup, string> = {
   security: 'Security',
 };
 
+export function translateMenuText(value: string, tI18nComplete: UiTranslator): string {
+  const key = MENU_TRANSLATION_KEYS[value];
+  return key ? tI18nComplete.raw(key as Parameters<UiTranslator['raw']>[0]) : value;
+}
+
+export function translateMenuItem(item: MenuItemDef, tI18nComplete: UiTranslator): MenuItemDef {
+  return {
+    ...item,
+    label: translateMenuText(item.label, tI18nComplete),
+    keywords: item.keywords ? translateMenuText(item.keywords, tI18nComplete) : undefined,
+  };
+}
+
 export interface MenuItemDef {
   /** Unique identifier for this item (used as React key, cmdk value, etc.) */
   id: string;
@@ -144,6 +173,13 @@ export interface MenuItemDef {
 
   /** For kind='navigate': the route to navigate to */
   href?: string;
+  /**
+   * For kind='account': which hub section to open (`?accountTab=`), or omitted
+   * for the hub's account list. Values come from `VALID_TABS` in
+   * `features/accounts/hub/sections.ts`, which
+   * `menu-registry-destinations.test.ts` checks this against.
+   */
+  accountTab?: string;
   /** For kind='navigate': tab type override (defaults to 'page') */
   tabType?: string;
   /** For kind='navigate': tab id override (defaults to `page:${href}`) */
@@ -189,6 +225,9 @@ export interface MenuItemDef {
   requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
+  /** If set, the item is only shown when the session's runtime serves this
+   *  feature (`runtimeSupports`). */
+  requiresRuntime?: RuntimeCapability;
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
@@ -250,6 +289,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'compactSession',
     requiresSession: true,
+    requiresRuntime: 'session.compact',
   },
   {
     id: 'view-changes',
@@ -374,13 +414,17 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'nav-projects',
-    // "Switch workspace", not "Projects". The product retired the noun
-    // (`features/workspace/workspace-vocabulary.test.ts`) everywhere except
-    // here, so the palette was the one surface still answering a question the
-    // rest of the app had stopped asking — and a bare noun does not say the
-    // row DOES anything, which is why it read as a list rather than as the
-    // switcher it opens.
-    label: 'Switch workspace',
+    // "Switch project", not "Projects": a bare noun does not say the row DOES
+    // anything, which is why it read as a list rather than as the switcher it
+    // opens. The verb stays; only the noun changed.
+    //
+    // It said "Switch workspace" until the product settled on ONE noun
+    // (`features/workspace/workspace-vocabulary.test.ts`). "Project" won
+    // because it is the load-bearing one — the URL (`/projects/<id>`), the API
+    // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
+    // all say it, and renaming those would break a published SDK's public
+    // surface and every existing link.
+    label: 'Switch project',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -404,21 +448,12 @@ export const menuRegistry: MenuItemDef[] = [
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
-    kind: 'navigate',
     // Selecting this in the palette opens the in-palette account switcher
-    // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx), so this href is the routed
-    // fallback for any surface that consumes the registry without that picker —
-    // same arrangement as `proj-sessions` below.
-    //
-    // Back to `/accounts`, the account picker. It pointed at
-    // `/settings/organization` while the account-scoped surfaces
-    // (Organization, Billing, Usage, Groups, Roles, Identity, Audit, API keys)
-    // lived in the project settings overlay. They do not: every one of them is
-    // a section of `/accounts/[id]` again, reachable from the `account-*` rows
-    // below, and `parseSettingsTab('organization')` now returns `null` — so
-    // that href would have fallen through `resolveSettingsOverlayHref` to a
-    // bare navigation at a route that renders no such tab.
-    href: '/accounts',
+    // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx); `kind: 'account'` with no
+    // `accountTab` is the fallback for any surface that consumes the registry
+    // without that picker — it opens the hub on its account LIST, which is the
+    // same choice by another route.
+    kind: 'account',
     // 'members' is deliberately absent. It names the SETTINGS MEMBERS TAB and
     // the 'proj-invite' action, not the account switcher, so typing "member"
     // used to return Accounts ahead of the two rows that actually answer it.
@@ -671,7 +706,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-members',
-    label: 'Workspace members',
+    label: 'Project members',
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -749,12 +784,9 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Its own capability tab since 2026-09-02, beside Agents and Triggers.
-    href: '/projects/{projectId}/customize/review',
+    // Its own project page since 2026-10-02, outside Customize.
+    href: '/projects/{projectId}/review',
     requiresProject: true,
-    // Same gate the tab carries (`visibleCapabilityTabs` hides Review while
-    // `review_center` is off), so the row cannot outlive the page.
-    requiresFlag: 'review_center',
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
   {
@@ -1020,11 +1052,8 @@ export const menuRegistry: MenuItemDef[] = [
   //
   // `account-referrals` is gone for a different reason: `referrals` is not a
   // member of `SettingsTab` at all, so it fell through to `general` — a
-  // mislabelled destination. Its only live surface, `ReferralModal`, mounts
-  // inside `UserMenu` -> `AppHeader`, i.e. only under `/accounts/**`, and
-  // nothing calls `useReferralDialog().openDialog()`. Pointing a palette
-  // entry at it would reproduce the "store with no renderer" defect this
-  // change exists to remove.
+  // mislabelled destination. The API has no referral routes, and the web
+  // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
   // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
   // WORKSPACE tab — which is a `?section=` on `/projects/[id]/customize/settings` now, not
@@ -1060,10 +1089,10 @@ export const menuRegistry: MenuItemDef[] = [
     icon: CogOne,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
+    kind: 'account',
     // It holds the account name, the MFA/session policy, the enterprise
     // preview, and deletion.
-    href: '/accounts/{accountId}?tab=settings',
+    accountTab: 'settings',
     keywords:
       'general organization org company name sign in rules teams manage security mfa danger zone rename delete',
   },
@@ -1073,8 +1102,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=members',
+    kind: 'account',
+    accountTab: 'members',
     // 'members' alone stays off this row: it names the project settings
     // Members tab, which is a different roster. These words name the ACCOUNT
     // roster specifically.
@@ -1086,8 +1115,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: CreditCardSolid,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=billing',
+    kind: 'account',
+    accountTab: 'billing',
     keywords:
       'billing payment credit card subscription manage wallet tier plan limits overview spend',
     requiresBilling: true,
@@ -1098,9 +1127,9 @@ export const menuRegistry: MenuItemDef[] = [
     icon: Coins,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
+    kind: 'account',
     // The account page calls this section `transactions`.
-    href: '/accounts/{accountId}?tab=transactions',
+    accountTab: 'transactions',
     keywords: 'usage credits ledger transactions history purchases receipts spend consumption',
   },
   {
@@ -1119,8 +1148,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: FolderOpen,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=access-projects',
+    kind: 'account',
+    accountTab: 'access-projects',
     keywords: 'workspace access grants who can open repositories per workspace membership',
   },
   {
@@ -1129,8 +1158,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: FolderGit2,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=git',
+    kind: 'account',
+    accountTab: 'git',
     keywords: 'git github app installation repositories connect clone remote host provider',
   },
   {
@@ -1139,8 +1168,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=groups',
+    kind: 'account',
+    accountTab: 'groups',
     keywords: 'groups teams directory scim membership sets',
   },
   {
@@ -1149,8 +1178,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: ShieldCheck,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=roles',
+    kind: 'account',
+    accountTab: 'roles',
     keywords: 'roles permissions access rbac policy custom role',
   },
   {
@@ -1159,8 +1188,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: ShieldCheck,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=identity',
+    kind: 'account',
+    accountTab: 'identity',
     keywords: 'identity sso saml oidc scim login provider single sign on directory',
   },
   {
@@ -1169,11 +1198,11 @@ export const menuRegistry: MenuItemDef[] = [
     icon: PaintBrush,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
+    kind: 'account',
     // Enterprise `branding` entitlement pane (#6947). The row stays ungated
     // like its enterprise siblings (roles, identity): the pane itself explains
     // the entitlement.
-    href: '/accounts/{accountId}?tab=branding',
+    accountTab: 'branding',
     keywords:
       'branding logo icon favicon product name app name white label whitelabel theme identity',
   },
@@ -1183,8 +1212,8 @@ export const menuRegistry: MenuItemDef[] = [
     icon: ScrollText,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/accounts/{accountId}?tab=audit',
+    kind: 'account',
+    accountTab: 'audit',
     keywords: 'audit log logs events history trail compliance',
   },
   {
@@ -1193,11 +1222,11 @@ export const menuRegistry: MenuItemDef[] = [
     icon: QuestionMark,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
+    kind: 'account',
     // The old `PermissionsHelpPopover`, promoted to a linkable pane. It is
     // reference copy — no data, no mutations — and is the only pane in the
     // Access rail nothing linked to from outside the page.
-    href: '/accounts/{accountId}?tab=help',
+    accountTab: 'help',
     keywords: 'permissions help what does mean reference explain owner admin member viewer',
   },
   {
@@ -1206,7 +1235,7 @@ export const menuRegistry: MenuItemDef[] = [
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette'],
-    kind: 'navigate',
+    kind: 'account',
     // The account page calls this section `tokens`, and since 2026-08-18 it
     // holds ONE kind of credential: a service account's — an automation's own
     // identity, which outlives whoever made it. A person's own API keys moved
@@ -1214,7 +1243,7 @@ export const menuRegistry: MenuItemDef[] = [
     // words for those — `personal`, `pat`, `cli` — moved with them. Leaving
     // them here would make this row the answer to a query it is the wrong
     // answer to.
-    href: '/accounts/{accountId}?tab=tokens',
+    accountTab: 'tokens',
     keywords:
       'service account tokens machine identity automation ci cd bot integration key rules expiry policy',
   },
@@ -1259,7 +1288,7 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   ...WALLPAPERS.map((wp): MenuItemDef => ({
     id: `wallpaper-${wp.id}`,
-    label: `Appearance · ${wp.name}`,
+    label: wp.name,
     icon: WallpaperIcon,
     group: 'wallpaper',
     showIn: ['commandPalette'],

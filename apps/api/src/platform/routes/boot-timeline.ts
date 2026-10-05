@@ -1,6 +1,6 @@
 /**
  * POST /v1/platform/boot-timeline — sandbox-only sink for the in-guest boot
- * timeline (apps/kortix-sandbox-agent-server/src/boot-timeline-relay.ts's
+ * timeline (apps/kortix-sandbox-agent-server/src/harness/shared/boot-timeline-relay.ts's
  * `relayBootTimelineToApi`), persisted via boot-timeline-store.ts's
  * `recordBootTimeline`.
  *
@@ -19,24 +19,16 @@
  *      this change's file set, same reasoning as main.ts not being wired here.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import {
-  getSessionRuntimeCredential,
-  isSessionSandboxCredential,
-} from '../../middleware/session-sandbox-credential';
-import { auth, errors, json, makeOpenApiApp } from '../../openapi';
+import { BootTimelineRelayBodySchema } from '@kortix/api-contract/runtime-relay';
+import { sessionSandboxes } from '@kortix/db';
+import { pinSandboxEgressIp, requestEgressIp } from '../services/sandbox-egress-pin';
 import { db } from '../../shared/db';
+import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { recordBootTimeline } from '../services/boot-timeline-store';
-import { pinRuntimeEgressIp, requestEgressIp } from '../services/sandbox-egress-pin';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 
-const BootMarkSchema = z.object({ label: z.string(), atMs: z.number() });
-
-const BootTimelineRequestSchema = z.object({
-  session_id: z.string(),
-  timeline: z.array(BootMarkSchema),
-});
 
 export const bootTimelineRouter = makeOpenApiApp<AppEnv>();
 
@@ -48,7 +40,7 @@ bootTimelineRouter.openapi(
     summary: 'Relay a sandbox in-guest boot timeline for server-side persistence',
     ...auth,
     request: {
-      body: { content: { 'application/json': { schema: BootTimelineRequestSchema } } },
+      body: { content: { 'application/json': { schema: BootTimelineRelayBodySchema } } },
     },
     responses: {
       200: json(z.object({ ok: z.boolean() }), 'Timeline recorded'),
@@ -62,8 +54,8 @@ bootTimelineRouter.openapi(
       return c.json({ error: 'boot-timeline requires a sandbox token' }, 403);
     }
     const accountId = c.get('accountId');
-    const runtimeCredential = getSessionRuntimeCredential(c);
-    if (!accountId || !runtimeCredential) {
+    const sandboxId = c.get('sandboxId');
+    if (!accountId || !sandboxId) {
       return c.json({ error: 'boot-timeline requires a sandbox token' }, 403);
     }
 
@@ -73,39 +65,22 @@ bootTimelineRouter.openapi(
     // relaying for (and to the caller's own account) — same defense-in-depth
     // as turn-stream's `authenticatedSandboxId` check, so a sandbox token can
     // only ever persist a timeline for the session it actually belongs to.
-    const [runtime] =
-      runtimeCredential.kind === 'environment'
-        ? await db
-            .select({
-              sessionId: sessionEnvironments.sessionId,
-              provider: sessionEnvironments.provider,
-            })
-            .from(sessionEnvironments)
-            .where(
-              and(
-                eq(sessionEnvironments.environmentId, runtimeCredential.runtimeId),
-                eq(sessionEnvironments.sessionId, body.session_id),
-                eq(sessionEnvironments.accountId, accountId),
-                inArray(sessionEnvironments.status, ['provisioning', 'active']),
-              ),
-            )
-            .limit(1)
-        : await db
-            .select({
-              sessionId: sessionSandboxes.sessionId,
-              provider: sessionSandboxes.provider,
-            })
-            .from(sessionSandboxes)
-            .where(
-              and(
-                eq(sessionSandboxes.sandboxId, runtimeCredential.runtimeId),
-                eq(sessionSandboxes.sessionId, body.session_id),
-                eq(sessionSandboxes.accountId, accountId),
-                inArray(sessionSandboxes.status, ['provisioning', 'active']),
-              ),
-            )
-            .limit(1);
-    if (!runtime) {
+    const [sandbox] = await db
+      .select({
+        sessionId: sessionSandboxes.sessionId,
+        provider: sessionSandboxes.provider,
+      })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, sandboxId),
+          eq(sessionSandboxes.sessionId, body.session_id),
+          eq(sessionSandboxes.accountId, accountId),
+          inArray(sessionSandboxes.status, ['provisioning', 'active']),
+        ),
+      )
+      .limit(1);
+    if (!sandbox) {
       return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
     }
 
@@ -114,20 +89,18 @@ bootTimelineRouter.openapi(
     // it happens before the agent can run — so the pin cannot be set by whoever
     // reaches the API first. Fire-and-forget for the same reason as the
     // timeline: a failed pin must never fail a boot.
-    void pinRuntimeEgressIp(runtimeCredential, requestEgressIp(c)).catch((err) =>
+    void pinSandboxEgressIp(sandboxId, requestEgressIp(c)).catch((err) =>
       console.warn('[egress-pin] could not pin sandbox egress ip (ignored):', err?.message ?? err),
     );
 
     // Fire-and-forget — this is telemetry, not a durability contract the
     // caller should wait on (see recordBootTimeline's doc comment).
-    if (runtimeCredential.kind === 'worker') {
-      recordBootTimeline({
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        accountId,
-        timeline: body.timeline,
-      });
-    }
+    recordBootTimeline({
+      provider: sandbox.provider,
+      sessionId: sandbox.sessionId,
+      accountId,
+      timeline: body.timeline,
+    });
 
     return c.json({ ok: true });
   },

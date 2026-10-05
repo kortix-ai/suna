@@ -22,11 +22,10 @@
  * the daemon authorizes the proxied call into OpenCode.
  */
 
-import { cellRuntimeFromSandboxMetadata } from './cell-runtime-detect';
-import { rootPinWithoutDiscovery } from './opencode-root-pin';
 import { and, eq } from 'drizzle-orm';
 
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
+import { BOOT_PHASE_HEADER } from '@kortix/api-contract/runtime-relay';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import {
@@ -68,25 +67,85 @@ export async function sandboxOpencodeEndpoint(
   return { url: ingress.url.replace(/\/$/, ''), headers };
 }
 
+/**
+ * WHY an `unreachable` happened.
+ *
+ * `unreachable` collapsed FIVE distinct causes into one word: no service key,
+ * a 401 unsigned context, any non-ok status, a request timeout, and a throw
+ * while resolving the endpoint. The caller then parks the session with
+ * `runtime_unreachable_timeout`, so an operator reading it learns only that
+ * "something about the box did not answer".
+ *
+ * That is not hypothetical. The 401 case is already recorded in the comment
+ * below as having disabled the opencode_sessions snapshot for three weeks
+ * unnoticed (0 of 2804 staging sessions, 2026-08). And on 2026-09-28 a dev
+ * session cycled `starting/unreachable` -> `failed/runtime_unreachable_timeout`
+ * for 1447s while its daemon answered the API's own service key with
+ * `200 {"daemon":"ok","opencode":"ok","runtimeReady":true}` — five candidate
+ * causes, no way to tell them apart from the outside.
+ *
+ * The caller contract is unchanged: `reason` still says `unreachable`. This
+ * only adds the WHY, so the next occurrence is self-diagnosing instead of
+ * costing another investigation.
+ */
+export type UnreachableCause =
+  /** No service key for this box — nothing was ever sent. */
+  | 'no_key'
+  /** The daemon refused the signed context (401). Never transient. */
+  | 'unsigned_context'
+  /** The daemon answered, with a status we cannot use. Carries the code. */
+  | `http_${number}`
+  /** The request exceeded LIST_TIMEOUT_MS, or the connection failed. */
+  | 'timeout_or_network'
+  /** Resolving the endpoint itself threw (provider API, rate limit, gone). */
+  | 'endpoint_error';
+
+/**
+ * Which of the two throw-shaped causes this error is.
+ *
+ * An AbortError/TimeoutError is the request budget — the box is reachable but
+ * slow. Anything else happened before or around the request (resolving the
+ * endpoint, the provider API, DNS, a refused connection) — the box could not
+ * be addressed at all. "Slow" and "gone" need different responses, so they
+ * must not share a word.
+ */
+export function unreachableCauseForThrow(err: unknown): UnreachableCause {
+  const aborted = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
+  return aborted ? 'timeout_or_network' : 'endpoint_error';
+}
+
 export type ListResult =
   | { ok: true; sessions: OpencodeSessionLite[] }
-  | { ok: false; reason: 'no_key' | 'not_ready' | 'unreachable'; bootPhase?: string };
+  | {
+      ok: false;
+      reason: 'no_key' | 'not_ready' | 'unreachable';
+      bootPhase?: string;
+      /** Present on every `unreachable`. See `UnreachableCause`. */
+      cause?: UnreachableCause;
+      /** `Server` header of whatever answered — names the provider edge. */
+      responder?: string;
+      /** First 120 chars of the error body, whitespace-collapsed. */
+      detail?: string;
+    };
 
-/** The daemon names its boot phase on every 503 — see the daemon's boot-phase.ts. */
-export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
+export { BOOT_PHASE_HEADER };
 
 /** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
 export async function listSandboxOpencodeSessions(
   externalId: string,
   userId: string | undefined,
+  opts: { endpoint?: { url: string; headers: Record<string, string> } } = {},
 ): Promise<ListResult> {
   try {
     // Endpoint resolution itself can throw (provider preview-link API errors,
     // rate limits, archived/deleted sandboxes). Keep it INSIDE the try so any
     // failure degrades to a clean `unreachable` instead of rejecting up the
     // call stack and 500ing the caller (e.g. the session list title-sync).
-    const ep = await sandboxOpencodeEndpoint(externalId, userId);
-    if (!ep) return { ok: false, reason: 'no_key' };
+    // A caller that already resolved the endpoint hands it in and skips its
+    // own resolution — the transcript read resolves it once per request, not
+    // once per stage.
+    const ep = opts.endpoint ?? (await sandboxOpencodeEndpoint(externalId, userId));
+    if (!ep) return { ok: false, reason: 'no_key', cause: 'no_key' };
     const res = await fetch(
       `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
       // Fail FAST: a healthy daemon answers this list in <300ms; an 8s budget
@@ -113,19 +172,44 @@ export async function listSandboxOpencodeSessions(
     // into a silent `unreachable` is what let a userId-less caller disable the
     // opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
     // sessions in 2026-08). Name it in the log; the caller contract is unchanged.
-    if (res.status === 401) {
-      appLogger.warn('[opencode-mapping] daemon refused the session list (unsigned context)', {
-        externalId,
-        hasUserId: Boolean(userId),
-      });
-      return { ok: false, reason: 'unreachable' };
+    if (!res.ok) {
+      // WHO answered. On this path the request goes to the PROVIDER EDGE
+      // (`resolveIngress` returns Platinum's `https://<port>-<id>.sbx…` with an
+      // HMAC header) — our control plane is never in it. So a 401 is either the
+      // edge rejecting the preview token or the DAEMON rejecting
+      // `X-Kortix-User-Context`, and those need opposite fixes.
+      //
+      // Five hypotheses were tested and killed against this one status code on
+      // 2026-09-28 — service-key rotation, a stale cached preview token, row/VM
+      // divergence, boot slowness, a control-plane refusal — because the
+      // responder was never recorded. Record it: `server` names the edge when
+      // the edge answers, and a short body snippet distinguishes the two.
+      const responder = res.headers.get('server')?.trim().slice(0, 40) || null;
+      const snippet = (await res.text().catch(() => ''))
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      if (res.status === 401) {
+        appLogger.warn('[opencode-mapping] session list refused with 401', {
+          externalId,
+          hasUserId: Boolean(userId),
+          responder: responder ?? 'unnamed',
+          body: snippet,
+        });
+      }
+      return {
+        ok: false,
+        reason: 'unreachable',
+        cause: res.status === 401 ? 'unsigned_context' : `http_${res.status}`,
+        ...(responder ? { responder } : {}),
+        ...(snippet ? { detail: snippet } : {}),
+      };
     }
-    if (!res.ok) return { ok: false, reason: 'unreachable' };
     const data = (await res.json()) as unknown;
     const sessions = Array.isArray(data) ? (data as OpencodeSessionLite[]) : [];
     return { ok: true, sessions };
-  } catch {
-    return { ok: false, reason: 'unreachable' };
+  } catch (err) {
+    return { ok: false, reason: 'unreachable', cause: unreachableCauseForThrow(err) };
   }
 }
 
@@ -142,6 +226,12 @@ export interface EnsureResult {
   sessions?: OpencodeSessionLite[];
   /** Daemon-reported boot phase behind a `not_ready` (opaque; compare for equality). */
   bootPhase?: string;
+  /** WHY, when `reason` is `unreachable`. See `UnreachableCause`. */
+  cause?: UnreachableCause;
+  /** `Server` header of whatever answered. */
+  responder?: string;
+  /** First 120 chars of the error body. */
+  detail?: string;
 }
 
 /**
@@ -151,47 +241,6 @@ export interface EnsureResult {
  * current pin unchanged so a transient sandbox blip never clobbers a good
  * mapping.
  */
-/** The provider-side runtime of a box ('cell' | 'microvm' | ...), cached: it is
- *  immutable for the life of a sandbox. Null when it cannot be read, which
- *  means "discover", the answer given before this existed. */
-const runtimeCache = new Map<string, string>();
-async function sandboxRuntimeFor(externalId: string, sessionId?: string): Promise<string | null> {
-  const hit = runtimeCache.get(externalId);
-  if (hit) return hit;
-  try {
-    // THE SESSION'S OWN ROW FIRST. A shared cell runner has one row per
-    // session under the same `external_id`, and `limit(1)` there is whichever
-    // the ordering preferred — a row that carries none of the cell markers
-    // answers "not a cell", which sends this session to DISCOVERY, and
-    // discovery on a shared box reaches the default cell and pins ANOTHER
-    // session's root. Measured on dev 2026-09-10: session c025199e's row
-    // carried `opencode_session_id: f04394e2…`, and the transcript it served
-    // was that other session's.
-    const rows = sessionId
-      ? await db
-          .select({ metadata: sessionSandboxes.metadata, provider: sessionSandboxes.provider })
-          .from(sessionSandboxes)
-          .where(eq(sessionSandboxes.sessionId, sessionId))
-          .limit(1)
-      : [];
-    const [row] = rows.length
-      ? rows
-      : await db
-          .select({ metadata: sessionSandboxes.metadata, provider: sessionSandboxes.provider })
-          .from(sessionSandboxes)
-          .where(eq(sessionSandboxes.externalId, externalId))
-          .limit(1);
-    // Every signal that survives, including the pooled-claim rewrite that
-    // strips `pi_worker_boot` from exactly the sessions that share a box.
-    // See cell-runtime-detect.ts.
-    const runtime = cellRuntimeFromSandboxMetadata(row?.metadata);
-    if (runtime) runtimeCache.set(externalId, runtime);
-    return runtime;
-  } catch {
-    return null;
-  }
-}
-
 export async function ensureOpencodeSessionPin(input: {
   projectId: string;
   sessionId: string;
@@ -199,32 +248,27 @@ export async function ensureOpencodeSessionPin(input: {
   externalId: string;
   userId: string | undefined;
   currentPin: string | null;
+  /** Pre-resolved daemon endpoint. When given, the session list below skips
+   *  its own (provider-hitting) resolution. */
+  endpoint?: { url: string; headers: Record<string, string> };
 }): Promise<EnsureResult> {
   const { projectId, sessionId, accountId, externalId, userId, currentPin } = input;
 
-  // A CELL NEEDS NO DISCOVERY, AND MUST NOT HAVE IT. The box is addressed BY the
-  // session, so the root is this session's id by construction. `GET /session`
-  // carries no session anywhere in the request, so on a shared cell host it
-  // reaches the worker's default cell and every session pins the SAME root —
-  // measured on dev 2026-09-08, three sessions with one prompt each all showing
-  // the same ten user/assistant pairs. See opencode-root-pin.ts.
-  const cellPin = rootPinWithoutDiscovery(await sandboxRuntimeFor(externalId, sessionId), sessionId);
-  if (cellPin) {
-    if (cellPin === currentPin) return { pin: cellPin, changed: false, reason: 'unchanged' };
-    await db
-      .update(projectSessions)
-      .set({ opencodeSessionId: cellPin, updatedAt: new Date() })
-      .where(eq(projectSessions.sessionId, sessionId));
-    return { pin: cellPin, changed: true, reason: 'healed' };
-  }
-
-  const listed = await listSandboxOpencodeSessions(externalId, userId);
+  const listed = await listSandboxOpencodeSessions(
+    externalId,
+    userId,
+    input.endpoint ? { endpoint: input.endpoint } : undefined,
+  );
   if (!listed.ok) {
     return {
       pin: currentPin,
       changed: false,
       reason: listed.reason === 'not_ready' ? 'not_ready' : 'unreachable',
       ...(listed.bootPhase ? { bootPhase: listed.bootPhase } : {}),
+      // Carry the WHY to the open, which is the only place a human sees it.
+      ...(listed.cause ? { cause: listed.cause } : {}),
+      ...(listed.responder ? { responder: listed.responder } : {}),
+      ...(listed.detail ? { detail: listed.detail } : {}),
     };
   }
 
@@ -241,7 +285,7 @@ export async function ensureOpencodeSessionPin(input: {
 
   await db
     .update(projectSessions)
-    .set({ opencodeSessionId: resolved, updatedAt: new Date() })
+    .set({ runtimeSessionId: resolved, updatedAt: new Date() })
     .where(
       and(
         eq(projectSessions.sessionId, sessionId),

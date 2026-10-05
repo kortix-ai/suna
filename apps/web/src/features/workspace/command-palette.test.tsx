@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   isSettingsTabAllowed,
-} from '@/features/workspace/settings/settings-panel';
+} from '@/features/workspace/settings/settings-panel-body';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
@@ -13,7 +13,7 @@ import {
 } from '@/features/workspace/settings/settings-tabs';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
-import { LEGACY_SETTINGS_TAB_MAP } from './command-palette';
+import { LEGACY_SETTINGS_TAB_MAP, sessionMatchesPaletteQuery } from './command-palette';
 import {
   PALETTE_ACCOUNT_SCOPED_TABS,
   PALETTE_NO_PROJECT_DEFAULT_TAB,
@@ -439,7 +439,11 @@ describe('the registry no longer carries palette settings destinations', () => {
    * rail any more. Each must point at `/accounts/{accountId}`, never at a
    * `/settings/<tab>` segment `parseSettingsTab` would reject.
    */
-  test('every account section is a navigate row on the account page', () => {
+  // `kind: 'account'`, not `navigate`: the hub has no route, so these rows
+  // open a modal over the current page rather than pushing a URL. A row left
+  // on `navigate` would push an href that 404s — which is exactly the defect
+  // this file exists to catch, one surface later.
+  test('every account section is an account row, with no href to navigate to', () => {
     const ids = [
       'account-general',
       'account-members',
@@ -454,9 +458,9 @@ describe('the registry no longer carries palette settings destinations', () => {
     for (const id of ids) {
       const item = paletteItems.find((entry) => entry.id === id);
       expect(item).toBeDefined();
-      expect(item?.kind).toBe('navigate');
-      expect(item?.href?.startsWith('/accounts/{accountId}?tab=')).toBe(true);
-      expect(resolveSettingsOverlayHref(item!.href!).opensOverlay).toBe(false);
+      expect(item?.kind).toBe('account');
+      expect(typeof item?.accountTab).toBe('string');
+      expect(item?.href).toBeUndefined();
     }
   });
 });
@@ -499,9 +503,7 @@ describe('LEGACY_SETTINGS_TAB_MAP', () => {
     // `referrals` is not a member of `SettingsTab`, so `account-referrals`
     // fell through to `DEFAULT_SETTINGS_TAB` and opened the project workspace
     // General tab under a "Referrals" label. Mapping it correctly was not an
-    // option: the only live referral surface is `ReferralModal`, which mounts
-    // inside `UserMenu` -> `AppHeader` (i.e. only under `/accounts/**`) and
-    // which nothing opens. The entry was removed instead.
+    // option: the API has no referral routes. The entry was removed instead.
     expect(SETTINGS_TABS as readonly string[]).not.toContain('referrals');
     expect(LEGACY_SETTINGS_TAB_MAP.referrals).toBeUndefined();
     expect(paletteItems.find((item) => item.id === 'account-referrals')).toBeUndefined();
@@ -541,5 +543,43 @@ describe('command palette — model list chrome', () => {
 
   test('the raw model ID is gated on saying something the name does not', () => {
     expect(modelsPage).toContain('modelIdAddsInformation(model.modelName, model.modelID)');
+  });
+});
+
+describe('palette session search', () => {
+  const session = {
+    session_id: 'ses_abc123456',
+    name: 'Quarterly review',
+  } as Parameters<typeof sessionMatchesPaletteQuery>[0];
+
+  test('matches full session ID and its prefix, not arbitrary ID substrings', () => {
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc123456')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'abc123')).toBe(false);
+    expect(sessionMatchesPaletteQuery(session, 'quarterly')).toBe(true);
+  });
+});
+
+/**
+ * The SSH dialog store was write-only dead wiring: nothing read `isOpen`, so
+ * no dialog could ever render, and no registry row referenced the handler id,
+ * so the palette could not reach it either (KRTX-723). These pins keep it
+ * deleted: a registry row that starts answering the retired action id, or a
+ * return of the dynamic import, fails here. The needles are assembled from
+ * parts on purpose — the retirement sweep greps apps/web/src for the exact
+ * identifiers, and this test must not become its own hit.
+ */
+describe('the retired ssh dialog wiring', () => {
+  const retiredActionId = 'generate' + 'SSHKey';
+  const retiredStorePath = '@/stores/ssh-' + 'dialog-store';
+
+  test('no palette row reaches the retired action id', () => {
+    expect(paletteItems.some((item) => item.actionId === retiredActionId)).toBe(false);
+  });
+
+  test('the palette neither imports the store nor names the handler', () => {
+    const source = readFileSync(new URL('./command-palette.tsx', import.meta.url), 'utf8');
+    expect(source).not.toContain(retiredStorePath);
+    expect(source).not.toContain(retiredActionId);
   });
 });

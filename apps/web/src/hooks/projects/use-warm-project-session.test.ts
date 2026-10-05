@@ -86,8 +86,8 @@ describe('warmSessionFitsSend', () => {
 
   test('per-session connector wiring has no equivalent on an existing session', () => {
     expect(warmSessionFitsSend(warm(), { connector_bindings: {} })).toBe(false);
+    expect(warmSessionFitsSend(warm(), { provider_secret_pools: { anthropic: ['primary', 'backup'] } })).toBe(false);
     expect(warmSessionFitsSend(warm(), { inherit_unbound: false })).toBe(false);
-    expect(warmSessionFitsSend(warm(), { require_connectors: ['slack'] })).toBe(false);
   });
 });
 
@@ -146,9 +146,36 @@ describe('createWarmSession', () => {
 
   test('projects are independent', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-a' }) }));
-    await createWarmSession('proj-2', client({ create: async () => warm({ sessionId: 'warm-b' }) }));
+    await createWarmSession(
+      'proj-2',
+      client({ create: async () => warm({ sessionId: 'warm-b' }) }),
+    );
     expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-a');
     expect(useWarmSessionStore.getState().ready['proj-2']?.sessionId).toBe('warm-b');
+  });
+
+  // KRTX-700 phase 1: the retry must exclude the id that was REFUSED, not
+  // repeat the original exclusion — repeating it verbatim guarantees a second
+  // refusal when the server echoes a different taken id than the one excluded.
+  test('the echo retry excludes the REFUSED id, not the original exclusion', async () => {
+    // The tab already took warm-2. The server ignores exclusions, so a create
+    // asked to exclude warm-1 still gets warm-2 back.
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-2' }) }));
+    takeWarmSession(P, { replenish: false });
+    const calls: Array<string | undefined> = [];
+    const create = mock(async (_projectId: string, excludeSessionId?: string) => {
+      calls.push(excludeSessionId);
+      return warm({ sessionId: 'warm-2' });
+    });
+
+    await createWarmSession(P, { create }, { excludeSessionId: 'warm-1' });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls).toEqual(['warm-1', 'warm-2']);
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+    expect(useWarmSessionStore.getState().creating[P]).toBeUndefined();
   });
 });
 
@@ -203,9 +230,9 @@ describe('takeWarmSession', () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
     const create = mock(async () => warm({ sessionId: 'warm-2' }));
 
-    expect(
-      takeWarmSession(P, { replenish: false, isPresent: PRESENT, client: { create } }),
-    ).toBe('warm-1');
+    expect(takeWarmSession(P, { replenish: false, isPresent: PRESENT, client: { create } })).toBe(
+      'warm-1',
+    );
     await Promise.resolve();
 
     expect(create).not.toHaveBeenCalled();
@@ -213,7 +240,10 @@ describe('takeWarmSession', () => {
 
   test('projects are independent', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-a' }) }));
-    await createWarmSession('proj-2', client({ create: async () => warm({ sessionId: 'warm-b' }) }));
+    await createWarmSession(
+      'proj-2',
+      client({ create: async () => warm({ sessionId: 'warm-b' }) }),
+    );
     expect(takeWarmSession(P, { replenish: false })).toBe('warm-a');
     expect(useWarmSessionStore.getState().ready['proj-2']?.sessionId).toBe('warm-b');
   });
@@ -258,9 +288,13 @@ describe('takeWarmSession', () => {
     expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
   });
 
-  test('a server without the fix that echoes the just-taken id gets exactly ONE retry, then gives up — no infinite loop', async () => {
+  test('a server without the fix that echoes the just-taken id gets exactly ONE retry, excluding the echoed id, then gives up — no infinite loop', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
-    const create = mock(async () => warm({ sessionId: 'warm-1' })); // always echoes the taken id
+    const calls: Array<string | undefined> = [];
+    const create = mock(async (_projectId: string, excludeSessionId?: string) => {
+      calls.push(excludeSessionId);
+      return warm({ sessionId: 'warm-1' }); // always echoes the taken id
+    });
 
     expect(takeWarmSession(P, { isPresent: PRESENT, client: { create } })).toBe('warm-1');
     // Let the initial replenish AND its one retry both settle.
@@ -270,6 +304,9 @@ describe('takeWarmSession', () => {
     await Promise.resolve();
 
     expect(create).toHaveBeenCalledTimes(2); // one attempt + one bounded retry, never more
+    // KRTX-700 phase 1: the replenish carries the taken id; the retry excludes
+    // the ECHOED id — the same id here, so the sequence pins both hops.
+    expect(calls).toEqual(['warm-1', 'warm-1']);
     expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
     expect(useWarmSessionStore.getState().creating[P]).toBeUndefined();
   });
@@ -551,6 +588,43 @@ describe('revalidateHeldWarmSession', () => {
     const dropped = await pending;
     expect(dropped).toBe(false);
   });
+
+  // KRTX-700 phase 1: the check compares SESSION ids, not "some entry is still
+  // held". A hold replaced mid-fetch (take + replenish files a new session)
+  // must survive the stale read; a weaker check would drop the replacement.
+  test('a hold REPLACED mid-fetch is not dropped — the check is the same session, not any entry', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const registry = registryOf();
+
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = revalidateHeldWarmSession(P, {
+      registry,
+      fetchSession: async () => {
+        await gate;
+        return { metadata: {} }; // warm-1 is no longer warm server-side
+      },
+    });
+    // While the fetch is in flight the user takes warm-1 and the replenish
+    // files warm-2: the hold was replaced, not merely consumed.
+    expect(
+      takeWarmSession(P, {
+        isPresent: PRESENT,
+        registry,
+        client: { create: async () => warm({ sessionId: 'warm-2' }) },
+      }),
+    ).toBe('warm-1');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-2');
+    release();
+
+    const dropped = await pending;
+    expect(dropped).toBe(false);
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-2');
+  });
 });
 
 // --- JAY-599 / T21: the sessions-list optimistic seed needs the full server
@@ -583,7 +657,6 @@ describe('takeWarmSessionEntry', () => {
   });
 });
 
-
 describe('primeTakenWarmSession — the first prompt lands as a durable row on the warm session', () => {
   const warmEntry = (): WarmSession => ({
     sessionId: WARM,
@@ -614,7 +687,95 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
     const claim = mock(async () => {
       throw Object.assign(new Error('gone'), { code: 'WARM_SESSION_ALREADY_CLAIMED' });
     });
-    const ok = await primeTakenWarmSession(P, warmEntry(), { pending_prompt: { text: 'hi' } }, claim as never);
+    const ok = await primeTakenWarmSession(
+      P,
+      warmEntry(),
+      { pending_prompt: { text: 'hi' } },
+      claim as never,
+    );
     expect(ok).toBe(false);
+  });
+
+  // A large first prompt (attachments ride as data: URLs) can outlast the
+  // API's 25 s deadline or the SDK's 30 s abort while the claim transaction
+  // still commits. Treating that as a refusal fell back to a SECOND create
+  // with the same prompt, and the home composer kept the text of a prompt the
+  // agent was already running.
+  const noSleep = async () => {};
+  const timeout = () => Object.assign(new Error('Request timed out after 30s'), { code: 'TIMEOUT' });
+  const deadline = () =>
+    Object.assign(new Error('Request exceeded the server processing deadline'), {
+      code: 'request_deadline',
+    });
+
+  test('an ambiguous claim failure whose warm marker is gone IS the claim — true', async () => {
+    const claim = mock(async () => {
+      throw timeout();
+    });
+    const reads: string[] = [];
+    const read = mock(async (_projectId: string, sessionId: string) => {
+      reads.push(sessionId);
+      return { ...serverRow(WARM), metadata: { pending_prompt: { agent: 'kortix' } } };
+    });
+    const ok = await primeTakenWarmSession(
+      P,
+      warmEntry(),
+      { pending_prompt: { text: 'with a file' } },
+      claim as never,
+      read as never,
+      noSleep,
+    );
+    expect(ok).toBe(true);
+    expect(reads).toEqual([WARM]);
+  });
+
+  test('a server deadline counts the same as a client timeout', async () => {
+    const claim = mock(async () => {
+      throw deadline();
+    });
+    const read = mock(async () => ({ ...serverRow(WARM), metadata: {} }));
+    const ok = await primeTakenWarmSession(
+      P,
+      warmEntry(),
+      { pending_prompt: { text: 'with a file' } },
+      claim as never,
+      read as never,
+      noSleep,
+    );
+    expect(ok).toBe(true);
+  });
+
+  test('an ambiguous failure whose session is STILL warm is false after polling', async () => {
+    const claim = mock(async () => {
+      throw timeout();
+    });
+    const read = mock(async () => serverRow(WARM));
+    const ok = await primeTakenWarmSession(
+      P,
+      warmEntry(),
+      { pending_prompt: { text: 'with a file' } },
+      claim as never,
+      read as never,
+      noSleep,
+    );
+    expect(ok).toBe(false);
+    expect(read.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  test('a definite refusal never reads the session', async () => {
+    const claim = mock(async () => {
+      throw Object.assign(new Error('gone'), { code: 'WARM_SESSION_ALREADY_CLAIMED' });
+    });
+    const read = mock(async () => serverRow(WARM));
+    const ok = await primeTakenWarmSession(
+      P,
+      warmEntry(),
+      { pending_prompt: { text: 'hi' } },
+      claim as never,
+      read as never,
+      noSleep,
+    );
+    expect(ok).toBe(false);
+    expect(read.mock.calls.length).toBe(0);
   });
 });

@@ -23,11 +23,27 @@ const SESSION = '00000000-0000-4000-a000-000000000501';
 const SESSION_B = '00000000-0000-4000-a000-000000000502';
 /** Same session, but with no persisted model — exercises the compact fallback. */
 const SESSION_C = '00000000-0000-4000-a000-000000000503';
+/** A pi-harness session: its runtime lists no `session.compact` / `session.attach`. */
+const SESSION_PI = '00000000-0000-4000-a000-000000000504';
 const ACCOUNT = '00000000-0000-4000-a000-000000000401';
 const EXECUTION = '00000000-0000-4000-a000-000000000601';
 const PROMPT_ROW = '00000000-0000-4000-a000-000000000701';
 const SHARE = '00000000-0000-4000-a000-000000000801';
 const EXTERNAL = 'sandbox-parity';
+const EXTERNAL_PI = 'sandbox-pi';
+/** `GET /kortix/health` capabilities, as the W3 daemon lists them per harness. */
+const OPENCODE_CAPABILITIES = [
+  'session.rewind',
+  'session.compact',
+  'session.commands',
+  'session.fork',
+  'session.subagents',
+  'session.mcp',
+  'session.todo',
+  'session.shell',
+  'session.attach',
+];
+const PI_CAPABILITIES = ['session.subagents'];
 
 interface Seen {
   method: string;
@@ -101,15 +117,25 @@ function queuedPrompt() {
   };
 }
 
+/** Bytes of each multipart body's file parts, so the fake daemon answers like the real one. */
+const multipartFileBytes = new WeakMap<object, number>();
+
 async function bodyOf(req: Request): Promise<unknown> {
   const type = req.headers.get('content-type') ?? '';
   if (type.includes('application/json')) return req.json().catch(() => null);
   if (type.includes('multipart/form-data')) {
     const form = await req.formData();
     const out: Record<string, unknown> = {};
+    let fileBytes = 0;
     for (const [key, value] of form.entries()) {
-      out[key] = typeof value === 'string' ? value : `<file:${(value as File).name}>`;
+      if (typeof value === 'string') {
+        out[key] = value;
+      } else {
+        out[key] = `<file:${(value as File).name}>`;
+        fileBytes += (value as File).size;
+      }
     }
+    multipartFileBytes.set(out, fileBytes);
     return out;
   }
   return null;
@@ -128,6 +154,13 @@ function startServer(): string {
       const project = `/v1/projects/${PROJECT}`;
       const session = `${project}/sessions/${SESSION}`;
 
+      if (method === 'GET' && path === `${session}/config`) {
+        return Response.json({ running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true });
+      }
+      if (method === 'POST' && path === `${session}/reload`) {
+        return Response.json({ applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+      }
+
       // ── control plane ────────────────────────────────────────────────────
       if (method === 'GET' && path === `${project}/sessions/${SESSION}`) {
         return Response.json(sessionRow());
@@ -137,6 +170,21 @@ function startServer(): string {
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_C}`) {
         return Response.json({ ...sessionRow(SESSION_C), metadata: {} });
+      }
+      if (method === 'GET' && path === `${project}/sessions/${SESSION_PI}`) {
+        return Response.json(sessionRow(SESSION_PI));
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_PI}/start`) {
+        return Response.json({
+          stage: 'ready',
+          agent_name: 'kortix',
+          retriable: false,
+          sandbox: { external_id: EXTERNAL_PI },
+          opencode_session_id: 'ses_oc',
+        });
+      }
+      if (method === 'GET' && path === `/v1/p/${EXTERNAL_PI}/8000/kortix/health`) {
+        return Response.json({ status: 'ok', runtimeReady: true, capabilities: PI_CAPABILITIES });
       }
       if (method === 'POST' && path === `${project}/sessions/${SESSION_C}/start`) {
         return Response.json({
@@ -266,6 +314,13 @@ function startServer(): string {
       }
 
       // ── sandbox daemon (through the /v1/p proxy) ─────────────────────────
+      if (method === 'GET' && path === `${daemon}/kortix/health`) {
+        return Response.json({
+          status: 'ok',
+          runtimeReady: true,
+          capabilities: ['file.import', ...OPENCODE_CAPABILITIES],
+        });
+      }
       if (method === 'GET' && path === `${daemon}/file`) {
         return Response.json([
           { name: 'report.md', path: 'out/report.md', absolute: '/workspace/out/report.md', type: 'file', ignored: false },
@@ -290,7 +345,10 @@ function startServer(): string {
         const form = (body ?? {}) as Record<string, unknown>;
         const parent = typeof form.path === 'string' ? form.path : '/workspace';
         const name = typeof form.filename === 'string' ? form.filename : 'uploaded';
-        return Response.json([{ path: `${parent}/${name}`.replace('//', '/'), size: 5 }]);
+        // The real daemon answers with the bytes it wrote (`buffer.byteLength`).
+        return Response.json([
+          { path: `${parent}/${name}`.replace('//', '/'), size: multipartFileBytes.get(form) ?? 0 },
+        ]);
       }
       if (method === 'POST' && path === `${daemon}/session/ses_oc/summarize`) {
         return Response.json({});
@@ -676,7 +734,8 @@ describe('kortix sessions model', () => {
       {
         method: 'PUT',
         path: `/v1/projects/${PROJECT}/sessions/${SESSION}/model`,
-        body: { opencode_model: 'kortix/glm-5.3-flash' },
+        // `model` since W4; `opencode_model` keeps an older self-hosted API working.
+        body: { model: 'kortix/glm-5.3-flash', opencode_model: 'kortix/glm-5.3-flash' },
       },
     ]);
     expect(r.stdout).toContain('Now running kortix/glm-5.3-flash');
@@ -721,6 +780,25 @@ describe('kortix sessions compact', () => {
     const r = await runCli(['sessions', 'compact', ...P], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('Pass a session id');
+  });
+
+  test('a runtime without session.compact exits 1 before any summarize call', async () => {
+    const r = await runCli(['sessions', 'compact', SESSION_PI, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("This session's runtime does not support compacting the conversation.");
+    expect(calls('GET', `/v1/p/${EXTERNAL_PI}/8000/kortix/health`)).toHaveLength(1);
+    expect(calls('POST', `/v1/p/${EXTERNAL_PI}/8000/session`)).toEqual([]);
+  });
+});
+
+describe('kortix connect', () => {
+  test('a runtime without session.attach exits 1 with the reason, before any download', async () => {
+    const r = await runCli(['connect', SESSION_PI, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("This session's runtime does not support attaching a terminal client.");
+    expect(r.stderr).toContain(`kortix sessions shell ${SESSION_PI}`);
+    // The version probe precedes the opencode download; it never ran.
+    expect(calls('GET', `/v1/p/${EXTERNAL_PI}/8000/global/health`)).toEqual([]);
   });
 });
 
@@ -821,10 +899,13 @@ describe('kortix sessions files', () => {
     const upload = calls('POST', `${daemon}/file/upload`)[0]?.body as Record<string, string>;
     expect(upload.path).toBe('/workspace/out');
     expect(upload.filename).toMatch(/^\.note\.txt\.kortix-write-/);
-    // Backup the target, move the temp into place, drop the backup.
+    // One rename moves the temp onto the target. The target is never moved
+    // aside, so nothing is deleted.
     const renames = calls('POST', `${daemon}/file/rename`).map((c) => c.body as { from: string; to: string });
-    expect(renames.some((r2) => r2.to === '/workspace/out/note.txt')).toBe(true);
-    expect(calls('DELETE', `${daemon}/file`)).toHaveLength(1);
+    expect(renames).toHaveLength(1);
+    expect(renames[0]?.to).toBe('/workspace/out/note.txt');
+    expect(renames[0]?.from).toMatch(/^\/workspace\/out\/\.note\.txt\.kortix-write-/);
+    expect(calls('DELETE', `${daemon}/file`)).toHaveLength(0);
   });
 
   test('write reads stdin when there is no --from', async () => {
@@ -842,7 +923,22 @@ describe('kortix sessions files', () => {
     const r = await runCli(['sessions', 'files', SESSION, 'touch', 'out/empty.txt', ...P], config);
     expect(r.code).toBe(0);
     expect(calls('POST', `${daemon}/file/upload`)).toHaveLength(1);
+    expect(calls('POST', `${daemon}/file/rename`)[0]?.body).toMatchObject({
+      to: '/workspace/out/empty.txt',
+      overwrite: false,
+    });
   });
+
+  for (const existing of ['out/report.md', 'out/assets']) {
+    test(`touch on an existing path (${existing}) fails and writes nothing`, async () => {
+      const r = await runCli(['sessions', 'files', SESSION, 'touch', existing, ...P], config);
+      expect(r.code).not.toBe(0);
+      expect(r.stderr + r.stdout).toContain('already exists');
+      expect(calls('POST', `${daemon}/file/upload`)).toHaveLength(0);
+      expect(calls('POST', `${daemon}/file/rename`)).toHaveLength(0);
+      expect(calls('DELETE', `${daemon}/file`)).toHaveLength(0);
+    });
+  }
 
   test('a missing subcommand exits 2 with the help', async () => {
     const r = await runCli(['sessions', 'files', SESSION, ...P], config);
@@ -919,5 +1015,30 @@ describe('kortix sessions rm (multiple ids)', () => {
     const r = await runCli(['sessions', 'rm', ...P], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('Pass a session id');
+  });
+});
+
+describe('kortix sessions reload', () => {
+  const cases: { options: string[] }[] = [{ options: [] }, { options: ['--status'] }, { options: ['--force', '--no-repo'] }];
+  test.each(cases)('preserves --json with options %j', async ({ options }) => {
+    const r = await runCli(['sessions', 'reload', SESSION, '--json', ...options, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    const statusOnly = options.includes('--status');
+    expect(JSON.parse(r.stdout)).toEqual(statusOnly
+      ? { running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true }
+      : { applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+    if (!statusOnly) {
+      expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`)).toEqual([
+        { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`, body: { refresh_repo: !options.includes('--no-repo'), force: options.includes('--force') } },
+      ]);
+    }
+  });
+
+  test('keeps human output without --json', async () => {
+    const r = await runCli(['sessions', 'reload', SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Config reloaded.');
+    expect(() => JSON.parse(r.stdout)).toThrow();
   });
 });

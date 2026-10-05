@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  captureTurnScrollAnchor,
-  restoreTurnScrollAnchor,
-} from './session-history-scroll';
+import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 
 function rect(top: number, bottom = top + 100): DOMRect {
   return { top, bottom } as DOMRect;

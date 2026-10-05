@@ -1,9 +1,9 @@
 'use client';
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 // ============================================================================
 // Types
@@ -36,8 +36,6 @@ export interface UserPreferences {
   themeId: string;
   /** Selected desktop wallpaper ID */
   wallpaperId: string;
-  /** When true, the tab selector bar is hidden and content extends to the top */
-  disableTabSelector: boolean;
   /** Session action panel mode — defaults to 'easy' for all users */
   panelMode: PanelMode;
   /**
@@ -67,6 +65,7 @@ function getDefaultKeyboardPreferences(): KeyboardShortcutPreferences {
 
 interface UserPreferencesState {
   preferences: UserPreferences;
+  patchPreferences: (partial: Partial<UserPreferences>) => void;
 
   /** Update keyboard shortcut preferences (partial merge) */
   setKeyboardPreferences: (prefs: Partial<KeyboardShortcutPreferences>) => void;
@@ -77,81 +76,36 @@ interface UserPreferencesState {
   /** Set the active desktop wallpaper by ID */
   setWallpaperId: (wallpaperId: string) => void;
 
-  /** Toggle the tab selector bar on/off */
-  setDisableTabSelector: (disabled: boolean) => void;
-
-  /** Set the session panel mode */
-  setPanelMode: (mode: PanelMode) => void;
-
   /** Flip between easy and advanced */
   togglePanelMode: () => void;
 
   /** Set the conversation density */
   setConversationDensity: (density: ConversationDensity) => void;
 
-  /** Reset all preferences to defaults */
-  resetPreferences: () => void;
-
   /** Get the label for the current tab switch modifier (e.g. "Cmd" or "Ctrl") */
   getModifierLabel: () => string;
 }
 
+const DEFAULT_PREFERENCES: UserPreferences = {
+  keyboard: getDefaultKeyboardPreferences(),
+  themeId: 'graphite',
+  wallpaperId: DEFAULT_WALLPAPER_ID,
+  panelMode: 'easy',
+  conversationDensity: 'normal',
+};
+
 export const useUserPreferencesStore = create<UserPreferencesState>()(
   persist(
     (set, get) => ({
-      preferences: {
-        keyboard: getDefaultKeyboardPreferences(),
-        themeId: 'graphite',
-        wallpaperId: DEFAULT_WALLPAPER_ID,
-        disableTabSelector: false,
-        panelMode: 'easy',
-        conversationDensity: 'normal',
-      },
+      preferences: DEFAULT_PREFERENCES,
 
-      setKeyboardPreferences: (prefs) => {
-        const current = get().preferences;
-        set({
-          preferences: {
-            ...current,
-            keyboard: { ...current.keyboard, ...prefs },
-          },
-        });
-      },
+      patchPreferences: (partial) => set({ preferences: { ...get().preferences, ...partial } }),
 
-      setThemeId: (themeId) => {
-        const current = get().preferences;
-        set({
-          preferences: {
-            ...current,
-            themeId,
-          },
-        });
-      },
+      setKeyboardPreferences: (prefs) => get().patchPreferences({ keyboard: { ...get().preferences.keyboard, ...prefs } }),
 
-      setWallpaperId: (wallpaperId) => {
-        const current = get().preferences;
-        set({
-          preferences: {
-            ...current,
-            wallpaperId,
-          },
-        });
-      },
+      setThemeId: (themeId) => get().patchPreferences({ themeId }),
 
-      setDisableTabSelector: (disabled) => {
-        const current = get().preferences;
-        set({
-          preferences: {
-            ...current,
-            disableTabSelector: disabled,
-          },
-        });
-      },
-
-      setPanelMode: (mode) => {
-        const current = get().preferences;
-        set({ preferences: { ...current, panelMode: mode } });
-      },
+      setWallpaperId: (wallpaperId) => get().patchPreferences({ wallpaperId }),
 
       togglePanelMode: () => {
         const current = get().preferences;
@@ -161,31 +115,10 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
         // site in the app already does via `?? 'easy'`), or the toggle
         // silently writes 'easy' back and the Advanced affordance does nothing.
         const effective = current.panelMode ?? 'easy';
-        set({
-          preferences: {
-            ...current,
-            panelMode: effective === 'easy' ? 'advanced' : 'easy',
-          },
-        });
+        get().patchPreferences({ panelMode: effective === 'easy' ? 'advanced' : 'easy' });
       },
 
-      setConversationDensity: (density) => {
-        const current = get().preferences;
-        set({ preferences: { ...current, conversationDensity: density } });
-      },
-
-      resetPreferences: () => {
-        set({
-          preferences: {
-            keyboard: getDefaultKeyboardPreferences(),
-            themeId: 'graphite',
-            wallpaperId: DEFAULT_WALLPAPER_ID,
-            disableTabSelector: false,
-            panelMode: 'easy',
-            conversationDensity: 'normal',
-          },
-        });
-      },
+      setConversationDensity: (density) => get().patchPreferences({ conversationDensity: density }),
 
       getModifierLabel: () => {
         const mod = get().preferences.keyboard.tabSwitchModifier;
@@ -198,6 +131,6 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       partialize: (state) => ({
         preferences: state.preferences,
       }),
-    }
-  )
+    },
+  ),
 );

@@ -1,22 +1,21 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `ModelsTab` — "which models can this project use".
  *
  * ## What this screen is for
  *
- * Exactly one thing: turning models on and off in the model menu. Everything
- * here is subordinate to that, including the two default scopes, which are
- * settings ABOUT a model that is already on.
+ * Explicit model disables block inference. Legacy picker-only preferences
+ * remain distinct and are labeled so a hidden model is not mistaken for a
+ * blocked model. Default scopes apply to models offered by the picker.
  *
  * ## The row shows real numbers, not a paraphrase
  *
  * A row is the model's name, its capability icons (reasoning / tool calling /
  * vision), its default tags, and the catalog's own figures — context window
- * and price per 1M tokens — the same `ModelCapabilityIcons` /
- * `formatTokenCount` / `formatPricePerMillion` `provider-detail.tsx` uses for
- * the "Add provider" catalog. One catalog, one set of facts, everywhere it's
- * shown. The wire id kept its one real use, pasting it into a config, and
+ * and customer price per eligible route per 1M tokens. Provider links open this same grouped list.
+ * The wire id keeps its use in configuration and
  * lives in a "Copy model ID" item in the row's own menu: one click for the
  * few who need it, no line for everyone who does not.
  */
@@ -26,11 +25,15 @@ import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
+import { errorToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
+import { isManagedModelId, MANAGED_ENDPOINT_PROVIDERS } from '@kortix/llm-catalog';
 import {
+  useModelAccess,
   useModelDefaults,
   useModelEnablement,
+  useProjectModelPickerCatalog,
   useProjectModels,
   wireToModelKey,
 } from '@kortix/sdk/react';
@@ -38,9 +41,11 @@ import {
   CheckIcon as Check,
   FolderSimpleIcon as Folder,
   DotsThreeIcon as MoreHorizontal,
+  ShieldCheckIcon as ShieldCheck,
   StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
+import { ProviderAccessMenu } from './provider-access-menu';
 
 import {
   DropdownMenu,
@@ -58,8 +63,8 @@ import {
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 
 import { Copy } from '@/features/icon/icons/copy';
-import { buildModelGroups } from './model-rows';
 import { ModelCapabilityIcons } from './model-capability-icons';
+import { buildModelGroups } from './model-rows';
 import { formatPricePerMillion, formatTokenCount } from './utils';
 
 /**
@@ -72,10 +77,14 @@ import { formatPricePerMillion, formatTokenCount } from './utils';
 export function ModelsTab({
   projectId,
   search: hostSearch,
+  canWrite = false,
 }: {
   projectId: string;
   search?: string;
+  canWrite?: boolean;
 }) {
+  const tAccess = useTranslations('modelAccess');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [ownSearch, setOwnSearch] = useState('');
   const search = hostSearch ?? ownSearch;
   const ownsSearch = hostSearch === undefined;
@@ -85,7 +94,9 @@ export function ModelsTab({
   // flag is resolved server-side and enforced by the gateway, so a switch here
   // is the one and only thing deciding whether it appears there.
   const models = useProjectModels(projectId);
+  const pickerCatalog = useProjectModelPickerCatalog(projectId);
   const enablement = useModelEnablement(projectId);
+  const access = useModelAccess(projectId);
   // Setting the project default from here is what makes the locked row
   // actionable: the only way to turn the default off is to make something else
   // the default, so the control for that belongs on the same screen.
@@ -105,19 +116,9 @@ export function ModelsTab({
   if (models.length === 0) {
     return (
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-1 px-6 text-center">
-        <p className="text-foreground text-sm">No models yet</p>
+        <p className="text-foreground text-sm">{tI18nComplete.raw('textc7a9aa43558f')}</p>
         <p className="text-muted-foreground max-w-xs text-xs text-pretty">
-          Add a key on the Providers tab. The models it unlocks show up here.
-        </p>
-      </div>
-    );
-  }
-
-  if (groups.length === 0) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-muted-foreground text-xs">
-          {search ? `Nothing matches "${search}"` : 'No models'}
+          {tI18nComplete.raw('text2cedbc7a36d8')}
         </p>
       </div>
     );
@@ -155,7 +156,7 @@ export function ModelsTab({
               </InputGroupSearchIcon>
               <InputGroupSearchInput
                 type="text"
-                placeholder="Search models…"
+                placeholder={tI18nComplete.raw('text2380f018cc45')}
                 autoComplete="off"
                 value={ownSearch}
                 onChange={(event) => setOwnSearch(event.target.value)}
@@ -167,100 +168,203 @@ export function ModelsTab({
             <Button
               variant="ghost"
               size="sm"
-              disabled={enablement.isUpdating}
+              disabled={!canWrite || enablement.isUpdating || access.isUpdating}
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => void enablement.resetToDefaults()}
+              onClick={() =>
+                void enablement
+                  .resetToDefaults()
+                  .catch((error: unknown) =>
+                    errorToast(error instanceof Error ? error.message : tAccess('resetError')),
+                  )
+              }
             >
-              Start over
+              {tI18nComplete.raw('text5eed7e9fc8f3')}
             </Button>
           )}
         </div>
       )}
 
-      <div className="space-y-6">
-        {groups.map((group) => (
-          <div key={group.providerID} className="space-y-2">
-            <div className="flex items-center gap-2">
-              <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
-              <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
-              <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
-                {group.rows.length}
-              </span>
-            </div>
-            <div className="bg-popover overflow-hidden rounded-md border">
-              {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
-                const enabled = !!model.enabled;
-                // `auto` resolves to this one, so turning it off would break
-                // every default request — the server refuses it with a 409.
-                // Lock the switch and say why instead of letting the click
-                // become a failed action.
-                const isProjectDefault = wireId === enablement.defaultModel;
-                // `useModelDefaults` builds every scope with `wireToModelKey`,
-                // which parks the whole wire id in `modelID` under the `kortix`
-                // provider — so comparing `modelID` to this row's `wireId` is
-                // the same comparison `isProjectDefault` makes one line up, not
-                // a lucky string match.
-                const isAccountDefault = defaults.accountDefault?.modelID === wireId;
-                const ctx = formatTokenCount(model.contextWindow);
-                const priceIn = formatPricePerMillion(model.cost?.input);
-                const priceOut = formatPricePerMillion(model.cost?.output);
-                return (
-                  // A plain row, NOT a <label>: it holds three controls (copy
-                  // id, set-as-default, the switch) and a label binds to the
-                  // FIRST labelable one — the copy button — so "click the row
-                  // to toggle" never did what it looked like. Each control
-                  // carries its own accessible name instead.
-                  <div
-                    key={wireId}
-                    className={cn(
-                      'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
-                      i > 0 && 'border-border border-t',
-                      !enabled && 'opacity-60',
-                    )}
-                  >
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-foreground truncate text-sm">{model.modelName}</span>
-                        <ModelCapabilityIcons
-                          reasoning={model.capabilities?.reasoning}
-                          toolCall={model.capabilities?.toolcall}
-                          vision={model.capabilities?.vision}
-                        />
-                        {/* Same display name as its pinned snapshots — say which
+      {/* The no-match message lives HERE, in the list's slot, never as an
+          early return above the search row. Returned early, a query that
+          matched nothing unmounted the input and its clear button: the string
+          survived in `ownSearch`, nothing on screen could change it, and the
+          tab stayed on "Nothing matches" until it was remounted. */}
+      {groups.length === 0 ? (
+        <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
+          <p className="text-muted-foreground text-xs">
+            {search
+              ? tI18nComplete('textb475669b9d30', { value0: search })
+              : tI18nComplete.raw('textb12da9202e8c')}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <div key={group.providerID} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <ProviderLogo
+                  providerID={group.providerID}
+                  name={group.providerName}
+                  size="small"
+                />
+                <span className="text-muted-foreground text-xs font-medium">
+                  {group.providerName}
+                </span>
+                <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
+                  {group.rows.length}
+                </span>
+                <ProviderAccessMenu
+                  access={access}
+                  providerId={group.providerID}
+                  name={group.providerName}
+                  canWrite={canWrite}
+                />
+              </div>
+              {group.providerID === 'kortix' &&
+                group.rows.every(({ model }) => {
+                  const routes = pickerCatalog?.managedPricingRoutes?.[model.modelID];
+                  // Only a Morph route breaks the claim. A model whose price
+                  // feed is missing still serves from the verified US ZDR pool.
+                  return isManagedModelId(model.modelID) && !routes?.some((route) => route.route === 'morph');
+                }) && (
+                  // One quiet line, not a green panel: both facts are
+                  // reassurance, not a warning, and the detail lives one hover
+                  // away. `tabIndex` keeps each hint reachable by keyboard.
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <Hint label={tAccess('zdrDescription')} side="top" className="max-w-xs">
+                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
+                        <ShieldCheck className="text-kortix-green size-3.5" weight="fill" />
+                        {tAccess('zdrTitle')}
+                      </span>
+                    </Hint>
+                    <Hint label={tAccess('usProvidersDescription')} side="top" className="max-w-xs">
+                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
+                        <UsFlag />
+                        {tAccess('usProvidersTitle')}
+                      </span>
+                    </Hint>
+                  </div>
+                )}
+              <div className="bg-popover overflow-hidden rounded-md border">
+                {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
+                  const isManaged =
+                    group.providerID === 'kortix' && isManagedModelId(model.modelID);
+                  const enabled = !!model.enabled;
+                  const providerDisabled =
+                    access.data?.disabledProviders.includes(group.providerID) ?? false;
+                  const modelDisabled = access.data?.disabledModels.includes(wireId) ?? false;
+                  const hiddenFromPicker =
+                    !!access.data && !enabled && !providerDisabled && !modelDisabled;
+                  // `auto` resolves to this one, so turning it off would break
+                  // every default request — the server refuses it with a 409.
+                  // Lock the switch and say why instead of letting the click
+                  // become a failed action.
+                  const isProjectDefault = wireId === enablement.defaultModel;
+                  // `useModelDefaults` builds every scope with `wireToModelKey`,
+                  // which parks the whole wire id in `modelID` under the `kortix`
+                  // provider — so comparing `modelID` to this row's `wireId` is
+                  // the same comparison `isProjectDefault` makes one line up, not
+                  // a lucky string match.
+                  const isAccountDefault = defaults.accountDefault?.modelID === wireId;
+                  const ctx = formatTokenCount(model.contextWindow);
+                  const priceIn = formatPricePerMillion(model.cost?.input);
+                  const priceOut = formatPricePerMillion(model.cost?.output);
+                  const pricingRoutes = isManaged ? pickerCatalog?.managedPricingRoutes?.[wireId] : undefined;
+                  return (
+                    // A plain row, NOT a <label>: it holds three controls (copy
+                    // id, set-as-default, the switch) and a label binds to the
+                    // FIRST labelable one — the copy button — so "click the row
+                    // to toggle" never did what it looked like. Each control
+                    // carries its own accessible name instead.
+                    <div
+                      key={wireId}
+                      data-model-id={wireId}
+                      className={cn(
+                        'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
+                        i > 0 && 'border-border border-t',
+                        !enabled && 'opacity-60',
+                      )}
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-foreground truncate text-sm">
+                            {model.modelName}
+                          </span>
+                          {hiddenFromPicker && (
+                            <Hint label={tAccess('hiddenHint')}>
+                              <Tag>{tAccess('hidden')}</Tag>
+                            </Hint>
+                          )}
+                          {modelDisabled && !providerDisabled && <Tag>{tAccess('disabled')}</Tag>}
+                          <ModelCapabilityIcons
+                            reasoning={model.capabilities?.reasoning}
+                            toolCall={model.capabilities?.toolcall}
+                            vision={model.capabilities?.vision}
+                          />
+                          {/* Same display name as its pinned snapshots — say which
                             row is the one that rolls forward. "latest" named
                             the alias; "auto-updates" names what it DOES. */}
-                        {isRollingAlias && (
-                          <Hint label="Always points at the newest version of this model">
-                            <Tag>auto-updates</Tag>
-                          </Hint>
-                        )}
-                        {/* Both scopes badge the model that holds them. A
+                          {isRollingAlias && (
+                            <Hint label={tI18nComplete.raw('text7482f09d1b13')}>
+                              <Tag>{tI18nComplete.raw('textf096ba0a2aa6')}</Tag>
+                            </Hint>
+                          )}
+                          {/* Both scopes badge the model that holds them. A
                             "set as default" control with no matching "this one
                             IS the default" is the reason these moved here. */}
-                        {isProjectDefault && (
-                          <Hint label="New sessions in this project start with this model">
-                            <Tag>project default</Tag>
-                          </Hint>
+                          {isProjectDefault && (
+                            <Hint label={tI18nComplete.raw('text68cde35131cf')}>
+                              <Tag>{tI18nComplete.raw('text5e06ae1125b5')}</Tag>
+                            </Hint>
+                          )}
+                          {isAccountDefault && (
+                            <Hint label={tI18nComplete.raw('textd197e66e9634')}>
+                              <Tag>{tI18nComplete.raw('text071c0f5e8495')}</Tag>
+                            </Hint>
+                          )}
+                        </div>
+
+                        {(isManaged || ctx || (!isManaged && priceIn && priceOut)) && (
+                          <InlineMeta>
+                            {isManaged && (
+                              <span>
+                                {model.capabilities?.vision
+                                  ? tAccess('textImage')
+                                  : tAccess('textOnly')}
+                              </span>
+                            )}
+                            {ctx && (
+                              <span className="tabular-nums">
+                                {ctx} {tI18nComplete.raw('text0230c6b1d833')}
+                              </span>
+                            )}
+                            {!isManaged && priceIn && priceOut && (
+                              <span className="tabular-nums">
+                                {priceIn} / {priceOut} {tI18nComplete.raw('text38989e6be9c4')}
+                              </span>
+                            )}
+                          </InlineMeta>
                         )}
-                        {isAccountDefault && (
-                          <Hint label="Your own starting model, in every project">
-                            <Tag>your default</Tag>
-                          </Hint>
+                        {isManaged && pricingRoutes && pricingRoutes.length > 0 && (
+                          <div className="text-muted-foreground space-y-0.5 text-xs tabular-nums">
+                            <div>{tAccess('pricingEstimate')}</div>
+                            {pricingRoutes.map((price) => (
+                              <div key={price.route}>
+                                {tAccess('pricingRoute', {
+                                  route:
+                                    (MANAGED_ENDPOINT_PROVIDERS as Record<string, string>)[price.route] ??
+                                    price.route.split('/')[0],
+                                  input: formatPricePerMillion(price.input),
+                                  cacheRead: formatPricePerMillion(price.cacheRead),
+                                  output: formatPricePerMillion(price.output),
+                                })}
+                                {price.role === 'preferred' ? ` · ${tAccess('pricingPreferred')}` : ''}
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
-
-                      {(ctx || (priceIn && priceOut)) && (
-                        <InlineMeta>
-                          {ctx && <span className="tabular-nums">{ctx} ctx</span>}
-                          {priceIn && priceOut && (
-                            <span className="tabular-nums">
-                              {priceIn} / {priceOut} per 1M
-                            </span>
-                          )}
-                        </InlineMeta>
-                      )}
-                    </div>
-                    {/*
+                      {/*
                       Both default scopes, on the row they apply to.
 
                       Gated on `enabled` rather than on "is not already the
@@ -280,75 +384,131 @@ export function ModelsTab({
                       `useDialogDepth`, so it stacks above the modal this tab
                       lives in without any per-call-site z-index.
                     */}
-                    {enabled && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            disabled={defaults.isUpdating}
-                            aria-label={`Default settings for ${model.modelName}`}
-                            title="Make this a default"
-                            className="text-muted-foreground/50 hover:text-foreground hover:bg-muted data-[state=open]:bg-muted data-[state=open]:text-foreground mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <MoreHorizontal className="size-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-90">
-                          <DropdownMenuItem
-                            disabled={isProjectDefault || defaults.isUpdating}
-                            onSelect={() => void defaults.setProjectDefault(wireToModelKey(wireId))}
-                          >
-                            <Folder className="size-3.5" />
-                            Start this project&apos;s sessions with it
-                            {isProjectDefault && <Check className="ml-auto size-3.5" />}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={isAccountDefault || defaults.isUpdating}
-                            onSelect={() => void defaults.setAccountDefault(wireToModelKey(wireId))}
-                          >
-                            <Star className="size-3.5" />
-                            Make it my default everywhere
-                            {isAccountDefault && <Check className="ml-auto size-3.5" />}
-                          </DropdownMenuItem>
-                          {/* The wire id's only home now that it is off the
+                      {canWrite && (enabled || hiddenFromPicker) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={defaults.isUpdating}
+                              aria-label={tI18nComplete('text43d1a2b807aa', {
+                                value0: model.modelName,
+                              })}
+                              title={tI18nComplete.raw('textc3b312278ee5')}
+                              className="text-muted-foreground/50 hover:text-foreground hover:bg-muted data-[state=open]:bg-muted data-[state=open]:text-foreground mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <MoreHorizontal className="size-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-90">
+                            {hiddenFromPicker && (
+                              <DropdownMenuItem
+                                disabled={access.isUpdating}
+                                onSelect={() =>
+                                  void access
+                                    .setEnabled({ target: 'model', id: wireId, enabled: false })
+                                    .catch((error: unknown) =>
+                                      errorToast(
+                                        error instanceof Error
+                                          ? error.message
+                                          : tAccess('modelError'),
+                                      ),
+                                    )
+                                }
+                              >
+                                {tAccess('disableModel')}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              disabled={!enabled || isProjectDefault || defaults.isUpdating}
+                              onSelect={() =>
+                                void defaults.setProjectDefault(wireToModelKey(wireId))
+                              }
+                            >
+                              <Folder className="size-3.5" />
+                              {tI18nComplete.raw('text246d55bd2682')}
+                              {isProjectDefault && <Check className="ml-auto size-3.5" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={!enabled || isAccountDefault || defaults.isUpdating}
+                              onSelect={() =>
+                                void defaults.setAccountDefault(wireToModelKey(wireId))
+                              }
+                            >
+                              <Star className="size-3.5" />
+                              {tI18nComplete.raw('textc74a21a56d79')}
+                              {isAccountDefault && <Check className="ml-auto size-3.5" />}
+                            </DropdownMenuItem>
+                            {/* The wire id's only home now that it is off the
                               row. It was printed under every model name —
                               `anthropic/claude-sonnet-4-5` on 34 rows, meaning
                               nothing to most readers and needed only by the
                               few about to paste one into a config file. A menu
                               item costs them one click and everyone else
                               nothing. */}
-                          <DropdownMenuItem
-                            onSelect={() => void navigator.clipboard?.writeText(wireId)}
-                          >
-                            <Copy className="size-3.5" />
-                            Copy model ID
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                    <Switch
-                      checked={enabled}
-                      disabled={enablement.isUpdating || isProjectDefault}
-                      aria-label={
-                        isProjectDefault
-                          ? `${model.modelName} is this project's default model and cannot be turned off`
-                          : `Offer ${model.modelName}`
-                      }
-                      title={
-                        isProjectDefault
-                          ? 'This project starts every session with this model — pick a different default before turning it off.'
-                          : undefined
-                      }
-                      onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
-                      className="mt-0.5 shrink-0"
-                    />
-                  </div>
-                );
-              })}
+                            <DropdownMenuItem
+                              onSelect={() => void navigator.clipboard?.writeText(wireId)}
+                            >
+                              <Copy className="size-3.5" />
+                              {tI18nComplete.raw('text16af2c8fb28f')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      <Switch
+                        checked={enabled}
+                        disabled={
+                          !canWrite ||
+                          access.isLoading ||
+                          access.isUpdating ||
+                          (isProjectDefault && enabled) ||
+                          access.data?.disabledProviders.includes(group.providerID)
+                        }
+                        aria-label={
+                          isProjectDefault
+                            ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
+                            : `Enable ${model.modelName}`
+                        }
+                        title={
+                          isProjectDefault
+                            ? tI18nComplete.raw('textecb89227d17e')
+                            : hiddenFromPicker
+                              ? tAccess('hiddenShort')
+                              : undefined
+                        }
+                        onCheckedChange={(next) =>
+                          void access
+                            .setEnabled({ target: 'model', id: wireId, enabled: next })
+                            .catch((error: unknown) =>
+                              errorToast(
+                                error instanceof Error ? error.message : tAccess('modelError'),
+                              ),
+                            )
+                        }
+                        className="mt-0.5 shrink-0"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** US flag for the data-location hint. Phosphor has no flag; an emoji flag renders as "US" letters on Windows. */
+function UsFlag() {
+  return (
+    <svg viewBox="0 0 19 10" className="h-2.5 w-auto shrink-0" aria-hidden="true">
+      <rect width="19" height="10" fill="#B22234" />
+      <path
+        d="M0 1.15h19M0 2.7h19M0 4.23h19M0 5.77h19M0 7.3h19M0 8.85h19"
+        stroke="#FFFFFF"
+        strokeWidth="0.77"
+      />
+      <rect width="7.6" height="5.38" fill="#3C3B6E" />
+    </svg>
   );
 }

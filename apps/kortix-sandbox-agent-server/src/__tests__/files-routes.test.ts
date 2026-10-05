@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { RUNTIME_CAPABILITIES } from '@kortix/api-contract/runtime-relay'
 import { createHmac } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
-import { buildOpencodeApp } from '../proxy'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 
 const TEST_TOKEN = 'files-test-kortix-token'
 
@@ -53,6 +54,7 @@ function fakeOpencode(): Opencode {
   return {
     getState: () => 'ok',
     getPid: () => 123,
+    getActivePort: () => 4096,
     getInternalUrl: () => 'http://127.0.0.1:1',
     restart: async () => {},
   } as unknown as Opencode
@@ -90,7 +92,7 @@ describe('daemon file write routes', () => {
 
   beforeAll(async () => {
     WORKSPACE = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-files-test-'))
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode(), Date.now())
+    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode(), Date.now())
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })
@@ -100,11 +102,56 @@ describe('daemon file write routes', () => {
     if (WORKSPACE) await fs.rm(WORKSPACE, { recursive: true, force: true })
   })
 
-  it('rejects unauthenticated upload (no signed context)', async () => {
-    const form = new FormData()
-    form.append('file', new File(['hello'], 'a.txt', { type: 'text/plain' }))
-    const res = await fetch(`${base}/file/upload`, { method: 'POST', body: form })
-    expect(res.status).toBe(401)
+  for (const namespace of [
+    'file',
+    'kortix',
+    'kortix/refresh',
+    'kortix/pty',
+    'kortix/opencode',
+  ]) {
+    it(`unknown /${namespace} routes terminate before the OpenCode proxy`, async () => {
+      const upstream = Bun.serve({
+        port: 0,
+        fetch: () =>
+          new Response('<html>OpenCode</html>', { headers: { 'content-type': 'text/html' } }),
+      })
+      try {
+        const opencode = fakeOpencode()
+        opencode.getInternalUrl = () => `http://127.0.0.1:${upstream.port}`
+        const app = buildOpenCodeTestApp(baseConfig(), opencode, Date.now())
+        const response = await app.request(`http://daemon.test/${namespace}/missing/route`, {
+          method: 'POST',
+          headers: authHeaders(),
+        })
+        expect(response.status).toBe(404)
+        expect(response.headers.get('content-type')).toContain('application/json')
+        expect(await response.json()).toHaveProperty('error')
+      } finally {
+        upstream.stop(true)
+      }
+    })
+  }
+
+  it('health advertises file import, append and config releases while preserving existing health fields', async () => {
+    const response = await fetch(`${base}/kortix/health`)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as Record<string, unknown>
+    expect(body).toMatchObject({
+      daemon: 'ok',
+      opencode: 'ok',
+      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES],
+    })
+    // The config block and the legacy config_dir_sha field.
+    expect(Object.keys(body.config as object).sort()).toEqual([
+      'desired_release_id',
+      'failed_release_id',
+      'fallback_reason',
+      'mode',
+      'proven',
+      'release_id',
+      'source',
+    ])
+    expect(body).toHaveProperty('config_dir_sha')
   })
 
   it('uploads a file via the `path` + `file` convention', async () => {
@@ -233,6 +280,92 @@ describe('daemon file write routes', () => {
     expect(stat.isDirectory()).toBe(true)
   })
 
+  // Chunked upload. The sandbox provider's edge DISCARDS a request body over
+  // its size ceiling (measured 2026-09-04: ~104 KB lands, ~115 KB does not), so
+  // a single-shot upload cannot carry a real photo or PDF. `/file/append`
+  // writes one bounded chunk at a time: `first` truncates, the rest extend.
+  it('append assembles a file from bounded chunks', async () => {
+    const chunks = ['alpha-', 'beta-', 'gamma']
+    for (const [index, chunk] of chunks.entries()) {
+      const form = new FormData()
+      form.append('path', `${WORKSPACE}/chunked`)
+      form.append('filename', 'joined.txt')
+      form.append('first', index === 0 ? 'true' : 'false')
+      form.append('offset', String(chunks.slice(0, index).join('').length))
+      form.append('file', new File([chunk], 'joined.txt'))
+      const res = await fetch(`${base}/file/append`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: form,
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { path: string; size: number }
+      expect(body.path).toBe(`${WORKSPACE}/chunked/joined.txt`)
+      // `size` is CUMULATIVE, so the caller can prove every byte landed.
+      expect(body.size).toBe(chunks.slice(0, index + 1).join('').length)
+    }
+    expect(await fs.readFile(`${WORKSPACE}/chunked/joined.txt`, 'utf8')).toBe('alpha-beta-gamma')
+  })
+
+  it('append treats a replayed chunk at the same offset as success without duplicating bytes', async () => {
+    const send = async () => {
+      const form = new FormData()
+      form.append('path', `${WORKSPACE}/chunk-replay`)
+      form.append('filename', 'joined.txt')
+      form.append('first', 'false')
+      form.append('offset', '6')
+      form.append('file', new File(['beta'], 'joined.txt'))
+      return fetch(`${base}/file/append`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: form,
+      })
+    }
+
+    await fs.mkdir(`${WORKSPACE}/chunk-replay`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/chunk-replay/joined.txt`, 'alpha-')
+    expect((await send()).status).toBe(200)
+    expect((await send()).status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/chunk-replay/joined.txt`, 'utf8')).toBe('alpha-beta')
+  })
+
+  // A retried upload must not append onto the previous attempt's bytes.
+  it('append with first=true truncates an existing file', async () => {
+    await fs.mkdir(`${WORKSPACE}/chunked2`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/chunked2/retry.txt`, 'STALE-PARTIAL')
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/chunked2`)
+    form.append('filename', 'retry.txt')
+    form.append('first', 'true')
+    form.append('file', new File(['fresh'], 'retry.txt'))
+    const res = await fetch(`${base}/file/append`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+    })
+    expect(res.status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/chunked2/retry.txt`, 'utf8')).toBe('fresh')
+  })
+
+  // Same guard as /file/upload: the name is a NAME, never a path.
+  it('append refuses a filename that escapes the target directory', async () => {
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/chunked3`)
+    form.append('filename', '../escaped.txt')
+    form.append('first', 'true')
+    form.append('file', new File(['x'], 'escaped.txt'))
+    const res = await fetch(`${base}/file/append`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { path: string }
+    // basename()'d to a bare name, so it lands INSIDE the target directory.
+    expect(body.path).toBe(`${WORKSPACE}/chunked3/escaped.txt`)
+    await expect(fs.stat(`${WORKSPACE}/escaped.txt`)).rejects.toThrow()
+  })
+
   it('renames/moves a file', async () => {
     await fs.writeFile(`${WORKSPACE}/src.txt`, 'move me')
     const res = await fetch(`${base}/file/rename`, {
@@ -243,6 +376,70 @@ describe('daemon file write routes', () => {
     expect(res.status).toBe(200)
     expect(await fs.readFile(`${WORKSPACE}/moved/dest.txt`, 'utf8')).toBe('move me')
     await expect(fs.stat(`${WORKSPACE}/src.txt`)).rejects.toThrow()
+  })
+
+  it('rename replaces an existing file by default (the overwrite-in-place write path)', async () => {
+    await fs.writeFile(`${WORKSPACE}/replace-src.txt`, 'new bytes')
+    await fs.writeFile(`${WORKSPACE}/replace-dest.txt`, 'old bytes')
+    const res = await fetch(`${base}/file/rename`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ from: `${WORKSPACE}/replace-src.txt`, to: `${WORKSPACE}/replace-dest.txt` }),
+    })
+    expect(res.status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/replace-dest.txt`, 'utf8')).toBe('new bytes')
+  })
+
+  it('rename with overwrite:false refuses an existing target and changes nothing', async () => {
+    await fs.writeFile(`${WORKSPACE}/excl-src.txt`, '')
+    await fs.writeFile(`${WORKSPACE}/excl-dest.txt`, 'keep me')
+    const res = await fetch(`${base}/file/rename`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        from: `${WORKSPACE}/excl-src.txt`,
+        to: `${WORKSPACE}/excl-dest.txt`,
+        overwrite: false,
+      }),
+    })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: 'EEXIST' })
+    expect(await fs.readFile(`${WORKSPACE}/excl-dest.txt`, 'utf8')).toBe('keep me')
+    expect(await fs.readFile(`${WORKSPACE}/excl-src.txt`, 'utf8')).toBe('')
+  })
+
+  it('rename with overwrite:false moves the file when the target is free', async () => {
+    await fs.writeFile(`${WORKSPACE}/excl-free-src.txt`, 'x')
+    const res = await fetch(`${base}/file/rename`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        from: `${WORKSPACE}/excl-free-src.txt`,
+        to: `${WORKSPACE}/excl-free/dest.txt`,
+        overwrite: false,
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/excl-free/dest.txt`, 'utf8')).toBe('x')
+    await expect(fs.stat(`${WORKSPACE}/excl-free-src.txt`)).rejects.toThrow()
+  })
+
+  it('rename refuses to replace an existing directory, whatever the overwrite mode', async () => {
+    await fs.mkdir(`${WORKSPACE}/keep-dir/lib`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/keep-dir/lib/a.ts`, 'export {}')
+    await fs.mkdir(`${WORKSPACE}/empty-dir`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/dir-src.txt`, '')
+    for (const to of [`${WORKSPACE}/keep-dir`, `${WORKSPACE}/empty-dir`]) {
+      const res = await fetch(`${base}/file/rename`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ from: `${WORKSPACE}/dir-src.txt`, to }),
+      })
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: 'EISDIR' })
+    }
+    expect(await fs.readFile(`${WORKSPACE}/keep-dir/lib/a.ts`, 'utf8')).toBe('export {}')
+    expect((await fs.stat(`${WORKSPACE}/empty-dir`)).isDirectory()).toBe(true)
   })
 
   it('deletes a file', async () => {
@@ -315,11 +512,6 @@ describe('daemon file write routes', () => {
     })
     expect(res.status).toBe(403)
   })
-
-  it('GET /file/raw requires a signed context (401 unauthenticated)', async () => {
-    const res = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/sheet.xlsx`)}`)
-    expect(res.status).toBe(401)
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -355,7 +547,7 @@ describe('daemon file read + list + status + find routes', () => {
     await fs.writeFile(`${WS}/ignored.txt`, 'do not track\n') // gitignored
 
     const cfg: Config = { ...baseConfig(), workspace: WS, projectTarget: WS }
-    const app = buildOpencodeApp(cfg, fakeOpencode(), Date.now())
+    const app = buildOpenCodeTestApp(cfg, fakeOpencode(), Date.now())
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })
@@ -429,12 +621,24 @@ describe('daemon file read + list + status + find routes', () => {
     expect(res.status).toBe(200)
     const matches = (await res.json()) as Array<{ path: string; line_number: number; lines: string }>
     expect(matches.length).toBeGreaterThan(0)
-    expect(matches.some((m) => m.path.endsWith('nested.md') && m.lines.includes('needle'))).toBe(true)
+    // Exact and relative: whichever search branch runs on this machine
+    // (ripgrep or the Node fallback) must hand back the same path shape.
+    expect(matches.some((m) => m.path === 'sub/nested.md' && m.lines.includes('needle'))).toBe(true)
   })
 
-  it('read/list/find require a signed context (401 unauthenticated)', async () => {
-    expect((await fetch(`${base}/file?path=.`)).status).toBe(401)
-    expect((await fetch(`${base}/file/status`)).status).toBe(401)
-    expect((await fetch(`${base}/find?pattern=x`)).status).toBe(401)
+  // The daemon's auth gate, one row per surface that reads or writes the box.
+  it.each([
+    ['GET', '/file?path=.'],
+    ['GET', '/file/status'],
+    ['GET', '/find?pattern=x'],
+    ['GET', `/file/raw?path=${encodeURIComponent(`${WORKSPACE}/sheet.xlsx`)}`],
+    ['POST', '/file/upload'],
+    ['POST', '/presentation/convert-to-pdf'],
+    ['GET', '/proxy/5173/'],
+    ['GET', '/web-proxy/http/x/'],
+  ])('%s %s requires a signed context (401 unauthenticated)', async (method, path) => {
+    const body = method === 'POST' ? new FormData() : undefined
+    if (body) body.append('file', new File(['hello'], 'a.txt', { type: 'text/plain' }))
+    expect((await fetch(`${base}${path}`, { method, body })).status).toBe(401)
   })
 })

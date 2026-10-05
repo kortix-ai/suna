@@ -10,10 +10,12 @@
  * twice.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { sql } from 'drizzle-orm';
+import { sessionLifecycleCommands } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
 import {
   INBOX_ORDER_BACKOFF_MS,
   admitInboxPrompt,
+  hasLaterReleasedSibling,
   sessionHoldsTurnAuthority,
 } from '../projects/session-lifecycle/inbox-admission';
 import {
@@ -22,24 +24,35 @@ import {
 } from '../projects/session-lifecycle/consumption';
 import {
   deleteInboxPrompt,
+  editInboxPrompt,
+  enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
   releaseInboxHold,
+  sessionHasHoldMark,
   retryInboxPrompt,
 } from '../projects/session-lifecycle/inbox-rows';
+import { remintForRepair } from '../projects/session-lifecycle/inbox-placement';
 import { requeueAbandonedPrompt } from '../projects/session-lifecycle/redelivery';
+import { findInboxRowIdByMessageId } from '../projects/session-lifecycle/cancel-forwarded';
+import { settleInboxHoldAfterStop } from '../projects/session-lifecycle/inbox-hold-settle';
 import { acceptSandboxTurn } from '../projects/sandbox-turn-lifecycle';
 import {
-  LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  markInboxDeliveryStarted,
   markCommandForwarded,
   promoteNextInboxRow,
   requeueForAdmission,
+  requeueUnverifiedRedelivery,
 } from '../projects/session-lifecycle/store';
+import type { CommandLease } from '../projects/session-lifecycle/command-lease';
 import { db } from '../shared/db';
+import { logger } from '../lib/logger';
+import { promptState } from '../projects/lib/session-prompt-view';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
@@ -49,7 +62,12 @@ const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 
 async function enqueue(
   clientMessageId: string,
-  overrides: { wireMessageId?: string; createdAt?: string; clientSentAtMs?: number } = {},
+  overrides: {
+    wireMessageId?: string;
+    createdAt?: string;
+    clientSentAtMs?: number;
+    placement?: 'transcript' | 'composer';
+  } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
     source: 'ui',
@@ -62,6 +80,7 @@ async function enqueue(
     clientMessageId,
     wireMessageId: overrides.wireMessageId ?? WIRE_ID,
     clientSentAtMs: overrides.clientSentAtMs,
+    ...(overrides.placement ? { placement: overrides.placement } : {}),
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -74,6 +93,19 @@ async function enqueue(
   return row;
 }
 
+/**
+ * Claim `row` the way the drain does and return the lease its writes name.
+ * The writes that end a claim apply only to a `running` row under the same
+ * `locked_by`.
+ */
+async function hold(row: { commandId: string }, worker = 'prompt-inbox-it'): Promise<CommandLease> {
+  await db.execute(sql`
+    UPDATE kortix.session_lifecycle_commands
+       SET status = 'running', locked_by = ${worker}
+     WHERE command_id = ${row.commandId}::uuid`);
+  return { commandId: row.commandId, lockedBy: worker };
+}
+
 async function readRow(commandId: string): Promise<Record<string, unknown>> {
   const result = await db.execute(sql`
     SELECT status, attempts, payload, result, last_error, locked_by
@@ -82,6 +114,14 @@ async function readRow(commandId: string): Promise<Record<string, unknown>> {
   const rows = ((result as { rows?: Array<Record<string, unknown>> }).rows ??
     result) as Array<Record<string, unknown>>;
   return rows[0];
+}
+
+/** The stored row, as the delivery path holds it when it re-places a prompt. */
+async function storedRow(commandId: string): Promise<SessionLifecycleCommandRow[]> {
+  return db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.commandId, commandId));
 }
 
 async function setBox(status: 'active' | 'stopped', activeTurns: Record<string, unknown>) {
@@ -208,7 +248,7 @@ describe('requeueForAdmission against real Postgres', () => {
          SET status = 'running', attempts = 3, locked_by = 'worker-1'
        WHERE command_id = ${row.commandId}::uuid`);
 
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date(Date.now() + 2_000));
+    await requeueForAdmission({ commandId: row.commandId, lockedBy: 'worker-1' }, 'older_prompt_pending', new Date(Date.now() + 2_000));
 
     const after = await readRow(row.commandId);
     expect(after.status).toBe('queued');
@@ -228,9 +268,9 @@ describe('requeueForAdmission against real Postgres', () => {
     // on every refusal. `admissionBackoffMs` reads this counter to widen the
     // gap so a long turn costs a handful of claims instead of one per second.
     const row = await enqueue('q_refusals');
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).result).toEqual({
       admission_reason: 'older_prompt_pending',
       admission_refusals: 3,
@@ -244,7 +284,7 @@ describe('requeueForAdmission against real Postgres', () => {
     // OpenCode reads as already answered — the prompt is accepted and silently
     // never runs.
     const row = await enqueue('q_promote_marker');
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     const promoted = await retryInboxPrompt(SESSION_ID, row.commandId);
     expect(promoted).not.toBeNull();
 
@@ -254,11 +294,31 @@ describe('requeueForAdmission against real Postgres', () => {
     expect((after.payload as Record<string, unknown>).wireMessageId).toBe(WIRE_ID);
   });
 
+  test('an unverifiable redelivery waits, counts its failures, and keeps admission refusals', async () => {
+    const row = await enqueue('q_unverified');
+    await requeueForAdmission(await hold(row), 'turn_active', new Date());
+    await requeueUnverifiedRedelivery(await hold(row), new Date(Date.now() + 5_000));
+    await requeueUnverifiedRedelivery(await hold(row), new Date(Date.now() + 10_000));
+
+    const read = await readRow(row.commandId);
+    expect(read.status).toBe('queued');
+    expect(read.locked_by).toBeNull();
+    expect(read.result).toMatchObject({
+      admission_reason: 'answer_unverified',
+      answer_check_failures: 2,
+      admission_refusals: 1,
+    });
+    expect(promptState({ status: 'queued', result: read.result } as never)).toEqual({
+      state: 'waiting',
+      reason: 'answer_unverified',
+    });
+  });
+
   test('the attempt give-back FLOORS at zero', async () => {
     // A concurrent writer can already have reset `attempts`; `GREATEST(...,0)`
     // is what stops a negative count, which the dead-letter budget compares on.
     const row = await enqueue('q_floor');
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).attempts).toBe(0);
   });
 
@@ -268,7 +328,7 @@ describe('requeueForAdmission against real Postgres', () => {
       UPDATE kortix.session_lifecycle_commands
          SET result = '{"kept": true}'::jsonb
        WHERE command_id = ${row.commandId}::uuid`);
-    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(await hold(row), 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).result).toEqual({
       kept: true,
       admission_reason: 'older_prompt_pending',
@@ -318,6 +378,57 @@ describe('admitInboxPrompt against real rows', () => {
         metadata: boxRows[0].metadata as Record<string, unknown>,
       }),
     ).toBe(true);
+  });
+
+  test('a Quick Queue entry behind an older Queue List entry heads the queue and arms the interrupt', async () => {
+    // 2026-09-17, local: "stop" (Quick Queue) waited 72 refusals behind an
+    // older Queue List entry, so the response never stopped at its tool boundary.
+    const sentAt = Date.now();
+    const queueList = await enqueue('q_list', {
+      clientSentAtMs: sentAt,
+      placement: 'composer',
+      wireMessageId: 'msg_000000000001QueueListEntryW',
+    });
+    const quickQueue = await enqueue('q_quick', {
+      clientSentAtMs: sentAt + 1_000,
+      placement: 'transcript',
+      wireMessageId: 'msg_000000000002QuickQueueEntry',
+    });
+    await setBox('active', turn);
+
+    expect((await listInboxPrompts(SESSION_ID, 200)).map((row) => row.commandId)).toEqual([
+      quickQueue.commandId,
+      queueList.commandId,
+    ]);
+    expect(await admitInboxPrompt(quickQueue)).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
+    });
+    expect(await admitInboxPrompt(queueList)).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+    // Only the HEAD Quick Queue entry arms the interrupt: a second one behind
+    // it would stop the turn for a prompt that is not next.
+    const quickQueueBehind = await enqueue('q_quick_behind', {
+      clientSentAtMs: sentAt + 2_000,
+      placement: 'transcript',
+      wireMessageId: 'msg_000000000003QuickQueueLater',
+    });
+    expect(await admitInboxPrompt(quickQueueBehind)).not.toHaveProperty('interruptAtBoundary');
+    await db.execute(sql`
+      DELETE FROM kortix.session_lifecycle_commands
+       WHERE command_id = ${quickQueueBehind.commandId}::uuid`);
+
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET available_at = now() + interval '5 minutes',
+             result = '{"admission_reason":"turn_active"}'::jsonb
+       WHERE command_id IN (${queueList.commandId}::uuid, ${quickQueue.commandId}::uuid)`);
+    expect(await promoteNextInboxRow(SESSION_ID)).toBe(quickQueue.idempotencyKey);
   });
 
   test('the SAME metadata on a STOPPED box admits — authority dies with the runtime', async () => {
@@ -508,7 +619,7 @@ describe('requeueAbandonedPrompt against real rows', () => {
     // composer, and invisible to the sweep — no retry, no remove, nothing that
     // could ever close it.
     const row = await enqueue('q_exhausted_forwarded');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET payload = payload || '{"redeliveries":3}'::jsonb
@@ -599,6 +710,43 @@ describe('the inbox is scoped to prompts the USER made', () => {
   });
 });
 
+describe('what a new send learns about its session inbox in one read', () => {
+  test('an empty inbox holds nothing and has nothing pending', async () => {
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
+  });
+
+  test('a queued prompt and a prompt in delivery are pending; a finished one is not', async () => {
+    const row = await enqueue('q_state_pending');
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: true });
+    await hold(row);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: true });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands SET status = 'succeeded'
+       WHERE command_id = ${row.commandId}::uuid`);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
+  });
+
+  test('a Stop hold is reported, in agreement with the hold-mark read', async () => {
+    await enqueue('q_state_held');
+    await holdInboxPrompts(SESSION_ID, true);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: true, pending: true });
+    expect(await sessionHasHoldMark(SESSION_ID)).toBe(true);
+  });
+
+  test('a row an automation queued is not part of the inbox', async () => {
+    await enqueueContinueSessionCommand({
+      source: 'trigger:cron',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      sessionId: SESSION_ID,
+      actorUserId: null,
+      text: 'scheduled',
+      idempotencyKey: `trigger:${SESSION_ID}:${crypto.randomUUID()}`,
+    });
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
+  });
+});
+
 describe('holding the queue — what the Stop button now writes', () => {
   test('a held prompt is not due, and does not block the next one the user sends', async () => {
     const held = await enqueue('q_held', { createdAt: '2026-08-01T00:00:00.000Z' });
@@ -632,25 +780,442 @@ describe('holding the queue — what the Stop button now writes', () => {
     expect(claimed.map((r) => r.commandId)).toContain(held.commandId);
   });
 
-  test('"send now" promotes ONE row past the order gate and releases the hold', async () => {
+  test('"send now" on a held row releases the hold and keeps the released batch in queue order', async () => {
+    // KRTX-683: "send now" out of a Stop is a release, and a released batch is
+    // answered in ONE turn, in queue order. A promoted row jumped the older
+    // rows of its own batch, started a turn alone, and left them a second one.
     const first = await enqueue('q_first', { createdAt: '2026-08-01T00:00:00.000Z' });
     const second = await enqueue('q_second', { createdAt: '2026-08-02T00:00:00.000Z' });
     await holdInboxPrompts(SESSION_ID, true);
     await setBox('stopped', {});
 
+    const sent = await retryInboxPrompt(SESSION_ID, second.commandId);
+    expect(sent?.commandId).toBe(second.commandId);
+    expect(sent?.result).toEqual({});
+    expect((await readRow(second.commandId)).result).toEqual({});
+    // The rest of the queue is released, and both rows are one batch.
+    expect((await readRow(first.commandId)).result).toEqual({});
+    const batch = ((await readRow(first.commandId)).payload as Record<string, unknown>).releasedBatchId;
+    expect(typeof batch).toBe('string');
+    expect(((await readRow(second.commandId)).payload as Record<string, unknown>).releasedBatchId).toBe(batch);
+    // The older row goes first; the pointed-at row waits for it.
+    const [firstRow] = await storedRow(first.commandId);
+    const [secondRow] = await storedRow(second.commandId);
+    expect(await admitInboxPrompt(secondRow)).toMatchObject({ admit: false, reason: 'older_prompt_pending' });
+    expect(await admitInboxPrompt(firstRow)).toEqual({ admit: true });
+    expect(await hasLaterReleasedSibling(firstRow)).toBe(true);
+  });
+
+  test('"send now" out of a Stop never leaves the row due before its batch is released', async () => {
+    // The 1 s tick can claim the row the instant a COMMIT makes it due. A
+    // trigger records every state the row passes through, with its
+    // transaction; the last state of each transaction is what a drain could
+    // see. None may be promoted, and none may be due-and-queued unstamped.
+    const first = await enqueue('q_atomic_first', { createdAt: '2026-08-01T00:00:00.000Z' });
+    const second = await enqueue('q_atomic_second', { createdAt: '2026-08-02T00:00:00.000Z' });
+    await holdInboxPrompts(SESSION_ID, true);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS public.krtx683_row_states (
+      seq bigserial PRIMARY KEY, txid bigint, status text, due boolean, promoted boolean, batched boolean)`);
+    await db.execute(sql`CREATE OR REPLACE FUNCTION public.krtx683_log_state() RETURNS trigger AS $$
+      BEGIN
+        INSERT INTO public.krtx683_row_states (txid, status, due, promoted, batched)
+        VALUES (txid_current(), NEW.status, NEW.available_at <= clock_timestamp(),
+                COALESCE(NEW.result->>'promoted', '') = 'true', NEW.payload ? 'releasedBatchId');
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await db.execute(sql.raw(`CREATE TRIGGER krtx683_log AFTER UPDATE ON kortix.session_lifecycle_commands
+      FOR EACH ROW WHEN (NEW.command_id = '${second.commandId}'::uuid)
+      EXECUTE FUNCTION public.krtx683_log_state()`));
+    try {
+      const sent = await retryInboxPrompt(SESSION_ID, second.commandId);
+      expect(sent?.commandId).toBe(second.commandId);
+      const logged = await db.execute(sql`SELECT DISTINCT ON (txid) status, due, promoted, batched
+        FROM public.krtx683_row_states ORDER BY txid, seq DESC`);
+      const states = ((logged as { rows?: Array<Record<string, unknown>> }).rows ?? logged) as Array<{
+        status: string; due: boolean; promoted: boolean; batched: boolean;
+      }>;
+      expect(states.length).toBeGreaterThan(0);
+      expect(states.some((st) => st.promoted)).toBe(false);
+      expect(states.filter((st) => st.status === 'queued' && st.due && !st.batched)).toEqual([]);
+      expect((await readRow(first.commandId)).result).toEqual({});
+    } finally {
+      await db.execute(sql`DROP TRIGGER IF EXISTS krtx683_log ON kortix.session_lifecycle_commands`);
+      await db.execute(sql`DROP FUNCTION IF EXISTS public.krtx683_log_state()`);
+      await db.execute(sql`DROP TABLE IF EXISTS public.krtx683_row_states`);
+    }
+  });
+
+  test('"send now" with no hold to lift still promotes ONE row past the order gate', async () => {
+    const first = await enqueue('q_first_plain', { createdAt: '2026-08-01T00:00:00.000Z' });
+    const second = await enqueue('q_second_plain', { createdAt: '2026-08-02T00:00:00.000Z' });
+    await setBox('stopped', {});
+
     const promoted = await retryInboxPrompt(SESSION_ID, second.commandId);
-    expect(promoted?.commandId).toBe(second.commandId);
+    expect(promoted?.result).toEqual({ promoted: true });
     // The row the user pointed at runs, even though an older one is pending.
     expect(await admitInboxPrompt(promoted!)).toEqual({ admit: true });
-    // And the rest of the queue is released, to drain at the next boundary.
-    expect((await readRow(first.commandId)).result).toEqual({});
+    expect(((await readRow(first.commandId)).payload as Record<string, unknown>).releasedBatchId).toBeUndefined();
+  });
+});
+
+describe('a released Stop batch is marked so it can be answered in one turn', () => {
+  async function batchId(commandId: string): Promise<unknown> {
+    return ((await readRow(commandId)).payload as Record<string, unknown>).releasedBatchId;
+  }
+
+  test('releasing stamps every queued row with ONE batch id', async () => {
+    const a = await enqueue('q_batch_a', { createdAt: '2026-08-01T00:00:00.000Z' });
+    const b = await enqueue('q_batch_b', { createdAt: '2026-08-02T00:00:00.000Z' });
+    await holdInboxPrompts(SESSION_ID, true);
+    await holdInboxPrompts(SESSION_ID, false);
+
+    const idA = await batchId(a.commandId);
+    expect(typeof idA).toBe('string');
+    expect((idA as string).length).toBeGreaterThan(0);
+    expect(await batchId(b.commandId)).toBe(idA);
+    expect((await readRow(a.commandId)).result).not.toHaveProperty('held');
+  });
+
+  test('the send that triggers the release joins the batch and is claimable', async () => {
+    const a = await enqueue('q_join_a', { createdAt: '2026-08-01T00:00:00.000Z' });
+    const b = await enqueue('q_join_b', { createdAt: '2026-08-02T00:00:00.000Z' });
+    await holdInboxPrompts(SESSION_ID, true);
+    const c = await enqueue('q_join_c', { createdAt: '2026-08-03T00:00:00.000Z' });
+    expect(await releaseInboxHold(SESSION_ID)).toBe(2);
+
+    const idA = await batchId(a.commandId);
+    expect(typeof idA).toBe('string');
+    expect(await batchId(b.commandId)).toBe(idA);
+    expect(await batchId(c.commandId)).toBe(idA);
+    // A and B were held: they predate anything staged while stopped (a rewind)
+    // and say so. C was sent while stopped: it did not wait, and it may be the
+    // prompt that commits a rewind. Its id is re-minted at delivery because it
+    // is a batch row (`placeQueuedContinue`), not because it waited.
+    const stamped = async (row: { commandId: string }) =>
+      (await readRow(row.commandId)).payload as Record<string, unknown>;
+    expect((await stamped(a)).releasedFromHold).toBe(true);
+    expect((await stamped(b)).releasedFromHold).toBe(true);
+    expect((await stamped(c)).releasedFromHold).toBe(false);
+    expect((await stamped(c)).remintOnDelivery).toBeUndefined();
+    for (const row of [a, b, c]) {
+      const claimed = await claimDueLifecycleCommands({
+        workerId: `w-join-${row.commandId}`,
+        limit: 1,
+        idempotencyKey: row.idempotencyKey!,
+      });
+      expect(claimed.map((r) => r.commandId)).toContain(row.commandId);
+    }
+  });
+
+  test('a stop-paused row requeued by the release shares the new send\'s batch', async () => {
+    const a = await enqueue('q_paused_a', { createdAt: '2026-08-01T00:00:00.000Z' });
+    await markCommandForwarded(await hold(a), SESSION_ID, WIRE_ID);
+    await holdInboxPrompts(SESSION_ID, true);
+    const c = await enqueue('q_paused_c', { createdAt: '2026-08-03T00:00:00.000Z' });
+    await releaseInboxHold(SESSION_ID);
+
+    expect((await readRow(a.commandId)).status).toBe('queued');
+    const idC = await batchId(c.commandId);
+    expect(typeof idC).toBe('string');
+    expect(await batchId(a.commandId)).toBe(idC);
+  });
+
+  test('a Quick Queue send made while stopped is delivered after the Queue List rows typed before it', async () => {
+    // Live 2026-09-29: ALPHA and BRAVO with Cmd+Enter, Stop, CHARLIE with Enter.
+    // Lane-first order sent CHARLIE before BRAVO, so BRAVO carried the turn and
+    // the answer rendered under the wrong message. A released batch shares the
+    // later lane, so its order is typing order; each row keeps its placement.
+    const a = await enqueue('q_mix_a', { clientSentAtMs: 1_000, placement: 'composer' });
+    const b = await enqueue('q_mix_b', { clientSentAtMs: 2_000, placement: 'composer' });
+    await holdInboxPrompts(SESSION_ID, true);
+    const c = await enqueue('q_mix_c', { clientSentAtMs: 3_000, placement: 'transcript' });
+    expect(await releaseInboxHold(SESSION_ID)).toBe(2);
+
+    const idA = await batchId(a.commandId);
+    expect(typeof idA).toBe('string');
+    expect(await batchId(b.commandId)).toBe(idA);
+    expect(await batchId(c.commandId)).toBe(idA);
+    const placements = await Promise.all(
+      [a, b, c].map(async (row) => ((await readRow(row.commandId)).payload as Record<string, unknown>).placement),
+    );
+    expect(placements).toEqual(['composer', 'composer', 'transcript']);
+
+    // The real SQL order, as the listing, promotion and admission read it.
+    expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).toEqual([
+      a.commandId,
+      b.commandId,
+      c.commandId,
+    ]);
+    const [rowA] = await storedRow(a.commandId);
+    const [rowB] = await storedRow(b.commandId);
+    const [rowC] = await storedRow(c.commandId);
+    expect(await hasLaterReleasedSibling(rowA)).toBe(true);
+    expect(await hasLaterReleasedSibling(rowB)).toBe(true);
+    expect(await hasLaterReleasedSibling(rowC)).toBe(false);
+    // The Quick Queue row waits for the Queue List rows typed before it.
+    expect(await admitInboxPrompt(rowC)).toMatchObject({ admit: false, reason: 'older_prompt_pending' });
+    expect(await admitInboxPrompt(rowA)).toEqual({ admit: true });
+  });
+
+  test('a message sent while stopped is never claimable before its batch is released and stamped', async () => {
+    // `POST .../prompts` enqueues the send, then releases the hold. Enqueued
+    // due, the 1 s tick could claim it in between: `running`, so the stamp
+    // skipped it, and admission ignores the still-held rows — it started a
+    // turn alone, ahead of them. A trigger records every state of the new row
+    // with its transaction; the last state per transaction is what a drain
+    // can see.
+    const a = await enqueue('q_send_a', { clientSentAtMs: 1_000 });
+    const b = await enqueue('q_send_b', { clientSentAtMs: 2_000 });
+    await holdInboxPrompts(SESSION_ID, true);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS public.krtx683_send_states (
+      seq bigserial PRIMARY KEY, txid bigint, status text, due boolean, batched boolean)`);
+    await db.execute(sql`CREATE OR REPLACE FUNCTION public.krtx683_log_send() RETURNS trigger AS $$
+      BEGIN
+        INSERT INTO public.krtx683_send_states (txid, status, due, batched)
+        VALUES (txid_current(), NEW.status, NEW.available_at <= clock_timestamp(),
+                NEW.payload ? 'releasedBatchId');
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await db.execute(sql`CREATE TRIGGER krtx683_send_log AFTER INSERT OR UPDATE ON kortix.session_lifecycle_commands
+      FOR EACH ROW WHEN (NEW.payload->>'clientMessageId' = 'q_send_c')
+      EXECUTE FUNCTION public.krtx683_log_send()`);
+    try {
+      const { row: c, deduped } = await enqueueReleasingHold(SESSION_ID, (hold) =>
+        enqueueContinueSessionCommand({
+          source: 'ui',
+          projectId: PROJECT_ID,
+          accountId: ACCOUNT_ID,
+          sessionId: SESSION_ID,
+          actorUserId: null,
+          text: 'say hi',
+          idempotencyKey: `prompt:${SESSION_ID}:q_send_c`,
+          clientMessageId: 'q_send_c',
+          wireMessageId: WIRE_ID,
+          clientSentAtMs: 3_000,
+          placement: 'transcript',
+          parts: [{ type: 'text', text: 'say hi' }],
+          ...hold,
+        }),
+      );
+      expect(deduped).toBe(false);
+      // What the POST answers with is the row as the release left it.
+      expect(promptState(c).state).toBe('queued');
+
+      const logged = await db.execute(sql`SELECT DISTINCT ON (txid) status, due, batched
+        FROM public.krtx683_send_states ORDER BY txid, seq DESC`);
+      const states = ((logged as { rows?: Array<Record<string, unknown>> }).rows ?? logged) as Array<{
+        status: string; due: boolean; batched: boolean;
+      }>;
+      expect(states.length).toBeGreaterThan(0);
+      expect(states.filter((st) => st.status === 'queued' && st.due && !st.batched)).toEqual([]);
+
+      // And the batch is whole: one id on all three, C due now.
+      const idA = await batchId(a.commandId);
+      expect(await batchId(b.commandId)).toBe(idA);
+      expect(await batchId(c.commandId)).toBe(idA);
+      expect((await readRow(c.commandId)).result).toEqual({});
+    } finally {
+      await db.execute(sql`DROP TRIGGER IF EXISTS krtx683_send_log ON kortix.session_lifecycle_commands`);
+      await db.execute(sql`DROP FUNCTION IF EXISTS public.krtx683_log_send()`);
+      await db.execute(sql`DROP TABLE IF EXISTS public.krtx683_send_states`);
+    }
+  });
+
+  test('a send with no hold to lift is enqueued due, with no release and no batch', async () => {
+    const { row } = await enqueueReleasingHold(SESSION_ID, async (hold) => ({
+      row: await enqueue(hold ? 'q_nohold_unexpected' : 'q_nohold_send'),
+      deduped: false,
+    }));
+    const stored = await readRow(row.commandId);
+    expect((stored.payload as Record<string, unknown>).clientMessageId).toBe('q_nohold_send');
+    expect(stored.result).toEqual({});
+    expect((stored.payload as Record<string, unknown>).releasedBatchId).toBeUndefined();
+  });
+
+  test('a send whose hold release fails is still made due, and the Stop rows stay held', async () => {
+    // The web client reads a held row as landed and never re-POSTs it: a send
+    // left held by a failed release would sit out the 24 h horizon unseen.
+    const a = await enqueue('q_relfail_a', { clientSentAtMs: 1_000 });
+    await holdInboxPrompts(SESSION_ID, true);
+
+    const { row: c, deduped } = await enqueueReleasingHold(
+      SESSION_ID,
+      (hold) =>
+        enqueueContinueSessionCommand({
+          source: 'ui',
+          projectId: PROJECT_ID,
+          accountId: ACCOUNT_ID,
+          sessionId: SESSION_ID,
+          actorUserId: null,
+          text: 'say hi',
+          idempotencyKey: `prompt:${SESSION_ID}:q_relfail_c`,
+          clientMessageId: 'q_relfail_c',
+          wireMessageId: WIRE_ID,
+          clientSentAtMs: 3_000,
+          parts: [{ type: 'text', text: 'say hi' }],
+          ...hold,
+        }),
+      async () => {
+        throw new Error('release transaction failed');
+      },
+    );
+
+    expect(deduped).toBe(false);
+    expect(promptState(c).state).toBe('queued');
+    const storedC = await readRow(c.commandId);
+    expect(storedC.status).toBe('queued');
+    expect(storedC.result).toEqual({});
+    const due = await db.execute(sql`
+      SELECT available_at <= clock_timestamp() AS due FROM kortix.session_lifecycle_commands
+       WHERE command_id = ${c.commandId}::uuid`);
+    expect((((due as { rows?: unknown[] }).rows ?? due) as Array<{ due: boolean }>)[0].due).toBe(true);
+    expect(await batchId(c.commandId)).toBeUndefined();
+    // The release rolled back: the Stop's row is exactly as the Stop left it.
+    expect((await readRow(a.commandId)).result).toEqual({ held: true });
+  });
+
+  test('with no Stop there is no batch', async () => {
+    const a = await enqueue('q_nostop_a', { createdAt: '2026-08-01T00:00:00.000Z' });
+    const b = await enqueue('q_nostop_b', { createdAt: '2026-08-02T00:00:00.000Z' });
+    expect(await releaseInboxHold(SESSION_ID)).toBe(0);
+
+    expect(await batchId(a.commandId)).toBeUndefined();
+    expect(await batchId(b.commandId)).toBeUndefined();
+  });
+
+  test('"send now" on one held row stamps the whole released queue', async () => {
+    const a = await enqueue('q_now_a', { createdAt: '2026-08-01T00:00:00.000Z' });
+    const b = await enqueue('q_now_b', { createdAt: '2026-08-02T00:00:00.000Z' });
+    await holdInboxPrompts(SESSION_ID, true);
+    await retryInboxPrompt(SESSION_ID, b.commandId);
+
+    const idA = await batchId(a.commandId);
+    expect(typeof idA).toBe('string');
+    expect(await batchId(b.commandId)).toBe(idA);
+  });
+});
+
+describe('which released prompt goes out without a reply', () => {
+  const OTHER_SESSION_ID = crypto.randomUUID();
+
+  beforeAll(async () => {
+    await db.execute(sql`
+      INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, status)
+      VALUES (${OTHER_SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${`br-batch-${SANDBOX_ID}`}, 'running')`);
+  });
+
+  afterAll(async () => {
+    await db.execute(
+      sql`DELETE FROM kortix.session_lifecycle_commands WHERE session_id = ${OTHER_SESSION_ID}`,
+    );
+    await db.execute(sql`DELETE FROM kortix.project_sessions WHERE session_id = ${OTHER_SESSION_ID}`);
+  });
+
+  async function stamp(row: { commandId: string }, batch: string) {
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET payload = payload || ${JSON.stringify({ releasedBatchId: batch })}::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+    return (await storedRow(row.commandId))[0];
+  }
+
+  test('a row with a later queued or claimed row of its batch holds its reply; the last does not', async () => {
+    const a = await stamp(await enqueue('q_rb_a', { clientSentAtMs: 1_000 }), 'b1');
+    const b = await stamp(await enqueue('q_rb_b', { clientSentAtMs: 2_000 }), 'b1');
+    const c = await stamp(await enqueue('q_rb_c', { clientSentAtMs: 3_000 }), 'b1');
+    expect(await hasLaterReleasedSibling(a)).toBe(true);
+    expect(await hasLaterReleasedSibling(b)).toBe(true);
+    expect(await hasLaterReleasedSibling(c)).toBe(false);
+
+    // C claimed by ANOTHER drain is still unsent: B still holds its reply.
+    await hold(c, 'other-drain');
+    expect(await hasLaterReleasedSibling(b)).toBe(true);
+    // Once C has gone out, nothing of the batch is left behind B.
+    await markCommandForwarded({ commandId: c.commandId, lockedBy: 'other-drain' }, SESSION_ID, WIRE_ID);
+    expect(await hasLaterReleasedSibling(b)).toBe(false);
+  });
+
+  test('a different batch, a held row, another session, or no batch at all does not count', async () => {
+    const a = await stamp(await enqueue('q_rb2_a', { clientSentAtMs: 1_000 }), 'b1');
+    await stamp(await enqueue('q_rb2_other_batch', { clientSentAtMs: 2_000 }), 'b2');
+    const held = await stamp(await enqueue('q_rb2_held', { clientSentAtMs: 3_000 }), 'b1');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET result = '{"held": true}'::jsonb
+       WHERE command_id = ${held.commandId}::uuid`);
+    const { row: foreign } = await enqueueContinueSessionCommand({
+      source: 'ui',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      sessionId: OTHER_SESSION_ID,
+      actorUserId: null,
+      text: 'say hi',
+      idempotencyKey: `prompt:${OTHER_SESSION_ID}:q_rb2_foreign`,
+      clientMessageId: 'q_rb2_foreign',
+      wireMessageId: WIRE_ID,
+      clientSentAtMs: 4_000,
+      parts: [{ type: 'text', text: 'say hi' }],
+    });
+    await stamp(foreign, 'b1');
+    expect(await hasLaterReleasedSibling(a)).toBe(false);
+
+    // An unmarked row never asks, whatever follows it.
+    const plain = (await storedRow((await enqueue('q_rb2_plain', { clientSentAtMs: 500 })).commandId))[0];
+    expect(await hasLaterReleasedSibling(plain)).toBe(false);
+  });
+});
+
+describe('a noReply delivery closes its row at once', () => {
+  test('the row is delivered, unlisted and ignored by the sweep', async () => {
+    const row = await enqueue('q_noreply');
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID, { noReply: true });
+
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('succeeded');
+    expect(after.result).toMatchObject({
+      status: 'delivered',
+      no_reply: true,
+      forwarded_message_id: WIRE_ID,
+    });
+    expect((after.result as Record<string, unknown>).forwarded_at).toBeTruthy();
+    expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).not.toContain(
+      row.commandId,
+    );
+    await reconcileForwardedPrompts();
+    expect((await readRow(row.commandId)).result).toMatchObject({ status: 'delivered' });
+  });
+
+  test('a stop mark on the row still wins over noReply', async () => {
+    const row = await enqueue('q_noreply_stopped');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+    await holdInboxPrompts(SESSION_ID, true);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID, { noReply: true });
+
+    expect((await readRow(row.commandId)).result).toMatchObject({
+      status: 'forwarded',
+      stop_paused: true,
+      held: true,
+    });
+  });
+
+  test('the next row is admitted once the noReply row has closed', async () => {
+    const a = await enqueue('q_chain_a', { createdAt: '2026-08-01T00:00:00.000Z' });
+    const b = await enqueue('q_chain_b', { createdAt: '2026-08-02T00:00:00.000Z' });
+    await setBox('active', {});
+    await markCommandForwarded(await hold(a), SESSION_ID, WIRE_ID, { noReply: true });
+
+    expect(await admitInboxPrompt(b)).toEqual({ admit: true });
   });
 });
 
 describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
   async function forward(clientMessageId: string, wireMessageId = WIRE_ID) {
     const row = await enqueue(clientMessageId, { wireMessageId });
-    await markCommandForwarded(row.commandId, SESSION_ID, wireMessageId);
+    await markCommandForwarded(await hold(row), SESSION_ID, wireMessageId);
     return row;
   }
 
@@ -686,7 +1251,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).toEqual([
       row.commandId,
     ]);
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-forwarded', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-forwarded', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
   });
 
@@ -705,6 +1270,8 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     // MERGED: the forwarding record survives the confirmation, so the row still
     // says which id it went out under.
     expect(after.result).toMatchObject({ status: 'delivered', forwarded_message_id: WIRE_ID });
+    // A forwarded row is CLOSED, never marked for a later delivery.
+    expect(after.payload as Record<string, unknown>).not.toHaveProperty('consumedOnDelivery');
     expect(await listInboxPrompts(SESSION_ID, 200)).toEqual([]);
     // Idempotent: both witnesses (acceptance, then completion) can fire.
     expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('no_prompt');
@@ -720,6 +1287,25 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
       'confirmed',
     );
     expect((await readRow(row.commandId)).result).toMatchObject({ status: 'delivered' });
+  });
+
+  // A prompt can be re-minted more than once (it waits behind a live turn,
+  // then a strand re-places it). Every id it went out under must still name
+  // its row, or a ledger row keyed on the first re-minted id matches nothing
+  // and the row reads `delivering` for ever.
+  test('a prompt re-minted twice keeps EVERY id it went out under', async () => {
+    const row = await forward('q_reminted_twice');
+    const [stored] = await storedRow(row.commandId);
+    const first = await remintForRepair(stored!, null);
+    const second = await remintForRepair(stored!, null);
+    expect(second).not.toBe(first);
+
+    expect((await readRow(row.commandId)).payload).toMatchObject({
+      redeliveredMessageId: second,
+      redeliveredMessageIds: [first, second],
+      deliveryAttempt: 2,
+    });
+    expect(await confirmInboxPromptConsumed(SESSION_ID, first)).toBe('confirmed');
   });
 
   test('the sweep closes a row whose turn RAN but whose confirmation never landed', async () => {
@@ -773,7 +1359,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     // marker, so the drain re-reads the transcript before delivering.
     expect((after.payload as Record<string, unknown>).remintOnDelivery).toBe(true);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-released', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-released', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).toContain(row.commandId);
   });
 
@@ -783,13 +1369,19 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     // releases the hold, and the admission gate then orders by `created_at`.
     const stopped = await forward('q_release_order_first');
     await holdInboxPrompts(SESSION_ID, true);
+    // Created after `stopped`, and a higher wire id breaks a same-millisecond
+    // tie. (A fixed `createdAt` here was a date that has since passed, so it
+    // put this row FIRST; the assertion only held because it read the stale
+    // pre-UPDATE `createdAt` off the enqueue's return value.)
     const newer = await enqueue('q_release_order_second', {
       wireMessageId: 'msg_0198f3a1b2c5ZzYyXxWwVvUu',
-      createdAt: '2026-09-01T00:00:00.000Z',
     });
     await releaseInboxHold(SESSION_ID);
 
-    expect(await admitInboxPrompt({ ...newer } as SessionLifecycleCommandRow)).toEqual({
+    // The row as the drain claims it: re-read, so it carries the release's
+    // batch stamp like every row the claim hands over.
+    const [claimedNewer] = await storedRow(newer.commandId);
+    expect(await admitInboxPrompt(claimedNewer)).toEqual({
       admit: false,
       reason: 'older_prompt_pending',
       retryAfterMs: INBOX_ORDER_BACKOFF_MS,
@@ -878,7 +1470,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
 
     // The delivery lands anyway — nothing can recall a POST — and it comes back
     // held rather than as an ordinary forwarded row.
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     expect((await readRow(row.commandId)).result).toMatchObject({
       status: 'forwarded',
       stop_paused: true,
@@ -905,7 +1497,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(
       (await readRow(row.commandId)).payload as Record<string, unknown>,
     ).not.toHaveProperty('stopPausedOnDelivery');
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = (await readRow(row.commandId)).result as Record<string, unknown>;
     expect(after.status).toBe('forwarded');
     expect(after.stop_paused).toBeUndefined();
@@ -931,7 +1523,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(after.status).toBe('queued');
     expect(after.result).toMatchObject({ held: true });
     // Visible, but not due: nothing claims it until the user releases the hold.
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-stopped', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-stopped', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
   });
 
@@ -950,7 +1542,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('pending_delivery');
     expect((await readRow(row.commandId)).payload).toMatchObject({ consumedOnDelivery: true });
 
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = await readRow(row.commandId);
     // DELIVERED, not `forwarded`: a turn has the message, so the composer must
     // not keep showing it as a pending queue row for the length of that turn.
@@ -958,6 +1550,20 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(await listInboxPrompts(SESSION_ID, 200)).toEqual([]);
     // The marker is CONSUMED, so a later delivery of this row cannot re-read it.
     expect(after.payload as Record<string, unknown>).not.toHaveProperty('consumedOnDelivery');
+  });
+
+  test('acceptance under the RE-MINTED id marks the in-flight row too', async () => {
+    const row = await enqueue('q_accept_reminted');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running',
+             payload = payload || '{"redeliveredMessageId":"msg_0198f3a1b2c5AcceptReminted"}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    expect(await confirmInboxPromptConsumed(SESSION_ID, 'msg_0198f3a1b2c5AcceptReminted')).toBe(
+      'pending_delivery',
+    );
+    expect((await readRow(row.commandId)).payload).toMatchObject({ consumedOnDelivery: true });
   });
 
   test('a delivery a turn ACCEPTED is not mislabelled as stop-paused', async () => {
@@ -973,7 +1579,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     await holdInboxPrompts(SESSION_ID, true);
     expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('pending_delivery');
 
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = await readRow(row.commandId);
     expect(after.result).toMatchObject({ status: 'delivered' });
     expect((after.result as Record<string, unknown>).stop_paused).toBeUndefined();
@@ -996,14 +1602,14 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
          SET status = 'running'
        WHERE command_id = ${row.commandId}::uuid`);
     await holdInboxPrompts(SESSION_ID, true);
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     expect((await readRow(row.commandId)).payload as Record<string, unknown>).not.toHaveProperty(
       'stopPausedOnDelivery',
     );
 
     // The user sends the row again; the second delivery is an ordinary one.
     await releaseInboxHold(SESSION_ID);
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     const after = (await readRow(row.commandId)).result as Record<string, unknown>;
     expect(after.status).toBe('forwarded');
     expect(after.stop_paused).toBeUndefined();
@@ -1029,7 +1635,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
 
     // And "send now" on a stop-paused row is the other advertised way out of a
     // Stop, so it needs the same fresh key.
-    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
     await holdInboxPrompts(SESSION_ID, true);
     await retryInboxPrompt(SESSION_ID, row.commandId);
     expect((await readRow(row.commandId)).payload).toMatchObject({ deliveryAttempt: 2 });
@@ -1086,7 +1692,7 @@ describe('a claim nobody is working on is reclaimed, not left to wedge the sessi
              locked_until = now() - interval '11 minutes'
        WHERE command_id = ${stranded.commandId}::uuid`);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-reclaim', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-reclaim', limit: 1, idempotencyKey: stranded.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).toContain(stranded.commandId);
     expect((await readRow(stranded.commandId)).locked_by).toBe('w-reclaim');
   });
@@ -1100,9 +1706,8 @@ describe('a claim nobody is working on is reclaimed, not left to wedge the sessi
              locked_until = now() + interval '2 minutes'
        WHERE command_id = ${working.commandId}::uuid`);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-nope', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-nope', limit: 1, idempotencyKey: working.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(working.commandId);
-    expect(LIFECYCLE_RUNNING_RECLAIM_GRACE_MS).toBeGreaterThan(0);
   });
 });
 
@@ -1115,9 +1720,18 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     return rows[0].status as string;
   }
 
+  async function triggerRuntimeRows(): Promise<Array<Record<string, unknown>>> {
+    const result = await db.execute(sql`
+      SELECT slug, last_status, last_error FROM kortix.project_trigger_runtime
+       WHERE project_id = ${PROJECT_ID}::uuid`);
+    return ((result as { rows?: Array<Record<string, unknown>> }).rows ?? result) as Array<
+      Record<string, unknown>
+    >;
+  }
+
   test('a browser prompt that dead-letters leaves the session running', async () => {
     const mine = await enqueue('q_dead');
-    await markCommandFailed(mine.commandId, 'delivery outcome: failed', {
+    await markCommandFailed(await hold(mine), 'delivery outcome: failed', {
       retryable: false,
       attempts: 5,
       sessionId: SESSION_ID,
@@ -1127,6 +1741,8 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     // The user is watching, the row shows `failed`, and there is a retry
     // button. Parking their session would take a working session away.
     expect(await sessionStatus()).toBe('running');
+    // A prompt with no trigger slug touches no trigger runtime row.
+    expect(await triggerRuntimeRows()).toEqual([]);
   });
 
   test('an AUTOMATION prompt that dead-letters still parks the session', async () => {
@@ -1134,14 +1750,302 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     // sessions, so the next fire of a `session_mode: "reuse"` trigger creates a
     // fresh one instead of re-aiming at a wedged session.
     const automation = await enqueueAutomationPrompt('trigger prompt');
-    await markCommandFailed(automation.commandId, 'delivery outcome: failed', {
-      retryable: false,
-      attempts: 5,
-      sessionId: SESSION_ID,
-    });
+    const paged: Array<Record<string, unknown>> = [];
+    const { error } = logger;
+    logger.error = (message: string, context?: Record<string, unknown>) => {
+      if (message.includes('dead-lettered')) paged.push(context ?? {});
+    };
+    try {
+      await markCommandFailed(await hold(automation), 'delivery outcome: failed', {
+        retryable: false,
+        attempts: 5,
+        sessionId: SESSION_ID,
+      });
+    } finally {
+      logger.error = error;
+    }
 
     expect(await sessionStatus()).toBe('failed');
+    // The page names the trigger and where it fired, so the operator can find
+    // the schedule without reading the command row.
+    expect(paged).toEqual([
+      expect.objectContaining({
+        command_id: automation.commandId,
+        trigger_slug: 'daily-digest',
+        session_id: SESSION_ID,
+        project_id: PROJECT_ID,
+        attempts: 5,
+        error: 'delivery outcome: failed',
+      }),
+    ]);
+    // The triggers API reads the dead-letter from the runtime row; left alone
+    // it would show the last fire frozen at `queued`.
+    expect(await triggerRuntimeRows()).toEqual([
+      {
+        slug: 'daily-digest',
+        last_status: 'failed',
+        last_error: 'delivery outcome: failed',
+      },
+    ]);
     await db.execute(sql`
       UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = ${SESSION_ID}`);
+    await db.execute(sql`
+      DELETE FROM kortix.project_trigger_runtime WHERE project_id = ${PROJECT_ID}::uuid`);
+  });
+});
+
+test('claims only the owning instance before changing queue availability', async () => {
+  const { config } = await import('../config');
+  const original = config.KORTIX_INSTANCE_ID;
+  try {
+    config.KORTIX_INSTANCE_ID = 'queue-owner-test';
+    const row = await enqueue('instance-claim');
+    await setBox('active', {});
+    await db.execute(sql`UPDATE kortix.session_sandboxes
+      SET metadata = metadata || '{"instanceId":"queue-peer-test"}'::jsonb
+      WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+    const input = { workerId: 'instance-test', limit: 1, idempotencyKey: row.idempotencyKey! };
+    expect(await claimDueLifecycleCommands(input)).toEqual([]);
+    expect((await readRow(row.commandId)).status).toBe('queued');
+    await db.execute(sql`UPDATE kortix.session_sandboxes
+      SET metadata = metadata || '{"instanceId":"queue-owner-test"}'::jsonb
+      WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+    expect((await claimDueLifecycleCommands(input)).map((claimed) => claimed.commandId)).toEqual([row.commandId]);
+  } finally {
+    config.KORTIX_INSTANCE_ID = original;
+  }
+});
+
+
+test('a retry claim resets delivery evidence and stays waiting until admitted', async () => {
+  const row = await enqueue('claim-state');
+  const claim = () => claimDueLifecycleCommands({
+    workerId: 'claim-state-worker', limit: 1, idempotencyKey: row.idempotencyKey!,
+  });
+  const [first] = await claim();
+  expect(promptState(first).state).toBe('queued');
+  await markInboxDeliveryStarted(first);
+  expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
+  await requeueForAdmission(first, 'turn_active', new Date());
+  const [retry] = await claim();
+  expect(promptState(retry)).toEqual({ state: 'waiting', reason: 'turn_active' });
+  expect(retry.result).not.toHaveProperty('delivery_started_at');
+  await markInboxDeliveryStarted(retry);
+  expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
+});
+
+// One predicate names the row a wire id belongs to (`wireMessageIdMatches`).
+// A row carries its ids in four places: the client id, the latest and every
+// re-minted id, and the id the delivery actually used. Each reader must find
+// the row by any of them. The fourth reader, the strand repair's
+// `requeueStranded`, is proven in integration-forwarded-strand-reconcile.
+describe('every reader finds a row by any id it went out under', () => {
+  async function forwardedUnder(clientMessageId: string, sentUnder: string) {
+    const row = await enqueue(clientMessageId);
+    await markCommandForwarded(await hold(row), SESSION_ID, sentUnder);
+    return row;
+  }
+
+  async function withRemintedIds(commandId: string, ids: string[]) {
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET payload = payload || ${JSON.stringify({ redeliveredMessageIds: ids })}::jsonb
+       WHERE command_id = ${commandId}::uuid`);
+  }
+
+  // The 2026-08-20 regression: the delivery used an id neither payload column
+  // held, and three readers matched on the payload only.
+  test('an id held only as the forwarded id: confirmation, cancel lookup and redelivery', async () => {
+    const onlyForwarded = 'msg_0198f3a1b2c6OnlyForwarded';
+    const row = await forwardedUnder('q_only_forwarded', onlyForwarded);
+    expect(await findInboxRowIdByMessageId(SESSION_ID, onlyForwarded)).toBe(row.commandId);
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: onlyForwarded,
+        turnToken: 'turn-only-forwarded',
+        endReason: 'runtime_gone',
+      }),
+    ).toBe('requeued');
+
+    const again = await forwardedUnder('q_only_forwarded_confirm', onlyForwarded);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, onlyForwarded)).toBe('confirmed');
+    expect((await readRow(again.commandId)).result).toMatchObject({ status: 'delivered' });
+  });
+
+  test('an id held only in the re-minted history: confirmation, cancel lookup and redelivery', async () => {
+    const earlier = 'msg_0198f3a1b2c6EarlierRemint';
+    const row = await forwardedUnder('q_only_history', WIRE_ID);
+    await withRemintedIds(row.commandId, [earlier]);
+    expect(await findInboxRowIdByMessageId(SESSION_ID, earlier)).toBe(row.commandId);
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: earlier,
+        turnToken: 'turn-only-history',
+        endReason: 'runtime_gone',
+      }),
+    ).toBe('requeued');
+
+    const again = await forwardedUnder('q_only_history_confirm', WIRE_ID);
+    await withRemintedIds(again.commandId, [earlier]);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, earlier)).toBe('confirmed');
+  });
+
+  test('an id no column holds names nothing, and a queued row is never confirmed', async () => {
+    await forwardedUnder('q_names_nothing', WIRE_ID);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, 'msg_0198f3a1b2c6NoSuchPrompt')).toBe(
+      'no_prompt',
+    );
+    await cleanup();
+
+    // Not yet on the wire: the confirmation leaves it to the drain.
+    const queued = await enqueue('q_still_queued');
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('no_prompt');
+    const after = await readRow(queued.commandId);
+    expect(after.status).toBe('queued');
+    expect(after.result).toEqual({});
+  });
+
+  // SECURITY: a wire id comes from the client. It is a bound parameter, so SQL
+  // in it is data: it matches nothing and raises nothing.
+  test('a wire id carrying SQL is matched as data', async () => {
+    await forwardedUnder('q_sql_in_id', WIRE_ID);
+    const injected = "x' OR '1'='1";
+    expect(await confirmInboxPromptConsumed(SESSION_ID, injected)).toBe('no_prompt');
+    expect(await findInboxRowIdByMessageId(SESSION_ID, injected)).toBeNull();
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: injected,
+        turnToken: 'turn-sql',
+        endReason: 'runtime_gone',
+      }),
+    ).toBe('no_prompt');
+  });
+});
+
+// The settle that runs after Stop takes the prompts the Stop paused back out
+// of OpenCode. It selects them with `stopPausedOnWireScope`. The settle reads
+// the box only when that scope selected a row, and this session has no
+// runtime, so `unreadable` reports whether the scope selected anything.
+describe('the post-Stop settle selects exactly the prompts the Stop paused', () => {
+  const OTHER_SESSION_ID = crypto.randomUUID();
+
+  beforeAll(async () => {
+    await db.execute(sql`
+      INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, status)
+      VALUES (${OTHER_SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${`br-other-${SANDBOX_ID}`}, 'running')`);
+  });
+
+  afterAll(async () => {
+    await db.execute(
+      sql`DELETE FROM kortix.session_lifecycle_commands WHERE session_id = ${OTHER_SESSION_ID}`,
+    );
+    await db.execute(sql`DELETE FROM kortix.project_sessions WHERE session_id = ${OTHER_SESSION_ID}`);
+  });
+
+  const settleSelected = async () => (await settleInboxHoldAfterStop(SESSION_ID)).unreadable;
+
+  // The Stop stamps `held` on every forwarded row BEFORE the settle runs. A
+  // scope that excluded held rows excluded exactly the rows it exists for.
+  test('a forwarded prompt the Stop just held, and a delivered one, are selected', async () => {
+    const row = await enqueue('q_stop_held');
+    await markCommandForwarded(await hold(row), SESSION_ID, WIRE_ID);
+    await holdInboxPrompts(SESSION_ID, true);
+    expect((await readRow(row.commandId)).result).toMatchObject({ held: true });
+
+    expect(await settleSelected()).toBe(true);
+    await cleanup();
+
+    // Confirmed on persistence, long before a model step reads it: still on
+    // the wire as far as the Stop is concerned.
+    const delivered = await enqueue('q_stop_delivered');
+    await markCommandForwarded(await hold(delivered), SESSION_ID, WIRE_ID);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('confirmed');
+    expect(await settleSelected()).toBe(true);
+  });
+
+  test('another session, an automation prompt, and a prompt forwarded 11 minutes ago are not', async () => {
+    const { row: other } = await enqueueContinueSessionCommand({
+      source: 'ui',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      sessionId: OTHER_SESSION_ID,
+      actorUserId: null,
+      text: 'say hi',
+      idempotencyKey: `prompt:${OTHER_SESSION_ID}:q_other_session`,
+      clientMessageId: 'q_other_session',
+      wireMessageId: WIRE_ID,
+      parts: [{ type: 'text', text: 'say hi' }],
+    });
+    await markCommandForwarded(await hold(other), OTHER_SESSION_ID, WIRE_ID);
+    await holdInboxPrompts(OTHER_SESSION_ID, true);
+    expect(await settleSelected()).toBe(false);
+
+    const automation = await enqueueAutomationPrompt('trigger prompt');
+    await markCommandForwarded(await hold(automation), SESSION_ID, WIRE_ID);
+    expect(await settleSelected()).toBe(false);
+    await cleanup();
+
+    const old = await enqueue('q_forwarded_long_ago');
+    await markCommandForwarded(await hold(old), SESSION_ID, WIRE_ID);
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET result = result || jsonb_build_object(
+               'forwarded_at', to_jsonb(now() - interval '11 minutes'))
+       WHERE command_id = ${old.commandId}::uuid`);
+    expect(await settleSelected()).toBe(false);
+  });
+});
+
+describe('editing a queued prompt — the queue list pencil', () => {
+  test('replaces the text in place: same row, same place, files kept, nothing released', async () => {
+    const row = await enqueue('q_edit', { clientSentAtMs: Date.now() - 5_000 });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET payload = jsonb_set(payload, '{parts}', ${JSON.stringify([
+           { type: 'text', text: 'say hi' },
+           { type: 'file', mime: 'image/png', url: 'kortix-attachment://a', filename: 'a.png' },
+         ])}::jsonb),
+             result = '{"held": true}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+    const before = await readRow(row.commandId);
+
+    const edited = await editInboxPrompt(SESSION_ID, row.commandId, 'say hello');
+
+    expect(edited.outcome).toBe('edited');
+    const after = await readRow(row.commandId);
+    const payload = after.payload as Record<string, unknown>;
+    expect(payload.text).toBe('say hello');
+    expect(payload.parts).toEqual([
+      { type: 'text', text: 'say hello' },
+      { type: 'file', mime: 'image/png', url: 'kortix-attachment://a', filename: 'a.png' },
+    ]);
+    // Its place, its wire id and its hold are untouched: an edit is not a send.
+    expect(payload.clientSentAtMs).toBe((before.payload as Record<string, unknown>).clientSentAtMs);
+    expect(payload.wireMessageId).toBe(WIRE_ID);
+    expect(after.status).toBe('queued');
+    expect(after.result).toEqual({ held: true });
+  });
+
+  test('a prompt already on the wire answers `delivering` and keeps its text', async () => {
+    const row = await enqueue('q_edit_running');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+    expect(await editInboxPrompt(SESSION_ID, row.commandId, 'too late')).toEqual({
+      outcome: 'delivering',
+    });
+    expect((((await readRow(row.commandId)).payload) as Record<string, unknown>).text).toBe('say hi');
+  });
+
+  test('an automation prompt cannot be edited through the prompt routes', async () => {
+    const automation = await enqueueAutomationPrompt('trigger says hello');
+    expect(await editInboxPrompt(SESSION_ID, automation.commandId, 'x')).toEqual({
+      outcome: 'missing',
+    });
   });
 });

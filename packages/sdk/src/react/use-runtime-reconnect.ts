@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { getSupabaseAccessToken } from '../core/http/auth';
 import {
+  CONNECTION_FAULT_GRACE_MS,
   getSessionHealth,
   isRuntimeReady,
   type ProxyHop,
@@ -13,7 +14,8 @@ import {
   markInitialCheckDone,
   resetForServerSwitch,
   resetSandboxFail,
-  setOpenCodeHealth,
+  setRuntimeHealth,
+  setRuntimeCapabilities,
   setSandboxStatus,
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
@@ -44,6 +46,27 @@ export const POLL_CONNECTED = 30_000; // 30s when healthy
 // tracking actual daemon readiness tightly; the health probe is a cheap GET.
 export const POLL_FAILING = 150;
 export const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
+/**
+ * 1s while a connected session is inside a failure streak. The streak must
+ * persist `CONNECTION_FAULT_GRACE_MS` before it changes what the user sees, so
+ * the 30s healthy cadence would stretch one missed probe into a 30s question,
+ * and the 150ms boot cadence would spend ~60 requests answering it.
+ */
+export const POLL_RECHECK = 1_000;
+/**
+ * 15s while the box is PARKED.
+ *
+ * Deliberately the slowest cadence here, because parking is the only state in
+ * this set that is not a fault: it is the expected resting state of an idle
+ * session, and it ends when the user sends — which resets this store directly
+ * rather than waiting for a probe to notice. The poll stays alive only so a
+ * wake from somewhere else (another tab, another client) still surfaces.
+ *
+ * Before this existed, a parked box matched `connected` + `healthy: false` and
+ * inherited POLL_FAILING: a health request every 150ms, forever, per open tab,
+ * against a state that cannot change on its own.
+ */
+export const POLL_PARKED = 15_000;
 
 export const CHECK_TIMEOUT = 20_000;
 
@@ -93,7 +116,7 @@ export function shouldIgnoreProbeFailure(
  *    not answer), `provider_ingress`, or — for a `CHECK_TIMEOUT` abort — no hop
  *    at all. All three count. On a box saturated by a heavy turn that is the
  *    2026-08-17 incident verbatim: two missed probes flip `sandboxStatus` to
- *    `unreachable`, `useOpenCodeEventStream` (gated on `=== 'connected'`) tears
+ *    `unreachable`, `useRuntimeEventStream` (gated on `=== 'connected'`) tears
  *    the live stream down, and the transcript freezes mid-turn on a runtime
  *    that is provably up — it is delivering the frames. A frame is a fact from
  *    the runtime itself, not an inference, and it outranks a probe that timed
@@ -211,21 +234,47 @@ export function classifyProbeResult(result: ProbeResultLike): ProbeOutcome {
  * Threshold counting — the one piece of state this machine actually needs to
  * decide a transition. `failCount` is the count AFTER the current failure has
  * been recorded (matches `incrementSandboxFail()` semantics: increment, then
- * read). Returns the next status, or `null` for "no status change" (still
- * below threshold on a first-ever connection, which stays in whatever status
- * it already had — normally "connecting").
+ * read). Returns `'unreachable'`, or `null` for "no status change".
+ *
+ * A failure never moves a session to `connecting`: that flip closed the live
+ * SSE stream on one missed probe, and the next probe opened it again — the
+ * connecting → unreachable → connected flap of KRTX-606.
+ *
+ * `failingForMs` is how long the current streak has lasted. When given, the
+ * streak must also last `CONNECTION_FAULT_GRACE_MS` — an immediate-offline
+ * 502/504 included, which a proxy hop answers for a second during boot. When
+ * omitted (callers from before it existed), the count alone decides.
  */
 export function computeFailureStatus(
   failCount: number,
   wasConnected: boolean,
   immediateOffline: boolean,
+  failingForMs?: number,
 ): SandboxConnectionStatus | null {
+  if (failingForMs !== undefined && failingForMs < CONNECTION_FAULT_GRACE_MS) return null;
   if (immediateOffline) return 'unreachable';
-
   const threshold = wasConnected ? FAIL_THRESHOLD_RECONNECT : FAIL_THRESHOLD_FIRST;
-  if (failCount >= threshold) return 'unreachable';
-  if (wasConnected) return 'connecting';
-  return null;
+  return failCount >= threshold ? 'unreachable' : null;
+}
+
+/**
+ * Whether a probe that says the runtime is NOT READY (a booting 503, or a 200
+ * whose body is not ready) should leave a healthy runtime marked healthy.
+ *
+ * `healthy: false` closes the SSE stream and every runtime query, so believing
+ * one such answer turns a single slow boot check into a visible outage. It is
+ * believed once it has persisted `CONNECTION_FAULT_GRACE_MS` — unless the
+ * runtime's own SSE frames are still arriving, which outrank any probe.
+ */
+export function shouldHoldHealthy(input: {
+  healthy: boolean | null;
+  notReadySinceMs: number;
+  nowMs: number;
+  lastRuntimeEvidenceAt: number | null;
+}): boolean {
+  if (input.healthy !== true) return false;
+  if (shouldIgnoreProbeFailure(input.lastRuntimeEvidenceAt, input.nowMs)) return true;
+  return input.nowMs - input.notReadySinceMs < CONNECTION_FAULT_GRACE_MS;
 }
 
 /**
@@ -233,8 +282,20 @@ export function computeFailureStatus(
  * pair — fast while anything is unresolved or unhealthy, slow once truly
  * settled into "connected and healthy".
  */
-export function nextPollDelay(status: SandboxConnectionStatus, healthy: boolean | null): number {
-  if (status === 'connected' && healthy === false) return POLL_FAILING;
+export function nextPollDelay(
+  status: SandboxConnectionStatus,
+  healthy: boolean | null,
+  parked = false,
+  /** A failure or not-ready streak is open and still inside its grace period. */
+  failing = false,
+): number {
+  if (failing && status === 'connected') return POLL_RECHECK;
+  // Parked and booting present identically (`connected` + not healthy) and need
+  // opposite cadences. Booting resolves on its own in seconds and the fast poll
+  // is what makes the runtime appear promptly; parked resolves only on a send.
+  if (status === 'connected' && healthy === false) {
+    return parked ? POLL_PARKED : POLL_FAILING;
+  }
   if (status === 'connected') return POLL_CONNECTED;
   if (status === 'unreachable') return POLL_UNREACHABLE;
   // Initial "connecting" phase (sandbox just went active, opencode still
@@ -251,9 +312,11 @@ export function nextPollDelay(status: SandboxConnectionStatus, healthy: boolean 
  * Probes `getSessionHealth` (the SDK's `/kortix/health`) and maps the result
  * into the shared `sandbox-connection-store`. Behaviour:
  *   - On first failure, immediately switches to fast polling.
- *   - If the user was previously connected, the first failure moves to
- *     "connecting" and the second consecutive failure marks unreachable.
- *   - If it's the first connection, requires FAIL_THRESHOLD_FIRST failures.
+ *   - A failure never moves the status to "connecting". "Unreachable" needs
+ *     FAIL_THRESHOLD_RECONNECT (was connected) or FAIL_THRESHOLD_FIRST
+ *     failures AND a streak of at least CONNECTION_FAULT_GRACE_MS.
+ *   - A healthy runtime stays healthy through a not-ready answer for the same
+ *     grace period, and for as long as its own SSE frames keep arriving.
  *
  * The transition logic itself (`classifyProbeResult`, `computeFailureStatus`,
  * `nextPollDelay`) is pure and exported above — this hook is thin glue that
@@ -274,11 +337,19 @@ export function useRuntimeReconnect() {
     isMountRef.current = false;
 
     if (isFirstMount) {
-      // Full reset — clears wasConnected, failCount, status, everything.
-      resetForServerSwitch();
+      // Full reset — clears wasConnected, failCount, status, everything — unless
+      // this is a remount for the runtime the store already describes. A
+      // remount inside one session used to wipe a healthy store to
+      // `connecting`, which closed the SSE stream until the next probe.
+      resetForServerSwitch(useServerStore.getState().getActiveServerUrl() ?? undefined);
     }
 
     let alive = true;
+    // When the current run of failed probes began, and when the runtime began
+    // answering "not ready". Both gate a visible change behind
+    // `CONNECTION_FAULT_GRACE_MS` (see `computeFailureStatus`, `shouldHoldHealthy`).
+    let failingSince: number | null = null;
+    let notReadySince: number | null = null;
 
     async function check() {
       if (!alive) return;
@@ -348,15 +419,28 @@ export function useRuntimeReconnect() {
             // resumes only on the next SEND, so it must not be reported as
             // `connected`, and its stall clock must stay off (RC-3) — otherwise
             // the idle session escalates to "taking longer than usual" forever.
+            failingSince = null;
             const parked = result.hop === 'control_plane';
+            const now = Date.now();
+            const { healthy, lastRuntimeEvidenceAt } = useSandboxConnectionStore.getState();
+            // A parked answer is the control plane's statement, believed at
+            // once — unless the runtime's own frames say it is mid-turn (the
+            // session row lags a resume).
+            if (parked && shouldIgnoreProbeFailure(lastRuntimeEvidenceAt, now)) break;
+            notReadySince ??= now;
+            if (!parked && shouldHoldHealthy({ healthy, notReadySinceMs: notReadySince, nowMs: now, lastRuntimeEvidenceAt })) {
+              break;
+            }
             if (parked) {
-              setOpenCodeHealth(false, outcome.health?.version, null, { parked: true });
+              setRuntimeHealth(false, outcome.health?.version, null, { parked: true });
             } else {
               setSandboxStatus('connected');
+              // The daemon answered: what its runtime serves is known (E1).
+              setRuntimeCapabilities(outcome.health?.capabilities ?? null);
               // Only a real `boot_error` is an error; the routine boot `reason`
               // ("schema not ready") is progress and must not paint a terminal
               // card (RC-1). See `runtimeErrorFromHealth`.
-              setOpenCodeHealth(
+              setRuntimeHealth(
                 false,
                 outcome.health?.version,
                 runtimeErrorFromHealth(outcome.health),
@@ -372,12 +456,26 @@ export function useRuntimeReconnect() {
           }
           case 'healthy': {
             resetSandboxFail();
+            failingSince = null;
+            const ready = isRuntimeReady(outcome.health);
+            if (ready) {
+              notReadySince = null;
+            } else {
+              const now = Date.now();
+              notReadySince ??= now;
+              const { healthy, lastRuntimeEvidenceAt } = useSandboxConnectionStore.getState();
+              if (shouldHoldHealthy({ healthy, notReadySinceMs: notReadySince, nowMs: now, lastRuntimeEvidenceAt })) {
+                setSandboxStatus('connected');
+                break;
+              }
+            }
             setSandboxStatus('connected');
+            setRuntimeCapabilities(outcome.health?.capabilities ?? null);
             // Same rule as the booting branch: a `200` that is not yet ready
             // still carries only routine progress in `reason`/`message`; only a
             // real `boot_error` is an error (RC-1).
-            setOpenCodeHealth(
-              isRuntimeReady(outcome.health),
+            setRuntimeHealth(
+              ready,
               outcome.health?.version,
               runtimeErrorFromHealth(outcome.health),
             );
@@ -410,13 +508,11 @@ export function useRuntimeReconnect() {
         }
         if (failed) {
           incrementSandboxFail();
-          if (immediateOffline) {
-            setSandboxStatus('unreachable');
-          } else {
-            const { failCount, wasConnected } = useSandboxConnectionStore.getState();
-            const nextStatus = computeFailureStatus(failCount, wasConnected, immediateOffline);
-            if (nextStatus) setSandboxStatus(nextStatus);
-          }
+          const now = Date.now();
+          failingSince ??= now;
+          const { failCount, wasConnected } = useSandboxConnectionStore.getState();
+          const nextStatus = computeFailureStatus(failCount, wasConnected, immediateOffline, now - failingSince);
+          if (nextStatus) setSandboxStatus(nextStatus);
         }
 
         // Reschedule from finally so EVERY path re-arms the poll loop —
@@ -434,8 +530,9 @@ export function useRuntimeReconnect() {
     function scheduleNext() {
       if (!alive) return;
       if (timerRef.current) clearTimeout(timerRef.current);
-      const { status, healthy } = useSandboxConnectionStore.getState();
-      timerRef.current = setTimeout(check, nextPollDelay(status, healthy));
+      const { status, healthy, parked } = useSandboxConnectionStore.getState();
+      const failing = failingSince !== null || (notReadySince !== null && healthy === true);
+      timerRef.current = setTimeout(check, nextPollDelay(status, healthy, parked, failing));
     }
 
     check();

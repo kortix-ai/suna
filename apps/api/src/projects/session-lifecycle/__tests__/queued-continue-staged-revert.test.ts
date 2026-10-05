@@ -19,7 +19,7 @@
 //     rather than dropped. See the `inbox prompts across a staged revert` block
 //     at the bottom of this file.
 //
-// Same mocking caveat as ../__tests__/continue-session-title.test.ts:
+// Same mocking caveat as ./continue-session.test.ts:
 // `mock.module` is process-global in bun:test, so this file must run on its
 // own (the repo's `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -55,10 +55,14 @@ mock.module('../../../config', () => ({
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
-    select: () => ({
+    select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
+          // continuationOverrides (queued-continue-delivery.ts) reads the newest
+          // turn that named a model; none here, so the prompt goes out as sent.
+          orderBy: () => ({ limit: async () => [] }),
           limit: async () => {
+            if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             return [];
@@ -126,16 +130,28 @@ mock.module('../store', () => ({
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
-  markCommandFailed: async (commandId: string, message: string, opts: unknown) => {
+  // The landing proof requeues a prompt the runtime never showed (fresh
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
+  // store mock has to carry it or the engine import fails outright. Nothing in
+  // this file fails a landing.
+  requeueUnlandedPrompt: async () => {
+    throw new Error('not expected: this test never fails a landing proof');
+  },
+  markInboxDeliveryStarted: async () => {},
+  markCommandFailed: async ({ commandId }: { commandId: string }, message: string, opts: unknown) => {
     failedCalls.push({ commandId, message, opts });
   },
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
-  markCommandSucceeded: async (commandId: string, result: unknown, sessionId?: string | null) => {
+  markCommandSucceeded: async (
+    { commandId }: { commandId: string },
+    result: unknown,
+    sessionId?: string | null,
+  ) => {
     succeededCalls.push({ commandId, result, sessionId });
   },
   // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
@@ -160,21 +176,22 @@ mock.module('../../opencode-mapping', () => ({
   },
 }));
 
-// The wake path now converges the box before every delivery (engine.ts
+// The wake path now converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
 // `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
-// the wire, not about the sync (see continue-session-env-sync.test.ts).
+// the wire, not about the sync (see continue-session-runtime-env.test.ts).
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+  invalidateSandbox: () => {},
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSessionRuntimesEnvForPrompt: async () => {},
+  syncSandboxEnvForPrompt: async () => {},
 }));
 
-const { executeQueuedContinue } = await import('../engine');
+const { executeQueuedContinue } = await import('../queued-continue');
 
 const originalFetch = globalThis.fetch;
 
@@ -236,11 +253,7 @@ describe('executeQueuedContinue — staged-revert guard', () => {
 
     expect(outcome).toBe('succeeded');
     expect(succeededCalls).toEqual([
-      {
-        commandId: 'cmd-1',
-        result: { status: 'skipped', reason: 'staged_revert' },
-        sessionId: SESSION_ID,
-      },
+      { commandId: 'cmd-1', result: { status: 'skipped', reason: 'staged_revert' }, sessionId: SESSION_ID },
     ]);
     expect(failedCalls).toEqual([]);
     // The guard ran (it read the sandbox's OpenCode session) but delivery
@@ -257,9 +270,7 @@ describe('executeQueuedContinue — staged-revert guard', () => {
     const outcome = await executeQueuedContinue(baseRow());
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
-    ]);
+    expect(succeededCalls).toEqual([{ commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID }]);
     expect(failedCalls).toEqual([]);
     // Guard ran BEFORE delivery, then delivery proceeded normally.
     const endpointIdx = events.indexOf('endpoint');
@@ -276,9 +287,7 @@ describe('executeQueuedContinue — staged-revert guard', () => {
     const outcome = await executeQueuedContinue(baseRow());
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
-    ]);
+    expect(succeededCalls).toEqual([{ commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID }]);
     // The guard tried (endpoint resolution) but got nothing back, so it never
     // even reached the GET /session/{id} fetch — and delivery still ran.
     expect(events).toContain('endpoint');
@@ -293,9 +302,7 @@ describe('executeQueuedContinue — staged-revert guard', () => {
     const outcome = await executeQueuedContinue(baseRow());
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
-    ]);
+    expect(succeededCalls).toEqual([{ commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID }]);
     // Never even reached endpoint resolution — the pin check short-circuits first.
     expect(events).not.toContain('endpoint');
     expect(events).toContain('open');
@@ -361,24 +368,13 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     // The row went out and stays OPEN: an inbox prompt carries a wire id, so it
     // reads `delivering` until the ledger says a turn consumed it.
     expect(forwardedCalls).toEqual([
-      {
-        commandId: 'cmd-1',
-        sessionId: SESSION_ID,
-        wireMessageId: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn',
-      },
+      { commandId: 'cmd-1', sessionId: SESSION_ID, wireMessageId: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn' },
     ]);
     expect(succeededCalls).toEqual([]);
     expect(failedCalls).toEqual([]);
     expect(events).toContain('prompt');
-  });
-
-  test('the guard does not even read the sandbox for a never-waited inbox row', async () => {
-    // A read that cannot change the outcome is a 5s timeout on the delivery
-    // path of every single composer send.
-    sessionInfoBody = { id: OC_SESSION_ID, revert: { messageID: 'msg-99' } };
-
-    await executeQueuedContinue(inboxRow());
-
+    // The guard never even reads the sandbox for a never-waited inbox row: a
+    // read that cannot change the outcome is a 5s timeout on every send.
     expect(events.some((e) => e.startsWith('fetch:'))).toBe(false);
   });
 
@@ -471,6 +467,43 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     expect(outcome).toBe('succeeded');
     expect(failedCalls).toEqual([]);
     expect(events).toContain('prompt');
+  });
+
+  // KRTX-683. Stop held A and B; the user rewound the stopped session, then
+  // sent C. The send released A, B and C as one batch. A and B predate the
+  // rewind and must not commit it; C is the replacement prompt and must. In
+  // the drain, C waits behind A and B like any batch tail, so it arrives
+  // carrying the lane's `admission_reason` and `remintOnDelivery` — waiting
+  // behind its own batch is not waiting from before the rewind.
+  function batchRow(name: string, releasedFromHold: boolean) {
+    return inboxRow({
+      commandId: `cmd-${name}`,
+      payload: {
+        text: `prompt ${name}`,
+        clientMessageId: `cm_${name}`,
+        wireMessageId: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn',
+        releasedBatchId: 'b1',
+        releasedFromHold,
+        remintOnDelivery: true,
+      } as unknown as SessionLifecycleCommandRow['payload'],
+      result: { admission_reason: 'older_prompt_pending' } as Record<string, unknown>,
+    });
+  }
+
+  test('Stop, rewind, send: the held prompts fail with the rewind copy and the new send commits the revert', async () => {
+    sessionInfoBody = { id: OC_SESSION_ID, revert: { messageID: 'msg-99' } };
+
+    expect(await executeQueuedContinue(batchRow('a', true))).toBe('failed');
+    expect(await executeQueuedContinue(batchRow('b', true))).toBe('failed');
+    expect(failedCalls.map((call) => [call.commandId, call.message])).toEqual([
+      ['cmd-a', 'queued before the session was rewound — send it again to run it'],
+      ['cmd-b', 'queued before the session was rewound — send it again to run it'],
+    ]);
+    expect(events).not.toContain('prompt');
+
+    expect(await executeQueuedContinue(batchRow('c', false))).toBe('succeeded');
+    expect(events).toContain('prompt');
+    expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-c']);
   });
 });
 

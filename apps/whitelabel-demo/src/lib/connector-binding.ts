@@ -9,10 +9,10 @@ import type { ConnectorBindingChoice } from '@/server/bindable-connections';
  *
  * `selfServiceAction` is typed `null` on purpose. A wrapper acts under one
  * credential for many end-users, so there is no personal upstream identity to
- * connect WITH — the interactive flow that would do it (`require_connectors`)
- * is refused for a wrapper credential outright
- * (403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY). A "connect it yourself" button
- * here could only ever lead to that refusal, so the type forbids one existing.
+ * connect WITH — a `member`-owned account is reachable only by its own human
+ * owner, never a service account, so a wrapper can never complete a connect
+ * flow for one. A "connect it yourself" button here could only ever lead to
+ * that dead end, so the type forbids one existing.
  */
 export interface ConnectorBindingNotice {
   title: string;

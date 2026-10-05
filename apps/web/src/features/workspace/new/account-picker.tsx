@@ -2,6 +2,7 @@
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { KortixAccount } from '@kortix/sdk';
 
@@ -99,6 +100,8 @@ export function AccountPicker({
    *  specific rendering, regardless of `accounts.length`. */
   showAccountLine?: boolean;
 }) {
+  const t = useTranslations('newWorkspace');
+
   if (!showAccountLine || accounts.length < 2) {
     const { identityLabel, accountLabel } = resolveAccountPickerIdentity({
       accounts,
@@ -108,13 +111,13 @@ export function AccountPicker({
     });
     if (!identityLabel && !accountLabel) return null;
     return (
-      <span className={cn('flex min-w-0 flex-col', className)}>
+      <span className={cn('flex w-full min-w-0 flex-col', className)}>
         {identityLabel ? (
           <span className="text-muted-foreground min-w-0 truncate text-sm">{identityLabel}</span>
         ) : null}
         {accountLabel ? (
           <span className="text-muted-foreground/70 min-w-0 truncate text-xs">
-            Create in {accountLabel}
+            {t('account.createIn', { account: accountLabel })}
           </span>
         ) : null}
       </span>
@@ -127,25 +130,26 @@ export function AccountPicker({
     <Select value={value ?? undefined} onValueChange={onChange}>
       <SelectTrigger
         id="workspace-account"
-        variant="transparent"
-        size="sm"
-        aria-label="Account"
-        className={cn(
-          'text-muted-foreground hover:text-foreground h-8 max-w-[min(100%,16rem)] min-w-0 px-2',
-          className,
-        )}
+        aria-label={t('account.label')}
+        // className={cn(
+        //   'text-muted-foreground hover:text-foreground h-8 max-w-[min(100%,16rem)] min-w-0 px-2',
+        //   className,
+        // )}
+        className="w-full"
+        size="md"
       >
         {selectedByValue ? (
-          <span className="text-muted-foreground flex min-w-0 items-center gap-2 truncate text-sm">
-            {selectedByValue.name}
+          <span className="flex min-w-0 items-center gap-2">
+            <EntityAvatar label={selectedByValue.name} size="xs" />
+            <span className="truncate text-sm">{selectedByValue.name}</span>
           </span>
         ) : (
-          <span className="text-muted-foreground truncate text-sm">Choose an account</span>
+          <span className="text-muted-foreground truncate text-sm">{t('account.choose')}</span>
         )}
       </SelectTrigger>
       <SelectContent align="start">
         {accounts.map((account) => (
-          <SelectItem key={account.account_id} value={account.account_id}>
+          <SelectItem key={account.account_id} size="md" value={account.account_id}>
             <span className="flex min-w-0 items-center gap-2">
               <EntityAvatar label={account.name} size="xs" />
               <span className="truncate">{account.name}</span>

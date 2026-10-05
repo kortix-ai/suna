@@ -52,6 +52,7 @@ COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-ser
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 
@@ -158,6 +159,20 @@ COPY packages/sdk/package.json ./packages/sdk/
 RUN corepack enable pnpm && \
     pnpm install --filter ./${SERVICE}... --filter kortix --shamefully-hoist --prod=false --ignore-scripts
 
+# The Supabase CLI is a LOCAL-DEV tool. `--prod=false` above is load-bearing —
+# the API runs TypeScript directly and the migration runner (node-pg-migrate,
+# pg) sits in the ROOT devDependencies — but it also drags in `supabase`, whose
+# platform package vendors a ~50 MB Go binary. Nothing in apps/api or
+# packages/db imports it; only scripts/dev-local.sh and scripts/nuke-local.sh
+# invoke it, and neither runs in this image. It was carrying 14 high-severity
+# Go CVEs into every scan of the runtime image (Trivy, 2026-09-16:
+# CVE-2026-56862/56860/56859/56858/56853/46600/39821/33818/56865/56864/17106/
+# 33748/33747/71556) for code this image never executes. Drop it.
+RUN rm -rf node_modules/supabase \
+           node_modules/@supabase/cli-* \
+           node_modules/.pnpm/supabase@* \
+           node_modules/.pnpm/@supabase+cli-*
+
 # Sources, after the install layer. `.dockerignore` excludes `**/node_modules`,
 # so these COPYs merge over the installed tree without clobbering what pnpm
 # just wrote. Keep this list identical to the manifest list above.
@@ -224,6 +239,7 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 # Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
+COPY --from=deps /app/packages/db/scripts/early-applied-migration-repair.ts ./packages/db/scripts/early-applied-migration-repair.ts
 COPY --from=deps /app/packages/db/scripts/local-audit-v2-ledger-repair.ts ./packages/db/scripts/local-audit-v2-ledger-repair.ts
 COPY --from=deps /app/packages/db/scripts/local-invalid-index-repair.ts ./packages/db/scripts/local-invalid-index-repair.ts
 COPY --from=deps /app/packages/db/scripts/local-warm-session-index-repair.ts ./packages/db/scripts/local-warm-session-index-repair.ts
@@ -231,6 +247,8 @@ COPY --from=deps /app/packages/db/scripts/migration-target.ts ./packages/db/scri
 COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
 COPY --from=deps /app/packages/db/scripts/migration-retry.ts ./packages/db/scripts/migration-retry.ts
 COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts
+COPY --from=deps /app/packages/db/scripts/migration-status.ts ./packages/db/scripts/migration-status.ts
+COPY --from=deps /app/packages/db/scripts/catalog.ts ./packages/db/scripts/catalog.ts
 # Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
 # self-host databases. `migrate.ts bootstrap` applies this before `up` when
 # basejump is absent (no-op on provisioned cloud/dev DBs).
@@ -240,6 +258,9 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel
 COPY --from=deps /app/packages/starter/src ./packages/starter/src
 COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
 COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
+# starter and registry import @kortix/manifest-schema/layout. pnpm links it in
+# the package's own node_modules; the root node_modules hoists no @kortix package.
+COPY --from=deps /app/packages/starter/node_modules ./packages/starter/node_modules
 # Project-scaffold templates read at runtime: packages/starter/src/index.ts
 # resolves BASE_TEMPLATE_DIR = join(import.meta.dir,'..','templates','base').
 # Without this the "Create project" seed path throws
@@ -254,6 +275,7 @@ COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contrac
 COPY --from=deps /app/packages/registry/src ./packages/registry/src
 COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
 COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
+COPY --from=deps /app/packages/registry/node_modules ./packages/registry/node_modules
 
 # Migrations are NOT bundled into the image: deployed ensureSchema() is warn-only
 # (it never applies at boot), and migrations run in the deploy pipeline's
@@ -271,10 +293,12 @@ COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-am
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
-COPY apps/sandbox/MACHINE.fast.md ./apps/sandbox/MACHINE.fast.md
-COPY apps/sandbox/lazy-tools ./apps/sandbox/lazy-tools
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
-COPY packages/sdk ./packages/sdk
+# From deps, not the build context: the SDK imports @kortix/llm-catalog at
+# runtime (composer-model.ts), and only the deps stage carries the SDK's own
+# node_modules symlink to it. The context copy has none (.dockerignore), and the
+# API crash-looped on "Cannot find module '@kortix/llm-catalog/lite'".
+COPY --from=deps /app/packages/sdk ./packages/sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
 # SOURCE (not the compiled binaries above, which `bun build --compile` produces

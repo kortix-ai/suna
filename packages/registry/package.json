@@ -10,7 +10,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
+  },
+  "dependencies": {
+    "@kortix/manifest-schema": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",

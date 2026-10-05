@@ -26,8 +26,8 @@
  * from the client: whether a session still has no title. That is what these
  * tests pin.
  */
-import { describe, expect, test } from 'bun:test';
 import type { ProjectSession } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 import {
   UNTITLED_SESSION_LABEL,
@@ -65,9 +65,9 @@ describe('sessionTitleHasLanded', () => {
     // OR so a precedence change cannot silently drop a source.
     expect(sessionTitleHasLanded(session({ name: 'Fix The Proxy' }))).toBe(true);
     expect(sessionTitleHasLanded(session({ custom_name: 'My Rename' }))).toBe(true);
-    expect(
-      sessionTitleHasLanded(session({ metadata: { session_name: 'Legacy Name' } })),
-    ).toBe(true);
+    expect(sessionTitleHasLanded(session({ metadata: { session_name: 'Legacy Name' } }))).toBe(
+      true,
+    );
   });
 
   test('whitespace is not a title — it is what an empty generation writes', () => {

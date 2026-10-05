@@ -1,3 +1,7 @@
+import { AGENT_AUTOMATION_TRANSLATION_KEYS } from '@/i18n/agent-automation-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/agent-computer` copy.
  *
@@ -5,7 +9,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  * ACCURACY GATE for this page specifically:
  *  - Say "agent computer" / "cloud computer" / "sandbox". NEVER "container".
  *  - "3,000+ apps" is the only sanctioned number. No benchmarks, no latency,
@@ -16,7 +20,7 @@
  *    rule `features/marketing/security-page/content.ts` follows.
  *  - NEVER write that a secret is "never shown to the model". A granted runtime
  *    secret is a real env value in the session, readable by any command the
- *    agent runs (docs/ENV_SECRET_EXPOSURE_BASELINE.md). CONNECTOR credentials
+ *    agent runs. CONNECTOR credentials
  *    are the ones that never enter the machine.
  *  - Never claim a certification. Never name a licence — "open source" and stop.
  *  - Nothing merges itself: work reaches `main` through a change request a
@@ -24,7 +28,7 @@
  */
 
 export const hero = {
-  eyebrow: 'Agent computer',
+  eyebrow: 'Agent Computer',
   title: 'Every session gets its own computer.',
   sub: 'Your project and tools are ready from the start, so the agent can work without using your laptop.',
   ctaPrimary: 'Start a session',
@@ -94,7 +98,7 @@ export const control = {
 
 export const parallel = {
   eyebrow: 'Parallelism',
-  title: 'Hundreds of thousands of computers. One main.',
+  title: 'Thousands of computers. One main.',
   sub: 'Run many agents at once without mixing up their work. You review every result before it joins your main project.',
   /** The mono equation under the headline. Keep it three terms. */
   equation: '1 session  =  1 computer  =  1 branch',
@@ -143,7 +147,7 @@ export const declared = {
     ],
   },
   shell: {
-    title: 'inside the agent computer',
+    title: 'inside the cloud computer',
     lines: [
       '# the repo is already here. nothing to set up.',
       '$ pwd',
@@ -181,9 +185,9 @@ export const files = {
       note: 'sandbox image, triggers, channels, connectors, secrets',
       depth: 1,
     },
-    { path: '.kortix/opencode/', note: 'the runtime your agents think in', depth: 1 },
-    { path: 'agents/', note: 'one OpenCode agent per file', depth: 2 },
-    { path: 'skills/', note: 'how this company does a specific job', depth: 2 },
+    { path: 'agents/', note: 'one OpenCode agent per file', depth: 1 },
+    { path: 'skills/', note: 'how this company does a specific job', depth: 1 },
+    { path: 'harnesses/opencode/', note: 'the runtime your agents think in', depth: 1 },
     { path: 'commands/', note: 'the shortcuts everyone shares', depth: 2 },
     { path: 'plugins/', note: 'the tools you wrote yourself', depth: 2 },
   ],
@@ -238,3 +242,11 @@ export const closing = {
   ctaSecondary: 'Talk to us about enterprise',
   ctaSecondaryHref: '/enterprise',
 } as const;
+
+export function getLocalizedAgentComputerContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, boot, control, parallel, declared, files, isolation, closing },
+    tI18nComplete,
+    AGENT_AUTOMATION_TRANSLATION_KEYS,
+  );
+}

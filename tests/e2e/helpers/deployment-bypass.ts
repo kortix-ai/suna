@@ -86,6 +86,29 @@ export function deploymentBypassHeaders(secret: string): Record<string, string> 
   };
 }
 
+/**
+ * Headers for ONE server-side request that must read a protected deployment's
+ * response BODY directly — the deployed-SHA preflight in
+ * `src/core/target-smoke.ts`.
+ *
+ * Deliberately WITHOUT `x-vercel-set-bypass-cookie`. That second header asks
+ * Vercel to mint the cookie, and Vercel answers it with a 307 back to the same
+ * path instead of the body. That is exactly what the browser lane wants and
+ * exactly what a one-shot JSON read does not. `fetch` keeps no cookie jar, so
+ * following that 307 just lands back on the SSO wall. Measured against
+ * `https://staging.kortix.com/api/health` on 2026-09-18:
+ *
+ *   bypass + set-bypass-cookie -> HTTP 307, body "Redirecting..."
+ *   bypass alone               -> HTTP 200, body {"status":"ok","service":"web",…}
+ *
+ * `.github/workflows/deploy-staging.yml` already reads `/api/runtime-config`
+ * this way (bypass header alone, `curl -f`), so this is the same mechanism that
+ * workflow uses rather than a second one.
+ */
+export function deploymentBypassRequestHeaders(secret: string): Record<string, string> {
+  return { 'x-vercel-protection-bypass': secret };
+}
+
 export interface StorageState {
   cookies: Cookie[];
   origins: never[];

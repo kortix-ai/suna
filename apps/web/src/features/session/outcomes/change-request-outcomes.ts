@@ -11,6 +11,9 @@
  * trust than ten missed cards.
  */
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
 
 import type { Outcome, OutcomeTone } from './outcome-types';
@@ -47,6 +50,7 @@ function epoch(iso: string | null | undefined): number {
 export function changeRequestOutcomes(
   crs: ChangeRequest[],
   sessionId: string | undefined,
+  tI18nComplete?: UiTranslator,
 ): Outcome[] {
   // An unknown session shows NOTHING. Falling through to "every change request
   // in the project" would attribute a teammate's work to this turn.
@@ -55,7 +59,13 @@ export function changeRequestOutcomes(
   return crs
     .filter((cr) => cr.origin_session_id === sessionId)
     .map((cr) => {
-      const word = CR_STATUS_WORD[cr.status] ?? FALLBACK_STATUS;
+      const word = tI18nComplete
+        ? localizeUiCatalog(
+            CR_STATUS_WORD[cr.status] ?? FALLBACK_STATUS,
+            tI18nComplete,
+            REMAINING_UI_TRANSLATION_KEYS,
+          )
+        : (CR_STATUS_WORD[cr.status] ?? FALLBACK_STATUS);
       // `?.` despite the non-null type: this crosses a network boundary, and
       // a server that sends `null` should degrade to the fallback sentence
       // rather than throw inside a transcript render.
@@ -70,14 +80,19 @@ export function changeRequestOutcomes(
         title: cr.title,
         // Kept for the modal, which has room for it. The card no longer renders
         // a description; see `outcome-card.tsx`.
-        description: summary || 'Ready for you to look over.',
+        description:
+          summary || tI18nComplete?.raw('text5c58b6d31ba9') || 'Ready for you to look over.',
         status: { label: word.label, tone: word.tone },
         at: epoch(cr.created_at),
         // The number is a REFERENCE, not a name — it belongs in the quiet line
         // with the status. `into <base_ref>` is gone: a branch name is the one
         // piece of git that had reached the screen, and it told a
         // non-technical reader nothing they could act on.
-        meta: [`Change request #${cr.number}`],
+        meta: [
+          tI18nComplete
+            ? tI18nComplete('texta4fc39798651', { number: cr.number })
+            : `Change request #${cr.number}`,
+        ],
         action: { label: word.action, intent: 'open' as const },
         resourceHref: `?cr=${cr.cr_id}`,
       };

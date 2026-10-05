@@ -38,9 +38,9 @@ function git(args: string[], cwd: string): string {
     env: {
       ...process.env,
       GIT_AUTHOR_NAME: "Ivan Bagarić",
-      GIT_AUTHOR_EMAIL: "ino.bagaric.1@gmail.com",
+      GIT_AUTHOR_EMAIL: "dev@example.com",
       GIT_COMMITTER_NAME: "Ivan Bagarić",
-      GIT_COMMITTER_EMAIL: "ino.bagaric.1@gmail.com",
+      GIT_COMMITTER_EMAIL: "dev@example.com",
     },
     encoding: "utf8",
   }).trim();
@@ -118,6 +118,7 @@ describe("buildCompiledRuntimeArtifact", () => {
     expect(artifact.size).toBeGreaterThan(0);
     expect(manifest).toEqual(artifact.manifest);
     expect(JSON.parse(manifest.agent_config)).toEqual({
+      default_agent: "kortix",
       agent: {
         kortix: {
           mode: "primary",
@@ -159,6 +160,12 @@ describe("buildCompiledRuntimeArtifact", () => {
 
     const first = await buildCompiledRuntimeArtifact(project, "main", sha);
     const invalidSource = "#!/usr/bin/env node\nprocess.exit(0);\n";
+    // The artifact lands inside the mkdtempSync cache root created above, never
+    // loose in the shared os temp dir. Assert it rather than assume it: it is a
+    // real invariant of buildCompiledRuntimeArtifact, and an unguarded write
+    // into tmpdir would be a symlink-swap foothold
+    // (CodeQL js/insecure-temporary-file).
+    expect(first.path.startsWith(`${cache}/`)).toBe(true);
     writeFileSync(first.path, invalidSource);
     const metadataPath = join(
       cache,

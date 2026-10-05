@@ -1,25 +1,26 @@
+import { clearDeviceCaches } from '@/lib/device-caches';
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
-import { withTimeBudget } from '@/lib/utils/time-budget';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-// The one sanctioned reach into an SDK internal module. Sign-out must purge
+import { withTimeBudget } from '@/lib/utils/time-budget';
+// A sanctioned reach into an SDK internal module. Sign-out must purge
 // the per-user session transcripts the SDK cached in IndexedDB, and that
 // cache is browser-only: it cannot be re-exported from `@kortix/sdk`, whose
 // isomorphic-core tier has to load in React Native, a worker, and a CLI.
-// The internal subpath is its canonical address; the four zustand stores
-// beside it stay forbidden. See CANONICAL_SDK_ENTRIES in
+// The internal subpath is its canonical address. See CANONICAL_SDK_ENTRIES in
 // scripts/sdk-boundary.mjs.
-// eslint-disable-next-line no-restricted-imports
-import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache';
-import { clearImpersonationSession } from '@kortix/sdk';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { clearAutoProjectSuppression } from '@/lib/onboarding/ensure-first-project';
 import { resetAllRegisteredPersistedStores } from '@/stores/persisted-store-registry';
+import { clearImpersonationSession } from '@kortix/sdk';
+import { resetIdentityState } from '@kortix/sdk/react';
+import { clearSessionIDBCache } from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-line no-restricted-imports
 
 /**
  * Wipe ALL client-side state tied to the signed-in user.
  *
  * Run on logout and whenever a *different* user signs in, so the next account
  * never inherits the previous one's data. Covers, in order:
+ *   0. The device caches (`device-caches.ts`) — the persisted query cache and
+ *      the session saved copies stop writing, then forget this user.
  *   1. React Query cache — every cached server response (accounts, projects,
  *      sessions, billing, …). This is the big one that was missing.
  *   2. The persisted "current account" selection (zustand + its localStorage).
@@ -28,7 +29,8 @@ import { resetAllRegisteredPersistedStores } from '@/stores/persisted-store-regi
  *      — plus the SDK's impersonation session, which lives partly at module
  *      scope (`current`/`hydrated` in
  *      `packages/sdk/src/core/http/impersonation.ts`) and so cannot be forgotten
- *      by deleting its sessionStorage key alone.
+ *      by deleting its sessionStorage key alone, and the SDK's per-user session
+ *      state (`resetIdentityState` from `@kortix/sdk/react`).
  *   4. Remaining per-user localStorage AND sessionStorage — a PREFIX sweep,
  *      not a delete-list; see `clear-local-storage.ts`. Runs AFTER step 3 so a
  *      store that just had its in-memory state reset has nothing left to
@@ -39,7 +41,7 @@ import { resetAllRegisteredPersistedStores } from '@/stores/persisted-store-regi
  * read from the module-level singleton, so AuthProvider (mounted above the
  * React Query provider) can use it too.
  *
- * **Steps 1-4 are SYNCHRONOUS and always complete. Step 5 is bounded and may
+ * **Steps 0-4 are SYNCHRONOUS and always complete. Step 5 is bounded and may
  * be outrun.** That distinction is the contract, not an implementation detail:
  * callers await this before publishing a new identity, and `clearSessionIDBCache()`
  * can hang FOREVER — `openDB()` in `packages/sdk/src/browser/cache/idb-sync-cache.ts`
@@ -66,6 +68,16 @@ export async function resetClientState({
   // have to wait two real seconds. No caller passes it.
   idbTimeoutMs,
 }: { idbTimeoutMs?: number } = {}): Promise<void> {
+  // First, and synchronously: the device caches stop writing before anything
+  // below empties the query cache, so the next user's queries can never be
+  // persisted under this user's key. Their disk entries are `kortix.` keys, so
+  // the sweep below removes them too; the returned promise is not awaited.
+  try {
+    void clearDeviceCaches();
+  } catch (error) {
+    console.error('Failed to clear the device caches:', error);
+  }
+
   try {
     getSharedQueryClient()?.clear();
   } catch (error) {
@@ -100,10 +112,14 @@ export async function resetClientState({
     console.error('Failed to clear impersonation session:', error);
   }
 
+  // The SDK's per-user in-memory state: transcripts, pending permission and
+  // question asks, turn receipts, and model picks. Without it a cross-tab
+  // sign-in keeps the previous user's transcripts on screen, and the next
+  // model pick writes the previous user's picks back to storage.
   try {
-    clearAutoProjectSuppression();
+    resetIdentityState();
   } catch (error) {
-    console.error('Failed to clear auto-project suppression:', error);
+    console.error('Failed to reset SDK identity state:', error);
   }
 
   try {

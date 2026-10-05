@@ -70,3 +70,18 @@ paths = [
 regexes = [
   '''ghp_PHASE1CredentialSentinel0+''',
 ]
+
+[[allowlists]]
+description = "False-positive LinkedIn labels in generated i18n source maps. The linkedin-client-secret rule matches the product name followed by a generated message identifier. This exception requires both an exact generated map path and a line containing the literal product name."
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/web/src/i18n/company-os-sections-translation-keys\.generated\.ts$''',
+  '''apps/web/src/i18n/footer-translation-keys\.generated\.ts$''',
+  '''apps/web/src/i18n/marketing-secondary-translation-keys\.generated\.ts$''',
+  '''apps/web/src/i18n/site-config-translation-keys\.generated\.ts$''',
+  '''apps/web/src/i18n/remaining-ui-translation-keys\.generated\.ts$''',
+]
+regexes = [
+  '''(?i)linkedin''',
+]

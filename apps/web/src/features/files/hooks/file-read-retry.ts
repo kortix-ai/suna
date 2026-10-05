@@ -82,6 +82,31 @@ function isMissingFileReadFailure(error: unknown): boolean {
 // box is active and the file loads on its own.
 export const SANDBOX_WAKING_REFETCH_INTERVAL_MS = 3_000;
 
+/**
+ * Re-read cadence while the box is asleep. Slower, never off.
+ *
+ * A PARKED box resumes only on the next SEND, and the API refuses every read
+ * meant to wake it — so the 3s boot cadence is ~20 requests a minute against a
+ * state that cannot change on its own. But it still has to be WATCHED: the send
+ * that wakes the box can come from the composer, another tab, or a trigger, and
+ * when it does the file must appear without the user hunting for a retry
+ * button. Stopping the poll outright would trade a busy wait for a dead one.
+ *
+ * 30s: the same reasoning as `POLL_PARKED` in the SDK's runtime reconnect.
+ */
+export const SANDBOX_PARKED_REFETCH_INTERVAL_MS = 30_000;
+
+/**
+ * How often to re-read a file that failed with a sandbox-readiness 503.
+ *
+ * The 3s comment above describes a BOOTING box, and for that box it is right:
+ * the file appears on its own in seconds. A parked box takes the slow lane.
+ */
+export function sandboxWakingRefetchInterval(error: unknown, parked: boolean): number | false {
+  if (!isSandboxNotReadyError(error)) return false;
+  return parked ? SANDBOX_PARKED_REFETCH_INTERVAL_MS : SANDBOX_WAKING_REFETCH_INTERVAL_MS;
+}
+
 export function shouldRetryFileRead(
   filePath: string | null | undefined,
   failureCount: number,

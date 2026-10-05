@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Interactivity: agent/model picker clicks persist the channel selection, and
 // the "Open in Kortix" message shortcut resolves a thread to its session URL.
@@ -10,21 +11,38 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
-mock.module('../shared/db', () => ({ db: { select: () => makeChain() }, hasDatabase: () => true }));
+const inserts: unknown[] = [];
+mock.module('../shared/db', () => ({
+  db: {
+    select: () => makeChain(),
+    insert: () => ({
+      values: (v: unknown) => {
+        inserts.push(v);
+        return { onConflictDoUpdate: async () => [] };
+      },
+    }),
+  },
+  hasDatabase: () => true,
+}));
 
-// Stub the dispatch graph so importing interactivity stays light.
 const actualDispatch = await import('../channels/slack/dispatch');
+const spawned: Array<{ projectId: string; event: Record<string, unknown> }> = [];
 mock.module('../channels/slack/dispatch', () => ({
   ...actualDispatch,
   dispatchSlackEvent: async () => {},
-  pendingPickers: new Map(),
-  spawnAgentTurn: async () => {},
+  spawnAgentTurn: async (projectId: string, _envelope: unknown, event: Record<string, unknown>) => {
+    spawned.push({ projectId, event });
+  },
 }));
+const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
   loadSlackTokenForProject: async () => 'xoxb',
   saveSlackOauthInstall: async () => {},
 }));
+const realSlackApi = await import('../channels/slack-api');
 mock.module('../channels/slack-api', () => ({
+  ...realSlackApi,
   openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',
   postEphemeral: async () => true,
@@ -39,7 +57,7 @@ mock.module('../channels/slack/selection', () => ({
   // `./commands` (transitively imported by interactivity.ts for handleSlashCommand)
   // also pulls this in — the mock module shape must cover its full surface or
   // the import fails, not just the bits this file's own code paths exercise.
-  currentChannelSelection: async () => null,
+  currentChannelSelection: async () => ({ projectId: 'proj-1', agentName: null, opencodeModel: null, conversationPolicy: null }),
   setChannelAgent: async (_c: unknown, a: string | null) => {
     setAgentCalls.push(a);
     return setResult ? { ok: true } : { ok: false, reason: setAgentReason };
@@ -52,6 +70,43 @@ mock.module('../channels/slack/selection', () => ({
   modelLabel: (id: string) => id,
 }));
 
+// Model picks go through slack/model-choice.ts (pinned in
+// unit-slack-model-choice); this file pins what the click hands it.
+const modelChoices: Array<{ ctx: Record<string, unknown>; choice: string }> = [];
+mock.module('../channels/slack/model-choice', () => ({
+  applySlackModelChoice: async (c: Record<string, unknown>, choice: string) => {
+    modelChoices.push({ ctx: c, choice });
+    return choice ? `Model for this channel set to ${choice}.` : 'Model reset to the project default.';
+  },
+  buildSlackModelsResponse: async () => ({ response_type: 'ephemeral' }),
+  slackChannelIsDm: (id: string) => id.startsWith('D'),
+  slackModelScope: async () => null,
+}));
+
+// Channel settings need a linked project manager (core/settings.ts).
+let settingsActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({ resolveProjectChatActor: async () => settingsActor }),
+);
+const realModelGate = await import('../channels/slack/model-gate');
+mock.module('../channels/slack/model-gate', () => ({
+  ...realModelGate,
+  channelModelContext: async () => ({
+    projectId: 'proj-1',
+    accountId: 'acct-1',
+    ownerUserId: 'owner-1',
+    freeManagedOnly: false,
+    llmGatewayEnabled: true,
+  }),
+}));
+const realDefaultModel = await import('../llm-gateway/resolution/default-model');
+mock.module('../llm-gateway/resolution/default-model', () => ({
+  ...realDefaultModel,
+  isModelServableForAccount: async () => true,
+  resolveEffectiveModel: async () => ({ model: null, source: 'platform' }),
+}));
+
+// Stub the dispatch graph so importing interactivity stays light.
 // Capture response_url POSTs.
 const posts: Array<{ url: string; body: any }> = [];
 const realFetch = globalThis.fetch;
@@ -61,7 +116,11 @@ beforeEach(() => {
   setModelCalls.length = 0;
   setResult = true;
   setAgentReason = 'no_binding';
+  settingsActor = { userId: 'user-1' };
+  inserts.length = 0;
   posts.length = 0;
+  modelChoices.length = 0;
+  spawned.length = 0;
   globalThis.fetch = (async (url: string, init?: any) => {
     posts.push({ url, body: JSON.parse(init?.body ?? '{}') });
     return { ok: true } as any;
@@ -76,18 +135,28 @@ const basePayload = {
   team: { id: 'T1' },
   user: { id: 'U1' },
   channel: { id: 'C1' },
-  response_url: 'https://hooks.slack/response',
+  response_url: 'https://hooks.slack.com/response',
 } as any;
 
 describe('agent/model picker clicks', () => {
-  test('set_model_ → persists the model and confirms', async () => {
+  test('set_model_ → the pick is applied as the person who clicked, and the picker is replaced', async () => {
     await handleBlockAction({
       ...basePayload,
       actions: [{ action_id: 'set_model_anthropic/claude-opus-4-8', value: JSON.stringify({ c: 'C1', m: 'anthropic/claude-opus-4-8' }) }],
     });
-    expect(setModelCalls).toEqual(['kortix/anthropic/claude-opus-4-8']);
+    expect(modelChoices).toEqual([
+      { ctx: { teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' }, choice: 'anthropic/claude-opus-4-8' },
+    ]);
     expect(posts[0]?.body.text).toContain('Model for this channel set to');
     expect(posts[0]?.body.replace_original).toBe(true);
+  });
+
+  test('the long list`s select carries its pick in selected_option', async () => {
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'set_model_select', selected_option: { value: JSON.stringify({ c: 'C1', m: 'openrouter/model-11' }) } }],
+    });
+    expect(modelChoices.map((c) => c.choice)).toEqual(['openrouter/model-11']);
   });
 
   test('set_model_default (empty value) → clears the override', async () => {
@@ -95,7 +164,7 @@ describe('agent/model picker clicks', () => {
       ...basePayload,
       actions: [{ action_id: 'set_model_default', value: JSON.stringify({ c: 'C1', m: '' }) }],
     });
-    expect(setModelCalls).toEqual([null]);
+    expect(modelChoices.map((c) => c.choice)).toEqual(['']);
     expect(posts[0]?.body.text).toContain('reset');
   });
 
@@ -146,7 +215,7 @@ describe('Open in Kortix message shortcut', () => {
       team: { id: 'T1' },
       channel: { id: 'C1' },
       message: { ts: '5.5', thread_ts: '1.1' },
-      response_url: 'https://hooks.slack/response',
+      response_url: 'https://hooks.slack.com/response',
     } as any);
     const txt = JSON.stringify(posts[0]?.body);
     expect(txt).toContain('/projects/proj-1/sessions/sess-9');
@@ -161,7 +230,7 @@ describe('Open in Kortix message shortcut', () => {
       team: { id: 'T1' },
       channel: { id: 'C1' },
       message: { ts: '5.5' },
-      response_url: 'https://hooks.slack/response',
+      response_url: 'https://hooks.slack.com/response',
     } as any);
     expect(posts[0]?.body.text).toContain('No Kortix session is attached');
   });
@@ -171,8 +240,130 @@ describe('Open in Kortix message shortcut', () => {
       type: 'message_action',
       callback_id: 'something_else',
       team: { id: 'T1' },
-      response_url: 'https://hooks.slack/response',
+      response_url: 'https://hooks.slack.com/response',
     } as any);
     expect(posts.length).toBe(0);
+  });
+});
+
+/**
+ * A per-project (bring-your-own) app signs its requests with a secret its
+ * project admin chose, so every project or thread named in the payload must be
+ * that project's own. Handlers receive the verified scope and stay inside it.
+ */
+describe('per-project interactivity stays inside its own project', () => {
+  const byo = { kind: 'project' as const, projectId: 'proj-1', teamId: 'T1' };
+
+  test('a picker click for a channel bound to another project is refused, nothing persisted', async () => {
+    dbResults = [[{ projectId: 'proj-other' }]]; // the channel's binding
+    await handleBlockAction(
+      { ...basePayload, actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }] },
+      byo,
+    );
+    expect(setAgentCalls).toEqual([]);
+    expect(posts[0]?.body.text).toContain('different Kortix project');
+  });
+
+  test('a picker click for a channel bound to this project is applied', async () => {
+    dbResults = [[{ projectId: 'proj-1' }]];
+    await handleBlockAction(
+      { ...basePayload, actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }] },
+      byo,
+    );
+    expect(setAgentCalls).toEqual(['reviewer']);
+  });
+
+  test('"Request access" naming another project files nothing', async () => {
+    await handleBlockAction(
+      { ...basePayload, actions: [{ action_id: 'slack_request_access', value: JSON.stringify({ projectId: 'proj-other' }) }] },
+      byo,
+    );
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body.text).toContain('different Kortix project');
+  });
+});
+
+describe('response_url', () => {
+  test('a response_url outside the Slack webhook host is never POSTed to', async () => {
+    await handleBlockAction({
+      ...basePayload,
+      response_url: 'https://collector.example.test/in',
+      actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }],
+    });
+    expect(posts).toHaveLength(0);
+  });
+});
+
+/**
+ * The picker and switch buttons change project settings, so they need the
+ * same linked project manager the slash commands need (core/settings.ts).
+ */
+describe('settings buttons need a linked project manager', () => {
+  test('an agent pick from an unlinked caller is refused; nothing is persisted', async () => {
+    settingsActor = { reason: 'unlinked' };
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }],
+    });
+    expect(setAgentCalls).toEqual([]);
+    expect(posts[0]?.body.text).toContain('Connect your Kortix account first');
+  });
+
+  test('switching a bound channel to another project without the capability is refused; no binding is written', async () => {
+    settingsActor = { reason: 'not_member' };
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'switch_project_proj-2', value: JSON.stringify({ p: 'proj-2', c: 'C1' }) }],
+    });
+    expect(inserts).toEqual([]);
+    expect(posts[0]?.body.text).toContain('Only a project manager');
+  });
+
+  test('a project manager switches the channel', async () => {
+    dbResults = [[{ id: 'install-2' }]]; // the target is installed in this workspace
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'switch_project_proj-2', value: JSON.stringify({ p: 'proj-2', c: 'C1' }) }],
+    });
+    expect(inserts).toEqual([{ platform: 'slack', workspaceId: 'T1', channelId: 'C1', projectId: 'proj-2', pickerTs: null }]);
+    expect(posts.at(-1)?.body.text).toContain('Switched this channel to');
+  });
+});
+
+// An agent can post any button through the bot, including a look-alike
+// "Connect" whose value names a URL of its choosing. Kortix used to present
+// that URL as its own sign-in page. The link is now built for the clicker.
+describe('the Connect button', () => {
+  test('never presents a URL taken from the button value', async () => {
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'slack_login_connect', value: JSON.stringify({ url: 'https://phish.example.test/login', pendingId: 'pending-1' }) }],
+    });
+    const body = JSON.stringify(posts[0]?.body);
+    expect(body).not.toContain('phish.example.test');
+    expect(body).toMatch(/\/(slack\/login|v1\/channels\/slack\/identity\/login)\/[^"]+/);
+  });
+});
+
+// A click turn carried its own `Workspace: T0…` / `Channel: C0…` / `User: U0…`
+// lines and a second copy of the working instructions (2026-10-02). The
+// follow-up header around it already names the channel and the person and
+// carries the instructions; the session card showed the bare ids as the
+// message. The click text now carries the click alone.
+describe('agent button clicks', () => {
+  test('a click turn carries the click alone; the follow-up header names the channel and the person', async () => {
+    dbResults = [[{ sessionId: 'sess-1', projectId: 'proj-1' }]];
+    await handleBlockAction({
+      ...basePayload,
+      message: { ts: '10.1', thread_ts: '10.0' },
+      actions: [{ action_id: 'deploy_now', value: 'v1.2', text: { type: 'plain_text', text: 'Deploy' } }],
+    });
+
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]?.projectId).toBe('proj-1');
+    expect(spawned[0]?.event).toMatchObject({ user: 'U1', channel: 'C1', thread_ts: '10.0', ts: '10.1', team: 'T1' });
+    expect(spawned[0]?.event.text).toBe(
+      '[Button click] The user clicked *Deploy*.\naction_id: `deploy_now`\nvalue: `v1.2`\n\nContinue the turn based on this choice.',
+    );
   });
 });

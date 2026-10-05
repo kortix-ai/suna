@@ -56,7 +56,6 @@ export const PROJECT_ACTIONS = {
    *  a custom role can grant editing without granting deletion. */
   PROJECT_DELETE: 'project.delete',
 
-
   PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
   PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
   PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
@@ -78,8 +77,10 @@ export const PROJECT_ACTIONS = {
   PROJECT_TRIGGER_CREATE: 'project.trigger.create',
   PROJECT_FILE_READ: 'project.file.read',
   PROJECT_FILE_WRITE: 'project.file.write',
-  PROJECT_CUSTOMIZE_READ: 'project.customize.read',
-  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
+  PROJECT_SETTINGS_WRITE: 'project.settings.write',
+  PROJECT_SANDBOX_WRITE: 'project.sandbox.write',
+  PROJECT_MODEL_READ: 'project.model.read',
+  PROJECT_MODEL_WRITE: 'project.model.write',
   PROJECT_GITOPS_READ: 'project.gitops.read',
   PROJECT_GITOPS_PUSH: 'project.gitops.push',
   PROJECT_GITOPS_MERGE: 'project.gitops.merge',
@@ -117,7 +118,7 @@ export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTION
  *   separately gated by project.gitops.push.
  * - sandbox/settings/marketplace have no dedicated read leaf, so
  *   they stay visible on project.read and gate writes on the closest real leaf
- *   the backend asserts (e.g. sandbox rebuild → customize.write, marketplace
+ *   the backend asserts (e.g. sandbox rebuild → sandbox.write, marketplace
  *   install → gitops.push).
  */
 export const CUSTOMIZE_SECTION_ACCESS: Record<
@@ -173,25 +174,25 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   // LLM gateway sections — visible to any project member; the backend enforces
   // the specific gateway capability (logs/spend.read, budget.set, keys.manage)
   // on each mutation route, so visibility gates on project.read.
-  'llm-management': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  'llm-management': { read: PROJECT_ACTIONS.PROJECT_MODEL_READ, write: PROJECT_ACTIONS.PROJECT_MODEL_WRITE },
   'llm-overview': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-providers': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-logs': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-budgets': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-keys': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-api': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
-  sandbox: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
-  settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  sandbox: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE },
+  settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
   // Feature flags — any member SEES which flags this project runs; only
-  // project.customize.write may flip one. That is the leaf the API asserts on
+  // project.settings.write may flip one. That is the leaf the API asserts on
   // `PATCH /projects/:id/features`, so the toggle gates on exactly it.
   'feature-flags': {
     read: PROJECT_ACTIONS.PROJECT_READ,
-    write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    write: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
   },
   // `upgrade` (migrate the manifest to v2) starts an agent session that edits the
   // repo and opens a CR — the session itself asserts the real leaves; visibility
-  // follows settings (editor+ via customize.write in isCustomizeSectionVisible).
+  // follows settings.
   upgrade: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
 };
 
@@ -210,8 +211,8 @@ export const CUSTOMIZE_SECTION_READ_ACTIONS: readonly ProjectAction[] = Array.fr
  * CUSTOMIZE_SECTION_ACCESS above and the backend's granular capability model —
  * so a custom role granted e.g. `secret.read` sees the Secrets section
  * read-only, and a role that omits a read leaf hides just that one section.
- * (Previously this ALSO required `project.customize.write`, which blanked the
- * whole panel for every read-only / granular role — the bug this fixes.) This
+ * (Previously this ALSO required a write leaf, which blanked the whole panel
+ * for every read-only / granular role — the bug this fixes.) This
  * is a VISIBILITY layer only; the API re-checks every mutation. Files is NOT
  * here — it's the standalone /projects/[id]/files page, gated on project.file.read.
  */

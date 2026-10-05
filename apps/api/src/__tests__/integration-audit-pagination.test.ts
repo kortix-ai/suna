@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { auditEvents } from '@kortix/db';
+import { auditEventsAll } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import pg from 'pg';
 import { db } from '../shared/db';
 import { buildAuditCursorCondition, parseAuditCursor } from '../shared/audit-query';
 
-const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
 const OLDER = 'c7100000-0000-4000-a000-000000000011';
 const NEWER = 'c7100000-0000-4000-a000-000000000012';
@@ -39,15 +39,15 @@ describe.skipIf(!databaseUrl)('audit cursor pagination — migrated PostgreSQL',
   test('resolves the cursor event timestamp before ascending export pagination', async () => {
     const cursor = parseAuditCursor(`2026-08-07T12:00:00.000Z|${OLDER}`)!;
     const rows = await db
-      .select({ eventId: auditEvents.eventId })
-      .from(auditEvents)
+      .select({ eventId: auditEventsAll.eventId })
+      .from(auditEventsAll)
       .where(
         and(
-          eq(auditEvents.accountId, ACCOUNT),
+          eq(auditEventsAll.accountId, ACCOUNT),
           buildAuditCursorCondition(cursor, ACCOUNT, 'ascending'),
         ),
       )
-      .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId));
+      .orderBy(asc(auditEventsAll.occurredAt), asc(auditEventsAll.eventId));
 
     expect(rows.map((row) => row.eventId)).toEqual([NEWER]);
   });
@@ -55,15 +55,15 @@ describe.skipIf(!databaseUrl)('audit cursor pagination — migrated PostgreSQL',
   test('resolves the cursor event timestamp before descending list pagination', async () => {
     const cursor = parseAuditCursor(`2026-08-07T12:00:00.000Z|${NEWER}`)!;
     const rows = await db
-      .select({ eventId: auditEvents.eventId })
-      .from(auditEvents)
+      .select({ eventId: auditEventsAll.eventId })
+      .from(auditEventsAll)
       .where(
         and(
-          eq(auditEvents.accountId, ACCOUNT),
+          eq(auditEventsAll.accountId, ACCOUNT),
           buildAuditCursorCondition(cursor, ACCOUNT, 'descending'),
         ),
       )
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId));
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId));
 
     expect(rows.map((row) => row.eventId)).toEqual([OLDER]);
   });

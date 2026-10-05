@@ -1,0 +1,89 @@
+name: Mobile OTA
+
+# Ships the mobile app's JS/TS as an EAS Update. Native changes still need a
+# store build; apps/mobile/scripts/ota-publish.mjs skips a platform whose native
+# fingerprint differs from the newest build on the channel and says so.
+#
+#   Deploy Prod succeeded  -> channel `production` (store builds), so the JS
+#                             ships with the API it was released with
+#   workflow_dispatch      -> the chosen channel: `dev` for dev-backend builds,
+#                             or a production hotfix or re-run
+#
+# No push trigger: since 2026-10-03 a push to main starts only cheap guards and
+# path-gated infra (tests/unit/sandbox-workflow.test.ts, Actions minutes).
+#
+# Rollback and the full runbook: apps/mobile/BUILD_GUIDE.md.
+
+on:
+  # workflow_run loads THIS file from main, then checks out the deployed commit.
+  workflow_run:
+    workflows: [Deploy Prod]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Update channel
+        type: choice
+        required: true
+        default: dev
+        options: [dev, production]
+      dry_run:
+        description: Check every guard, publish nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # aws-env reads EXPO_TOKEN from AWS Secrets Manager
+
+jobs:
+  publish:
+    name: Publish ${{ github.event_name == 'workflow_run' && 'production' || inputs.channel || 'dev' }}
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 30
+    # One publish per channel at a time, never cancelled: a cancelled run can
+    # leave one platform published and the other not.
+    concurrency:
+      group: mobile-ota-${{ github.event_name == 'workflow_run' && 'production' || inputs.channel || 'dev' }}
+      cancel-in-progress: false
+    env:
+      CHANNEL: ${{ github.event_name == 'workflow_run' && 'production' || inputs.channel || 'dev' }}
+    steps:
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          # An Expo robot access token for the `kortix` account.
+          keys: |
+            EXPO_TOKEN
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # The script diffs against the commit of the channel's last update.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+          # The root .npmrc sets ignore-scripts=true, so the install skipped
+          # apps/mobile's postinstall. Without this the bundle ships unpatched.
+          pnpm --dir apps/mobile exec patch-package --error-on-fail
+          npm install --global eas-cli@20.3.0
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Publish
+        run: node apps/mobile/scripts/ota-publish.mjs "$CHANNEL" ${{ inputs.dry_run && '--dry-run' || '' }}

@@ -1,9 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { NextIntlClientProvider } from 'next-intl';
+import type { ReactNode } from 'react';
+import { renderToStaticMarkup as renderRaw } from 'react-dom/server';
+
+import enMessages from '../../../translations/en.json';
 
 import type { SessionCostDetail } from '@kortix/sdk';
 
 import { SessionCostDetailContent } from './session-cost-detail';
+
+const renderCostDetail = (node: ReactNode) =>
+  renderRaw(
+    <NextIntlClientProvider locale="en" messages={enMessages}>
+      {node}
+    </NextIntlClientProvider>,
+  );
 
 const detail = {
   session_id: 'session-detail',
@@ -80,7 +91,7 @@ const detail = {
 
 describe('SessionCostDetailContent', () => {
   test('renders totals, model usage, both ledger kinds, and the canonical session link', () => {
-    const html = renderToStaticMarkup(
+    const html = renderCostDetail(
       <SessionCostDetailContent detail={detail} isLoading={false} error={null} />,
     );
 
@@ -94,10 +105,10 @@ describe('SessionCostDetailContent', () => {
   });
 
   test('renders loading and error states without stale detail', () => {
-    const loading = renderToStaticMarkup(
+    const loading = renderCostDetail(
       <SessionCostDetailContent detail={undefined} isLoading error={null} />,
     );
-    const failed = renderToStaticMarkup(
+    const failed = renderCostDetail(
       <SessionCostDetailContent
         detail={undefined}
         isLoading={false}
@@ -120,7 +131,7 @@ describe('SessionCostDetailContent', () => {
   // no data in every pending-but-not-fetching state (query disabled, fetch
   // cancelled, retry loop paused while the document is hidden or offline).
   test('a ledger that was never read renders as loading, never as an empty ledger', () => {
-    const html = renderToStaticMarkup(
+    const html = renderCostDetail(
       <SessionCostDetailContent detail={undefined} isLoading={false} error={null} />,
     );
 
@@ -129,7 +140,7 @@ describe('SessionCostDetailContent', () => {
   });
 
   test('renders an explicit empty ledger', () => {
-    const html = renderToStaticMarkup(
+    const html = renderCostDetail(
       <SessionCostDetailContent
         detail={{ ...detail, model_usage: [], ledger_entries: [] }}
         isLoading={false}
@@ -154,7 +165,7 @@ describe('SessionCostDetailContent', () => {
   // one count that fills its rows at BOTH declared column counts, which is
   // why this grid needs no filler cells — and why the count is pinned here.
   test('draws the tile hairlines with the grid gap, never with divide utilities', () => {
-    const html = renderToStaticMarkup(
+    const html = renderCostDetail(
       <SessionCostDetailContent detail={detail} isLoading={false} error={null} />,
     );
 
@@ -169,7 +180,7 @@ describe('SessionCostDetailContent', () => {
   });
 
   test('renders exactly six tiles, so no grid track is left empty at either column count', () => {
-    const html = renderToStaticMarkup(
+    const html = renderCostDetail(
       <SessionCostDetailContent detail={detail} isLoading={false} error={null} />,
     );
 

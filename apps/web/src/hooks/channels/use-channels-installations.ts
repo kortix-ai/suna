@@ -60,7 +60,9 @@ export function useSlackMode(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 60_000,
     queryFn: () =>
-      projectId ? getSlackMode(projectId) : ({ oauth_available: false, install_url: null } satisfies SlackMode),
+      projectId
+        ? getSlackMode(projectId)
+        : ({ oauth_available: false, install_url: null } satisfies SlackMode),
   });
 }
 

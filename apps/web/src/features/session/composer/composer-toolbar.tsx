@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react';
 
@@ -102,6 +103,8 @@ export interface ComposerToolbarProps {
   escCount: number;
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
+  /** See `SendStopControl`. */
+  submitLabel?: string | null;
   questionCanAct: boolean;
   hasText: boolean;
   canSubmit: boolean;
@@ -110,6 +113,10 @@ export interface ComposerToolbarProps {
   modelUnavailable: boolean;
   /** No agent is available to this user — the send is refused. See composer.tsx. */
   agentUnavailable?: boolean;
+  /** A selected upload failed. See `SendStopControl`. */
+  attachmentFailed?: boolean;
+  /** Why the selected model cannot take the attachments, or null. See `SendStopControl`. */
+  attachmentUnsupported?: string | null;
   onSubmit: () => void;
 }
 
@@ -139,6 +146,7 @@ export function ComposerToolbar({
   escCount,
   lockForQuestion,
   questionButtonLabel,
+  submitLabel,
   questionCanAct,
   hasText,
   canSubmit,
@@ -146,8 +154,11 @@ export function ComposerToolbar({
   disabled,
   modelUnavailable,
   agentUnavailable = false,
+  attachmentFailed = false,
+  attachmentUnsupported = null,
   onSubmit,
 }: ComposerToolbarProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
 
   return (
@@ -165,6 +176,7 @@ export function ComposerToolbar({
             defaultControls={modelDefaultControls}
             triggerLabelClassName="max-w-[7rem]"
             projectId={projectId}
+            offerChatGptAccounts
             open={modelMenuOpen}
             onOpenChange={onModelMenuOpenChange}
           />
@@ -200,14 +212,14 @@ export function ComposerToolbar({
                   ) : (
                     <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
                   )}
-                  Restore
+                  {tI18nComplete.raw('texta76e13b98392')}
                 </Button>
               </span>
             </HoverCardTrigger>
             <HoverCardContent className="px-3 py-2 text-sm text-balance">
               {rewind.disabled && !rewind.pending
-                ? 'The agent is still working — restore is available once it finishes or you stop it.'
-                : 'Session rewound — sending a new prompt commits this path. Restore keeps the removed messages and file changes.'}
+                ? tI18nComplete.raw('text98433e61649a')
+                : tI18nComplete.raw('text4c25090df9ea')}
             </HoverCardContent>
           </HoverCard>
         )}
@@ -222,6 +234,7 @@ export function ComposerToolbar({
           escCount={escCount}
           lockForQuestion={lockForQuestion}
           questionButtonLabel={questionButtonLabel}
+          submitLabel={submitLabel}
           questionCanAct={questionCanAct}
           hasText={hasText}
           canSubmit={canSubmit}
@@ -229,6 +242,8 @@ export function ComposerToolbar({
           disabled={disabled}
           modelUnavailable={modelUnavailable}
           agentUnavailable={agentUnavailable}
+          attachmentFailed={attachmentFailed}
+          attachmentUnsupported={attachmentUnsupported}
           onSubmit={onSubmit}
         />
       </div>

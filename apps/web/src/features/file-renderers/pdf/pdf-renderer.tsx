@@ -3,7 +3,7 @@
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 import { PDFViewer } from './pdf-viewer';
 
@@ -30,6 +30,9 @@ interface PdfRendererProps {
   toolbarActions?: React.ReactNode;
   /** Start the zoom plugin at fit-to-page instead of the numeric default. */
   fitOnOpen?: boolean;
+  /** False when the host's own toolbar already has the Download button, so the
+   *  viewer does not show a second one. */
+  showDownload?: boolean;
 }
 
 export function PdfRenderer({
@@ -40,6 +43,7 @@ export function PdfRenderer({
   fileName,
   toolbarActions,
   fitOnOpen,
+  showDownload = true,
 }: PdfRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -113,6 +117,7 @@ export function PdfRenderer({
       src={pdfUrl}
       fileName={fileName}
       showToolbar={!compact}
+      showDownload={showDownload}
       showUpload={false}
       className={cn('h-full w-full', className)}
       toolbarActions={toolbarActions}

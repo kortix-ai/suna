@@ -6,7 +6,6 @@
 #   - uv + uv-managed Python       (Python tools resolve dependencies per command)
 #   - pnpm + Node.js + npm         (pinned runtime toolchain)
 #   - opencode CLI                  (the supervised child process)
-#   - Codex CLI + Claude Code       (environment tools invoked by the harness)
 #   - kortix-agent                  (compiled daemon from
 #                                    apps/kortix-sandbox-agent-server)
 #   - kortix                        (compiled admin CLI from apps/cli — the
@@ -48,6 +47,7 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
@@ -95,12 +95,14 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \
+        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \
         texlive-latex-extra texlive-latex-recommended \
-    && rm -rf /var/lib/apt/lists/*
+        bat bc fd-find file fzf git-lfs htop iputils-ping jq less lsof moreutils nano netcat-openbsd openssh-client patch procps ripgrep rsync sqlite3 tree unzip wget xz-utils zip zstd \
+    && rm -rf /var/lib/apt/lists/* \
+    && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
@@ -149,9 +151,7 @@ RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packa
         $(python3 -c "import json; print(' '.join(f'{k}=={v}' for k, v in sorted(json.load(open('/tmp/kortix-runtime-versions.json'))['pythonPackages'].items())))") \
     && python3 -c "import importlib; [importlib.import_module(m) for m in ['PIL', 'docx', 'fitz', 'lxml', 'markitdown', 'openpyxl', 'pandas', 'pdf2docx', 'pdf2image', 'pdfplumber', 'playwright', 'pptx', 'pypdf', 'pypdfium2', 'pytesseract', 'reportlab']]; print('python package floor OK')"
 
-ENV SHELL=/bin/bash \
-    DISABLE_AUTOUPDATER=1 \
-    DISABLE_UPDATES=1
+ENV SHELL=/bin/bash
 RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
     && NODE_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['node'])")" \
     && NPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['npm'])")" \
@@ -177,6 +177,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+# The non-root sandbox user has passwordless sudo by design (sudoers above);
+# playwright --with-deps installs apt packages as root.
+# hadolint ignore=DL3004
 RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').agentBrowser)")" \
     && PLAYWRIGHT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').playwright)")" \
     && pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}" \
@@ -195,41 +198,8 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && chromium --version \
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-# The Pi harness invokes these as environment tools. Download only the current
-# architecture from each publisher's official npm package. Repository-owned
-# SHA-256 pins protect the artifact path without executing an installer script.
-# Keep Codex's complete vendor tree because its sandbox and search resources sit
-# beside the main executable. The image-wide Claude update guards keep this pin
-# stable after startup.
-RUN CODEX_CLI_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexCli)")" \
-    && CLAUDE_CODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCode)")" \
-    && CODEX_CLI_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexCliSha256Amd64)")" \
-    && CODEX_CLI_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexCliSha256Arm64)")" \
-    && CLAUDE_CODE_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCodeSha256Amd64)")" \
-    && CLAUDE_CODE_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCodeSha256Arm64)")" \
-    && case "$(uname -m)" in \
-         x86_64) cli_arch=x64; codex_target=x86_64-unknown-linux-musl; codex_sha="$CODEX_CLI_SHA256_AMD64"; claude_sha="$CLAUDE_CODE_SHA256_AMD64" ;; \
-         aarch64|arm64) cli_arch=arm64; codex_target=aarch64-unknown-linux-musl; codex_sha="$CODEX_CLI_SHA256_ARM64"; claude_sha="$CLAUDE_CODE_SHA256_ARM64" ;; \
-         *) echo "unsupported agent CLI architecture: $(uname -m)" >&2; exit 1 ;; \
-       esac \
-    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz \
-         "https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_CLI_VERSION}-linux-${cli_arch}.tgz" \
-    && echo "${codex_sha}  /tmp/codex.tgz" | sha256sum -c - \
-    && rm -rf /opt/kortix/codex \
-    && mkdir -p /opt/kortix/codex \
-    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/kortix/codex \
-    && ln -sfn "/opt/kortix/codex/vendor/${codex_target}/bin/codex" /home/kortix/.local/bin/codex \
-    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-resources/bwrap" \
-    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-path/rg" \
-    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/claude-code.tgz \
-         "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-${cli_arch}/-/claude-code-linux-${cli_arch}-${CLAUDE_CODE_VERSION}.tgz" \
-    && echo "${claude_sha}  /tmp/claude-code.tgz" | sha256sum -c - \
-    && tar -xzf /tmp/claude-code.tgz -O package/claude > /home/kortix/.local/bin/claude \
-    && chmod 0755 /home/kortix/.local/bin/claude \
-    && rm /tmp/codex.tgz /tmp/claude-code.tgz \
-    && test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}" \
-    && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"
-
+# The opencode-kortix link lives in root-owned /usr/local/bin.
+# hadolint ignore=DL3004
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
@@ -274,28 +244,55 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
     && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
     && rm -rf /tmp/opencode-deps-bundle-check
 
+# pi system packages (runtime-versions.json `piSystemPackages`), installed the
+# way `pi install` installs a global one. Same step as `piSystemPackageLines` in
+# packages/shared/src/sandbox/dockerfile-layer.ts; keep both in sync.
+RUN PI_PACKAGES="$(node -e "console.log((require('/tmp/kortix-runtime-versions.json').piSystemPackages || []).map((s) => s.slice(4)).join(' '))")" \
+    && if [ -n "$PI_PACKAGES" ]; then \
+         mkdir -p /opt/kortix/pi-agent/npm/pi-supplied \
+         && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > /opt/kortix/pi-agent/npm/pi-supplied/package.json \
+         && node -e "const s='file:./pi-supplied'; const deps={ '@earendil-works/pi-agent-core': s, '@earendil-works/pi-ai': s, '@earendil-works/pi-coding-agent': s, '@earendil-works/pi-tui': s }; for (const p of require('/tmp/kortix-runtime-versions.json').piSystemPackages) { const spec=p.slice(4); const at=spec.lastIndexOf('@'); deps[spec.slice(0, at)]=spec.slice(at + 1); } require('fs').writeFileSync('/opt/kortix/pi-agent/npm/package.json', JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies: deps }))" \
+         && npm install --prefix /opt/kortix/pi-agent/npm --omit=dev --ignore-scripts --no-audit --no-fund \
+         && node -e "require('fs').writeFileSync('/opt/kortix/pi-agent/settings.json', JSON.stringify({ packages: require('/tmp/kortix-runtime-versions.json').piSystemPackages }))"; \
+       fi
+
 USER root
-COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
+# Modes and ownership are set BY THE COPY, never by a later chmod/chown.
+# A RUN that changes a file's mode or owner copies that file into a NEW layer,
+# so the old `chmod +x … && chown -R /opt/kortix …` at the bottom of this block
+# rewrote the 106 MB CLI, the compiled agent and the whole managed-skills tree
+# a second time — 288 MB of pure duplication in every sandbox image, measured
+# with `docker history`. `--chmod`/`--chown` apply it in the layer that already
+# carries the bytes.
+COPY --from=builder --chmod=755 /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
 # project-scoped token the platform injects (KORTIX_TOKEN).
-COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
+COPY --from=cli-builder --chown=kortix:kortix --chmod=755 /cli/kortix /usr/local/bin/kortix
 # Always-latest managed Kortix skills (kortix-cli + the kortix-* family). The
 # agent server overlays these into every session's OpenCode skills dir at boot
 # (see injected-skills.ts) so no project ever goes stale on Kortix internals.
-COPY --from=cli-builder /cli/managed-skills /opt/kortix/managed-skills
-COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
+COPY --from=cli-builder --chown=kortix:kortix /cli/managed-skills /opt/kortix/managed-skills
+COPY --chmod=755 apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
 # Channel shims delegate Connector calls to the compiled `kortix` CLI.
-COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
+COPY --chown=kortix:kortix --chmod=755 apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 # The daemon converges the CLI in place at /usr/local/bin/kortix (runtime-assets.ts
-# DEFAULT_CLI_PATH) and runs as kortix: the file must belong to that user or every
-# box reports `cli: failed` (EACCES) on its first convergence pass.
-RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
-    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
+# DEFAULT_CLI_PATH) and runs as kortix. It writes a temp file next to the target
+# and renames it, so the permission it needs comes from the DIRECTORY — owning
+# only the file left every digest mismatch failing EACCES with `cli: failed`.
+# The DIRECTORY ONLY: the CLI above already arrives `--chown=kortix:kortix`, so
+# naming the file here changed no ownership and still forced overlayfs to copy
+# the whole ~105 MB binary up into this layer.
+# The second command pins OpenCode's own autoupdate off for every caller in the
+# box, not just the daemon's OPENCODE_CONFIG child. Both live in
+# packages/shared/src/sandbox/platform-binaries.ts, which asserts them on all
+# three image definitions.
+RUN bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
-    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral \
-    && chown kortix:kortix /usr/local/bin/kortix
+    && chown kortix:kortix /usr/local/bin \
+    && mkdir -p /home/kortix/.config/opencode && chown kortix:kortix /home/kortix/.config /home/kortix/.config/opencode && echo '{"autoupdate":false}' > /home/kortix/.config/opencode/opencode.json && chown kortix:kortix /home/kortix/.config/opencode/opencode.json && chmod 0644 /home/kortix/.config/opencode/opencode.json \
+    && chown -R kortix:kortix /workspace /ephemeral
 
 # Platform-owned secret delivery. The daemon writes live project secrets to
 # /dev/shm/kortix/agent-env.sh (tmpfs — never on the persisted disk); these
@@ -311,6 +308,16 @@ RUN printf '%s\n' '[ -r /dev/shm/kortix/agent-env.sh ] && . /dev/shm/kortix/agen
 
 ENV KORTIX_WORKSPACE=/workspace
 USER kortix
+# Warm jiti's cache for the pi system packages with the daemon itself; a package
+# that fails to load fails the build. Same step as `piSystemPackageWarmLines`.
+# The second command states what this image carries, so a box booted from it
+# can answer "which bytes am I running" on its FIRST health read and its first
+# reconcile is a no-op. Both run as `kortix`, so the state file it writes is
+# the one the daemon later rewrites in place. One RUN, not two: hadolint DL3059
+# and one fewer layer. See packages/shared/src/sandbox/platform-binaries.ts —
+# the bake is asserted on all three image definitions.
+RUN if [ -f /opt/kortix/pi-agent/settings.json ]; then /usr/local/bin/kortix-agent warm-pi-packages; fi \
+    && /usr/local/bin/kortix-agent bake-runtime-assets-state
 WORKDIR /workspace
 
 EXPOSE 8000

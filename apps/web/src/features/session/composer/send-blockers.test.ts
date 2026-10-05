@@ -1,7 +1,16 @@
+import { testUiTranslator } from '@/i18n/test-translator';
 import { describe, expect, test } from 'bun:test';
-import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
+import { commandBlocker, runtimePermissionLocksComposer, sendBlocker, sendBlockerMessage } from './send-blockers';
 
 const clear = { hasActiveQuestion: false, pendingPermissionCount: 0, readOnly: false };
+
+describe('runtimePermissionLocksComposer', () => {
+  test('only an active runtime permission locks the composer', () => {
+    expect(runtimePermissionLocksComposer(0, true)).toBe(false);
+    expect(runtimePermissionLocksComposer(1, true)).toBe(true);
+    expect(runtimePermissionLocksComposer(1, false)).toBe(false);
+  });
+});
 
 describe('sendBlocker', () => {
   test('nothing blocks an ordinary send', () => {
@@ -96,7 +105,7 @@ describe('sendBlockerMessage', () => {
       'session_working',
       'runtime_waking',
     ] as const) {
-      const copy = sendBlockerMessage(blocker);
+      const copy = sendBlockerMessage(blocker, testUiTranslator);
       expect(copy.message.length).toBeGreaterThan(0);
       // No blocker may report itself with the enum name.
       expect(copy.message).not.toContain('_');
@@ -106,11 +115,13 @@ describe('sendBlockerMessage', () => {
   test('the working refusal names what to do about it', () => {
     // "Refused" with no way forward is how a composer becomes a wall. The
     // command runs the moment the turn ends, and the copy has to say so.
-    expect(sendBlockerMessage('session_working').description ?? '').toContain('turn');
+    expect(sendBlockerMessage('session_working', testUiTranslator).description ?? '').toContain(
+      'turn',
+    );
   });
 
   test('the waking refusal says the wait is short and the text is kept', () => {
-    const copy = sendBlockerMessage('runtime_waking');
+    const copy = sendBlockerMessage('runtime_waking', testUiTranslator);
     expect(copy.message.toLowerCase()).toContain('waking');
     expect((copy.description ?? '').toLowerCase()).toContain('again');
   });

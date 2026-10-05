@@ -1,10 +1,22 @@
 {
   "generatedAt": "static",
-  "count": 647,
+  "count": 724,
   "routes": [
     {
       "method": "GET",
       "path": "/.well-known/oauth-authorization-server"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/v1/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/openid-configuration"
     },
     {
       "method": "GET",
@@ -37,6 +49,14 @@
     {
       "method": "POST",
       "path": "/internal/gateway/models"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/pool-rate-limit"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/refresh-credential"
     },
     {
       "method": "POST",
@@ -137,6 +157,10 @@
     {
       "method": "GET",
       "path": "/v1/access/signup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/account-invites"
     },
     {
       "method": "GET",
@@ -456,6 +480,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/session-oversight"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/session-policy"
     },
     {
@@ -499,6 +531,10 @@
       "path": "/v1/accounts/:accountId/iam/sso/provider/from-metadata"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/provider/verify-domain"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/invites"
     },
@@ -529,6 +565,34 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/members/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
     },
     {
       "method": "GET",
@@ -595,8 +659,8 @@
       "path": "/v1/admin/api/accounts/:id/projects"
     },
     {
-      "method": "POST",
-      "path": "/v1/admin/api/accounts/:id/session-limit"
+      "method": "PUT",
+      "path": "/v1/admin/api/accounts/:id/sso-domain-verification"
     },
     {
       "method": "GET",
@@ -671,8 +735,28 @@
       "path": "/v1/apps/edge/tls-check"
     },
     {
+      "method": "GET",
+      "path": "/v1/auth/client-config"
+    },
+    {
       "method": "POST",
       "path": "/v1/auth/logout"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/mfa/factors"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/auth/mfa/factors/:factorId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/mfa/factors/:factorId/challenge"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/mfa/factors/:factorId/verify"
     },
     {
       "method": "POST",
@@ -704,6 +788,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/auth/sign-in/sso"
+    },
+    {
+      "method": "POST",
       "path": "/v1/auth/sign-out"
     },
     {
@@ -712,6 +800,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/auth/user"
+    },
+    {
+      "method": "PATCH",
       "path": "/v1/auth/user"
     },
     {
@@ -888,11 +980,19 @@
     },
     {
       "method": "POST",
+      "path": "/v1/channels/slack/identity/preview"
+    },
+    {
+      "method": "POST",
       "path": "/v1/channels/teams/identity/bind"
     },
     {
       "method": "GET",
       "path": "/v1/channels/teams/identity/login/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/channels/teams/identity/preview"
     },
     {
       "method": "POST",
@@ -932,6 +1032,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connect/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/connect/toolkits"
     },
     {
@@ -945,6 +1049,10 @@
     {
       "method": "DELETE",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
     },
     {
       "method": "PUT",
@@ -1012,6 +1120,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/discover/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/pipedream/apps"
     },
     {
@@ -1076,6 +1188,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/git/:project/project-snapshot"
+    },
+    {
+      "method": "GET",
       "path": "/v1/health"
     },
     {
@@ -1085,6 +1201,14 @@
     {
       "method": "GET",
       "path": "/v1/health/ready"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/llm-gateway/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/llm/*"
     },
     {
       "method": "GET",
@@ -1119,6 +1243,26 @@
       "path": "/v1/marketplace/sources/:id"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/device-token"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notifications/device-token/:token"
+    },
+    {
       "method": "GET",
       "path": "/v1/oauth/.well-known/oauth-authorization-server"
     },
@@ -1133,6 +1277,18 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/oauth/grants/:clientId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/oauth/register"
     },
     {
       "method": "POST",
@@ -1155,6 +1311,10 @@
       "path": "/v1/ops/overview"
     },
     {
+      "method": "ALL",
+      "path": "/v1/p/:sandboxId/:port/*"
+    },
+    {
       "method": "OPTIONS",
       "path": "/v1/p/auth"
     },
@@ -1169,6 +1329,22 @@
     {
       "method": "GET",
       "path": "/v1/p/public-share/:token"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/:port"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/:port/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/file"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/file/*"
     },
     {
       "method": "GET",
@@ -1316,6 +1492,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/agent-identities"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/agents/:agentName/config"
     },
     {
@@ -1372,11 +1552,19 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/agents"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId"
     },
     {
       "method": "GET",
@@ -1405,6 +1593,22 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/attachments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId/chunks/:index"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId/complete"
     },
     {
       "method": "GET",
@@ -1512,7 +1716,15 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/channels/slack/oauth/complete"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/channels/teams/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/conversations"
     },
     {
       "method": "GET",
@@ -1535,8 +1747,24 @@
       "path": "/v1/projects/:projectId/channels/teams/manifest"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/edit"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/oauth/complete"
     },
     {
       "method": "GET",
@@ -1564,6 +1792,14 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/computers"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/config-archives/:configTreeId"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/connect-requests"
     },
     {
@@ -1573,6 +1809,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connections"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/connections/:connectionId"
     },
     {
       "method": "PUT",
@@ -1593,6 +1833,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/default"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connections/:connectionId/label"
     },
     {
       "method": "GET",
@@ -1633,6 +1877,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/revoke"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/share"
     },
     {
       "method": "GET",
@@ -1681,34 +1929,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/files/search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/filesystems"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/filesystems"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/filesystems/:name"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/filesystems/:name/files"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/filesystems/:name/files/content"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/filesystems/:name/files/content"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/filesystems/:name/files/content"
     },
     {
       "method": "GET",
@@ -1803,6 +2023,10 @@
       "path": "/v1/projects/:projectId/git/connection"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/git/repository"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/group-grants"
     },
@@ -1833,6 +2057,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/model-access"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-access"
     },
     {
       "method": "DELETE",
@@ -1880,6 +2112,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/reminders"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/resource-grants"
     },
     {
@@ -1909,6 +2145,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId"
     },
     {
       "method": "GET",
@@ -2011,6 +2251,14 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
     },
@@ -2025,6 +2273,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/config-release"
     },
     {
       "method": "GET",
@@ -2044,11 +2296,7 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/log"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/log"
+      "path": "/v1/projects/:projectId/sessions/:sessionId/message-authors"
     },
     {
       "method": "PUT",
@@ -2057,6 +2305,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/open-bundle"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/presence"
     },
     {
       "method": "GET",
@@ -2075,12 +2331,28 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/hold"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
     },
     {
       "method": "GET",
@@ -2109,6 +2381,22 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/reload-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId"
     },
     {
       "method": "POST",
@@ -2192,6 +2480,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/turn-permission"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/turn-question"
     },
     {
@@ -2205,6 +2497,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/create-repo"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/git/backend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/git/backend/repositories"
     },
     {
       "method": "DELETE",
@@ -2241,6 +2541,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/github/repository-branches"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/user-token"
     },
     {
       "method": "POST",
@@ -2283,6 +2587,38 @@
       "path": "/v1/router/chat/completions"
     },
     {
+      "method": "ALL",
+      "path": "/v1/router/context7"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/context7/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/firecrawl"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/firecrawl/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/gemini"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/gemini/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/groq"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/groq/*"
+    },
+    {
       "method": "GET",
       "path": "/v1/router/health"
     },
@@ -2299,8 +2635,40 @@
       "path": "/v1/router/models/:model"
     },
     {
+      "method": "ALL",
+      "path": "/v1/router/openai"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/openai/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/serper"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/serper/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/tavily"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/tavily/*"
+    },
+    {
       "method": "POST",
       "path": "/v1/router/web-search"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/xai"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/xai/*"
     },
     {
       "method": "GET",
@@ -2309,6 +2677,14 @@
     {
       "method": "HEAD",
       "path": "/v1/runtime-assets/agent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunk/:sha256"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunks/:component"
     },
     {
       "method": "GET",
@@ -2355,42 +2731,6 @@
       "path": "/v1/setup-links/secret/:token"
     },
     {
-      "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/health"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
-    },
-    {
       "method": "GET",
       "path": "/v1/skills"
     },
@@ -2420,14 +2760,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/tunnel/audit/:tunnelId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/connections"
-    },
-    {
-      "method": "POST",
       "path": "/v1/tunnel/connections"
     },
     {
@@ -2467,36 +2799,12 @@
       "path": "/v1/tunnel/device-auth/:code/status"
     },
     {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests"
-    },
-    {
       "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/approve"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/deny"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests/stream"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permissions/:tunnelId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permissions/:tunnelId"
+      "path": "/v1/tunnel/rpc/:tunnelId"
     },
     {
       "method": "DELETE",
-      "path": "/v1/tunnel/permissions/:tunnelId/:permissionId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/rpc/:tunnelId"
+      "path": "/v1/tunnel/self"
     },
     {
       "method": "GET",

@@ -1,4 +1,5 @@
 import { beforeEach, expect, mock, test } from "bun:test";
+import { platinumHttpError } from "../../__tests__/helpers/platinum-http-error";
 
 process.env.SUPABASE_URL ??= "http://127.0.0.1:54321";
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role";
@@ -26,29 +27,35 @@ let lifecycleExecResult: Record<string, unknown> = {
 };
 let lifecycleExecError: Error | null = null;
 
+const platinumJson = async (path: string, init: RequestInit = {}) => {
+  const body = init.body
+    ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+    : undefined;
+  calls.push({ path, method: String(init.method ?? "GET"), body });
+  if (path.endsWith("/start") && startError) {
+    const error = startError;
+    startError = null;
+    throw error;
+  }
+  if (path.endsWith("/exec")) {
+    if (lifecycleExecError) throw lifecycleExecError;
+    return { result: lifecycleExecResult };
+  }
+  if (path === "/v1/sandboxes/sbx_app")
+    return { id: "sbx_app", state: sandboxStateSequence.shift() ?? sandboxState };
+  return {};
+};
+
 mock.module("../../shared/platinum", () => ({
   isPlatinumConfigured: () => true,
-  platinumJsonResponse: async () => {
-    throw new Error("unexpected Platinum materialization request");
-  },
-  platinumJson: async (path: string, init: RequestInit = {}) => {
-    const body = init.body
-      ? (JSON.parse(String(init.body)) as Record<string, unknown>)
-      : undefined;
-    calls.push({ path, method: String(init.method ?? "GET"), body });
-    if (path.endsWith("/start") && startError) {
-      const error = startError;
-      startError = null;
-      throw error;
+  // start() reads the /start status (a 202 means a restore is still running).
+  platinumJsonResponse: async (path: string, init: RequestInit = {}) => {
+    if (!path.endsWith("/start")) {
+      throw new Error("unexpected Platinum materialization request");
     }
-    if (path.endsWith("/exec")) {
-      if (lifecycleExecError) throw lifecycleExecError;
-      return { result: lifecycleExecResult };
-    }
-    if (path === "/v1/sandboxes/sbx_app")
-      return { id: "sbx_app", state: sandboxStateSequence.shift() ?? sandboxState };
-    return {};
+    return { status: 200, body: await platinumJson(path, init) };
   },
+  platinumJson,
 }));
 mock.module("../service-key", () => ({
   serviceKeyForExternalId: () => "svc_key",
@@ -97,9 +104,7 @@ test("renewLifecycle resets Platinum activity with one bounded no-op exec", asyn
 });
 
 test("renewLifecycle never wakes a stopped Platinum sandbox", async () => {
-  lifecycleExecError = new Error(
-    'platinum POST /v1/sandboxes/sbx-stopped/exec -> 409 {"code":"sandbox_not_running"}',
-  );
+  lifecycleExecError = platinumHttpError('platinum POST /v1/sandboxes/sbx-stopped/exec -> 409 {"code":"sandbox_not_running"}');
   const provider = new PlatinumProvider();
 
   await expect(provider.renewLifecycle("sbx-stopped")).rejects.toThrow("sandbox_not_running");
@@ -127,9 +132,7 @@ test("ensureAppRuntimeStarted remains idempotent when the hosting layer calls it
 });
 
 test("start treats a running conflict as an idempotent success", async () => {
-  startError = new Error(
-    'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"sandbox not stopped/archived","state":"running","code":"conflict"}',
-  );
+  startError = platinumHttpError('platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"sandbox not stopped/archived","state":"running","code":"conflict"}');
   const provider = new PlatinumProvider();
 
   await expect(provider.start("sbx_app")).resolves.toBeUndefined();
@@ -141,9 +144,7 @@ test("start treats a running conflict as an idempotent success", async () => {
 });
 
 test("start waits for an accepted stop to settle before retrying the wake", async () => {
-  startError = new Error(
-    'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"stopping","code":"conflict"}',
-  );
+  startError = platinumHttpError('platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"stopping","code":"conflict"}');
   sandboxStateSequence = ["stopping", "stopped"];
   const provider = new PlatinumProvider();
 
@@ -157,9 +158,7 @@ test("start waits for an accepted stop to settle before retrying the wake", asyn
 });
 
 test("start preserves a conflict when the provider reports a terminal state", async () => {
-  startError = new Error(
-    'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"failed","code":"conflict"}',
-  );
+  startError = platinumHttpError('platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"failed","code":"conflict"}');
   sandboxState = "failed";
   const provider = new PlatinumProvider();
 

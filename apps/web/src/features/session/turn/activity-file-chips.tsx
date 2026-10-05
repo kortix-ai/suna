@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * A run of reads or writes rendered as FILES rather than as tool cards.
  *
@@ -15,9 +16,9 @@
  * agent opened or produced, not about edits.
  */
 
-import { CaretRightIcon, WarningIcon } from '@phosphor-icons/react';
+import { WarningIcon } from '@phosphor-icons/react';
 
-import { DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { DisclosureContent } from '@/components/ui/disclosure';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
@@ -33,6 +34,7 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
 import { memo } from 'react';
 import { normalizeActivityToolName } from '../session-activity-groups';
+import { ChainStepTrigger } from './chain-step-trigger';
 
 import { ActivityStep, iconFor } from './activity-step';
 import { samePartsList } from './same-parts';
@@ -126,6 +128,7 @@ function isInFlight(part: ToolPart): boolean {
  * disappear under the pointer.
  */
 function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const filename = getFilename(path);
   const type = getFileType(filename);
   // The glyph for THIS file, not for its category — a .ts, a .png and a .zip
@@ -136,7 +139,7 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) =
   // second line that costs 16px and says nothing. The extension itself is the
   // information; "File" survives only for a name that genuinely has none.
   const ext = filename.includes('.') ? filename.split('.').pop() : undefined;
-  const typeLabel = getTypeLabel(type, ext);
+  const typeLabel = getTypeLabel(type, ext, tI18nComplete);
 
   return (
     <li>
@@ -205,6 +208,7 @@ function ActivityFileChipStepImpl({
   /** This row is the WHOLE burst — see `ActivityBurst`. */
   bare?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   // Called before every early return below — hook order is not negotiable.
   // This is the same door `read-tool.tsx` uses, and it reads the SHARED query
@@ -305,16 +309,7 @@ function ActivityFileChipStepImpl({
     <>
       {/* One child only — DisclosureTrigger clones each child into its own
 			    clickable node, so a sibling caret would stack as a separate row. */}
-      <DisclosureTrigger>
-        <div
-          data-status={status}
-          className={cn(
-            'text-foreground/80 hover:text-foreground',
-            'flex w-full cursor-pointer items-center gap-3',
-            'text-left text-sm leading-[1.5] transition-colors',
-          )}
-        >
-          {/* EVERY row keeps its leading glyph, single-row bursts included —
+      {/* EVERY row keeps its leading glyph, single-row bursts included —
               the same rule, and the same reasoning, `ActivityStep` already
               carries. A bare row used to drop it on the geometric argument that
               the icon anchors the chain rail (`left-2`) and one row has no
@@ -331,14 +326,17 @@ function ActivityFileChipStepImpl({
               The failure mark still replaces the glyph while closed: on a bare
               row it is the only verdict left, since the burst's summary line and
               closing step are both gone. */}
-          {status === 'error' ? (
+      <ChainStepTrigger
+        status={status}
+        icon={
+          status === 'error' ? (
             <>
               {/* Closed: failure mark replaces the family glyph. Open: the
                   failed rows carry their own verdicts, so the trigger falls
                   back to the family icon and drops the duplicate warning. */}
               <WarningIcon
                 weight="fill"
-                aria-label="This step failed"
+                aria-label={tI18nComplete.raw('textf0103f528539')}
                 className={cn(
                   'size-4 flex-none group-data-[state=open]/step:hidden',
                   STATUS_TEXT.destructive,
@@ -348,22 +346,18 @@ function ActivityFileChipStepImpl({
             </>
           ) : (
             <Icon className="text-muted-foreground size-4 flex-none" />
-          )}
-          {status === 'running' ? (
+          )
+        }
+        label={
+          status === 'running' ? (
             <TextShimmer className="min-w-0 truncate leading-[1.5] font-medium">
               {label}
             </TextShimmer>
           ) : (
             <span className="min-w-0 truncate font-medium">{label}</span>
-          )}
-          <CaretRightIcon
-            className={cn(
-              'text-muted-foreground/40 size-3.5 flex-none',
-              'transition-transform group-data-[state=open]/step:rotate-90',
-            )}
-          />
-        </div>
-      </DisclosureTrigger>
+          )
+        }
+      />
       <DisclosureContent>
         {/* `pl-7` puts the files under the LABEL (size-4 icon + gap-3), clear of
 				    the chain rail at `left-2` — the indent is what says they belong to

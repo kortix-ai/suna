@@ -19,6 +19,7 @@ import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
+import { normalizeImportPath } from './imports';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -27,12 +28,10 @@ import {
   CONNECTOR_PROVIDERS,
   type ConnectorProvider,
   ENV_NAME_RE,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
-  KNOWN_SCHEMA_VERSION,
-  manifestUsesAgentMap,
+  GRANTABLE_KORTIX_PERMISSIONS,
   LEGACY_SANDBOX_KEYS,
-  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
-  DEPRECATED_KORTIX_CLI_ALIASES,
+  LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
   reservedEnvNameReason,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
@@ -55,9 +54,30 @@ import {
   rejectChannelsV2,
   validateAgentsV2,
   validateDefaultAgentV2,
+  validateHarnessesV2,
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
+
+export {
+  AGENTS_DIR,
+  AGENT_FILE_PATTERN,
+  HARNESSES_DIR,
+  LEGACY_MEMORY_DIR,
+  LEGACY_OPENCODE_CONFIG_DIR,
+  MEMORY_DIR,
+  OPENCODE_CONFIG_DIR,
+  SKILLS_DIR,
+  agentFileCandidates,
+  defaultAgentFile,
+  legacyConfigDir,
+  manifestOpencodeConfigDir,
+  opencodeConfigDirCandidates,
+  piConfigDirCandidates,
+  safeAgentFile,
+  safeRepoPath,
+  skillDirs,
+} from './layout';
 
 export {
   type ManifestFormat,
@@ -69,6 +89,29 @@ export {
   parseManifestText,
   serializeManifestObject,
 } from './format';
+
+export {
+  type ImportableKey,
+  type ManifestImportReader,
+  type ManifestImportReaderSync,
+  type ManifestOrigins,
+  type ManifestSourceFile,
+  type ResolvedManifest,
+  type SplitManifestFile,
+  IMPORTABLE_LIST_KEYS,
+  IMPORTABLE_MAP_KEYS,
+  IMPORT_PATH_PATTERN,
+  MANIFEST_IMPORTS_KEY,
+  MAX_IMPORT_DEPTH,
+  MAX_IMPORT_FILES,
+  ManifestImportError,
+  ROOT_ONLY_KEYS,
+  hasManifestImports,
+  normalizeImportPath,
+  resolveManifestImports,
+  resolveManifestImportsSync,
+  splitManifestByOrigin,
+} from './imports';
 
 // Re-exported for backward compatibility — these lived as local `const`s in
 // this file until the `constants.ts` extraction (see that module's doc for
@@ -99,15 +142,13 @@ export {
   CONNECTOR_PROVIDERS,
   type ConnectorProvider,
   ENV_NAME_RE,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
-  KNOWN_SCHEMA_VERSION,
-  manifestDefaultConfigDir,
-  manifestDefaultRuntime,
-  manifestUsesAgentMap,
+  PI_PACKAGE_NPM_RE,
+  PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
-  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
-  DEPRECATED_KORTIX_CLI_ALIASES,
+  LEGACY_TOLERATED_KORTIX_PERMISSIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
   isReservedEnvName,
   NEVER_DELIVERED_ENV_NAMES,
   PERMISSION_ACTION_ONLY_KEYS_V2,
@@ -152,6 +193,8 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
+  type HarnessesV2,
+  type PiPackageEntryV2,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -161,15 +204,16 @@ export {
  * Maximum manifest schema version this validator understands.
  *
  * v1 = `[[agents]]` array overlay, TOML or YAML, `[[channels]]` allowed.
- * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/
- * workspace/enabled); OpenCode behavior (mode/model/temperature/top_p/steps/
- * variant/color/hidden/permission/prompt) lives entirely in the agent's own
- * native `.kortix/opencode/agents/<name>.md` frontmatter + body, never in
- * this manifest. YAML-only, `[[channels]]` removed, deny-by-default grant
- * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
+ * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/
+ * workspace/enabled) plus `file`, the path of the agent's `.md`; agent behavior
+ * (mode/model/temperature/top_p/steps/variant/color/hidden/permission/prompt)
+ * lives entirely in that `.md` frontmatter + body, never in this manifest.
+ * YAML-only, `[[channels]]` removed, deny-by-default grant sets. (decision
+ * 2026-07-05: "one home per concern").
+ * v3 = YAML-only agent behavior (model, prompt or prompt_file, permission)
+ * compiled into the existing harness config channel; v1/v2 stay unchanged.
  */
-
+const KNOWN_SCHEMA_VERSION = 3;
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -251,8 +295,8 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version !== undefined && manifestUsesAgentMap(version)) {
-    validateManifestBodyV2(parsed, format, issues, version);
+  if (version !== undefined && version >= 2) {
+    validateManifestBodyV2(parsed, format, issues);
   } else {
     validateManifestBodyV1(parsed, format, issues);
   }
@@ -297,23 +341,48 @@ function validateManifestBodyV2(
   parsed: Record<string, unknown>,
   format: ManifestFormat,
   issues: ManifestIssue[],
-  // The manifest's OWN version, not a literal 2 — v3 shares this body, and a
-  // hardcoded 2 made a v3 manifest report "not supported in kortix_version 2".
-  version: number,
 ): void {
+  validateImports(parsed.imports, 'imports', issues);
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
-  validateOpenCode(parsed.opencode, 'opencode', issues);
+  if (parsed.kortix_version === 3 && parsed.opencode !== undefined) {
+    issues.push({ path: 'opencode', message: 'v3 uses YAML-only agent configuration; remove the raw opencode config.', severity: 'error' });
+  } else validateOpenCode(parsed.opencode, 'opencode', issues);
+  validateOpenCode(parsed.pi, 'pi', issues);
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
-  validateConnectors(parsed.connectors, 'connectors', issues, version, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
   validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
-  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
+  validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
+  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+}
+
+/**
+ * `imports:` shape check (v2). The files themselves are resolved by
+ * `resolveManifestImports` — this only guards the list a root file declares, so
+ * `kortix validate` and the editor schema flag a bad path before any read.
+ */
+function validateImports(value: unknown, path: string, issues: ManifestIssue[]): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    issues.push({ path, message: '`imports` must be a list of paths', severity: 'error' });
+    return;
+  }
+  value.forEach((entry, index) => {
+    if (normalizeImportPath(entry) === null) {
+      issues.push({
+        path: `${path}[${index}]`,
+        message:
+          'must be a repository-relative path to a .yaml/.yml file or a directory (no "..", no absolute path, no glob)',
+        severity: 'error',
+      });
+    }
+  });
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */
@@ -347,10 +416,10 @@ function listSectionHint(key: string, format: ManifestFormat = 'toml'): string {
 // ─── Section validators ───────────────────────────────────────────────────
 
 /**
- * Validate a `connectors` / `kortix_cli` grant value (array | "all" | "none").
+ * Validate a `connectors` / `kortix_permissions` grant value (array | "all" | "none").
  *
- * `version` only changes how a `kortix_cli` entry from
- * `LEGACY_TOLERATED_KORTIX_CLI_ACTIONS` is treated (only reachable when
+ * `version` only changes how a `kortix_permissions` entry from
+ * `LEGACY_TOLERATED_KORTIX_PERMISSIONS` is treated (only reachable when
  * `checkAction` is true): v1 keeps it a warning (these actions were REMOVED
  * from enforcement, not from v1's manifest shape — an existing manifest that
  * still lists one must keep validating, just with a deprecation nudge). v2 is
@@ -373,10 +442,10 @@ export function validateGrantList(
   if (typeof value === 'string') {
     // Runtime parseGrantSet treats "" the same as "none" (default-deny).
     const v = value.trim().toLowerCase();
-    if (v !== '' && v !== 'all' && v !== 'none') {
+    if (v !== '' && v !== 'all' && v !== '*' && v !== 'none') {
       issues.push({
         path: where,
-        message: `${label} string must be "all" or "none" (or an array of names).`,
+        message: `${label} string must be "all", "*" or "none" (or an array of names).`,
         severity: 'error',
       });
     }
@@ -400,8 +469,8 @@ export function validateGrantList(
       return;
     }
     const s = item.trim();
-    if (checkAction && s !== '*' && !GRANTABLE_KORTIX_CLI_ACTIONS.includes(s)) {
-      const renamedTo = DEPRECATED_KORTIX_CLI_ALIASES[s];
+    if (checkAction && s !== '*' && !GRANTABLE_KORTIX_PERMISSIONS.includes(s)) {
+      const renamedTo = DEPRECATED_KORTIX_PERMISSION_ALIASES[s];
       if (renamedTo) {
         // A RENAMED action, not a dead one: it still resolves to a real
         // capability (`canonicalizeGrantActions` rewrites it), so this is a
@@ -411,22 +480,22 @@ export function validateGrantList(
         // every capability it holds rather than the one line that is outdated.
         issues.push({
           path: `${where}[${k}]`,
-          message: `"${s}" was renamed to "${renamedTo}" — the grant still applies, but update the manifest.`,
+          message: `"${s}" was renamed to "${renamedTo.join('", "')}" — the grant still applies, but update the manifest.`,
           severity: 'warning',
         });
-      } else if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
+      } else if (LEGACY_TOLERATED_KORTIX_PERMISSIONS.includes(s)) {
         issues.push({
           path: `${where}[${k}]`,
           message:
-            manifestUsesAgentMap(version)
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version ${version} — remove it from the manifest.`
-              : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
+            version === 2
+              ? `"${s}" is a deprecated, no-op Kortix permission (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+              : `"${s}" is a deprecated, no-op Kortix permission (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
+          severity: version === 2 ? 'error' : 'warning',
         });
       } else {
         issues.push({
           path: `${where}[${k}]`,
-          message: `"${s}" is not a grantable kortix_cli action (allowed: project.*; account-scoped actions can never be granted to an agent).`,
+          message: `"${s}" is not a grantable Kortix permission (allowed: project.*; account-scoped actions can never be granted to an agent).`,
           severity: 'error',
         });
       }
@@ -434,7 +503,60 @@ export function validateGrantList(
   });
 }
 
-/** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
+/**
+ * Validate an agent's project-permission grant. `kortix_permissions` is the
+ * canonical key. `kortix_cli` is its deprecated alias (the pre-rename name —
+ * the list never had anything to do with the CLI): still accepted, always
+ * flagged with a warning. Both keys on one agent must resolve to the same
+ * grant; different values are an error because the parser could only honor
+ * one of them silently.
+ */
+export function validateKortixPermissionFields(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+  version: 1 | 2,
+): void {
+  const canonical = entry.kortix_permissions;
+  const legacy = entry.kortix_cli;
+  validateGrantList(canonical, `${where}.kortix_permissions`, 'kortix_permissions', issues, true, version);
+  validateGrantList(legacy, `${where}.kortix_cli`, 'kortix_cli', issues, true, version);
+  if (legacy === undefined || legacy === null) return;
+  const hasCanonical = canonical !== undefined && canonical !== null;
+  if (hasCanonical && !sameGrantValue(canonical, legacy)) {
+    issues.push({
+      path: `${where}.kortix_cli`,
+      message: 'kortix_cli is the deprecated alias of kortix_permissions and must match it when both are present — remove kortix_cli.',
+      severity: 'error',
+    });
+    return;
+  }
+  issues.push({
+    path: `${where}.kortix_cli`,
+    message: hasCanonical
+      ? 'kortix_cli is deprecated and duplicates kortix_permissions — remove kortix_cli.'
+      : 'kortix_cli is deprecated — rename it to kortix_permissions (same value).',
+    severity: 'warning',
+  });
+}
+
+/** Grant-set equality: "all"/"none" case-insensitive, lists as trimmed sets. */
+function sameGrantValue(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown): string => {
+    if (typeof v === 'string') {
+      const t = v.trim().toLowerCase();
+      return t === '' ? 'none' : t;
+    }
+    if (Array.isArray(v)) {
+      const items = v.map((x) => (typeof x === 'string' ? x.trim() : JSON.stringify(x)));
+      return JSON.stringify([...new Set(items)].sort());
+    }
+    return JSON.stringify(v);
+  };
+  return norm(a) === norm(b);
+}
+
+/** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_permissions). */
 function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
@@ -471,13 +593,16 @@ function validateAgents(node: unknown, path: string, issues: ManifestIssue[], fo
       seen.add(name);
     }
     validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
-    validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true);
+    validateKortixPermissionFields(entry, where, issues, 1);
     // `env` (project-secret allowlist) shares the same array | "all" | "none"
-    // shape as connectors/kortix_cli (runtime parseGrantSet, no per-entry
+    // shape as connectors/kortix_permissions (runtime parseGrantSet, no per-entry
     // action check). Omitted defaults to "all" at runtime (back-compat — a
     // NEW dimension must not starve existing agents), so absence is not an
     // error here either; validateGrantList already no-ops on undefined/null.
     validateGrantList(entry.env, `${where}.env`, 'env', issues, false);
+    // `apps` (spec 2026-09-22 §2.5): App slugs an agent session may open when
+    // the App is restricted/private. Omitted = none.
+    validateGrantList(entry.apps, `${where}.apps`, 'apps', issues, false);
   });
 }
 
@@ -521,11 +646,11 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (manifestUsesAgentMap(version) && format === 'toml') {
+  if (version >= 2 && format === 'toml') {
     issues.push({
       path: 'kortix_version',
       message:
-        `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run \`kortix migrate\`.`,
+        'kortix_version 2 and 3 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
       severity: 'error',
     });
     return version;
@@ -752,6 +877,13 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
     expectBoundedIntOrAbsent(entry.cpu, `${where}.cpu`, SANDBOX_CPU_BOUNDS, issues);
     expectBoundedIntOrAbsent(entry.memory, `${where}.memory`, SANDBOX_MEMORY_BOUNDS, issues);
     expectBoundedIntOrAbsent(entry.disk, `${where}.disk`, SANDBOX_DISK_BOUNDS, issues);
+    if (entry.container_runtime !== undefined && typeof entry.container_runtime !== 'boolean') {
+      issues.push({
+        path: `${where}.container_runtime`,
+        message: '`container_runtime` must be true or false.',
+        severity: 'error',
+      });
+    }
     if (entry.gpu !== undefined) {
       issues.push({
         path: `${where}.gpu`,
@@ -943,7 +1075,7 @@ function validateMonitorDuration(
 }
 
 /**
- * `type: monitor` — the third trigger type (docs/specs/2026-08-12-monitors.md).
+ * `type: monitor` — the third trigger type.
  * A monitor names a repo command (`run`) that the platform supervises 24/7 in
  * the project's monitor box; its stdout lines are the events. `cron`/`run_at`/
  * `timezone`/`secret_env` are cron/webhook wiring and are hard-rejected here —
@@ -1224,7 +1356,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: number = 1, format: ManifestFormat = 'toml'): void {
+function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1364,18 +1496,17 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if (entry.credential !== undefined) {
       const cm = typeof entry.credential === 'string' ? entry.credential.trim().toLowerCase() : '';
       if (cm === 'per_user') {
-        // `per_user` (each member brings their own) was removed 2026-07-05
-        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5).
+        // `per_user` (each member brings their own) was removed 2026-07-05.
         // v1 tolerates it as a legacy value — it always resolves to `shared`
         // at runtime and is never round-tripped back into git. v2 is a clean
         // break: reject it outright, same as the removed CLI actions.
         issues.push({
           path: `${where}.credential`,
           message:
-            manifestUsesAgentMap(version)
-              ? `credential "per_user" is not supported in kortix_version ${version} — connectors are always "shared"; remove this key.`
+            version === 2
+              ? 'credential "per_user" is not supported in kortix_version 2 — connectors are always "shared"; remove this key.'
               : 'credential "per_user" was removed — it is tolerated here for now and resolves to "shared", but should be removed from the manifest.',
-          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
+          severity: version === 2 ? 'error' : 'warning',
         });
       } else if (cm !== 'shared') {
         // The runtime (apps/api's connectors.ts `parseConnectorEntry`)
@@ -1392,7 +1523,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         issues.push({
           path: `${where}.credential`,
           message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
-          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
+          severity: version === 2 ? 'error' : 'warning',
         });
       }
     }
@@ -1411,8 +1542,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     }
     if (entry.agent_scope !== undefined) {
       // The connector-side agent gate was removed 2026-07 (wave-2 of the
-      // agent-first cut, docs/specs/2026-07-05-agent-first-config-unification.md
-      // §2.5): connector access is now purely the agent's own `connectors`
+      // agent-first cut): connector access is now purely the agent's own `connectors`
       // grant (`[[agents]].connectors` in v1, `agents.<name>.connectors` in
       // v2). The runtime (apps/api's connectors.ts `parseConnectorEntry`) no
       // longer reads `agent_scope` at all — it parses fine and is simply
@@ -1423,10 +1553,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
       issues.push({
         path: `${where}.agent_scope`,
         message:
-          manifestUsesAgentMap(version)
-            ? `agent_scope is not supported in kortix_version ${version} — connector access is set on the agent (\`connectors\` grant); remove this key.`
+          version === 2
+            ? 'agent_scope is not supported in kortix_version 2 — connector access is set on the agent (`connectors` grant); remove this key.'
             : 'agent_scope is no longer used — connector access is set on the agent (`connectors` grant), not on the connector. This key is ignored at runtime; remove it from the manifest.',
-        severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
+        severity: version === 2 ? 'error' : 'warning',
       });
     }
     if ((provider === 'pipedream' || provider === 'composio') && entry.auth !== undefined) {
@@ -1684,7 +1814,7 @@ function expectBoundedIntOrAbsent(
 }
 
 // The canonical, public JSON Schema (`./json-schema.ts`) is built FROM the
-// constants above (GRANTABLE_KORTIX_CLI_ACTIONS, CONNECTOR_PROVIDERS,
+// constants above (GRANTABLE_KORTIX_PERMISSIONS, CONNECTOR_PROVIDERS,
 // AGENT_MODES_V2, …), so it imports this module — this re-export must stay
 // the LAST statement in the file: json-schema.ts's own top-level code calls
 // its builder functions eagerly (`export const KORTIX_V1_JSON_SCHEMA =
@@ -1700,6 +1830,7 @@ export {
   KORTIX_JSON_SCHEMA,
   buildManifestV1Schema,
   buildManifestV2Schema,
+  buildManifestV3Schema,
   buildManifestSchema,
   manifestJsonSchema,
 } from './json-schema';

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+// The real module namespace, so the mock below only overrides the calls this
+// suite stubs and still carries every export the shared forwarder imports.
+import * as realBackend from '../sandbox-proxy/backend';
 
 const SHARE_TOKEN = 'kps_11111111111141118111111111111111';
 const SHARE_ID = '11111111-1111-4111-8111-111111111111';
@@ -7,38 +10,33 @@ const SESSION_ID = '22222222-2222-4222-8222-222222222222';
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const EXTERNAL_ID = 'sandbox-external-1';
-const ENVIRONMENT_EXTERNAL_ID = 'environment-external-1';
 
 let shareRow: any;
 let personalBindingRow: { connectionId: string } | null;
 let updateCalls = 0;
 let fetchUrls: string[] = [];
-let loadedSandboxIds: string[] = [];
+let ingressResolves = 0;
+let invalidations = 0;
+let wakes = 0;
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({
-      from: () => {
-        let selectsPersonalBinding = false;
-        const query = {
-          leftJoin: () => query,
-          innerJoin: () => {
-            selectsPersonalBinding = true;
-            return query;
-          },
-          where: () => query,
-          limit: async () =>
-            selectsPersonalBinding
-              ? personalBindingRow
-                ? [personalBindingRow]
-                : []
-              : shareRow
-                ? [shareRow]
-                : [],
-        };
-        return query;
-      },
+      from: () => ({
+        leftJoin: () => ({
+          leftJoin: () => ({
+            where: () => ({
+              limit: async () => shareRow ? [shareRow] : [],
+            }),
+          }),
+        }),
+        innerJoin: () => ({
+          where: () => ({
+            limit: async () => personalBindingRow ? [personalBindingRow] : [],
+          }),
+        }),
+      }),
     }),
     update: () => ({
       set: () => ({
@@ -51,26 +49,33 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../sandbox-proxy/backend', () => ({
+  ...realBackend,
   buildSandboxUpstreamHeaders: async ({ serviceKey, providerHeaders }: any) => ({
     ...providerHeaders,
     ...(serviceKey ? { Authorization: `Bearer ${serviceKey}` } : {}),
   }),
-  invalidatePreviewLink: () => {},
-  loadSandbox: async (externalId: string) => {
-    loadedSandboxIds.push(externalId);
+  invalidatePreviewLink: () => {
+    invalidations += 1;
+  },
+  loadSandbox: async () => ({
+    externalId: EXTERNAL_ID,
+    status: 'active',
+    serviceKey: 'service-key',
+  }),
+  markSandboxErrored: async () => {},
+  markSandboxUsed: async () => {},
+  resolveSandboxIngress: async () => {
+    ingressResolves += 1;
     return {
-      externalId,
-      status: 'active',
-      serviceKey: 'service-key',
+      url: 'https://preview.test',
+      headers: { 'e2b-traffic-access-token': 'preview-token' },
+      effectivePort: 3000,
     };
   },
-  markSandboxUsed: async () => {},
-  resolveSandboxIngress: async () => ({
-    url: 'https://preview.test',
-    headers: { 'e2b-traffic-access-token': 'preview-token' },
-    effectivePort: 3000,
-  }),
-  wakeSandbox: async () => {},
+  routeSandboxIngress: (_record: any, request: any) => ({ effectivePort: request.port }),
+  wakeSandbox: async () => {
+    wakes += 1;
+  },
 }));
 
 const originalFetch = globalThis.fetch;
@@ -90,16 +95,15 @@ beforeEach(() => {
     allowWebsocket: false,
     expiresAt: null,
     revokedAt: null,
-    workerExternalId: EXTERNAL_ID,
-    workerStatus: 'active',
-    environmentSessionId: null,
-    environmentExternalId: null,
-    environmentStatus: null,
+    externalId: EXTERNAL_ID,
+    sandboxStatus: 'active',
   };
   personalBindingRow = null;
   updateCalls = 0;
   fetchUrls = [];
-  loadedSandboxIds = [];
+  ingressResolves = 0;
+  invalidations = 0;
+  wakes = 0;
   globalThis.fetch = (async (url: RequestInfo | URL) => {
     fetchUrls.push(String(url));
     return new Response('ok', { status: 200 });
@@ -120,15 +124,11 @@ function app() {
 
 describe('public session preview shares', () => {
   test('returns public metadata without authenticated preview auth', async () => {
-    const res = await app().request(
-      new Request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`),
-    );
+    const res = await app().request(new Request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await res.json() as any;
     expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
-    expect(body.share.public_url).toBe(
-      `http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`,
-    );
+    expect(body.share.public_url).toBe(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
     expect(body.share.resource_type).toBe('preview');
   });
 
@@ -143,8 +143,10 @@ describe('public session preview shares', () => {
     });
   });
 
-  test('rejects ports outside the share allow-list', async () => {
-    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/8000/`);
+  // 5173 is not a blocked port, so the share's own port is the only reason
+  // this is refused. The blocked set is its own row below.
+  test('a preview share is pinned to its own port', async () => {
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/5173/`);
     expect(res.status).toBe(403);
   });
 
@@ -162,21 +164,6 @@ describe('public session preview shares', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('ok');
     expect(updateCalls).toBe(1);
-    expect(loadedSandboxIds).toEqual([EXTERNAL_ID]);
-  });
-
-  test('routes public shares to the session environment when one exists', async () => {
-    shareRow = {
-      ...shareRow,
-      environmentSessionId: SESSION_ID,
-      environmentExternalId: ENVIRONMENT_EXTERNAL_ID,
-      environmentStatus: 'active',
-    };
-
-    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
-
-    expect(res.status).toBe(200);
-    expect(loadedSandboxIds).toEqual([ENVIRONMENT_EXTERNAL_ID]);
   });
 
   test('proxies file shares through the static file server', async () => {
@@ -190,7 +177,7 @@ describe('public session preview shares', () => {
 
     const meta = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
     expect(meta.status).toBe(200);
-    const body = (await meta.json()) as any;
+    const body = await meta.json() as any;
     expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/file`);
     expect(body.share.public_url).toBeNull();
 
@@ -208,9 +195,7 @@ describe('public session preview shares', () => {
       filePath: '/workspace/app/index.html',
     };
 
-    const res = await app().request(
-      `/v1/p/public-share/${SHARE_TOKEN}/file/abs/workspace/app/style.css`,
-    );
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file/abs/workspace/app/style.css`);
     expect(res.status).toBe(403);
     expect(fetchUrls.length).toBe(0);
   });
@@ -224,9 +209,7 @@ describe('public session preview shares', () => {
       filePath: '/workspace/app/index.html',
     };
 
-    const res = await app().request(
-      `/v1/p/public-share/${SHARE_TOKEN}/file/open?path=/workspace/secret.env`,
-    );
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file/open?path=/workspace/secret.env`);
     expect(res.status).toBe(200);
     expect(fetchUrls.at(-1)).toBe('https://preview.test/open?path=%2Fworkspace%2Fapp%2Findex.html');
   });
@@ -259,5 +242,100 @@ describe('public session preview shares', () => {
       body: '{}',
     });
     expect(res.status).toBe(405);
+  });
+
+});
+
+describe('path-form public shares delegate to the shared sandbox forwarder', () => {
+  test('a preview share and a file share return the same status and body', async () => {
+    const preview = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+    expect(preview.status).toBe(200);
+    expect(await preview.text()).toBe('ok');
+    expect(updateCalls).toBe(1);
+
+    shareRow = {
+      ...shareRow,
+      resourceType: 'file',
+      label: 'index.html',
+      port: null,
+      filePath: '/workspace/app/index.html',
+    };
+    const file = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file`);
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe('ok');
+  });
+
+  test('a 502 invalidates the link and re-resolves the ingress once before it succeeds', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response('bad gateway', { status: 502 })
+        : new Response('ok', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(calls).toBe(2);
+    expect(invalidations).toBe(1);
+    expect(ingressResolves).toBe(2);
+  });
+
+  test('a dead-signal 400 wakes the sandbox and re-resolves the ingress', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response('no IP address found', { status: 400 })
+        : new Response('ok', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+    expect(res.status).toBe(200);
+    expect(wakes).toBe(1);
+    expect(ingressResolves).toBe(2);
+  });
+});
+
+describe('public transcript shares on the proxy edge', () => {
+  beforeEach(() => {
+    shareRow = {
+      ...shareRow,
+      resourceType: 'transcript',
+      label: 'Conversation',
+      port: null,
+      filePath: null,
+      externalId: null,
+      sandboxStatus: null,
+    };
+  });
+
+  test('a transcript share resolves without a sandbox and names its public messages route', async () => {
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.share.resource_type).toBe('transcript');
+    expect(body.share.proxy_path).toBe(`/v1/public/session-shares/${SHARE_TOKEN}/messages`);
+    expect(body.share.public_url.endsWith(`/share/session/${SHARE_TOKEN}`)).toBe(true);
+  });
+
+  test('a transcript share opens no port and no file', async () => {
+    shareRow = { ...shareRow, externalId: EXTERNAL_ID, sandboxStatus: 'active' };
+    for (const path of ['3000/', 'file', 'file/open']) {
+      const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/${path}`);
+      expect(res.status).toBe(403);
+    }
+    expect(fetchUrls.length).toBe(0);
+  });
+});
+
+describe('public shares of a deleted session', () => {
+  test('a tombstoned session ends every link to it → 410', async () => {
+    for (const resourceType of ['preview', 'transcript']) {
+      shareRow = { ...shareRow, resourceType, sessionMetadata: { deletedAt: '2026-09-26T00:00:00.000Z' } };
+      const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+      expect(res.status).toBe(410);
+    }
   });
 });

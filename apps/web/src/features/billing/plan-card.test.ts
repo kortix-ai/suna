@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { AccountState } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 import { describePlanStatus } from './account-overview';
 import { seatProperties } from './plan-card';
@@ -22,6 +22,30 @@ function stateWith(patch: Partial<AccountState>): AccountState {
 }
 
 describe('describePlanStatus', () => {
+  test('uses localized status and seat copy', () => {
+    const state = stateWith({
+      billing_model: 'per_seat',
+      seats: { count: 3 },
+      subscription: {
+        status: 'active',
+        cancel_at_period_end: false,
+        current_period_end: 1790208000,
+      },
+    } as Partial<AccountState>);
+    expect(
+      describePlanStatus(state, {
+        locale: 'sr',
+        teamSeats: (count) => `Тим · ${count} места`,
+        cancels: (date) => `Отказује се ${date}`,
+        cancelsAtPeriodEnd: 'Отказује се на крају периода',
+        renews: (date) => `Обнавља се ${date}`,
+        active: 'Активна',
+        noSubscription: 'Нема претплате',
+        status: (value) => value,
+      }),
+    ).toMatchObject({ name: 'Тим · 3 места', detail: 'Обнавља се 24. сеп' });
+  });
+
   test('a live subscription renews on its period end', () => {
     const status = describePlanStatus(
       stateWith({
@@ -84,6 +108,28 @@ describe('describePlanStatus', () => {
 });
 
 describe('seatProperties', () => {
+  test('uses localized labels, currency, and monthly suffix', () => {
+    expect(
+      seatProperties(
+        stateWith({
+          billing_model: 'per_seat',
+          seats: { count: 3, price_per_seat_usd: 25 },
+        } as Partial<AccountState>),
+        {
+          seats: 'Места',
+          perSeat: 'По месту',
+          monthlyTotal: 'Месечно укупно',
+          perMonth: (amount) => `${amount}/мес`,
+          locale: 'sr',
+        },
+      ),
+    ).toEqual([
+      { id: 'count', label: 'Места', value: '3' },
+      { id: 'price', label: 'По месту', value: '25,00 US$/мес' },
+      { id: 'total', label: 'Месечно укупно', value: '75,00 US$/мес' },
+    ]);
+  });
+
   test('derives the monthly total from count x price', () => {
     expect(
       seatProperties(
@@ -102,7 +148,9 @@ describe('seatProperties', () => {
   test('is null for any account that does not bill per seat', () => {
     // The strip is the one thing on the card a flat plan has no version of —
     // rendering three empty columns would be worse than rendering none.
-    expect(seatProperties(stateWith({ billing_model: 'legacy' } as Partial<AccountState>))).toBeNull();
+    expect(
+      seatProperties(stateWith({ billing_model: 'legacy' } as Partial<AccountState>)),
+    ).toBeNull();
     expect(seatProperties(stateWith({}))).toBeNull();
   });
 

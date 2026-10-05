@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { RELEASES_PAGE, getLatestRelease } from '@/features/marketing/download/releases';
 

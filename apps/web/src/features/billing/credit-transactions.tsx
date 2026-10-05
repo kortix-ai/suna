@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -42,7 +42,7 @@ export default function CreditTransactions({ accountId }: Props) {
     return (
       <div className="border-border text-muted-foreground flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-10 text-center text-sm">
         <Coins className="text-muted-foreground/50 size-5" />
-        <p>Credits and billing are not available on this instance.</p>
+        <p>{tHardcodedUi.raw('i18nComplete.texte95b29e0f9c7')}</p>
       </div>
     );
   }
@@ -69,8 +69,8 @@ export default function CreditTransactions({ accountId }: Props) {
 
   if (error) {
     return (
-      <InfoBanner tone="destructive" title="Failed to load transactions">
-        {error.message || 'Failed to load transactions'}
+      <InfoBanner tone="destructive" title={tHardcodedUi.raw('i18nComplete.textd7982e9989d5')}>
+        {error.message || tHardcodedUi.raw('i18nComplete.textd7982e9989d5')}
       </InfoBanner>
     );
   }
@@ -102,7 +102,9 @@ export default function CreditTransactions({ accountId }: Props) {
             <SelectItem value="tier_grant">
               {tHardcodedUi.raw('componentsBillingCreditTransactions.line163JsxTextTierGrant')}
             </SelectItem>
-            <SelectItem value="purchase">Purchase</SelectItem>
+            <SelectItem value="purchase">
+              {tHardcodedUi.raw('i18nComplete.text5b5e9c65b400')}
+            </SelectItem>
             <SelectItem value="auto_topup">
               {tHardcodedUi.raw('componentsBillingCreditTransactions.line165JsxTextAutoTopUp')}
             </SelectItem>
@@ -115,21 +117,38 @@ export default function CreditTransactions({ accountId }: Props) {
             <SelectItem value="admin_grant">
               {tHardcodedUi.raw('componentsBillingCreditTransactions.line168JsxTextAdminGrant')}
             </SelectItem>
-            <SelectItem value="usage">Usage</SelectItem>
-            <SelectItem value="refund">Refund</SelectItem>
-            <SelectItem value="expired">Expired</SelectItem>
-            <SelectItem value="adjustment">Adjustment</SelectItem>
-            <SelectItem value="promotional">Promotional</SelectItem>
+            <SelectItem value="usage">
+              {tHardcodedUi.raw('i18nComplete.text8d59829c1e15')}
+            </SelectItem>
+            <SelectItem value="refund">
+              {tHardcodedUi.raw('i18nComplete.text6b37bd35081f')}
+            </SelectItem>
+            <SelectItem value="expired">
+              {tHardcodedUi.raw('i18nComplete.text424a2551d356')}
+            </SelectItem>
+            <SelectItem value="adjustment">
+              {tHardcodedUi.raw('i18nComplete.textc416069b7f61')}
+            </SelectItem>
+            <SelectItem value="promotional">
+              {tHardcodedUi.raw('i18nComplete.texta9b8859fba62')}
+            </SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="ghost" size="icon" aria-label="Refresh" onClick={() => refetch()}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={tHardcodedUi.raw('i18nComplete.text0e9161011702')}
+          onClick={() => refetch()}
+        >
           <RefreshCw className="size-4" />
         </Button>
       </div>
 
       {transactions.length === 0 ? (
         <p className="text-muted-foreground px-3 py-8 text-center text-sm">
-          {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
+          {typeFilter
+            ? tHardcodedUi('i18nComplete.texta2f7df9323a1', { value0: typeFilter })
+            : tHardcodedUi.raw('i18nComplete.text7f85693ab42b')}
         </p>
       ) : (
         <>
@@ -147,8 +166,10 @@ export default function CreditTransactions({ accountId }: Props) {
           {data?.pagination && (
             <div className="flex items-center justify-between">
               <p className="text-muted-foreground text-xs tabular-nums">
-                Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of{' '}
-                {data.pagination.total} transactions
+                {tHardcodedUi.raw('i18nComplete.textd604310a789a')} {offset + 1}-
+                {Math.min(offset + limit, data.pagination.total)}{' '}
+                {tHardcodedUi.raw('i18nComplete.text28391d3bc64e')} {data.pagination.total}{' '}
+                {tHardcodedUi.raw('i18nComplete.text81dc075c3d55')}
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -157,7 +178,7 @@ export default function CreditTransactions({ accountId }: Props) {
                   onClick={handlePrevPage}
                   disabled={offset === 0}
                 >
-                  Previous
+                  {tHardcodedUi.raw('i18nComplete.texta57b08a480b8')}
                 </Button>
                 <Button
                   variant="outline"
@@ -165,7 +186,7 @@ export default function CreditTransactions({ accountId }: Props) {
                   onClick={handleNextPage}
                   disabled={!data.pagination.has_more}
                 >
-                  Next
+                  {tHardcodedUi.raw('i18nComplete.text1ff57a29d7c9')}
                 </Button>
               </div>
             </div>

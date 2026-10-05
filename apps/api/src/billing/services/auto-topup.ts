@@ -5,6 +5,7 @@
  * we charge their Stripe default payment method off-session and grant credits.
  */
 
+import type Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
@@ -16,7 +17,7 @@ import {
 } from './auto-topup-payment-method';
 import { resolveAccountBilling } from './billing-cache';
 import { isDeadSubscriptionStatus } from './billing-state';
-import { grantCredits } from './credits';
+import { wallet } from '../wallet';
 import { isPaidTier } from './tiers';
 import { BillingError } from '../../errors';
 import {
@@ -56,6 +57,9 @@ const HARD_DECLINE_CODES = new Set([
   'fraudulent',
   'authentication_required',
 ]);
+
+/** PaymentIntent metadata key marking an auto-topup that settles asynchronously. */
+const ASYNC_SETTLEMENT_KEY = 'async_settlement';
 
 /** Per-account in-process mutex: dedup concurrent triggers within a single API instance. */
 const inFlight = new Map<string, Promise<void>>();
@@ -254,6 +258,24 @@ async function tryAutoTopup(accountId: string): Promise<void> {
   }
 
   const stripe = getStripe();
+
+  // A bank-debit auto-topup sits in `processing` for up to several days before
+  // it succeeds. The balance stays low the whole time, so without this check
+  // every trigger after the 60 s cooldown would start ANOTHER debit for the
+  // same shortfall. One unsettled auto-topup at a time.
+  let pending: string | null;
+  try {
+    pending = await findProcessingAutoTopup(customer.id, accountId);
+  } catch (err) {
+    // Unknown is not "none": skip this trigger rather than risk a second debit.
+    console.warn(`[AutoTopup] ${accountId}: could not list pending payments; skipping this trigger:`, err instanceof Error ? err.message : err);
+    return;
+  }
+  if (pending) {
+    console.log(`[AutoTopup] ${accountId}: payment ${pending} is still processing; not charging again`);
+    return;
+  }
+
   try {
     const chargeWindow = Math.floor(Date.now() / CHARGE_COOLDOWN_MS);
     const idempotencyKey = `auto-topup:${accountId}:${amount.toFixed(2)}:${chargeWindow}`;
@@ -277,23 +299,30 @@ async function tryAutoTopup(accountId: string): Promise<void> {
     });
 
     if (paymentIntent.status === 'succeeded') {
-      await grantCredits(
-        accountId,
-        amount,
-        'purchase',
-        `Auto-topup: $${amount.toFixed(2)} (balance was $${freshBalance.toFixed(2)}, threshold $${threshold.toFixed(2)})`,
-        false,
-        paymentIntent.id,
-      );
+      await grantAutoTopup(accountId, paymentIntent.id, amount, `balance was $${freshBalance.toFixed(2)}, threshold $${threshold.toFixed(2)}`);
+      console.log(`[AutoTopup] charged $${amount} for ${accountId} (balance was $${freshBalance.toFixed(2)})`);
+    } else if (paymentIntent.status === 'processing') {
+      // Not a failure: an asynchronous method (ACH debit, bank-backed Link)
+      // accepted the charge and settles later. Grant nothing now; the
+      // `payment_intent.succeeded` webhook grants under the same PaymentIntent
+      // key (settleAutoTopupPaymentIntent). Start the cooldown so the next
+      // trigger re-checks instead of charging on every debit.
       await updateCreditAccount(accountId, {
         autoTopupLastCharged: new Date().toISOString(),
-        autoTopupConsecutiveFailures: 0,
-        autoTopupDisabledReason: null,
       } as any);
-      console.log(`[AutoTopup] charged $${amount} for ${accountId} (balance was $${freshBalance.toFixed(2)})`);
+      // Tag the PaymentIntent so a later `payment_intent.payment_failed` is
+      // counted as this attempt's failure. A synchronous decline is counted
+      // right here in the catch below and carries no tag, so it is never
+      // counted twice. Best effort: an untagged async failure is not counted.
+      await stripe.paymentIntents
+        .update(paymentIntent.id, { metadata: { [ASYNC_SETTLEMENT_KEY]: 'true' } })
+        .catch((err: unknown) =>
+          console.warn(`[AutoTopup] could not tag ${paymentIntent.id} as async:`, err instanceof Error ? err.message : err),
+        );
+      console.log(`[AutoTopup] payment ${paymentIntent.id} for ${accountId} is processing; credit follows payment_intent.succeeded`);
     } else {
-      // Pending / requires_action / requires_payment_method — count as a soft
-      // failure so we back off, but don't auto-disable.
+      // requires_action / requires_payment_method — count as a soft failure
+      // so we back off, but don't auto-disable.
       await handleFailedCharge(accountId, previousFailures, `payment_intent_status:${paymentIntent.status}`, false);
       console.warn(`[AutoTopup] payment intent status: ${paymentIntent.status} for ${accountId}`);
     }
@@ -303,6 +332,78 @@ async function tryAutoTopup(accountId: string): Promise<void> {
     const isHardDecline = errCode != null && HARD_DECLINE_CODES.has(errCode);
     console.error(`[AutoTopup] payment failed for ${accountId} (code=${errCode ?? 'unknown'}, hard=${isHardDecline}):`, errMessage);
     await handleFailedCharge(accountId, previousFailures, errCode ?? errMessage.slice(0, 200), isHardDecline);
+  }
+}
+
+/**
+ * Grant the credit a SUCCEEDED auto-topup PaymentIntent paid for, and clear
+ * the failure state. The grant key is the PaymentIntent id, so the synchronous
+ * path and the `payment_intent.succeeded` webhook grant exactly once between
+ * them.
+ */
+async function grantAutoTopup(accountId: string, paymentIntentId: string, amount: number, context: string) {
+  await wallet.grant({
+    accountId,
+    amount,
+    kind: 'purchase',
+    description: `Auto-topup: $${amount.toFixed(2)} (${context})`,
+    expiring: false,
+    key: { event: paymentIntentId },
+  });
+  await updateCreditAccount(accountId, {
+    autoTopupLastCharged: new Date().toISOString(),
+    autoTopupConsecutiveFailures: 0,
+    autoTopupDisabledReason: null,
+  } as any);
+}
+
+/** Id of this account's auto-topup PaymentIntent that is still `processing`, if any. */
+async function findProcessingAutoTopup(customerId: string, accountId: string): Promise<string | null> {
+  const recent = await getStripe().paymentIntents.list({ customer: customerId, limit: 20 });
+  const pending = recent.data.find(
+    (pi) =>
+      pi.status === 'processing' &&
+      pi.metadata?.type === 'auto_topup' &&
+      pi.metadata?.account_id === accountId,
+  );
+  return pending?.id ?? null;
+}
+
+/**
+ * Settle an auto-topup whose outcome arrived by webhook
+ * (`payment_intent.succeeded` / `payment_intent.payment_failed`). Every other
+ * PaymentIntent (Checkout purchases, subscription invoices) is ignored: those
+ * have their own events.
+ */
+export async function settleAutoTopupPaymentIntent(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  if (paymentIntent.metadata?.type !== 'auto_topup') return;
+  const accountId = paymentIntent.metadata?.account_id;
+  if (!accountId) return;
+
+  if (paymentIntent.status === 'succeeded') {
+    const amount = (paymentIntent.amount_received || paymentIntent.amount) / 100;
+    await grantAutoTopup(accountId, paymentIntent.id, amount, 'settled payment');
+    console.log(`[AutoTopup] settled ${paymentIntent.id} for ${accountId}`);
+    return;
+  }
+
+  // Only an attempt that went `processing` fails by webhook. A synchronous
+  // decline was already counted when the charge call threw.
+  if (
+    paymentIntent.metadata?.[ASYNC_SETTLEMENT_KEY] === 'true' &&
+    (paymentIntent.status === 'requires_payment_method' || paymentIntent.status === 'canceled')
+  ) {
+    const account = await getCreditAccount(accountId);
+    const previousFailures = Number(account?.autoTopupConsecutiveFailures) || 0;
+    const errCode = paymentIntent.last_payment_error?.decline_code ?? paymentIntent.last_payment_error?.code ?? null;
+    const isHardDecline = errCode != null && HARD_DECLINE_CODES.has(errCode);
+    await handleFailedCharge(
+      accountId,
+      previousFailures,
+      errCode ?? `payment_intent_status:${paymentIntent.status}`,
+      isHardDecline,
+    );
+    console.warn(`[AutoTopup] ${paymentIntent.id} for ${accountId} failed after processing (code=${errCode ?? 'unknown'})`);
   }
 }
 

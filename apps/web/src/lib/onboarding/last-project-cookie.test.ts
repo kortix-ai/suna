@@ -21,9 +21,7 @@ const OTHER_PROJECT = '44444444-4444-4444-8444-444444444444';
 
 function stubCookie(value: string | null): { cookie: string } {
   const stub = {
-    cookie: value
-      ? `${LAST_PROJECT_COOKIE}=${encodeURIComponent(value)}`
-      : '',
+    cookie: value ? `${LAST_PROJECT_COOKIE}=${encodeURIComponent(value)}` : '',
   };
   g.document = stub;
   return stub;

@@ -29,6 +29,8 @@ import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
@@ -36,20 +38,16 @@ import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon,
-  DiscordLogoIcon,
-  DownloadSimpleIcon as Download,
-  GithubLogoIcon,
   StackIcon as Layers,
-  LinkedinLogoIcon,
   ListIcon as Menu,
   TextTIcon as Type,
   XIcon as X,
-  XLogoIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import Link from 'next/link';
+import { useTranslations } from '@/i18n/use-translations';
+import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
@@ -57,35 +55,11 @@ const SCROLL_THRESHOLD_UP = 20;
 const CTA_LINK = '/auth';
 
 /**
- * Scroll compaction — height only.
- *
- * At the top of the page the bar breathes. Once the reader scrolls it tucks in:
- * the outer padding drops from 14.72px to 5.52px and the row from 52px to 40px,
- * taking the bar from 66.7px to 51.0px (-23.5%).
- *
- * Nothing moves horizontally. The measure, the logo/nav gap, and every button
- * size are identical in both states, so the only thing that animates is the
- * vertical rhythm — the bar tightens around its contents instead of rearranging
- * them.
- */
-const BAR_TOP_PAD = { rest: 'pt-4', compact: 'pt-1.5' } as const;
-const BAR_ROW_HEIGHT = { rest: 'h-[52px]', compact: 'h-[40px]' } as const;
-
-/**
  * The marketing sections all sit on `mx-auto max-w-7xl px-6`. The bar's surface
  * still spans the viewport, but its contents ride the exact same measure, so the
  * logo's left edge and the CTA's right edge line up with the section text below.
  */
 const CONTENT_MEASURE = 'mx-auto w-full max-w-7xl px-6';
-
-/**
- * The scrolled surface is a blur veil, not a bar with an edge. It extends 22px
- * past the header and its mask fades the blur out over that overhang, so the
- * frosted panel dissolves into the page instead of ending on a line. The row
- * content sits in the fully-opaque top of the mask, so nothing behind the logo
- * or the buttons is ever half-blurred.
- */
-const BAR_VEIL_MASK = '[mask-image:linear-gradient(to_bottom,#000_0%,#000_72%,transparent_100%)]';
 
 /** The links a drawer row expands to; empty for a row that simply navigates. */
 function drawerSubLinks(item: NavLink): NavSubLink[] {
@@ -100,22 +74,15 @@ function drawerSubLinks(item: NavLink): NavSubLink[] {
  */
 const DRAWER_ROW = 'flex items-center py-2 text-lg font-medium transition-colors';
 
-const DRAWER_SOCIALS = [
-  { label: 'X', href: 'https://x.com/kortix', icon: XLogoIcon },
-  { label: 'LinkedIn', href: 'https://linkedin.com/company/kortix', icon: LinkedinLogoIcon },
-  { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', icon: DiscordLogoIcon },
-  { label: 'GitHub', href: 'https://github.com/kortix-ai/suna', icon: GithubLogoIcon },
-] as const;
-
 interface NavbarProps {
   isAbsolute?: boolean;
 }
 
 export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [openDrawerMenu, setOpenDrawerMenu] = useState<number | null>(null);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -139,7 +106,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     setProjectsHref((prev) => (prev === next ? prev : next));
   });
 
-  const filteredNavLinks = siteConfig.nav.links;
+  const filteredNavLinks = localizeUiCatalog(
+    siteConfig.nav.links,
+    tI18nComplete,
+    SITE_CONFIG_TRANSLATION_KEYS,
+  );
   const { stars, formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
   const openDemo = useRequestDemo();
 
@@ -161,9 +132,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     try {
       const svg = await (await fetch(path)).text();
       await navigator.clipboard.writeText(svg);
-      successToast(tHardcodedUi.raw('componentsHomeNavbar.svgCopied'));
+      successToast(tHardcodedUi.raw('i18nComplete.textc46a054cc5d2'));
     } catch {
-      errorToast(tHardcodedUi.raw('componentsHomeNavbar.copyFailed'));
+      errorToast(tHardcodedUi.raw('i18nComplete.text5d9940f7d30f'));
     }
   };
 
@@ -263,7 +234,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               <ContextMenuTrigger asChild className="group/kortix-logo">
                 <Link
                   href="/"
-                  aria-label="Kortix home"
+                  aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
                   className="hit-area-4 group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex shrink-0 items-center"
                 >
                   <KortixLogo size={15} variant="logomark" />
@@ -391,8 +362,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Github className="size-4 text-foreground" />
-                  <span className={cn('font-medium text-foreground tabular-nums', starsLoading && 'opacity-50')}>
+                  <Github className="text-foreground size-4" />
+                  <span
+                    className={cn(
+                      'text-foreground font-medium tabular-nums',
+                      starsLoading && 'opacity-50',
+                    )}
+                  >
                     {formattedStars}
                   </span>
                 </Link>
@@ -402,7 +378,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             {user ? (
               <Button size="sm" asChild>
                 <Link href={projectsHref} prefetch>
-                  Projects
+                  {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 </Link>
               </Button>
             ) : (
@@ -435,7 +411,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           >
             <Link
               href="/"
-              aria-label="Kortix home"
+              aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
               onClick={() => setIsDrawerOpen(false)}
               className="flex items-center"
             >
@@ -535,7 +511,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 onClick={() => setIsDrawerOpen(false)}
                 className="text-muted-foreground active:text-foreground flex items-center gap-1.5 text-base transition-colors"
               >
-                Projects
+                {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 <ArrowRightIcon className="size-4" />
               </Link>
             ) : (

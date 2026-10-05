@@ -43,7 +43,11 @@ function Crumbs({ crumbs }: { crumbs: MarketplaceCrumb[] }) {
                   <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>
                 ) : crumb.onClick ? (
                   <BreadcrumbLink asChild>
-                    <button type="button" onClick={crumb.onClick} className="truncate cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={crumb.onClick}
+                      className="cursor-pointer truncate"
+                    >
                       {crumb.label}
                     </button>
                   </BreadcrumbLink>
@@ -114,7 +118,7 @@ function EmbeddedShell({
       <div className="relative min-h-0 min-w-0 flex-1">
         <div
           className={cn(
-            'from-background pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b to-transparent transition-opacity duration-200',
+            'from-background pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b to-transparent transition-opacity duration-(--duration-moderate)',
             scrolled ? 'opacity-100' : 'opacity-0',
           )}
           aria-hidden
@@ -132,7 +136,8 @@ function EmbeddedShell({
  * page, the item detail page, AND the in-project Customize overlay. A
  * breadcrumb trail pinned in a left rail, plus a wide main column.
  *
- * - **Page** (default): window-scrolled, the rail is `sticky` to the viewport.
+ * - **Page** (default): window-scrolled, a 3/12 rail `sticky` to the viewport
+ *   beside a 9/12 main column that runs to the container's right edge.
  * - **`embedded`** (Customize panel): the whole thing fills its parent's height
  *   (`h-full`); on desktop the rail stays put and ONLY the main column scrolls
  *   (`scrollRef` is attached there so a virtualized grid measures against it),
@@ -143,12 +148,15 @@ export function MarketplaceShell({
   sidebar,
   children,
   embedded = false,
+  sidebarLast = false,
   scrollRef,
 }: {
   crumbs: MarketplaceCrumb[];
   sidebar: ReactNode;
   children: ReactNode;
   embedded?: boolean;
+  /** Page only: below `lg`, render the rail after the main column. */
+  sidebarLast?: boolean;
   /** Embedded only: attached to the scrolling main column (grid virtualizes
    *  against it). Typed broadly to match the grid's ref; it's a `div`. */
   scrollRef?: RefObject<HTMLElement | null>;
@@ -162,17 +170,21 @@ export function MarketplaceShell({
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 pt-28 pb-24 lg:px-0 lg:pt-32">
-      <div className="grid grid-cols-12 gap-6 lg:gap-8">
-        {/* The breadcrumb lives INSIDE the sticky rail (not a full-width row
-            above the grid) so it stays pinned with the sidebar as the main
-            column scrolls. */}
-        <div className="col-span-12 lg:col-span-3">
-          <aside className="min-w-0 space-y-6 lg:sticky lg:top-32 lg:self-start">
-            <Crumbs crumbs={crumbs} />
-            {sidebar}
-          </aside>
-        </div>
+    <div className="mx-auto max-w-7xl px-6 pt-28 pb-24 lg:pt-32">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:gap-5">
+        {/* The rail is sticky on desktop; its breadcrumb lives inside it so it
+            stays pinned with the sidebar as the main column scrolls. On a
+            detail page (`sidebarLast`) the rail's metadata reads after the
+            content on mobile, the way the content-first column expects. */}
+        <aside
+          className={cn(
+            'min-w-0 space-y-6 lg:sticky lg:top-32 lg:col-span-3 lg:self-start',
+            sidebarLast && 'order-last lg:order-none',
+          )}
+        >
+          <Crumbs crumbs={crumbs} />
+          {sidebar}
+        </aside>
 
         <div className="min-w-0 lg:col-span-9">{children}</div>
       </div>

@@ -4,13 +4,14 @@ import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 
 import { insertMention } from '../editor/mention-node';
-import { baseSuggestion } from '../editor/suggestion';
 import type { MenuController } from '../editor/suggestion';
-import { MentionMenuHost } from './mention-menu';
-import { mountSuggestionMenu } from './mount';
+import { baseSuggestion } from '../editor/suggestion';
 import type { MentionMenuHostProps } from './mention-menu';
+import { MentionMenuHost } from './mention-menu';
 import type { MenuRow } from './menu-items';
 import { MenuNavState } from './menu-nav-state';
+import { menuNavigation } from './menu-navigation';
+import { mountSuggestionMenu } from './mount';
 
 export const MENTION_PLUGIN_KEY = new PluginKey('mentionSuggestion');
 
@@ -127,33 +128,18 @@ export function createMentionSuggestion(
         onHover,
       });
     },
-    onKeyDown({ event }) {
-      if (!nav.getRows().length) return false;
-      if (event.key === 'ArrowDown') {
-        nav.move(1);
-        renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
-        return true;
-      }
-      if (event.key === 'ArrowUp') {
-        nav.move(-1);
-        renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
-        return true;
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        const row = nav.getSelectedRow();
-        if (row) latestCommand?.(row);
-        return true;
-      }
-      return false;
-    },
-    onExit() {
-      nav.close();
-      unmount?.();
-      renderer?.destroy();
-      renderer = null;
-      unmount = null;
-      latestCommand = null;
-    },
+    ...menuNavigation(
+      nav,
+      () => renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() }),
+      (row) => latestCommand?.(row),
+      () => {
+        unmount?.();
+        renderer?.destroy();
+        renderer = null;
+        unmount = null;
+        latestCommand = null;
+      },
+    ),
   };
 
   return {

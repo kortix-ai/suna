@@ -2,7 +2,7 @@
 //
 // The manifest declares its own schema version: `kortix_version` is REQUIRED by
 // every published schema (`kortix.v1.schema.json` and
-// `kortix.v2.schema.json` each pin it to a
+// `kortix.v2.schema.json` and `kortix.v3.schema.json` each pin it to a
 // `const`). So the version is read, never inferred — there is no sniffing of
 // which keys happen to be present.
 //
@@ -22,22 +22,13 @@ import { type ManifestFormat, parseManifestText } from '@kortix/manifest-schema'
 
 /** Highest manifest schema version this platform ships and reads. Mirrored by
  *  `MAX_SCHEMA_VERSION` in `../triggers` (kept separate to avoid an import
- *  cycle: `triggers` pulls in the git layer, which consumes this module) and by
- *  `KNOWN_SCHEMA_VERSION` in `@kortix/manifest-schema`. All three are pinned
- *  together by `apps/api/src/__tests__/manifest-ceiling.test.ts`. */
+ *  cycle: `triggers` pulls in the git layer, which consumes this module). */
 export const LATEST_MANIFEST_VERSION = 3;
 
 /**
- * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists (the
- * `kortix.toml` → `kortix.yaml` governance conversion).
- *
- * There is deliberately NO 2 → 3 entry. v3 is not the next rung on this
- * ladder — it is the pi runtime's manifest, and adopting it means MOVING the
- * project's agents from `.kortix/opencode` to `.kortix/pi` and running a
- * different runtime. No code performs that move, and per this module's own
- * rule, advertising a jump the product cannot perform is a bug. So a v2
- * project reads as `latest_version: 3, migration_offered: false`: honest that
- * v3 exists, honest that nothing will convert it for you.
+ * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists today (the
+ * `kortix.toml` → `kortix.yaml` governance conversion). Version 3 is the
+ * current schema. No automatic v2 → v3 migration exists: v2 agents depend on Markdown files.
  */
 const MIGRATIONS: Readonly<Record<number, number>> = { 1: 2 };
 
@@ -48,7 +39,7 @@ export type ManifestUnknownReason =
   | 'unparsable'
   /** Parses, but declares no usable integer `kortix_version`. */
   | 'undeclared'
-  /** Hidden from this caller — no `project.customize.read`. */
+  /** Hidden from this caller — no `project.file.read`. */
   | 'restricted';
 
 export interface ProjectManifestVerdict {

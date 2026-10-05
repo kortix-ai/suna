@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { CreateSessionPromptInput, RemovedSessionPrompt } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import { createQueueUndoAction, restoreQueuedMessage } from './queued-message-restore';
 
 function removed(overrides: Partial<RemovedSessionPrompt> = {}): RemovedSessionPrompt {
@@ -52,9 +52,9 @@ describe('restoreQueuedMessage', () => {
   test('omits `overrides` entirely when the prompt carried none', () => {
     // `undefined` and `{}` are not the same downstream: an empty object would
     // send "no agent, no model" rather than "resolve at delivery".
-    expect(restoreQueuedMessage(removed({ overrides: null }), () => 'msg_fresh')).not.toHaveProperty(
-      'overrides',
-    );
+    expect(
+      restoreQueuedMessage(removed({ overrides: null }), () => 'msg_fresh'),
+    ).not.toHaveProperty('overrides');
   });
 });
 

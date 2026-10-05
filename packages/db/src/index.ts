@@ -1,11 +1,12 @@
 // Main exports
-export { createDb, type Database } from './client';
+export { createDb, instrumentSql, type Database, type DbHooks } from './client';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
 export {
   // Schema namespace
   kortixSchema,
+  usedRefreshTokens,
   // Enums
   sandboxStatusEnum,
   projectStatusEnum,
@@ -20,14 +21,17 @@ export {
   accounts,
   accountMembers,
   accountMemberships,
+  accountScimUsers,
   accountInvitations,
   accountGithubInstallations,
   accountGithubInstallationStates,
+  accountGithubUserTokens,
   accountRoleEnum,
   accountsRelations,
-  accountMembersRelations,
   accountGithubInstallationsRelations,
   auditEvents,
+  auditEventsAll,
+  auditArchiveChunks,
   auditSessionSequences,
   usageEvents,
   gatewayRequestLogs,
@@ -38,9 +42,15 @@ export {
   projects,
   projectGitConnections,
   projectGitCredentials,
+  projectSnapshotArchives,
+  configReleases,
+  configReleaseFailures,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
+  accountSecretResources,
+  accountSecretGrants,
+  sessionProviderSecretPools,
   projectSessionSecretHandles,
   projectSecretHandleStatusEnum,
   projectSecretConsumerEnum,
@@ -66,12 +76,8 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  sessionPresenceLeases,
   projectSessionRuntimeContexts,
-  sessionWorkerLog,
-  piRuntimeArtifacts,
-  filesystems,
-  filesystemFiles,
-  filesystemBlobs,
   accountModelPreferences,
   projectLlmRoutingPolicies,
   projectSessionGrants,
@@ -100,7 +106,6 @@ export {
   projectsRelations,
   projectGitConnectionsRelations,
   projectGitCredentialsRelations,
-  projectMembersRelations,
   projectSecretsRelations,
   projectSessionsRelations,
   projectSessionRuntimeContextsRelations,
@@ -114,6 +119,8 @@ export {
   creditUsage,
   accountDeletionRequests,
   creditPurchases,
+  // Mobile push notification device tokens
+  pushDeviceTokens,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,
@@ -225,8 +232,11 @@ export {
   connectorPolicies,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectorSyncFences,
   connectorCalls,
   connectorAttachments,
+  promptAttachments,
+  promptAttachmentReferences,
   sessionToolApprovals,
   connectorsRelations,
   connectorActionsRelations,
@@ -234,7 +244,8 @@ export {
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
 } from './schema/kortix';
-export type { AgentGrant } from './schema/kortix';
+export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
+export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
@@ -253,11 +264,9 @@ export type {
   Account,
   AccountMember,
   NewAccount,
-  NewAccountMember,
   Project,
   NewProject,
   ProjectMember,
-  NewProjectMember,
   ProjectSecret,
   NewProjectSecret,
   ChatChannelBinding,
@@ -295,3 +304,5 @@ export type {
   GatewayBudget,
   NewGatewayBudget,
 } from './types';
+
+export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

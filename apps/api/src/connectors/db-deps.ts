@@ -1,3 +1,4 @@
+import { mapLimit } from '@kortix/registry';
 import {
   connectorConnections,
   connectorActions,
@@ -10,24 +11,27 @@ import {
   projectSessionConnectorBindings,
   projectSessions,
   projects,
-  tunnelConnections,
 } from '@kortix/db';
+import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { sanitizeConnectorHeaders, SLUG_RE } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 /**
  * Production wiring for the connector router — DB-backed ConnectorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,
  * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
- * is the glue to Postgres + the credential store + Pipedream. See docs/specs/connector.md.
+ * is the glue to Postgres + the credential store + Pipedream.
  */
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { bindSlackThreadToSession } from '../channels/slack/binding';
+import { slackUserNames } from '../channels/slack/labels';
 import {
   loadAgentMailApiKeyForInbox,
   loadAgentMailApiKeyForProject,
   loadAgentMailInstall,
   loadSlackInstall,
+  loadSlackTeamIdForProject,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsInstall,
@@ -35,41 +39,67 @@ import {
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
+import { bindIntegrationPrincipal } from '../shared/audit-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorOf } from '../iam/actor';
-import { agentMayUseConnector } from '../iam/agent-scope';
+import { principalMayUseConnector } from './principal-access';
 import type { ChannelPlatform } from '../projects/connectors';
 import { invalidateProjectMirror } from '../projects/git';
 import { loadProjectForUser } from '../projects/lib/access';
-import { connectorAuthorizationMatchesStrategy } from '../projects/lib/connector-authorization-strategy';
+import {
+  connectionIsReachable,
+  type ConnectionOwnerType,
+  type ConnectorConnectOwner,
+} from '../projects/lib/connection-access';
 import { reconcileStoredSessionAgentGrant } from '../projects/lib/session-token-grant';
-import { getProjectSecretValueForConsumer } from '../projects/secrets';
+import {
+  getProjectSecretConsumerConfigurationStatus,
+  getProjectSecretValueForConsumer,
+} from '../projects/secrets';
 import {
   canonicalConnectorAlias,
+  listEntitledConnectorConnections,
+  listEntitledConnectorConnectionsBatch,
   publicConnectorAlias,
   resolveSessionConnectorConnection,
+  resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
+import { tokenAgentPrincipalScope } from '../projects/lib/personal-resources';
 import { connectorAttachmentStore } from './attachments';
-import { computerProfileSpec } from './computer-materialize';
-import { COMPUTER_SLUG, computerLabel } from './computers';
+import { gateChannelRead } from './channel-read-scope';
+import { gateChannelWrite } from './channel-write-scope';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
 import { notifyConnectorSession } from './notify-session';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
 import {
   connectorIdsWithSharedCredentials,
+  connectorIdsWithReachableMemberCredential,
+  connectionIsEffectiveProjectDefault,
   credentialExists,
+  defaultConnectionIdForConnector,
   deleteCredential,
   connectionCredentialExists,
   ensureDefaultConnection,
+  ensureMemberConnection,
   resolveCredentialValue,
   resolveConnectionCredentialValue,
 } from './credentials';
-import type { ConnectorAuth, FetchImpl } from './call';
+import {
+  connectedAsOf,
+  relabelToIdentity,
+  resolveConnectedAs,
+  rowMetadata,
+  CONNECTED_AS_KEY,
+} from './connection-identity';
+import type { ConnectorAuth } from './call';
+import { connectorEgressFetch } from './egress';
+import { CredentialNotSharedError } from './gateway';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
 import {
   type ConnectorDraft,
@@ -110,15 +140,23 @@ import {
 } from './policy';
 import type {
   AdminConnectorView,
+  CatalogAccount,
   CatalogConnector,
   ConnectorPrincipal,
   ConnectorRouterDeps,
+  ListCatalogOptions,
 } from './router';
+import { COMPUTER_SLUG, withComputerCatalog } from './computers';
 import { resolveShareSubject } from './share';
-import { getConnectorCatalogDetail, listConnectorCatalog } from './connector-catalog';
+import {
+  connectorCatalogSections,
+  getConnectorCatalogDetail,
+  listConnectorCatalog,
+} from './connector-catalog';
 import {
   discoverDraftConnectorAuth,
-  materializeComputerConnectorProfile,
+  ensureComputerConnector,
+  ensureProjectComputer,
   setMaterializedComputerConnectorPolicies,
   syncProjectConnectors,
 } from './sync';
@@ -137,67 +175,6 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 function isUuid(value: string): boolean {
   return UUID_REGEX.test(value);
-}
-
-function computerTunnelIds(configValue: unknown, slug: string): string[] | null {
-  const config = (configValue ?? {}) as Record<string, unknown>;
-  if (Array.isArray(config.tunnel_ids)) {
-    return [
-      ...new Set(config.tunnel_ids.filter((value): value is string => typeof value === 'string')),
-    ];
-  }
-  if (typeof config.tunnel_id === 'string') return [config.tunnel_id];
-  // Compatibility for durable sessions bound to the original aggregate row.
-  return slug === COMPUTER_SLUG ? null : [];
-}
-
-function computerTunnelAccountIds(
-  configValue: unknown,
-  projectAccountId: string,
-  slug: string,
-): string[] | null {
-  const config = (configValue ?? {}) as Record<string, unknown>;
-  if (Array.isArray(config.tunnel_account_ids)) {
-    return [
-      ...new Set(
-        config.tunnel_account_ids.filter(
-          (value): value is string => typeof value === 'string' && value.length > 0,
-        ),
-      ),
-    ];
-  }
-  return slug === COMPUTER_SLUG && !Array.isArray(config.tunnel_ids) ? null : [projectAccountId];
-}
-
-function isLegacyComputerAggregate(row: {
-  providerType: string;
-  slug: string;
-  config: unknown;
-}): boolean {
-  if (row.providerType !== 'computer' || row.slug !== COMPUTER_SLUG) return false;
-  const config = (row.config ?? {}) as Record<string, unknown>;
-  return !Array.isArray(config.tunnel_ids) && typeof config.tunnel_id !== 'string';
-}
-
-async function principalHasLegacyComputerBinding(
-  principal: ConnectorPrincipal,
-  connectorId: string,
-): Promise<boolean> {
-  if (!principal.sessionId) return false;
-  const [binding] = await db
-    .select({ connectorId: projectSessionConnectorBindings.connectorId })
-    .from(projectSessionConnectorBindings)
-    .where(
-      and(
-        eq(projectSessionConnectorBindings.accountId, principal.accountId),
-        eq(projectSessionConnectorBindings.projectId, principal.projectId),
-        eq(projectSessionConnectorBindings.sessionId, principal.sessionId),
-        eq(projectSessionConnectorBindings.connectorAlias, COMPUTER_SLUG),
-        eq(projectSessionConnectorBindings.connectorId, connectorId),
-      ),
-    )
-    .limit(1);
-  return binding !== undefined;
 }
 
 /** How long an unconsumed human approve stays claimable by a fresh call. Long
@@ -340,8 +317,13 @@ export function composioConnectionMetadata(input: {
   /** Kortix session whose agent asked for this connector. Deliberately NOT
    *  `session_id` — that key is Composio's Tool Router session (`trs_…`). */
   requestingSessionId?: string | null;
+  /** The previous metadata. Its row-level keys (`rowMetadata`) are kept. */
+  previous?: unknown;
+  /** The authorized identity (`probeComposioIdentity`). Omitted when unknown. */
+  connectedAs?: string | null;
 }): Record<string, unknown> {
   return {
+    ...rowMetadata(input.previous),
     provider: 'composio',
     toolkit: input.toolkit,
     stable_user_id: input.stableUserId,
@@ -350,6 +332,7 @@ export function composioConnectionMetadata(input: {
     connected_account_id: input.connectedAccountId ?? null,
     is_no_auth: input.isNoAuth,
     requesting_session_id: input.requestingSessionId ?? null,
+    ...(input.connectedAs ? { [CONNECTED_AS_KEY]: input.connectedAs } : {}),
   };
 }
 
@@ -492,13 +475,22 @@ async function connectorConnected(
   if (row.providerType === 'composio') {
     return composioConnectionIsNoAuth(connection?.metadata) || composioConnectedAccountId(connection?.metadata) !== null;
   }
-  return connection
-    ? (await connectionCredentialExists({
-        connectorId: row.connectorId,
-        connectionId: connection.connectionId,
-      })) ||
-        (connection.isDefault && (await credentialExists(row.connectorId, userId)))
-    : credentialExists(row.connectorId, userId);
+  if (!connection) return credentialExists(row.connectorId, userId);
+  if (
+    await connectionCredentialExists({ connectorId: row.connectorId, connectionId: connection.connectionId })
+  ) {
+    return true;
+  }
+  // `connection.isDefault` covers a PINNED default of any owner type (kept as
+  // before). INVARIANT (2026-09-16, account_required rule): a project-owned
+  // connection with nothing pinned ALSO inherits the legacy connector-level
+  // credential when it is the connector's sole active project-owned row — see
+  // `defaultConnectionIdForConnector`. A project connector with one shared
+  // account keeps working exactly as before this change.
+  const inheritsLegacyCredential =
+    connection.isDefault ||
+    (await connectionIsEffectiveProjectDefault(row.connectorId, connection.connectionId));
+  return inheritsLegacyCredential && (await credentialExists(row.connectorId, userId));
 }
 
 function toGatewayConnector(
@@ -507,6 +499,11 @@ function toGatewayConnector(
     connectionId: string;
     isDefault: boolean;
     metadata: Record<string, unknown>;
+    // Optional: only `resolveActiveConnectorConnection` (session-scoped calls)
+    // carries these. Other callers (catalog/discovery paths) pass connections
+    // without them and the gateway simply has no account to echo.
+    label?: string;
+    ownerType?: ConnectionOwnerType;
   } | null,
 ): GatewayConnector {
   const { auth, hasAuth: configuredHasAuth } = authOf(row);
@@ -520,15 +517,11 @@ function toGatewayConnector(
     connectionId: connection?.connectionId ?? null,
     connectionIsDefault: connection?.isDefault ?? false,
     connectionMetadata: connection?.metadata ?? {},
+    connectionLabel: connection?.label ?? null,
+    connectionOwnerType: connection?.ownerType ?? null,
     slug: row.slug,
     provider: row.providerType,
     platform: channelPlatform(row.config),
-    tunnelIds:
-      row.providerType === 'computer' ? computerTunnelIds(row.config, row.slug) : undefined,
-    tunnelAccountIds:
-      row.providerType === 'computer'
-        ? computerTunnelAccountIds(row.config, row.accountId, row.slug)
-        : undefined,
     baseUrl: baseUrlOf(row),
     auth,
     headers: headersOf(row),
@@ -555,51 +548,150 @@ async function resolveActiveConnectorConnection(principal: ConnectorPrincipal, r
     sessionId: principal.sessionId,
     alias: row.slug,
     actingUserId: principal.userId,
+    account: principal.requestedConnectorAccount ?? null,
+    agentPrincipal: principal.agentPrincipal ?? null,
   });
   return connection?.status === 'active' ? connection : null;
 }
 
-const nodeFetch: FetchImpl = async (url, init) => {
-  const res = await fetch(url, {
-    method: init.method,
-    headers: init.headers,
-    body: init.body,
-    ...(init.tls ? { tls: init.tls } : {}),
-  } as RequestInit);
-  // `headers` is what carries `Mcp-Session-Id` back to the MCP session
-  // handshake in call.ts. Without it every MCP call to a stateful server
-  // re-initializes.
-  return { status: res.status, ok: res.ok, text: () => res.text(), headers: res.headers };
-};
-
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
   return {
     attachmentStore: connectorAttachmentStore,
+    // Spec 2026-09-22 §2.5: an agent session calling a same-project Kortix App.
+    appAuthorizationFor: (input) => appAuthorizationForConnectorCall(input),
     loadConnectorBySlug: async (projectId, slug) => {
+      if (canonicalConnectorAlias(slug) === COMPUTER_SLUG) {
+        await ensureProjectComputer(projectId, principal.userId);
+      }
       const [row] = await db
         .select()
         .from(connectors)
         .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
         .limit(1);
       if (!row) return null;
-      if (
-        isLegacyComputerAggregate(row) &&
-        !(await principalHasLegacyComputerBinding(principal, row.connectorId))
-      ) {
-        return null;
-      }
       const connection = await resolveActiveConnectorConnection(principal, row);
       if (!connection) return null;
-      return toGatewayConnector(row, connection);
+      const connector = toGatewayConnector(row, connection);
+      if (row.providerType === 'computer') {
+        const [machine] = await db
+          .select({ tunnelId: connectorConnections.tunnelId })
+          .from(connectorConnections)
+          .where(eq(connectorConnections.connectionId, connection.connectionId))
+          .limit(1);
+        connector.connectionTunnelId = machine?.tunnelId ?? null;
+      }
+      return connector;
+    },
+    selectComputerAccount: async (projectId, slug, selector) => {
+      const [row] = await db
+        .select({ connectorId: connectors.connectorId, providerType: connectors.providerType })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+        .limit(1);
+      if (row?.providerType !== 'computer') return 'not_computer';
+      const name = typeof selector === 'string' ? selector.trim() : '';
+      if (!name) return null;
+      // A tunnel id names the machine; its account ids go first. The name
+      // itself is tried last as an account label or connection id.
+      const byMachine = isUuid(name)
+        ? await db
+            .select({ connectionId: connectorConnections.connectionId })
+            .from(connectorConnections)
+            .where(
+              and(
+                eq(connectorConnections.connectorId, row.connectorId),
+                eq(connectorConnections.tunnelId, name),
+                eq(connectorConnections.status, 'active'),
+              ),
+            )
+        : [];
+      const named = principal.requestedConnectorAccount
+        ? await makeDbGatewayDeps(principal).loadConnectorBySlug(projectId, slug)
+        : null;
+      for (const account of [...byMachine.map((match) => match.connectionId), name]) {
+        const selected = await makeDbGatewayDeps({
+          ...principal,
+          requestedConnectorAccount: account,
+        }).loadConnectorBySlug(projectId, slug);
+        if (!selected) continue;
+        // --account and the legacy argument must agree.
+        if (principal.requestedConnectorAccount && named?.connectionId !== selected.connectionId) {
+          return null;
+        }
+        return selected;
+      }
+      return null;
+    },
+    explainMissingConnector: async (projectId, slug) => {
+      const [row] = await db
+        .select({
+          connectorId: connectors.connectorId,
+          enabled: connectors.enabled,
+          status: connectors.status,
+          providerType: connectors.providerType,
+        })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+        .limit(1);
+      if (!row) return 'connector_not_found';
+      if (!row.enabled || row.status === 'disabled') return 'connector_disabled';
+      // Re-run the SAME resolution `loadConnectorBySlug` just failed (session
+      // binding, visibility, explicit-only gate — all of it), to learn WHY:
+      // `ambiguous` (several reachable accounts, none named or pinned) is
+      // `account_required`, a denial the caller can fix by naming one. Every
+      // other `none` outcome keeps the original `connector_not_connected`.
+      const outcome = await resolveSessionConnectorConnectionOutcome({
+        accountId: principal.accountId,
+        projectId,
+        sessionId: principal.sessionId,
+        alias: slug,
+        actingUserId: principal.userId,
+        account: principal.requestedConnectorAccount ?? null,
+        agentPrincipal: principal.agentPrincipal ?? null,
+      });
+      if (outcome.kind === 'ambiguous') return 'account_required';
+      // Unpairing revokes the machine's accounts and nulls their tunnel_id
+      // (DELETE /tunnel/connections/:id). The caller's own such account, or the
+      // one they named, says why: the computer is gone, not unconnected.
+      if (row.providerType === 'computer') {
+        const named = principal.requestedConnectorAccount?.trim();
+        const [unpaired] = await db
+          .select({ connectionId: connectorConnections.connectionId })
+          .from(connectorConnections)
+          .where(
+            and(
+              eq(connectorConnections.connectorId, row.connectorId),
+              eq(connectorConnections.status, 'revoked'),
+              isNull(connectorConnections.tunnelId),
+              eq(connectorConnections.ownerType, 'member'),
+              eq(connectorConnections.ownerId, principal.userId),
+              named ? eq(connectorConnections.label, named) : undefined,
+            ),
+          )
+          .limit(1);
+        if (unpaired) return 'computer_unpaired';
+      }
+      return 'connector_not_connected';
     },
     loadAction: async (connectorId, relPath) => {
-      const [a] = await db
-        .select()
-        .from(connectorActions)
-        .where(
-          and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
-        )
-        .limit(1);
+      const [[stored], [owner]] = await Promise.all([
+        db
+          .select()
+          .from(connectorActions)
+          .where(
+            and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
+          )
+          .limit(1),
+        db
+          .select({ providerType: connectors.providerType })
+          .from(connectors)
+          .where(eq(connectors.connectorId, connectorId))
+          .limit(1),
+      ]);
+      const a =
+        owner?.providerType === 'computer'
+          ? withComputerCatalog(connectorId, 'computer', []).find((row) => row.path === relPath)
+          : stored;
       if (!a) return null;
       return {
         path: a.path,
@@ -648,7 +740,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           : null;
       if (storedCredential !== null) return storedCredential;
       if (!connector.authSecret) return null;
-      return getProjectSecretValueForConsumer({
+      const value = await getProjectSecretValueForConsumer({
         projectId: principal.projectId,
         accountId: principal.accountId,
         sessionId: principal.sessionId,
@@ -656,10 +748,31 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         name: connector.authSecret,
         consumer: 'connector',
       });
+      if (value !== null) return value;
+      // A configured secret that resolved to nothing for this caller is one
+      // narrowed to an audience they are outside of.
+      const status = await getProjectSecretConsumerConfigurationStatus({
+        projectId: principal.projectId,
+        name: connector.authSecret,
+        consumer: 'connector',
+      });
+      if (status === 'configured') throw new CredentialNotSharedError(connector.authSecret);
+      return null;
     },
     // Session metadata is user-writable, so it is not a trusted routing source
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
+    bindSlackThread: (input) => bindSlackThreadToSession(input),
+    // ponytail: 25 distinct authors per read; a longer thread keeps ids past it.
+    nameSlackUsers: async ({ projectId, token, userIds }) =>
+      slackUserNames(
+        token,
+        (await loadSlackTeamIdForProject(projectId).catch(() => null)) ?? `project:${projectId}`,
+        userIds,
+        25,
+      ),
+    gateChannelRead: (input) => gateChannelRead(input),
+    gateChannelWrite: (input) => gateChannelWrite(input),
     loadEmailSessionContext: async () => null,
     loadEmailConnectorContext: async (projectId, connectorSlug) => {
       const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
@@ -672,6 +785,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     loadDefaultMode: loadDefaultModeFor,
     mintApprovalLink: ({ projectId, executionId, sessionId }) =>
       approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // Lazy: channels import connectors, so a static import here would cycle.
+    postApprovalCard: async (input) =>
+      (await import('../channels/approval-card-relay')).postApprovalCard(input),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(connectorCalls)
@@ -703,31 +819,12 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
       runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
-    // Computers connectors relay through the shared tunnel RPC core (profile
-    // allowlist → account ownership → permission check → relay → audit).
-    executeComputerCall: ({
-      accountId,
-      projectId,
-      sessionId,
-      actorUserId,
-      allowedTunnelIds,
-      allowedTunnelAccountIds,
-      selector,
-      method,
-      args,
-    }) =>
-      executeComputerCall({
-        accountId,
-        projectId,
-        sessionId,
-        actorUserId,
-        allowedTunnelIds,
-        allowedTunnelAccountIds,
-        selector,
-        method,
-        args,
-      }),
-    fetchImpl: nodeFetch,
+    // Computer connectors relay to the resolved account's machine through the
+    // shared tunnel RPC core (wire permission → relay → audit).
+    executeComputerCall,
+    // Every connector request resolves and checks its target, on each
+    // redirect hop too. See egress.ts.
+    fetchImpl: connectorEgressFetch,
     enforcePolicies: true,
   };
 }
@@ -744,6 +841,31 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
     // Conditions are re-validated on READ, never trusted from storage.
     ...parseStoredConditions(r.conditions),
   }));
+}
+
+/** `loadConnectorPoliciesFor`, batched over many connectors in one query
+ *  instead of one `eq(connectorId, ...)` select per connector. */
+async function loadConnectorPoliciesForMany(
+  connectorIds: readonly string[],
+): Promise<Map<string, Policy[]>> {
+  const map = new Map<string, Policy[]>();
+  if (connectorIds.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(connectorPolicies)
+    .where(inArray(connectorPolicies.connectorId, connectorIds));
+  for (const r of rows) {
+    const policy: Policy = {
+      match: r.match,
+      action: r.action,
+      position: r.position,
+      ...parseStoredConditions(r.conditions),
+    };
+    const list = map.get(r.connectorId);
+    if (list) list.push(policy);
+    else map.set(r.connectorId, [policy]);
+  }
+  return map;
 }
 
 async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
@@ -775,7 +897,6 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
       connectorId: connectors.connectorId,
       providerType: connectors.providerType,
       config: connectors.config,
-      authorizationStrategy: connectors.authorizationStrategy,
     })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
@@ -783,11 +904,7 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
   if (!row || row.providerType !== 'pipedream') return null;
   const app = (row.config as any)?.app;
   if (typeof app !== 'string' || !app) return null;
-  return {
-    connectorId: row.connectorId,
-    app,
-    authorizationStrategy: row.authorizationStrategy,
-  };
+  return { connectorId: row.connectorId, app };
 }
 
 /** Load a Composio connector's toolkit slug + id (verifies provider). */
@@ -798,7 +915,6 @@ export async function loadComposioConnector(projectId: string, slug: string) {
       accountId: connectors.accountId,
       providerType: connectors.providerType,
       config: connectors.config,
-      authorizationStrategy: connectors.authorizationStrategy,
     })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
@@ -806,12 +922,7 @@ export async function loadComposioConnector(projectId: string, slug: string) {
   if (!row || row.providerType !== 'composio') return null;
   const app = (row.config as any)?.app;
   if (typeof app !== 'string' || !app) return null;
-  return {
-    connectorId: row.connectorId,
-    accountId: row.accountId,
-    app,
-    authorizationStrategy: row.authorizationStrategy,
-  };
+  return { connectorId: row.connectorId, accountId: row.accountId, app };
 }
 
 type ComposioAdapter = {
@@ -823,6 +934,7 @@ type ComposioAdapter = {
     cursor?: string;
     limit?: number;
   }): Promise<unknown>;
+  composioCatalogSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown>;
   composioConnectUrl(input: {
     projectId: string;
     slug: string;
@@ -841,6 +953,11 @@ type ComposioAdapter = {
     authRequestId?: string;
     expectedConnectedAccountId?: string;
   }): Promise<{ connected: boolean; connectedAccountId?: string; sessionId: string; authRequestId?: string; isNoAuth: boolean }>;
+  probeComposioIdentity?(input: {
+    app: string;
+    sessionId: string;
+    connectedAccountId: string;
+  }): Promise<string | null>;
 };
 
 async function loadComposioAdapter(): Promise<ComposioAdapter | null> {
@@ -864,7 +981,6 @@ export type ConnectLinkEligibility =
       ok: true;
       connectorId: string;
       app: string;
-      authorizationStrategy: string;
       /** Which provider mints the hosted page behind the link. */
       providerType: 'pipedream' | 'composio';
     }
@@ -894,7 +1010,6 @@ export async function connectLinkEligibility(
       connectorId: connectors.connectorId,
       providerType: connectors.providerType,
       config: connectors.config,
-      authorizationStrategy: connectors.authorizationStrategy,
     })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
@@ -919,7 +1034,6 @@ export async function connectLinkEligibility(
     ok: true,
     connectorId: row.connectorId,
     app,
-    authorizationStrategy: row.authorizationStrategy,
     providerType: row.providerType,
   };
 }
@@ -946,6 +1060,51 @@ export function projectSessionIdForProjectPrincipal(
   return tokenProjectId ? (contextualSessionId ?? null) : null;
 }
 
+/**
+ * The channel connector(s) that CREATED a session, resolved from the session's
+ * own `metadata.source` and the project's channel connector rows — never from
+ * the request. See `principalMayUseConnector` for why they stay reachable
+ * under any grant.
+ */
+export async function sessionChannelConnectorSlugs(
+  projectId: string,
+  sessionId: string | null,
+): Promise<string[]> {
+  if (!sessionId) return [];
+  try {
+    const [session] = await db
+      .select({ metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+      .limit(1);
+    const source = (session?.metadata as { source?: unknown } | null)?.source;
+    if (typeof source !== 'string' || !CHANNEL_SOURCES.has(source)) return [];
+    const rows = await db
+      .select({ slug: connectors.slug, config: connectors.config, providerType: connectors.providerType })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.projectId, projectId),
+          eq(connectors.providerType, 'channel'),
+          eq(connectors.enabled, true),
+        ),
+      );
+    return rows
+      .filter((row) => channelPlatform(row.config) === source)
+      .map((row) => canonicalConnectorAlias(row.slug));
+  } catch (err) {
+    console.warn('[connectors] could not resolve the session channel connector', {
+      projectId,
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+/** `project_sessions.metadata.source` values that name a channel platform. */
+const CHANNEL_SOURCES: ReadonlySet<string> = new Set(['slack', 'teams', 'email', 'telegram']);
+
 async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> {
   const header = c.req.header('Authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
@@ -957,19 +1116,30 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
     c.req.header('X-Kortix-Session-Id') ?? null,
   );
   if (!sessionIdentity.ok) return null;
-  const agentGrant = sessionIdentity.sessionId
-    ? await reconcileStoredSessionAgentGrant({
-        projectId: result.projectId,
-        sessionId: sessionIdentity.sessionId,
-      })
-    : (result.agentGrant ?? null);
+  const [agentGrant, channelConnectorSlugs] = await Promise.all([
+    sessionIdentity.sessionId
+      ? reconcileStoredSessionAgentGrant({
+          projectId: result.projectId,
+          sessionId: sessionIdentity.sessionId,
+        })
+      : Promise.resolve(result.agentGrant ?? null),
+    sessionChannelConnectorSlugs(result.projectId, sessionIdentity.sessionId),
+  ]);
   return {
     userId: result.userId,
     accountId: result.accountId,
     projectId: result.projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId: result.tokenId ?? null,
     subject: await resolveShareSubject(result.userId),
     agentGrant,
+    channelConnectorSlugs,
+    agentPrincipal: await tokenAgentPrincipalScope({
+      projectId: result.projectId,
+      tokenId: result.tokenId ?? null,
+      agentGrant,
+      onBehalfOfUserId: result.onBehalfOfUserId ?? null,
+    }),
   };
 }
 
@@ -1025,65 +1195,179 @@ async function resolveProjectPrincipal(
   if (!sessionIdentity.ok) return null;
 
   const storedAgentGrant = (c.get('agentGrant') as ConnectorPrincipal['agentGrant']) ?? null;
-  const agentGrant = sessionIdentity.sessionId
-    ? await reconcileStoredSessionAgentGrant({
-        projectId,
-        sessionId: sessionIdentity.sessionId,
-      })
-    : storedAgentGrant;
+  const [agentGrant, channelConnectorSlugs] = await Promise.all([
+    sessionIdentity.sessionId
+      ? reconcileStoredSessionAgentGrant({
+          projectId,
+          sessionId: sessionIdentity.sessionId,
+        })
+      : Promise.resolve(storedAgentGrant),
+    sessionChannelConnectorSlugs(projectId, sessionIdentity.sessionId),
+  ]);
 
+  const tokenId = (c.get('iamTokenId') as string | undefined) ?? null;
   return {
     userId,
     accountId,
     projectId,
     sessionId: sessionIdentity.sessionId,
+    tokenId,
     subject: await resolveShareSubject(userId),
     agentGrant,
+    channelConnectorSlugs,
+    // Only a project-scoped (session) token can be an agent principal; a
+    // human JWT/PAT keeps the legacy rule. The fresh on_behalf_of comes from
+    // the auth middleware, so a clear by a foreign prompt applies at once.
+    agentPrincipal: tokenProjectId
+      ? await tokenAgentPrincipalScope({
+          projectId,
+          tokenId,
+          agentGrant,
+          onBehalfOfUserId: getRequestOnBehalfOf(c),
+        })
+      : null,
   };
 }
 
+/** A session's connection visibility, defaulting to `private` (also the no-session default). */
+async function sessionVisibility(
+  sessionId: string | null,
+): Promise<'private' | 'project' | 'restricted'> {
+  const [session] = sessionId
+    ? await db
+        .select({ visibility: projectSessions.visibility })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1)
+    : [];
+  return session?.visibility ?? 'private';
+}
+
+/**
+ * The accounts a principal may run one connector as, default first — the same
+ * computation `GET .../connectors/{slug}/accounts` (`listConnectorAccounts`)
+ * exposes, reused here so the catalog can carry it inline without a second
+ * round trip per connector.
+ */
+async function catalogAccountsFor(
+  p: ConnectorPrincipal,
+  slug: string,
+  visibility: 'private' | 'project' | 'restricted',
+): Promise<CatalogAccount[]> {
+  const entitled = await listEntitledConnectorConnections({
+    accountId: p.accountId,
+    projectId: p.projectId,
+    alias: canonicalConnectorAlias(slug),
+    actingUserId: p.userId,
+    visibility,
+    agentPrincipal: p.agentPrincipal ?? null,
+  });
+  return entitled.map((connection) => ({
+    connection_id: connection.connectionId,
+    label: connection.label,
+    owner_type: connection.ownerType,
+    is_default: connection.isDefault,
+  }));
+}
+
 /** The catalog a principal can actually use (agent grant + credential present + not blocked). */
-async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
-  const conns = hideSupersededSlack(
+async function listCatalog(
+  p: ConnectorPrincipal,
+  options: ListCatalogOptions = {},
+): Promise<CatalogConnector[]> {
+  const wantedSlug = options.slug ? canonicalConnectorAlias(options.slug) : null;
+  if (!wantedSlug || wantedSlug === COMPUTER_SLUG) await ensureProjectComputer(p.projectId, p.userId);
+  const allConns = hideSupersededSlack(
     await db
       .select()
       .from(connectors)
       .where(and(eq(connectors.projectId, p.projectId), eq(connectors.enabled, true))),
   );
+  const conns = wantedSlug
+    ? allConns.filter((row) => canonicalConnectorAlias(row.slug) === wantedSlug)
+    : allConns;
+  if (conns.length === 0) return [];
 
   // Project-scoped layer is the same for every connector in this list — load once.
-  const [projectPolicies, defaultMode] = await Promise.all([
-    loadProjectPoliciesFor(p.projectId),
-    loadDefaultModeFor(p.projectId),
-  ]);
+  const connectorIds = conns.map((row) => row.connectorId);
+  const [projectPolicies, defaultMode, accountVisibility, actionsByConnector, policiesByConnector] =
+    await Promise.all([
+      loadProjectPoliciesFor(p.projectId),
+      loadDefaultModeFor(p.projectId),
+      // Same rule `listConnectorAccounts` uses: a private session can also see
+      // the caller's own member-owned accounts, anything else stays project-only.
+      // An agent-principal credential with no session is never `private`.
+      p.agentPrincipal && !p.sessionId ? Promise.resolve('project' as const) : sessionVisibility(p.sessionId),
+      // Batched: was one `connectorActions` select PER connector inside the
+      // loop below. One `inArray` query for the whole catalog instead.
+      db
+        .select()
+        .from(connectorActions)
+        .where(inArray(connectorActions.connectorId, connectorIds))
+        .then((rows) => {
+          const map = new Map<string, typeof rows>();
+          for (const row of rows) {
+            const list = map.get(row.connectorId);
+            if (list) list.push(row);
+            else map.set(row.connectorId, [row]);
+          }
+          for (const conn of conns) {
+            if (conn.providerType !== 'computer') continue;
+            map.set(conn.connectorId, withComputerCatalog(conn.connectorId, 'computer', []));
+          }
+          return map;
+        }),
+      loadConnectorPoliciesForMany(connectorIds),
+    ]);
 
-  const out: CatalogConnector[] = [];
-  for (const row of conns) {
-    if (
-      isLegacyComputerAggregate(row) &&
-      !(await principalHasLegacyComputerBinding(p, row.connectorId))
-    ) {
-      continue;
-    }
+  // Each connector's resolution reads only: its session outcome, its accounts
+  // and its credential. They are independent (the session row is request-
+  // memoized), so they run concurrently instead of one connector at a time.
+  // Measured on dev-api 2026-09-27 with 8 connectors: 8.0-16.9 s, db n=71-80
+  // serial; prod showed db n=113 on this route. Bounded, because a project can
+  // hold dozens of connectors. `mapLimit` keeps the connector order.
+  const CATALOG_RESOLVE_CONCURRENCY = 8;
+  const resolved = await mapLimit(conns, CATALOG_RESOLVE_CONCURRENCY, async (row): Promise<CatalogConnector | null> => {
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
     // This is the ONLY access gate — connectors are project-wide visible to
     // every human with project access (no per-connector member scoping).
     // Canonical on both sides — the grant is canonicalized at construction.
-    if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias(row.slug))) continue;
-    const connection = await resolveActiveConnectorConnection(p, row);
-    if (!connection) continue;
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(row.slug))) return null;
+    // The accounts come first, and they decide whether the connector is listed.
+    // `resolveActiveConnectorConnection` answers "what would an UNNAMED call run
+    // as" — and under the account_required rule that is null when several
+    // accounts are reachable and none is pinned. A connector with two connected
+    // Gmail accounts must not vanish from the catalog for exactly the reason it
+    // is interesting; the agent sees its accounts and names one.
+    // Ask the session-scoped resolver WHY, not just whether: `none` means the
+    // session's scope (explicit empty scope, revoked pin, visibility) hides
+    // this connector and the catalog must hide it too — the catalog never
+    // advertises what a call would refuse. `ambiguous` is the one exception:
+    // several reachable accounts, none pinned — the connector IS usable, the
+    // agent just has to name an account, so it is listed with its accounts.
+    const outcome = await resolveSessionConnectorConnectionOutcome({
+      accountId: p.accountId,
+      projectId: row.projectId,
+      sessionId: p.sessionId,
+      alias: row.slug,
+      actingUserId: p.userId,
+      account: null,
+      agentPrincipal: p.agentPrincipal ?? null,
+    });
+    if (outcome.kind === 'none') return null;
+    const connection =
+      outcome.kind === 'ok' && outcome.connection.status === 'active' ? outcome.connection : null;
+    if (outcome.kind === 'ok' && !connection) return null;
+    const accounts = await catalogAccountsFor(p, row.slug, accountVisibility);
     const { hasAuth } = authOf(row);
-    if (hasAuth) {
+    if (connection && hasAuth) {
       // Always the shared credential — `per_user` was removed 2026-07-05.
-      if (!(await connectorConnected(row, null, connection))) continue;
+      if (!(await connectorConnected(row, null, connection))) return null;
     }
-    const connectorPolicies = await loadConnectorPoliciesFor(row.connectorId);
-    const actions = await db
-      .select()
-      .from(connectorActions)
-      .where(eq(connectorActions.connectorId, row.connectorId));
-    out.push({
+    const connectorPolicies = policiesByConnector.get(row.connectorId) ?? [];
+    const actions = actionsByConnector.get(row.connectorId) ?? [];
+    return {
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
@@ -1106,11 +1390,18 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
           name: a.name,
           description: a.description ?? '',
           risk: a.risk,
-          inputSchema: a.inputSchema ?? null,
+          inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
         })),
-    });
-  }
-  return out;
+      accounts,
+      // What an UNNAMED call runs as: the one pinned account, or the only
+      // account. Several accounts with no pin is `null` — the call would be
+      // refused with `account_required`, so the catalog must not promise one.
+      default_account:
+        accounts.find((account) => account.is_default)?.label ??
+        (accounts.length === 1 ? accounts[0].label : null),
+    };
+  });
+  return resolved.filter((entry): entry is CatalogConnector => entry !== null);
 }
 
 async function resolveProjectUserWith(
@@ -1119,6 +1410,7 @@ async function resolveProjectUserWith(
   action:
     | typeof PROJECT_ACTIONS.PROJECT_CONNECTOR_READ
     | typeof PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE
+    | typeof PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE
     | typeof PROJECT_ACTIONS.PROJECT_SECRET_READ
     | typeof PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
 ): Promise<{ accountId: string; userId: string } | null> {
@@ -1150,6 +1442,19 @@ async function resolveAdmin(
   projectId: string,
 ): Promise<{ accountId: string; userId: string } | null> {
   return resolveProjectUserWith(c, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+}
+
+// Connecting an account the whole project can use is administration, and this
+// is the SAME capability the project-owned connection create (routes/connections.ts) asserts.
+async function resolveConnectionsManager(
+  c: Context,
+  projectId: string,
+): Promise<{ accountId: string; userId: string } | null> {
+  return resolveProjectUserWith(
+    c,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+  );
 }
 
 async function resolveSecretBindingAdmin(
@@ -1188,11 +1493,62 @@ async function resolveSecretReader(
   return resolveProjectUserWith(c, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 }
 
-/** Admin list — sharing + credential mode + whether the shared credential is set. */
-async function listConnectors(projectId: string): Promise<AdminConnectorView[]> {
-  const conns = hideSupersededSlack(
-    await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
-  ).filter((row) => !isLegacyComputerAggregate(row));
+/**
+ * A computer connector with no machine — no `connector_connections` row bound
+ * to a tunnel — has nothing to manage and no call it could answer, so it is
+ * not a connected connector and stays out of the admin list (KRTX-1492: a
+ * fresh project's Connected tab listed the machineless built-in `computer`
+ * connector as connected while its own dialog said "No account yet"). The
+ * catalogue's native Computers card carries the Connect CTA instead, and the
+ * row reappears the moment a machine is paired.
+ */
+async function hideMachinelessComputers<
+  T extends { connectorId: string; providerType: string; slug: string; createdAt: Date },
+>(
+  rows: T[],
+): Promise<T[]> {
+  const computers = rows.filter((row) => row.providerType === 'computer');
+  if (computers.length === 0) return rows;
+  const computerIds = computers.map((row) => row.connectorId);
+  const withMachine = new Set(
+    (
+      await db
+        .selectDistinct({ connectorId: connectorConnections.connectorId })
+        .from(connectorConnections)
+        .where(
+          and(
+            inArray(connectorConnections.connectorId, computerIds),
+            isNotNull(connectorConnections.tunnelId),
+          ),
+        )
+    ).map((row) => row.connectorId),
+  );
+  return rows.filter(
+    (row) => row.providerType !== 'computer' || withMachine.has(row.connectorId),
+  );
+}
+
+/**
+ * Admin list — sharing + credential mode + whether a credential is set.
+ *
+ * `actingUserId` answers it for THIS caller: a connector with no project-wide
+ * shared credential but a credentialed account owned by the caller is
+ * connected for them (connection-access.ts — reachability is per-row, not
+ * per-connector). Omitted only by callers with no human principal (there is
+ * nobody whose own account could make the difference); the project-wide
+ * checks below still apply either way.
+ */
+async function listConnectors(
+  projectId: string,
+  actingUserId?: string | null,
+  options: { includeSchemas?: boolean } = {},
+): Promise<AdminConnectorView[]> {
+  await ensureProjectComputer(projectId, actingUserId ?? null);
+  const conns = await hideMachinelessComputers(
+    hideSupersededSlack(
+      await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
+    ),
+  );
   if (conns.length === 0) return [];
 
   const credentialRows = conns.filter((row) => {
@@ -1218,34 +1574,81 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
         .filter((identifier): identifier is string => Boolean(identifier)),
     ),
   ];
+  const computerConnectorIds = new Set(
+    conns.filter((row) => row.providerType === 'computer').map((row) => row.connectorId),
+  );
   const [
     actions,
     credentialConnectorIds,
+    memberCredentialedConnectorIds,
     connectedChannelSlugs,
-    authorizedComposioSlugs,
+    entitledByConnector,
     validBoundSecrets,
   ] =
     await Promise.all([
       db
-        .select()
+        .select({
+          connectorId: connectorActions.connectorId,
+          path: connectorActions.path,
+          name: connectorActions.name,
+          description: connectorActions.description,
+          risk: connectorActions.risk,
+          // The full per-action JSON Schema is the bulk of this route's
+          // payload (1.6 MB on prod). A caller that opts out
+          // (`?include_schemas=false` — the dashboard and `kortix connectors
+          // ls`) must not make Postgres detoast and ship every schema just for
+          // the response to null it below.
+          inputSchema:
+            options.includeSchemas === false
+              ? sql<Record<string, unknown> | null>`null`
+              : connectorActions.inputSchema,
+        })
         .from(connectorActions)
         .where(
           inArray(
             connectorActions.connectorId,
             conns.map((row) => row.connectorId),
           ),
-        ),
+        )
+        .then((stored) => [
+          ...stored.filter((action) => !computerConnectorIds.has(action.connectorId)),
+          ...[...computerConnectorIds].flatMap((id) => withComputerCatalog(id, 'computer', [])),
+        ]),
       connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
+      actingUserId
+        ? connectorIdsWithReachableMemberCredential(
+            credentialRows.map((row) => row.connectorId),
+            actingUserId,
+          )
+        : Promise.resolve(new Set<string>()),
       Promise.all(
         channelRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
       ).then(
         (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
       ),
-      Promise.all(
-        composioRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
-      ).then(
-        (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
-      ),
+      // The accounts THIS caller may run each connector as, default first —
+      // same computation as `listConnectorAccounts` (the `.../accounts` route
+      // and the MCP `accounts` tool read it), reused here so `kortix connectors
+      // ls`/`show` carry it without a client round trip per connector, AND —
+      // for Composio below — the SAME predicate the gateway applies at call
+      // time to decide "is it connected at all" (resolves an entitled account
+      // for THIS caller; `connectorConnected(row, null)` with no connection
+      // argument always answered `false` for Composio, INC-2026-09-08-
+      // CONNECTOR-GATEWAY E6). Dashboard-wide, not session-scoped, so
+      // visibility is always `private`.
+      //
+      // ONE batched call for every connector in the project instead of one
+      // `listEntitledConnectorConnections` call PER connector (was n=64 on a
+      // ~20-connector project — see `listEntitledConnectorConnectionsBatch`'s
+      // doc comment). Composio's authorization check below reads from this
+      // SAME map instead of re-running the identical lookup a second time.
+      listEntitledConnectorConnectionsBatch({
+        accountId: conns[0]!.accountId,
+        projectId,
+        connectors: conns,
+        actingUserId: actingUserId ?? undefined,
+        visibility: 'private',
+      }),
       boundSecretIdentifiers.length === 0
         ? Promise.resolve([])
         : db
@@ -1262,6 +1665,52 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
               ),
             ),
     ]);
+  const accountsByConnector = new Map<string, CatalogAccount[]>(
+    conns.map((row) => [
+      row.connectorId,
+      (entitledByConnector.get(row.connectorId) ?? []).map((connection) => ({
+        connection_id: connection.connectionId,
+        label: connection.label,
+        owner_type: connection.ownerType,
+        is_default: connection.isDefault,
+      })),
+    ]),
+  );
+  const authorizedComposioSlugs = new Set(
+    composioRows
+      .filter((row) => (entitledByConnector.get(row.connectorId) ?? []).length > 0)
+      .map((row) => row.slug),
+  );
+  // `authorization_strategy` is a DERIVED SUMMARY now, not a setting. The
+  // column is retired (see migration 20260917160000000) and the PUT route is an
+  // inert no-op, but the field stays on the wire so an older client keeps
+  // parsing the response. It answers one question: does this connector's live
+  // set of accounts look private-only?
+  const ownershipRows =
+    conns.length === 0
+      ? []
+      : await db
+          .select({
+            connectorId: connectorConnections.connectorId,
+            ownerType: connectorConnections.ownerType,
+          })
+          .from(connectorConnections)
+          .where(
+            and(
+              inArray(
+                connectorConnections.connectorId,
+                conns.map((row) => row.connectorId),
+              ),
+              eq(connectorConnections.status, 'active'),
+            ),
+          );
+  const memberOwned = new Set<string>();
+  const projectOwned = new Set<string>();
+  for (const row of ownershipRows) {
+    if (row.ownerType === 'member') memberOwned.add(row.connectorId);
+    else if (row.ownerType === 'project') projectOwned.add(row.connectorId);
+  }
+
   const actionsByConnector = new Map<string, typeof actions>();
   for (const action of actions) {
     const current = actionsByConnector.get(action.connectorId) ?? [];
@@ -1272,7 +1721,13 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
   const connectedSlugs = new Set(connectedChannelSlugs);
   const storedCredentialSlugs = new Set<string>();
   for (const row of credentialRows) {
-    if (credentialConnectorIds.has(row.connectorId)) {
+    // Project-wide (shared) credential, OR the caller's own credentialed
+    // member-owned account — either makes this connector connected FOR THIS
+    // CALLER, same as a real gateway call would resolve it (connection-access.ts).
+    if (
+      credentialConnectorIds.has(row.connectorId) ||
+      memberCredentialedConnectorIds.has(row.connectorId)
+    ) {
       connectedSlugs.add(row.slug);
       storedCredentialSlugs.add(row.slug);
     }
@@ -1283,6 +1738,7 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       connectedSlugs.add(row.slug);
     }
   }
+  for (const slug of authorizedComposioSlugs) connectedSlugs.add(slug);
   const candidates = conns.map((row) => {
     const { auth, hasAuth } = authOf(row);
     const config = row.config as {
@@ -1305,20 +1761,34 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       //
       // Read-side only. `disabled` and `error` are deliberate operator/sync
       // states and outrank this; the DB column is left alone.
+      // Read-side only. `active` in the DB means "declared and synced"; a
+      // connector that needs a credential/authorization it does not have is
+      // reported as `needs_auth` so `kortix connectors ls` says the same thing
+      // the gateway will (a call answers `connector_not_connected`). Before
+      // this, an openapi connector with no stored credential listed as
+      // `active` and then 404'd on call (incident E2).
       status:
-        row.providerType === 'composio' &&
         row.status === 'active' &&
-        !authorizedComposioSlugs.has(row.slug)
+        hasAuth &&
+        row.providerType !== 'channel' &&
+        !connectedSlugs.has(row.slug)
           ? ('needs_auth' as const)
           : row.status,
-      authorizationStrategy: row.authorizationStrategy,
+      authorizationStrategy:
+        memberOwned.has(row.connectorId) && !projectOwned.has(row.connectorId)
+          ? ('user' as const)
+          : ('project' as const),
       sensitive: config?.sensitive === true,
       actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({
         path: a.path,
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
-        inputSchema: a.inputSchema ?? null,
+        // The full per-action JSON Schema is the bulk of this route's payload
+        // (1.6 MB on prod). It is included unless the caller passes
+        // `includeSchemas: false` (`?include_schemas=false`): baked sandbox
+        // CLIs read it and cannot be updated in place.
+        inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
       })),
       requestAuthType: auth.type,
       requiresAuth: hasAuth,
@@ -1332,6 +1802,8 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
             : row.authSecret
               ? ('project_secret' as const)
               : ('none' as const),
+      accounts: accountsByConnector.get(row.connectorId) ?? [],
+      defaultAccount: accountsByConnector.get(row.connectorId)?.[0]?.label ?? null,
     };
   });
   return buildAdminConnectorViews(candidates, connectedSlugs);
@@ -1375,7 +1847,6 @@ async function setConnectorSecretBinding(
     secretIdentifier,
     requiresAuth: authOf(connector).hasAuth,
     provider: connector.providerType,
-    authorizationStrategy: connector.authorizationStrategy,
     hasStoredCredential: await credentialExists(connector.connectorId, null),
     secretCompatible: Boolean(secret),
   });
@@ -1417,6 +1888,7 @@ async function getConnectorPolicies(
       .select({
         connectorId: connectors.connectorId,
         config: connectors.config,
+        providerType: connectors.providerType,
       })
       .from(connectors)
       .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
@@ -1447,7 +1919,11 @@ async function getConnectorPolicies(
   const [projectPolicies, defaultMode, actions] = await Promise.all([
     loadProjectPoliciesFor(projectId),
     loadDefaultModeFor(projectId),
-    db.select().from(connectorActions).where(eq(connectorActions.connectorId, row.connectorId)),
+    db
+      .select()
+      .from(connectorActions)
+      .where(eq(connectorActions.connectorId, row.connectorId))
+      .then((stored) => withComputerCatalog(row.connectorId, row.providerType, stored)),
   ]);
   const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
   const connectorPolicies: Policy[] = policies.map((p) => ({
@@ -1502,6 +1978,7 @@ async function getConnectorConfig(
     provider: row.providerType,
     platform: channelPlatform(row.config) as ChannelPlatform | null,
     credentialMode: 'shared',
+    /** @deprecated Retired; echoed from the manifest so an old editor still parses. */
     authorizationStrategy: row.authorizationStrategy,
     app: cfg.app ?? null,
     account: cfg.account ?? null,
@@ -1510,8 +1987,6 @@ async function getConnectorConfig(
     endpoint: cfg.endpoint ?? null,
     baseUrl: baseUrlOf(row),
     spec: cfg.spec ?? null,
-    tunnelIds:
-      row.providerType === 'computer' ? (computerTunnelIds(row.config, row.slug) ?? []) : undefined,
     auth: {
       type: auth.type,
       in: auth.in,
@@ -1606,106 +2081,32 @@ async function setComputerConnectorSensitive(
   return { ok: true };
 }
 
-const MAX_COMPUTERS_PER_PROFILE = 100;
-
-async function upsertComputerConnectorProfile(
+/**
+ * `provider: computer` on connector create makes (or renames) the project's
+ * computer connector. Its accounts are paired machines, added by pairing or by
+ * `POST /projects/:id/computers`, never by this draft.
+ */
+async function createComputerConnector(
   projectId: string,
   accountId: string,
   draft: Record<string, unknown>,
-  actorUserId?: string,
 ): Promise<ConnectorCrudResult | null> {
   if (draft.provider !== 'computer') return null;
   const slug = typeof draft.slug === 'string' ? draft.slug.trim() : '';
   if (!SLUG_RE.test(slug)) {
     return { ok: false, error: 'invalid connector slug', status: 400 };
   }
-  const rawTunnelIds = draft.tunnel_ids;
-  if (!Array.isArray(rawTunnelIds)) {
-    return { ok: false, error: 'tunnel_ids must be an array', status: 400 };
-  }
-  const tunnelIds = [
-    ...new Set(rawTunnelIds.filter((value): value is string => typeof value === 'string')),
-  ];
-  if (tunnelIds.length === 0) {
-    return { ok: false, error: 'select at least one computer', status: 400 };
-  }
-  if (tunnelIds.length !== rawTunnelIds.length || tunnelIds.some((value) => !isUuid(value))) {
-    return {
-      ok: false,
-      error: 'tunnel_ids must contain unique UUIDs',
-      status: 400,
-    };
-  }
-  if (tunnelIds.length > MAX_COMPUTERS_PER_PROFILE) {
-    return {
-      ok: false,
-      error: `a Computers profile can contain at most ${MAX_COMPUTERS_PER_PROFILE} machines`,
-      status: 400,
-    };
-  }
-  const eligibleAccountIds = [...new Set([accountId, actorUserId].filter(Boolean) as string[])];
-  const owned = await db
-    .select({
-      tunnelId: tunnelConnections.tunnelId,
-      accountId: tunnelConnections.accountId,
-    })
-    .from(tunnelConnections)
-    .where(
-      and(
-        inArray(tunnelConnections.accountId, eligibleAccountIds),
-        inArray(tunnelConnections.tunnelId, tunnelIds),
-        isNotNull(tunnelConnections.lastHeartbeatAt),
-      ),
-    );
-  if (owned.length !== tunnelIds.length) {
-    return {
-      ok: false,
-      error:
-        'One or more selected computers are no longer available. Refresh the list or pair the computer again.',
-      status: 400,
-    };
-  }
-  const tunnelAccountIds = [...new Set(owned.map((row) => row.accountId))];
-
+  const name = typeof draft.name === 'string' ? draft.name.trim() : '';
+  if (name.length > 255) return { ok: false, error: 'name is too long (max 255)', status: 400 };
   const [existing] = await db
-    .select({
-      connectorId: connectors.connectorId,
-      providerType: connectors.providerType,
-      name: connectors.name,
-      config: connectors.config,
-    })
+    .select({ providerType: connectors.providerType })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
-  if (existing && existing.providerType !== 'computer') {
-    return {
-      ok: false,
-      error: `Connector slug "${slug}" already exists`,
-      status: 409,
-    };
+  if (existing && (existing.providerType !== 'computer' || draft.create_only === true)) {
+    return { ok: false, error: `Connector slug "${slug}" already exists`, status: 409 };
   }
-  if (existing && draft.create_only === true) {
-    return {
-      ok: false,
-      error: `Connector slug "${slug}" already exists`,
-      status: 409,
-    };
-  }
-  const requestedName = typeof draft.name === 'string' ? draft.name.trim() : '';
-  const name = requestedName || existing?.name || computerLabel();
-  if (name.length > 255) return { ok: false, error: 'name is too long (max 255)', status: 400 };
-  await materializeComputerConnectorProfile({
-    projectId,
-    accountId,
-    existingId: existing?.connectorId ?? null,
-    spec: computerProfileSpec({
-      slug,
-      name,
-      tunnelIds,
-      tunnelAccountIds,
-      sensitive: (existing?.config as { sensitive?: unknown } | null)?.sensitive === true,
-    }),
-  });
+  await ensureComputerConnector(projectId, accountId, { slug, ...(name ? { name } : {}) });
   return { ok: true, sync: { synced: 1, errors: [] } };
 }
 
@@ -1722,6 +2123,27 @@ async function deleteComputerConnectorProfile(
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row || row.providerType !== 'computer') return null;
+  // F1: the built-in computer connector (the one ensureProjectComputer picks)
+  // is never removable. Deleting it cascades to every account on it, and the
+  // project-shared ones would never come back. A legacy extra profile goes
+  // only while no machine is attached to it.
+  const [builtIn] = await db
+    .select({ connectorId: connectors.connectorId })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')))
+    .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+    .limit(1);
+  if (builtIn?.connectorId === row.connectorId) {
+    return { ok: false, error: 'The built-in computer connector cannot be removed. Unpair or revoke a computer instead.', status: 409 };
+  }
+  const [attached] = await db
+    .select({ one: sql`1` })
+    .from(connectorConnections)
+    .where(and(eq(connectorConnections.connectorId, row.connectorId), isNotNull(connectorConnections.tunnelId)))
+    .limit(1);
+  if (attached) {
+    return { ok: false, error: 'This computer connector still has computers attached. Unpair or revoke them first.', status: 409 };
+  }
   await db.transaction(async (tx) => {
     await tx
       .delete(projectSessionConnectorBindings)
@@ -1759,6 +2181,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   listCatalog,
   featureFlagEnabled: projectFeatureFlagEnabled,
   resolveAdmin,
+  resolveConnectionsManager,
   resolveReader,
   resolveSecretReader,
   listConnectors,
@@ -1768,8 +2191,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     invalidateProjectMirror(projectId);
     return syncProjectConnectors(projectId, accountId, { force: true });
   },
-  createConnector: async (projectId, accountId, draft, actorUserId) =>
-    (await upsertComputerConnectorProfile(projectId, accountId, draft, actorUserId)) ??
+  createConnector: async (projectId, accountId, draft) =>
+    (await createComputerConnector(projectId, accountId, draft)) ??
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: async (projectId, slug) =>
     (await deleteComputerConnectorProfile(projectId, slug)) ??
@@ -1780,26 +2203,21 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   resolveSecretBindingAdmin,
   deleteConnectorCredential: async (projectId, slug) => {
     const [row] = await db
-      .select({
-        connectorId: connectors.connectorId,
-        authorizationStrategy: connectors.authorizationStrategy,
-      })
+      .select({ connectorId: connectors.connectorId })
       .from(connectors)
       .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
       .limit(1);
     if (!row) return { ok: false as const, error: 'connector not found', status: 404 };
-    if (row.authorizationStrategy !== 'project') {
-      return {
-        ok: false as const,
-        error: 'Shared credentials require a project authorization strategy',
-        status: 409,
-      };
-    }
+    // The connector-level strategy gate is gone: the shared credential is a
+    // project-wide credential on every connector, and this route already runs
+    // behind project.connector.write.
     await deleteCredential(row.connectorId, null);
     return { ok: true as const };
   },
   setCredentialMode: (projectId, accountId, slug, mode) =>
     setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
+  // @deprecated The route above it is an inert no-op; kept wired so the manifest
+  // writer stays reachable if an operator ever needs it out of band.
   setAuthorizationStrategy: (projectId, accountId, slug, authorizationStrategy) =>
     setConnectorAuthorizationStrategyInManifest(projectId, accountId, slug, authorizationStrategy),
   setSensitive: async (projectId, accountId, slug, sensitive) =>
@@ -1821,7 +2239,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   pipedreamConnect: pipedreamConfigured()
     ? async (projectId, slug, _userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
-        if (!conn || conn.authorizationStrategy !== 'project') return null;
+        if (!conn) return null;
         const { connectUrl, token } = await pipedreamConnectUrl(
           projectId,
           slug,
@@ -1835,7 +2253,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   pipedreamFinalize: pipedreamConfigured()
     ? async (projectId, slug, _userId) => {
         const conn = await loadPipedreamConnector(projectId, slug);
-        if (!conn || conn.authorizationStrategy !== 'project') return null;
+        if (!conn) return null;
         const r = await finalizePipedreamConnection({
           projectId,
           slug,
@@ -1850,6 +2268,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     ? async (extUserId, sig) => {
         const rejected = { ok: false, connected: false } as const;
         if (!verifyWebhookSig(extUserId, sig)) return rejected;
+        bindIntegrationPrincipal('pipedream');
         const [projectId, slug, identityId] = extUserId.split(':');
         if (!projectId || !slug) return rejected;
         const conn = await loadPipedreamConnector(projectId, slug);
@@ -1872,12 +2291,13 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             .limit(1);
           if (
             connection &&
-            connectorAuthorizationMatchesStrategy({
-              strategy: conn.authorizationStrategy,
+            connectionIsReachable({
               ownerType: connection.ownerType,
               ownerId: connection.ownerId,
               actingUserId: connection.ownerId ?? '',
               actingPrincipalIsServiceAccount: false,
+              // Finishing this row's own authorization is not a use of it.
+              audience: 'open',
             })
           ) {
             // Propagate `connected` — a finalize that found no account is NOT
@@ -1895,7 +2315,6 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           }
           return rejected;
         }
-        if (conn.authorizationStrategy !== 'project') return rejected;
         const shared = await finalizePipedreamConnection({
           projectId,
           slug,
@@ -1927,6 +2346,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     // Composio deployment into an implicit Pipedream request. The legacy
     // Pipedream catalogue has explicit `/pipedream/apps` routes for deliberate
     // rollback use.
+    return null;
+  },
+  listConnectSections: async (_projectId, input) => {
+    const composio = await loadComposioAdapter();
+    if (composio?.composioConfigured?.() && composio.composioCatalogSections) {
+      return composio.composioCatalogSections(input);
+    }
+    // Same rule as `/connect/toolkits`: no silent Pipedream fallback.
     return null;
   },
   listSessionConnectRequests: async (projectId, sessionId) => {
@@ -1966,28 +2393,109 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     }
     return out;
   },
-  connectorConnect: async (projectId, slug, _userId, redirects, requestingSessionId) => {
+  listConnectorAccounts: async ({ projectId, slug, userId, sessionId, agentPrincipal }) => {
+    const [session] = sessionId
+      ? await db
+          .select({ visibility: projectSessions.visibility })
+          .from(projectSessions)
+          .where(eq(projectSessions.sessionId, sessionId))
+          .limit(1)
+      : [];
+    const [project] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!project) return [];
+    const entitled = await listEntitledConnectorConnections({
+      accountId: project.accountId,
+      projectId,
+      alias: canonicalConnectorAlias(slug),
+      actingUserId: userId,
+      // An agent-principal credential with no session is never `private`.
+      visibility: session?.visibility ?? (agentPrincipal ? 'project' : 'private'),
+      agentPrincipal: agentPrincipal ?? null,
+    });
+    return entitled.map((connection) => ({
+      connection_id: connection.connectionId,
+      label: connection.label,
+      owner_type: connection.ownerType,
+      is_default: connection.isDefault,
+      connected_as: connectedAsOf(connection.metadata),
+    }));
+  },
+  mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {
+    const eligibility = await connectLinkEligibility(projectId, canonicalConnectorAlias(slug));
+    // No hosted page (raw http/mcp/graphql connector, or no provider app bound)
+    // means no link exists to hand over. The denial still names the connector.
+    if (!eligibility.ok) return null;
+    const composio = await loadComposioAdapter();
+    if (!(composio?.composioConfigured?.() ?? false) && !pipedreamConfigured()) return null;
+    // The denial's remedy is always "authorize YOURSELF": the human reading it
+    // is the one who can, and a shared account is a deliberate admin choice made
+    // from settings. A link with no member behind it would resolve to nobody.
+    if (!userId) return null;
+    const { mintSetupLink } = await import('../setup-links/token');
+    const { token } = mintSetupLink(projectId, {
+      kind: 'connector',
+      slug: canonicalConnectorAlias(slug),
+      app: eligibility.app,
+      uid: userId,
+      sid: sessionId,
+      owner: 'me',
+    });
+    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/connect/${token}`;
+  },
+  connectorConnect: async (projectId, slug, userId, redirects, requestingSessionId, owner) => {
+    const connectOwner: ConnectorConnectOwner = owner ?? 'me';
     const conn = await loadComposioConnector(projectId, slug);
     if (conn) {
-      if (conn.authorizationStrategy !== 'project') return null;
       const composio = await loadComposioAdapter();
       if (!composio?.composioConfigured?.()) return null;
-      // Sync creates the canonical project-default connection for every
-      // materialized connector. Reuse it rather than inserting a second row,
-      // which violates idx_connector_connections_default_project.
-      const connectionId = await ensureDefaultConnection({
-        projectId,
-        connectorId: conn.connectorId,
-      });
+      // WHICH connection this authorization lands on is the CALLER's explicit
+      // choice, not a property of the connector:
+      //
+      // `me`      → the caller's own member connection.
+      // `project` → the canonical project-default connection sync already
+      //             created. Reuse it rather than inserting a second row, which
+      //             violates idx_connector_connections_default_project.
+      //
+      // The `me` branch used to `return null` for any connector whose strategy
+      // was not `user`, which is why a private account had no connect flow
+      // anywhere in the product: no link could be minted, so the session card
+      // had nothing to offer and the user was simply stuck.
+      if (connectOwner === 'me' && !userId) return null;
+      const connectionId =
+        connectOwner === 'me'
+          ? await ensureMemberConnection({
+              projectId,
+              connectorId: conn.connectorId,
+              userId,
+            })
+          : await ensureDefaultConnection({
+              projectId,
+              connectorId: conn.connectorId,
+            });
+      const [previousRow] = await db
+        .select({ metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(eq(connectorConnections.connectionId, connectionId))
+        .limit(1);
+      const previous = (previousRow?.metadata ?? {}) as Record<string, unknown>;
       await db
         .update(connectorConnections)
         .set({
           status: 'active',
-          isDefault: true,
+          // INVARIANT (2026-09-16, account_required rule): never set is_default
+          // here — an auto-authorized account is not a deliberately pinned one.
+          // `connectorFinalize` below finds this row back by recency
+          // (`updatedAt`), not by `is_default`, so dropping this never breaks
+          // the handshake.
           // Clear any previous account binding before authorization starts.
           // Pending rows stay active because the DB enum has no needs_auth
           // value. The gateway still fails closed on missing auth metadata.
           metadata: {
+            ...rowMetadata(previous),
             provider: 'composio',
             toolkit: conn.app,
             requesting_session_id: requestingSessionId ?? null,
@@ -2023,6 +2531,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             connectedAccountId: result.connectedAccountId,
             isNoAuth: result.isNoAuth,
             requestingSessionId,
+            previous,
+            // An already-active account kept its identity. A new authorization
+            // has none until finalize probes it.
+            connectedAs:
+              result.connectedAccountId &&
+              result.connectedAccountId === previous.connected_account_id
+                ? connectedAsOf(previous)
+                : null,
           }),
           updatedAt: sql`now()`,
         })
@@ -2045,7 +2561,13 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
-    if (!pipedream || pipedream.authorizationStrategy !== 'project') return null;
+    if (!pipedream) return null;
+    // Legacy Pipedream path: its hosted flow only ever authorized the ONE shared
+    // project account (`pipedreamConnectUrl(..., null)` — no external user id).
+    // A private account there needs a per-member external id, which this path
+    // has never minted, so `me` is refused rather than silently answered with
+    // the shared account.
+    if (connectOwner === 'me') return null;
     const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, pipedream.app, null, redirects);
     await mergeRequestingSession(
       await ensureDefaultConnection({ projectId, connectorId: pipedream.connectorId }),
@@ -2053,10 +2575,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     );
     return { provider: 'pipedream', token, app: pipedream.app, connectUrl };
   },
-  connectorFinalize: async (projectId, slug, _userId, selector) => {
+  connectorFinalize: async (projectId, slug, _userId, selector, owner) => {
+    const finalizeOwner: ConnectorConnectOwner = owner ?? 'me';
     const conn = await loadComposioConnector(projectId, slug);
     if (conn) {
-      if (conn.authorizationStrategy !== 'project') return null;
+      // Finalize the connection the START created, so it honors the owner the
+      // link recorded. Hard-requiring a project-owned row here is what made a
+      // completed private authorization resolve to nothing.
+      if (finalizeOwner === 'me' && !_userId) return null;
       const composio = await loadComposioAdapter();
       if (!composio?.composioConfigured?.()) return null;
       const [connection] = await db
@@ -2067,13 +2593,27 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             eq(connectorConnections.accountId, conn.accountId),
             eq(connectorConnections.projectId, projectId),
             eq(connectorConnections.connectorId, conn.connectorId),
-            eq(connectorConnections.ownerType, 'project'),
-            isNull(connectorConnections.ownerId),
-            selector?.connectionId
-              ? eq(connectorConnections.connectionId, selector.connectionId)
-              : eq(connectorConnections.isDefault, true),
+            finalizeOwner === 'me'
+              ? and(
+                  eq(connectorConnections.ownerType, 'member'),
+                  eq(connectorConnections.ownerId, _userId ?? ''),
+                )
+              : and(
+                  eq(connectorConnections.ownerType, 'project'),
+                  isNull(connectorConnections.ownerId),
+                ),
+            ...(selector?.connectionId
+              ? [eq(connectorConnections.connectionId, selector.connectionId)]
+              : []),
           ),
         )
+        // No explicit connectionId: find the connection the matching `connect`
+        // call just started. INVARIANT (2026-09-16, account_required rule):
+        // that row is never marked `is_default` (a Composio authorization is
+        // never a deliberate pin), so this can no longer key off `is_default` —
+        // `connectorConnect`'s two updates both touch `updatedAt`, so the most
+        // recently touched row in this owner scope IS the one just started.
+        .orderBy(desc(connectorConnections.updatedAt))
         .limit(1);
       if (selector?.connectionId && !connection) throw new HTTPException(404, { message: 'connector connection not found' });
       if (!connection) return { provider: 'composio', connected: false };
@@ -2097,6 +2637,22 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         authRequestId,
         expectedConnectedAccountId,
       });
+      const connectedAccountId = result.connectedAccountId ?? expectedConnectedAccountId;
+      const connectedAs = result.connected
+        ? await resolveConnectedAs({
+            previous: metadata,
+            connectedAccountId,
+            isNoAuth: result.isNoAuth,
+            probe: () =>
+              composio.probeComposioIdentity
+                ? composio.probeComposioIdentity({
+                    app: conn.app,
+                    sessionId: result.sessionId,
+                    connectedAccountId: connectedAccountId!,
+                  })
+                : Promise.resolve(null),
+          })
+        : null;
       await db
         .update(connectorConnections)
         .set({
@@ -2109,9 +2665,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             stableUserId,
             sessionId: result.sessionId,
             authRequestId: result.authRequestId ?? authRequestId,
-            connectedAccountId: result.connectedAccountId ?? expectedConnectedAccountId,
+            connectedAccountId,
             isNoAuth: result.isNoAuth,
             requestingSessionId,
+            previous: metadata,
+            connectedAs,
           }),
           updatedAt: sql`now()`,
         })
@@ -2125,6 +2683,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       // account landed so it resumes instead of posting a second link next run.
       // Fire-and-forget: the credential is already saved, and a notification
       // failure must never turn a successful connect into an error.
+      // A generic default label ("Private connection", the connector name)
+      // becomes the identity, so the account list shows WHO each row is.
+      const label = connectedAs
+        ? await relabelToIdentity({ connectionId: connection.connectionId, identity: connectedAs })
+        : null;
       if (result.connected && requestingSessionId) {
         void notifyConnectorSession(requestingSessionId, projectId, _userId ?? null, slug, conn.app);
       }
@@ -2134,11 +2697,16 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         accountId: result.connectedAccountId,
         connectionId: connection.connectionId,
         isNoAuth: result.isNoAuth,
+        connectedAs,
+        ...(label ? { label } : {}),
       };
     }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
-    if (!pipedream || pipedream.authorizationStrategy !== 'project') return null;
+    if (!pipedream) return null;
+    // Mirrors `connectorConnect`: the legacy Pipedream hosted flow only ever
+    // authorized the shared project account.
+    if (finalizeOwner === 'me') return null;
     const r = await finalizePipedreamConnection({
       projectId,
       slug,
@@ -2147,17 +2715,19 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       userId: null,
     });
     if (r.connected) {
-      const [row] = await db
-        .select({ metadata: connectorConnections.metadata })
-        .from(connectorConnections)
-        .where(
-          and(
-            eq(connectorConnections.connectorId, pipedream.connectorId),
-            eq(connectorConnections.isDefault, true),
-            eq(connectorConnections.ownerType, 'project'),
-          ),
-        )
-        .limit(1);
+      // INVARIANT (2026-09-16, account_required rule): the row `connectorConnect`
+      // primed via `ensureDefaultConnection` is never marked `is_default`
+      // itself — `defaultConnectionIdForConnector` still finds it (pinned, or
+      // the connector's sole project row), which is exactly the resolution the
+      // legacy Pipedream hosted flow (project-account-only) needs here.
+      const defaultConnectionId = await defaultConnectionIdForConnector(pipedream.connectorId);
+      const [row] = defaultConnectionId
+        ? await db
+            .select({ metadata: connectorConnections.metadata })
+            .from(connectorConnections)
+            .where(eq(connectorConnections.connectionId, defaultConnectionId))
+            .limit(1)
+        : [];
       const waiting = readRequestingSessionId(row?.metadata);
       if (waiting) void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, pipedream.app);
     }
@@ -2165,6 +2735,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
+  listDiscoverSections: (input) => connectorCatalogSections(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>

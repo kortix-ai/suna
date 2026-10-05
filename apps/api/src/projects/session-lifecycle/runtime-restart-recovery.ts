@@ -1,3 +1,4 @@
+import { sessionSandboxes } from '@kortix/db';
 /**
  * A runtime that is started again after the provider had it STOPPED comes back
  * with nothing in memory: every pause Kortix issues or observes is a
@@ -6,7 +7,7 @@
  * OpenCode process that owned it is gone — and its last assistant message sits
  * in the transcript with `tokens 0/0/0` and no parts.
  *
- * Essentia 2026-08-25: the provider paused two boxes mid-turn; the UI's next
+ * SampleCo 2026-08-25: the provider paused two boxes mid-turn; the UI's next
  * request woke them through the proxy (`wakeSandbox`) without touching the turn
  * authority, the fresh runtime answered `idle`, and one turn was closed
  * `completed` — the user saw the agent "just stop", with no error and nothing
@@ -21,9 +22,9 @@
  * itself; `MAX_PROMPT_REDELIVERIES` in redelivery.ts bounds any loop.
  */
 import { eq, sql } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { settleOpenSandboxTurns } from '../session-turn-ledger';
+import { storedSandboxTurns } from '../session-turn-ledger';
 import { type PromptRedelivery, requeueAbandonedPrompt } from './redelivery';
 import { reArmRuntimeBlockedPrompts } from './store';
 
@@ -75,7 +76,6 @@ export async function settleTurnsLostToRuntimeRestart(sandboxId: string): Promis
       .update(sessionSandboxes)
       .set({
         metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-          - 'activeTurn'
           - 'activeTurns'
           - 'pendingStopObservedAtMs')`,
         updatedAt: new Date(),
@@ -102,7 +102,7 @@ const liveDeps: RuntimeRestartRecoveryDeps = {
   // on a partially-mocked `shared/daytona` / `projects/git` the moment the
   // static edge existed. Nothing here needs the engine before this call.
   kickDrain: () =>
-    void import('./engine')
+    void import('./drain')
       .then((m) => m.drainSessionLifecycleQueue({ limit: 5 }))
       .catch(() => undefined),
   requeue: (input) => requeueAbandonedPrompt(input),

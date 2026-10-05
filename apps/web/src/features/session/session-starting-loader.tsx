@@ -2,13 +2,13 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { type SessionStartResult, type SessionStartStage } from '@kortix/sdk';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
@@ -48,6 +48,29 @@ interface Step {
  * loader.
  */
 type BootStepVariant = 'stepper' | 'compact';
+type StartFailure = SessionStartResult['failure'];
+
+/** Keep a provider failure visible while `/start` waits for its retry clock. */
+export function sessionWakeStatusNote(input: {
+  reason?: string | null;
+  failure?: StartFailure;
+  note?: string | null;
+  now: number;
+}): string | null {
+  if (input.reason !== 'runtime_wake_cooldown' || !input.failure) return input.note ?? null;
+  const attempts = Math.max(1, input.failure.evidence?.attempts ?? 1);
+  const nextAttempt = attempts + 1;
+  const retryAt = Date.parse(input.failure.evidence?.next_retry_at ?? '');
+  if (!Number.isFinite(retryAt)) {
+    return `Computer did not start. Retrying automatically (attempt ${nextAttempt}).`;
+  }
+  const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
+  if (seconds === 0) return `Computer did not start. Retrying automatically now (attempt ${nextAttempt}).`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  const duration = minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+  return `Computer did not start. Retrying automatically in ${duration} (attempt ${nextAttempt}).`;
+}
 
 /** Copy is deliberately parallel, so stage changes read as one continuous task. */
 export const STEPS: Step[] = [
@@ -89,6 +112,29 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
   return { active: activeStep(stage, now - stageEnteredAt), now };
 }
 
+/**
+ * The boot clock a restart carries. The shared restart hook owns the whole
+ * mutation, so the success signal this file used to read out of a hand-rolled
+ * `onSuccess` is the hook's own state: its `errorMessage` is null exactly when
+ * a settled restart succeeded, so a pending→idle edge without an error resets
+ * the clock. A rejected restart keeps the old clock, so the stuck fallback
+ * stays available for a retry.
+ */
+function useRestartedBootClock(restart: {
+  isPending: boolean;
+  errorMessage: string | null;
+}): number {
+  const [clockStart, setClockStart] = useState(() => Date.now());
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !restart.isPending && !restart.errorMessage) {
+      setClockStart(Date.now());
+    }
+    wasPending.current = restart.isPending;
+  }, [restart.isPending, restart.errorMessage]);
+  return clockStart;
+}
+
 /** The stalled-boot escape hatch, shared by the loader and instant session shell. */
 export function RestartFallback({
   show,
@@ -103,12 +149,13 @@ export function RestartFallback({
   className?: string;
   buttonClassName?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!show) return null;
 
   return (
     <div className={cn('mt-5 w-full', className)}>
       <p className="text-muted-foreground mb-2 text-xs text-pretty">
-        This is taking longer than usual.
+        {tI18nComplete.raw('textbeda94e911d3')}
       </p>
       <Button
         type="button"
@@ -123,7 +170,7 @@ export function RestartFallback({
         ) : (
           <RotateCcw className="size-3.5 shrink-0" />
         )}
-        {pending ? 'Restarting…' : 'Restart session'}
+        {pending ? tI18nComplete.raw('text75d0f1469d16') : tI18nComplete.raw('textcb886371afc6')}
       </Button>
     </div>
   );
@@ -154,7 +201,9 @@ function QuietProgressLoader({
   slow,
   stuck,
 }: QuietProgressLoaderProps) {
-  const step = STEPS[Math.min(active, STEPS.length - 1)];
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const steps = useLocalizedUiCatalog(STEPS);
+  const step = steps[Math.min(active, steps.length - 1)];
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
@@ -166,20 +215,20 @@ function QuietProgressLoader({
           />
           <div className="min-w-0 flex-1">
             <h2 className="text-foreground text-sm font-medium text-balance">
-              Starting your session
+              {tI18nComplete.raw('textac4e05b19878')}
             </h2>
             <p className="text-muted-foreground mt-1 text-xs text-pretty">{note ?? step.label}</p>
 
             <div
               role="progressbar"
-              aria-label="Session startup progress"
+              aria-label={tI18nComplete.raw('text4cbf9c0d5628')}
               aria-valuemin={1}
-              aria-valuemax={STEPS.length}
+              aria-valuemax={steps.length}
               aria-valuenow={active + 1}
-              aria-valuetext={`Step ${active + 1} of ${STEPS.length}: ${step.label}`}
+              aria-valuetext={`Step ${active + 1} of ${steps.length}: ${step.label}`}
               className="mt-3 grid grid-cols-4 gap-1.5"
             >
-              {STEPS.map((item, index) => (
+              {steps.map((item, index) => (
                 <span
                   key={item.label}
                   aria-hidden
@@ -193,7 +242,7 @@ function QuietProgressLoader({
 
             {slow ? (
               <p className="text-muted-foreground mt-3 text-xs text-pretty">
-                Cold starts can take a little longer.
+                {tI18nComplete.raw('textbb2ab0401c3c')}
               </p>
             ) : null}
 
@@ -213,6 +262,8 @@ export function SessionStartingLoader({
   sessionId,
   /** Honest one-liner from the SDK wake escalation ladder. */
   note,
+  reason,
+  failure,
 }: {
   stage?: SessionStartStage;
   delayMs?: number;
@@ -220,8 +271,9 @@ export function SessionStartingLoader({
   sessionId?: string;
   variant?: BootStepVariant;
   note?: string | null;
+  reason?: string | null;
+  failure?: StartFailure;
 }) {
-  const queryClient = useQueryClient();
   const [delayElapsed, setDelayElapsed] = useState(false);
   const show = delayMs <= 0 || delayElapsed;
   useEffect(() => {
@@ -230,33 +282,21 @@ export function SessionStartingLoader({
     return () => clearTimeout(timeout);
   }, [delayMs]);
 
+  const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
-  const [clockStart, setClockStart] = useState(now);
+  const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
+  const clockStart = useRestartedBootClock(restart);
   const slow = now - clockStart >= SLOW_AFTER_MS;
   const stuck = now - clockStart >= STUCK_AFTER_MS;
   const canRestart = !!projectId && !!sessionId;
-
-  const restartMutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId!, sessionId!),
-    onSuccess: () => {
-      setClockStart(Date.now());
-      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
-      queryClient.invalidateQueries({
-        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
-      });
-    },
-    onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Failed to restart session');
-    },
-  });
 
   return (
     <QuietProgressLoader
       active={active}
       canRestart={canRestart}
-      note={note}
-      onRestart={() => restartMutation.mutate()}
-      pending={restartMutation.isPending}
+      note={statusNote}
+      onRestart={restart.restart}
+      pending={restart.isPending}
       show={show}
       slow={slow}
       stuck={stuck}
@@ -274,33 +314,26 @@ export function SessionConnectingBanner({
   sessionId,
   className,
   note,
+  reason,
+  failure,
 }: {
   stage?: SessionStartStage;
   projectId?: string;
   sessionId?: string;
   className?: string;
   note?: string | null;
+  reason?: string | null;
+  failure?: StartFailure;
 }) {
-  const queryClient = useQueryClient();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
-  const [clockStart, setClockStart] = useState(now);
+  const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
+  const clockStart = useRestartedBootClock(restart);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
   const canRestart = !!projectId && !!sessionId;
-  const step = STEPS[Math.min(active, STEPS.length - 1)];
-
-  const restartMutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId!, sessionId!),
-    onSuccess: () => {
-      setClockStart(Date.now());
-      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
-      queryClient.invalidateQueries({
-        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
-      });
-    },
-    onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Failed to restart session');
-    },
-  });
+  const steps = useLocalizedUiCatalog(STEPS);
+  const step = steps[Math.min(active, steps.length - 1)];
 
   return (
     <div
@@ -317,17 +350,17 @@ export function SessionConnectingBanner({
           variant="spokes"
           className="size-3.5 shrink-0 text-current motion-reduce:animate-none"
         />
-        <span className="truncate">{note ?? step.label}</span>
+        <span className="min-w-0 text-pretty">{statusNote ?? step.label}</span>
         {stuck && canRestart ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="pointer-events-auto -mr-2 h-6 px-2 text-xs"
-            disabled={restartMutation.isPending}
-            onClick={() => restartMutation.mutate()}
+            disabled={restart.isPending}
+            onClick={restart.restart}
           >
-            {restartMutation.isPending ? 'Restarting…' : 'Restart'}
+            {restart.isPending ? tI18nComplete.raw('text75d0f1469d16') : 'Restart'}
           </Button>
         ) : null}
       </div>

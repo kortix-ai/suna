@@ -97,6 +97,7 @@ describe('runtime model catalog', () => {
               modalities: { input: ['text', 'image'], output: ['text'] },
               limit: { context: 1_000_000, input: 900_000, output: 128_000 },
               cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+              provider: { npm: '@ai-sdk/anthropic', api: 'https://override.test/v1' },
             },
           },
         },
@@ -118,22 +119,10 @@ describe('runtime model catalog', () => {
       limit: { context: 1_000_000, input: 900_000, output: 128_000 },
       cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
       reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+      provider: { npm: '@ai-sdk/anthropic', api: 'https://override.test/v1' },
     });
   });
 
-  // MUST-FIX regression (adversarial review of PR #5010): this file's header
-  // comment promises the live refresh path and the baked-snapshot enrich
-  // script (apps/web/scripts/enrich-llm-catalog-capabilities.ts)
-  // "must never diverge in SHAPE, only in freshness". Before this fix, the
-  // live path passed `reasoning_options` through RAW/unfiltered while the
-  // baked path's `normalizeReasoningOptions` silently dropped any entry
-  // without `values` (the `budget_tokens`/`toggle` shapes) — so a
-  // budget_tokens model (mainline Claude's ONLY shape) came out
-  // `[{type:'budget_tokens', min:1024}]` live but `undefined` baked: same
-  // model, two different shapes depending on which path served it. Assert
-  // the live path's raw passthrough matches EXACTLY what the enrich script
-  // would normalize the same input to for a budget_tokens entry — i.e. the
-  // object survives verbatim on both paths, not just on live.
   // models.dev marks retired entries `status: "deprecated"`; opencode hides
   // those in the sandbox. The pre-runtime picker source reads this route, so
   // the field must survive or the two pickers disagree (dev 2026-08-25: 29
@@ -160,8 +149,12 @@ describe('runtime model catalog', () => {
     expect(models.find((m) => m.id === 'hy3-free')?.status).toBeUndefined();
   });
 
-  test('a budget_tokens reasoning_options entry survives the live path in the SAME shape the baked enrich script normalizes it to', async () => {
-    const rawBudgetTokensOption = { type: 'budget_tokens', min: 1024 };
+  // MUST-FIX regression (adversarial review of PR #5010): the live refresh
+  // path and the baked-snapshot enrich script must never diverge in SHAPE.
+  // The live path once kept a `budget_tokens` entry (mainline Claude's only
+  // shape) while the baked path dropped it. The baked half is proven in
+  // packages/llm-catalog catalog-field-fidelity.test.ts.
+  test('a budget_tokens reasoning_options entry survives the live path verbatim', async () => {
     const catalog = createRuntimeModelCatalog({
       seed,
       sourceUrl: 'https://catalog.test/api.json',
@@ -175,7 +168,7 @@ describe('runtime model catalog', () => {
               id: 'claude-haiku-4-5',
               name: 'Claude Haiku 4.5',
               reasoning: true,
-              reasoning_options: [rawBudgetTokensOption],
+              reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
               temperature: true,
             },
           },
@@ -185,22 +178,53 @@ describe('runtime model catalog', () => {
 
     expect(await catalog.refresh()).toBe(true);
     const model = catalog.snapshot().providers[0]?.models[0];
-    // The live path's raw passthrough (no `values` filtering).
     expect(model?.reasoning_options).toEqual([{ type: 'budget_tokens', min: 1024 }]);
+  });
 
-    // What the baked-snapshot enrich script's normalizeReasoningOptions
-    // produces for the IDENTICAL raw input — mirrors that function's field
-    // selection exactly (type, then values/min/max only when present) so a
-    // divergence in either implementation fails this test.
-    const bakedShapeForSameInput = [rawBudgetTokensOption]
-      .filter((option) => typeof option?.type === 'string')
-      .map((option: { type: string; values?: string[]; min?: number; max?: number }) => ({
-        type: option.type,
-        ...(Array.isArray(option.values) ? { values: option.values } : {}),
-        ...(typeof option.min === 'number' ? { min: option.min } : {}),
-        ...(typeof option.max === 'number' ? { max: option.max } : {}),
-      }));
-    expect(model?.reasoning_options).toEqual(bakedShapeForSameInput);
+  // The ChatGPT-plan lineup comes from the Codex CLI's models.json, never a
+  // hand-kept list (prod 2026-10-01 lacked gpt-6.1-sol and still offered the
+  // retired gpt-5.4).
+  test('refreshes the codex lineup: listed slugs only, Codex priority order', async () => {
+    const catalog = createRuntimeModelCatalog({
+      seed,
+      codexSeed: ['gpt-5.4'],
+      sourceUrl: 'https://catalog.test/api.json',
+      codexSourceUrl: 'https://codex.test/models.json',
+      fetchImpl: async (url) =>
+        url === 'https://codex.test/models.json'
+          ? Response.json({
+              models: [
+                { slug: 'gpt-6-sol', visibility: 'list', priority: 3 },
+                { slug: 'codex-auto-review', visibility: 'hide', priority: 43 },
+                { slug: 'gpt-6.1-sol', visibility: 'list', priority: 1 },
+                { slug: '../../etc', visibility: 'list', priority: 2 },
+              ],
+            })
+          : new Response('down', { status: 503 }),
+    });
+
+    expect(catalog.codexModelIds()).toEqual(['gpt-5.4']);
+    expect(await catalog.refresh()).toBe(false); // models.dev is down; codex is independent
+    expect(catalog.codexModelIds()).toEqual(['gpt-6.1-sol', 'gpt-6-sol']);
+    expect(catalog.status().revision).toBe(1);
+  });
+
+  test('keeps the last known codex lineup when the source fails or changes shape', async () => {
+    let body: unknown = { models: [{ slug: 'gpt-6.1-sol', visibility: 'list' }] };
+    const catalog = createRuntimeModelCatalog({
+      seed,
+      codexSeed: ['gpt-5.4'],
+      codexSourceUrl: 'https://codex.test/models.json',
+      fetchImpl: async (url) =>
+        url === 'https://codex.test/models.json' ? Response.json(body) : new Response('down', { status: 503 }),
+    });
+    await catalog.refresh();
+    expect(catalog.codexModelIds()).toEqual(['gpt-6.1-sol']);
+    for (body of [{ models: [] }, { lineup: [] }, null]) {
+      await catalog.refresh();
+      expect(catalog.codexModelIds()).toEqual(['gpt-6.1-sol']);
+    }
+    expect(catalog.status().revision).toBe(1);
   });
 
   test('keeps the last known catalog when the API is unavailable', async () => {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { Client } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { createApiJsonClient } from '../helpers/http';
 import {
@@ -10,6 +10,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { waitForSessionReady } from '../helpers/session-ready';
 
 const enabled = process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1';
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
@@ -26,22 +27,25 @@ test.use({
   },
 });
 
-function executeSql(sql: string): string {
-  return execFileSync(
-    'psql',
-    [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-At', '-c', sql],
-    { encoding: 'utf8' },
-  ).trim();
+async function executeSql(sql: string): Promise<string> {
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const result = await client.query({ text: sql, rowMode: 'array' });
+    return result.rows.map((row) => row.join('|')).join('\n');
+  } finally {
+    await client.end();
+  }
 }
 
-function readAccountTier(accountId: string): string {
+async function readAccountTier(accountId: string): Promise<string> {
   return executeSql(
     `SELECT tier FROM kortix.credit_accounts WHERE account_id = '${accountId}'`,
   );
 }
 
-function fundAccount(accountId: string): void {
-  executeSql(
+async function fundAccount(accountId: string): Promise<void> {
+  await executeSql(
     `INSERT INTO kortix.credit_accounts (
        account_id,
        balance,
@@ -61,16 +65,16 @@ function fundAccount(accountId: string): void {
   );
 }
 
-function readSessionStatuses(sessionId: string): {
+async function readSessionStatuses(sessionId: string): Promise<{
   projectSession: string;
   sandbox: string;
-} {
-  const [projectSession, sandbox] = executeSql(
+}> {
+  const [projectSession, sandbox] = (await executeSql(
     `SELECT ps.status || '|' || ss.status
        FROM kortix.project_sessions ps
        JOIN kortix.session_sandboxes ss ON ss.session_id = ps.session_id
       WHERE ps.session_id = '${sessionId}'`,
-  ).split('|');
+  )).split('|');
   if (!projectSession || !sandbox) {
     throw new Error(`missing runtime status for session ${sessionId}`);
   }
@@ -107,39 +111,12 @@ interface ModelPicker {
   models: Record<string, unknown>;
 }
 
-interface SessionStart {
-  stage: string;
-  sandbox?: {
-    status?: string;
-    external_id?: string | null;
-  } | null;
-}
-
 async function waitForReadySession(
   token: string,
   projectId: string,
   sessionId: string,
 ): Promise<void> {
-  const deadline = Date.now() + 10 * 60_000;
-  let last = '';
-  while (Date.now() < deadline) {
-    const result = await api<SessionStart>(
-      token,
-      'POST',
-      `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`,
-      {},
-    );
-    last = `${result.stage}:${result.sandbox?.status ?? 'none'}`;
-    if (
-      result.stage === 'ready'
-      && result.sandbox?.status === 'active'
-      && result.sandbox.external_id
-    ) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-  }
-  throw new Error(`session did not become ready: ${last}`);
+  await waitForSessionReady(api, token, projectId, sessionId, { intervalMs: 1_000 });
 }
 
 /**
@@ -201,8 +178,8 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
     const accounts = await api<AccountSummary[]>(auth.access_token, 'GET', '/accounts');
     const account = accounts.find((item) => item.personal_account) ?? accounts[0];
     expect(account?.account_id).toBe(accountId);
-    fundAccount(accountId);
-    expect(readAccountTier(accountId)).toBe('tier_2_20');
+    await fundAccount(accountId);
+    expect(await readAccountTier(accountId)).toBe('tier_2_20');
 
     const project = await api<ProjectSummary>(
       auth.access_token,
@@ -216,14 +193,14 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
       201,
     );
     projectId = project.project_id;
-    expect(readAccountTier(accountId)).toBe('tier_2_20');
+    expect(await readAccountTier(accountId)).toBe('tier_2_20');
     await api(
       auth.access_token,
       'PATCH',
       `/projects/${projectId}/onboarding`,
       { completed: true },
     );
-    expect(readAccountTier(accountId)).toBe('tier_2_20');
+    expect(await readAccountTier(accountId)).toBe('tier_2_20');
     const billing = await api<BillingState>(
       auth.access_token,
       'GET',
@@ -266,17 +243,7 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
       await api(auth.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
     }
     if (accountId) {
-      execFileSync(
-        'psql',
-        [
-          databaseUrl,
-          '-v',
-          'ON_ERROR_STOP=1',
-          '-c',
-          `DELETE FROM kortix.accounts WHERE account_id = '${accountId}'`,
-        ],
-        { stdio: 'ignore' },
-      );
+      await executeSql(`DELETE FROM kortix.accounts WHERE account_id = '${accountId}'`);
     }
     if (user?.id) {
       await deleteAuthUser(user.id, {
@@ -358,7 +325,7 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
     expect(passiveRead).toBe(503);
     expect(transcriptReads).toHaveLength(1);
     expect(startRequests).toEqual([]);
-    expect(readSessionStatuses(sessionId)).toEqual({
+    expect(await readSessionStatuses(sessionId)).toEqual({
       projectSession: 'stopped',
       sandbox: 'stopped',
     });
@@ -527,4 +494,193 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
     expect(Date.now() - startedAt).toBeLessThan(180_000);
     expect(mismatchConsoleErrors).toEqual([]);
   });
+
+});
+
+// Terminal recovery runs in the blocking deployed lane independently of the
+// quarantined transcript assertions above.
+
+test("13 — opening a terminal without a cached PTY wakes a stopped sandbox and accepts shell input", async ({
+  page,
+}) => {
+  test.skip(
+    !enabled,
+    "Set E2E_ENABLE_SDK_ONLY_SESSION=1 for the real sandbox flow.",
+  );
+  test.setTimeout(12 * 60_000);
+  const email = `terminal-wake-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
+  const user = await createAuthUser(email, authOptions);
+  const auth = await signIn(email, authOptions);
+  let projectId = "";
+  let sessionId = "";
+  try {
+    await api<AccountSummary[]>(auth.access_token, "GET", "/accounts");
+    await fundAccount(user.id);
+    const project = await api<ProjectSummary>(
+      auth.access_token,
+      "POST",
+      "/projects/provision",
+      {
+        account_id: user.id,
+        name: "Terminal wake verification",
+        seed_starter: true,
+      },
+      201,
+    );
+    projectId = project.project_id;
+    await api(auth.access_token, "PATCH", `/projects/${projectId}/onboarding`, {
+      completed: true,
+    });
+    const session = await api<ProjectSession>(
+      auth.access_token,
+      "POST",
+      `/projects/${projectId}/sessions`,
+      {
+        name: "Cold terminal wake",
+      },
+      201,
+    );
+    sessionId = session.session_id;
+    await waitForReadySession(auth.access_token, projectId, sessionId);
+    await installBrowserSessionDirect(
+      page,
+      auth,
+      `/projects/${projectId}/sessions/${sessionId}`,
+      authOptions,
+    );
+    const terminalButton = page.getByRole("button", {
+      name: "Terminal",
+      exact: true,
+    });
+    await expect(terminalButton).toBeVisible({ timeout: 120_000 });
+    // This page has not mounted the terminal, so neither the PTY query nor its
+    // remembered ID exists. Stop after navigation to isolate terminal wake.
+    await api(
+      auth.access_token,
+      "POST",
+      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      {},
+    );
+    await expect
+      .poll(() => readSessionStatuses(sessionId), { timeout: 60_000 })
+      .toEqual({ projectSession: "stopped", sandbox: "stopped" });
+
+    const responses: { method: string; status: number; payload: unknown }[] = [];
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname.endsWith("/kortix/pty")) {
+        responses.push({
+          method: response.request().method(),
+          status: response.status(),
+          payload: response.request().postDataJSON(),
+        });
+      }
+    });
+    await terminalButton.click();
+    const input = page.locator(".xterm-helper-textarea");
+    await expect(input).toBeAttached({ timeout: 180_000 });
+    await expect
+      .poll(() => responses.some((r) => r.method === "GET" && r.status === 503))
+      .toBe(true);
+    await expect
+      .poll(
+        () => responses.some((r) => r.method === "POST" && r.status === 200),
+        { timeout: 180_000 },
+      )
+      .toBe(true);
+    expect(responses.find((r) => r.method === "POST" && r.status === 200)?.payload).toMatchObject({
+      env: { TERM: "xterm-256color", COLORTERM: "truecolor" },
+    });
+    // Mounting xterm does not prove the socket has received shell output.
+    await expect(page.locator(".xterm-rows")).toContainText(/[$#] /, { timeout: 60_000 });
+    await input.focus();
+    await page.keyboard.type("printf 'TERMINAL_%s\\n' COLD_CONNECTED");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText(
+      "TERMINAL_COLD_CONNECTED",
+      { timeout: 30_000 },
+    );
+    await expect(page.locator(".xterm-rows")).not.toContainText(
+      "Reconnecting in",
+    );
+  } finally {
+    if (projectId && sessionId)
+      await api(
+        auth.access_token,
+        "DELETE",
+        `/projects/${projectId}/sessions/${sessionId}`,
+      ).catch(() => {});
+    if (projectId)
+      await api(auth.access_token, "DELETE", `/projects/${projectId}`).catch(
+        () => {},
+      );
+    await executeSql(`DELETE FROM kortix.accounts WHERE account_id = '${user.id}'`);
+    await deleteAuthUser(user.id, authOptions);
+  }
+});
+
+test('13 — message retries keep their sandbox after switching sessions', async ({ page }) => {
+  test.skip(!enabled, 'Set E2E_ENABLE_SDK_ONLY_SESSION=1 for the real sandbox flow.');
+  test.setTimeout(15 * 60_000);
+  const email = `session-routing-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
+  const user = await createAuthUser(email, authOptions);
+  const auth = await signIn(email, authOptions);
+  let projectId = '';
+  const sessions: Array<{ id: string; nativeId: string; externalId: string }> = [];
+  try {
+    await api<AccountSummary[]>(auth.access_token, 'GET', '/accounts');
+    await fundAccount(user.id);
+    const project = await api<ProjectSummary>(auth.access_token, 'POST', '/projects/provision', {
+      account_id: user.id, name: 'Session routing verification', seed_starter: true,
+    }, 201);
+    projectId = project.project_id;
+    await api(auth.access_token, 'PATCH', `/projects/${projectId}/onboarding`, { completed: true });
+    for (const name of ['Routing session A', 'Routing session B']) {
+      const session = await api<ProjectSession>(auth.access_token, 'POST', `/projects/${projectId}/sessions`, { name }, 201);
+      const item = { id: session.session_id, nativeId: '', externalId: '' };
+      sessions.push(item);
+      await waitForReadySession(auth.access_token, projectId, item.id);
+      const [nativeId, externalId] = (await executeSql(
+        `SELECT ps.opencode_session_id || '|' || ss.external_id
+         FROM kortix.project_sessions ps JOIN kortix.session_sandboxes ss USING(session_id)
+         WHERE ps.session_id = '${item.id}'`,
+      )).split('|');
+      if (!nativeId || !externalId) throw new Error('Session runtime identity is missing');
+      Object.assign(item, { nativeId, externalId });
+    }
+    const [first, second] = sessions;
+    expect(first.externalId).not.toBe(second.externalId);
+    const reads: Array<{ nativeId: string; externalId: string }> = [];
+    page.on('request', (request) => {
+      const match = new URL(request.url()).pathname.match(/\/p\/([^/]+)\/8000\/session\/([^/]+)\/message$/);
+      if (match) reads.push({ externalId: match[1], nativeId: match[2] });
+    });
+    // Keep A's message retry pending while the user opens B. The old registry
+    // resolves that retry through the newly active runtime and sends A to B.
+    await page.route(`**/session/${first.nativeId}/message?*`, (route) => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Sandbox is not ready' }),
+    }));
+    await installBrowserSessionDirect(page, auth, `/projects/${projectId}/sessions/${first.id}`, authOptions);
+    await expect.poll(() => reads.filter((read) => read.nativeId === first.nativeId).length, { timeout: 120_000 }).toBeGreaterThan(0);
+    await page.getByRole('link', { name: 'Routing session B', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/sessions/${second.id}`));
+    await expect.poll(() => reads.some((read) => read.nativeId === second.nativeId && read.externalId === second.externalId), { timeout: 120_000 }).toBe(true);
+    const previousReads = reads.filter((read) => read.nativeId === first.nativeId).length;
+    await expect.poll(() => reads.filter((read) => read.nativeId === first.nativeId).length, { timeout: 30_000 }).toBeGreaterThan(previousReads);
+    for (const session of sessions) {
+      for (const read of reads.filter((read) => read.nativeId === session.nativeId)) {
+        expect(read.externalId, `Message read for ${session.nativeId}`).toBe(session.externalId);
+      }
+    }
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+  } finally {
+    await page.goto('about:blank').catch(() => {});
+    for (const session of sessions) {
+      await api(auth.access_token, 'DELETE', `/projects/${projectId}/sessions/${session.id}`).catch(() => {});
+    }
+    if (projectId) await api(auth.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+    await executeSql(`DELETE FROM kortix.accounts WHERE account_id = '${user.id}'`);
+    await deleteAuthUser(user.id, authOptions);
+  }
 });

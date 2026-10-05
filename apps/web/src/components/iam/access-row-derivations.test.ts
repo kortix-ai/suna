@@ -59,9 +59,7 @@ describe('accessVia', () => {
   });
 
   test('a group source with no resolved name falls back to no line', () => {
-    expect(
-      accessVia(member({ effective_source: 'group', group_sources: [] })),
-    ).toBeNull();
+    expect(accessVia(member({ effective_source: 'group', group_sources: [] }))).toBeNull();
   });
 
   test('no effective role reads "no access", not an empty meta', () => {

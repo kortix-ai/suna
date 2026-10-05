@@ -5,6 +5,7 @@ import { join } from 'node:path';
 const dir = import.meta.dir;
 const connectorsSource = readFileSync(join(dir, 'connectors-view.tsx'), 'utf8');
 const fieldsSource = readFileSync(join(dir, 'connector-oauth2-fields.tsx'), 'utf8');
+const scopeFieldsSource = readFileSync(join(dir, 'connector-oauth2-scope-fields.tsx'), 'utf8');
 
 describe('Custom connector OAuth2 onboarding', () => {
   test('shows OAuth 2.0 in the initial Auth selector', () => {
@@ -13,7 +14,10 @@ describe('Custom connector OAuth2 onboarding', () => {
   });
 
   test('renders the OAuth2 credential fields before connector creation', () => {
-    expect(connectorsSource).toContain('oauth2Selected={sharedOAuth2Selected}');
+    // No connector-level authorization strategy gates this any more (a
+    // custom connector's draft carries no owner choice) — the OAuth2-at-
+    // creation offer is plain `oauth2Selected` state.
+    expect(connectorsSource).toContain('oauth2Selected={oauth2Selected}');
     expect(connectorsSource).toContain('idPrefix="new-connector-oauth2"');
     expect(connectorsSource).toContain('createConnectorWithOptionalOAuth2(');
   });
@@ -49,8 +53,10 @@ describe('Custom connector OAuth2 onboarding', () => {
   });
 
   test('does not contain provider-specific OAuth examples', () => {
-    expect(fieldsSource).not.toContain('microsoftonline.com');
-    expect(fieldsSource).not.toContain('graph.microsoft.com');
-    expect(fieldsSource).not.toContain('sharepoint.com');
+    for (const source of [fieldsSource, scopeFieldsSource]) {
+      expect(source).not.toContain('microsoftonline.com');
+      expect(source).not.toContain('graph.microsoft.com');
+      expect(source).not.toContain('sharepoint.com');
+    }
   });
 });

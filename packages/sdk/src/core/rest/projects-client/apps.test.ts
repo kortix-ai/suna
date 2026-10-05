@@ -6,11 +6,13 @@ import {
   createAppAccessSession,
   createAppDeployment,
   deleteApp,
+  deleteAppDeployment,
   finalizeAppArtifact,
   getApp,
   getAppAccess,
   getAppDeployment,
   getAppDeploymentLogs,
+  listAppAgents,
   listAppDeployments,
   listApps,
   registerAppArtifact,
@@ -21,6 +23,8 @@ import {
   updateAppAccess,
   uploadAppArtifactArchive,
   type AppDeployment,
+  type AppImageRelease,
+  type DeleteAppDeploymentResult,
   type AppAccessMode,
   type AppHostingProvider,
   type UpdateAppAccessInput,
@@ -283,4 +287,67 @@ test('deployment inspection, logs, lifecycle, and rollback use bound identifiers
   await stopApp('project-1', 'app-1');
   await rollbackApp('project-1', 'app-1', 'deployment-1');
   expect(last()).toMatchObject({ method: 'POST', body: { deployment_id: 'deployment-1' } });
+});
+
+test('listAppAgents reads the agents whose kortix.yaml `apps:` grant names the App', async () => {
+  const agents = [
+    { agent_name: 'report-writer', grant: 'listed' as const, path: 'kortix.yaml#agents.report-writer' },
+    { agent_name: 'ops', grant: 'all' as const, path: 'kortix.yaml#agents.ops' },
+  ];
+  responses.push({ body: { agents } });
+
+  expect(await listAppAgents('project-1', 'app-1')).toEqual(agents);
+  expect(last()).toMatchObject({
+    method: 'GET',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/agents',
+  });
+});
+
+test('deleteApp returns how many deployment images the delete freed', async () => {
+  const images: AppImageRelease = { released: 3, pending: 1 };
+  responses.push({ body: { ok: true, images } });
+
+  const result = await deleteApp('project-1', 'app-1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1',
+  });
+  expect(result).toEqual({ ok: true, images });
+});
+
+test('deleteAppDeployment deletes one deployment and reports its image outcome', async () => {
+  const deleted: DeleteAppDeploymentResult = {
+    ok: true,
+    deployment_id: 'deployment-1',
+    image: 'released',
+  };
+  responses.push({ body: deleted });
+
+  const result = await deleteAppDeployment('project-1', 'app-1', 'deployment-1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/deployments/deployment-1',
+  });
+  expect(result).toEqual(deleted);
+});
+
+test('deleteAppDeployment surfaces the 409 for the live deployment', async () => {
+  responses.push({
+    status: 409,
+    body: {
+      error: 'This deployment serves live traffic. Roll back to another deployment first, or delete the App.',
+      code: 'deployment_live',
+    },
+  });
+
+  await expect(deleteAppDeployment('project-1', 'app-1', 'deployment-1')).rejects.toMatchObject({
+    status: 409,
+  });
+});
+
+test('DeleteAppDeploymentResult.image is exactly released, pending, or none', () => {
+  const exact: Equal<DeleteAppDeploymentResult['image'], 'released' | 'pending' | 'none'> = true;
+  expect(exact).toBe(true);
 });

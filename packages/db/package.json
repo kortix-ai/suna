@@ -13,7 +13,7 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
-    "test": "bun test --parallel=2 --max-concurrency 2",
+    "test": "bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'",
     "typecheck": "tsc --noEmit",
     "db:generate": "bunx drizzle-kit generate",
     "db:check": "bunx drizzle-kit check",
@@ -30,8 +30,6 @@
     "lint": "bun scripts/lint-migrations.ts && bun scripts/squawk-lint.ts"
   },
   "dependencies": {
-    "dotenv": "^16",
-    "dotenv-expand": "^12",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "node-pg-migrate": "^8",

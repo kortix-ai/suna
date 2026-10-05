@@ -10,7 +10,7 @@
  *   • The token carries everything the public intake endpoints need: the kind,
  *     the requested field names (or connector slug), the chosen scope, the
  *     minting user, and an expiry. Modeled on the Codex device-auth flow handle
- *     in projects/routes/r3.ts, which seals its whole state into one encrypted
+ *     in projects/routes/provider-oauth.ts, which seals its whole state into one encrypted
  *     `flow_id` for the same reasons.
  *   • VALUE-ONLY by construction: the field NAMES are fixed at mint time, so a
  *     leaked token can only SET the named keys in that one project before it
@@ -39,10 +39,15 @@ export interface SecretFieldSpec {
   description?: string;
 }
 
+import type { ConnectorConnectOwner } from '../projects/lib/connection-access';
+
 export type SecretScope = 'runtime' | 'connector';
 
 interface BasePayload {
   exp: number;
+  /** When the link was minted, epoch ms. Tokens minted before this field
+   *  existed decode without it, and `exp` cannot stand in: the TTL varies. */
+  iat?: number;
   nonce: string;
   /** projectId sealed inside the envelope; cross-checked against the outer id. */
   pid: string;
@@ -53,9 +58,20 @@ interface BasePayload {
 export type SetupLinkPayload =
   | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope; sid: string | null })
   /** `sid` is the session that asked for the connector, so the finalize route
-   *  can tell it the credential landed. Tokens minted before it existed decode
-   *  without the field — every read must tolerate `undefined`. */
-  | (BasePayload & { kind: 'connector'; slug: string; app: string | null; sid: string | null })
+   *  can tell it the credential landed. `owner` is whose account the link
+   *  authorizes. Tokens minted before either field existed decode without it —
+   *  every read must tolerate `undefined` and fall back to `me`, which is what
+   *  every link minted before this change actually did. */
+  | (BasePayload & {
+      kind: 'connector';
+      slug: string;
+      app: string | null;
+      sid: string | null;
+      owner: ConnectorConnectOwner;
+      /** The name the agent suggests for the NEW account; the dialog prefills
+       *  it and the human may change it. Absent on older tokens. */
+      label?: string | null;
+    })
   /**
    * A human-in-the-loop APPROVAL for one gated connector call.
    *
@@ -90,6 +106,10 @@ type ConnectorSpec = {
   /** The session that requested this connector, so the finalize route can
    *  notify it when the connection is persisted. */
   sid?: string | null;
+  /** Whose account the link authorizes. Defaults to `me`. */
+  owner?: ConnectorConnectOwner;
+  /** Suggested name for the new account. */
+  label?: string | null;
 };
 type ApprovalSpec = {
   kind: 'approval';
@@ -115,9 +135,10 @@ export function mintSetupLink(
   opts?: { expiresInMinutes?: number | null },
 ): { token: string; expiresAt: number } {
   const defaultTtl = spec.kind === 'approval' ? APPROVAL_TTL_MINUTES : undefined;
-  const exp = Date.now() + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
+  const iat = Date.now();
+  const exp = iat + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
   const nonce = randomBytes(9).toString('base64url');
-  const base: BasePayload = { exp, nonce, pid: projectId, uid: spec.uid ?? null };
+  const base: BasePayload = { exp, iat, nonce, pid: projectId, uid: spec.uid ?? null };
 
   const payload: SetupLinkPayload =
     spec.kind === 'secret'
@@ -130,6 +151,8 @@ export function mintSetupLink(
             slug: spec.slug,
             app: spec.app ?? null,
             sid: spec.sid ?? null,
+            owner: spec.owner ?? 'me',
+            label: spec.label ?? null,
           };
 
   const envelope = encryptProjectSecret(projectId, JSON.stringify(payload));

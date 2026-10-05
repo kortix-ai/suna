@@ -4,8 +4,7 @@
 // It used to decide everything: Platinum had a credential edge to arm, every
 // other provider had none, and a session carrying a boundary secret on one of
 // those failed provisioning outright unless the project carried the in-guest
-// shim opt-in flag. One mechanism now serves all three
-// (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4) — the guest holds a
+// shim opt-in flag. One mechanism now serves all three — the guest holds a
 // HANDLE and the broker route substitutes the real value server-side — so the
 // arm, the edge and the flag are gone.
 //
@@ -17,13 +16,12 @@
 // fan-out is the caller that does NOT fail soft — a refusal reaches its report
 // verbatim, which is the only place the decision is observable as a message.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { sessionEnvironments } from '@kortix/db';
 import { config } from '../../config';
 
-import type { ProviderName } from '../../platform/providers';
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
+import type { ProviderName } from '../../platform/providers';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Which provider the single active sandbox row reports for the case in flight. */
 let sandboxProvider: ProviderName = 'daytona';
@@ -46,18 +44,13 @@ const SESSION_ROW = {
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: (table: unknown) => ({
+      from: () => ({
         where: () => {
-          const rows =
-            table === sessionEnvironments
-              ? []
-              : [{ ...SESSION_ROW, provider: sandboxProvider, metadata: null }];
+          const rows = [{ ...SESSION_ROW, provider: sandboxProvider, metadata: null }];
           return {
             limit: async () => rows,
-            then: (
-              resolve: (value: typeof rows) => unknown,
-              reject?: (reason: unknown) => unknown,
-            ) => Promise.resolve(rows).then(resolve, reject),
+            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve(rows).then(resolve, reject),
           };
         },
       }),

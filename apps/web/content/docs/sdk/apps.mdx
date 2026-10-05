@@ -3,8 +3,6 @@ title: Apps
 description: Create, deploy, and control Kortix Apps from the SDK and from React.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Apps are project-scoped serverless deployments. This page covers the SDK
 surface: the `apps` facade on a project handle, the artifact and deployment
 calls, the access calls, the exported types, and the React hooks.
@@ -16,11 +14,11 @@ behavior, read [Apps](/docs/feature-flags/apps).
 const apps = kortix.project(projectId).apps;
 ```
 
-<Callout type="info" title="Apps is a feature flag">
+:::info[Apps is a feature flag]
 Every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`
 until the project turns Apps on. Use `isFeatureDisabledError(error)` to branch
 on it. See [Feature flags](/docs/feature-flags).
-</Callout>
+:::
 
 ## The apps facade
 
@@ -30,7 +28,7 @@ on it. See [Feature flags](/docs/feature-flags).
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
 | `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, or budget |
-| `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App and its runtimes |
+| `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}` |
 | `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime |
 | `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it |
 | `apps.rollback(appId, deploymentId)` | `POST …/apps/:id/rollback` | Moves traffic to a ready deployment |
@@ -51,12 +49,13 @@ Deployments are immutable and numbered:
 | `apps.deployments.list(appId)` | `GET …/apps/:id/deployments` | Lists the deployment history |
 | `apps.deployments.get(appId, deploymentId)` | `GET …/deployments/:did` | Reads one deployment plus its events |
 | `apps.deployments.logs(appId, deploymentId, options?)` | `GET …/deployments/:did/logs` | Reads runtime logs with a cursor |
+| `apps.deployments.remove(appId, deploymentId)` | `DELETE …/deployments/:did` | Deletes one deployment and its image; `409` for the live deployment or an in-progress build. Returns `image: 'released' \| 'pending' \| 'none'` |
 
 Access is the App's own authorization policy:
 
 | Method | Wraps | What it does |
 |---|---|---|
-| `apps.access.get(appId)` | `GET …/apps/:id/access` | Reads the policy. Needs `project.customize.write` |
+| `apps.access.get(appId)` | `GET …/apps/:id/access` | Reads the policy. Needs `project.app.read` |
 | `apps.access.update(appId, input)` | `PATCH …/apps/:id/access` | Replaces the policy and bumps its revision |
 | `apps.access.session(appId)` | `POST …/apps/:id/access-session` | Mints a five-minute URL that exchanges into a host-only cookie |
 
@@ -150,7 +149,9 @@ for (;;) {
 ```
 
 Each entry carries `cursor`, `time`, `source` (`app`, `appd`, `caddy`), and
-`line`.
+`line`. A `caddy` line is the access log: method, URI, status, duration and
+response headers. It never contains request headers, because those carry the
+gate's credentials (the viewer token and identity, the provider ingress token).
 
 ## Your App already knows who is looking
 
@@ -196,8 +197,9 @@ made with a secret derived per App.
 
 ### How much your App is told
 
-One setting on the App's access policy — **Settings → Access** in Kortix, or
-`viewer_token_scope` on `PATCH /projects/:id/apps/:appId/access`:
+One setting on the App's access policy — **Settings → Access** in Kortix,
+`kortix apps access <app> --viewer off|identity|api`, or `viewer_token_scope`
+on `PATCH /projects/:id/apps/:appId/access`:
 
 | Scope | Your App receives |
 |---|---|
@@ -207,8 +209,30 @@ One setting on the App's access policy — **Settings → Access** in Kortix, or
 
 The token is never the user's Kortix session: it lasts an hour, carries only
 those scopes, and every token an App minted dies when the App is deleted or its
-access policy changes. `public` and `password` Apps have no signed-in Kortix
-viewer, so they receive none of this.
+access policy changes.
+
+### Using the viewer token
+
+- **On your server, read it per request.** The gate puts a live token in
+  `x-kortix-app-viewer-token` on every proxied request. Send it as
+  `Authorization: Bearer` to the Kortix API — `createAppViewerKortix(request)`
+  does exactly that. Build one client per request; do not store the token.
+- **After an access-policy change, old tokens stop working.** The next request
+  through the gate carries a new one. In the browser, `kortixAppViewerToken()`
+  recovers by itself: when the API refuses its token, the SDK re-reads
+  `/_kortix/viewer` and replays the call once.
+- **The viewer's role is the ceiling.** The token can do exactly what the
+  viewer can do in Kortix, never more. On a project with agent permissions, a
+  `member` needs a grant on the agent your App starts: without one,
+  `POST /projects/:id/sessions` answers `403 no_agent_access`. Grant your
+  viewers the agent, not a broader role.
+- **Who has a viewer.** A person who opens the App with their Kortix login — or
+  with an access link, which signs them in as that person — has one. A
+  `password` App has none: the password proves a shared secret, not a person. A
+  `public` App has one only for a visitor who arrived through an access link;
+  the bare URL stays anonymous.
+- **It is a credential.** Kortix leaves request headers out of the App's access
+  log (`kortix apps logs`). Do not log the header in your own code.
 
 An App served on its **own domain** (not `*.apps.kortix.com`) has no gate in
 front of it — use [Sign in with Kortix](/docs/sdk/sign-in) there instead.

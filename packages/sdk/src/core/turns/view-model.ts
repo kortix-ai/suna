@@ -41,7 +41,7 @@
  * tool call itself — there's no tool named `permission` on the wire.
  */
 
-import { normalizeToolName } from './tool-registry';
+import { toolKind } from './tool-kind';
 import type { ToolView } from './classify';
 
 // ============================================================================
@@ -324,13 +324,24 @@ function computeLineDiff(oldStr: string, newStr: string): DiffLine[] | undefined
   return lines;
 }
 
+/** The replaced blocks of an edit: OpenCode's one `oldString`/`newString`, or pi's `edits[]`. */
+function editBlocks(input: Record<string, unknown> | undefined): Array<[string, string]> {
+  const oldString = firstString(input?.oldString);
+  const newString = firstString(input?.newString);
+  if (oldString !== undefined && newString !== undefined) return [[oldString, newString]];
+  const edits = Array.isArray(input?.edits) ? input.edits : [];
+  return edits.flatMap((edit) => {
+    const e = asRecord(edit);
+    const before = e && firstString(e.oldText);
+    const after = e && firstString(e.newText);
+    return before !== undefined && after !== undefined ? [[before, after] as [string, string]] : [];
+  });
+}
+
 function fileEditViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'file-edit' }> {
-  const oldString = firstString(tool.input?.oldString);
-  const newString = firstString(tool.input?.newString);
-  const diff =
-    oldString !== undefined && newString !== undefined
-      ? computeLineDiff(oldString, newString)
-      : undefined;
+  const blocks = editBlocks(tool.input);
+  const diffs = blocks.map(([before, after]) => computeLineDiff(before, after));
+  const diff = blocks.length && diffs.every(Boolean) ? diffs.flatMap((lines) => lines ?? []) : undefined;
   return { kind: 'file-edit', path: filePath(tool), diff };
 }
 
@@ -491,11 +502,8 @@ function genericViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'gener
  * capped).
  */
 export function toolViewModel(tool: ToolView): ToolViewModel {
-  const name = normalizeToolName(tool.name);
-  switch (name) {
+  switch (toolKind(tool.name)) {
     case 'web_search':
-    case 'websearch':
-    case 'image_search':
       return webSearchViewModel(tool);
     case 'bash':
       return shellViewModel(tool);
@@ -504,7 +512,6 @@ export function toolViewModel(tool: ToolView): ToolViewModel {
     case 'write':
       return fileWriteViewModel(tool);
     case 'edit':
-    case 'morph_edit':
       return fileEditViewModel(tool);
     case 'grep':
     case 'glob':
@@ -514,7 +521,6 @@ export function toolViewModel(tool: ToolView): ToolViewModel {
     case 'todowrite':
       return todoViewModel(tool);
     case 'question':
-    case 'ask':
       return questionViewModel(tool);
     default:
       return genericViewModel(tool);

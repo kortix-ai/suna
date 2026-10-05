@@ -1,4 +1,7 @@
+import { hubTarget } from '@/stores/account-panel-store';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ConnectedAccountsTabView } from './connected-tab';
@@ -40,6 +43,30 @@ const rowLabelIndex = (html: string, label: string): number => {
 const skeletons = (html: string): number => [...html.matchAll(/animate-pulse/g)].length;
 
 describe('ConnectedAccountsTabView', () => {
+  test('renders injected locale copy instead of fixed English labels', () => {
+    const out = renderToStaticMarkup(
+      <ConnectedAccountsTabView
+        canManageAccount
+        copy={{
+          checking: 'Провера налога.',
+          connectedAs: (name) => `Повезано као ${name}.`,
+          unavailable: 'Статус није доступан.',
+          install: 'Инсталирајте GitHub App.',
+          disconnect: 'Прекини везу',
+          connect: 'Повежи',
+          github: 'GitHub',
+          moreInstallations: (count) => `Још инсталација: ${count}`,
+          adminOnly: 'Само администратор може да повеже GitHub.',
+          disconnectedToast: 'GitHub веза је прекинута',
+          disconnectFailed: 'Прекид GitHub везе није успео',
+        }}
+      />,
+    );
+    expect(out).toContain('Инсталирајте GitHub App.');
+    expect(out).toContain('Повежи');
+    expect(out).not.toContain('>Connect<');
+  });
+
   test('renders exactly one provider row — GitHub', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
     expect(headings(out)).toEqual(['Connected accounts']);
@@ -148,11 +175,14 @@ describe('ConnectedAccountsTabView', () => {
         githubStatus="connected"
         githubInstallationName="github.com/acme"
         githubOtherInstallationsCount={2}
-        githubManageAllHref="/accounts/acc_1?tab=git"
+        githubManageAllTo={hubTarget('acc_1', { tab: 'git' })}
       />,
     );
     expect([...out.matchAll(/<button/g)]).toHaveLength(1);
-    expect(out).toContain('href="/accounts/acc_1?tab=git"');
+    // The account hub has no route: the link carries the hub's params, and
+    // with no router context it renders the query-only relative form, which a
+    // browser resolves against whatever page the tab is open on.
+    expect(out).toContain('href="?accountId=acc_1&amp;accountTab=git"');
     expect(out).toMatch(/\+2 more installations/);
   });
 
@@ -163,54 +193,39 @@ describe('ConnectedAccountsTabView', () => {
         githubStatus="connected"
         githubInstallationName="github.com/acme"
         githubOtherInstallationsCount={0}
-        githubManageAllHref="/accounts/acc_1?tab=git"
+        githubManageAllTo={hubTarget('acc_1', { tab: 'git' })}
       />,
     );
     expect(out).not.toContain('manage all');
   });
 
-  // Task 545 — `GitHubAppSetupCard` (the self-host GitHub App setup card)
-  // rehomed here so it survives the accounts-page deletion ticket. It's
-  // passed as a slot rather than imported directly (see this file's header
-  // comment): the real card needs a `QueryClientProvider`, which
-  // `renderToStaticMarkup` doesn't provide, so these tests stand a marker
-  // `<div>` in for it — same pattern `api-keys-tab.test.tsx` uses for its
-  // slots.
-  //
-  // ORDERING. The slot leads the pane, and what this test pins is the
-  // invariant that carries the meaning: the two GitHub surfaces stay
-  // CONTIGUOUS, ordered widest scope first — instance ("every project on this
-  // instance") then account ("shared by every project"). Nothing may separate
-  // the setup section from the GitHub row it configures. See the ordering
-  // comment in `connected-tab.tsx`.
-  test('the GitHub App setup slot leads the pane, contiguous with the GitHub row it configures', () => {
+  /**
+   * The managed-git setup card is GONE from this pane, and this test is what
+   * keeps it gone.
+   *
+   * It configures ONE instance-global row
+   * (`kortix.platform_settings.managed_github_app`). Rendering it inside an
+   * account-scoped pane is how a platform admin came to reconfigure
+   * production's GitHub App while looking at one customer's settings on
+   * 2026-09-16 — every GitHub connection on prod broke for ~6 min. Its home is
+   * `/admin/git`, behind the platform-admin gate.
+   */
+  test('renders no instance-global managed-git setup surface, whatever the props say', () => {
     const out = renderToStaticMarkup(
       <ConnectedAccountsTabView
         canManageAccount
         githubStatus="connected"
         githubInstallationName="github.com/acme"
-        githubAppSetupSlot={<div>github-app-setup-marker</div>}
       />,
     );
-    const slot = out.indexOf('github-app-setup-marker');
-    expect(slot).toBeGreaterThan(-1);
-
-    // Descending scope: instance-level setup, then the account-level row.
-    expect(slot).toBeLessThan(rowLabelIndex(out, 'GitHub'));
-
-    // Contiguous: the first provider row after the setup section is the GitHub
-    // one. Moving the slot below the group fails this.
-    expect(rowLabels(out.slice(slot))[0]).toBe('GitHub');
+    expect(out).not.toContain('Managed GitHub');
+    expect(out).not.toContain('every project on this instance');
   });
 
-  test('the GitHub App setup slot is absent without account.write, same as the GitHub row it pairs with', () => {
-    const out = renderToStaticMarkup(
-      <ConnectedAccountsTabView
-        canManageAccount={false}
-        githubAppSetupSlot={<div>github-app-setup-marker</div>}
-      />,
-    );
-    expect(out).not.toContain('github-app-setup-marker');
+  test('the view takes no slot for it either — there is nothing left to pass', () => {
+    const source = readFileSync(join(import.meta.dir, 'connected-tab.tsx'), 'utf8');
+    expect(source).not.toContain('githubAppSetupSlot');
+    expect(source).not.toContain('GitHubAppSetupCard');
   });
 });
 

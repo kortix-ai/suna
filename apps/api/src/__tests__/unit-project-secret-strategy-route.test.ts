@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { connectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
+import { connectors, projectSecrets, projectSessionSecretHandles, roleAssignments } from '@kortix/db';
 import type { SecretEgressPolicy } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
@@ -20,10 +20,14 @@ const PROJECT_ACTIONS = {
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realIam = await import('../iam');
+mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
 
 let agentGrant: Record<string, unknown> | null = null;
-let authType: 'service_account' | 'supabase' = 'supabase';
+let authType: 'service_account' | 'supabase' | 'pat' = 'supabase';
 
 let row: ReturnType<typeof secretRow> | null = secretRow();
 const updates: Array<Record<string, unknown>> = [];
@@ -136,6 +140,8 @@ const databaseMock = {
       if (table === connectors) {
         return { where: async () => boundConnectorSlugs.map((slug) => ({ slug })) };
       }
+      // Secret audiences (secret-audience.ts): this project narrows none.
+      if (table === roleAssignments) return { where: async () => [] };
       if (table !== projectSecrets) throw new Error('unexpected table');
       // The destination-collision query is the only projectSecrets select that
       // asks for identifier + policy and no secretId, and the only one that
@@ -218,7 +224,9 @@ mock.module('../projects/lib/access', () => ({
   assertProjectCapability: async () => undefined,
 }));
 
+const realSync = await import('../projects/lib/sandbox-env-sync');
 mock.module('../projects/lib/sandbox-env-sync', () => ({
+  ...realSync,
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, options: unknown) => {
     propagations.push({ projectId, options });
     if (propagationGate) await propagationGate;
@@ -243,14 +251,18 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/r3');
+// The secret and provider-OAuth routes, in production registration order.
+// secrets.ts registers the `/secrets/*` write rate limit ahead of them.
+await import('../projects/routes/secrets');
+await import('../projects/routes/secret-delivery');
+await import('../projects/routes/provider-oauth');
 
 function buildApp() {
   const app = new Hono<{
     Variables: {
       userId: string;
       agentGrant: Record<string, unknown>;
-      authType: 'service_account' | 'supabase';
+      authType: 'service_account' | 'supabase' | 'pat';
     };
   }>();
   app.use('*', async (c, next) => {
@@ -502,8 +514,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(audits).toHaveLength(1);
   });
 
-  // The DEFAULT shape since docs/specs/2026-08-19-secrets-exposure-usage-model.md
-  // §6: an egress-enforced secret is served by handle substitution, so the
+  // The DEFAULT shape: an egress-enforced secret is served by handle substitution, so the
   // policy is a HOST LIST and there is no injection slot to name. This route
   // used to reject it with `policy.inject is invalid`.
   test('stores a substitution-only policy that names no injection slot', async () => {
@@ -771,6 +782,9 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
   });
 
   test('rejects an agent principal', async () => {
+    // A session credential is a PAT (`authType: 'pat'`); the guard keys on the
+    // session principal, not on the grant alone.
+    authType = 'pat';
     agentGrant = { env: ['SERVICE_API_KEY'] };
 
     const response = await buildApp().request(
@@ -1390,6 +1404,8 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider audit', () => {
         metadata: {
           identifier: 'CODEX_AUTH_JSON',
           consumer: 'llm_gateway',
+          // effectiveRole 'owner' is not manager-tier: own private rows only.
+          scope: 'own_private',
         },
       }),
     ]);

@@ -17,8 +17,7 @@ export const DESKTOP_UA_TOKEN = 'KortixDesktop';
  * same pattern as the CLI's `/install`. Override with
  * NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL if needed.
  */
-export const DESKTOP_DOWNLOAD_URL =
-  process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
+export const DESKTOP_DOWNLOAD_URL = process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
 
 /**
  * Build a per-platform download URL, e.g. desktopDownloadUrl('macos') →
@@ -107,31 +106,6 @@ export function desktopShellPlatform(): DesktopShellPlatform | null {
   return platform === 'macos' ? 'macos' : 'other';
 }
 
-type TauriWindow = {
-  minimize: () => Promise<void>;
-  toggleMaximize: () => Promise<void>;
-  close: () => Promise<void>;
-  isMaximized: () => Promise<boolean>;
-  onResized: (cb: () => void) => Promise<() => void>;
-};
-
-type TauriGlobal = {
-  window: { getCurrentWindow: () => TauriWindow };
-};
-
-function tauri(): TauriGlobal | null {
-  if (typeof window === 'undefined') return null;
-  return (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__ ?? null;
-}
-
-/**
- * Custom URL scheme registered by the desktop shell. OAuth providers and
- * email magic links should redirect here (instead of `https://kortix.com/...`)
- * so the OS hands the callback back to the desktop app rather than opening
- * it in the user's browser.
- */
-export const DESKTOP_URL_SCHEME = 'kortix';
-
 /**
  * Returns the right OAuth redirect target for the current runtime:
  * - Desktop: HTTPS `/auth/callback?desktop=true&...` so the user's browser
@@ -218,7 +192,11 @@ export function getDesktopZoom(): number {
 }
 
 async function invokeSetZoom(scale: number): Promise<void> {
-  const t = (window as unknown as { __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } } }).__TAURI__;
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
   if (!t?.core?.invoke) return;
   try {
     await t.core.invoke('set_zoom', { scale });
@@ -231,10 +209,7 @@ export async function setDesktopZoom(scale: number): Promise<number> {
   const next = clampZoom(scale);
   try {
     // Stamped with the base it was chosen against — see readStoredZoom.
-    window.localStorage.setItem(
-      ZOOM_KEY,
-      JSON.stringify({ scale: next, base: DESKTOP_BASE_ZOOM }),
-    );
+    window.localStorage.setItem(ZOOM_KEY, JSON.stringify({ scale: next, base: DESKTOP_BASE_ZOOM }));
   } catch {
     /* private mode */
   }
@@ -256,6 +231,22 @@ export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
 /** Back to the shell's own scale, not the browser's 100%. */
 export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
+export async function setDesktopNativeTheme(theme: string | undefined): Promise<void> {
+  if (typeof window === 'undefined' || !theme) return;
+  const selected = theme === 'light' || theme === 'dark' ? theme : 'system';
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
+  if (!t?.core?.invoke) return;
+  try {
+    await t.core.invoke('set_native_theme', { theme: selected });
+  } catch {
+    /* older desktop shell */
+  }
+}
+
 /* ─── Frontend URL override (self-hosting) ───────────────────────────────
    The switcher lives in the hidden native menu (Kortix → Frontend URL). Its
    "Custom URL…" item can't take text input natively, so it fires a
@@ -265,9 +256,11 @@ export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
 function tauriInvoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> | null {
   if (typeof window === 'undefined') return null;
-  const t = (window as unknown as {
-    __TAURI__?: { core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> } };
-  }).__TAURI__;
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
   if (!t?.core?.invoke) return null;
   return t.core.invoke(cmd, args) as Promise<T>;
 }
@@ -286,21 +279,145 @@ export async function setFrontendUrl(url: string): Promise<void> {
   await tauriInvoke('set_frontend_url', { url });
 }
 
-export const desktopWindow = {
-  minimize: () => tauri()?.window.getCurrentWindow().minimize(),
-  toggleMaximize: () => tauri()?.window.getCurrentWindow().toggleMaximize(),
-  close: () => tauri()?.window.getCurrentWindow().close(),
-  isMaximized: async () => {
-    const t = tauri();
-    if (!t) return false;
-    return t.window.getCurrentWindow().isMaximized();
-  },
-  onResized: async (cb: () => void) => {
-    const t = tauri();
-    if (!t) return () => {};
-    return t.window.getCurrentWindow().onResized(cb);
-  },
-};
+/* ─── This computer (desktop app) ─────────────────────────────────────────
+   The desktop app bundles the computer agent (@kortix/agent-tunnel) and runs
+   it as an OS service. These wrappers return null in a browser and on a
+   desktop build that predates the commands. */
+
+export interface DesktopComputerStatus {
+  /** False when the bundled agent could not run; `error` says why. */
+  available: boolean;
+  /** This machine holds a pairing credential. */
+  paired: boolean;
+  tunnelId?: string;
+  /** Relay the local pairing belongs to, e.g. `https://api.kortix.com/v1/tunnel`. */
+  apiUrl?: string;
+  /** Live connection of the local agent, from its state file. */
+  state?: DesktopComputerState;
+  /** Paused by the owner: stays stopped across restarts until resumed. */
+  paused?: boolean;
+  serviceInstalled: boolean;
+  /** False while computer access is paused or the service is down. */
+  serviceActive: boolean;
+  error?: string;
+}
+
+/** `rejected` = the credential was refused (reconnect); `standby` = another process holds it. */
+export type DesktopComputerState = 'online' | 'connecting' | 'offline' | 'rejected' | 'standby';
+
+export interface DesktopComputerConnectResult {
+  ok: boolean;
+  tunnelId?: string;
+  /** The machine was already paired; the saved pairing was reused. */
+  existing?: boolean;
+  error?: string;
+}
+
+export interface DesktopComputerDisconnectResult {
+  ok: boolean;
+  /** The machine removed itself from Kortix. False: the server still lists it. */
+  serverUnpaired?: boolean;
+  status: DesktopComputerStatus;
+  error?: string;
+}
+
+/** Access control enforced on this machine (the owner answers a native prompt). */
+export interface DesktopComputerAccess {
+  mode: 'ask' | 'always' | 'off';
+  grantedUntil: string | null;
+  deniedUntil: string | null;
+  keepAwake: boolean;
+  keepAwakeSupported: boolean;
+  pendingRequest: { id: string; capability: string; requestedAt: string } | null;
+}
+
+export interface DesktopComputerAccessInput {
+  mode?: DesktopComputerAccess['mode'];
+  /** Allow for this many minutes (max 24 h). */
+  grantMinutes?: number;
+  /** End the current grant now. */
+  revoke?: boolean;
+  /** Answer a pending request with "Deny": refused for 10 minutes. */
+  deny?: boolean;
+  keepAwake?: boolean;
+}
+
+async function desktopCommand<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
+  try {
+    return ((await tauriInvoke<T>(cmd, args)) ?? null) as T | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Like `desktopCommand`, but a failure the desktop app reports rejects with its
+ * message instead of reading as "not the desktop app". `null` = not desktop.
+ */
+async function desktopAction<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
+  const pending = tauriInvoke<T>(cmd, args);
+  if (!pending) return null;
+  try {
+    return ((await pending) ?? null) as T | null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+  }
+}
+
+/** Pause/resume answer `{ ok, error?, status }` (X5). */
+async function desktopServiceVerb(cmd: string): Promise<DesktopComputerStatus | null> {
+  const result = await desktopAction<{ ok: boolean; error?: string; status: DesktopComputerStatus }>(cmd);
+  if (!result) return null;
+  if (!result.ok) throw new Error(result.error || 'The desktop app could not change computer access.');
+  return result.status;
+}
+
+export const desktopComputerStatus = () => desktopCommand<DesktopComputerStatus>('computer_status');
+
+/**
+ * Pairs this machine and installs the background service. The desktop app
+ * derives the backend from its own instance and opens the approval page
+ * itself; it resolves once the service runs. `projectId` is optional (F3).
+ * `{ ok: false, error: 'cancelled' }`: the person closed the approval window.
+ */
+export const desktopComputerConnect = (input: {
+  projectId?: string;
+  /** Drop the local pairing first: this backend does not know it. */
+  reauth?: boolean;
+}) => desktopCommand<DesktopComputerConnectResult>('computer_connect', input);
+
+/** Pause survives a restart or a new login; Resume reverses it. Rejects on failure. */
+export const desktopComputerPause = () => desktopServiceVerb('computer_pause');
+export const desktopComputerResume = () => desktopServiceVerb('computer_resume');
+/**
+ * Removes this machine from Kortix with its own credential, then the local
+ * credential and the service. `serverUnpaired: false` = Kortix was not
+ * reachable; the machine record must be removed through the API.
+ */
+export const desktopComputerDisconnect = () =>
+  desktopCommand<DesktopComputerDisconnectResult>('computer_disconnect');
+export const desktopComputerOpenLogs = () => desktopAction<null>('computer_open_logs');
+/**
+ * The macOS grants the Kortix app holds for this computer's approved access.
+ * `files`: Desktop, Documents, and Downloads (`null` = not asked yet).
+ * `missing`: what setup still needs, in the order it asks. `null` off macOS
+ * or off desktop.
+ */
+export interface DesktopComputerGrants {
+  accessibility: boolean;
+  screenRecording: boolean;
+  files?: boolean | null;
+  missing?: ('files' | 'accessibility' | 'screenRecording')[];
+}
+export const desktopComputerGrants = () => desktopCommand<DesktopComputerGrants>('computer_grants');
+/** Setup's "Allow all": asks macOS for every missing grant, one prompt at a time. */
+export const desktopComputerRequestGrants = () =>
+  desktopAction<DesktopComputerGrants>('computer_grants_request');
+export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAccess>('computer_access_get');
+/** Rejects with the desktop app's message on invalid input. */
+export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
+  desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
 
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and

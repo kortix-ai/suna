@@ -5,8 +5,9 @@ import { KortixLogo } from '@/components/ui/kortix-logo';
 import { useMediaQuery } from '@/hooks/utils/use-media-query';
 import { cn } from '@/lib/utils';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { LAYERS, SECTION, type Layer } from './how-it-works-content';
+import { LAYERS, getLocalizedHowItWorksContent, type Layer } from './how-it-works-content';
 import { StepComputer } from './step/step-computer';
 import { StepConnectors } from './step/step-connectors';
 import { StepControlPlane } from './step/step-control-plane';
@@ -41,12 +42,15 @@ function LayerShowcase({ layer }: { layer: Layer }): ReactNode {
 
 /** The closing step: the six layers add up to one thing. No product panel. */
 function ClosingPane({ layer, className }: { layer: Layer; className?: string }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { LAYERS: localizedLayers } = getLocalizedHowItWorksContent(tI18nComplete);
   return (
     <div className={cn('flex flex-col items-center justify-center gap-5 text-center', className)}>
       <KortixLogo size={64} variant="icon" className="text-foreground" />
       <p className="text-foreground max-w-md text-balance">{layer.description}</p>
       <p className="text-muted-foreground/60 font-mono text-[10px] tracking-widest tabular-nums">
-        {LAYERS.slice(0, LAST)
+        {localizedLayers
+          .slice(0, LAST)
           .map((l) => l.ordinal)
           .join(' · ')}
       </p>
@@ -161,6 +165,8 @@ function MobileCard({ layer, index }: { layer: Layer; index: number }): ReactNod
  * of the same seven cards.
  */
 export function HowItWorks(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { LAYERS: localizedLayers, SECTION } = getLocalizedHowItWorksContent(tI18nComplete);
   const reduced = useReducedMotion();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const pinned = isDesktop && !reduced;
@@ -181,7 +187,7 @@ export function HowItWorks(): ReactNode {
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
         if (!hit) return;
         const id = hit.target.getAttribute('data-stack-pane');
-        const next = LAYERS.findIndex((layer) => layer.id === id);
+        const next = localizedLayers.findIndex((layer) => layer.id === id);
         if (next >= 0) setActive(next);
       },
       { rootMargin: '-20% 0px -55% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] },
@@ -192,7 +198,7 @@ export function HowItWorks(): ReactNode {
   }, [pinned]);
 
   const seek = useCallback((index: number) => {
-    const id = LAYERS[index]?.id;
+    const id = localizedLayers[index]?.id;
     if (!id) return;
     document.getElementById(`stack-pane-${id}`)?.scrollIntoView({
       behavior: 'smooth',
@@ -227,7 +233,7 @@ export function HowItWorks(): ReactNode {
         {pinned ? (
           <div className="grid grid-cols-[14rem_minmax(0,1fr)] items-start gap-10 xl:grid-cols-[16rem_minmax(0,1fr)]">
             <nav aria-label={SECTION.eyebrow} className="sticky top-30 flex flex-col gap-1 pt-1">
-              {LAYERS.map((layer, index) => {
+              {localizedLayers.map((layer, index) => {
                 const isActive = index === active;
                 return (
                   <button
@@ -261,7 +267,7 @@ export function HowItWorks(): ReactNode {
             </nav>
 
             <div className="flex min-w-0 flex-col gap-24 xl:gap-30">
-              {LAYERS.map((layer, index) => (
+              {localizedLayers.map((layer, index) => (
                 <div
                   key={layer.id}
                   id={`stack-pane-${layer.id}`}
@@ -275,7 +281,7 @@ export function HowItWorks(): ReactNode {
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            {LAYERS.map((layer, index) => (
+            {localizedLayers.map((layer, index) => (
               <MobileCard key={layer.id} layer={layer} index={index} />
             ))}
           </div>

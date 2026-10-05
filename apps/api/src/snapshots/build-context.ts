@@ -19,6 +19,7 @@ import {
   copyFile,
   cp,
   chmod,
+  open as openFile,
   readdir,
   mkdir,
   mkdtemp,
@@ -35,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
-import { buildFastSandboxDockerfile, buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
+import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
@@ -64,21 +65,15 @@ const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-// Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
-// skills). Staged into the context so the layer can warm a real opencode project
+// Canonical starter OpenCode config dir (pty plugin + standard tools).
+// Staged into the context so the layer can warm a real opencode project
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
-  || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
+  || resolve(REPO_ROOT, 'packages/starter/templates/base/harnesses/opencode');
 const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
-const fastMachineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_FAST_MACHINE_DOC_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.fast.md');
-const lazyToolsSrcPath = () => process.env.KORTIX_SNAPSHOT_LAZY_TOOLS_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/lazy-tools');
-const runtimeVersionsSrcPath = () => process.env.KORTIX_SNAPSHOT_RUNTIME_VERSIONS_PATH
-  || resolve(REPO_ROOT, 'packages/shared/src/runtime-versions.json');
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -249,95 +244,6 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   return { contextDir, composedPath, dockerfileName };
 }
 
-/** Stage the shared slim runtime selected by KORTIX_FAST_COLD_BOOT_ENABLED. */
-export async function stageFastBuildContext(): Promise<StagedContext> {
-  const agentPath = agentBinPath();
-  const cliPath = cliBinPath();
-  const entrypointPath = entrypointSrcPath();
-  const opencodeWarmupPath = opencodeWarmupSrcPath();
-  const slackPath = slackCliSrcPath();
-  const machinePath = fastMachineDocSrcPath();
-  const lazyToolsPath = lazyToolsSrcPath();
-  const runtimeVersionsPath = runtimeVersionsSrcPath();
-  const opencodeConfigPath = opencodeConfigSrcPath();
-
-  await assertExists(agentPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-  await assertExists(cliPath, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
-  await assertExists(entrypointPath, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExists(opencodeWarmupPath, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
-  await assertExists(machinePath, 'KORTIX_SNAPSHOT_FAST_MACHINE_DOC_PATH');
-  await assertExists(runtimeVersionsPath, 'KORTIX_SNAPSHOT_RUNTIME_VERSIONS_PATH');
-  await assertExistsDir(slackPath, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
-  await assertExistsDir(lazyToolsPath, 'KORTIX_SNAPSHOT_LAZY_TOOLS_PATH');
-  await assertExistsDir(opencodeConfigPath, 'KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH');
-  await assertRuntimeArtifactsCurrent(agentPath, cliPath, cliAttestationPath());
-
-  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-fast-snap-'));
-  try {
-    await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
-    await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
-    await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
-    await copyFile(opencodeWarmupPath, join(contextDir, 'kortix-opencode-warmup'));
-    await copyFile(machinePath, join(contextDir, 'MACHINE.fast.md'));
-    await copyFile(runtimeVersionsPath, join(contextDir, 'runtime-versions.json'));
-    await cp(slackPath, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-    await cp(lazyToolsPath, join(contextDir, 'lazy-tools'), { recursive: true });
-    await stageOpencodeConfigTree(
-      opencodeConfigPath,
-      join(contextDir, 'kortix-opencode-config'),
-    );
-    await stageManagedSkills(join(contextDir, 'managed-skills'));
-    await writeFileFs(
-      join(contextDir, 'kortix-llm-catalog.json'),
-      JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
-    );
-    await stageScaffoldRepo(contextDir);
-
-    const dockerfileName = 'Dockerfile';
-    const composedPath = join(contextDir, dockerfileName);
-    const composed = buildFastSandboxDockerfile({
-      agentBinaryPath: 'kortix-agent.gz',
-      cliBinaryPath: 'kortix.gz',
-      entrypointScriptPath: 'kortix-entrypoint',
-      opencodeWarmupScriptPath: 'kortix-opencode-warmup',
-      machineDocPath: 'MACHINE.fast.md',
-      slackCliPath: 'kortix-slack-cli',
-      lazyToolsPath: 'lazy-tools',
-      catalogPath: 'kortix-llm-catalog.json',
-      managedSkillsPath: 'managed-skills',
-      runtimeVersionsPath: 'runtime-versions.json',
-      opencodeConfigPath: 'kortix-opencode-config',
-      scaffoldPath: 'scaffold.git',
-    });
-    await guardBuildahPortable(composed);
-    await writeComposedDockerfile(composedPath, composed);
-    for (const required of [
-      dockerfileName,
-      'kortix-agent.gz',
-      'kortix.gz',
-      'kortix-entrypoint',
-      'kortix-opencode-warmup',
-      'MACHINE.fast.md',
-      'runtime-versions.json',
-      'kortix-slack-cli',
-      'lazy-tools/install',
-      'kortix-opencode-config',
-      'managed-skills',
-      'kortix-llm-catalog.json',
-      'scaffold.git',
-    ]) {
-      await stat(join(contextDir, required)).catch(() => {
-        throw new Error(`fast build context staging incomplete: ${required} missing in ${contextDir}`);
-      });
-    }
-    return { contextDir, composedPath, dockerfileName };
-  } catch (error) {
-    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
-    throw error;
-  }
-}
-
-
 /**
  * The pi worker image: node + a boot script, nothing else. The actual harness
  * arrives at BOOT as the per-(project, sha) compiled artifact served by
@@ -347,34 +253,6 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
  * discipline: same content ⇒ same snapshot, reused forever.
  */
 export const PI_WORKER_ENTRYPOINT = '/usr/local/bin/pi-worker-entrypoint';
-
-/**
- * The node flags every worker boot runs under — the "lock the file system on
- * the harness" item from the design huddle, enforced by node's permission
- * model rather than by care.
- *
- * Under `--permission` the process may READ only what is listed here — its own
- * artifact and `/proc/uptime` (the boot clock) — and nothing else: every other
- * fs read, every fs write, every child process and every worker thread is
- * `ERR_ACCESS_DENIED`. That holds for pi's built-in tools (which never touch
- * this disk anyway, see kortix-env.ts) AND for a user-authored tool bundled
- * into the artifact, which is the case the isolation test cannot cover: it
- * can only prove that the tools we ship stay off the disk, not that arbitrary
- * in-process code does. Network stays open — the worker is nothing but
- * network: the model gateway, the environment RPC, the durable store.
- *
- * Both boot paths — the cold entrypoint and park.mjs's post-claim spawn —
- * derive their argv from this ONE function, and pi-worker-lockdown.test.ts
- * drives the real compiled bundle through a tool turn under exactly these
- * flags, so a flag the bundle cannot live with fails there, not on a box.
- */
-export function piWorkerNodeArgs(runtimeDir: string): string[] {
-  return [
-    '--permission',
-    `--allow-fs-read=${runtimeDir}/session-worker.mjs`,
-    '--allow-fs-read=/proc/uptime',
-  ];
-}
 
 const PI_WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # Boot a session on the compiled pi worker runtime.
@@ -393,9 +271,7 @@ fi
 : "\${KORTIX_API_URL:?}" "\${KORTIX_TOKEN:?}" "\${KORTIX_PROJECT_ID:?}"
 : "\${KORTIX_PI_RUNTIME_REF:?}" "\${KORTIX_PI_RUNTIME_SHA:?}"
 node /opt/kortix/fetch-runtime.mjs
-# Locked down (see piWorkerNodeArgs): reads limited to the artifact and the
-# boot clock; no other reads, no writes, no child processes.
-exec node ${piWorkerNodeArgs('/opt/kortix').join(' ')} /opt/kortix/session-worker.mjs
+exec node /opt/kortix/session-worker.mjs
 `;
 
 const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session claims it.
@@ -404,27 +280,10 @@ const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session clai
 import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
-import { readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 
 const PORT = Number(process.env.PORT ?? 8000);
 const PARK_TOKEN = process.env.KORTIX_PI_PARK_TOKEN ?? '';
-// Resolved through realpath: the permission model compares the path node
-// actually opens, so a symlinked runtime dir (macOS's /var -> /private/var in
-// tests) would otherwise deny the worker its own entrypoint.
-const RUNTIME_DIR = realpathSync(process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix');
-// The claim, made durable.
-//
-// A claim arrives over HTTP and is spawned into a CHILD process, but the
-// container's own environment still carries KORTIX_PI_PARK=1 — so the first
-// stop/resume re-runs the entrypoint, which execs this script again with the
-// claim env gone. The box then answered {parked:true,runtimeReady:false}
-// forever and the session could never run another turn: its transcript
-// survived, nothing else did. Writing the claim here, and preferring it over
-// parking on every later boot, is what makes a resume come back as a worker.
-//
-// 0600: this file holds the session token, same as the process env already
-// does. It never leaves the box.
-const CLAIM_FILE = RUNTIME_DIR + '/claim.json';
+const RUNTIME_DIR = process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix';
 const REQUIRED = [
   'KORTIX_API_URL',
   'KORTIX_TOKEN',
@@ -467,62 +326,10 @@ async function boot(env) {
     console.error(JSON.stringify({ msg: 'claimed park boot FAILED at fetch', exit: fetchExit }));
     process.exit(1);
   }
-  // Same lockdown as the cold entrypoint (piWorkerNodeArgs in build-context.ts):
-  // a claimed box must not be the one boot path that runs the harness unconfined.
-  const worker = spawn(
-    'node',
-    [
-      '--permission',
-      '--allow-fs-read=' + RUNTIME_DIR + '/session-worker.mjs',
-      '--allow-fs-read=/proc/uptime',
-      RUNTIME_DIR + '/session-worker.mjs',
-    ],
-    { env: merged, stdio: 'inherit' },
-  );
+  const worker = spawn('node', [RUNTIME_DIR + '/session-worker.mjs'], { env: merged, stdio: 'inherit' });
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => worker.kill(sig));
   worker.on('exit', (code) => process.exit(code ?? 1));
 }
-
-function validClaimEnv(env) {
-  if (!env || typeof env !== 'object' || Array.isArray(env)) return false;
-  for (const [key, value] of Object.entries(env)) {
-    if (!/^KORTIX_[A-Z0-9_]*$/.test(key) || typeof value !== 'string') return false;
-  }
-  return REQUIRED.every((key) => Boolean(env[key]));
-}
-
-/** Atomic, so a crash mid-write cannot leave a half claim that parses. */
-function persistClaim(env) {
-  try {
-    const tmp = CLAIM_FILE + '.tmp';
-    writeFileSync(tmp, JSON.stringify(env), { mode: 0o600 });
-    renameSync(tmp, CLAIM_FILE);
-    return true;
-  } catch (error) {
-    console.error(JSON.stringify({ msg: 'claim persist FAILED', error: String(error?.message ?? error) }));
-    return false;
-  }
-}
-
-/** The claim from a previous life, or null. A corrupt file parks. */
-function loadClaim() {
-  try {
-    const env = JSON.parse(readFileSync(CLAIM_FILE, 'utf8'));
-    // Re-validated on the way in: a file that no longer satisfies the contract
-    // must not boot a worker with a half env.
-    return validClaimEnv(env) ? env : null;
-  } catch {
-    return null;
-  }
-}
-
-const resumed = loadClaim();
-if (resumed) {
-  // Already claimed in a previous life. Never listen — the port belongs to the
-  // worker, and a parked answer here is what stranded the session before.
-  console.log(JSON.stringify({ msg: 'park resume: booting the claimed session', keys: Object.keys(resumed).length }));
-  void boot(resumed);
-} else {
 
 const server = createServer(async (req, res) => {
   const path = String(req.url ?? '').split('?')[0];
@@ -561,14 +368,6 @@ const server = createServer(async (req, res) => {
       return;
     }
     claimed = true;
-    // Persist BEFORE answering: a claim the API believes succeeded must
-    // survive a restart, so the durable write is part of accepting it.
-    if (!persistClaim(env)) {
-      claimed = false;
-      res.writeHead(500, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: 'could not persist claim' }));
-      return;
-    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
     console.log(JSON.stringify({ msg: 'park claim accepted', keys: Object.keys(env).length }));
@@ -582,8 +381,6 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(JSON.stringify({ msg: 'pi worker parked', port: PORT }));
 });
-
-}
 `;
 
 const PI_WORKER_FETCH_MJS = `// Download this session's compiled pi runtime, verified before it may run.
@@ -626,12 +423,8 @@ process.exit(1);
 `;
 
 function buildPiWorkerDockerfile(): string {
-  // alpine, not slim: the worker is pure JS (`@earendil-works/pi-*` + `ws`,
-  // no native modules, no child_process), so musl costs nothing and the base
-  // is ~40 MB smaller. `adduser` is busybox's, not shadow's — the Debian
-  // `useradd` flags do not exist here.
-  return `FROM node:22-alpine
-RUN adduser -D -s /sbin/nologin kortix \\
+  return `FROM node:22-slim
+RUN useradd --create-home --shell /usr/sbin/nologin kortix \\
     && mkdir -p /opt/kortix && chown kortix:kortix /opt/kortix
 COPY pi-worker-entrypoint /usr/local/bin/pi-worker-entrypoint
 COPY fetch-runtime.mjs /opt/kortix/fetch-runtime.mjs
@@ -646,7 +439,7 @@ ENV NODE_ENV=production
 export function piWorkerImageFingerprint(): string {
   return createHash('sha256')
     .update(
-      `pi-worker-v2\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}\0${PI_WORKER_PARK_MJS}`,
+      `pi-worker-v1\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}\0${PI_WORKER_PARK_MJS}`,
     )
     .digest('hex');
 }
@@ -667,7 +460,7 @@ export async function stagePiWorkerBuildContext(): Promise<StagedContext> {
   return { contextDir, composedPath, dockerfileName };
 }
 
-export type RuntimeBuildProfile = 'standard' | 'fast' | 'meta' | 'app' | 'pi-worker';
+export type RuntimeBuildProfile = 'standard' | 'meta' | 'app' | 'pi-worker';
 
 /** Select one runtime renderer for every provider adapter. */
 export async function stageRuntimeBuildContext(input: {
@@ -676,6 +469,7 @@ export async function stageRuntimeBuildContext(input: {
   runtimeProfile?: RuntimeBuildProfile;
   appContext?: { sourceDir?: string; runtimeSpec: Record<string, unknown> };
   isShared?: boolean;
+  containerRuntime?: boolean;
 }): Promise<StagedContext> {
   switch (input.runtimeProfile) {
     case 'app':
@@ -685,13 +479,12 @@ export async function stageRuntimeBuildContext(input: {
       return stageMetaBuildContext();
     case 'pi-worker':
       return stagePiWorkerBuildContext();
-    case 'fast':
-      return stageFastBuildContext();
     default:
       return stageBuildContext(
         input.snapshotName,
         input.userDockerfile,
         input.isShared,
+        input.containerRuntime,
       );
   }
 }
@@ -710,6 +503,7 @@ export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
   isSharedDefault?: boolean,
+  containerRuntime?: boolean,
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
   const CLI_BIN_PATH = cliBinPath();
@@ -790,6 +584,15 @@ export async function stageBuildContext(
     // back to a full fetch through the same code.
     await stageScaffoldRepo(contextDir);
 
+    // The managed `kortix-*` skill overlay, baked like every other artifact.
+    // Only the meta image used to carry it, so an ordinary session sandbox —
+    // dev, prod and preview alike — booted with nothing at
+    // /opt/kortix/managed-skills and downloaded the whole overlay on its first
+    // reconcile. `kortix-starter` is already a snapshot-fingerprint input
+    // (templates.ts NON_AGENT_RUNTIME_ARTIFACTS), so a skill edit mints a new
+    // snapshot and the bake stays current.
+    await stageManagedSkills(join(contextDir, 'managed-skills'));
+
     const dockerfileName = '.kortix-snapshot.Dockerfile';
     const composedPath = join(contextDir, dockerfileName);
     const composed = buildLayeredDockerfile({
@@ -804,7 +607,9 @@ export async function stageBuildContext(
       opencodeConfigPath,
       opencodeWarmupScriptPath: 'kortix-opencode-warmup',
       catalogPath: 'kortix-llm-catalog.json',
+      managedSkillsPath: 'managed-skills',
       isSharedDefault,
+      containerRuntime,
     });
 
     await guardBuildahPortable(composed);
@@ -814,6 +619,8 @@ export async function stageBuildContext(
     // "Path does not exist", and the auto-build can't tell it's a staging miss to
     // recover from. Assert at the source so a miss is caught here AND is retryable
     // (the daytona adapter re-stages on "staging incomplete").
+    // It was declared and never called, so it guarded nothing.
+    await assertContextComplete(contextDir, dockerfileName);
     console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
     return { contextDir, composedPath, dockerfileName };
   });
@@ -874,6 +681,10 @@ async function assertContextComplete(
     // fetch that gates opencode's port bind. That is invisible in build logs and
     // shows up only as "boot got slower", so assert it here.
     'kortix-llm-catalog.json',
+    // The managed skill overlay. A miss here is the defect this guard exists
+    // for: the image still builds, and every box on it silently downloads the
+    // overlay on its first reconcile instead of booting with it.
+    'managed-skills',
     dockerfileName,
   ];
   for (const rel of required) {
@@ -944,8 +755,21 @@ async function agentBinaryStale(agentPath: string, srcDir: string): Promise<bool
     // Current by mtime. Memoize the source hash once (only when absent, so the
     // steady state pays nothing) so a later checkout can be recognized as a
     // no-op instead of false-positive stale.
-    if (!(await stat(hashPath).catch(() => null))) {
-      await writeFileFs(hashPath, await srcContentHash(srcDir)).catch(() => {});
+    // `wx` creates the file ONLY if it is absent, and does so atomically. The
+    // previous shape — stat, then write when the stat said "missing" — is a
+    // check-then-act race (CodeQL js/file-system-race): two concurrent builds
+    // both see it absent and both write. Opening exclusively also keeps the
+    // steady-state cost at zero, because the hash is computed only on the
+    // branch that actually won the create.
+    const handle = await openFile(hashPath, 'wx').catch(() => null);
+    if (handle) {
+      try {
+        await handle.writeFile(await srcContentHash(srcDir));
+      } catch {
+        // A memoized hash is an optimization; losing it only costs a rebuild.
+      } finally {
+        await handle.close().catch(() => {});
+      }
     }
     return false;
   }

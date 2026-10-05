@@ -47,7 +47,7 @@ print_banner() {
     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝╚═╝  ╚═╝
 EOF
   printf "${N}\n"
-  printf "    ${W}The open-source AI Management System${N}\n"
+  printf "    ${W}The open-source AI Operating System${N}\n"
   printf "    ${F}One-click CLI installer${N}\n"
   printf "\n"
 }
@@ -139,6 +139,7 @@ link_onto_path() {
   # Preferred: /usr/local/bin (already on most PATHs).
   if [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
     ln -sf "$target" "/usr/local/bin/${BINARY_NAME}"
+    ln -sf "$target" "/usr/local/bin/${BINARY_NAME}t"
     ok "Symlinked /usr/local/bin/${BINARY_NAME} → ${target}"
     return
   fi
@@ -147,6 +148,7 @@ link_onto_path() {
   if [ -d "$local_bin" ]; then
     mkdir -p "$local_bin"
     ln -sf "$target" "${local_bin}/${BINARY_NAME}"
+    ln -sf "$target" "${local_bin}/${BINARY_NAME}t"
     ok "Symlinked ${local_bin}/${BINARY_NAME} → ${target}"
     case ":$PATH:" in
       *":${local_bin}:"*) ;;
@@ -160,7 +162,7 @@ link_onto_path() {
   # Last resort: try sudo for /usr/local/bin.
   if command -v sudo >/dev/null 2>&1; then
     info "Linking via sudo (you may be prompted for your password)…"
-    if sudo ln -sf "$target" "/usr/local/bin/${BINARY_NAME}"; then
+    if sudo ln -sf "$target" "/usr/local/bin/${BINARY_NAME}" && sudo ln -sf "$target" "/usr/local/bin/${BINARY_NAME}t"; then
       ok "Symlinked /usr/local/bin/${BINARY_NAME} → ${target}"
       return
     fi

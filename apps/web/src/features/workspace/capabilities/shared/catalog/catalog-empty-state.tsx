@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 /**
@@ -34,14 +35,19 @@ export function CatalogNoMatch({
    */
   excludedNoActions?: number;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <CatalogEmptyNote>
-      No matches for <span className="text-foreground font-mono">{query.trim()}</span>.
+      {tI18nComplete.raw('texta8897de42124')}{' '}
+      <span className="text-foreground font-mono">{query.trim()}</span>.
       {excludedNoActions > 0 ? (
         <>
           {' '}
-          {excludedNoActions === 1 ? '1 app matches' : `${excludedNoActions} apps match`} but
-          publish{excludedNoActions === 1 ? 'es' : ''} no actions an agent can call.
+          {excludedNoActions === 1
+            ? tI18nComplete.raw('text6c612fd35781')
+            : tI18nComplete('text9241c5f73c2c', { value0: excludedNoActions })}{' '}
+          {tI18nComplete.raw('text121a2886aca0')}
+          {excludedNoActions === 1 ? 'es' : ''} {tI18nComplete.raw('textb2a0a09c5ca4')}
         </>
       ) : null}
     </CatalogEmptyNote>

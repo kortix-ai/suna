@@ -1,8 +1,9 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
+import { type Sandbox as E2BSandbox, Sandbox } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
 import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -20,8 +21,8 @@ import type {
   SandboxIngressRequest,
   SandboxProvider,
   SandboxStatus,
-} from './index';
-import { assertWorkloadCredential, sandboxWorkloadType } from './index';
+} from './contract';
+import { assertWorkloadCredential, sandboxWorkloadType } from './contract';
 
 // One hour is the maximum accepted by every E2B plan (Pro permits 24 hours).
 // Kortix's own idle reaper normally pauses much sooner; this is the provider
@@ -59,6 +60,8 @@ const KORTIX_APPD_HEALTH_WAIT =
   '-H "Authorization: Bearer $KORTIX_APPD_TOKEN" ' +
   'http://127.0.0.1:7331/v1/health >/dev/null; then exit 0; fi; ' +
   'sleep 1; done; exit 1';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
+
 const MANAGED_METADATA = 'kortix_managed';
 const ENV_METADATA = 'kortix_env';
 // The E2B SDK accepts requestTimeoutMs, but a live kill call remained pending
@@ -110,18 +113,6 @@ function apiOpts() {
     domain: e2bDomain(),
     requestTimeoutMs: 20_000,
   } as const;
-}
-
-function isMissingSandboxError(error: unknown): boolean {
-  if (error instanceof SandboxNotFoundError) return true;
-  const err = error as {
-    status?: unknown;
-    statusCode?: unknown;
-    code?: unknown;
-    message?: unknown;
-  } | null;
-  if (err?.status === 404 || err?.statusCode === 404 || err?.code === 404) return true;
-  return /not found|does not exist|no such sandbox/i.test(String(err?.message ?? error ?? ''));
 }
 
 /**
@@ -183,7 +174,7 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
  * GUEST's own disk. Daytona and Platinum hand it back from their control plane
  * on resume, so on those two the session credential and the project's runtime
  * secrets exist only in a live process — the same reason the daemon keeps the
- * agent's env on tmpfs (kortix-sandbox-agent-server/src/agent-env-file.ts).
+ * agent's env on tmpfs (kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts).
  * Here the file has to survive the pause, and `chmod 600 root` is thin cover:
  * the sandbox user has NOPASSWD sudo (packages/shared/src/sandbox/dockerfile-layer.ts).
  * What differs from a live process env is DURABILITY — the plaintext outlived
@@ -346,7 +337,7 @@ async function kortixHealthy(
  * filesystem-only snapshot as one that "cold-boots" and "must be resumed
  * explicitly via connect()". Kortix sets no template `startCmd` either, so
  * apps/api is the ONLY thing that starts the runtime after a resume — and a
- * resume that leaves the process tree dead (observed on Essentia box
+ * resume that leaves the process tree dead (observed on SampleCo box
  * `igu3qpz1ctv0pg2agda1x`: `/opt/kortix/logs/daemon.log` gained no boot entries
  * after the pause) used to spin the caller for the full 190 s health wait and
  * then hand back an unreachable box. Only a human restart — a NEW sandbox —
@@ -464,7 +455,7 @@ export class E2BProvider implements SandboxProvider {
       ...apiOpts(),
       envs: envVars,
       metadata: {
-        [MANAGED_METADATA]: 'true',
+        [MANAGED_METADATA]: await sandboxOwnershipMarker(),
         [ENV_METADATA]: config.INTERNAL_KORTIX_ENV,
         kortix_account_id: opts.accountId,
         kortix_created_by: opts.userId,
@@ -606,7 +597,7 @@ export class E2BProvider implements SandboxProvider {
     // team's `max_length_hours` (tier + project_limits), so on a team capped
     // at 1h the deadline never moves past `startedAt + 1h` and the sandbox is
     // paused mid-turn exactly one hour after create/resume — while Kortix
-    // logged a successful renewal every 20 s (Essentia 2026-08-25: 375 blind
+    // logged a successful renewal every 20 s (SampleCo 2026-08-25: 375 blind
     // 204s, 4 turns killed). Read the deadline back and refuse to call a
     // renewal that did not land a renewal.
     const info = await withTimeout(
@@ -649,7 +640,7 @@ export class E2BProvider implements SandboxProvider {
         `E2B kill(${externalId})`,
       );
     } catch (error) {
-      if (!isMissingSandboxError(error)) throw error;
+      if (!isProviderNotFound(error)) throw error;
     } finally {
       invalidateRunningStatus(externalId);
       statusCacheGeneration.delete(externalId);
@@ -674,7 +665,7 @@ export class E2BProvider implements SandboxProvider {
       return 'unknown';
     } catch (error) {
       invalidateRunningStatus(externalId);
-      if (isMissingSandboxError(error)) {
+      if (isProviderNotFound(error)) {
         statusCacheGeneration.delete(externalId);
         return 'removed';
       }
@@ -788,7 +779,7 @@ export class E2BProvider implements SandboxProvider {
       ...apiOpts(),
       limit: 100,
       query: {
-        metadata: { [MANAGED_METADATA]: 'true', [ENV_METADATA]: config.INTERNAL_KORTIX_ENV },
+        metadata: { [MANAGED_METADATA]: await sandboxOwnershipMarker(), [ENV_METADATA]: config.INTERNAL_KORTIX_ENV },
         state: ['running'],
       },
     });

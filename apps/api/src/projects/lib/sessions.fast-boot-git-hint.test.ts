@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 async function sessionsSource(): Promise<string> {
-  return Bun.file(new URL('./sessions.ts', import.meta.url)).text();
+  return Bun.file(new URL('./session-create.ts', import.meta.url)).text();
 }
 
 async function monitorBoxProvisionSource(): Promise<string> {
@@ -38,7 +38,7 @@ describe('session fast boot Git hint cache', () => {
       sessionsSource(),
       Bun.file(new URL('./session-runtime-allocator.ts', import.meta.url)).text(),
       Bun.file(new URL('../session-lifecycle/actions.ts', import.meta.url)).text(),
-      Bun.file(new URL('../routes/shared.ts', import.meta.url)).text(),
+      Bun.file(new URL('../routes/session-open-provision.ts', import.meta.url)).text(),
       Bun.file(new URL('../../platform/services/session-sandbox.ts', import.meta.url)).text(),
     ]);
 
@@ -46,7 +46,7 @@ describe('session fast boot Git hint cache', () => {
     // a pi session never receives a project image, every other session still
     // goes through projectImageAllowedForSession. Both halves are pinned.
     expect(sessions).toContain('allowProjectImage: piWorkerBoot');
-    expect(sessions).toContain(': projectImageAllowedForSession(agentName, workspaceMode)');
+    expect(sessions).toContain(': projectImageAllowedForSession(agentName, repositoryAccess)');
     expect(actions).toContain('allowProjectImage: projectImageAllowedForSession(');
     expect(shared).toContain('allowProjectImage: projectImageAllowedForSession(');
     expect(actions).toContain('restoreSessionBranch: true');
@@ -83,22 +83,15 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
     expect(full).toBeGreaterThan(slim);
   });
 
-  test('the pi decision reads the runtime from the exact resolved commit', async () => {
+  test('the pi decision resolves runtime and tip in one parallel round trip', async () => {
     const source = await sessionsSource();
     const decision = source.indexOf("resolveFeatureFlag(project.metadata, 'pi_worker')");
-    const resolveTip = source.indexOf(
-      'const sha = await resolveCommitSha(authedProject, ref)',
-      decision,
-    );
-    const readRuntime = source.indexOf(
-      'const runtime = await resolveManifestRuntime(authedProject, sha)',
-      resolveTip,
-    );
+    const parallel = source.indexOf('const [runtime, sha] = await Promise.all([', decision);
     expect(decision).toBeGreaterThan(-1);
-    expect(resolveTip).toBeGreaterThan(decision);
-    expect(readRuntime).toBeGreaterThan(resolveTip);
-    const block = source.slice(decision, source.indexOf('\n  if (', decision));
-    expect(block).not.toContain('Promise.all');
+    expect(parallel).toBeGreaterThan(decision);
+    const block = source.slice(parallel, source.indexOf(']);', parallel));
+    expect(block).toContain('resolveManifestRuntime(authedProject, baseRef)');
+    expect(block).toContain('resolveCommitSha(authedProject, ref).catch(() => null)');
   });
 });
 

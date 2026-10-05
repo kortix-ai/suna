@@ -20,7 +20,8 @@
 
 import { eq } from 'drizzle-orm';
 import { accountGroupMembers, accountMemberships, roleAssignments } from '@kortix/db';
-import { db } from '../shared/db';
+import * as database from '../shared/db';
+const { db } = database;
 
 interface PrincipalScopedMemo {
   invalidateByPrefix: (prefix: string) => void;
@@ -60,6 +61,9 @@ export function invalidateIamCacheForUser(userId: string | null | undefined): vo
   if (!userId) return;
   const prefix = `${userId}|`;
   for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
+  database.afterDbCommit?.(() => {
+    for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
+  });
 }
 
 /** Bulk variant — e.g. busting every member of a group whose grant changed. */

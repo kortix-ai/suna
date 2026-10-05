@@ -1,7 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -150,9 +150,7 @@ export function OtpVerification({
                   {t('resendCode')}
                 </button>
               ) : (
-                <span className="tabular-nums">
-                  {t('resendInSeconds', { seconds: countdown })}
-                </span>
+                <span className="tabular-nums">{t('resendInSeconds', { seconds: countdown })}</span>
               )}
             </p>
           </>

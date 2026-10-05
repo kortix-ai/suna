@@ -8,12 +8,11 @@ import {
   appRuntimes,
   apps,
 } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
-import { tryGetProvider } from '../platform/providers';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
 import {
@@ -24,6 +23,7 @@ import {
 import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-worker';
 import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
+import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
@@ -40,6 +40,7 @@ import { assertProjectCapability, loadProjectForUser } from '../projects/lib/acc
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
+import { readAgentsGrantingApp } from './agent-grants';
 import {
   appAccessibleToUser,
   appsOpenableByUser,
@@ -81,6 +82,11 @@ function appLimitResponse(c: any, error: unknown): Response | null {
 const AppObject = z.object({}).passthrough().openapi('KortixApp');
 const DeploymentObject = z.object({}).passthrough().openapi('KortixAppDeployment');
 const ArtifactObject = z.object({}).passthrough().openapi('KortixAppArtifact');
+/** Deployment states the worker still drives. Deleting one would race its build. */
+const IN_PROGRESS_DEPLOYMENT_STATUSES = ['queued', 'validating', 'building', 'provisioning', 'checking'];
+/** Provider images a delete freed now, and the ones maintenance retries. */
+const ImageReleaseObject = z.object({ released: z.number().int(), pending: z.number().int() })
+  .openapi('KortixAppImageRelease');
 const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const APP_ENV_NAME = /^(?!KORTIX_|OPENCODE_)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const APP_SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -407,6 +413,44 @@ projectsApp.openapi(
   },
 );
 
+export { agentsGrantingApp } from './agent-grants';
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get', path: '/{projectId}/apps/{appId}/agents', tags: ['apps'], summary: 'List the agents granted this App in kortix.yaml', ...auth,
+    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    responses: {
+      200: json(z.object({ agents: z.array(z.object({
+        agent_name: z.string(),
+        grant: z.enum(['all', 'listed']),
+        path: z.string(),
+      })) }), 'Agents whose apps grant names this App'),
+      ...errors(403, 404, 503),
+    },
+  }),
+  async (c: any) => {
+    const { projectId, appId } = c.req.param();
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    const row = await visibleApp(projectId, appId, loaded.userId);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    const project = loaded.row;
+    if (!project.defaultBranch) return c.json({ agents: [] });
+    try {
+      const agents = await readAgentsGrantingApp({
+        projectId: project.projectId,
+        repoUrl: project.repoUrl,
+        defaultBranch: project.defaultBranch,
+        manifestPath: project.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      }, row.slug);
+      return c.json({ agents });
+    } catch (error) {
+      return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
+    }
+  },
+);
+
 projectsApp.openapi(
   createRoute({
     method: 'post', path: '/{projectId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
@@ -422,9 +466,19 @@ projectsApp.openapi(
     if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
       return c.json({ error: 'App access denied' }, 403);
     }
-    if (row.accessMode === 'public' || row.accessMode === 'password') {
+    // A PASSWORD App gets the bare URL: the door is the password prompt, and a
+    // Kortix session cannot stand in for knowing the secret.
+    if (row.accessMode === 'password') {
       return c.json({ url: appPublicUrl(row), expires_at: new Date(Date.now() + 5 * 60_000).toISOString() });
     }
+    // A PUBLIC App gets a real session URL, the same as a gated one.
+    //
+    // It used to get the bare URL, which meant a public App could never
+    // recognise anyone: no access link, so no identity cookie, so no viewer
+    // header — `public` silently also meant `anonymous`. Opening it from Kortix
+    // now carries who you are, while the bare URL underneath stays shareable
+    // with someone who has no Kortix account at all. The gate does not GATE a
+    // public App either way; this only decides whether it can greet you.
     const session = appAccessSessionUrl(appPublicUrl(row), row, loaded.userId);
     return c.json({ url: session.url, expires_at: session.expiresAt.toISOString() });
   },
@@ -613,7 +667,7 @@ projectsApp.openapi(
   createRoute({
     method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
     request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-    responses: { 200: json(z.object({ ok: z.boolean() }), 'Deleted'), ...errors(403, 404) },
+    responses: { 200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'), ...errors(403, 404) },
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
@@ -621,24 +675,43 @@ projectsApp.openapi(
     if (loaded instanceof Response) return loaded;
     const row = await visibleApp(projectId, appId, loaded.userId);
     if (!row) return c.json({ error: 'Not found' }, 404);
-    const runtimes = await db.select().from(appRuntimes)
-      .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
-      .where(eq(appDeployments.appId, appId));
-    for (const item of runtimes) {
-      const runtime = item.app_runtimes;
-      // Best-effort remote teardown. A legacy runtime can name a provider this
-      // box has since disabled or retired (e.g. platinum after switching to
-      // e2b-only); tryGetProvider returns null there instead of throwing, so a
-      // dead provider never blocks the delete. pauseComputeSession runs
-      // unconditionally — it stops billing and must not depend on the provider
-      // being reachable.
-      const provider = tryGetProvider(runtime.provider);
-      if (provider) await provider.remove(runtime.externalId).catch(() => {});
-      await pauseComputeSession(runtime.runtimeId).catch(() => {});
-    }
+    // Delete first, tear down second. A deleted App stops routing and leaves
+    // the idle reaper at once; if this request dies mid-teardown, project
+    // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
     await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
       .where(eq(apps.appId, appId));
-    return c.json({ ok: true });
+    const deployments = await db
+      .select({
+        deploymentId: appDeployments.deploymentId,
+        hostingProvider: appDeployments.hostingProvider,
+        status: appDeployments.status,
+      })
+      .from(appDeployments)
+      .where(eq(appDeployments.appId, appId));
+    const runtimes = await db
+      .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
+      .from(appRuntimes)
+      .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
+      .where(and(eq(appDeployments.appId, appId), ne(appRuntimes.status, 'deleted')));
+    // A runtime's provider may since have been disabled or retired; removal
+    // then counts it gone (`removeAppRuntime`), so a dead provider never blocks
+    // the delete. Its compute meter closes either way.
+    await teardownAppRuntimes(runtimes);
+    // Each deployment build left one provider image. Platinum counts them
+    // against a per-org template cap, so the App is not gone until they are.
+    // A build still running may register its image after this request, so it
+    // is reported pending, never released; maintenance reclaims it once the
+    // worker stops (the worker refuses to start a runtime for a deleted App).
+    const building = deployments.filter((deployment) =>
+      deployment.hostingProvider && IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+    // A deployment its owner already deleted released (or queued) its image
+    // then; counting it again would report one image as freed twice. Any of
+    // those still pending is retried by maintenance.
+    const finished = deployments.filter((deployment) =>
+      deployment.status !== 'deleted' && !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+    const released = await releaseDeploymentImages(finished);
+    const images = { released: released.released, pending: released.pending + building.length };
+    return c.json({ ok: true, images });
   },
 );
 
@@ -711,7 +784,9 @@ projectsApp.openapi(
     if (!(await visibleApp(projectId, appId, loaded.userId))) {
       return c.json({ error: 'Not found' }, 404);
     }
-    const rows = await db.select().from(appDeployments).where(eq(appDeployments.appId, appId)).orderBy(desc(appDeployments.version));
+    const rows = await db.select().from(appDeployments)
+      .where(and(eq(appDeployments.appId, appId), ne(appDeployments.status, 'deleted')))
+      .orderBy(desc(appDeployments.version));
     return c.json({ deployments: rows.map(serializeDeployment) });
   },
 );
@@ -729,7 +804,11 @@ projectsApp.openapi(
     if (!(await visibleApp(projectId, appId, loaded.userId))) {
       return c.json({ error: 'Not found' }, 404);
     }
-    const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId))).limit(1);
+    const [deployment] = await db.select().from(appDeployments).where(and(
+      eq(appDeployments.deploymentId, deploymentId),
+      eq(appDeployments.appId, appId),
+      ne(appDeployments.status, 'deleted'),
+    )).limit(1);
     if (!deployment) return c.json({ error: 'Not found' }, 404);
     const events = await db.select().from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, deploymentId)).orderBy(appDeploymentEvents.createdAt);
     return c.json({ deployment: serializeDeployment(deployment), events: events.map((row) => ({
@@ -755,6 +834,7 @@ projectsApp.openapi(
     const [deployment] = await db.select().from(appDeployments).where(and(
       eq(appDeployments.deploymentId, deploymentId),
       eq(appDeployments.appId, appId),
+      ne(appDeployments.status, 'deleted'),
     )).limit(1);
     if (!deployment) return c.json({ error: 'Not found' }, 404);
     const eventFallback = async () => {
@@ -785,6 +865,87 @@ projectsApp.openapi(
       console.warn(`[apps] logs unavailable for runtime ${row.runtimeId}:`, error);
       return c.json(await eventFallback());
     }
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Delete an App deployment', ...auth,
+    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
+    responses: {
+      200: json(z.object({
+        ok: z.boolean(),
+        deployment_id: z.string().uuid(),
+        image: z.enum(['released', 'pending', 'none']),
+      }), 'Deleted'),
+      ...errors(403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const { projectId, appId, deploymentId } = c.req.param();
+    const loaded = await authorizedProject(c, projectId, 'write');
+    if (loaded instanceof Response) return loaded;
+    if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      return c.json({ error: 'Not found' }, 404);
+    }
+    const decision = await db.transaction(async (tx) => {
+      // Deploy creation takes the same lock, and the App row lock orders this
+      // against an activation or rollback moving the live pointer.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
+      const [app] = await tx.select({ activeDeploymentId: apps.activeDeploymentId })
+        .from(apps)
+        .where(and(eq(apps.appId, appId), isNull(apps.deletedAt)))
+        .for('update')
+        .limit(1);
+      if (!app) return { kind: 'missing' as const };
+      const [deployment] = await tx.select().from(appDeployments).where(and(
+        eq(appDeployments.deploymentId, deploymentId),
+        eq(appDeployments.appId, appId),
+        ne(appDeployments.status, 'deleted'),
+      )).limit(1);
+      if (!deployment) return { kind: 'missing' as const };
+      if (app.activeDeploymentId === deploymentId) return { kind: 'live' as const };
+      if (IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status)) {
+        return { kind: 'in_progress' as const, status: deployment.status };
+      }
+      await tx.update(appDeployments)
+        .set({ status: 'deleted', updatedAt: new Date() })
+        .where(and(
+          eq(appDeployments.deploymentId, deploymentId),
+          notInArray(appDeployments.status, [...IN_PROGRESS_DEPLOYMENT_STATUSES, 'deleted']),
+        ));
+      return { kind: 'deleted' as const, hostingProvider: deployment.hostingProvider };
+    });
+    if (decision.kind === 'missing') return c.json({ error: 'Not found' }, 404);
+    if (decision.kind === 'live') {
+      return c.json({
+        error: 'This deployment serves live traffic. Roll back to another deployment first, or delete the App.',
+        code: 'deployment_live',
+      }, 409);
+    }
+    if (decision.kind === 'in_progress') {
+      return c.json({
+        error: `This deployment is still in progress (status: ${decision.status}). Delete it after it finishes or fails.`,
+        code: 'deployment_in_progress',
+        status: decision.status,
+      }, 409);
+    }
+
+    const runtimes = await db
+      .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
+      .from(appRuntimes)
+      .where(and(eq(appRuntimes.deploymentId, deploymentId), ne(appRuntimes.status, 'deleted')));
+    // Platinum refuses to delete an image while a sandbox pins it, so the
+    // runtime goes first. Anything left `pending` is retried by maintenance.
+    await teardownAppRuntimes(runtimes);
+    const image = await releaseDeploymentImage({ deploymentId, hostingProvider: decision.hostingProvider });
+    await db.insert(appDeploymentEvents).values({
+      deploymentId,
+      type: 'deployment_deleted',
+      message: 'Deployment deleted by its owner',
+      data: { image, userId: loaded.userId },
+    });
+    return c.json({ ok: true, deployment_id: deploymentId, image });
   },
 );
 
@@ -887,10 +1048,19 @@ projectsApp.openapi(
     }
 
     const previousDeploymentId = app.activeDeploymentId;
+    // A concurrent `DELETE …/deployments/:id` can delete the target after the
+    // ready check above. Move traffic only while the target is still ready.
     const [row] = await db.update(apps)
       .set({ activeDeploymentId: deploymentId, desiredState: 'running', updatedAt: new Date() })
-      .where(eq(apps.appId, appId))
+      .where(and(
+        eq(apps.appId, appId),
+        exists(db.select({ deploymentId: appDeployments.deploymentId }).from(appDeployments).where(and(
+          eq(appDeployments.deploymentId, deploymentId),
+          eq(appDeployments.status, 'ready'),
+        ))),
+      ))
       .returning();
+    if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
     await db.insert(appDeploymentEvents).values({
       deploymentId,
       runtimeId: targetRuntime.runtimeId,

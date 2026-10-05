@@ -16,13 +16,12 @@
 import Loading from '@/components/ui/loading';
 
 import { AgentPicker } from '@/components/chat/agent-picker';
-import { CallSnippet } from '@/components/dev/call-snippet';
 import {
   ConnectorBindingFields,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import { Button } from '@/components/ui/button';
-import { ConnectRequiredCard } from '@/components/connect-required-card';
 import {
   Dialog,
   DialogContent,
@@ -35,24 +34,14 @@ import {
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import {
-  type ConnectorRequirement,
-  connectorRequirement,
-} from '@/lib/connector-required';
 import { kortix } from '@/lib/kortix';
-import { invalidateSessions, qk } from '@/lib/query-keys';
-import { sessionCreateFailure } from '@/lib/session-create-failure';
-import {
-  NO_OVERRIDES,
-  type SessionOverrides,
-  buildSessionCreateInput,
-} from '@/lib/session-overrides';
-import { generateSessionId } from '@kortix/sdk';
+import { qk } from '@/lib/query-keys';
+import { NO_OVERRIDES, type SessionOverrides } from '@/lib/session-overrides';
+import { useCreateSession } from '@/lib/use-create-session';
 import { useProjectConfig, useVisibleAgents } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
 export function NewSessionDialog({
   projectId,
@@ -73,8 +62,7 @@ export function NewSessionDialog({
         <DialogHeader>
           <DialogTitle>New session</DialogTitle>
           <DialogDescription>
-            Set the initial agent, secrets, and connections. You
-            can change the session scope later.
+            Set the initial agent, secrets, and connections. You can change the session scope later.
           </DialogDescription>
         </DialogHeader>
         {/* Mounted only while open so the pickers' fetches don't run on every
@@ -101,20 +89,13 @@ function NewSessionForm({
   onDone: () => void;
 }) {
   const router = useRouter();
-  const qc = useQueryClient();
 
   const [agent, setAgent] = useState<string | null>(initialAgent);
   const [bindings, setBindings] = useState<Record<string, string>>({});
-  // Off = send no allowlist at all, which is today's behaviour and the honest
+  // null = send no allowlist at all, which is today's behaviour and the honest
   // default: the agent's own grant already narrows what the sandbox receives.
-  const [narrowSecrets, setNarrowSecrets] = useState(false);
-  const [allowed, setAllowed] = useState<string[] | null>(null);
-  // The connector pre-flight refusal, kept IN the dialog. A toast would be
-  // dismissed along with the dialog that caused it, and this one has a remedy
-  // the user is meant to act on.
-  const [requirement, setRequirement] = useState<ConnectorRequirement | null>(
-    null,
-  );
+  // One state, not a flag plus a list: the flag WAS the list's null case.
+  const [allowlist, setAllowlist] = useState<string[] | null>(null);
 
   const agents = useVisibleAgents({ projectId });
   const config = useProjectConfig(projectId);
@@ -144,42 +125,20 @@ function NewSessionForm({
   // An empty allowlist is also the honest default for a control whose whole
   // point is narrowing: the user picks what to expose, rather than un-picking
   // from a set the server may refuse.
-  const checked = allowed ?? [];
+  const checked = allowlist ?? [];
 
   const overrides: SessionOverrides = {
     ...NO_OVERRIDES,
     agent,
     bindings,
-    secrets: narrowSecrets ? checked : null,
+    secrets: allowlist,
   };
 
-  const start = useMutation({
-    mutationFn: async () => {
-      const sessionId = generateSessionId();
-      await kortix.project(projectId).sessions.create(
-        buildSessionCreateInput(overrides, {
-          sessionId,
-        }),
-      );
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
+  const start = useCreateSession(projectId, {
+    input: () => ({ overrides }),
+    onCreated: (sessionId) => {
       onDone();
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
-    },
-    onError: (err) => {
-      // Each KaaB refusal has a distinct code and a different person who can
-      // fix it — collapsing them into one string threw that away. The connector
-      // pre-flight goes further: it is the one with an action attached, so it
-      // renders in place instead of as a toast.
-      const connector = connectorRequirement(err);
-      if (connector) {
-        setRequirement(connector);
-        return;
-      }
-      const failure = sessionCreateFailure(err);
-      toast.error(failure.title, { description: failure.detail });
     },
   });
 
@@ -187,7 +146,7 @@ function NewSessionForm({
     const next = on
       ? [...new Set([...checked, identifier])]
       : checked.filter((id) => id !== identifier);
-    setAllowed(next);
+    setAllowlist(next);
   };
 
   return (
@@ -212,39 +171,31 @@ function NewSessionForm({
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <Label htmlFor="narrow-secrets">
-              Limit which secrets this session can read
-            </Label>
+            <Label htmlFor="narrow-secrets">Limit which secrets this session can read</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Off, the session gets the agent&apos;s full secret grant. An
-              allowlist only ever narrows it. You can replace the allowlist
-              after the session starts.
+              Off, the session gets the agent&apos;s full secret grant. An allowlist only ever
+              narrows it. You can replace the allowlist after the session starts.
             </p>
           </div>
           <Switch
             id="narrow-secrets"
-            checked={narrowSecrets}
-            onCheckedChange={setNarrowSecrets}
+            checked={allowlist !== null}
+            onCheckedChange={(on) => setAllowlist(on ? [] : null)}
             disabled={secrets.isLoading || identifiers.length === 0}
           />
         </div>
         {secrets.isLoading && <Skeleton className="h-8 w-full" />}
-        {narrowSecrets && (
+        {allowlist !== null && (
           <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
             {identifiers.map((secret) => (
-              <div
-                key={secret.identifier}
-                className="flex items-center justify-between gap-3"
-              >
+              <div key={secret.identifier} className="flex items-center justify-between gap-3">
                 <Label
                   htmlFor={`secret-${secret.identifier}`}
                   className="min-w-0 font-mono text-xs font-normal"
                 >
                   <span className="truncate">{secret.identifier}</span>
                   {secret.name !== secret.identifier && (
-                    <span className="truncate text-muted-foreground">
-                      → {secret.name}
-                    </span>
+                    <span className="truncate text-muted-foreground">→ {secret.name}</span>
                   )}
                 </Label>
                 <Switch
@@ -268,20 +219,14 @@ function NewSessionForm({
           <div>
             <Label>Connections</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Which shared account each connector acts as. Sessions started here
-              can only use project connections.
+              Which shared account each connector acts as. Sessions started here can only use
+              project connections.
             </p>
           </div>
           <ConnectorBindingFields
             choices={connectors.data?.connectors ?? []}
             value={bindings}
-            onChange={(next) => {
-              setBindings(next);
-              // The refusal named the bindings that were sent. Once those change
-              // it describes a request that no longer exists, and leaving it up
-              // would have the user reading a stale verdict on a new selection.
-              setRequirement(null);
-            }}
+            onChange={setBindings}
           />
           {/* Where the options in that picker come from — including why an
               alias can be listed with nothing to choose. */}
@@ -298,18 +243,6 @@ function NewSessionForm({
           overrides,
         }}
       />
-
-      {requirement && (
-        <ConnectRequiredCard
-          projectId={projectId}
-          requirement={requirement}
-          onRetry={() => {
-            setRequirement(null);
-            start.mutate();
-          }}
-          onDismiss={() => setRequirement(null)}
-        />
-      )}
 
       <DialogFooter>
         <Button variant="ghost" onClick={onDone} disabled={start.isPending}>

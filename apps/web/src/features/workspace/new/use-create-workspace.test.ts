@@ -1,5 +1,18 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
+import {
+  ApiError,
+  PROVISION_IN_FLIGHT_CODE,
+  type KortixAccount,
+  type KortixProject,
+  type ProvisionPhase,
+  type ProvisionProjectInput,
+  type ProvisionStreamEvent,
+} from '@kortix/sdk';
+import { attemptKeyFor, clearAttemptKey } from './create-workspace-key';
+import { INITIAL_FORM_STATE } from './new-workspace-form';
 import {
   buildCreatePayload,
   fingerprintOf,
@@ -14,19 +27,12 @@ import {
   type CreateOrchestrationClient,
   type CreateWorkspaceClient,
 } from './use-create-workspace';
-import { attemptKeyFor, clearAttemptKey } from './create-workspace-key';
-import { INITIAL_FORM_STATE } from './new-workspace-form';
-import {
-  ApiError,
-  PROVISION_IN_FLIGHT_CODE,
-  type KortixAccount,
-  type KortixProject,
-  type ProvisionPhase,
-  type ProvisionProjectInput,
-  type ProvisionStreamEvent,
-} from '@kortix/sdk';
 
-const OWNER_ACCOUNT: KortixAccount = { account_id: 'acct-owner', name: 'Owner Co', account_role: 'owner' };
+const OWNER_ACCOUNT: KortixAccount = {
+  account_id: 'acct-owner',
+  name: 'Owner Co',
+  account_role: 'owner',
+};
 
 function fakeProject(id: string, accountId = 'acct-owner'): KortixProject {
   return {
@@ -103,7 +109,11 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
     // `OWNER_ACCOUNT`) so it is a normal multi-account list, not a FOREIGN
     // one — the user is explicitly picking the OTHER account they can also
     // create in (e.g. personal account owned, team account picked).
-    const picked: KortixAccount = { account_id: 'acct-picked', name: 'Picked Co', account_role: 'owner' };
+    const picked: KortixAccount = {
+      account_id: 'acct-picked',
+      name: 'Picked Co',
+      account_role: 'owner',
+    };
     const payload = buildCreatePayload(
       { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
       [OWNER_ACCOUNT, picked],
@@ -165,10 +175,18 @@ describe('resolveTargetAccountId', () => {
   });
 
   test('identity match resolves the default when nothing is explicitly picked', () => {
-    const personal: KortixAccount = { account_id: 'user-1', name: "me's Account", account_role: 'owner' };
+    const personal: KortixAccount = {
+      account_id: 'user-1',
+      name: "me's Account",
+      account_role: 'owner',
+    };
     const team: KortixAccount = { account_id: 'acct-team', name: 'Acme', account_role: 'owner' };
     expect(
-      resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [team, personal], 'user-1'),
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: null },
+        [team, personal],
+        'user-1',
+      ),
     ).toBe('user-1');
   });
 
@@ -177,7 +195,7 @@ describe('resolveTargetAccountId', () => {
   // `filterCreatableAccounts` excludes a member-role account entirely, so a
   // member-only user's `creatableAccounts` is always `[]` — there is nothing
   // to default into, and nothing was ever explicitly picked either.
-  test('a member-only user (empty creatableAccounts) resolves to undefined, never a stranger\'s account', () => {
+  test("a member-only user (empty creatableAccounts) resolves to undefined, never a stranger's account", () => {
     expect(
       resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [], 'user-1'),
     ).toBeUndefined();
@@ -199,8 +217,16 @@ describe('resolveTargetAccountId', () => {
     // to SOME entry — and that entry is trivially "in creatableAccounts",
     // since it came from that exact list. The plain membership check above
     // cannot catch this; only asking whether the list itself is FOREIGN can.
-    const foreign1: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
-    const foreign2: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+    const foreign1: KortixAccount = {
+      account_id: 'org-1',
+      name: 'Acme Inc',
+      account_role: 'admin',
+    };
+    const foreign2: KortixAccount = {
+      account_id: 'org-2',
+      name: 'Widgets Co',
+      account_role: 'admin',
+    };
     expect(() =>
       resolveTargetAccountId(
         { ...INITIAL_FORM_STATE, accountId: null },
@@ -245,15 +271,19 @@ describe('messageFor', () => {
   });
 
   // This route's ONLY 503 is the managed-git-unavailable one
-  // (`isManagedGitUnavailableError`, `ensure-first-project.ts`) — a server
+  // (`isManagedGitUnavailableError`, `provision-errors.ts`) — a server
   // configuration state, not a transient failure. Unlike 502, it must NOT
   // get the retry-hint message: nothing the user does changes the outcome.
   test('maps 503 to a server-config message distinct from the 502 retry hint', () => {
-    const msg = messageFor(new ApiError('Service Unavailable', { status: 503 }));
+    const msg = messageFor(
+      new ApiError('Managed git provider "github" is not configured on this server', {
+        status: 503,
+      }),
+    );
     expect(msg).not.toBe('Could not create the workspace. Try again.');
     expect(msg).not.toContain('Try again');
     expect(msg).toBe(
-      "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.",
+      "Managed git isn't set up on this server. A platform admin connects GitHub in the admin console before workspaces can be created.",
     );
   });
 
@@ -290,18 +320,19 @@ describe('messageFor', () => {
   //
   // `messageFor`'s 403 branch used to fire for ANY 403, including
   // `enforceProjectQuota`'s `project_limit_reached` (`apps/api/src/projects/
-  // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1,
-  // `ensureFirstProject` auto-provisions everyone's first project) they lack
-  // permissions they actually have.
+  // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1)
+  // who already has a project that they lack permissions they actually have.
 
-  test('FIX 2: maps a 403 project_limit_reached to the server\'s own quota message, not the owner/admin explanation', () => {
+  test("FIX 2: maps a 403 project_limit_reached to the server's own quota message, not the owner/admin explanation", () => {
     const err = new ApiError(
       'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
       { status: 403, code: 'project_limit_reached' },
     );
     const msg = messageFor(err);
     expect(msg).not.toBe('You need owner or admin access in this account to create a workspace.');
-    expect(msg).toBe('Free accounts are limited to 1 project. Upgrade to a paid plan to create more.');
+    expect(msg).toBe(
+      'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
+    );
   });
 
   test('FIX 2: a plain 403 with no quota code still gets the owner/admin explanation', () => {
@@ -349,10 +380,7 @@ describe('runCreateAttempt', () => {
 
   test('succeeds on the first try — no retry, no wait', async () => {
     const c = client();
-    const project = await runCreateAttempt(
-      { name: 'x', idempotency_key: 'key-1' },
-      c,
-    );
+    const project = await runCreateAttempt({ name: 'x', idempotency_key: 'key-1' }, c);
     expect(project.project_id).toBe('created-1');
     expect(c.calls).toHaveLength(1);
     expect(c.waits).toEqual([]);
@@ -426,12 +454,12 @@ describe('runCreateAttempt', () => {
 /**
  * `runCreate` is the full sequence `create()` actually runs: mint/reuse the
  * key -> provision -> on success, clear the key -> prime the cache ->
- * invalidate -> write the cookie -> enter onboarding. `runCreateAttempt`
- * above only covers the provision sub-step; NONE of those tests would fail
- * if a future edit dropped `clearAttemptKey`, or moved it after
- * `enterOnboarding` — a stale key left behind is exactly what lets a later
- * create with the same name silently return the OLD project instead of
- * making a new one.
+ * invalidate -> write the cookie -> stamp onboarded -> hand off to the
+ * project page. `runCreateAttempt` above only covers the provision sub-step;
+ * NONE of those tests would fail if a future edit dropped `clearAttemptKey`,
+ * or moved it after `enterProject` — a stale key left behind is exactly what
+ * lets a later create with the same name silently return the OLD project
+ * instead of making a new one.
  *
  * Every seam is injected (`CreateOrchestrationClient`), never
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
@@ -456,7 +484,9 @@ describe('runCreate: the full create() orchestration', () => {
     } as Storage;
   });
 
-  function noopClient(overrides: Partial<CreateOrchestrationClient> = {}): CreateOrchestrationClient {
+  function noopClient(
+    overrides: Partial<CreateOrchestrationClient> = {},
+  ): CreateOrchestrationClient {
     return {
       attemptKeyFor,
       clearAttemptKey,
@@ -466,7 +496,8 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
-      enterOnboarding: () => {},
+      completeOnboarding: async () => {},
+      enterProject: () => {},
       now: () => 1_000,
       ...overrides,
     };
@@ -492,7 +523,7 @@ describe('runCreate: the full create() orchestration', () => {
     expect(nextKey).not.toBe(sentKeys[0]);
   });
 
-  test('MANDATORY: on success, the key is cleared BEFORE cache priming, invalidation, the cookie write, or entering onboarding', async () => {
+  test('MANDATORY: on success, the key is cleared BEFORE cache priming, invalidation, the cookie write, the onboarding stamp, or the handoff', async () => {
     const order: string[] = [];
     const state = { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' };
 
@@ -508,18 +539,22 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => order.push('primeCache'),
       invalidateProjects: () => order.push('invalidate'),
       writeLastProjectId: () => order.push('writeCookie'),
-      enterOnboarding: () => order.push('enterOnboarding'),
+      completeOnboarding: async () => {
+        order.push('stampOnboarding');
+      },
+      enterProject: () => order.push('enterProject'),
       now: () => 1_000,
     });
 
-    // The exact sequence, not just "clearKey happened before enterOnboarding"
+    // The exact sequence, not just "clearKey happened before enterProject"
     // — a reorder among the other steps must fail this too.
     expect(order).toEqual([
       'clearKey',
       'primeCache',
       'invalidate',
       'writeCookie',
-      'enterOnboarding',
+      'stampOnboarding',
+      'enterProject',
     ]);
   });
 
@@ -592,7 +627,8 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
-      enterOnboarding: () => {},
+      completeOnboarding: async () => {},
+      enterProject: () => {},
       now: () => 1_000,
     });
 
@@ -625,43 +661,85 @@ describe('runCreate: the full create() orchestration', () => {
     expect(cookieCalls).toEqual([['user-42', 'created-cookie']]);
   });
 
-  test('enters onboarding on /new for the created project, and does not leave /new', async () => {
-    const entered: string[] = [];
-    const client = {
-      ...noopClient(),
-      runCreateAttempt: async () => fakeProject('created-nav'),
-      enterOnboarding: (projectId: string) => entered.push(projectId),
-    };
-    await runCreate(
-      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
-      'user-1',
-      client,
-    );
-    expect(entered).toEqual(['created-nav']);
-  });
-
-  // A create must NOT stamp the new project onboarded — stamping is what made
-  // the wizard render `null` on arrival. The guard against the stamping seam
-  // coming back is `CreateOrchestrationClient` not declaring it, which `tsc`
-  // enforces at every call site; this test proves the orchestration runs to
-  // completion through the seams that client DOES declare.
-  test('does not mark the new project onboarded', async () => {
-    const client = { ...noopClient(), runCreateAttempt: async () => fakeProject('created') };
+  /**
+   * The create's handoff contract (KRTX-1419): a successful create must land
+   * the user on the project they just created — it stamps the project
+   * onboarded (the same PATCH the wizard's own exits use) and then navigates
+   * to `/projects/<id>`. It used to redirect to `/new?onboarding=<id>`, which
+   * mounted the full-screen wizard over the page and held the user until they
+   * completed three steps or clicked "Skip for now" — the project page was
+   * never reached without a click.
+   */
+  test('on success, stamps the project onboarded, then hands off to the project page', async () => {
+    const stamps: string[] = [];
+    const handoffs: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
       [OWNER_ACCOUNT],
       'user-1',
-      client,
+      {
+        ...noopClient(),
+        runCreateAttempt: async () => fakeProject('created-handoff'),
+        completeOnboarding: async (projectId) => {
+          stamps.push(projectId);
+        },
+        enterProject: (projectId) => handoffs.push(projectId),
+      },
     );
     expect(result.ok).toBe(true);
+    expect(stamps).toEqual(['created-handoff']);
+    // The stamp precedes the handoff: the project shell's wizard reads the
+    // stamped metadata on arrival, so it can never mount over the landing.
+    expect(handoffs).toEqual(['created-handoff']);
+    expect(stamps.length).toBe(1);
+    expect(handoffs.length).toBe(1);
   });
 
-  test('a non-retryable failure never touches the cache, the cookie, or onboarding', async () => {
+  /**
+   * The stamp is best-effort: a failed PATCH must not keep the user off the
+   * project that already exists (the same policy as the wizard's own exits,
+   * `completeThenNotify`). The accepted failure mode is the wizard running
+   * the next time they open the workspace, not a dead handoff screen.
+   */
+  test('a failed onboarding stamp still hands off to the project page', async () => {
+    const handoffs: string[] = [];
+    const result = await runCreate(
+      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
+      [OWNER_ACCOUNT],
+      'user-1',
+      {
+        ...noopClient(),
+        runCreateAttempt: async () => fakeProject('created-stamp-fail'),
+        completeOnboarding: async () => {
+          throw new ApiError('network down', { status: 0 });
+        },
+        enterProject: (projectId) => handoffs.push(projectId),
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(handoffs).toEqual(['created-stamp-fail']);
+  });
+
+  /**
+   * The direction of the stamp is part of the contract: `completed: true` is
+   * what makes the project shell's wizard render null on arrival, and the
+   * wiring is the one place the literal lives. The hook cannot render in this
+   * harness (no jsdom; `mock.module` is process-wide across a non-isolated run
+   * — see `new-workspace-errors.test.ts` for the same technique), so the
+   * wiring line is pinned by scan instead of behavior.
+   */
+  test('the wiring stamps completed: true — a cleared flag would trap the user in the shell wizard', () => {
+    const hook = readFileSync(join(import.meta.dir, 'use-create-workspace.ts'), 'utf8');
+    expect(hook).toContain('setProjectOnboardingComplete(projectId, true)');
+    expect(hook).not.toContain('setProjectOnboardingComplete(projectId, false)');
+  });
+
+  test('a non-retryable failure never touches the cache, the cookie, the stamp, or the handoff', async () => {
     const err = new ApiError('Bad Gateway', { status: 502 });
     const primeCalls: unknown[] = [];
     const cookieCalls: unknown[] = [];
     const entered: string[] = [];
+    const stamped: string[] = [];
 
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
@@ -674,13 +752,17 @@ describe('runCreate: the full create() orchestration', () => {
         },
         primeProjectCache: () => primeCalls.push('called'),
         writeLastProjectId: () => cookieCalls.push('called'),
-        enterOnboarding: (projectId) => entered.push(projectId),
+        completeOnboarding: async (projectId: string) => {
+          stamped.push(projectId);
+        },
+        enterProject: (projectId) => entered.push(projectId),
       },
     );
 
     expect(result.ok).toBe(false);
     expect(primeCalls).toEqual([]);
     expect(cookieCalls).toEqual([]);
+    expect(stamped).toEqual([]);
     expect(entered).toEqual([]);
   });
 
@@ -805,7 +887,7 @@ describe('runCreate: the full create() orchestration', () => {
     expect(mintCalls).toEqual([]);
   });
 
-  test('every source runs the SAME success path — cache, invalidate, cookie, onboarding', async () => {
+  test('every source runs the SAME success path — cache, invalidate, cookie, stamp, handoff', async () => {
     // The routing differs; what happens after a project exists must not.
     for (const state of [
       { ...INITIAL_FORM_STATE, name: 'a', accountId: 'acct-owner', source: 'managed' as const },
@@ -831,17 +913,29 @@ describe('runCreate: the full create() orchestration', () => {
         primeProjectCache: () => order.push('primeCache'),
         invalidateProjects: () => order.push('invalidate'),
         writeLastProjectId: () => order.push('writeCookie'),
-        enterOnboarding: () => order.push('enterOnboarding'),
+        completeOnboarding: async () => {
+          order.push('stampOnboarding');
+        },
+        enterProject: () => order.push('enterProject'),
       });
       expect(result.ok).toBe(true);
-      expect(order).toEqual(['primeCache', 'invalidate', 'writeCookie', 'enterOnboarding']);
+      expect(order).toEqual([
+        'primeCache',
+        'invalidate',
+        'writeCookie',
+        'stampOnboarding',
+        'enterProject',
+      ]);
     }
   });
 
   test('a failed GitHub create surfaces the error like any other source', async () => {
-    const err = new ApiError('Install the Kortix GitHub App before creating GitHub-backed projects', {
-      status: 409,
-    });
+    const err = new ApiError(
+      'Install the Kortix GitHub App before creating GitHub-backed projects',
+      {
+        status: 409,
+      },
+    );
     const result = await runCreate(
       {
         ...INITIAL_FORM_STATE,
@@ -863,7 +957,6 @@ describe('runCreate: the full create() orchestration', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe(err);
   });
-
 });
 
 /**
@@ -888,7 +981,9 @@ describe('isTransportFailure', () => {
 
   test('no response.body (the React Native case) is transport-shaped', () => {
     expect(
-      isTransportFailure(new Error('Provision stream is unavailable on this runtime (no response body)')),
+      isTransportFailure(
+        new Error('Provision stream is unavailable on this runtime (no response body)'),
+      ),
     ).toBe(true);
   });
 
@@ -970,9 +1065,13 @@ describe('runProvisionAttempt', () => {
       },
     });
 
-    const project = await runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, (phase) => {
-      seenPhases.push(phase);
-    }, client);
+    const project = await runProvisionAttempt(
+      { name: 'x', idempotency_key: 'key-1' },
+      (phase) => {
+        seenPhases.push(phase);
+      },
+      client,
+    );
 
     expect(project.project_id).toBe('created-stream');
     expect(seenPhases).toEqual(['validating', 'creating_repository']);
@@ -1159,5 +1258,55 @@ describe('runProvisionAttempt', () => {
     expect(project.project_id).toBe('created-after-retry');
     expect(plainAttempts).toBe(2);
     expect(client.waits).toEqual([RETRY_DELAY_MS[0]]);
+  });
+});
+
+/**
+ * `POST /projects/create-repo` refuses a personal GitHub account with a typed
+ * 409 (`github_personal_account_create_unsupported`): GitHub rejects an App
+ * installation token on `POST /user/repos`. Retrying resends the same owner
+ * and fails the same way, so no retry is offered, and the server's sentence is
+ * shown as-is.
+ */
+describe('create-repo under a personal GitHub account', () => {
+  const err = () =>
+    new ApiError(
+      'GitHub does not let the Kortix app create repositories in the personal account octo-person. Create the repository on GitHub, then import it.',
+      { status: 409, code: 'github_personal_account_create_unsupported' },
+    );
+
+  test('is not retryable', () => {
+    expect(isRetryableError(err())).toBe(false);
+  });
+
+  test('shows the server sentence, never the managed-git message', () => {
+    const msg = messageFor(err());
+    expect(msg).toContain('octo-person');
+    expect(msg).not.toContain('Managed git');
+  });
+});
+
+/**
+ * The API's edge middleware sends every 502 as a 503 with the body kept
+ * (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Prod: create-repo
+ * answered `503 {"error":"GitHub /user/repos failed (403): Resource not
+ * accessible by integration"}` and `/new` said managed git is not set up.
+ */
+describe('an edge-rewritten 502 (503 with an upstream error body)', () => {
+  const err = () =>
+    new ApiError('GitHub /user/repos failed (403): Resource not accessible by integration', {
+      status: 503,
+    });
+
+  test('is not read as managed git being unconfigured', () => {
+    expect(messageFor(err())).not.toContain('Managed git');
+  });
+
+  test('gets the retry hint, not GitHub\'s raw text', () => {
+    expect(messageFor(err())).toBe('Could not create the workspace. Try again.');
+  });
+
+  test('is retryable, like the 502 it was', () => {
+    expect(isRetryableError(err())).toBe(true);
   });
 });

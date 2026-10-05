@@ -8,21 +8,25 @@
  * The link itself is resolved/submitted by the PUBLIC app at /v1/setup-links/*.
  *
  * See ../../setup-links/token.ts for the stateless token model and
- * .kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md
+ * packages/starter/templates/managed/skills/kortix-system/references/kortix/credentials-and-setup-links.md
  * for the agent-facing flow.
  */
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
+import { validateConnectionLabel } from '../../connectors/connection-identity';
 import { connectLinkEligibility } from '../../connectors/db-deps';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { composioConfigured } from '../../connectors/composio';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { sessionWithheldSecrets, withheldSecretsFix } from '../lib/session-secret-reach';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
+import { projectsApp } from '../lib/app';
+import { parseConnectorConnectOwner } from '../lib/connection-access';
 import { PROJECT_ACTIONS } from '../../iam';
-import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 function frontendBase(): string {
   return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -37,11 +41,20 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/secret-requests',
     tags: ['secrets'],
-    summary: 'POST /:projectId/secret-requests — mint a secret-entry link',
+    summary: 'Create a link where a person enters a secret',
+    description:
+      'Create a one-time link where a person types secret values. Use it when you need a secret you do not have.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          names: z.array(z.string()).optional().openapi({ description: 'Secret names (env vars) the person must enter. Send names or a single name.' }),
+          name: z.string().optional().openapi({ description: 'A single secret name. Alternative to names.' }),
+          labels: z.record(z.string(), z.any()).optional().openapi({ description: 'Map of secret name to a label shown to the person.' }),
+          descriptions: z.record(z.string(), z.any()).optional().openapi({ description: 'Map of secret name to a help text shown to the person.' }),
+          scope: z.string().optional().openapi({ description: 'Where the secret applies.' }),
+          expires_in_minutes: z.number().optional().openapi({ description: 'Link lifetime in minutes.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'A secret-entry link'),
@@ -50,7 +63,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     // Floor 'read'; project.secret.write is the real gate — the same leaf as
     // POST /secrets. Was 'manage' → project.write, so unchecking secret.write
     // did nothing here.
@@ -101,18 +114,34 @@ projectsApp.openapi(
     // turn a server-side credential into plaintext sandbox environment state.
     // Runtime delivery remains available only through an explicit opt-in.
     const scope = requestedScope === 'runtime' ? 'runtime' : 'connector';
+    const sessionId = (c.get('sessionId') as string | undefined) ?? null;
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },
+      { kind: 'secret', fields, scope, uid: loaded.userId, sid: sessionId },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
+
+    // A runtime value this session's agent is not granted is saved and then
+    // never delivered. Say so now, while the agent can still tell the human the
+    // one extra step, instead of after they fill the form and nothing arrives.
+    // Only names the agent itself just requested are judged, against its own
+    // grant, so this reveals nothing about which secrets exist.
+    const requested = fields.map((f) => f.name);
+    const reach = scope === 'runtime' && sessionId ? await sessionWithheldSecrets(sessionId, requested) : null;
 
     return c.json({
       kind: 'secret',
       url: `${frontendBase()}/secret-intake/${token}`,
-      names: fields.map((f) => f.name),
+      names: requested,
       scope,
       expires_at: new Date(expiresAt).toISOString(),
+      ...(reach
+        ? {
+            agent: reach.agent,
+            withheld: reach.withheld,
+            withheld_fix: withheldSecretsFix(reach.agent, reach.withheld),
+          }
+        : {}),
     });
   },
 );
@@ -127,11 +156,16 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/connect-requests',
     tags: ['connectors'],
-    summary: 'POST /:projectId/connect-requests — mint a Pipedream Quick Connect link',
+    summary: 'Create a link where a person connects an app',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          slug: z.string().openapi({ description: 'Connector slug from the project connectors list.' }),
+          owner: z.enum(['me', 'project']).optional().openapi({ description: 'Whose account the link authorizes: me (the caller) or project (shared).' }),
+          label: z.string().optional().openapi({ description: 'Suggested name for the new connected account.' }),
+          expires_in_minutes: z.number().optional().openapi({ description: 'Link lifetime in minutes.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'A connect link'),
@@ -140,7 +174,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     // Floor 'read'; project.connector.write is the real gate (minting a Pipedream
     // Quick Connect link is a connector operation). Was 'manage' → project.write.
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -193,14 +227,44 @@ projectsApp.openapi(
       );
     }
     const conn = eligibility;
-    if (conn.authorizationStrategy !== 'project') {
+    // WHOSE account the link authorizes is the caller's explicit choice, never
+    // derived from the connector (see projects/lib/connection-access.ts) — the
+    // old `authorizationStrategy==='user'` branch this replaced is what left a
+    // private-only connector with no connect flow anywhere in the product.
+    const owner = parseConnectorConnectOwner(body.owner);
+    if (!owner) return c.json({ error: 'owner must be "me" or "project"' }, 400);
+    // `me` authorizes the caller themselves and needs no member id beyond the
+    // signed-in caller already asserted above (loaded.userId).
+    if (owner === 'me' && !loaded.userId) {
       return c.json(
         {
-          error: 'Shared connect links require a project authorization strategy',
-          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+          error: 'A private connector link can only be minted for a signed-in member',
+          code: 'CONNECTOR_AUTHORIZATION_REQUIRES_MEMBER',
         },
         409,
       );
+    }
+    // Minting a link that authorizes the SHARED account is administration —
+    // the same capability the project-owned connection create (connections.ts) asserts
+    // (PROJECT_CONNECTOR_CONNECTIONS_MANAGE), not just connector.write.
+    if (owner === 'project') {
+      const mayManage = await projectCapabilityAllowed(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+      );
+      if (!mayManage) return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    // A suggested name for the NEW account ("Dad's Gmail"). The human sees it
+    // prefilled in the dialog and may change it; the same rules as any label.
+    let label: string | null = null;
+    if (body.label !== undefined && body.label !== null) {
+      const checked = validateConnectionLabel(body.label);
+      if (!checked.ok) return c.json({ error: checked.error }, 400);
+      label = checked.label;
     }
 
     const { token, expiresAt } = mintSetupLink(
@@ -211,6 +275,8 @@ projectsApp.openapi(
         app: conn.app,
         uid: loaded.userId,
         sid: (c.get('sessionId') as string | undefined) ?? null,
+        owner,
+        label,
       },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
@@ -220,6 +286,8 @@ projectsApp.openapi(
       url: `${frontendBase()}/connect/${token}`,
       slug,
       app: conn.app,
+      owner,
+      label,
       expires_at: new Date(expiresAt).toISOString(),
     });
   },

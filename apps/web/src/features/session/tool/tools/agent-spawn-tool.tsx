@@ -25,11 +25,13 @@ import {
 } from '@/ui';
 import { useRuntimeMessages } from '@kortix/sdk/react';
 import { CheckIcon as Check, CpuIcon as Cpu } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useContext, useMemo, useState } from 'react';
 
 import { cleanWorkerOutput } from '@/features/session/tool/shared/agent-helpers';
 
 export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useContext(ToolSurfaceContext);
   const input = partInput(part);
   const status = partStatus(part);
@@ -77,7 +79,7 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
       <BasicTool
         icon={<Cpu className="size-3.5 shrink-0" />}
         trigger={{
-          title: 'Spawn agent',
+          title: tI18nComplete.raw('text9577487fd26d'),
           subtitle: isRunning
             ? (lastActivity ?? description)
             : spawnFailure
@@ -135,7 +137,7 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
                   })}
                   {childToolParts.length > 3 && (
                     <div className="text-muted-foreground/50 pl-4 text-xs">
-                      +{childToolParts.length - 3} more
+                      +{childToolParts.length - 3} {tI18nComplete.raw('text187897ce0afc')}
                     </div>
                   )}
                 </div>
@@ -171,16 +173,10 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </>
   );
 }
-ToolRegistry.register('agent_spawn', AgentSpawnTool);
 ToolRegistry.register('agent-spawn', AgentSpawnTool);
 
-ToolRegistry.register('agent_task', AgentSpawnTool);
 ToolRegistry.register('agent-task', AgentSpawnTool);
-ToolRegistry.register('agent_task_create', AgentSpawnTool);
 ToolRegistry.register('agent-task-create', AgentSpawnTool);
-ToolRegistry.register('agent_task_start', AgentSpawnTool);
 ToolRegistry.register('agent-task-start', AgentSpawnTool);
-ToolRegistry.register('task_create', AgentSpawnTool);
 ToolRegistry.register('task-create', AgentSpawnTool);
-ToolRegistry.register('task_start', AgentSpawnTool);
 ToolRegistry.register('task-start', AgentSpawnTool);

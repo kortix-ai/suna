@@ -4,8 +4,63 @@
 # complementing GitHub's secret-scanning push protection.)
 set -e
 
-if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
-elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+# Repo-pinned dotenvx first — see the same resolution in pre-commit.
+if [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+elif command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
+
+# git passes "<local ref> <local sha> <remote ref> <remote sha>" lines on stdin.
+# Read them once; both checks below need them.
+push_refs=$(cat)
+
+# No top-level docs/ tree. Refuse a push whose new commits add or edit a file
+# under docs/, including commits made with --no-verify or without the hooks.
+zero=0000000000000000000000000000000000000000
+docs_files=$(printf '%s\n' "$push_refs" | while read -r _ local_sha _ _; do
+  [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
+  git log --no-merges --diff-filter=ACMR --name-only --format= \
+    "$local_sha" --not --remotes -- docs/
+done | sort -u)
+if [ -n "$docs_files" ]; then
+  echo "pre-push: the repository has no docs/ tree. These commits add or edit:" >&2
+  printf '  %s\n' $docs_files >&2
+  echo "  Put runbooks and specs in a skill (.agents/skills/<name>/references/)," >&2
+  echo "  incident rules in .agents/skills/learnings/entries/, and detail in the PR body." >&2
+  exit 1
+fi
+
+# No customer data in the pushed commits, their messages, or the ref names.
+printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" push
+
+# No crash dumps or files over 20 MB in the pushed commits, including commits
+# made with --no-verify.
+printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-binary-dumps.sh" push
+
+# Tests ran locally on the files this PR changed. `pnpm test` writes
+# tests/attestations/<branch>.json; verify-attestation.mjs finds the file the
+# pushed commit's diff adds (else <pushed branch>.json, else the legacy
+# tests/test-attestation.json) and recomputes the PR diff
+# (git diff origin/main...HEAD) from the pushed commit, so a merge of origin/main
+# that touches other files keeps it green. Sanctioned skips: db-suites may be
+# skipped-no-db (no Docker) and packages may be skipped-sandbox-image (a Kortix
+# sandbox image) — fine for a PR branch, never for main (--strict). The merge
+# gate holds a DB-touching PR on the db skip. Deletions, tags, and scratch/*
+# branches are exempt.
+root=$(cd "$(dirname "$0")/.." && pwd)
+bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
+  [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
+  # (no `case` here: macOS /bin/sh 3.2 misparses it inside $(...))
+  [ "${remote_ref#refs/heads/}" != "$remote_ref" ] || continue
+  [ "${remote_ref#refs/heads/scratch/}" = "$remote_ref" ] || continue
+  strict=""
+  [ "$remote_ref" = refs/heads/main ] && strict="--strict"
+  node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" \
+    --branch "${remote_ref#refs/heads/}" $strict >&2 || echo "$remote_ref"
+done)
+if [ -n "$bad" ]; then
+  echo "pre-push: the test attestation is missing, stale, or red — run \`pnpm test\` and commit tests/attestations/ before pushing." >&2
+  echo "  Rejected: $bad. Do not bypass with --no-verify: the merge gate runs \`pnpm test:verify\` on the PR head." >&2
+  exit 1
+fi
 
 exec $DX ext precommit

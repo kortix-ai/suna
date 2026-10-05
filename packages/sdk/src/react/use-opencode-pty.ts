@@ -9,7 +9,7 @@ import {
   updateKortixPty,
   type KortixPty,
 } from '../core/runtime/pty';
-import { getActiveWorkspaceUrl } from '../browser/stores/server-store';
+import { getActiveRuntimeUrl } from '../browser/stores/server-store';
 import { isPtyQueryEnabled, resolvePtyServerUrl } from './pty-query-state';
 import { useCurrentRuntime } from './use-current-runtime';
 
@@ -48,9 +48,9 @@ export interface PtyMutationOptions {
 
 /** Pure merge helper for {@link PtyMutationOptions} — spread into `useMutation`.
  *  Omits the key entirely when unset so the host default still applies. */
-export function ptyMutationOverrides(options?: PtyMutationOptions): {
-  onError?: (error: unknown) => void;
-} {
+export function ptyMutationOverrides(
+  options?: PtyMutationOptions,
+): { onError?: (error: unknown) => void } {
   return options?.onError ? { onError: options.onError } : {};
 }
 
@@ -58,9 +58,9 @@ export function ptyMutationOverrides(options?: PtyMutationOptions): {
 // Hooks
 // ============================================================================
 
-export function useOpenCodePtyList(options?: { enabled?: boolean; serverUrl?: string }) {
-  const runtimeUrl = useCurrentRuntime((state) => state.workspaceUrl);
-  const activeUrl = runtimeUrl || getActiveWorkspaceUrl();
+export function useRuntimePtyList(options?: { enabled?: boolean; serverUrl?: string }) {
+  const runtimeUrl = useCurrentRuntime((state) => state.url);
+  const activeUrl = runtimeUrl || getActiveRuntimeUrl();
   const serverUrl = resolvePtyServerUrl(options?.serverUrl, activeUrl);
   return useQuery<Pty[]>({
     queryKey: ptyKeys.list(serverUrl),
@@ -77,10 +77,10 @@ export function useOpenCodePtyList(options?: { enabled?: boolean; serverUrl?: st
 
 export function useCreatePty(hookOptions?: PtyMutationOptions) {
   const queryClient = useQueryClient();
-  const runtimeUrl = useCurrentRuntime((state) => state.workspaceUrl);
+  const runtimeUrl = useCurrentRuntime((state) => state.url);
   const serverUrl = resolvePtyServerUrl(
     hookOptions?.serverUrl,
-    runtimeUrl || getActiveWorkspaceUrl(),
+    runtimeUrl || getActiveRuntimeUrl(),
   );
 
   return useMutation({
@@ -103,7 +103,7 @@ export function useRemovePty() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => removeKortixPty(getActiveWorkspaceUrl(), id),
+    mutationFn: (id: string) => removeKortixPty(getActiveRuntimeUrl(), id),
     onSuccess: () => {
       // SSE pty.deleted will also fire
       queryClient.refetchQueries({ queryKey: ptyKeys.listPrefix(), type: 'active' });
@@ -112,8 +112,11 @@ export function useRemovePty() {
 }
 
 export function useUpdatePty(options?: PtyMutationOptions) {
-  const runtimeUrl = useCurrentRuntime((state) => state.workspaceUrl);
-  const serverUrl = resolvePtyServerUrl(options?.serverUrl, runtimeUrl || getActiveWorkspaceUrl());
+  const runtimeUrl = useCurrentRuntime((state) => state.url);
+  const serverUrl = resolvePtyServerUrl(
+    options?.serverUrl,
+    runtimeUrl || getActiveRuntimeUrl(),
+  );
   return useMutation({
     mutationFn: ({
       id,
@@ -141,5 +144,9 @@ export async function getPtyWebSocketUrl(
   serverUrl?: string,
   opts?: { wake?: boolean },
 ): Promise<string> {
-  return getKortixPtyWebSocketUrl(ptyId, serverUrl || getActiveWorkspaceUrl(), opts);
+  return getKortixPtyWebSocketUrl(ptyId, serverUrl || getActiveRuntimeUrl(), opts);
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimePtyList`. Removed in the next major. */
+export const useOpenCodePtyList = useRuntimePtyList;

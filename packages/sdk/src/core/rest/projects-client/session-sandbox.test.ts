@@ -101,6 +101,7 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-02T00:00:00Z",
     },
+    runtime_session_id: "oc-1",
     opencode_session_id: "oc-1",
     runtime_url: "http://test.local/v1/p/ext-1/8000",
   });
@@ -166,6 +167,20 @@ test("startProjectSession appends ?wait_ms=<floored ms> when waitMs is given", a
   };
   await startProjectSession(PROJECT, SESSION, 5_500.9);
   expect(last().url).toContain("/start?wait_ms=5500");
+});
+
+test("startProjectSession explicitly requests the preserved previous-repository runtime", async () => {
+  nextResponse = {
+    status: 200,
+    body: { stage: "starting", agent_name: "default", retriable: true, sandbox: null, opencode_session_id: null },
+  };
+  await startProjectSession(PROJECT, SESSION, {
+    waitMs: 5_500.9,
+    repositoryMode: "previous",
+  });
+  expect(last().url).toBe(
+    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=5500&repository_mode=previous`,
+  );
 });
 
 test("startProjectSession omits the query string for a zero or negative waitMs", async () => {
@@ -261,8 +276,28 @@ test("startProjectSession populates the shared session-runtime registry once sta
   const entry = getSessionRuntime(PROJECT, SESSION);
   expect(entry).toBeDefined();
   expect(entry?.opencodeSessionId).toBe("ocs-ready-1");
+  // A pre-W4 API sends only `opencode_session_id`; the neutral field still carries it.
+  expect(entry?.runtimeSessionId).toBe("ocs-ready-1");
   expect(entry?.sandboxId).toBe("ext-ready-1");
   expect(entry?.runtimeUrl).toBe("http://test.local/v1/p/ext-ready-1/8000");
+});
+
+test("startProjectSession reads the neutral runtime_session_id first", async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      stage: "ready",
+      agent_name: "default",
+      retriable: false,
+      sandbox: readySandbox({ external_id: "ext-ready-neutral" }),
+      runtime_session_id: "rs-neutral",
+      opencode_session_id: null,
+    },
+  };
+  await startProjectSession(PROJECT, SESSION);
+  const entry = getSessionRuntime(PROJECT, SESSION);
+  expect(entry?.runtimeSessionId).toBe("rs-neutral");
+  expect(entry?.opencodeSessionId).toBe("rs-neutral");
 });
 
 test("startProjectSession does NOT populate the registry when ready but sandbox has no external_id", async () => {

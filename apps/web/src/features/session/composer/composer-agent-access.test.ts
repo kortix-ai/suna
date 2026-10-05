@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { Agent } from '@kortix/sdk/react';
+import { describe, expect, test } from 'bun:test';
 
 import {
   composerSelectableAgents,
@@ -116,7 +116,7 @@ describe('resolveComposerAgent — the default is accessible', () => {
     expect(resolved.selected).toBe('kortix');
   });
 
-  test("an explicit pick outranks the default — switching agents still works", () => {
+  test('an explicit pick outranks the default — switching agents still works', () => {
     const resolved = resolveComposerAgent({
       agents: [agent('kortix'), agent('support')],
       defaultAgent: 'kortix',
@@ -176,7 +176,7 @@ describe('resolveComposerAgent — bound session agent', () => {
     expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'bound' });
   });
 
-  test('an explicit accessible pick still outranks the bound agent', () => {
+  test("the caller's pick outranks the bound agent — switching works (KRTX-1290)", () => {
     const resolved = resolveComposerAgent({
       agents: [agent('meta'), agent('kortix'), agent('writer')],
       boundAgent: 'kortix',
@@ -209,7 +209,7 @@ describe('resolveComposerAgent — bound session agent', () => {
     expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'loading' });
   });
 
-  test('while the roster loads, an existing pick still wins over the bound agent', () => {
+  test('while the roster loads, an explicit pick is the display value', () => {
     const resolved = resolveComposerAgent({
       agents: undefined,
       boundAgent: 'kortix',

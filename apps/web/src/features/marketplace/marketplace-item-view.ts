@@ -1,3 +1,6 @@
+import type { FileTreeNode } from '@/components/ui/file-tree';
+import { buildFileTree } from '@/features/workspace/capabilities/shared/entity/entity-files';
+import type { UiTranslator } from '@/i18n/translator';
 import type { DependencyItem, ItemCapabilities, MarketplaceItem } from '@/lib/marketplace-client';
 import { typeMeta } from './marketplace-meta';
 
@@ -14,7 +17,9 @@ export function emptyReadmeCopy(type: string): string {
 
 /** Type-aware meta-line count label for a card/detail (e.g. "3 items" for a
  *  bundle's member count, "12 files" for everything else). */
-export function itemCountLabel(item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>): {
+export function itemCountLabel(
+  item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>,
+): {
   count: number;
   unit: string;
 } {
@@ -90,7 +95,10 @@ const MEMBER_TYPE_LABELS: Record<string, string> = {
 
 /** Bucket bundle/project members by registry type in a stable order, with an
  *  "Other" bucket for anything unrecognized (or a null type). */
-export function groupBundleMembersByType(members: BundleMember[]): TypedMemberGroup[] {
+export function groupBundleMembersByType(
+  members: BundleMember[],
+  tI18nComplete: UiTranslator,
+): TypedMemberGroup[] {
   const byType = new Map<string, BundleMember[]>();
   for (const m of members) {
     const key = m.type ?? 'other';
@@ -105,7 +113,8 @@ export function groupBundleMembersByType(members: BundleMember[]): TypedMemberGr
     byType.delete(type);
   }
   const rest = [...byType.values()].flat();
-  if (rest.length) groups.push({ type: 'other', label: 'Other', members: rest });
+  if (rest.length)
+    groups.push({ type: 'other', label: tI18nComplete.raw('textf97e9da0e3b8'), members: rest });
   return groups;
 }
 
@@ -121,13 +130,16 @@ export interface CapabilityGroup {
 /** Groups an item's `capabilities` into labeled sections for the detail
  *  view's scannable badge rows, dropping empty groups. Includes `network`,
  *  which existing detail views silently omitted. */
-export function groupCapabilities(caps: ItemCapabilities | undefined | null): CapabilityGroup[] {
+export function groupCapabilities(
+  caps: ItemCapabilities | undefined | null,
+  tI18nComplete: UiTranslator,
+): CapabilityGroup[] {
   if (!caps) return [];
   const groups: CapabilityGroup[] = [
-    { kind: 'secret', label: 'Secrets', items: caps.secrets },
-    { kind: 'connector', label: 'Connectors', items: caps.connectors },
-    { kind: 'tool', label: 'Tools', items: caps.tools },
-    { kind: 'network', label: 'Network', items: caps.network },
+    { kind: 'secret', label: tI18nComplete.raw('textd8707d411d99'), items: caps.secrets },
+    { kind: 'connector', label: tI18nComplete.raw('textc3d2e79ebdd0'), items: caps.connectors },
+    { kind: 'tool', label: tI18nComplete.raw('textea93d6a262ec'), items: caps.tools },
+    { kind: 'network', label: tI18nComplete.raw('text1744b96470b5'), items: caps.network },
   ];
   return groups.filter((g) => g.items.length > 0);
 }
@@ -137,4 +149,35 @@ export function groupCapabilities(caps: ItemCapabilities | undefined | null): Ca
 export function totalCapabilityCount(caps: ItemCapabilities | undefined | null): number {
   if (!caps) return 0;
   return caps.secrets.length + caps.connectors.length + caps.tools.length + caps.network.length;
+}
+
+/** The deepest directory every target shares (`@skills/pdf` for
+ *  `@skills/pdf/SKILL.md` + `@skills/pdf/scripts/x.py`), or `''` when none. */
+function commonDirectory(targets: readonly string[]): string {
+  if (targets.length === 0) return '';
+  const dirs = targets.map((t) => t.split('/').slice(0, -1));
+  const first = dirs[0];
+  let shared = first.length;
+  for (const dir of dirs) {
+    let i = 0;
+    while (i < shared && dir[i] === first[i]) i++;
+    shared = i;
+  }
+  return first.slice(0, shared).join('/');
+}
+
+/**
+ * An item's install targets as file-tree rows — the same ordering and
+ * indentation as the capability entity modal (`buildFileTree`: SKILL.md first,
+ * a directory's own files above its subdirectories), rooted at the directory
+ * all targets share so the rows read as the skill's own files. When the
+ * targets share no directory and some are nested, `buildFileTree` would drop
+ * the nested ones, so they list flat by full path instead.
+ */
+export function marketplaceFileNodes(targets: readonly string[]): FileTreeNode[] {
+  const dir = commonDirectory(targets);
+  if (!dir && targets.some((t) => t.includes('/'))) {
+    return [...targets].sort().map((path) => ({ path, name: path, depth: 0 }));
+  }
+  return buildFileTree(targets, dir);
 }

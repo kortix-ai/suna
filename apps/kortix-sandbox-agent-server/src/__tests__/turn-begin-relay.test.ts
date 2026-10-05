@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '../main'
-import { dispatch } from '../opencode-events'
-import type { Config } from '../config'
+import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '@/harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+} from '@/lib/kortix-api/session-token-health'
 
 // A BOX-INITIATED turn (OpenCode's synthetic `<pty_exited>` wake-up) must be
 // announced to apps/api so it gets turn authority — live incident 2026-08-20
-// (Essentia session d1b74954): pty-driven turns streamed for 10+ minutes while
+// (a customer session): pty-driven turns streamed for 10+ minutes while
 // `GET .../turn` reported idle, because nothing ever told the control plane a
 // turn had started.
 
@@ -52,6 +56,7 @@ function startMocks(getMessages: () => unknown[]) {
 let saved: Record<string, string | undefined> = {}
 beforeEach(() => {
   __resetRelayedTurnBegins()
+  resetSessionTokenHealthForTests()
   saved = {
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
@@ -61,6 +66,7 @@ beforeEach(() => {
   delete process.env.KORTIX_TOKEN
 })
 afterEach(() => {
+  resetSessionTokenHealthForTests()
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k]
     else process.env[k] = v
@@ -91,9 +97,11 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
       expect(m.calls()).toBe(1)
       expect(m.bodies()[0]).toMatchObject({
         kind: 'turn_begin',
-        opencode_session_id: ROOT,
+        runtime_session_id: ROOT,
         turn_message_id: 'msg_pty_2',
       })
+      // The single session credential.
+      expect(m.auth()[0]).toBe('Bearer tok')
     } finally {
       m.stop()
     }
@@ -157,20 +165,6 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
     }
   })
 
-  test('authenticates with the single session credential', async () => {
-    const m = startMocks(syntheticTurn)
-    sessionEnv(m.baseUrl)
-    const opencode = { getInternalUrl: () => m.baseUrl }
-    const cfg = { workspace: WORKSPACE } as unknown as Config
-    try {
-      await relayTurnBeginToApi(ROOT, opencode, cfg)
-      expect(m.calls()).toBe(1)
-      expect(m.auth()[0]).toBe('Bearer tok')
-    } finally {
-      m.stop()
-    }
-  })
-
   test('does not relay without the session credential', async () => {
     const m = startMocks(syntheticTurn)
     sessionEnv(m.baseUrl)
@@ -187,6 +181,11 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
 
   test('does not relay without sandbox callback identity', async () => {
     const m = startMocks(syntheticTurn)
+    // Credential and API present; only the project/session identity missing,
+    // so the identity guard (not the token guard) is what refuses.
+    sessionEnv(m.baseUrl)
+    delete process.env.KORTIX_PROJECT_ID
+    delete process.env.KORTIX_SESSION_ID
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -196,28 +195,24 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
       m.stop()
     }
   })
-})
 
-// The wiring itself, pinned separately from the relay's behavior: the live
-// event loop routes every frame through `dispatch`, so a `session.status`
-// frame must reach `onSessionStatus`. Verified against a REAL frame captured
-// from opencode 1.18.19 on dev (`{"sessionID":"ses_…","status":{"type":"busy"}}`).
-describe('dispatch → onSessionStatus', () => {
-  test('a real busy frame reaches the handler', () => {
-    const seen: Array<[string, string]> = []
-    dispatch(
-      { type: 'session.status', properties: { sessionID: 'ses_root', status: { type: 'busy' } } },
-      { onSessionStatus: (s, t) => seen.push([s, t]) },
-    )
-    expect(seen).toEqual([['ses_root', 'busy']])
-  })
-
-  test('session.idle is not swallowed by the status branch', () => {
-    let idle = ''
-    dispatch(
-      { type: 'session.idle', properties: { sessionID: 'ses_root' } },
-      { onSessionStatus: () => {}, onSessionIdle: (s) => { idle = s } },
-    )
-    expect(idle).toBe('ses_root')
+  // KRTX-446: a box that outlives its session keeps emitting `busy`/`retry`
+  // frames, and each one re-issued two `POST .../turn-stream -> 401`s. Once the
+  // shared breaker reports the credential dead (here, the revoked-token refusal
+  // — session delete revokes the token ROW), the relay must issue nothing.
+  test('does not relay once the API has affirmed the session credential is dead', async () => {
+    const m = startMocks(syntheticTurn)
+    sessionEnv(m.baseUrl)
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      noteControlPlaneResponse(401, 'PAT not found or revoked')
+    }
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnBeginToApi(ROOT, opencode, cfg)
+      expect(m.calls()).toBe(0)
+    } finally {
+      m.stop()
+    }
   })
 })

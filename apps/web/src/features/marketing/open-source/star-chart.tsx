@@ -2,6 +2,7 @@
 
 import { useWallpaperTheme } from '@/components/ui/wallpaper-shaders';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import dynamic from 'next/dynamic';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useHasBeenSeen } from './star-count';
@@ -111,6 +112,7 @@ const AREA_CLIP_PATH = `${smoothPath(
  * Purely decorative: `aria-hidden`, `pointer-events-none`, no data claim.
  */
 export function StarChart({ className }: { className?: string }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [ref, seen] = useHasBeenSeen<HTMLDivElement>();
   const [reduced, setReduced] = useState(false);
   const { isDark, bg } = useWallpaperTheme();
@@ -135,20 +137,17 @@ export function StarChart({ className }: { className?: string }): ReactNode {
           reduced
             ? undefined
             : {
-                clipPath: seen ? 'inset(0 0 0 0)' : 'inset(0 100% 0 0)',
+                clipPath: seen
+                  ? "inset(0 0 0 0)"
+                  : "inset(0 100% 0 0)",
                 transition: `clip-path ${DURATION_MS}ms ${EASE_OUT_QUART}`,
               }
         }
       >
         {/* Dithered fill, clipped to the area under the curve. Params match
             the CTA DitherShader so both landing sections share one texture. */}
-        <div
-          className="absolute inset-0 opacity-15"
-          style={{ clipPath: `url(#${clipId})` }}
-        >
-          <Shader
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
+        <div className="absolute inset-0 opacity-15" style={{ clipPath: `url(#${clipId})` }}>
+          <Shader style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
             <Dither
               colorA={bg}
               colorB={isDark ? '#84858d' : '#55565d'}

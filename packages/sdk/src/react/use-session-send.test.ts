@@ -652,7 +652,7 @@ describe('replayStartStash', () => {
   test('a network send failure restores the stash and reports the classified error via onFailure', async () => {
     const timers = createFakeTimers();
     writeStartStash('sess-1', { prompt: 'network will fail', model: null, agent: null });
-    // A real 4xx (never retried by `promptOpenCodeMessage`) so this test
+    // A real 4xx (never retried by `promptRuntimeMessage`) so this test
     // doesn't ride out that function's own transient-failure backoff, which
     // uses the real clock independently of the `timers` this test controls.
     promptImpl = async () => ({
@@ -939,4 +939,17 @@ describe('stopWithReceipt', () => {
     expect(holdInboxPrompts).not.toHaveBeenCalled();
     expect(runAbort).toHaveBeenCalledTimes(1);
   });
+});
+
+
+test('stopping a queued prompt cannot mark a completed answer interrupted', () => {
+  const store = useSyncStore.getState();
+  store.upsertMessage('stop-queued', {
+    id: 'completed', sessionID: 'stop-queued', role: 'assistant',
+    time: { created: 100, completed: 200 },
+  } as any);
+  store.upsertMessage('stop-queued', { id: 'queued', sessionID: 'stop-queued', role: 'user' } as any);
+  applyOptimisticAbort('stop-queued');
+  const answer = useSyncStore.getState().messages['stop-queued']?.find((message) => message.id === 'completed');
+  expect(answer).not.toHaveProperty('error');
 });

@@ -1,27 +1,15 @@
 'use client';
-import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import {
   BasicTool,
   ToolOutputFallback,
-  ToolSurfaceContext,
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
-import {
-  getChildSessionError,
-  getRetryInfo,
-  getRetryMessage,
-  type MessageWithParts,
-  type ToolPart,
-} from '@/ui';
-import { useSessionStateStore } from '@kortix/sdk/react';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState } from 'react';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -36,7 +24,7 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
             {tHardcodedUi.raw('componentsSessionToolRenderers.line5270JsxTextLegacyConnectorTool')}
           </span>
           <span className="text-muted-foreground/60 ml-auto text-xs font-medium whitespace-nowrap">
-            removed
+            {tHardcodedUi.raw('i18nComplete.texte1f79758cc42')}
           </span>
         </div>
       }
@@ -72,73 +60,3 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
   'integration-request',
   'integration-exec',
 ].forEach((toolName) => ToolRegistry.register(toolName, RemovedConnectorTool));
-
-function SubAgentActivity({
-  childSessionId,
-  parts,
-}: {
-  childSessionId?: string;
-  parts: ToolPart[];
-}) {
-  if (parts.length === 0) return null;
-  return (
-    <ToolSurfaceContext.Provider value="inline">
-      <div className="space-y-1">
-        {parts.map((tp) => (
-          <ToolPartRenderer
-            key={tp.callID}
-            part={tp}
-            sessionId={childSessionId}
-            disableNavigation
-          />
-        ))}
-      </div>
-    </ToolSurfaceContext.Provider>
-  );
-}
-
-function SubAgentStatusBanner({
-  childSessionId,
-  childMessages,
-}: {
-  childSessionId?: string;
-  childMessages?: MessageWithParts[];
-}) {
-  const childStatus = useSessionStateStore((s) =>
-    childSessionId ? s.sessionStatus[childSessionId] : undefined,
-  );
-  const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);
-  const retryMessage = useMemo(() => getRetryMessage(childStatus), [childStatus]);
-  const childError = useMemo(() => getChildSessionError(childMessages), [childMessages]);
-
-  const [secondsLeft, setSecondsLeft] = useState(0);
-  useEffect(() => {
-    if (!retryInfo) {
-      setSecondsLeft(0);
-      return;
-    }
-    const tick = () =>
-      setSecondsLeft(Math.max(0, Math.round((retryInfo.next - Date.now()) / 1000)));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [retryInfo]);
-
-  if (retryInfo && retryMessage) {
-    return (
-      <SessionRetryDisplay
-        message={retryMessage}
-        attempt={retryInfo.attempt}
-        secondsLeft={secondsLeft}
-        details={retryInfo.details}
-        className="mt-2"
-      />
-    );
-  }
-
-  if (childError) {
-    return <TurnErrorDisplay errorText={childError} className="mt-2" />;
-  }
-
-  return null;
-}

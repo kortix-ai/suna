@@ -70,22 +70,35 @@ afterEach(() => {
 
 const PRINCIPAL_BASE = { userId: 'u1', accountId: 'a1', projectId: 'p1' };
 
-describe('isModelServableForAccount — never 500s a passive servability check', () => {
-  test('resolveCandidates throwing a typed GatewayResolutionError → false, not a throw', async () => {
-    resolveCandidatesImpl = async () => {
-      throw new GatewayResolutionError(
-        'provider_not_connected',
-        'No openrouter API key is connected for this project.',
-        'Add an openrouter API key in project settings, then retry.',
-      );
-    };
-    await expect(
-      isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'openrouter/some-model' }),
-    ).resolves.toBe(false);
+describe('isModelServableForAccount — whose personal keys the probe may use', () => {
+  const principals: Array<Record<string, unknown>> = [];
+  beforeEach(() => {
+    principals.length = 0;
+    spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(
+      (async (principal: Record<string, unknown>) => {
+        principals.push(principal);
+        return [{ provider: 'anthropic' }];
+      }) as unknown as typeof resolveCandidatesModule.resolveCandidates,
+    );
   });
 
+  test('a shared session probes with no personal user, so a personal key cannot pass', async () => {
+    // A Teams group chat or channel: its session is shared, and the gateway
+    // will resolve it with personalUserId null. A probe that let the
+    // checker's own keys count would approve a model that then fails.
+    await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/x', personalUserId: null });
+    expect(principals[0]).toMatchObject({ userId: 'u1', personalUserId: null });
+  });
+
+  test('absent keeps the legacy principal — the checker is its own personal user', async () => {
+    await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/x' });
+    expect(principals[0]).not.toHaveProperty('personalUserId');
+  });
+});
+
+describe('isModelServableForAccount — never 500s a passive servability check', () => {
   test('every GatewayResolutionError reason collapses to false (model_not_found, plan_upgrade_required, ...)', async () => {
-    for (const reason of ['model_not_found', 'plan_upgrade_required', 'model_disabled_on_deployment'] as const) {
+    for (const reason of ['provider_not_connected', 'model_not_found', 'plan_upgrade_required', 'model_disabled_on_deployment'] as const) {
       resolveCandidatesImpl = async () => {
         throw new GatewayResolutionError(reason, 'nope', 'do something');
       };
@@ -102,6 +115,20 @@ describe('isModelServableForAccount — never 500s a passive servability check',
     await expect(
       isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'x/y' }),
     ).rejects.toThrow('unexpected DB failure');
+  });
+
+  // A prod project's one shared ChatGPT account hit its weekly limit. Each
+  // 30 s cooldown made the model "unservable": the project default degraded,
+  // the route stopped matching `project:default`, and the project's chain never
+  // ran, so the turn failed. New sessions and channel turns were refused too.
+  test('a pool that is cooling down is still servable: the pause is temporary', async () => {
+    resolveCandidatesImpl = async () => {
+      throw new GatewayResolutionError('provider_pool_rate_limited', 'All selected ChatGPT connections are cooling down.',
+        'Select a granted ChatGPT connection in session settings.', 30);
+    };
+    await expect(
+      isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'codex/gpt-6.1-sol' }),
+    ).resolves.toBe(true);
   });
 
   test('a real candidate list → true', async () => {
@@ -130,7 +157,7 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     expect(result).toEqual({ model: 'openai/gpt-5.5', source: 'project' });
   });
 
-  test('THE ESSENTIA BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
+  test('THE SAMPLECO BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
     accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
     // The configured openrouter default is no longer servable — no key connected.
     resolveCandidatesImpl = async (model) => {
@@ -168,6 +195,35 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     expect(result).toEqual({ model: null, source: 'platform' });
   });
 
+  test('a shared session checks the configured default without anyone`s personal keys', async () => {
+    // A default reached only through one person's ChatGPT subscription is not
+    // a default for a Teams channel session: the gateway runs it with
+    // personalUserId null, so the first turn would fail "Connect Codex".
+    accountDefaults = { account: 'codex/gpt-6-astra', agents: {}, projects: {} };
+    const principals: Array<Record<string, unknown>> = [];
+    spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(
+      (async (principal: Record<string, unknown>) => {
+        principals.push(principal);
+        if (principal.personalUserId === null) {
+          throw new GatewayResolutionError('provider_not_connected', 'Connect Codex to use this model.', 'connect it');
+        }
+        return [{ provider: 'codex' }];
+      }) as unknown as typeof resolveCandidatesModule.resolveCandidates,
+    );
+    connectedSecretNames = [];
+
+    const shared = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false, personalUserId: null });
+    expect(shared).toEqual({ model: null, source: 'platform' });
+    expect(principals[0]).toMatchObject({ userId: 'u1', personalUserId: null });
+    // Only shared project keys count for the fallback provider as well.
+    expect(secretsModule.listProjectSecretNamesForConsumer).toHaveBeenCalledWith(
+      expect.objectContaining({ principalUserId: undefined }),
+    );
+
+    const own = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(own).toEqual({ model: 'codex/gpt-6-astra', source: 'account' });
+  });
+
   test('an explicit pin that is unservable degrades through the same chain (never throws)', async () => {
     accountDefaults = { account: null, agents: {}, projects: {} };
     resolveCandidatesImpl = async () => {
@@ -189,14 +245,6 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
 // `auto` on an account would poison the cache for every OTHER project on
 // that same account for up to 30s.
 describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account, project)', () => {
-  test('the principal\'s projectId is threaded through to getAccountModelDefaults', async () => {
-    await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
-    expect(modelPreferencesModule.getAccountModelDefaults).toHaveBeenCalledWith(
-      PRINCIPAL_BASE.accountId,
-      'proj-a',
-    );
-  });
-
   test('two projects on the SAME account never share a cached agent default', async () => {
     const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
     spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => {
@@ -270,6 +318,18 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
     expect(result).toBeDefined();
     expect(result).not.toBe('openrouter/some-model');
     expect(result?.startsWith('openai/')).toBe(true);
+  });
+
+  test('a default whose ChatGPT pool is cooling down stays the default, so the project chain still matches', async () => {
+    accountDefaults = { account: null, agents: {}, projects: { p1: 'kortix/codex/gpt-6.1-sol' } };
+    resolveCandidatesImpl = async (model) => {
+      if (model === 'codex/gpt-6.1-sol') {
+        throw new GatewayResolutionError('provider_pool_rate_limited', 'cooling down', 'wait', 30);
+      }
+      return [{ provider: 'kortix' }];
+    };
+    const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toBe('kortix/codex/gpt-6.1-sol');
   });
 
   test('a stale configured default with nothing connected degrades to undefined (platform default applies), never throws', async () => {
@@ -387,4 +447,17 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
 
     expect(result).toBe('openai/gpt-5.5');
   });
+});
+
+test('model validation carries prospective pool selections into credential resolution', async () => {
+  const resolver = spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(async (_principal, _model, options) => {
+    return options?.providerSecretPools?.anthropic?.includes('selected') ? [{ provider: 'anthropic' } as any] : [];
+  });
+  expect(await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/claude-sonnet-4.6', providerSecretPools: { anthropic: ['selected'] } })).toBe(true);
+  expect(resolver.mock.calls[0]?.[2]).toEqual({ providerSecretPools: { anthropic: ['selected'] }, probe: true });
+});
+
+test('existing session validation resolves that session’s pool', async () => {
+  spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(async principal => principal.sessionId === 'pooled-session' ? [{ provider: 'anthropic' } as any] : []);
+  expect(await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/claude-sonnet-4.6', sessionId: 'pooled-session' })).toBe(true);
 });

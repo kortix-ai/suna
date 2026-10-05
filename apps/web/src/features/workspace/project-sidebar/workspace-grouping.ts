@@ -1,3 +1,4 @@
+import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
 import type { KortixAccount, KortixProject } from '@kortix/sdk';
 
 /**
@@ -117,7 +118,10 @@ export function resolveSwitcherAccountId({
 }
 
 export type WorkspaceRowNavigation =
-  { kind: 'switch'; href: string } | { kind: 'account-settings'; href: string };
+  | { kind: 'switch'; href: string }
+  /** The account hub, which is a modal over the current page rather than a
+   *  route — so this variant names a `HubTarget`, not a URL. */
+  | { kind: 'account-settings'; to: HubTarget };
 
 /**
  * Where clicking a workspace row goes.
@@ -134,7 +138,7 @@ export function resolveWorkspaceRowNavigation(
   activeWorkspaceId: string | null | undefined,
 ): WorkspaceRowNavigation {
   if (activeWorkspaceId && workspace.project_id === activeWorkspaceId) {
-    return { kind: 'account-settings', href: `/accounts/${workspace.account_id}` };
+    return { kind: 'account-settings', to: hubTarget(workspace.account_id) };
   }
   return { kind: 'switch', href: `/projects/${workspace.project_id}` };
 }

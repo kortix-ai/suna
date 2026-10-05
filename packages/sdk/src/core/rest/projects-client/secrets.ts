@@ -1,6 +1,7 @@
 // Secrets — project/shared + personal secret overrides, provider OAuth, git creds.
 
 import { backendApi } from '../../http/api-client';
+import type { ConnectionShare } from './connectors';
 import { type ConnectorSharing, type ProjectGitConnection, unwrap } from './shared';
 
 export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
@@ -59,9 +60,11 @@ export interface SecretBrokerResponse {
  * `identifier` is unique per project — the handle an agent's `secrets` grant
  * references and the UI shows. `name` (the KEY) is NOT unique — multiple
  * identifiers may share one (e.g. GMAPS-primary / GMAPS-backup, both
- * GOOGLE_MAPS_API_KEY). Authorization is centralized on the agent grant (by
- * identifier); every project member with read access sees every secret — there
- * is no per-secret member/group sharing and no resource-side agent allow-list.
+ * GOOGLE_MAPS_API_KEY). Which AGENT may receive a secret is the agent grant
+ * (by identifier). Which principals may use its shared value is its audience
+ * (`shared_with`): everyone in the project by default, or specific people,
+ * groups and agents. A person reaches a narrowed value directly or in their
+ * own private sessions; an agent in every one of its sessions.
  */
 export interface ProjectSecret {
   /** Unique per project. The handle an agent's `secrets` grant references. */
@@ -111,6 +114,21 @@ export interface ProjectSecret {
   last_rotated_at?: string | null;
   /** The stored value may have entered an earlier sandbox and must be replaced. */
   requires_rotation?: boolean;
+  /** Who can use the shared value. Empty = everyone in the project. Absent on
+   *  older servers. */
+  shared_with?: ConnectionShare[];
+  /** False when the value is shared with specific people and the caller is not
+   *  one of them. Absent on older servers. */
+  usable?: boolean;
+}
+
+/** One principal a secret value is shared with. `agent`: `principal_id` is the
+ *  agent's service account (`listAgentIdentities`) — every session of that
+ *  agent, triggers included, may use the value, so anyone who may run the
+ *  agent can use it through the agent. */
+export interface SecretSharePrincipal {
+  principal_type: 'user' | 'group' | 'agent';
+  principal_id: string;
 }
 
 export interface ProjectSecretsResponse {
@@ -131,6 +149,19 @@ export interface ProjectSecretsResponse {
   manifest_path?: string;
   /** Error string when manifest_status === 'error'. */
   manifest_error?: string;
+  /**
+   * The calling agent's own secrets grant; `null` for a caller that is not an
+   * agent session (absent on older servers). `items` is filtered by it, so a
+   * declared name missing from `items` may be set but not granted.
+   */
+  agent_scope?: ProjectSecretsAgentScope | null;
+}
+
+/** An agent session's secrets grant, as `GET /projects/:id/secrets` reports it. */
+export interface ProjectSecretsAgentScope {
+  agent: string;
+  /** `'all'`, or the secret identifiers the agent may receive. */
+  secrets: 'all' | string[];
 }
 
 export async function listProjectSecrets(projectId: string) {
@@ -162,6 +193,10 @@ export async function upsertProjectSecret(
     handle_prefix?: string;
     /** Omit to leave an existing secret's value untouched (e.g. a no-op touch). */
     value?: string;
+    /** Who can use the shared value: people, groups and agents. `[]` =
+     *  everyone in the project. Omit to leave it unchanged. A person sets it;
+     *  an agent session gets 403. */
+    shared_with?: SecretSharePrincipal[];
   },
 ) {
   return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));
@@ -211,6 +246,9 @@ export interface ProviderOAuthStart {
 
 export interface ProviderOAuthCredential {
   provider_id: string;
+  /** Present when the OAuth flow created a named account resource. */
+  secret_id?: string;
+  label?: string;
   expires_in_ms: number | null;
   updated_at: string;
 }
@@ -221,14 +259,32 @@ export type ProviderOAuthPoll =
   | { status: 'expired' }
   | { status: 'failed'; error: string };
 
+/** The provider logins (ChatGPT, OpenCode Zen, OpenCode Go) saved on a project. */
+export async function listProjectProviderOAuth(
+  projectId: string,
+): Promise<ProviderOAuthCredential[]> {
+  const result = unwrap(
+    await backendApi.get<{ items: ProviderOAuthCredential[] }>(`/projects/${projectId}/oauth`),
+  );
+  return result.items ?? [];
+}
+
 export async function startProjectProviderOAuth(
   projectId: string,
   provider: string,
-  input?: { sharing?: ConnectorSharing },
+  input?: {
+    sharing?: ConnectorSharing;
+    resourceLabel?: string;
+    /** Reconnect this existing account resource in place. Its label, access,
+     *  and session selections stay; send it without a label or sharing. */
+    resourceId?: string;
+  },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
     await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
       sharing: input?.sharing,
+      ...(input?.resourceLabel === undefined ? {} : { resource_label: input.resourceLabel }),
+      ...(input?.resourceId === undefined ? {} : { resource_id: input.resourceId }),
     }),
   );
 }
@@ -251,6 +307,90 @@ export async function deleteProjectProviderOAuth(projectId: string, provider: st
       `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
     ),
   );
+}
+
+/**
+ * Cadence the poller may not go under: a faster loop would hammer the poll
+ * endpoint for every connected user. The server's suggestion is honored only
+ * above this floor.
+ */
+const POLL_INTERVAL_FLOOR_MS = 2_000;
+/** Cadence when `start` suggests none. */
+const POLL_INTERVAL_FALLBACK_MS = 3_000;
+/** Deadline when `start` sends no expiry: give up after ten minutes. */
+const POLL_DEADLINE_FALLBACK_MS = 10 * 60_000;
+
+export interface ProjectProviderOAuthFlowOptions {
+  projectId: string;
+  provider: string;
+  /** The `start` request body: sharing intent, or an account resource to
+   *  reconnect. Same shape as `startProjectProviderOAuth`'s input. */
+  input?: Parameters<typeof startProjectProviderOAuth>[2];
+  /** Called once `start` resolves, before the first poll: show the code and
+   *  the verification link while the loop waits. */
+  onChallenge?: (challenge: { verification_url: string; user_code: string | null }) => void;
+  /** Checked between every step. Returning true abandons the flow: the
+   *  result is `cancelled` and the caller keeps whatever it already showed. */
+  isCancelled?: () => boolean;
+  /** Awaited between polls. Injectable for tests; a plain setTimeout by
+   *  default. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Deadline clock. Injectable for tests; `Date.now` by default. */
+  now?: () => number;
+}
+
+export type ProjectProviderOAuthFlowResult =
+  | { status: 'success'; credential: ProviderOAuthCredential }
+  | { status: 'failed'; error: string }
+  | { status: 'expired' }
+  | { status: 'cancelled' };
+
+/**
+ * Drive one device-OAuth authorization to a terminal state: start, show the
+ * challenge, then poll at the server's cadence until the credential lands,
+ * the server refuses or expires, or the deadline passes.
+ *
+ * A failed poll request is transient — a dropped connection or a blipping
+ * replica — so it is retried on the next tick rather than treated as an
+ * answer. A failed AUTHORIZATION (the poll's own `failed` status) is
+ * terminal. Start failures propagate: a permission or sharing problem is the
+ * caller's to present, not an authorization outcome.
+ */
+export async function runProjectProviderOAuthFlow(
+  options: ProjectProviderOAuthFlowOptions,
+): Promise<ProjectProviderOAuthFlowResult> {
+  const {
+    projectId,
+    provider,
+    input,
+    onChallenge,
+    isCancelled,
+    sleep = (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    now = () => Date.now(),
+  } = options;
+  const cancelled = () => isCancelled?.() ?? false;
+
+  const start = await startProjectProviderOAuth(projectId, provider, input);
+  if (cancelled()) return { status: 'cancelled' };
+  onChallenge?.({ verification_url: start.verification_url, user_code: start.user_code });
+
+  const interval = Math.max(POLL_INTERVAL_FLOOR_MS, start.interval_ms || POLL_INTERVAL_FALLBACK_MS);
+  const deadline = start.expires_at || now() + POLL_DEADLINE_FALLBACK_MS;
+  while (!cancelled() && now() < deadline) {
+    await sleep(interval);
+    if (cancelled()) return { status: 'cancelled' };
+    let poll: ProviderOAuthPoll;
+    try {
+      poll = await pollProjectProviderOAuth(projectId, provider, start.flow_id);
+    } catch {
+      continue;
+    }
+    if (cancelled()) return { status: 'cancelled' };
+    if (poll.status === 'success') return { status: 'success', credential: poll.credential };
+    if (poll.status === 'failed') return { status: 'failed', error: poll.error };
+    if (poll.status === 'expired') return { status: 'expired' };
+  }
+  return cancelled() ? { status: 'cancelled' } : { status: 'expired' };
 }
 
 export async function upsertProjectGitCredential(projectId: string, input: { token: string }) {

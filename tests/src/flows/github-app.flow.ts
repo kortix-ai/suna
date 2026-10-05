@@ -102,14 +102,51 @@ flow(
     if (ctx.env.capabilities.admin) {
       const admin = ctx.client.withBearer(ctx.env.adminToken!, 'ADMIN_TOKEN');
 
-      await ctx.step('admin GET /status → 200 with the source enum', async () => {
-        const r = await admin.get('/v1/platform/github-app/status');
-        r.status(200).body().exists('$.configured').exists('$.source');
-        const source = r.json<any>()?.source;
-        if (!['db', 'env', 'pat', 'none'].includes(source)) {
-          throw new Error(`expected source ∈ {db,env,pat,none}, got: ${source}`);
-        }
-      });
+      // Read once here; the manifest-start step below branches on it.
+      let mutable: boolean | null = null;
+
+      await ctx.step(
+        'admin GET /status → 200 with source, identity_source, backend_source, mutable, install_url, env_owned_by',
+        async () => {
+          const r = await admin.get('/v1/platform/github-app/status');
+          r.status(200).body().exists('$.configured').exists('$.source');
+          const body = r.json<any>();
+          if (!['db', 'env', 'pat', 'none'].includes(body.source)) {
+            throw new Error(`expected source ∈ {db,env,pat,none}, got: ${body.source}`);
+          }
+          for (const key of ['identity_source', 'backend_source'] as const) {
+            if (!['env', 'db', 'none'].includes(body[key])) {
+              throw new Error(`expected ${key} ∈ {env,db,none}, got: ${body[key]}`);
+            }
+          }
+          if (typeof body.mutable !== 'boolean') {
+            throw new Error(`expected boolean mutable, got: ${body.mutable}`);
+          }
+          if (!Array.isArray(body.env_owned_by)) {
+            throw new Error(`expected env_owned_by[], got: ${JSON.stringify(body.env_owned_by)}`);
+          }
+          // Immutable exactly when env owns a half — and then it says which
+          // variables, so the operator knows where the configuration lives.
+          if (body.mutable !== (body.env_owned_by.length === 0)) {
+            throw new Error(
+              `mutable=${body.mutable} disagrees with env_owned_by=${JSON.stringify(body.env_owned_by)}`,
+            );
+          }
+          const envHalf = body.identity_source === 'env' || body.backend_source === 'env';
+          if (envHalf === body.mutable) {
+            throw new Error(
+              `identity_source=${body.identity_source} backend_source=${body.backend_source} but mutable=${body.mutable}`,
+            );
+          }
+          if (
+            body.install_url !== null &&
+            !(typeof body.install_url === 'string' && body.install_url.startsWith('https://github.com/apps/'))
+          ) {
+            throw new Error(`expected install_url null or a github.com/apps URL, got: ${body.install_url}`);
+          }
+          mutable = body.mutable;
+        },
+      );
 
       await ctx.step('admin POST /app with missing fields → 400 (no GitHub call)', async () => {
         const r = await admin.post('/v1/platform/github-app/app', {});
@@ -122,11 +159,26 @@ flow(
       });
 
       await ctx.step(
-        'admin POST /manifest-start → 200 with signed state + GitHub create URL',
+        'admin POST /manifest-start → 409 instance_identity_is_env_managed when env owns the instance, else 200 with signed state',
         async () => {
-          // Read-only enough for a boundary check: it builds a manifest + signs
-          // a short-lived HMAC state token but does NOT call GitHub or store
-          // anything. Safe to run on shared staging.
+          // When env owns the identity or the backend the UI must not be able
+          // to shadow it — the exact button that replaced production's App
+          // from a customer's settings page on 2026-09-16 answers 409 now.
+          if (mutable === false) {
+            const r = await admin.post('/v1/platform/github-app/manifest-start', {});
+            r.status(409);
+            const body = r.json<any>();
+            if (body.error !== 'instance_identity_is_env_managed') {
+              throw new Error(`expected error instance_identity_is_env_managed, got: ${JSON.stringify(body)}`);
+            }
+            if (!Array.isArray(body.env_owned_by) || body.env_owned_by.length === 0) {
+              throw new Error(`409 must name the owning env variables, got: ${JSON.stringify(body)}`);
+            }
+            return;
+          }
+          // Mutable: read-only enough for a boundary check — it builds a
+          // manifest + signs a short-lived HMAC state token but does NOT call
+          // GitHub or store anything. Safe to run on shared staging.
           const r = await admin.post('/v1/platform/github-app/manifest-start', {});
           r.status(200)
             .body()
@@ -175,13 +227,26 @@ flow(
     // every malformed-input shape an attacker (or a confused browser) could
     // send.
 
-    await ctx.step('manifest-callback with no query → 302 to frontend (invalid_state)', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/platform/github-app/manifest-callback');
-      r.status(302).headerExists('location');
-      const loc = r.header('location') ?? '';
+    // A platform-setup callback is an instance concern, so its redirect
+    // target is the instance page. `/accounts/<id>?tab=git` — the previous
+    // target — was never a frontend route: every managed-git callback
+    // dead-ended on a 404 until 2026-09-16.
+    const expectPlatformError = (loc: string) => {
       if (!loc.includes('github=error')) {
         throw new Error(`expected redirect to carry github=error, got: ${loc}`);
       }
+      if (!loc.includes('/admin/git?')) {
+        throw new Error(`expected a platform-setup error to land on /admin/git, got: ${loc}`);
+      }
+      if (loc.includes('/accounts/')) {
+        throw new Error(`redirect names the non-existent /accounts/<id> route: ${loc}`);
+      }
+    };
+
+    await ctx.step('manifest-callback with no query → 302 to /admin/git (invalid_state)', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/platform/github-app/manifest-callback');
+      r.status(302).headerExists('location');
+      expectPlatformError(r.header('location') ?? '');
     });
 
     await ctx.step('manifest-callback with a tampered state → 302 (invalid_state)', async () => {
@@ -191,10 +256,7 @@ flow(
           query: { code: 'fake-code', state: 'not-a-real-state-token' },
         });
       r.status(302);
-      const loc = r.header('location') ?? '';
-      if (!loc.includes('github=error')) {
-        throw new Error(`expected redirect to carry github=error, got: ${loc}`);
-      }
+      expectPlatformError(r.header('location') ?? '');
     });
 
     await ctx.step('manifest-callback with GitHub error query → 302 (error)', async () => {
@@ -206,10 +268,7 @@ flow(
           query: { error: 'access_denied' },
         });
       r.status(302);
-      const loc = r.header('location') ?? '';
-      if (!loc.includes('github=error')) {
-        throw new Error(`expected redirect to carry github=error, got: ${loc}`);
-      }
+      expectPlatformError(r.header('location') ?? '');
     });
 
     await ctx.step('manifest-callback with valid-shape state but no code → 302 (missing_code)', async () => {
@@ -238,10 +297,9 @@ flow(
           .as(ctx.P.ANON)
           .get('/v1/platform/github-app/install-callback');
         r.status(302).headerExists('location');
-        const loc = r.header('location') ?? '';
-        if (!loc.includes('github=error')) {
-          throw new Error(`expected redirect to carry github=error, got: ${loc}`);
-        }
+        // No state → no purpose → the install is rejected as a platform
+        // concern, so it lands on /admin/git.
+        expectPlatformError(r.header('location') ?? '');
       },
     );
 
@@ -255,10 +313,7 @@ flow(
           .as(ctx.P.ANON)
           .get('/v1/platform/github-app/install-callback', { query: { state: 'not-a-real-state' } });
         r.status(302).headerExists('location');
-        const loc = r.header('location') ?? '';
-        if (!loc.includes('github=error')) {
-          throw new Error(`expected redirect to carry github=error, got: ${loc}`);
-        }
+        expectPlatformError(r.header('location') ?? '');
       },
     );
 

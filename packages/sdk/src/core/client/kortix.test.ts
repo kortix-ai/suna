@@ -5,7 +5,7 @@ import { isConfigured } from '../http/config';
 import { SessionNotReadyError, createKortix } from './kortix';
 
 // Capture every outbound request the facade makes.
-let calls: { url: string; method: string; body?: unknown }[] = [];
+let calls: { url: string; method: string; body?: any }[] = [];
 beforeEach(() => {
   calls = [];
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
@@ -81,6 +81,17 @@ test('project(id).apps exposes the complete App lifecycle with the project id bo
   });
 });
 
+test('project(id).apps.deployments.remove deletes one deployment with the project id bound', async () => {
+  const apps = kortix.project('PID123').apps;
+
+  await apps.deployments.remove('APP1', 'DEP1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/PID123/apps/APP1/deployments/DEP1',
+  });
+});
+
 test('project(id).connectors exposes the complete connector data plane', async () => {
   const connectors = kortix.project('PID123').connectors;
 
@@ -131,6 +142,18 @@ test('project(id).secrets.broker binds the project and encoded identifier', asyn
 test('session(projectId, sessionId) binds both ids', async () => {
   await kortix.session('PID123', 'SID456').previews();
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
+  await kortix.session('PID123', 'SID456').participants();
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/participants');
+});
+
+test('session presence writes a tab-scoped lease through the authenticated backend', async () => {
+  const tabId = '00000000-0000-4000-8000-000000000001';
+  await kortix.session('PID123', 'SID456').presence({ tab_id: tabId, active: true });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/PID123/sessions/SID456/presence',
+    method: 'PUT',
+    body: { tab_id: tabId, active: true },
+  });
 });
 
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
@@ -448,7 +471,11 @@ test('project(id).access.resourceGrants covers list/create/remove', async () => 
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).secrets covers provider OAuth start, poll, and removal', async () => {
+test('project(id).secrets covers provider OAuth list, start, poll, and removal', async () => {
+  await kortix.project('PID123').secrets.listProviderOAuth();
+  expect(last().url.endsWith('/projects/PID123/oauth')).toBe(true);
+  expect(last().method).toBe('GET');
+
   await kortix.project('PID123').secrets.startProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt/start');
   expect(last().method).toBe('POST');
@@ -528,6 +555,18 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
     label: 'Project Gmail',
   });
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').connectors.connections.rename('connection-1', 'Support inbox');
+  expect(last().url).toContain('/projects/PID123/connections/connection-1/label');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ label: 'Support inbox' });
+
+  await kortix
+    .project('PID123')
+    .connectors.connections.addComputer({ tunnelId: 'tunnel-1', share: 'me' });
+  expect(last().url).toContain('/projects/PID123/computers');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ tunnel_id: 'tunnel-1', share: 'me' });
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
@@ -856,6 +895,24 @@ function mockTwoSessionSandboxes() {
   }) as unknown as typeof fetch;
 }
 
+test('ensureReady names the runtime session from runtime_session_id first', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/sessions/SESS-NEUTRAL/start')) {
+      return jsonResponse({
+        ...sessionStartPayload('sb-neutral', ''),
+        runtime_session_id: 'rs-neutral',
+        opencode_session_id: null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-NEUTRAL').ensureReady();
+  expect(ready.runtimeSessionId).toBe('rs-neutral');
+  expect(ready.opencodeSessionId).toBe('rs-neutral');
+});
+
 test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {
   globalThis.fetch = mockTwoSessionSandboxes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -866,16 +923,15 @@ test('two session handles resolve independent sandboxes: A.send never crosses to
   await a.ensureReady();
   await b.ensureReady(); // resolves AFTER a — guards against shared sandbox state
 
+  // A prompt is a durable row in the session's own inbox (W5 E4).
   await a.send('hello from A');
-  const aPromptCall = calls.find((c) => c.url.includes('/message'));
-  expect(aPromptCall?.url).toContain('/p/sb-A/8000');
-  expect(aPromptCall?.url).not.toContain('sb-B');
+  const aPromptCall = calls.find((c) => c.url.endsWith('/prompts'));
+  expect(aPromptCall?.url).toContain('/projects/PROJ/sessions/SESS-A/prompts');
 
   calls.length = 0;
   await b.send('hello from B');
-  const bPromptCall = calls.find((c) => c.url.includes('/message'));
-  expect(bPromptCall?.url).toContain('/p/sb-B/8000');
-  expect(bPromptCall?.url).not.toContain('sb-A');
+  const bPromptCall = calls.find((c) => c.url.endsWith('/prompts'));
+  expect(bPromptCall?.url).toContain('/projects/PROJ/sessions/SESS-B/prompts');
 
   calls.length = 0;
   await a.abort();
@@ -914,15 +970,16 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
   await k.session('PROJ', 'SESS-INHERITED').send('hello from inherited state');
 
   const promptCall = calls.find(
-    (call) =>
-      call.url.includes('/p/sb-inherited/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-INHERITED/prompts') && call.method === 'POST',
   );
   expect(promptCall?.body).toMatchObject({
-    agent: 'kortix',
-    model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
+    overrides: { agent: 'kortix', model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } },
     parts: [{ type: 'text', text: 'hello from inherited state' }],
+    // Minted here with no transcript to place it against: the server places it.
+    remint_on_delivery: true,
   });
+  expect(promptCall?.body.message_id).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+  expect(typeof promptCall?.body.client_message_id).toBe('string');
 });
 
 test('changeModel invalidates the persisted default before the next send', async () => {
@@ -967,17 +1024,11 @@ test('changeModel invalidates the persisted default before the next send', async
   await handle.send('after change');
 
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-model-change/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/prompts') && call.method === 'POST',
   );
-  expect(prompts.map((call) => call.body)).toEqual([
-    expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
-    }),
-    expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },
-    }),
+  expect(prompts.map((call) => call.body.overrides)).toEqual([
+    expect.objectContaining({ model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } }),
+    expect.objectContaining({ model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' } }),
   ]);
 });
 
@@ -1041,23 +1092,12 @@ test('per-call and handle prompt choices override persisted session defaults', a
   });
 
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-overrides/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES/prompts') && call.method === 'POST',
   );
-  expect(prompts.map((call) => call.body)).toEqual([
-    expect.objectContaining({
-      model: { providerID: 'persisted', modelID: 'model' },
-      agent: 'persisted-agent',
-    }),
-    expect.objectContaining({
-      model: { providerID: 'sticky', modelID: 'model' },
-      agent: 'sticky-agent',
-    }),
-    expect.objectContaining({
-      model: { providerID: 'per-call', modelID: 'model' },
-      agent: 'per-call-agent',
-    }),
+  expect(prompts.map((call) => call.body.overrides)).toEqual([
+    { model: { providerID: 'persisted', modelID: 'model' }, agent: 'persisted-agent' },
+    { model: { providerID: 'sticky', modelID: 'model' }, agent: 'sticky-agent' },
+    { model: { providerID: 'per-call', modelID: 'model' }, agent: 'per-call-agent' },
   ]);
   expect(
     calls.filter(
@@ -1103,14 +1143,11 @@ test('a failed persisted-default read is retried by the next send', async () => 
 
   expect(sessionReads).toBe(4);
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-default-retry/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-DEFAULT-RETRY/prompts') && call.method === 'POST',
   );
   expect(prompts).toHaveLength(1);
   expect(prompts[0]?.body).toMatchObject({
-    model: { providerID: 'persisted', modelID: 'model' },
-    agent: 'persisted-agent',
+    overrides: { model: { providerID: 'persisted', modelID: 'model' }, agent: 'persisted-agent' },
     parts: [{ type: 'text', text: 'second' }],
   });
 });
@@ -1136,6 +1173,33 @@ test('previewUrl()/proxyUrl()/runtime throw SessionNotReadyError before ensureRe
   expect(() => s.previewUrl(3000)).toThrow(SessionNotReadyError);
   expect(() => s.proxyUrl('http://localhost:3000')).toThrow(SessionNotReadyError);
   expect(() => s.runtime).toThrow(SessionNotReadyError);
+});
+
+// sandboxPortUrl() is the AUTHENTICATED backend proxy for an arbitrary sandbox
+// port — `${backendUrl}/p/{externalId}/{port}` — with no browser preview-origin
+// rewriting. It is what a local port-forward proxy (CLI `sessions forward`, the
+// TUI Ports panel) dials with the caller's own bearer token, as opposed to
+// previewUrl()/proxyUrl() which target a browser tab and may rewrite onto a
+// per-preview origin.
+test("sandboxPortUrl uses the handle's own sandbox id, not whichever session resolved last", async () => {
+  globalThis.fetch = mockTwoSessionSandboxes();
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+
+  const a = k.session('PROJ', 'SESS-A');
+  const b = k.session('PROJ', 'SESS-B');
+
+  await a.ensureReady();
+  await b.ensureReady();
+
+  expect(a.sandboxPortUrl(3000)).toBe('http://test.local/p/sb-A/3000');
+  expect(b.sandboxPortUrl(5173)).toBe('http://test.local/p/sb-B/5173');
+});
+
+test('sandboxPortUrl() throws SessionNotReadyError before ensureReady()', () => {
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const s = k.session('PROJ', 'SESS-NEW');
+
+  expect(() => s.sandboxPortUrl(3000)).toThrow(SessionNotReadyError);
 });
 
 // health() is a liveness POLL, not an action gated on the runtime being up —
@@ -1218,8 +1282,8 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
 
   calls.length = 0;
   await handle.send('hello again');
-  const promptCall = calls.find((c) => c.url.includes('/message'));
-  expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
+  expect(calls.some((c) => c.url.endsWith('/projects/PROJ/sessions/SESS-REG-2/prompts'))).toBe(true);
+  // `send` resolves the runtime first, so the restarted session re-resolves.
   expect(startCount).toBe(2);
 });
 
@@ -1428,48 +1492,6 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
 });
 
-test('pi session files use the environment while messages stay on the worker', async () => {
-  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
-    const url = requestUrl(input);
-    const request = input instanceof Request ? input : null;
-    const method = request?.method ?? init?.method ?? 'GET';
-    calls.push({ url, method });
-    if (url.includes('/sessions/FILES-PI/start')) {
-      return jsonResponse({
-        ...sessionStartPayload('worker-files-pi', 'ocs-files-pi'),
-        sandbox: { external_id: 'worker-files-pi', metadata: { sandbox_slug: 'pi-worker' } },
-      });
-    }
-    if (url.endsWith('/sessions/FILES-PI/environment/ensure')) {
-      return jsonResponse({
-        session_id: 'FILES-PI',
-        status: 'active',
-        external_id: 'environment-files-pi',
-        preview_url: 'https://environment.example',
-        preview_token: null,
-      });
-    }
-    if (url.includes('/file?path=')) return jsonResponse([]);
-    if (url.endsWith('/sessions/FILES-PI')) {
-      return jsonResponse({ agent_name: 'agent', metadata: {} });
-    }
-    return jsonResponse({ ok: true });
-  }) as unknown as typeof fetch;
-
-  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
-  const session = k.session('PROJ', 'FILES-PI');
-
-  await session.files.list('/workspace');
-  expect(calls.some((call) => call.url.endsWith('/environment/ensure'))).toBe(true);
-  expect(calls.find((call) => call.url.includes('/file?path='))?.url).toContain(
-    '/p/environment-files-pi/8000/file',
-  );
-
-  calls.length = 0;
-  await session.send('continue');
-  expect(calls.some((call) => call.url.includes('/p/worker-files-pi/8000/session/'))).toBe(true);
-});
-
 // ── ensureReady() polls a slow cold-start to ready instead of throwing on the
 // first non-ready check (a backend waiting to send its first turn must not
 // give up while the sandbox is still provisioning/starting) ─────────────────
@@ -1496,6 +1518,7 @@ test('ensureReady() polls through provisioning/starting until the runtime report
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   const ready = await k.session('PROJ', 'SESS-POLL').ensureReady({ readyTimeoutMs: 10_000 });
   expect(ready.opencodeSessionId).toBe('ocs-poll');
+  expect(ready.runtimeSessionId).toBe('ocs-poll');
   expect(ready.sandboxId).toBe('sb-poll');
   expect(polls).toBeGreaterThanOrEqual(3);
 });
@@ -1519,6 +1542,59 @@ test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes re
   await expect(
     k.session('PROJ', 'SESS-TIMEOUT').ensureReady({ readyTimeoutMs: 20 }),
   ).rejects.toMatchObject({ code: 'RUNTIME_UNAVAILABLE' });
+});
+
+// A terminal `stage:"failed"` /start carries the concrete reason the server
+// earned: `failure.category`/`failure.message`, its `failure.evidence.error`,
+// and a `reason`. The thrown message must surface that reason instead of only
+// `(stage: failed)` — else `sessions log`/`sessions new --wait` show a bare
+// `Session runtime not ready (stage: failed)` and the operator cannot tell a
+// provider-capacity failure from a git-auth failure. Regression guard for
+// incident-20260922T140537Z-kxhourly.
+test('ensureReady() surfaces the concrete failure reason from a terminal stage:"failed" /start', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) {
+      return jsonResponse({
+        stage: 'failed',
+        agent_name: 'heartbeat-probe',
+        retriable: false,
+        sandbox: null,
+        opencode_session_id: null,
+        reason: 'runtime_boot_failed',
+        failure: {
+          category: 'sandbox-provider',
+          message: 'runtime exec did not come up before the boot budget',
+          retryable: false,
+          evidence: {
+            check: 'opencode_boot_wait',
+            observed_at: '2026-09-22T14:07:10Z',
+            error: 'daemon never reported ready',
+            attempts: 1,
+            next_retry_at: null,
+          },
+        },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const err = await k
+    .session('PROJ', 'SESS-FAILED')
+    .ensureReady({ readyTimeoutMs: 50 })
+    .then(
+      () => null,
+      (e) => e as ApiError,
+    );
+
+  expect(err).toBeInstanceOf(ApiError);
+  expect(err?.code).toBe('RUNTIME_UNAVAILABLE');
+  // The stage stays for continuity, but the concrete reason must be present.
+  expect(err?.message).toContain('failed');
+  expect(err?.message).toContain('sandbox-provider');
+  expect(err?.message).toContain('runtime exec did not come up before the boot budget');
+  expect(err?.message).toContain('daemon never reported ready');
 });
 
 test('ensureReady() treats a transient null /start result as retriable and resolves once ready', async () => {
@@ -1638,4 +1714,37 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
   });
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
+});
+
+test('session attachments upload before runtime initialization', async () => {
+  await kortix.session('PID123', 'SID456').attachments.upload(new File(['hello'], 'notes.txt'));
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/attachments');
+  expect(last().method).toBe('POST');
+});
+
+test('the facade carries the connect owner through to both connect surfaces', async () => {
+  // The web host and the CLI both pick the owner in the UI and hand it to the
+  // facade; if the facade dropped it, every account would be created under the
+  // API's default and the "Connect shared account" button would be a lie.
+  await kortix.project('PID123').connectors.pipedream.connect('slack-1', { owner: 'project' });
+  expect(last().url).toBe(
+    'http://test.local/connectors/projects/PID123/connectors/slack-1/connect',
+  );
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ owner: 'project' });
+
+  await kortix.project('PID123').setupLinks.requestConnector({ slug: 'slack-1', owner: 'me' });
+  expect(last().url).toBe('http://test.local/projects/PID123/connect-requests');
+  expect(last().body).toEqual({ slug: 'slack-1', owner: 'me' });
+});
+
+test('project-bound session retains both ids for transcript', async () => {
+  await kortix.project('BOUND_PROJECT').session('BOUND_SESSION').transcript();
+  expect(last().url).toContain('/projects/BOUND_PROJECT/sessions/BOUND_SESSION/transcript');
+});
+
+test('project agent identities retains its bound project id', async () => {
+  await kortix.project('BOUND_PROJECT').agentIdentities();
+  expect(last().url).toBe('http://test.local/projects/BOUND_PROJECT/agent-identities');
+  expect(last().method).toBe('GET');
 });

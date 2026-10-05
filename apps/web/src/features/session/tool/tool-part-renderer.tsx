@@ -25,8 +25,9 @@ import {
   type PermissionRequest,
   type QuestionRequest,
   type ToolPart,
+  shouldShowToolPart,
 } from '@/ui';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 interface PermissionPromptInlineProps {
@@ -60,7 +61,8 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   return (
     <div className={cn('flex items-center gap-2 px-2.5 py-2', STATUS_TEXT.warning)}>
       <span className="text-foreground flex-1 text-xs">
-        Permission: <span className="font-medium">{label}</span>
+        {tHardcodedUi.raw('i18nComplete.text5427e0ef4eba')}{' '}
+        <span className="font-medium">{label}</span>
       </span>
       <div className="flex items-center gap-1.5">
         <Button
@@ -70,7 +72,7 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
           size="xs"
           className="hover:text-destructive hover:bg-destructive/10"
         >
-          Deny
+          {tHardcodedUi.raw('i18nComplete.text05a2d7332eb9')}
         </Button>
         <Button
           disabled={replying}
@@ -110,6 +112,7 @@ function ToolPartRendererImpl({
   defaultOpen,
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const toolDurationMs = useMemo(() => {
     const s = (part.state as any)?.time?.start;
     const e = (part.state as any)?.time?.end;
@@ -124,7 +127,7 @@ function ToolPartRendererImpl({
   );
 
   const surface = useContext(ToolSurfaceContext);
-  // Read with the other hooks, ABOVE the `todoread` and thrown-error early
+  // Read with the other hooks, ABOVE the hidden-tool and thrown-error early
   // returns — a `useContext` down beside its use site is a conditional hook,
   // and the order would break on the first errored tool part in a turn.
   const turnLive = useContext(TurnLiveContext);
@@ -136,7 +139,8 @@ function ToolPartRendererImpl({
   // identical on the row too.
   const outcome = useMemo(() => partOutcome(part), [part]);
 
-  if (part.tool === 'todoread') return null;
+  // The SDK's verdict on tools that never render (a todo read, context bookkeeping).
+  if (!shouldShowToolPart(part)) return null;
 
   if (part.state.status === 'error' && 'error' in part.state) {
     const errorStr = (part.state as { error: string }).error;
@@ -165,7 +169,7 @@ function ToolPartRendererImpl({
             <BasicTool
               trigger={{
                 title: display,
-                subtitle: 'failed',
+                subtitle: tI18nComplete.raw('text5d28a90f4498'),
                 args: server ? [server] : undefined,
               }}
               badge="error"
@@ -219,12 +223,7 @@ function ToolPartRendererImpl({
     // fallback for every unregistered/MCP tool, and dropping them left that
     // whole class of call permanently closed and unopenable on the panel — the
     // one surface where a single call IS the view.
-    <GenericTool
-      part={part}
-      defaultOpen={defaultOpen}
-      forceOpen={forceOpen}
-      locked={isLocked}
-    />
+    <GenericTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={isLocked} />
   );
 
   return (
@@ -261,9 +260,6 @@ function ToolPartRendererImpl({
     </ToolNavigationContext.Provider>
   );
 }
-
-// Register all tool renderers after ToolPartRenderer is defined (avoids circular imports).
-import '@/features/session/tool/tools/register';
 
 /**
  * The boundary that stops a settled tool row re-rendering with the stream.

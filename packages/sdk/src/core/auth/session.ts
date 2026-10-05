@@ -43,6 +43,16 @@ export interface KortixSession {
   clear(): Promise<void>;
   /** Load from storage. Called lazily by the other methods; call it up front to hydrate eagerly. */
   load(): Promise<AuthSession | null>;
+  /**
+   * React to sign-in, refresh and sign-out. Returns an unsubscribe.
+   *
+   * The replacement for `supabase.auth.onAuthStateChange`. Distinct from the
+   * `onChange` OPTION, which is a single slot fixed at construction: two
+   * components both wanting to know would silently overwrite each other. This
+   * fans out, and a listener that throws cannot take down its siblings or the
+   * write that notified them.
+   */
+  subscribe(listener: (session: AuthSession | null) => void): () => void;
 }
 
 export function createKortixSession(options: KortixSessionOptions = {}): KortixSession {
@@ -51,7 +61,17 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
   let session: AuthSession | null = null;
   let user: AuthUser | null = null;
   let loaded = !options.storage;
+  /** The one storage read every caller waits for while it is pending. */
+  let loading: Promise<AuthSession | null> | null = null;
   let inflight: Promise<AuthSession | null> | null = null;
+  /**
+   * Bumped by every `set()` and `clear()`. An async result (a storage read, a
+   * refresh) captured the generation when it started and is applied only if
+   * the host has not replaced the session since — so an older answer can never
+   * overwrite a newer sign-out or sign-in.
+   */
+  let generation = 0;
+  const listeners = new Set<(session: AuthSession | null) => void>();
 
   const expiresAt = (s: AuthSession) => (s.expires_at ?? 0) * 1000;
   const needsRefresh = (s: AuthSession) => expiresAt(s) - skew * 1000 <= now();
@@ -61,25 +81,56 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
       if (session) await options.storage.set(JSON.stringify({ session, user }));
       else await options.storage.remove();
     }
-    options.onChange?.(session);
+    // A listener is host code — a React setState, an analytics ping. One of
+    // them throwing must not abort `persist`, or a UI bug becomes a failure to
+    // save the session.
+    for (const listener of [...listeners]) {
+      try {
+        listener(session);
+      } catch {
+        /* a broken listener is that listener's problem */
+      }
+    }
+    try {
+      options.onChange?.(session);
+    } catch {
+      /* same */
+    }
   }
 
   async function load(): Promise<AuthSession | null> {
     if (loaded) return session;
-    loaded = true;
-    const raw = await options.storage!.get();
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { session?: AuthSession; user?: AuthUser | null };
-        if (parsed.session?.access_token && parsed.session?.refresh_token) {
-          session = parsed.session;
-          user = parsed.user ?? null;
+    if (!loading) {
+      const startedAt = generation;
+      const pending = (async () => {
+        const raw = await options.storage!.get();
+        // A `set()` or `clear()` during the read is newer than what storage held.
+        if (startedAt === generation && raw) {
+          try {
+            const parsed = JSON.parse(raw) as { session?: AuthSession; user?: AuthUser | null };
+            if (parsed.session?.access_token && parsed.session?.refresh_token) {
+              session = parsed.session;
+              user = parsed.user ?? null;
+            }
+          } catch {
+            session = null;
+          }
         }
-      } catch {
-        session = null;
-      }
+        loaded = true;
+        return session;
+      })();
+      loading = pending;
+      // A failed read is not an answer: forget it so the next call reads again.
+      pending.then(
+        () => {
+          if (loading === pending) loading = null;
+        },
+        () => {
+          if (loading === pending) loading = null;
+        },
+      );
     }
-    return session;
+    return loading;
   }
 
   async function refresh(): Promise<AuthSession | null> {
@@ -87,14 +138,19 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
     if (!session) return null;
     if (!inflight) {
       const token = session.refresh_token;
-      inflight = refreshSession({ refresh_token: token }, options.request)
+      const startedAt = generation;
+      const request: Promise<AuthSession | null> = refreshSession({ refresh_token: token }, options.request)
         .then(async (result) => {
+          // The host signed out or signed in someone else while this was in
+          // flight. Its result belongs to a session that no longer exists.
+          if (startedAt !== generation) return session;
           session = result.session;
           if (result.user) user = result.user;
           await persist();
           return session;
         })
         .catch(async (err) => {
+          if (startedAt !== generation) return session;
           // A dead refresh token means signed out — everywhere. Anything else
           // (network) keeps the stored session so the next call can retry.
           const status = err && typeof err === 'object' && 'status' in err ? (err as { status: number }).status : 0;
@@ -107,18 +163,30 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
           throw err;
         })
         .finally(() => {
-          inflight = null;
+          // Only clear the slot this request owns; a newer refresh may hold it.
+          if (inflight === request) inflight = null;
         });
+      inflight = request;
     }
     return inflight;
   }
 
   return {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     current: () => session,
     user: () => user,
     load,
     async set(next, nextUser) {
       await load();
+      generation += 1;
+      // A refresh of the replaced session must not be shared with callers of
+      // the new one.
+      inflight = null;
       session = next;
       if (nextUser !== undefined) user = nextUser;
       if (!next) user = null;
@@ -135,6 +203,8 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
     },
     refresh,
     async clear() {
+      generation += 1;
+      inflight = null;
       session = null;
       user = null;
       loaded = true;

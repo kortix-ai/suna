@@ -71,7 +71,8 @@ afterAll(() => {
 /** The stub stands in for a real `Element` at runtime; TS still needs telling. */
 const asTarget = (el: StubElement): EventTarget => el as unknown as EventTarget;
 
-const { modalDismissesOnOutsideInteraction } = await import('./modal');
+const modal = await import('./modal');
+const { modalDismissesOnOutsideInteraction } = modal;
 
 describe('modalDismissesOnOutsideInteraction', () => {
   test('a click on the backdrop dismisses', () => {
@@ -95,7 +96,9 @@ describe('modalDismissesOnOutsideInteraction', () => {
 
   for (const [label, attrs] of floatingPanels) {
     test(`a click on a portaled ${label} does NOT dismiss`, () => {
-      expect(modalDismissesOnOutsideInteraction(asTarget(new StubElement(attrs)), true)).toBe(false);
+      expect(modalDismissesOnOutsideInteraction(asTarget(new StubElement(attrs)), true)).toBe(
+        false,
+      );
     });
 
     test(`a click on a descendant of a portaled ${label} does NOT dismiss`, () => {
@@ -123,4 +126,27 @@ describe('modalDismissesOnOutsideInteraction', () => {
       openFloatingLayer = null;
     }
   });
+});
+
+// Characterization: the surviving public surface of `@/components/ui/modal`.
+// These names must stay exported across the dead-code deletion; this file
+// passes before and after it.
+const SURVIVING_EXPORTS = [
+  'Modal',
+  'ModalBody',
+  'ModalClose',
+  'ModalContent',
+  'ModalContentInner',
+  'ModalDescription',
+  'ModalFooter',
+  'ModalHeader',
+  'ModalOverlay',
+  'ModalPortal',
+  'ModalTitle',
+  'ModalTrigger',
+  'modalDismissesOnOutsideInteraction',
+] as const;
+
+test('modal keeps its surviving exports', () => {
+  for (const name of SURVIVING_EXPORTS) expect(modal[name]).toBeDefined();
 });

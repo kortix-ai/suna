@@ -19,6 +19,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
@@ -36,6 +37,9 @@ import {
 import { shellExitCode, stripAnsi } from '@/ui';
 import { TerminalIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
+import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
+import { channelSendText, parseChannelSendCommand } from './channel-send';
+import { ChannelSendCard, channelSendTitle } from './channel-send-card';
 
 /** The row title never runs past this; a trigger is one line, not a sentence. */
 const TITLE_MAX = 60;
@@ -172,6 +176,7 @@ function CommandBlock({
   /** The call has finished. Until it has, silence means "not yet", not "none". */
   settled: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const hasOutput = Boolean(richOutput || output);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
   // On the panel the row card is the frame and the disclosure body is the
@@ -196,7 +201,7 @@ function CommandBlock({
       <div data-scrollable className={cn('max-h-64 overflow-auto', frame && 'bg-muted/40')}>
         <pre
           className={cn(
-            'text-foreground/90 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
+            'text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
             paneInset,
             'pr-11',
           )}
@@ -210,7 +215,7 @@ function CommandBlock({
           it scrolled away with a long command while the output's stayed
           pinned. */}
       <div className="absolute top-2 right-2">
-        <CopyButton code={command} className="text-muted-foreground/60 hover:text-foreground" />
+        <CopyButton code={command} className="text-muted-foreground hover:text-foreground" />
       </div>
 
       {(hasOutput || settled) && (
@@ -233,13 +238,13 @@ function CommandBlock({
               <div className="absolute top-2 right-2">
                 <CopyButton
                   code={output}
-                  className="text-muted-foreground/60 hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground"
                 />
               </div>
             </div>
           ) : (
-            <p className={cn('text-muted-foreground/50', paneInset, 'text-xs leading-relaxed')}>
-              No output
+            <p className={cn('text-muted-foreground', paneInset, 'text-xs leading-relaxed')}>
+              {tI18nComplete.raw('textf7e31759b202')}
             </p>
           )}
         </div>
@@ -257,7 +262,7 @@ function CommandBlock({
             pad && 'px-3',
           )}
         >
-          Exit code {exitCode}
+          {tI18nComplete.raw('textccc6eb1c87a1')} {exitCode}
         </div>
       )}
     </div>
@@ -299,6 +304,7 @@ function BashTrigger({
   /** The call is still running under a live stream. */
   live: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const open = useToolOpen();
 
   if (live) {
@@ -309,11 +315,13 @@ function BashTrigger({
           // read as in-progress, and with the command gone there is nothing
           // else left on it to carry the motion.
           <TextShimmer duration={1} spread={2} className="min-w-0 truncate text-xs">
-            Running command
+            {tI18nComplete.raw('text2afb17673ff9')}
           </TextShimmer>
         ) : (
           <>
-            <span className="text-foreground shrink-0 text-xs">Running command</span>
+            <span className="text-foreground shrink-0 text-xs">
+              {tI18nComplete.raw('text2afb17673ff9')}
+            </span>
             <TextShimmer
               duration={1}
               spread={2}
@@ -342,11 +350,11 @@ function BashTrigger({
         </span>
         {!open && (
           <>
-            <span className="text-muted-foreground/60 min-w-0 truncate font-mono">
+            <span className="text-muted-foreground min-w-0 truncate font-mono">
               {commandPreview}
             </span>
             {extraLines > 0 && (
-              <span className="text-muted-foreground/40 shrink-0 tabular-nums">+{extraLines}</span>
+              <span className="text-muted-foreground shrink-0 tabular-nums">+{extraLines}</span>
             )}
           </>
         )}
@@ -356,6 +364,7 @@ function BashTrigger({
 }
 
 export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
@@ -411,7 +420,18 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     return shellExitCode(part.state.output ?? '');
   }, [part.state]);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
-  const title = bashRowTitle(input.description, failed);
+
+  // `teams send "…"` / `slack send …` / `telegram send …` IS the reply the
+  // person in the channel received. It renders as that message — badge, text,
+  // attachment — with the shell call kept underneath for the record. A failed
+  // send stays a failed command: the reply never left.
+  // No manual memo: the parser is a one-line scan, and a hand-written memo
+  // here makes the React Compiler skip the whole component (see `command`).
+  const send = failed ? null : parseChannelSendCommand(command);
+  // Read before the memo below: a call on `send` after it makes the React
+  // Compiler assume `command` can still change, and skip the component.
+  const sendText = send ? channelSendText(send) : null;
+  const title = send ? channelSendTitle(send.platform, tI18nComplete) : bashRowTitle(input.description, failed);
 
   const { commandPreview, extraLines } = useMemo(() => {
     const lines = command.split('\n');
@@ -420,12 +440,18 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<TerminalIcon className="size-4 shrink-0" />}
+      icon={
+        send ? (
+          <ChannelBrandMark platform={send.platform} className="size-4 shrink-0" />
+        ) : (
+          <TerminalIcon className="size-4 shrink-0" />
+        )
+      }
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <TextShimmer duration={1} spread={2}>
-              Working...
+              {tI18nComplete.raw('textb93900bded31')}
             </TextShimmer>
           </div>
         ) : commandPreview ? (
@@ -433,16 +459,22 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             title={title}
             failed={failed}
             command={command}
-            commandPreview={commandPreview}
-            extraLines={extraLines}
+            commandPreview={send ? (sendText ?? send.file ?? '') : commandPreview}
+            extraLines={send ? 0 : extraLines}
             live={running && status !== 'completed' && status !== 'error'}
           />
         ) : null
       }
-      defaultOpen={defaultOpen}
+      // The reply is the point of the row, so it opens showing it.
+      defaultOpen={defaultOpen || Boolean(send)}
       forceOpen={forceOpen}
       locked={locked}
     >
+      {send && (
+        <div className={cn('mb-1.5', indent && 'mt-1.5', indent)}>
+          <ChannelSendCard send={send} />
+        </div>
+      )}
       {command && (
         // `CommandBlock` is a bordered card like the shared three, so it takes
         // the same gate: the seam belongs to the inline row it hangs under, not

@@ -3,8 +3,8 @@
 import { STATUS_TEXT } from '@/components/ui/status';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { FilePreviewModal as BaseFilePreviewModal } from '@/features/file-viewer';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
 import { FileHistoryPopoverContent } from './file-history-popover';
@@ -53,7 +53,7 @@ export function FilePreviewModal({
         fileStatus.status === 'deleted' && STATUS_TEXT.destructive,
         fileStatus.status === 'modified' && STATUS_TEXT.warning,
       )}
-      title={`This file is ${fileStatus.status} in this version`}
+      title={tI18nHardcoded('i18nComplete.text972edfcb5202', { value0: fileStatus.status })}
     >
       {fileStatus.status}
       {fileStatus.added > 0 && <span className="tabular-nums">+{fileStatus.added}</span>}
@@ -63,6 +63,7 @@ export function FilePreviewModal({
 
   return (
     <BaseFilePreviewModal
+      key={source.id}
       selectedFilePath={selectedFilePath}
       panelMode={panelMode}
       filePathList={filePathList}

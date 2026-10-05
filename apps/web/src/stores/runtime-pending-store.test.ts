@@ -121,9 +121,7 @@ describe('useRuntimePendingStore — resolved permissions', () => {
       store.addPermission(perm(`prm_${i}`));
       store.removePermission(`prm_${i}`);
     }
-    expect(useRuntimePendingStore.getState().resolvedPermissionIds.length).toBeLessThanOrEqual(
-      200,
-    );
+    expect(useRuntimePendingStore.getState().resolvedPermissionIds.length).toBeLessThanOrEqual(200);
   });
 });
 

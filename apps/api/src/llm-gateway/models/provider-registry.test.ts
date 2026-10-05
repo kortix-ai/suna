@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { Catalog } from '@kortix/llm-catalog';
 import { resolveCatalogUpstream } from './provider-registry';
 
 describe('runtime catalog provider resolution', () => {
@@ -28,6 +29,42 @@ describe('runtime catalog provider resolution', () => {
       kind: 'anthropic',
       envVar: 'ANTHROPIC_API_KEY',
       baseUrl: 'https://api.anthropic.com/v1',
+    });
+  });
+
+  // Regression (kortix-ai/suna self-host report, 2026-09-17): the baseUrl
+  // override keyed off `kind === 'anthropic'`, so EVERY provider with an
+  // Anthropic-shaped transport (npm: @ai-sdk/anthropic) — not just Anthropic
+  // itself — had its catalog `api` base discarded and its users' keys sent to
+  // api.anthropic.com, which correctly 401s them ("API key is invalid.").
+  // The catalog's `anthropic` entry publishes no `api` field (hence the
+  // ANTHROPIC_BASE_URL fallback, asserted above); these third-party
+  // Anthropic-compatible providers DO, and it must win.
+  test('resolves kimi-for-coding to its own Anthropic-compatible endpoint, not api.anthropic.com', () => {
+    expect(resolveCatalogUpstream('kimi-for-coding')).toMatchObject({
+      kind: 'anthropic',
+      envVar: 'KIMI_API_KEY',
+      baseUrl: 'https://api.kimi.com/coding/v1',
+    });
+  });
+
+  test('resolves MiniMax coding-plan providers to their own endpoints', () => {
+    expect(resolveCatalogUpstream('minimax-coding-plan')).toMatchObject({
+      kind: 'anthropic',
+      baseUrl: 'https://api.minimax.io/anthropic/v1',
+    });
+    expect(resolveCatalogUpstream('minimax-cn')).toMatchObject({
+      kind: 'anthropic',
+      baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+    });
+  });
+
+  test('resolves Google Gemini through its OpenAI-compatible API with the primary UI key', () => {
+    expect(resolveCatalogUpstream('google')).toEqual({
+      kind: 'openai-compat',
+      envVar: 'GOOGLE_GENERATIVE_AI_API_KEY',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      npm: '@ai-sdk/google',
     });
   });
 
@@ -80,6 +117,41 @@ describe('runtime catalog provider resolution', () => {
     // doc comment above).
     if (upstream?.kind === 'bedrock') throw new Error('expected openai-compat, got bedrock');
     expect(upstream?.baseUrl).toBe('https://openrouter.ai/api/v1');
-    expect(upstream?.baseUrl).toBeTruthy();
+  });
+});
+
+// models.dev overrides the provider's wire format per model with
+// `model.provider.npm`. OpenCode Go serves MiniMax/Qwen on Anthropic `/messages`
+// and Grok/GPT/Muse on OpenAI `/responses` under one `api` base. Resolving only
+// the provider sent every model to `/chat/completions`.
+describe('per-model wire format override', () => {
+  const catalog: Catalog = {
+    source: 'test', fetched_at: '2026-09-29T00:00:00.000Z', provider_count: 1, model_count: 4,
+    providers: [{
+      id: 'opencode-go', name: 'OpenCode Go', env: ['OPENCODE_API_KEY'],
+      api: 'https://opencode.ai/zen/go/v1', npm: '@ai-sdk/openai-compatible',
+      models: [
+        { id: 'glm-5.3', name: 'GLM-5.3' },
+        { id: 'minimax-m3', name: 'MiniMax-M3', provider: { npm: '@ai-sdk/anthropic' } },
+        { id: 'grok-4.7', name: 'Grok 4.7', provider: { npm: '@ai-sdk/openai' } },
+        { id: 'moved', name: 'Moved', provider: { api: 'https://other.test/v1' } },
+      ],
+    }],
+  };
+  // models.dev lists OPENCODE_API_KEY for Go too; Zen owns that name, so Go reads its own.
+  const base = { envVar: 'OPENCODE_GO_API_KEY', baseUrl: 'https://opencode.ai/zen/go/v1' };
+
+  test.each([
+    ['glm-5.3', { ...base, kind: 'openai-compat', npm: '@ai-sdk/openai-compatible' }],
+    ['minimax-m3', { ...base, kind: 'anthropic', npm: '@ai-sdk/anthropic' }],
+    ['grok-4.7', { ...base, kind: 'openai-responses', npm: '@ai-sdk/openai' }],
+    ['moved', { ...base, kind: 'openai-compat', baseUrl: 'https://other.test/v1' }],
+    ['not-in-catalog', { ...base, kind: 'openai-compat' }],
+  ])('%s resolves its own transport', (modelId, expected) => {
+    expect(resolveCatalogUpstream('opencode-go', modelId, catalog)).toEqual(expect.objectContaining(expected));
+  });
+
+  test('without a model id the provider default applies', () => {
+    expect(resolveCatalogUpstream('opencode-go', undefined, catalog)).toMatchObject({ kind: 'openai-compat' });
   });
 });

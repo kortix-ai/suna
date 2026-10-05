@@ -4,17 +4,13 @@ import { join } from 'node:path';
 
 const DIR = join(import.meta.dir, '..', 'migrations');
 const GRANDFATHER_FILE = join(import.meta.dir, '..', 'grandfathered-migrations.json');
-const BACKFILL_GRANDFATHER_FILE = join(
-  import.meta.dir,
-  '..',
-  'backfill-grandfathered-migrations.json',
-);
+const BACKFILL_GRANDFATHER_FILE = join(import.meta.dir, '..', 'backfill-grandfathered-migrations.json');
 const CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE = join(
   import.meta.dir,
   '..',
   'concurrent-lock-timeout-grandfathered-migrations.json',
 );
-// Three valid migration file shapes:
+// Two valid migration file shapes:
 //  - <ts>_<slug>.sql            hand-written or drizzle-generated, runs inside
 //                                the batch transaction (see MIGRATIONS.md).
 //  - <ts>_<slug>.concurrent.ts  the CONCURRENTLY escape hatch: a node-pg-migrate
@@ -23,12 +19,8 @@ const CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE = join(
 //                                Naming is deliberately distinct from a bare
 //                                `.ts` so it can never be mistaken for a
 //                                stray tooling file. See scripts/create-migration.ts.
-//  - <ts>_<slug>.nontransaction.ts  a constrained expand/validate/contract
-//                                sequence whose statements must commit
-//                                separately to release DDL locks.
 const SQL_NAME_RE = /^\d{17}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/;
 const CONCURRENT_NAME_RE = /^\d{17}_[A-Za-z0-9][A-Za-z0-9_-]*\.concurrent\.ts$/;
-const NONTRANSACTION_NAME_RE = /^\d{17}_[A-Za-z0-9][A-Za-z0-9_-]*\.nontransaction\.ts$/;
 const TS_RE = /^(\d{17})_/;
 const DOWN_MARKER = /^\s*--[\s-]*down\s+migration/im;
 
@@ -43,10 +35,7 @@ const MIXED_VERSION_TRIGGERS: { re: RegExp; what: string }[] = [
   { re: /\balter\s+table\b[\s\S]*?\bdrop\s+constraint\b/i, what: 'DROP CONSTRAINT' },
   { re: /\bdrop\s+index\b/i, what: 'DROP INDEX' },
   { re: /\balter\s+table\b[\s\S]*?\brename\s+(column|to)\b/i, what: 'RENAME' },
-  {
-    re: /\balter\s+table\b[\s\S]*?\balter\s+column\b[\s\S]*?\btype\b/i,
-    what: 'ALTER COLUMN ... TYPE',
-  },
+  { re: /\balter\s+table\b[\s\S]*?\balter\s+column\b[\s\S]*?\btype\b/i, what: 'ALTER COLUMN ... TYPE' },
   { re: /\balter\s+table\b[\s\S]*?\bdrop\s+not\s+null\b/i, what: 'DROP NOT NULL' },
   { re: /\balter\s+type\b[\s\S]*?\brename\s+value\b/i, what: 'ALTER TYPE ... RENAME VALUE' },
 ];
@@ -71,7 +60,6 @@ const ENUM_ANNOTATION_RE = /(?:--|\/\/)\s*enum-value-checked\s*:\s*\S/i;
 // no CONCURRENTLY statement, so it declares itself with
 // `// batched-dml: <what is batched, batch size, bound on row count>` instead.
 const BATCHED_DML_ANNOTATION_RE = /(?:--|\/\/)\s*batched-dml\s*:\s*\S/i;
-const CONSTRAINT_TRANSITION_ANNOTATION_RE = /(?:--|\/\/)\s*constraint-transition\s*:\s*\S/i;
 
 // CREATE INDEX CONCURRENTLY cannot land on a live database under the 2-5s
 // `lock_timeout` a plain .sql migration uses. CIC has to wait for EVERY
@@ -268,9 +256,7 @@ function lintConcurrentMigration(
     errors.push(`${filename}: missing \`export const up = (pgm) => { ... }\`.`);
   }
   if (/TODO/.test(raw)) {
-    errors.push(
-      `${filename}: has a leftover TODO placeholder from the scaffold — fill in the real table/index/column names.`,
-    );
+    errors.push(`${filename}: has a leftover TODO placeholder from the scaffold — fill in the real table/index/column names.`);
   }
 
   // The subtle footgun: a single pgm.sql(`...; ...;`) call with MULTIPLE
@@ -302,98 +288,6 @@ function lintConcurrentMigration(
   return { errors, warnings };
 }
 
-function lintNontransactionMigration(
-  filename: string,
-  raw: string,
-  grandfathered: boolean,
-): LintResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  if (/^(<{7}|={7}|>{7})/m.test(raw)) {
-    errors.push(
-      `${filename}: contains an unresolved merge-conflict marker (<<<<<<< / ======= / >>>>>>>).`,
-    );
-  }
-  if (raw.trim().length === 0) {
-    errors.push(`${filename}: empty file.`);
-    return { errors, warnings };
-  }
-  if (!/\bpgm\s*\.\s*noTransaction\s*\(\s*\)/.test(raw)) {
-    errors.push(
-      `${filename}: a .nontransaction.ts migration must call \`pgm.noTransaction()\` so each pgm.sql() statement commits separately.`,
-    );
-  }
-  if (!CONSTRAINT_TRANSITION_ANNOTATION_RE.test(raw)) {
-    errors.push(
-      `${filename}: a .nontransaction.ts migration must declare \`// constraint-transition: <why each statement must commit separately>\`.`,
-    );
-  }
-  if (!/\bexport\s+const\s+up\b|\bexport\s+function\s+up\b/.test(raw)) {
-    errors.push(`${filename}: missing \`export const up = (pgm) => { ... }\`.`);
-  }
-  if (!/\bexport\s+const\s+down\s*=\s*false\b/.test(raw)) {
-    errors.push(
-      `${filename}: a constraint transition must be roll-forward only (\`export const down = false\`).`,
-    );
-  }
-  if (/TODO/.test(raw)) {
-    errors.push(
-      `${filename}: has a leftover TODO placeholder from the scaffold — fill in the constraint names and compatibility rationale.`,
-    );
-  }
-
-  const sqlCallRe = /pgm\s*\.\s*sql\s*\(\s*`([^`]*)`\s*\)/gs;
-  const statements: string[] = [];
-  for (const match of raw.matchAll(sqlCallRe)) {
-    const body = match[1] ?? '';
-    const parts = stripComments(body)
-      .replace(/\$[a-zA-Z_]*\$[\s\S]*?\$[a-zA-Z_]*\$/g, "'body'")
-      .split(';')
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    if (parts.length !== 1) {
-      errors.push(
-        `${filename}: every pgm.sql() call must contain exactly one statement so node-pg-migrate can commit it independently.`,
-      );
-    }
-    if (parts.length === 1) statements.push(stripComments(body));
-  }
-
-  const addIndex = statements.findIndex((statement) =>
-    /\balter\s+table\b[\s\S]*?\badd\s+constraint\b[\s\S]*?\bnot\s+valid\b/i.test(statement),
-  );
-  const validateIndex = statements.findIndex((statement) =>
-    /\balter\s+table\b[\s\S]*?\bvalidate\s+constraint\b/i.test(statement),
-  );
-  const dropIndex = statements.findIndex((statement) =>
-    /\balter\s+table\b[\s\S]*?\bdrop\s+constraint\b/i.test(statement),
-  );
-  if (addIndex === -1 || validateIndex === -1 || validateIndex <= addIndex) {
-    errors.push(
-      `${filename}: a constraint transition must ADD ... NOT VALID before it VALIDATEs the replacement constraint.`,
-    );
-  }
-  if (dropIndex !== -1 && (validateIndex === -1 || dropIndex <= validateIndex)) {
-    errors.push(
-      `${filename}: a constraint transition must VALIDATE the replacement before it DROPs the old constraint.`,
-    );
-  }
-  const allowedStatement = (statement: string) =>
-    /\bset\s+(?:local\s+)?(?:lock_timeout|statement_timeout)\b/i.test(statement) ||
-    /\balter\s+table\b[\s\S]*?\badd\s+constraint\b[\s\S]*?\bnot\s+valid\b/i.test(statement) ||
-    /\balter\s+table\b[\s\S]*?\bvalidate\s+constraint\b/i.test(statement) ||
-    /\balter\s+table\b[\s\S]*?\bdrop\s+constraint\b/i.test(statement);
-  if (statements.length === 0 || statements.some((statement) => !allowedStatement(statement))) {
-    errors.push(
-      `${filename}: .nontransaction.ts only permits timeout settings and an ADD NOT VALID → VALIDATE → optional DROP constraint transition.`,
-    );
-  }
-
-  errors.push(...checkMixedVersionAndEnum(filename, stripComments(raw), raw, grandfathered));
-  return { errors, warnings };
-}
-
 export interface LintOptions {
   /**
    * Pre-existing migrations (see grandfathered-migrations.json) are exempt
@@ -418,11 +312,7 @@ export interface LintOptions {
   concurrentLockTimeoutGrandfathered?: boolean;
 }
 
-export function lintMigration(
-  filename: string,
-  raw: string,
-  options: LintOptions = {},
-): LintResult {
+export function lintMigration(filename: string, raw: string, options: LintOptions = {}): LintResult {
   if (CONCURRENT_NAME_RE.test(filename)) {
     return lintConcurrentMigration(
       filename,
@@ -431,16 +321,13 @@ export function lintMigration(
       options.concurrentLockTimeoutGrandfathered ?? false,
     );
   }
-  if (NONTRANSACTION_NAME_RE.test(filename)) {
-    return lintNontransactionMigration(filename, raw, options.grandfathered ?? false);
-  }
 
   const errors: string[] = [];
   const warnings: string[] = [];
 
   if (!SQL_NAME_RE.test(filename)) {
     errors.push(
-      `${filename}: invalid filename. Must be <17-digit-UTC-timestamp>_<slug>.sql, _<slug>.concurrent.ts, or _<slug>.nontransaction.ts — use \`pnpm migrate:create <slug>\` or \`pnpm migrate:generate <slug>\`. A bad prefix makes node-pg-migrate mis-order or skip the migration.`,
+      `${filename}: invalid filename. Must be <17-digit-UTC-timestamp>_<slug>.sql (or _<slug>.concurrent.ts for the CONCURRENTLY escape hatch) — use \`pnpm migrate:create <slug>\` or \`pnpm migrate:generate <slug>\`. A bad prefix makes node-pg-migrate mis-order or skip the migration.`,
     );
   }
 
@@ -477,10 +364,7 @@ export function lintMigration(
       `${filename}: destructive operation (DROP/TRUNCATE). Confirm the code reference was removed in a PRIOR deploy (expand→contract — see MIGRATIONS.md).`,
     );
   }
-  if (
-    /\bdelete\s+from\b/i.test(upStripped) &&
-    !/\bdelete\s+from\b[\s\S]*?\bwhere\b/i.test(upStripped)
-  ) {
+  if (/\bdelete\s+from\b/i.test(upStripped) && !/\bdelete\s+from\b[\s\S]*?\bwhere\b/i.test(upStripped)) {
     warnings.push(`${filename}: DELETE without a WHERE clause wipes the whole table. Intentional?`);
   }
 
@@ -513,9 +397,7 @@ export function lintMigration(
     const upNoBodies = upStripped
       .replace(/\$[a-zA-Z_]*\$[\s\S]*?\$[a-zA-Z_]*\$/g, "'body'")
       .replace(/-->\s*statement-breakpoint/g, '');
-    const dml = upNoBodies.match(
-      /(?:^|;)\s*(UPDATE\s|DELETE\s+FROM\s|INSERT\s+INTO\s|MERGE\s+INTO\s|WITH\s)/i,
-    );
+    const dml = upNoBodies.match(/(?:^|;)\s*(UPDATE\s|DELETE\s+FROM\s|INSERT\s+INTO\s|MERGE\s+INTO\s|WITH\s)/i);
     if (dml && !/(?:--|\/\/)\s*backfill-safe\s*:\s*\S/i.test(up)) {
       errors.push(
         `${filename}: top-level DML (${dml[1].trim().toUpperCase()}…) in a single-transaction .sql migration. The file's DDL holds ACCESS EXCLUSIVE until COMMIT, so this backfill blocks every writer on the table for its whole duration — this is exactly the 2026-08-10 centralized_audit_v2 prod outage. ` +
@@ -563,6 +445,39 @@ function loadConcurrentLockTimeoutGrandfatherSet(): Set<string> {
   }
 }
 
+/**
+ * A migration this checkout adds must sort after every migration already on
+ * main. node-pg-migrate's order check halts on an older-dated pending file, and
+ * Deploy Dev applies migrations first, so one such file blocks every dev deploy
+ * (incident #8846). db-migrations.yml checks this only after the merge; this is
+ * the same rule in the local lint, the pre-merge gate.
+ */
+export function lintMigrationSequence(local: string[], merged: string[]): string[] {
+  const mergedSet = new Set(merged);
+  const mergedMax = merged.map((f) => TS_RE.exec(f)?.[1]).filter(Boolean).sort().at(-1);
+  if (!mergedMax) return [];
+  return local
+    .filter((f) => !mergedSet.has(f))
+    .filter((f) => (TS_RE.exec(f)?.[1] ?? '') <= mergedMax)
+    .map(
+      (f) =>
+        `${f}: out of sequence — its timestamp is not after main's newest migration (${mergedMax}). Re-date it (git mv to a current timestamp) so it sorts last; node-pg-migrate's order check would halt every dev deploy.`,
+    );
+}
+
+/** Migration filenames on origin/main, or null when that ref is not available. */
+function mergedMigrationFiles(): string[] | null {
+  const git = Bun.spawnSync(['git', 'ls-tree', '--name-only', 'origin/main', '--', 'packages/db/migrations/'], {
+    cwd: join(import.meta.dir, '..', '..', '..'),
+  });
+  if (git.exitCode !== 0) return null;
+  return git.stdout
+    .toString()
+    .split('\n')
+    .map((path) => path.split('/').at(-1) ?? '')
+    .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'));
+}
+
 function main(): void {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -570,9 +485,7 @@ function main(): void {
   const backfillGrandfathered = loadBackfillGrandfatherSet();
   const lockTimeoutGrandfathered = loadConcurrentLockTimeoutGrandfatherSet();
   const files = readdirSync(DIR)
-    .filter(
-      (f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts') || f.endsWith('.nontransaction.ts'),
-    )
+    .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'))
     .sort();
   if (files.length === 0) errors.push('No migration files found in packages/db/migrations/.');
 
@@ -586,6 +499,8 @@ function main(): void {
     warnings.push(...w);
   }
   errors.push(...lintMigrationSet(files));
+  const merged = mergedMigrationFiles();
+  if (merged) errors.push(...lintMigrationSequence(files, merged));
 
   for (const w of warnings) console.log(`::warning::${w}`);
   for (const e of errors) console.error(`::error::${e}`);

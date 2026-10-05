@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
@@ -42,6 +43,7 @@ export function AddMarketplaceModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const featuredQuery = useFeaturedMarketplaces({ enabled: open });
   const add = useAddMarketplaceSource();
 
@@ -79,13 +81,16 @@ export function AddMarketplaceModal({
       .filter(Boolean);
     add.mutateAsync({ address: addr, gitRef: gitRef.trim() || undefined, sparsePaths }).then(
       () => {
-        successToast('Source added', { description: 'Its items now appear in the catalog.' });
+        successToast(tI18nComplete.raw('textdce2c13f4266'), {
+          description: tI18nComplete.raw('texte0c42f6fcdb3'),
+        });
         setAddress('');
         setGitRef('');
         setSparse('');
         setShowAdvanced(false);
       },
-      (e) => errorToast('Could not add source', { description: (e as Error).message }),
+      (e) =>
+        errorToast(tI18nComplete.raw('texte2b3a36c0979'), { description: (e as Error).message }),
     );
   };
 
@@ -95,10 +100,11 @@ export function AddMarketplaceModal({
       .mutateAsync({ address: addr, label })
       .then(
         () =>
-          successToast(`Enabled ${label}`, {
-            description: 'Its items now appear in the catalog.',
+          successToast(tI18nComplete('text0e498a7ede47', { value0: label }), {
+            description: tI18nComplete.raw('texte0c42f6fcdb3'),
           }),
-        (e) => errorToast('Could not enable', { description: (e as Error).message }),
+        (e) =>
+          errorToast(tI18nComplete.raw('text5d59a324b7e5'), { description: (e as Error).message }),
       )
       .finally(() => setEnabling(null));
   };
@@ -113,10 +119,12 @@ export function AddMarketplaceModal({
     >
       <ModalContent className="lg:max-w-lg">
         <ModalHeader>
-          <ModalTitle>Add a source</ModalTitle>
+          <ModalTitle>{tI18nComplete.raw('textb3fb8f492462')}</ModalTitle>
           <ModalDescription>
-            Point Kortix at any git repo with a <span className="font-mono">SKILL.md</span> /{' '}
-            <span className="font-mono">marketplace.json</span> — or enable a curated one below.
+            {tI18nComplete.raw('textf0007d3cdc93')}{' '}
+            <span className="font-mono">{tI18nComplete.raw('text0e95f5a36660')}</span> /{' '}
+            <span className="font-mono">{tI18nComplete.raw('text94fae5d8ff3f')}</span>{' '}
+            {tI18nComplete.raw('text5b467a764b9a')}
           </ModalDescription>
         </ModalHeader>
 
@@ -124,7 +132,7 @@ export function AddMarketplaceModal({
           {/* Primary: add any git source */}
           <div className="space-y-3">
             <Field className="gap-1.5">
-              <FieldLabel htmlFor="mp-address">Git source</FieldLabel>
+              <FieldLabel htmlFor="mp-address">{tI18nComplete.raw('text465aec9079d9')}</FieldLabel>
               <div className="flex items-center gap-2">
                 <Input
                   id="mp-address"
@@ -138,7 +146,7 @@ export function AddMarketplaceModal({
                       onAddCustom();
                     }
                   }}
-                  placeholder="owner/repo or https://…"
+                  placeholder={tI18nComplete.raw('textbdb0a086980a')}
                   autoFocus
                 />
                 <Button
@@ -147,19 +155,20 @@ export function AddMarketplaceModal({
                   disabled={!address.trim() || add.isPending}
                 >
                   {add.isPending && !enabling ? <Loading className="size-4 shrink-0" /> : null}
-                  Add
+                  {tI18nComplete.raw('text9fd728c66c9a')}
                 </Button>
               </div>
-              <FieldDescription>
-                Any public repo with skills. e.g. anthropics/skills or garrytan/gstack.
-              </FieldDescription>
+              <FieldDescription>{tI18nComplete.raw('textf4c028f9e5ff')}</FieldDescription>
             </Field>
 
             {showAdvanced ? (
               <div className="grid grid-cols-2 gap-3">
                 <Field className="gap-1.5">
                   <FieldLabel htmlFor="mp-ref">
-                    Git ref <span className="text-muted-foreground font-normal">(optional)</span>
+                    {tI18nComplete.raw('textd9323f2a7998')}{' '}
+                    <span className="text-muted-foreground font-normal">
+                      {tI18nComplete.raw('text0059798b7f70')}
+                    </span>
                   </FieldLabel>
                   <Input
                     id="mp-ref"
@@ -170,14 +179,16 @@ export function AddMarketplaceModal({
                 </Field>
                 <Field className="gap-1.5">
                   <FieldLabel htmlFor="mp-sparse">
-                    Sparse path{' '}
-                    <span className="text-muted-foreground font-normal">(optional)</span>
+                    {tI18nComplete.raw('text902baecff4db')}{' '}
+                    <span className="text-muted-foreground font-normal">
+                      {tI18nComplete.raw('text0059798b7f70')}
+                    </span>
                   </FieldLabel>
                   <Input
                     id="mp-sparse"
                     value={sparse}
                     onChange={(e) => setSparse(e.target.value)}
-                    placeholder="plugins/codex"
+                    placeholder={tI18nComplete.raw('text94a313f2864b')}
                   />
                 </Field>
               </div>
@@ -187,7 +198,7 @@ export function AddMarketplaceModal({
                 onClick={() => setShowAdvanced(true)}
                 className="text-muted-foreground hover:text-foreground text-xs transition-colors"
               >
-                Advanced — git ref, sparse path
+                {tI18nComplete.raw('text320274deee2c')}
               </button>
             )}
           </div>
@@ -195,7 +206,7 @@ export function AddMarketplaceModal({
           <div className="flex items-center gap-3">
             <Separator className="flex-1" />
             <span className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
-              Or enable a curated source
+              {tI18nComplete.raw('text6462590b2306')}
             </span>
             <Separator className="flex-1" />
           </div>
@@ -207,7 +218,7 @@ export function AddMarketplaceModal({
                 <Search />
               </InputGroupSearchIcon>
               <InputGroupSearchInput
-                placeholder="Search curated sources"
+                placeholder={tI18nComplete.raw('text94e8eeb4d760')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 variant="popover"
@@ -223,7 +234,9 @@ export function AddMarketplaceModal({
               </div>
             ) : featured.length === 0 ? (
               <p className="text-muted-foreground/70 py-6 text-center text-sm">
-                {search ? `No sources match “${search}”.` : 'All curated sources are enabled.'}
+                {search
+                  ? tI18nComplete('text598efd3e081f', { value0: search })
+                  : tI18nComplete.raw('text3b0f1d282304')}
               </p>
             ) : (
               <div className="space-y-2">
@@ -263,7 +276,7 @@ export function AddMarketplaceModal({
 
         <ModalFooter>
           <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Done
+            {tI18nComplete.raw('text11a6767d5674')}
           </Button>
         </ModalFooter>
       </ModalContent>

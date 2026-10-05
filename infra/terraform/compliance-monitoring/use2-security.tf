@@ -50,7 +50,7 @@ locals {
 
 data "aws_iam_policy_document" "use2_alerts_kms" {
   # checkov:skip=CKV_AWS_109:The account-root statement is the KMS key control plane. Service principals receive data-key operations only.
-  # checkov:skip=CKV_AWS_111:The account root must administer this KMS key. Service access is restricted by SourceAccount.
+  # checkov:skip=CKV_AWS_111:The account root must administer this KMS key. Publishing services are restricted by SourceAccount; SNS delivery decrypt cannot be scoped because delivery calls present no caller context.
   # checkov:skip=CKV_AWS_356:KMS key policies require Resource "*" because the key ARN does not exist during policy evaluation.
   statement {
     sid       = "EnableAccountAdministration"
@@ -82,6 +82,21 @@ data "aws_iam_policy_document" "use2_alerts_kms" {
       values   = [local.account_id]
     }
   }
+
+  # SNS decrypts each message just before delivering it to a subscription,
+  # so the encrypted topic cannot reach its Lambda or email subscribers
+  # unless the key policy allows the SNS service principal (see "Allow
+  # access for Key User (SNS Service Principal)" in the Amazon SNS KMS
+  # documentation).
+  statement {
+    sid       = "AllowSNSDeliveryDecryption"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["sns.amazonaws.com"]
+    }
+  }
 }
 
 resource "aws_kms_key" "use2_alerts" {
@@ -90,7 +105,11 @@ resource "aws_kms_key" "use2_alerts" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.use2_alerts_kms.json
-  tags                    = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "use2_alerts" {
@@ -103,7 +122,11 @@ resource "aws_sns_topic" "use2_alerts" {
   provider          = aws.use2
   name              = "kortix-compliance-alerts"
   kms_master_key_id = aws_kms_key.use2_alerts.arn
-  tags              = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 data "aws_iam_policy_document" "use2_alerts" {
@@ -173,6 +196,18 @@ resource "aws_sns_topic_policy" "use2_alerts" {
   policy   = data.aws_iam_policy_document.use2_alerts.json
 }
 
+# Drata DCF-86 also requires every ALB alarm action topic to hold at least one
+# subscription, and us-east-2's topic had none (the us-west-2 and eu-west-2
+# topics carry confirmed email subscriptions managed outside Terraform). An
+# email endpoint stays PendingConfirmation until a human confirms the SNS
+# email, so confirmation remains a human step after apply.
+resource "aws_sns_topic_subscription" "use2_alerts_email" {
+  provider  = aws.use2
+  topic_arn = aws_sns_topic.use2_alerts.arn
+  protocol  = "email"
+  endpoint  = "marko@kortix.com"
+}
+
 # ── WAF and ALB monitoring ────────────────────────────────────────────────────
 
 resource "aws_wafv2_web_acl" "use2" {
@@ -203,6 +238,11 @@ resource "aws_wafv2_web_acl" "use2" {
             "GenericLFI_BODY",
             "GenericRFI_BODY",
             "SizeRestrictions_BODY",
+            # Setup-link tokens (/v1/setup-links/{secret,connectors}/ksl_…) are
+            # encrypted envelopes that grow with the requested fields and pass
+            # 1024 bytes of path; Block returned a CORS-less 403 to the intake
+            # page. The ALB still caps the request line.
+            "SizeRestrictions_URIPATH",
           ])
           content {
             name = rule_action_override.value
@@ -388,7 +428,11 @@ resource "aws_kms_key" "use2_logs" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.use2_logs_kms.json
-  tags                    = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "use2_logs" {
@@ -411,11 +455,23 @@ resource "aws_wafv2_web_acl_logging_configuration" "use2" {
   log_destination_configs = [aws_cloudwatch_log_group.use2_waf.arn]
 }
 
-removed {
-  from = aws_cloudwatch_metric_alarm.use2_target_response_time
-  lifecycle {
-    destroy = false
-  }
+resource "aws_cloudwatch_metric_alarm" "use2_target_response_time" {
+  provider            = aws.use2
+  for_each            = local.use2_albs
+  alarm_name          = "kortix-alb-${each.value.name}-target-response-time"
+  alarm_description   = "SOC2 DCF-86: ALB target response time is elevated"
+  namespace           = "AWS/ApplicationELB"
+  metric_name         = "TargetResponseTime"
+  dimensions          = { LoadBalancer = each.value.dimension }
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 30
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.use2_alerts.arn]
+  tags                = local.alarm_tags
 }
 
 resource "aws_cloudwatch_metric_alarm" "use2_elb_5xx" {
@@ -497,9 +553,12 @@ resource "aws_default_security_group" "use2" {
   ingress = []
   egress  = []
 
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-default"
-  })
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-prod-use2-default"
+  }
 }
 
 resource "aws_network_acl" "use2_restricted" {
@@ -587,9 +646,12 @@ resource "aws_network_acl" "use2_restricted" {
     to_port    = 0
   }
 
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-restricted"
-  })
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-prod-use2-restricted"
+  }
 
   lifecycle {
     prevent_destroy = true

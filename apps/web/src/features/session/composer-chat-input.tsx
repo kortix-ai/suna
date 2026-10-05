@@ -10,24 +10,20 @@ import {
   SessionChatInput,
   type SessionChatInputProps,
 } from '@/features/session/session-chat-input';
-import { useRuntimeConfig } from '@kortix/sdk/react';
-import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
-import {
-  type Command,
-  useRuntimeAgents,
-  useRuntimeCommands,
-  useRuntimeProviders,
-} from '@kortix/sdk/react';
-import { useProjectConfig } from '@kortix/sdk/react';
-import { isMetaAgentName } from '@kortix/shared';
-import type { DraftScope } from './composer/draft/composer-draft';
+import type { SessionPromptOverrides } from '@kortix/sdk';
+import type { AttachmentSubmission } from './composer/attachment-submission';
+import type { ComposerSendReset } from './composer-reset';
+import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { resolveComposerAgent } from './composer/composer-agent-access';
+import type { DraftScope } from './composer/draft/composer-draft';
 
 export interface ComposerOptions {
+  placement?: 'transcript' | 'composer';
   agent?: string;
   model?: ModelKey;
   variant?: string;
   scope?: SessionScopeCommit;
+  providerSecretPools?: Record<string, string[]>;
 }
 
 /**
@@ -53,6 +49,8 @@ export function ComposerChatInput({
   autoFocus,
   placeholder,
   prefill,
+  onPrefillApplied,
+  aboveSlot,
   inputSlot,
   toolbarSlot,
   underbarPlacement,
@@ -64,8 +62,15 @@ export function ComposerChatInput({
   onAgentSelectionChange,
   sandboxSlot,
   draftScope,
+  draftActive,
+  promptAttachments,
 }: {
-  onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
+  onSend: (
+    text: string,
+    files: AttachedFile[] | undefined,
+    options: ComposerOptions,
+    attachments?: AttachmentSubmission,
+  ) => void | Promise<void>;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
   sessionId?: string;
   projectId?: string;
@@ -80,9 +85,13 @@ export function ComposerChatInput({
   /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
   isSending?: boolean;
   disabled?: boolean;
-  /** Clear the composer optimistically on send. Set false on the project-home
-   *  composer, whose send navigates it away (see SessionChatInput.clearOnSend). */
-  clearOnSend?: boolean;
+  /**
+   * What send does to this composer: clear and revoke (`true`, every in-thread
+   * composer), clear but keep the local preview URLs alive for the surface that
+   * takes over (`'text-only'`, project home), or leave the draft untouched
+   * (`false`). See `composer-reset.ts`.
+   */
+  clearOnSend?: ComposerSendReset;
   autoFocus?: boolean;
   placeholder?: string;
   prefill?: {
@@ -90,7 +99,11 @@ export function ComposerChatInput({
     id: number;
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
+    options?: SessionPromptOverrides | null;
+    submit?: boolean;
   } | null;
+  onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
+  aboveSlot?: ReactNode;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
@@ -107,6 +120,9 @@ export function ComposerChatInput({
   sandboxSlot?: SessionOverrideSlot;
   /** Persist the unsent draft under this scope — see `composer/draft/`. */
   draftScope?: DraftScope | null;
+  draftActive?: boolean;
+  /** Host-owned upload controller. See `SessionChatInputProps.promptAttachments`. */
+  promptAttachments?: SessionChatInputProps['promptAttachments'];
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -119,11 +135,19 @@ export function ComposerChatInput({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
-  // The meta agent is the only thing that pins the picker: a meta session must
-  // keep running its own agent. Every other session is freely switchable.
-  const lockedAgentName = isMetaAgentName(boundAgentName) ? boundAgentName?.trim() || null : null;
+  const restoredOptions = prefill?.options;
+  const setAgent = local.agent.set;
+  const setModel = local.model.set;
+  const setVariant = local.model.variant.set;
+  useEffect(() => {
+    if (!restoredOptions) return;
+    if (restoredOptions.agent) setAgent(restoredOptions.agent);
+    if (restoredOptions.model) setModel(restoredOptions.model);
+    setVariant(restoredOptions.variant ?? undefined);
+  }, [restoredOptions, setAgent, setModel, setVariant]);
+
   /**
    * What will ACTUALLY run — see `composer-agent-access.ts`.
    *
@@ -139,13 +163,13 @@ export function ComposerChatInput({
   const agentResolution = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
-  const selectedAgentName = lockedAgentName ?? agentResolution.selected;
-  // A locked meta session runs its own bound agent, so an empty project roster
-  // does not refuse it.
-  const noAccessibleAgents = !lockedAgentName && agentResolution.disabled;
+  const selectedAgentName = agentResolution.selected;
+  // An empty project roster refuses an unbound composer; the resolver answers
+  // `disabled` for exactly that case.
+  const noAccessibleAgents = agentResolution.disabled;
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);
@@ -155,6 +179,9 @@ export function ComposerChatInput({
     agentName: string | null;
     commit: SessionScopeCommit;
   } | null>(null);
+  const [newProviderSecretPools, setNewProviderSecretPools] = useState<Record<string, string[]>>({});
+
+
   const handleCommittedScope = useCallback(
     (commit: SessionScopeCommit | undefined) => {
       setNewSessionScope(commit ? { agentName: selectedAgentName, commit } : null);
@@ -172,11 +199,13 @@ export function ComposerChatInput({
           projectId={projectId}
           sessionId={sessionId}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+          providerSecretPools={newProviderSecretPools}
+          onProviderSecretPoolsChange={setNewProviderSecretPools}
           selectedAgent={selectedAgentName}
           sandboxSlot={sandboxSlot}
         />
       ) : null,
-    [handleCommittedScope, projectId, sandboxSlot, selectedAgentName, sessionId],
+    [handleCommittedScope, newProviderSecretPools, projectId, sandboxSlot, selectedAgentName, sessionId],
   );
 
   const combinedToolbarSlot = useMemo(
@@ -202,12 +231,16 @@ export function ComposerChatInput({
     if (!sessionId && newSessionScope && newSessionScope.agentName === selectedAgentName) {
       o.scope = newSessionScope.commit;
     }
+    if (!sessionId && Object.keys(newProviderSecretPools).length > 0) o.providerSecretPools = newProviderSecretPools;
     return o;
   };
 
   return (
     <SessionChatInput
-      onSend={(text, files) => onSend(text, files, options())}
+      onSend={(text, files, _mentions, attachments, placement) =>
+        onSend(text, files, { ...options(), placement }, attachments)
+      }
+      promptAttachments={promptAttachments}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       clearOnSend={clearOnSend}
       isBusy={isBusy}
@@ -219,6 +252,8 @@ export function ComposerChatInput({
       autoFocus={autoFocus}
       placeholder={placeholder}
       prefill={prefill}
+      onPrefillApplied={onPrefillApplied}
+      aboveSlot={aboveSlot}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}
@@ -231,11 +266,7 @@ export function ComposerChatInput({
       agents={local.agent.list}
       selectedAgent={selectedAgentName}
       noAccessibleAgents={noAccessibleAgents}
-      onAgentChange={
-        // The selectedAgentName effect above notifies the parent; no inline call.
-        lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)
-      }
-      agentSelectorLocked={!!lockedAgentName}
+      onAgentChange={(name) => local.agent.set(name ?? undefined)}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
@@ -246,6 +277,7 @@ export function ComposerChatInput({
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
       commands={commands || []}
       draftScope={draftScope}
+      draftActive={draftActive}
     />
   );
 }

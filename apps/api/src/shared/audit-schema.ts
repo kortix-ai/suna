@@ -1,5 +1,20 @@
 import { z } from '@hono/zod-openapi';
 
+/**
+ * Every `actor_type` the writer emits. `anonymous` is a request no
+ * authenticator identified: the request audit writes it instead of skipping
+ * the request. `null` is an older row written before the column existed.
+ */
+export const AUDIT_ACTOR_TYPES = [
+  'human',
+  'agent',
+  'service_account',
+  'system',
+  'anonymous',
+] as const;
+
+export const AuditActorTypeSchema = z.enum(AUDIT_ACTOR_TYPES);
+
 /** Public canonical audit contract shared by account, project, and session routes. */
 export const AuditEventSchema = z
   .object({
@@ -13,18 +28,27 @@ export const AuditEventSchema = z
     message_id: z.string().nullable(),
     tool_call_id: z.string().nullable(),
     execution_id: z.string().nullable(),
-    session_sequence: z.number().int().nullable(),
+    session_sequence: z
+      .number()
+      .int()
+      .nullable()
+      .describe('Deprecated. Set only on rows written before 2026-10; null for newer rows.'),
     actor_user_id: z.string().uuid().nullable(),
-    actor_type: z.enum(['human', 'agent', 'service_account', 'system']).nullable(),
+    actor_type: AuditActorTypeSchema.nullable(),
     agent_id: z.string().nullable(),
     agent_name: z.string().nullable(),
     initiator_actor_type: z.string().nullable(),
     initiator_actor_id: z.string().nullable(),
+    /** The human an agent session acted on behalf of; null otherwise. */
+    on_behalf_of_user_id: z.string().uuid().nullable(),
     parent_event_id: z.string().uuid().nullable(),
     delegation_depth: z.number().int(),
     source: z.string().nullable(),
     authoritative_source: z.string().nullable(),
     client_reported_source: z.string().nullable(),
+    credential_kind: z.string().nullable(),
+    credential_id: z.string().nullable(),
+    credential_name: z.string().nullable(),
     outcome: z.enum(['success', 'failure', 'denied', 'pending']).nullable(),
     action: z.string(),
     phase: z.string(),
@@ -45,8 +69,11 @@ export const AuditEventSchema = z
     output_sha256: z.string().nullable(),
     error_code: z.string().nullable(),
     error_message: z.string().nullable(),
-    integrity_previous_hash: z.string().nullable(),
-    integrity_hash: z.string().nullable(),
+    integrity_previous_hash: z
+      .string()
+      .nullable()
+      .describe('Deprecated. The hash chain left ingestion in 2026-10; null for newer rows.'),
+    integrity_hash: z.string().nullable().describe('Deprecated. Null for rows written since 2026-10.'),
     before: z.record(z.unknown()).nullable(),
     after: z.record(z.unknown()).nullable(),
     ip: z.string().nullable(),

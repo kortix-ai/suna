@@ -1,6 +1,7 @@
 'use client';
 
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { m, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
@@ -172,6 +173,7 @@ const KIND_LABEL: Record<RoleArtifact['kind'], string> = {
 };
 
 export function RoleHeroVisual({ role }: { role: RoleContent }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion() ?? false;
   const artifact = role.output.artifact;
 
@@ -179,7 +181,11 @@ export function RoleHeroVisual({ role }: { role: RoleContent }): ReactNode {
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label={`A specimen of what ${role.name} gets back: ${artifact.file}. ${role.output.caption}`}
+      aria-label={tI18nComplete('textdc9cbe5d4dd1', {
+        value0: role.name,
+        value1: artifact.file,
+        value2: role.output.caption,
+      })}
     >
       <div className="relative h-[24rem] w-full max-w-[38rem] sm:h-[27rem]">
         {/* ── the branch it came back on ──────────────────────────────── */}

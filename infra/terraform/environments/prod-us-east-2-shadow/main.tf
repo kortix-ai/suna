@@ -58,6 +58,32 @@ module "certificate" {
   })
 }
 
+# ── Project snapshot object store (S3 config provider) ────────────────────────
+# Private bucket the API's leader worker publishes prebuilt project snapshots
+# to, and sandboxes read through short-lived presigned GETs. The name is
+# deterministic on purpose: the task names it through the non-secret
+# KORTIX_PROJECT_SNAPSHOT_S3_BUCKET / _S3_REGION overrides in the deploy
+# workflow (see .github/workflows/deploy-<env>.yml). Applying this creates the bucket
+# and the task-role grant only; naming it in the task env starts the producer;
+# KORTIX_PROJECT_SNAPSHOT_MODE / a project's metadata turns consumption on.
+module "project_snapshots" {
+  source = "../../modules/project-snapshots-bucket"
+  name   = "${local.name}-project-snapshots"
+  tags   = local.tags
+}
+
+# ── Audit-event archive (WORM) ────────────────────────────────────────────────
+# Weekly kortix.audit_events partitions older than the 90-day hot window,
+# exported by the API as gzip JSONL with Object Lock retention (365 days). The
+# task names it through AUDIT_ARCHIVE_BUCKET / AUDIT_ARCHIVE_REGION in the
+# deploy workflow. Applying this creates the bucket, its KMS key, and the
+# task-role grant only.
+module "audit_archive" {
+  source = "../../modules/audit-archive-bucket"
+  name   = "${local.name}-audit-archive"
+  tags   = local.tags
+}
+
 module "api" {
   source = "../../modules/ecs-api"
 
@@ -77,10 +103,15 @@ module "api" {
     KORTIX_VERSION           = "0.10.14"
     LLM_GATEWAY_PROXY_TARGET = "https://${var.gateway_shadow_hostname}"
   }
-  secrets                 = local.secrets
-  secrets_blob_arn        = var.secret_arn
-  ses_send_region         = "us-east-2"
-  ses_send_identity_names = ["kortix.com", "kortix.ai"]
+  secrets                     = local.secrets
+  secrets_blob_arn            = var.secret_arn
+  ses_send_region             = "us-east-2"
+  ses_send_identity_names     = ["kortix.com", "kortix.ai"]
+  project_snapshots_enabled   = true
+  project_snapshot_bucket_arn = module.project_snapshots.bucket_arn
+  audit_archive_enabled       = true
+  audit_archive_bucket_arn    = module.audit_archive.bucket_arn
+  audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 

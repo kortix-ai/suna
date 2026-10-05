@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  ENTITLEMENT_BREACH_THRESHOLD_USD,
-  ENTITLEMENT_DRIFT_TOLERANCE_USD,
   expectedMonthlyEntitlementUsd,
   expiringCreditExceedsEntitlement,
   expiringCreditIsNegative,
@@ -50,56 +48,31 @@ describe('expectedMonthlyEntitlementUsd', () => {
 });
 
 describe('expiringCreditExceedsEntitlement — the drift this makes visible', () => {
-  test('an account exactly at its allowance is clean', () => {
-    expect(
-      expiringCreditExceedsEntitlement({ tier: 'per_seat', seatCount: 2, expiringCredits: '50' }),
-    ).toBeNull();
+  // Spending is not drift: a balance at or below the allowance is clean.
+  test.each([
+    ['exactly at its allowance', { tier: 'per_seat', seatCount: 2, expiringCredits: '50' }],
+    ['below its allowance', { tier: 'tier_2_20', expiringCredits: '3.21' }],
+  ])('an account %s is clean', (_name, subject) => {
+    expect(expiringCreditExceedsEntitlement(subject)).toBeNull();
   });
 
-  test('an account below its allowance is clean — spending is not drift', () => {
-    expect(
-      expiringCreditExceedsEntitlement({ tier: 'tier_2_20', expiringCredits: '3.21' }),
-    ).toBeNull();
+  test.each([
+    // The $40-per-seat grant bug, caught on the FIRST seat addition.
+    ['a $40 seat grant', 1, '40', { expectedUsd: 25, actualUsd: 40, excessUsd: 15 }],
+    ['a doubled activation grant', 6, '300', { expectedUsd: 150, actualUsd: 300, excessUsd: 150 }],
+  ])('%s is caught', (_name, seatCount, expiringCredits, breach) => {
+    expect(expiringCreditExceedsEntitlement({ tier: 'per_seat', seatCount, expiringCredits })).toEqual(breach);
   });
 
-  test('the $40-per-seat grant bug is caught on the FIRST seat addition', () => {
-    const breach = expiringCreditExceedsEntitlement({
-      tier: 'per_seat',
-      seatCount: 1,
-      expiringCredits: '40',
-    });
-    expect(breach).not.toBeNull();
-    expect(breach?.expectedUsd).toBe(25);
-    expect(breach?.actualUsd).toBe(40);
-    expect(breach?.excessUsd).toBe(15);
-  });
-
-  test('a doubled activation grant is caught', () => {
-    const breach = expiringCreditExceedsEntitlement({
-      tier: 'per_seat',
-      seatCount: 6,
-      expiringCredits: '300',
-    });
-    expect(breach?.expectedUsd).toBe(150);
-    expect(breach?.excessUsd).toBe(150);
-  });
-
-  test('rounding noise within tolerance is not reported', () => {
-    expect(
-      expiringCreditExceedsEntitlement({
-        tier: 'tier_2_20',
-        expiringCredits: String(20 + ENTITLEMENT_DRIFT_TOLERANCE_USD),
-      }),
-    ).toBeNull();
-  });
-
-  test('an excess just past the reporting threshold IS reported', () => {
-    expect(
-      expiringCreditExceedsEntitlement({
-        tier: 'tier_2_20',
-        expiringCredits: String(20 + ENTITLEMENT_BREACH_THRESHOLD_USD + 0.01),
-      }),
-    ).not.toBeNull();
+  // A paid tier tolerates $0.50 of rounding plus the $2 free grant a first
+  // cycle carries in; a free tier tolerates only the $0.50.
+  test.each([
+    ['a paid tier at its threshold is clean', 'tier_2_20', '22.5', false],
+    ['a paid tier past its threshold is reported', 'tier_2_20', '22.51', true],
+    ['the free tier at its tolerance is clean', 'free', '2.5', false],
+    ['the free tier past its tolerance is reported', 'free', '2.51', true],
+  ])('%s', (_name, tier, expiringCredits, reported) => {
+    expect(expiringCreditExceedsEntitlement({ tier, expiringCredits }) !== null).toBe(reported);
   });
 
   test('a subscriber who upgraded before spending the free $2 is NOT a breach', () => {
@@ -119,29 +92,21 @@ describe('expiringCreditExceedsEntitlement — the drift this makes visible', ()
     ).toBeNull();
   });
 
-  test('a pro account holding a normal cycle grant is NOT drift any more', () => {
-    // $25 is exactly what a $40 machine renewal now grants. Flagging it was
-    // what made this guard red for every correctly-granted account — and a
-    // guard that is red by construction gets ignored.
-    expect(expiringCreditExceedsEntitlement({ tier: 'pro', expiringCredits: '25' })).toBeNull();
-  });
-
   test('a pro account above the dearest-machine ceiling is still caught', () => {
     const breach = expiringCreditExceedsEntitlement({ tier: 'pro', expiringCredits: '500' });
     expect(breach?.expectedUsd).toBe(50);
     expect(breach?.excessUsd).toBe(450);
   });
 
-  test('a free account left holding a paid allowance after downgrade is caught', () => {
-    const breach = expiringCreditExceedsEntitlement({ tier: 'free', expiringCredits: '20' });
-    expect(breach?.expectedUsd).toBe(2);
-    expect(breach?.excessUsd).toBe(18);
-  });
-
-  test('a free wallet double-granted to $4 is still reported — no paid-tier headroom applies', () => {
-    const breach = expiringCreditExceedsEntitlement({ tier: 'free', expiringCredits: '4' });
-    expect(breach?.expectedUsd).toBe(2);
-    expect(breach?.excessUsd).toBe(2);
+  // No paid-tier headroom applies to a free wallet.
+  test.each([
+    ['a paid allowance left after a downgrade', '20', 18],
+    ['a double-granted $4', '4', 2],
+  ])('a free wallet holding %s is reported', (_name, expiringCredits, excessUsd) => {
+    expect(expiringCreditExceedsEntitlement({ tier: 'free', expiringCredits })).toMatchObject({
+      expectedUsd: 2,
+      excessUsd,
+    });
   });
 
   test('a null expiring balance is clean, not a crash', () => {

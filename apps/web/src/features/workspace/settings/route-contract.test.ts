@@ -37,7 +37,7 @@ describe('settings route segments', () => {
  */
 describe('the project settings [tab] route resolves legacy segments', () => {
   const source = readFileSync(
-    resolve(import.meta.dir, '../../../app/(app)/projects/[id]/settings/[tab]/page.tsx'),
+    resolve(import.meta.dir, '../../../app/[locale]/(app)/projects/[id]/settings/[tab]/page.tsx'),
     'utf8',
   );
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
@@ -100,13 +100,24 @@ describe('every account redirect names a tab the account hub accepts', () => {
     }
   });
 
+  // The destination is the PROJECT the bookmark came from, with the hub's
+  // params on it — the hub is a modal, not a route, so closing it leaves the
+  // person on their project rather than on a page they never chose.
   test('and the redirect builds exactly that URL', () => {
-    expect(legacySectionRedirect('p1', 'audit', 'acc1')).toBe('/accounts/acc1?tab=audit');
-    expect(legacySectionRedirect('p1', 'organization', 'acc1')).toBe('/accounts/acc1?tab=settings');
-    // `api-keys` used to build `?tab=tokens` here. It now resolves into the
-    // overlay, so `groups` is the third account-page id this asserts.
-    expect(legacySectionRedirect('p1', 'groups', 'acc1')).toBe('/accounts/acc1?tab=groups');
+    expect(legacySectionRedirect('p1', 'audit', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=audit',
+    );
+    expect(legacySectionRedirect('p1', 'organization', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=settings',
+    );
+    // `api-keys` used to build the hub's Tokens pane here. It now resolves
+    // into the settings overlay, so `groups` is the third hub id this asserts.
+    expect(legacySectionRedirect('p1', 'groups', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=groups',
+    );
     expect(legacySectionRedirect('p1', 'api-keys', 'acc1')).toBe('/projects/p1/settings/tokens');
-    expect(legacySectionRedirect('p1', 'usage', 'acc1')).toBe('/accounts/acc1?tab=transactions');
+    expect(legacySectionRedirect('p1', 'usage', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=transactions',
+    );
   });
 });

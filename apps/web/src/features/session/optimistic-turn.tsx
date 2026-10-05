@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useMemo, type ReactNode } from 'react';
 
 import { MentionChip } from '@/features/session/mention-chip';
 import { buildMentionSegments } from '@/features/session/mention-segments';
@@ -9,21 +10,25 @@ import {
   parseFileMentionReferences,
   parseFileReferences,
   parseProjectReferences,
-  parseReplyContext,
+  parseReplyContexts,
   parseSessionReferences,
+  splitAtQuoteMarkers,
 } from '@/features/session/message-parsing';
+import type { SentAttachment } from '@/features/session/sent-attachment-previews';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
   BUBBLE_SURFACE,
   BUBBLE_TEXT,
   MessageAttachments,
-  type NormalizedAttachment,
+  QuotedMessageBody,
   UserMessageActions,
+  type AttachmentUploadStatus,
+  type NormalizedAttachment,
 } from '@/features/session/turn/user-message';
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { cn } from '@/lib/utils';
 import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 // `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
 // not redeclared here. A local copy drifted twice already — first the dark
@@ -62,9 +67,24 @@ export function OptimisticTurn({
   /** Opens a file mention. Omitted before a runtime exists — mentions then
    *  render as static chips rather than dead buttons. */
   onFileClick,
-  /** Paint every tile as still-uploading while there is no sandbox yet
-   *  (instant shell). Same `pending` flag MessageAttachments uses on send. */
+  /** Prevent runtime previews while there is no sandbox yet (instant shell). */
   deferPreview,
+  /**
+   * Files this prompt is sending, by NAME and TYPE only.
+   *
+   * A reload throws away the composer's optimistic state, so the durable
+   * queued row is all that is left — and it knows the names, never the bytes
+   * (the runtime has not received the files yet, and the row is polled).
+   * Without them a refreshed tab drew a bare sentence for a send of seven
+   * attachments, and the user could not tell a send with files from one
+   * without. Rendered without an open action until a runtime path exists.
+   */
+  attachments: staged,
+  /**
+   * A failed accepted send remains visible until retry — see
+   * {@link AttachmentUploadStatus}.
+   */
+  uploadStatus,
   /** Keys the busy indicator's dot-matrix glyph — see `SessionDotMatrix`. */
   sessionId,
   /**
@@ -77,14 +97,18 @@ export function OptimisticTurn({
    * lie about how much is running.
    */
   busy = true,
+  leadingStatus,
   className,
 }: {
   text: string;
   agentNames?: string[];
   onFileClick?: (path: string) => void;
   deferPreview?: boolean;
+  attachments?: ReadonlyArray<SentAttachment>;
+  uploadStatus?: AttachmentUploadStatus;
   sessionId?: string;
   busy?: boolean;
+  leadingStatus?: ReactNode;
   className?: string;
 }) {
   return (
@@ -95,6 +119,9 @@ export function OptimisticTurn({
           agentNames={agentNames}
           onFileClick={onFileClick}
           deferPreview={deferPreview}
+          staged={staged}
+          uploadStatus={uploadStatus}
+          leadingStatus={leadingStatus}
         />
       </div>
       {busy && <SessionBusyIndicator sessionId={sessionId} className="mt-6" />}
@@ -107,57 +134,90 @@ function OptimisticUserBubble({
   agentNames,
   onFileClick,
   deferPreview,
+  staged,
+  uploadStatus,
+  leadingStatus,
 }: {
   text: string;
   agentNames?: string[];
   onFileClick?: (path: string) => void;
   deferPreview?: boolean;
+  staged?: ReadonlyArray<SentAttachment>;
+  uploadStatus?: AttachmentUploadStatus;
+  leadingStatus?: ReactNode;
 }) {
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
   // attachments as tiles — never raw XML.
-  const { replyContext, files, cleanText } = useMemo(() => {
-    const { cleanText: afterReply, replyContext } = parseReplyContext(text);
+  const { quotes, files, cleanText } = useMemo(() => {
+    const { cleanText: afterReply, quotes } = parseReplyContexts(text);
     const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
     const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
     const { cleanText: afterFileMentions } = parseFileMentionReferences(afterProjects);
     const { cleanText: afterAgentMentions } = parseAgentMentionReferences(afterFileMentions);
     const { cleanText } = parseSessionReferences(afterAgentMentions);
-    return { replyContext, files, cleanText };
+    return { quotes, files, cleanText };
   }, [text]);
+
+  // Quotes are drawn where they were written, by the same component the sent
+  // message uses — see `QuotedMessageBody`.
+  const quotedPieces = useMemo(
+    () => (quotes.length > 0 ? splitAtQuoteMarkers(cleanText, quotes) : null),
+    [cleanText, quotes],
+  );
 
   // Same shape MessageAttachments consumes on a real turn — one strip, one tile
   // language, so the optimistic bubble and the server turn never disagree.
-  const attachments = useMemo(
-    (): NormalizedAttachment[] =>
-      files.map((f, i) => ({
-        // Position first: an in-flight ref has no path to key on, and two
-        // attachments with the same name would otherwise share a key.
-        key: `optimistic:${i}:${f.pending ?? f.path}`,
-        filename: getFilename(f.filename || f.path),
-        mime: f.mime,
-        // An upload that has not landed has no sandbox path to resolve. Passing
-        // the old PREDICTED path made the tile fetch a file that did not exist.
-        src: f.path || undefined,
-        path: f.path || undefined,
-        pending: deferPreview || Boolean(f.pending) || !f.path,
-      })),
-    [files, deferPreview],
-  );
+  const attachments = useMemo((): NormalizedAttachment[] => {
+    const fromText = files.map((f, i) => ({
+      // The attachment identity keys the tile, so the real turn keeps it. A
+      // ref without one falls back to its position.
+      key: f.attachment ? `attachment:${f.attachment}` : `optimistic:${i}:${f.path}`,
+      ...(f.attachment ? { id: f.attachment } : {}),
+      filename: getFilename(f.filename || f.path),
+      mime: f.mime,
+      // A file the runtime does not hold yet has no sandbox path to resolve.
+      // The sent picture comes from the identity (`sent-attachment-previews`).
+      src: deferPreview ? undefined : f.path || undefined,
+      path: deferPreview ? undefined : f.path || undefined,
+    }));
+
+    // A file that already landed is BOTH a text ref and (after a reload) a
+    // staged name. Names already drawn win, so the strip never doubles a tile.
+    const drawn = new Set(fromText.map((tile) => tile.filename));
+    const fromStaged = (staged ?? [])
+      .filter((file) => !drawn.has(file.filename))
+      .map((file, i) => ({
+        // A remembered sent identity keys the tile and finds its picture.
+        key: file.id ? `attachment:${file.id}` : `staged:${i}:${file.filename}`,
+        ...(file.id ? { id: file.id } : {}),
+        filename: file.filename,
+        mime: file.mime,
+        // No `src`/`path`: the runtime cannot preview or open this tile yet.
+      }));
+
+    return [...fromText, ...fromStaged];
+  }, [files, deferPreview, staged]);
 
   return (
     <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
       {attachments.length > 0 && (
-        <MessageAttachments attachments={attachments} pending={deferPreview} />
+        <MessageAttachments attachments={attachments} status={uploadStatus} />
       )}
-      {(cleanText || replyContext) && (
+      {(cleanText || quotedPieces) && (
         <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden')}>
-          {replyContext && (
-            <blockquote className="border-border mb-2 border-l-2 pl-2.5">
-              <p className="text-muted-foreground line-clamp-2 text-sm leading-5">{replyContext}</p>
-            </blockquote>
-          )}
-          {cleanText && (
+          {quotedPieces ? (
+            <QuotedMessageBody
+              pieces={quotedPieces}
+              renderText={(runText) => (
+                <HighlightMentions
+                  text={runText}
+                  agentNames={agentNames}
+                  onFileClick={onFileClick}
+                />
+              )}
+            />
+          ) : (
             <p className={BUBBLE_TEXT}>
               <HighlightMentions
                 text={cleanText}
@@ -180,7 +240,7 @@ function OptimisticUserBubble({
           two-clocks bug that already made the elapsed timer run backwards here.
           The row stays empty until `time.created` arrives with the real
           message; the label then appears without moving anything. */}
-      <UserMessageActions timestamp={null} copyText={text} />
+      <UserMessageActions timestamp={null} copyText={text} leadingStatus={leadingStatus} />
     </div>
   );
 }
@@ -204,6 +264,7 @@ export function HighlightMentions({
   agentNames?: string[];
   onFileClick?: (path: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Strip every ref block (project/file/agent/session) before processing
   // inline @ mentions so the visible text never shows raw XML.
   const { cleanText, sessions } = useMemo(() => {
@@ -241,7 +302,12 @@ export function HighlightMentions({
     if (raw.startsWith('ses_')) {
       const href = sessionHref(raw);
       if (!href) return;
-      openTabAndNavigate({ id: raw, title: 'Session', type: 'session', href });
+      openTabAndNavigate({
+        id: raw,
+        title: tI18nComplete.raw('text6959b4159575'),
+        type: 'session',
+        href,
+      });
       return;
     }
     const ref = sessions.find((s) => s.title === raw);

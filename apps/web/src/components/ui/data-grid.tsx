@@ -1,19 +1,19 @@
 'use client';
 
-import React, { useCallback, useMemo, useRef } from 'react';
-import { AgGridReact } from 'ag-grid-react';
+import { cn } from '@/lib/utils';
 import {
   AllCommunityModule,
   type ColDef,
-  type GridReadyEvent,
-  type FirstDataRenderedEvent,
-  ModuleRegistry,
-  themeQuartz,
   colorSchemeDarkBlue,
   colorSchemeLight,
+  type FirstDataRenderedEvent,
+  type GridReadyEvent,
+  ModuleRegistry,
+  themeQuartz,
 } from 'ag-grid-community';
+import { AgGridReact } from 'ag-grid-react';
 import { useTheme } from 'next-themes';
-import { cn } from '@/lib/utils';
+import { useCallback, useMemo, useRef } from 'react';
 
 // Register all community modules once
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -136,8 +136,7 @@ export function DataGrid({
 
   // ── Theme resolved ───────────────────────────────────────────────────
   const theme = useMemo(() => {
-    const colorScheme =
-      resolvedTheme === 'dark' ? colorSchemeDarkBlue : colorSchemeLight;
+    const colorScheme = resolvedTheme === 'dark' ? colorSchemeDarkBlue : colorSchemeLight;
     return gridTheme.withPart(colorScheme);
   }, [resolvedTheme]);
 
@@ -146,7 +145,7 @@ export function DataGrid({
     return (
       <div
         className={cn(
-          'w-full h-full flex items-center justify-center text-sm text-muted-foreground',
+          'text-muted-foreground flex h-full w-full items-center justify-center text-sm',
           className,
         )}
       >
@@ -156,7 +155,7 @@ export function DataGrid({
   }
 
   return (
-    <div className={cn('w-full h-full', className)}>
+    <div className={cn('h-full w-full', className)}>
       <AgGridReact
         ref={gridRef}
         theme={theme}

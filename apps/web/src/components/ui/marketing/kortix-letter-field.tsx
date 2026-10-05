@@ -71,7 +71,10 @@ export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldP
     };
   }, []);
 
-  const tokens = useMemo<Token[]>(() => buildTokens(grid.tokenCount, seed), [grid.tokenCount, seed]);
+  const tokens = useMemo<Token[]>(
+    () => buildTokens(grid.tokenCount, seed),
+    [grid.tokenCount, seed],
+  );
 
   // Render the letter field as a CSS `background-image` SVG. The decorative
   // tokens live ONLY inside the SVG image — they never appear as text in the
@@ -93,7 +96,7 @@ export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldP
         transition={{ duration: 0.5, ease: 'easeInOut' }}
         ref={containerRef}
         className={cn(
-          'pointer-events-none absolute inset-0 overflow-hidden select-none text-foreground',
+          'text-foreground pointer-events-none absolute inset-0 overflow-hidden select-none',
           className,
         )}
         aria-hidden

@@ -10,33 +10,19 @@
  * the other.
  */
 
-export interface CompactToolCall {
-  tool: string;
-  status: string | null;
-}
-
-export interface CompactMessage {
-  /** The OpenCode message id, verbatim. This is the identity a client settles
-   *  a mirror-sourced message against when the runtime finally answers. */
-  id: string | null;
-  /** `info.parentID` — which user message a step was parented on. */
-  parent_id: string | null;
-  role: string;
-  created: string | null;
-  completed: string | null;
-  text: string;
-  tools: CompactToolCall[];
-  files: Array<{ filename: string | null; mime: string | null }>;
-  reasoning_omitted: boolean;
-  error: { name?: string; message?: string } | null;
-}
+/** The compact row and its tool calls are wire shapes: `@kortix/api-contract`. */
+export type {
+  SessionTranscriptMessage as CompactMessage,
+  SessionTranscriptToolCall as CompactToolCall,
+} from '@kortix/api-contract';
+import type { SessionTranscriptMessage as CompactMessage } from '@kortix/api-contract';
 
 export type RawOpencodePart = {
   type?: string;
   text?: string;
   synthetic?: boolean;
   tool?: string;
-  state?: { status?: string };
+  state?: { status?: string; input?: unknown; output?: unknown; error?: unknown };
   filename?: string;
   mime?: string;
 };
@@ -69,7 +55,12 @@ export function normalizeMessageList(payload: unknown): RawOpencodeMessage[] {
   return list.filter((m): m is RawOpencodeMessage => typeof m === 'object' && m !== null);
 }
 
-export function compactMessage(msg: RawOpencodeMessage, maxChars: number): CompactMessage {
+/**
+ * `full` is the reader-facing variant (the MCP `read_session` tool): line breaks
+ * survive, so code and command output stay legible, and each tool call carries
+ * its input and output. The default stays the one-line digest the CLI prints.
+ */
+export function compactMessage(msg: RawOpencodeMessage, maxChars: number, full = false): CompactMessage {
   const info = msg.info ?? msg;
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
   const text = parts
@@ -82,6 +73,12 @@ export function compactMessage(msg: RawOpencodeMessage, maxChars: number): Compa
     .map((p) => ({
       tool: p.tool ?? 'tool',
       status: p.state?.status ?? null,
+      ...(full
+        ? {
+            input: truncateMarked(JSON.stringify(p.state?.input ?? {}), maxChars),
+            output: truncateMarked(stringify(p.state?.output ?? p.state?.error ?? ''), maxChars),
+          }
+        : {}),
     }));
   const files = parts
     .filter((p) => p.type === 'file')
@@ -95,12 +92,26 @@ export function compactMessage(msg: RawOpencodeMessage, maxChars: number): Compa
     role: info.role ?? 'unknown',
     created: info.time?.created ? new Date(info.time.created).toISOString() : null,
     completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    text: truncate(normalizeWhitespace(text), maxChars),
+    // `full` readers get the whole answer (up to FULL_TEXT_CHARS); `maxChars`
+    // bounds the digest and each tool call's input and output.
+    text: full ? truncateMarked(text.trim(), FULL_TEXT_CHARS) : truncate(normalizeWhitespace(text), maxChars),
     tools,
     files,
     reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
     error: info.error ?? null,
   };
+}
+
+/** The final answer of a `detail: 'full'` read is cut here, not at `chars`. */
+const FULL_TEXT_CHARS = 16_000;
+
+/** Like `truncate`, but says how much was kept and how long the whole was. */
+function truncateMarked(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max)}…[truncated: ${max} of ${s.length} chars]`;
+}
+
+function stringify(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 function normalizeWhitespace(s: string): string {

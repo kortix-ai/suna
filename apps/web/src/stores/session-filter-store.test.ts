@@ -9,6 +9,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  EMPTY_LIST,
+  selectAccessFilters,
+  selectLabelFilters,
+  selectOwnerFilters,
   selectCollapsedSections,
   selectGroupMode,
   selectHiddenSections,
@@ -19,7 +23,7 @@ import {
 } from './session-filter-store';
 
 const P = 'project-1';
-const read = <T,>(selector: (s: ReturnType<typeof useSessionFilterStore.getState>) => T): T =>
+const read = <T>(selector: (s: ReturnType<typeof useSessionFilterStore.getState>) => T): T =>
   selector(useSessionFilterStore.getState());
 
 beforeEach(() => {
@@ -30,6 +34,9 @@ beforeEach(() => {
     sourceFiltersByProject: {},
     hiddenSectionsByProject: {},
     collapsedSectionsByProject: {},
+    ownerFiltersByProject: {},
+    accessFiltersByProject: {},
+    labelFiltersByProject: {},
   });
 });
 
@@ -145,5 +152,59 @@ describe('snapshot stability (zustand v5 compares with Object.is)', () => {
     // Including the inherit path, which reads through two lookups.
     useSessionFilterStore.getState().toggleSourceFilter(P, 'slack', 'sidebar');
     expect(read(selectSourceFilters(P, 'page'))).toBe(read(selectSourceFilters(P, 'page')));
+  });
+});
+
+describe('owner and access facets', () => {
+  test('toggle per surface, and Reset clears them with the other facets', () => {
+    const s = useSessionFilterStore.getState();
+    s.toggleOwnerFilter(P, 'u-alice', 'page');
+    s.toggleOwnerFilter(P, 'u-bob', 'page');
+    s.toggleOwnerFilter(P, 'u-alice', 'page');
+    s.toggleAccessFilter(P, 'private', 'page');
+
+    expect(read(selectOwnerFilters(P, 'page'))).toEqual(['u-bob']);
+    expect(read(selectAccessFilters(P, 'page'))).toEqual(['private']);
+    expect(read(selectOwnerFilters(P, 'sidebar'))).toEqual([]);
+
+    useSessionFilterStore.getState().resetFilters(P, 'page');
+    expect(read(selectOwnerFilters(P, 'page'))).toEqual([]);
+    expect(read(selectAccessFilters(P, 'page'))).toEqual([]);
+  });
+
+  test('the label facet toggles per surface and Reset clears it', () => {
+    const s = useSessionFilterStore.getState();
+    s.toggleLabelFilter(P, 'bug', 'page');
+    s.toggleLabelFilter(P, 'customer: eu', 'page');
+    expect(read(selectLabelFilters(P, 'page'))).toEqual(['bug', 'customer: eu']);
+    useSessionFilterStore.getState().resetFilters(P, 'page');
+    expect(read(selectLabelFilters(P, 'page'))).toEqual([]);
+  });
+
+  test('the unset owner filter is the stable empty list', () => {
+    expect(read(selectOwnerFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
+    expect(read(selectAccessFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
+  });
+});
+
+describe('scoped selector and toggle matrix', () => {
+  test('every list inherits, toggles from inherited state, and preserves its stored reference', () => {
+    const facets = [
+      [selectStatusFilters, 'toggleStatusFilter', 'failed'],
+      [selectSourceFilters, 'toggleSourceFilter', 'slack'],
+      [selectOwnerFilters, 'toggleOwnerFilter', 'owner-1'],
+      [selectAccessFilters, 'toggleAccessFilter', 'private'],
+      [selectLabelFilters, 'toggleLabelFilter', 'bug'],
+      [selectHiddenSections, 'toggleSectionHidden', 'older'],
+    ] as const;
+    for (const [selector, action, value] of facets) {
+      const state = useSessionFilterStore.getState();
+      (state[action] as (id: string, value: string, surface: 'sidebar' | 'page') => void)(P, value, 'sidebar');
+      expect(read(selector(P, 'page'))).toBe(read(selector(P, 'sidebar')));
+      (state[action] as (id: string, value: string, surface: 'sidebar' | 'page') => void)(P, value, 'page');
+      expect(read(selector(P, 'page'))).toBe(read(selector(P, 'page')));
+      expect(read(selector(P, 'page'))).toEqual([]);
+      expect(read(selector(P, 'sidebar'))).toEqual([value]);
+    }
   });
 });

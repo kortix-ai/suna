@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Every public link this session is currently handing out, and the only way to
  * take one back.
@@ -16,6 +17,7 @@
 
 import type { SessionPublicShare } from '@kortix/sdk';
 import {
+  ChatTextIcon as ChatText,
   CheckIcon as Check,
   FileTextIcon as FileText,
   GlobeIcon as Globe,
@@ -41,22 +43,12 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
   isShareLive,
+  publicShareUrl,
   shareListState,
   useRevokePublicShare,
   useSessionPublicShares,
 } from '@/hooks/use-session-public-shares';
 import { cn } from '@/lib/utils';
-
-/**
- * Read at render time, not in an event handler, so it must survive SSR. Today
- * it never runs on the server (the list is empty until react-query resolves, so
- * only the empty state renders), but that is a property of the fetch timing
- * rather than of this function — guard it rather than depend on that holding.
- */
-function shareUrl(share: SessionPublicShare): string | null {
-  if (!share.public_path || typeof window === 'undefined') return null;
-  return `${window.location.origin}${share.public_path}`;
-}
 
 function ShareRow({
   share,
@@ -67,16 +59,22 @@ function ShareRow({
   onRevoke: () => void;
   isRevoking: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tTranscript = useTranslations('hardcodedUi.publicTranscriptShare');
   const [copied, setCopied] = useState(false);
   const live = isShareLive(share);
-  const url = shareUrl(share);
+  // Read at render time: `publicShareUrl` is null outside a browser (SSR).
+  const url = publicShareUrl(share.public_path);
   const isFile = share.resource_type === 'file';
+  // A transcript share has no port and no file: it names the conversation.
+  const isTranscript = share.resource_type === 'transcript';
+  const Icon = isFile ? FileText : isTranscript ? ChatText : Globe;
 
   const copy = async () => {
     if (!url) return;
     await navigator.clipboard.writeText(url);
     setCopied(true);
-    successToast('Public link copied');
+    successToast(tI18nComplete.raw('textd0f24de8dbc6'));
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -93,13 +91,7 @@ function ShareRow({
           live ? 'bg-kortix-green/15' : 'bg-muted',
         )}
       >
-        {isFile ? (
-          <FileText
-            className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')}
-          />
-        ) : (
-          <Globe className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')} />
-        )}
+        <Icon className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')} />
       </span>
 
       <div className="min-w-0 flex-1">
@@ -112,17 +104,21 @@ function ShareRow({
           )}
         </div>
         <p className="text-muted-foreground truncate text-xs">
-          {isFile ? share.file_path : `Port ${share.port}${share.path}`}
+          {isFile
+            ? share.file_path
+            : isTranscript
+              ? tTranscript('rowMeta')
+              : `Port ${share.port}${share.path}`}
         </p>
       </div>
 
       {live && (
         <span className="flex shrink-0 items-center gap-1">
-          <Hint label={copied ? 'Copied' : 'Copy link'} side="bottom">
+          <Hint label={copied ? 'Copied' : tI18nComplete.raw('textdbf362d4f210')} side="bottom">
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Copy link"
+              aria-label={tI18nComplete.raw('textdbf362d4f210')}
               disabled={!url}
               onClick={() => void copy()}
               className="size-8 active:scale-[0.96]"
@@ -136,7 +132,7 @@ function ShareRow({
           </Hint>
           <Button variant="ghost" size="sm" onClick={onRevoke} disabled={isRevoking}>
             {isRevoking ? <Loading className="size-4 shrink-0" /> : null}
-            Revoke
+            {tI18nComplete.raw('text87e6d00bbf53')}
           </Button>
         </span>
       )}
@@ -155,6 +151,7 @@ export function SessionSharesModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { shares, liveShares, isLoading, isError } = useSessionPublicShares(projectId, sessionId);
   const { revoke, revokingId } = useRevokePublicShare(projectId, sessionId);
   const [pendingRevoke, setPendingRevoke] = useState<SessionPublicShare | null>(null);
@@ -167,11 +164,8 @@ export function SessionSharesModal({
       <Modal open={open} onOpenChange={onOpenChange}>
         <ModalContent className="lg:max-w-lg">
           <ModalHeader>
-            <ModalTitle>Public links</ModalTitle>
-            <ModalDescription>
-              Anyone with one of these links can view the resource without signing in. Revoking
-              takes effect immediately.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('texta95952c8b021')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text5ba39e7fa782')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-6 overflow-y-auto">
             {listState === 'loading' ? (
@@ -185,15 +179,15 @@ export function SessionSharesModal({
               // them nothing is shared, which may simply be false.
               <ErrorState
                 size="sm"
-                title="Can't show these links"
-                description="Only the session's creator or a project manager can view and revoke its public links."
+                title={tI18nComplete.raw('text25c9ab3f2bf6')}
+                description={tI18nComplete.raw('text93bce1d8f18d')}
               />
             ) : listState === 'empty' ? (
               <EmptyState
                 icon={Link2}
                 size="sm"
-                title="Nothing shared yet"
-                description="Use Copy link on a file or app preview to create a public link."
+                title={tI18nComplete.raw('texteeb088fdeabf')}
+                description={tI18nComplete.raw('text3c45b1a13f8b')}
               />
             ) : (
               <>
@@ -211,7 +205,9 @@ export function SessionSharesModal({
                 )}
                 {inactive.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-muted-foreground text-xs">No longer active</p>
+                    <p className="text-muted-foreground text-xs">
+                      {tI18nComplete.raw('textb3839e7c0b51')}
+                    </p>
                     <ul className="space-y-2">
                       {inactive.map((share) => (
                         <ShareRow
@@ -233,15 +229,14 @@ export function SessionSharesModal({
       <ConfirmDialog
         open={!!pendingRevoke}
         onOpenChange={(next) => !next && setPendingRevoke(null)}
-        title="Revoke this link?"
+        title={tI18nComplete.raw('text3d3b295854fe')}
         description={
           <>
-            <span className="font-medium">{pendingRevoke?.label}</span> will stop loading for
-            everyone holding the link. This can&apos;t be undone — you can create a new link
-            afterwards.
+            <span className="font-medium">{pendingRevoke?.label}</span>{' '}
+            {tI18nComplete.raw('text35b38cfe5b26')}
           </>
         }
-        confirmLabel="Revoke"
+        confirmLabel={tI18nComplete.raw('text87e6d00bbf53')}
         confirmVariant="destructive"
         onConfirm={() => {
           if (pendingRevoke) revoke(pendingRevoke.share_id);

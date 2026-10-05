@@ -1,4 +1,5 @@
 import { logger } from '../lib/logger';
+import { runWorkerTick } from '../shared/audit-scope';
 import type { ReapResult } from './sandbox-reaper';
 
 const DEFAULT_ACTIVE_TURN_RENEWAL_INTERVAL_MS = 20_000;
@@ -74,7 +75,7 @@ async function tick(
   const startedAtMs = monotonicNowMs();
   try {
     const result = await runActiveTurnRenewal(dependencies);
-    if (result.candidates > 0 || result.errors > 0) {
+    if (result.candidates > 0 || result.errors > 0 || result.transient > 0) {
       logger.info('[active-turn-renewal] pass', {
         candidates: result.candidates,
         matching: result.matching,
@@ -82,6 +83,7 @@ async function tick(
         lifecycleRenewed: result.lifecycleRenewed,
         reconciled: result.reconciled,
         errors: result.errors,
+        transient: result.transient,
       });
     }
   } catch (error) {
@@ -95,7 +97,7 @@ async function tick(
       const delayMs = Math.max(0, intervalMs - (monotonicNowMs() - startedAtMs));
       state.__kortixActiveTurnRenewalCancel = dependencies.cancel ?? clearTimeout;
       state.__kortixActiveTurnRenewalTimer = schedule(
-        () => void tick(generation, dependencies),
+        () => void runWorkerTick('active-turn-renewal', () => tick(generation, dependencies)),
         delayMs,
       );
     }
@@ -111,7 +113,7 @@ export function startActiveTurnRenewal(
   state.__kortixActiveTurnRenewalRunning = true;
   const generation = (state.__kortixActiveTurnRenewalGeneration ?? 0) + 1;
   state.__kortixActiveTurnRenewalGeneration = generation;
-  void tick(generation, dependencies);
+  void runWorkerTick('active-turn-renewal', () => tick(generation, dependencies));
 }
 
 export function stopActiveTurnRenewal(): void {

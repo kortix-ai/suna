@@ -2,7 +2,7 @@
 
 ## What this codebase does
 
-Kortix is an open/self-hostable AI command center: company/project state lives in a git repo, sessions boot isolated cloud sandboxes, OpenCode runs inside each sandbox, and humans review agent change requests. This is a pnpm/Bun/TypeScript monorepo with a Hono API (`apps/api`), Next.js web app (`apps/web`), CLI/desktop/mobile apps, `@kortix/sdk` as the backend client source of truth, a sandbox agent server (`apps/kortix-sandbox-agent-server`), Supabase auth/DB, Stripe billing, Daytona/Platinum sandbox providers, Slack/Telegram/email/Meet webhooks, connectors and connections, and GitOps infra.
+Kortix is an open-source, self-hostable AI Operating System: company/project state lives in a git repo, sessions boot isolated cloud sandboxes, OpenCode runs inside each sandbox, and humans review agent change requests. This is a pnpm/Bun/TypeScript monorepo with a Hono API (`apps/api`), Next.js web app (`apps/web`), CLI/desktop/mobile apps, `@kortix/sdk` as the backend client source of truth, a sandbox agent server (`apps/kortix-sandbox-agent-server`), Supabase auth/DB, Stripe billing, Daytona/Platinum sandbox providers, Slack/Telegram/email/Meet webhooks, connectors and connections, and GitOps infra.
 
 ## Auth shape
 
@@ -30,4 +30,4 @@ Highest impact: cross-account/project access to repos, sessions, secrets, connec
 - `projectWebhooksApp` is public by mount but validates project trigger slug plus HMAC signature or fallback shared token from the trigger secret before firing.
 - `setupLinksPublicApp` is intentionally unauthenticated; the `ksl_` token is an encrypted, short-lived, value-only capability scoped to one project and named fields/connector.
 - `/v1/tunnel/device-auth` public routes are part of CLI device auth; non-device-auth tunnel routes go through `combinedAuth`.
-- Tests, generated starter snapshots, encrypted dotenvx env files, docs/specs, and sample fixtures can contain fake secrets, placeholder tokens, broad CORS examples, or intentionally insecure snippets.
+- Tests, generated starter snapshots, encrypted dotenvx env files, and sample fixtures can contain fake secrets, placeholder tokens, broad CORS examples, or intentionally insecure snippets.

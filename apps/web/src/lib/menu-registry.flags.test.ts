@@ -1,31 +1,23 @@
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  visibleCapabilityTabs,
-  type CapabilityTabFlags,
-} from '@/features/workspace/capabilities/shared/capability-tabs';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join, resolve } from 'node:path';
 import { menuRegistry } from './menu-registry';
 
-const ALL_FLAGS_OFF: CapabilityTabFlags = {
-  reviewEnabled: false,
-};
-
 /**
  * `requiresFlag` is only a gate if EVERY consumer honours it. Before this, the
- * command palette filtered on it and `sidebar-right.tsx` did not — so the first
+ * command palette filtered on it and the legacy right rail did not — so the first
  * flagged item to gain `showIn: ['rightSidebar']` would have leaked a disabled
- * feature into the nav. These tests pin all three halves: the declaration, the
- * two consumers, and the flag map that resolves an arbitrary key.
+ * feature into the nav. The rail is deleted (KRTX-1012); these tests pin the
+ * declaration, the one surviving consumer, and the flag map that resolves an
+ * arbitrary key.
  */
 const root = resolve(import.meta.dir, '..');
 const registrySource = readFileSync(join(root, 'lib/menu-registry.ts'), 'utf8');
 const flagMapSource = readFileSync(join(root, 'lib/use-project-feature-flags.ts'), 'utf8');
 const paletteSource = readFileSync(join(root, 'features/workspace/command-palette.tsx'), 'utf8');
-const sidebarSource = readFileSync(join(root, 'components/sidebar/sidebar-right.tsx'), 'utf8');
 
 describe('menu registry feature-flag gating', () => {
   test('the field is named requiresFlag and typed FeatureFlagKey', () => {
@@ -43,21 +35,21 @@ describe('menu registry feature-flag gating', () => {
     }
   });
 
-  test('Review Center is reachable behind its flag and removed features stay absent', () => {
-    // Review is a capability tab since 2026-09-02, gated by the bar itself
-    // (`visibleCapabilityTabs`), so this asserts the BEHAVIOUR rather than a
-    // declaration — a flag that hides the tab hides every way in. Voice and
+  test('Review Center is reachable with no flag and removed features stay absent', () => {
+    // Review graduated out of the flag system on 2026-09-02. Since 2026-10-02
+    // (#8761) it is its own project page, `/projects/<id>/review`, reached from
+    // a permanent sidebar row and this palette row, so it is no longer a
+    // Customize capability tab. Neither entry point declares a flag. Voice and
     // Marketplace have no flag any more: both were removed from the product.
-    const keysFor = (flags: CapabilityTabFlags) =>
-      visibleCapabilityTabs({}, flags).map((tab) => tab.key);
+    const keys = CAPABILITY_TABS.map((tab) => tab.key);
+    expect(keys).not.toContain('review');
+    expect(keys).not.toContain('voice');
+    expect(keys).not.toContain('marketplace');
 
-    const off = keysFor(ALL_FLAGS_OFF);
-    expect(off).not.toContain('review');
-    expect(off).not.toContain('voice');
-    expect(off).not.toContain('marketplace');
-
-    expect(keysFor({ ...ALL_FLAGS_OFF, reviewEnabled: true })).toContain('review');
-    expect(keysFor({ ...ALL_FLAGS_OFF, reviewEnabled: true })).not.toContain('marketplace');
+    const reviewRow = menuRegistry.find((item) => item.id === 'proj-review-inbox');
+    expect(reviewRow).toBeDefined();
+    expect(reviewRow?.requiresFlag).toBeUndefined();
+    expect(reviewRow?.href).toBe('/projects/{projectId}/review');
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.
@@ -94,15 +86,6 @@ describe('menu registry feature-flag gating', () => {
     expect(paletteSource).toContain(
       'if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;',
     );
-  });
-
-  test('the right sidebar filters on requiresFlag too, fail-closed', () => {
-    expect(sidebarSource).toContain('useProjectFeatureFlags(routeProjectId)');
-    expect(sidebarSource).toContain(
-      '(item: MenuItemDef) => !item.requiresFlag || featureFlags[item.requiresFlag]',
-    );
-    expect(sidebarSource).toContain('const quickActionClusters = filterClusters(');
-    expect(sidebarSource).toContain('const navClusters = filterClusters(');
   });
 });
 

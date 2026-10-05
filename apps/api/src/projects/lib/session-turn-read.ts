@@ -2,7 +2,7 @@
  * Server truth about the turns a session is running RIGHT NOW.
  *
  * Extracted verbatim from `GET /:projectId/sessions/:sessionId/turn`
- * (`routes/r8.ts`) so a second reader — the session-open bundle — answers from
+ * (`routes/session-runtime.ts`) so a second reader — the session-open bundle — answers from
  * the SAME code rather than a second copy of this reasoning. Two projections of
  * one lifecycle authority is exactly how a client ends up holding two
  * disagreeing answers to "is this session working?".
@@ -12,33 +12,97 @@
  * holds no live turn whatever its ledger rows still say. The ledger DECORATES
  * (accepted_at, message identity) and owns HISTORY (`last_ended`).
  *
- * Reads only. No auth, no visibility gate — the CALLER owns both, exactly as
+ * No auth or visibility gate — the CALLER owns both, exactly as
  * the route does before it reaches this function.
  */
 
-import { db } from '../../shared/db';
 import { sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { db } from '../../shared/db';
+import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-recovery';
+import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
+import { ABORT_END_ERROR_NAMES, isRequestedStopName } from '../session-turn-ledger';
 
-/** One turn the control plane is holding open, in wire shape. */
-export interface SessionTurnView {
-  turn_token: string;
-  state: string;
-  message_id: string | null;
-  opencode_session_id: string | null;
-  started_at: string | null;
-  accepted_at: string | null;
-}
+/**
+ * The `/turn` wire shapes live in `@kortix/api-contract`. `last_ended` and
+ * `recent_failures` are OMITTED, never null: `last_ended` is one row and
+ * vanishes the moment the next turn starts, and a queued prompt starts it
+ * seconds after a failure, so `recent_failures` keeps the outcome findable by
+ * `message_id`. A turn the user stopped is not a failure and is never listed.
+ */
+export type {
+  SessionTurn as SessionTurnView,
+  SessionTurnStatus as SessionTurnState,
+  SessionTurnFailure,
+} from '@kortix/api-contract';
+import type {
+  SessionTurn as SessionTurnView,
+  SessionTurnStatus as SessionTurnState,
+  SessionTurnFailure,
+} from '@kortix/api-contract';
 
-/** The `/turn` response body. `last_ended` is OMITTED, never null — see below. */
-export interface SessionTurnState {
-  turns: SessionTurnView[];
-  last_ended?: {
-    turn_token: string;
-    end_reason: string | null;
-    ended_at: string | null;
-  };
+/** How many of a session's newest turns are searched for named failures. */
+const RECENT_FAILURE_TURN_WINDOW = 50;
+
+/**
+ * From here on every requested stop is stamped (`UserStop`, `QueueInterrupt`),
+ * so a `failed` row with no `end_error` is a death nobody explained, not a Stop.
+ * Prod's first recorded `end_error` is 2026-08-20 22:00 UTC.
+ */
+export const END_ERROR_COLUMN_EPOCH_MS = Date.parse('2026-08-21T00:00:00Z');
+
+/**
+ * Bounded by turn count, not by failure count: this read is polled, and a
+ * session with no failures must not scan its whole history to learn that.
+ * Served by `session_turns_session_idx` (session_id, started_at DESC).
+ *
+ * A failure the user cannot see is the bug this read exists to end, so a turn is
+ * listed whenever the ledger says it died:
+ *
+ *   - `runtime_gone`: the box vanished under it. Never a requested stop.
+ *   - `failed` with a recorded error. A bare abort is the EFFECT of whatever
+ *     stopped the turn, never a cause, so it reads as `error: null`.
+ *
+ *   - `failed` with NO recorded error, when it ended after the column existed.
+ *     Nobody said why (a lost end frame, an old daemon), and saying nothing
+ *     under a dead turn is worse than saying "no reason was reported". Prod
+ *     2026-09-22: 20-30 % of failed turns per hour had no cause and were hidden.
+ *
+ * Not listed: a stop somebody asked for (`REQUESTED_STOP_NAMES`), and a `failed`
+ * row with no recorded error from before `END_ERROR_COLUMN_EPOCH`. Before the
+ * column, a user Stop and an unexplained abort were stored identically; listing
+ * those would flag every turn anyone ever stopped.
+ */
+async function readRecentTurnFailures(sessionId: string): Promise<SessionTurnFailure[]> {
+  const recent = await db
+    .select({
+      messageId: sessionTurns.messageId,
+      endReason: sessionTurns.endReason,
+      endError: sessionTurns.endError,
+      endedAt: sessionTurns.endedAt,
+    })
+    .from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.state, 'ended')))
+    .orderBy(desc(sessionTurns.startedAt))
+    .limit(RECENT_FAILURE_TURN_WINDOW);
+  const failures: SessionTurnFailure[] = [];
+  for (const turn of recent) {
+    if (!turn.messageId) continue;
+    const name = turn.endError?.name ?? null;
+    const died =
+      turn.endReason === 'runtime_gone' ||
+      (turn.endReason === 'failed' &&
+        (turn.endError !== null ||
+          (turn.endedAt !== null && turn.endedAt.getTime() >= END_ERROR_COLUMN_EPOCH_MS)));
+    if (!died || isRequestedStopName(name)) continue;
+    const named = turn.endError && !(name && ABORT_END_ERROR_NAMES.includes(name));
+    failures.push({
+      message_id: turn.messageId,
+      ended_at: turn.endedAt ? turn.endedAt.toISOString() : null,
+      error: named ? turn.endError : null,
+    });
+  }
+  return failures;
 }
 
 export async function readSessionTurnState(sessionId: string): Promise<SessionTurnState> {
@@ -48,12 +112,22 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
   // every ledger row left open on a stopped box. Served by
   // idx_session_sandboxes_session (plain Index Scan; measured, see below).
   const [box] = await db
-    .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
+    .select({
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+      sandboxId: sessionSandboxes.sandboxId,
+      externalId: sessionSandboxes.externalId,
+      provider: sessionSandboxes.provider,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sessionId, sessionId))
     .limit(1);
   const authority =
     box && RUNNING_SANDBOX_STATUSES.has(box.status) ? storedSandboxTurns(box.metadata) : [];
+
+  // Recovery stays off the response path. A reload can miss the runtime's
+  // idle frame too; the next read must not keep serving a completed turn.
+  if (box && authority.length > 0) scheduleSessionTurnRecovery({ ...box, sessionId });
 
   // Decoration only, keyed by the tokens the authority already named: the
   // ledger owns `accepted_at`, and it fills in an identity the authority may
@@ -77,7 +151,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
       .select({
         turnToken: sessionTurns.turnToken,
         messageId: sessionTurns.messageId,
-        opencodeSessionId: sessionTurns.opencodeSessionId,
+        opencodeSessionId: sessionTurns.runtimeSessionId,
         startedAt: sessionTurns.startedAt,
         acceptedAt: sessionTurns.acceptedAt,
       })
@@ -92,7 +166,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
         ),
       );
     for (const row of rows) ledger.set(row.turnToken, row);
-}
+  }
 
   const live = authority
     .map((turn) => {
@@ -102,6 +176,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
       // record, which carries none.
       const startedAt =
         turn.startedAtMs !== null ? new Date(turn.startedAtMs) : (row?.startedAt ?? null);
+      const runtimeSessionId = turn.runtimeSessionId || row?.opencodeSessionId || null;
       return {
         startedAtMs: startedAt ? startedAt.getTime() : null,
         turn: {
@@ -112,7 +187,8 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
           // `delivering` for a turn OpenCode has accepted.
           state: turn.state,
           message_id: turn.messageId ?? row?.messageId ?? null,
-          opencode_session_id: turn.opencodeSessionId || row?.opencodeSessionId || null,
+          runtime_session_id: runtimeSessionId,
+          opencode_session_id: runtimeSessionId,
           started_at: startedAt ? startedAt.toISOString() : null,
           accepted_at: row?.acceptedAt ? row.acceptedAt.toISOString() : null,
         },
@@ -127,12 +203,14 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
         a.turn.turn_token.localeCompare(b.turn.turn_token),
     )
     .map((entry) => entry.turn);
-  if (live.length > 0) return { turns: live };
-
+  const failures = await readRecentTurnFailures(sessionId);
+  const recentFailures = failures.length > 0 ? { recent_failures: failures } : {};
   const [ended] = await db
     .select({
       turnToken: sessionTurns.turnToken,
+      messageId: sessionTurns.messageId,
       endReason: sessionTurns.endReason,
+      endError: sessionTurns.endError,
       endedAt: sessionTurns.endedAt,
     })
     .from(sessionTurns)
@@ -145,21 +223,24 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
     // one session's history.
     .orderBy(desc(sessionTurns.endedAt), desc(sessionTurns.startedAt))
     .limit(1);
-  // `last_ended` is OMITTED, never null: its absence is the only thing that
-  // separates "this session has never run a turn" from "the last one ended".
-  // It is HISTORY, and history is what the swallowed ledger write costs: a
-  // lost settle leaves the previous terminal row as the newest one. Liveness
-  // above does not depend on it.
+  // An ended turn can overlap an older live turn. Its identity lets the
+  // client distinguish that idle frame from the turn still running.
   return {
-    turns: [],
+    turns: live,
     ...(ended
       ? {
           last_ended: {
             turn_token: ended.turnToken,
+            ...(ended.messageId ? { message_id: ended.messageId } : {}),
             end_reason: ended.endReason,
             ended_at: ended.endedAt ? ended.endedAt.toISOString() : null,
+            // A requested stop is bookkeeping, not an error to report.
+            ...(ended.endError && !isRequestedStopName(ended.endError.name)
+              ? { error: ended.endError }
+              : {}),
           },
         }
       : {}),
+    ...recentFailures,
   };
 }

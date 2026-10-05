@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * "Use your own Microsoft Teams app" — the self-hosted / custom-bot install
  * path for the Teams channel, rendered under the channel rows in
@@ -16,7 +17,6 @@
  * - `rounded-2xl` on the panel, the manifest `<pre>`, and the error box →
  *   `rounded-md` / `rounded-sm`, matching the app radius scale.
  * - A hand-rolled tinted `<p>` for errors → `InfoBanner tone="destructive"`.
- * - A raw `<input type="checkbox">` → `Switch`.
  * - A local copy button that hard-swapped `{copied ? <Check/> : <Copy/>}`
  *   (which blinks) → the shared `ManifestCopyBlock`, so Slack and Teams now
  *   have one copy implementation instead of two. That block also absorbed the
@@ -24,14 +24,21 @@
  *   elements describing one object, collapsed into one.
  * - `h-3.5 w-3.5` → `size-3.5`; `<a><Button/></a>` → `Button asChild`.
  *
- * **The install FLOW is deliberately unchanged.** Slack's equivalent became a
- * three-step wizard (`component/slack-byo-wizard.tsx`), and Teams should get
- * the same treatment — but its inputs are a different shape (tenant id, plus
- * an app id and client secret only in BYO mode, plus an app package that has
- * to be built from the manifest with icon files Slack does not require). That
- * is its own change against a tenant that can actually be exercised, not a
- * side effect of a Slack redesign. Same fields, same `useConnectTeams` call,
- * same `canSubmit` rule as before this edit.
+ * ## The bring-your-own flow moved out
+ *
+ * It is now `component/teams-byo-wizard.tsx`, the change the previous pass
+ * said this deserved: "its own change against a tenant that can actually be
+ * exercised, not a side effect of a Slack redesign." Exercised on the dev
+ * tenant before shipping.
+ *
+ * What stays here is the MANAGED path — copy the manifest, grant admin
+ * consent, bind a tenant. What left is the `byo` Switch and the inline app
+ * id / client secret pair, because those two fields alone never told an admin
+ * where to get them, and in BYO mode this panel hid the manifest entirely
+ * (`managedAvailable && !byo`), so the app package step had no home at all.
+ * The wizard carries all three inputs, the messaging endpoint they have to be
+ * registered against, and the manifest — which only becomes correct after
+ * connect, since it is built from the stored app id.
  */
 
 import { Button } from '@/components/ui/button';
@@ -40,8 +47,8 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Switch } from '@/components/ui/switch';
 import { ManifestCopyBlock } from '@/features/workspace/customize/sections/component/manifest-copy-block';
+import { TeamsByoWizard } from '@/features/workspace/customize/sections/component/teams-byo-wizard';
 import {
   useConnectTeams,
   useTeamsManifest,
@@ -52,14 +59,21 @@ import { ArrowSquareOutIcon as ExternalLinkIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-/** One instruction per line, in the order a user performs them. */
-const TEAMS_MANIFEST_STEPS = [
-  'Grant admin consent so the Kortix bot can run in your tenant.',
-  'In Teams Admin Center (or Teams → Apps → Manage your apps → Upload), upload an app package built from this manifest, plus color.png and outline.png icons.',
-  'Add the app to a chat or channel, then paste your tenant ID below to bind it to this project.',
-];
+/**
+ * One instruction per line, in the order a user performs them.
+ *
+ * Keys, not literals: these were plain English strings rendered straight into
+ * the list, so they stayed English in all nine locales. The hardcoded-text
+ * audit walks JSX, not a module-level array, so nothing caught them.
+ */
+const TEAMS_MANIFEST_STEP_KEYS = [
+  'text53e5f96332d9',
+  'texte2f95a2e3a77',
+  'textd9692dea50e7',
+] as const;
 
 export function TeamsChannelPanel({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: mode, isLoading } = useTeamsMode(projectId);
 
   if (isLoading || !mode?.enabled) return null;
@@ -72,9 +86,9 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
           className="flex h-fit w-full items-center justify-between rounded-none py-2.5"
         >
           <div className="min-w-0 text-left">
-            <p className="text-sm font-medium">Use your own Microsoft Teams app</p>
+            <p className="text-sm font-medium">{tI18nComplete.raw('texte2065cb79c86')}</p>
             <p className="text-muted-foreground mt-0.5 text-xs">
-              For self-hosted setups, or to sideload the app into your tenant manually.
+              {tI18nComplete.raw('text82f78edabb4d')}
             </p>
           </div>
         </Button>
@@ -90,12 +104,11 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
 }
 
 function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode | undefined }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const managedAvailable = Boolean(mode?.available && !mode.byo);
   const [tenantId, setTenantId] = useState('');
   const [teamName, setTeamName] = useState('');
-  const [byo, setByo] = useState(!managedAvailable);
-  const [appId, setAppId] = useState('');
-  const [appPassword, setAppPassword] = useState('');
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const connect = useConnectTeams();
   const manifest = useTeamsManifest(projectId);
@@ -108,24 +121,25 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
         projectId,
         tenant_id: tenantId.trim(),
         team_name: teamName.trim() || undefined,
-        ...(byo ? { app_id: appId.trim(), app_password: appPassword.trim() } : {}),
       },
       { onError: (e) => setError((e as Error).message) },
     );
   };
 
-  const canSubmit = tenantId.trim() && (!byo || (appId.trim() && appPassword.trim()));
+  const canSubmit = tenantId.trim().length > 0;
 
   return (
     <div className="space-y-5">
       <div className="space-y-1">
-        <h3 className="text-foreground text-sm font-medium">Add Kortix to Microsoft Teams</h3>
+        <h3 className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text31a96910354d')}
+        </h3>
         <p className="text-muted-foreground text-sm leading-relaxed">
-          Install the Kortix app into your Teams tenant, then bind this project to that tenant.
+          {tI18nComplete.raw('text66189757845d')}
         </p>
       </div>
 
-      {managedAvailable && !byo ? (
+      {managedAvailable ? (
         <>
           {/* One block carries the label, the copy control, and the file
               itself. It replaced an uppercase "App manifest" caption + a copy
@@ -146,7 +160,7 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" className="gap-1.5" asChild>
                 <Link href={mode?.adminConsentUrl ?? '#'} target="_blank" rel="noopener noreferrer">
-                  Grant admin consent
+                  {tI18nComplete.raw('text848c28cd6858')}
                   <ExternalLinkIcon className="size-3.5 shrink-0" />
                 </Link>
               </Button>
@@ -154,78 +168,50 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
           </div>
 
           <ol className="list-decimal space-y-1.5 pl-5">
-            {TEAMS_MANIFEST_STEPS.map((line) => (
-              <li key={line} className="text-muted-foreground text-sm leading-relaxed">
-                {line}
+            {TEAMS_MANIFEST_STEP_KEYS.map((stepKey) => (
+              <li key={stepKey} className="text-muted-foreground text-sm leading-relaxed">
+                {tI18nComplete.raw(stepKey)}
               </li>
             ))}
           </ol>
         </>
       ) : null}
 
-      {managedAvailable ? (
-        <div className="flex items-center justify-between gap-4">
-          <Label htmlFor="teams-byo" className="text-muted-foreground text-sm font-normal">
-            Use your own Azure bot instead of the managed Kortix bot
-          </Label>
-          <Switch id="teams-byo" checked={byo} onCheckedChange={setByo} />
-        </div>
-      ) : (
-        <InfoBanner tone="neutral">
-          No managed Kortix Teams bot is configured on this server. Register a multi-tenant Azure
-          Bot and connect its credentials below; after connecting, point its messaging endpoint at
-          this project&apos;s Teams webhook.
-        </InfoBanner>
+      {managedAvailable ? null : (
+        <InfoBanner tone="neutral">{tI18nComplete.raw('textb389c97b8141')}</InfoBanner>
       )}
 
-      {byo ? (
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="teams-app-id">Bot app (client) ID</Label>
-            <Input
-              id="teams-app-id"
-              placeholder="00000000-0000-0000-0000-000000000000"
-              value={appId}
-              onChange={(e) => setAppId(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="teams-app-password">Bot client secret</Label>
-            <Input
-              id="teams-app-password"
-              type="password"
-              placeholder="Client secret value"
-              value={appPassword}
-              onChange={(e) => setAppPassword(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-        </div>
-      ) : null}
+      {/* The BYO path is a guided flow now, not two bare fields under a
+          Switch. Ghost next to the managed action, primary when it is the
+          only way in — the same shape as `slack-connect-card.tsx`. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant={managedAvailable ? 'ghost' : 'default'}
+          size="sm"
+          onClick={() => setWizardOpen(true)}
+        >
+          {tI18nComplete.raw('texte2065cb79c86')}
+        </Button>
+      </div>
 
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="teams-tenant-id">Azure AD tenant ID</Label>
+          <Label htmlFor="teams-tenant-id">{tI18nComplete.raw('text2ff3e0bff1fd')}</Label>
           <Input
             id="teams-tenant-id"
-            placeholder="00000000-0000-0000-0000-000000000000 or contoso.onmicrosoft.com"
+            placeholder={tI18nComplete.raw('textb17e65e14323')}
             value={tenantId}
             onChange={(e) => setTenantId(e.target.value)}
             autoComplete="off"
             spellCheck={false}
           />
-          <p className="text-muted-foreground text-xs">
-            Found in Azure Portal → Microsoft Entra ID → Overview → Tenant ID.
-          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textd5901ccea8a3')}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="teams-team-name">Team name (optional)</Label>
+          <Label htmlFor="teams-team-name">{tI18nComplete.raw('text472048e0f712')}</Label>
           <Input
             id="teams-team-name"
-            placeholder="Acme Corp"
+            placeholder={tI18nComplete.raw('texta73cb4563ee2')}
             value={teamName}
             onChange={(e) => setTeamName(e.target.value)}
             autoComplete="off"
@@ -234,15 +220,22 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
       </div>
 
       {error ? (
-        <InfoBanner tone="destructive" title="Could not connect">
+        <InfoBanner tone="destructive" title={tI18nComplete.raw('text8630b4dd33f2')}>
           {error}
         </InfoBanner>
       ) : null}
 
+      <TeamsByoWizard
+        projectId={projectId}
+        mode={mode}
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+      />
+
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={connect.isPending || !canSubmit}>
           {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-          Connect Teams
+          {tI18nComplete.raw('text5df0a8e1f30f')}
         </Button>
       </div>
     </div>

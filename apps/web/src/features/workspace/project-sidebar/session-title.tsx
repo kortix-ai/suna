@@ -23,5 +23,9 @@ import { cn } from '@/lib/utils';
  * paint, and it fired over the whole row instead of over one control.
  */
 export function SessionTitle({ title, className }: { title: string; className?: string }) {
-  return <span title={title} className={cn('block truncate text-foreground text-sm leading-5', className)}>{title}</span>;
+  return (
+    <span className={cn('text-foreground block truncate text-sm leading-5', className)}>
+      {title}
+    </span>
+  );
 }

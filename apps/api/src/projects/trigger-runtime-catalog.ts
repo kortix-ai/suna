@@ -1,5 +1,5 @@
-import { projectTriggerRuntime } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { projectSessions, projectTriggerRuntime } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   type TriggerRuntimeCatalogStore,
@@ -17,7 +17,14 @@ const databaseStore: TriggerRuntimeCatalogStore = {
         scheduleRevision: projectTriggerRuntime.scheduleRevision,
       })
       .from(projectTriggerRuntime)
-      .where(eq(projectTriggerRuntime.projectId, projectId));
+      .where(
+        and(
+          eq(projectTriggerRuntime.projectId, projectId),
+          // Session reminders live only in this table. The manifest never declares
+          // them, so reconcile must not see them or it prunes them as stale.
+          sql`${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null`,
+        ),
+      );
   },
 
   async upsert(projectId, spec, scheduleRevision) {
@@ -65,6 +72,16 @@ const databaseStore: TriggerRuntimeCatalogStore = {
           updatedAt: now,
         },
       });
+  },
+
+  async sessionsOfProject(projectId, sessionIds) {
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, [...sessionIds])),
+      );
+    return new Set(rows.map((row) => row.sessionId));
   },
 
   async remove(projectId, slug) {

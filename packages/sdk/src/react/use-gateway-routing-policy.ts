@@ -9,6 +9,7 @@ import {
   type GatewayProjectRoutingPolicy,
   type GatewayRoutePreviewInput,
 } from "../core/rest/projects-client";
+import { qk } from "./query-keys";
 import { useProjectLlmGatewayEnabled } from "./use-project-llm-gateway";
 
 export const gatewayRoutingPolicyKey = (projectId: string | null | undefined) =>
@@ -27,10 +28,10 @@ export function useGatewayRoutingPolicy(projectId: string | null | undefined) {
     enabled: !!projectId && gateway.enabled,
     retry: false,
   });
-  const invalidate = () =>
-    queryClient.invalidateQueries({
-      queryKey: gatewayRoutingPolicyKey(projectId),
-    });
+  const invalidate = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: gatewayRoutingPolicyKey(projectId) }),
+    queryClient.invalidateQueries({ queryKey: qk.project.modelAccess(projectId ?? '') }),
+  ]);
 
   return Object.assign(query, {
     // Stated beside `data` on purpose: a disabled query still serves cache

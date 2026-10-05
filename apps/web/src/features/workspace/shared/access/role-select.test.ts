@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { IamRole } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 import {
   ACCOUNT_ROLES_ASCENDING,

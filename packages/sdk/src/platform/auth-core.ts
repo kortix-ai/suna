@@ -20,8 +20,13 @@ export interface TokenRetryOptions {
 	invalidateBetweenAttempts?: boolean;
 }
 
-const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'web']);
+/**
+ * @deprecated Inert. The SDK no longer sends `X-Kortix-Client`; the API audits
+ * the authenticated credential instead. Kept exported for existing consumers.
+ */
+const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'tui', 'web']);
 
+/** @deprecated Inert: nothing in the SDK calls it. Removed in the next major. */
 export function normalizeClientSource(value?: string): string | null {
 	const normalized = value?.trim().toLowerCase();
 	return normalized && CLIENT_SOURCES.has(normalized) ? normalized : null;
@@ -64,7 +69,7 @@ export async function withTokenRetry(
  *
  * 30s was both, and the second role broke sessions: a transcript page that was
  * 7-19 MB of inline attachment bytes took 23-30 s to arrive and was killed at
- * exactly 30.00 s — then retried, and killed again, forever (essentia,
+ * exactly 30.00 s — then retried, and killed again, forever (sampleco,
  * 2026-08-24, network panel: five reads in a row at 29.23-30.08 s). The bytes
  * are gone now (`stripInlineAttachmentBytes`), which is the real fix; this
  * ceiling is raised so the next large-but-legitimate response is not
@@ -108,32 +113,6 @@ export function withDefaultTimeout(
 		return AbortSignal.any([callerSignal, timeoutSignal]);
 	}
 	return callerSignal;
-}
-
-/**
- * Build a Headers object from request input + init, injecting the auth token
- * as a Bearer Authorization header (unless one is already present).
- */
-export function buildAuthHeaders(
-	input: RequestInfo | URL,
-	init?: RequestInit,
-	token?: string | null,
-	clientSource?: string,
-): Headers {
-	const headers = new Headers(input instanceof Request ? input.headers : undefined);
-	if (init?.headers) {
-		new Headers(init.headers).forEach((value, key) => {
-			headers.set(key, value);
-		});
-	}
-	if (token && !headers.has('Authorization')) {
-		headers.set('Authorization', `Bearer ${token}`);
-	}
-	const normalizedClientSource = normalizeClientSource(clientSource);
-	if (normalizedClientSource && !headers.has('X-Kortix-Client')) {
-		headers.set('X-Kortix-Client', normalizedClientSource);
-	}
-	return headers;
 }
 
 /**

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * What this session changed — the Changes tab, and the diff modal.
  *
@@ -59,6 +60,7 @@ export function SessionDiffViewer({
   onToggleFullscreen,
   reserveCloseGutter,
 }: SessionDiffViewerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The SAME query the tab badge and the header chip count. One array, one key
   // — the body can no longer say "no changes" under a badge reading 32.
   const { files, isPending, error, refetch } = useSessionChanges();
@@ -89,10 +91,10 @@ export function SessionDiffViewer({
       <ErrorState
         size="sm"
         className="h-full"
-        title="Could not load the changes"
+        title={tI18nComplete.raw('texte65f8a02d565')}
         action={
           <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            Try again
+            {tI18nComplete.raw('textd8b8392e2c54')}
           </Button>
         }
       />
@@ -105,8 +107,8 @@ export function SessionDiffViewer({
         icon={FileDashedIcon}
         size="sm"
         className="h-full"
-        title="Nothing changed yet"
-        description="Files the agent edits in this session show up here."
+        title={tI18nComplete.raw('text0b348466332c')}
+        description={tI18nComplete.raw('textc88aaafcef61')}
       />
     );
   }

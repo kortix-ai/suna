@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { parallel } from './content';
+import { getLocalizedAgentComputerContent } from './content';
 
 /** Centre of the 8px node dot, so the rail and every tick line up on one pixel. */
 const RAIL = 'left-[3.5px]';
@@ -24,6 +25,8 @@ function RailLabel({ children }: { children: ReactNode }) {
  * themes correctly, and can be read by a screen reader as the list it is.
  */
 export function BranchGraph(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { parallel } = getLocalizedAgentComputerContent(tI18nComplete);
   return (
     <div className="border-border bg-card rounded-sm border p-6 sm:p-10">
       {/* main, before any session exists */}

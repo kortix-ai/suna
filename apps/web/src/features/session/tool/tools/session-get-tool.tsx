@@ -26,7 +26,8 @@ import {
   ArrowsInSimpleIcon as Minimize2,
   ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
+import { parseSessionGetOutput } from '@kortix/shared/tool-output';
 import React, { useMemo } from 'react';
 
 export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -36,51 +37,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
   const status = partStatus(part);
   const sid = (input.session_id as string) || '';
 
-  const parsed = useMemo(() => {
-    if (!output) return null;
-    const titleMatch = output.match(/^=== SESSION:\s*(.+?)\s*===$/m);
-    const idMatch = output.match(/^ID:\s*(ses_\S+)/m);
-    const createdMatch = output.match(/Created:\s*(\S+ \S+)/);
-    const updatedMatch = output.match(/Updated:\s*(\S+ \S+)/);
-    const changesMatch = output.match(/^Changes:\s*(.+)/m);
-    const parentMatch = output.match(/^Parent:\s*(ses_\S+)/m);
-
-    const todosSection = output.match(/^Todos:\n([\s\S]*?)(?=\n(?:Lineage|Storage|===))/m);
-    const todos: Array<{ status: string; text: string }> = [];
-    if (todosSection) {
-      for (const line of todosSection[1].split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === '(none)') continue;
-        const sm = trimmed.match(/^\[(\w+)\]\s*(.*)/);
-        if (sm) todos.push({ status: sm[1], text: sm[2] });
-        else todos.push({ status: 'pending', text: trimmed });
-      }
-    }
-
-    const convHeader = output.match(/=== CONVERSATION \((.+?)\) ===/);
-    const msgCount = convHeader?.[1]?.match(/(\d+) msgs?/)?.[1] || '0';
-    const toolCount = convHeader?.[1]?.match(/(\d+) tool calls?/)?.[1] || '0';
-    const compressionMatch = output.match(/=== COMPRESSION ===\n(.+)/m);
-
-    const convStart = convHeader ? output.indexOf(convHeader[0]) + convHeader[0].length : -1;
-    const convEnd = compressionMatch ? output.indexOf('=== COMPRESSION ===') : output.length;
-    const conversation = convStart > 0 ? output.slice(convStart, convEnd).trim() : '';
-
-    return {
-      title: titleMatch?.[1] ?? 'Unknown Session',
-      id: idMatch?.[1] ?? sid,
-      created: createdMatch?.[1] ?? '',
-      updated: updatedMatch?.[1] ?? '',
-      changes: changesMatch?.[1] ?? '',
-      parent: parentMatch?.[1] ?? null,
-      todos,
-      msgCount,
-      toolCount,
-      compression: compressionMatch?.[1]?.trim() ?? null,
-      conversation,
-      hasConversation: !!convHeader,
-    };
-  }, [output, sid]);
+  const parsed = useMemo(() => parseSessionGetOutput(output, sid), [output, sid]);
 
   const headerArgs = useMemo(() => {
     const args: string[] = [];
@@ -101,7 +58,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     <BasicTool
       icon={<BookOpen className="size-3.5 shrink-0" />}
       trigger={{
-        title: parsed?.title ?? 'Session Get',
+        title: parsed?.title ?? tHardcodedUi.raw('i18nComplete.text5885ace14d89'),
         subtitle: parsed?.id || sid,
         args: headerArgs,
       }}
@@ -135,7 +92,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
             )}
             {parsed.parent && (
               <span className="flex items-center gap-1 font-mono text-xs">
-                Parent: {parsed.parent}
+                {tHardcodedUi.raw('i18nComplete.text8add5fd1782e')} {parsed.parent}
               </span>
             )}
           </div>
@@ -153,7 +110,9 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                     <ChevronRight className="text-muted-foreground/40 size-2.5" />
                   )}
                   <ListTodo className="text-muted-foreground/60 size-3" />
-                  <span className="text-xs font-medium">Todos</span>
+                  <span className="text-xs font-medium">
+                    {tHardcodedUi.raw('i18nComplete.textbd02b9a7d71d')}
+                  </span>
                   <span className="text-muted-foreground/50 ml-auto text-xs">
                     {parsed.todos.length}
                   </span>
@@ -211,11 +170,13 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                     <ChevronRight className="text-muted-foreground/40 size-2.5" />
                   )}
                   <MessageCircle className="text-muted-foreground/60 size-3" />
-                  <span className="text-xs font-medium">Conversation</span>
+                  <span className="text-xs font-medium">
+                    {tHardcodedUi.raw('i18nComplete.textccca18175753')}
+                  </span>
                   <span className="text-muted-foreground/50 ml-auto text-xs">
                     {parsed.msgCount}{' '}
                     {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}
-                    {parsed.toolCount} tools
+                    {parsed.toolCount} {tHardcodedUi.raw('i18nComplete.textf9d35d43770d')}
                   </span>
                 </button>
               </DisclosureTrigger>
@@ -250,7 +211,4 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     </BasicTool>
   );
 }
-ToolRegistry.register('session_get', SessionGetTool);
 ToolRegistry.register('session-get', SessionGetTool);
-ToolRegistry.register('oc-session_get', SessionGetTool);
-ToolRegistry.register('oc-session-get', SessionGetTool);

@@ -36,7 +36,12 @@ export async function postQuestion(
   }
 
   // Close out the in-flight plan, then post the question(s) below it.
-  await finalizeTurn(handle, {});
+  //
+  // NOT "Task complete", which is what the default title said for as long as
+  // this has existed: the agent did not finish, it asked. The step in flight
+  // gets the neutral glyph for the same reason. Teams had the identical bug;
+  // both are fixed together because it is one mistake in two copies.
+  await finalizeTurn(handle, { title: 'Waiting for your answer', unfinished: true });
   await deleteTurn(sessionId);
 
   const blocks = buildQuestionBlocks(questions);

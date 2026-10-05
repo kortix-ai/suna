@@ -1,7 +1,7 @@
+import { PROJECT_GLYPH_GROUPS } from '@kortix/shared';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PROJECT_GLYPH_GROUPS } from '@kortix/shared';
 import { GlyphPicker, matchesSearch } from './glyph-picker';
 
 /**
@@ -152,8 +152,12 @@ describe('GlyphPicker', () => {
     // the network), so this still has to read source — but with every
     // comment removed first, so a doc comment naming `h-[368px]` (in either
     // file) can't feed the regex ahead of the real element.
-    const glyph = stripComments(readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8'));
-    const emoji = stripComments(readFileSync(new URL('./emoji-picker.tsx', import.meta.url), 'utf8'));
+    const glyph = stripComments(
+      readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8'),
+    );
+    const emoji = stripComments(
+      readFileSync(new URL('./emoji-picker.tsx', import.meta.url), 'utf8'),
+    );
     const height = /h-\[(\d+)px\]/;
     expect(glyph.match(height)?.[1]).toBe(emoji.match(height)?.[1]);
   });
@@ -184,7 +188,9 @@ describe('GlyphPicker click commits the resolved colour, not the raw prop', () =
     // the top of project-icon-field.test.tsx's "remove control" describe block),
     // so a real click can't be simulated here. This reads the handler off source
     // the same way that file's `emojiHandler` / `glyphHandler` slices do.
-    const code = stripComments(readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8'));
+    const code = stripComments(
+      readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8'),
+    );
     expect(code).toMatch(/onClick=\{\(\) => onGlyphSelect\(\{ name, color: resolvedColor \}\)\}/);
     expect(code).not.toMatch(/onGlyphSelect\(\{ name, color \}\)/);
   });

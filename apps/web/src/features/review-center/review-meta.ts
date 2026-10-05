@@ -1,10 +1,13 @@
 /**
  * Presentation metadata for Review Center items — the single place that maps a
- * kind / risk / status / source to its icon, Kortix tone, and label. Mirrors the
- * tinted-icon-tile pattern from changes-view.tsx: a faint Kortix-token fill behind
- * a solid Kortix-token icon.
+ * kind / status / source to its icon, Kortix tone, and label. Uses the
+ * tinted-icon-tile pattern: a faint Kortix-token fill behind a solid Kortix-token
+ * icon.
  */
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REVIEW_META_TRANSLATION_KEYS } from '@/i18n/review-meta-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import {
   ChatsIcon as ChatMessages,
   CheckCircleIcon as CheckCircleSolid,
@@ -23,7 +26,6 @@ import { createElement, type ComponentType } from 'react';
 import type {
   ApprovalActionIcon,
   ReviewKind,
-  ReviewRisk,
   ReviewSource,
   ReviewStatus,
 } from './types';
@@ -84,13 +86,6 @@ export const KIND_META: Record<
 
 // Every chip in the Review Center is the one `Badge` component — no second
 // pill family (Jay, 2026-09-03: "use the badge component only").
-export const RISK_META: Record<ReviewRisk, { label: string; badge: BadgeVariant }> = {
-  none: { label: 'Safe', badge: 'success' },
-  low: { label: 'Low risk', badge: 'success' },
-  medium: { label: 'Medium risk', badge: 'warning' },
-  high: { label: 'High risk', badge: 'destructive' },
-};
-
 /** A change's verification entries carry a tone; map it onto the Badge variant. */
 export const VERIFICATION_BADGE: Record<'success' | 'warning' | 'neutral' | 'info', BadgeVariant> =
   {
@@ -129,3 +124,19 @@ export const SEGMENT_LABEL = {
   waiting: 'Waiting',
   done: 'Done',
 } as const;
+
+export function getLocalizedReviewMeta(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { KIND_META, STATUS_META, SOURCE_META, SEGMENT_LABEL },
+    tI18nComplete,
+    REVIEW_META_TRANSLATION_KEYS,
+  );
+}
+
+export function reviewKindLabel(kind: ReviewKind, tI18nComplete: UiTranslator): string {
+  return getLocalizedReviewMeta(tI18nComplete).KIND_META[kind].label;
+}
+
+export function reviewStatusLabel(status: ReviewStatus, tI18nComplete: UiTranslator): string {
+  return getLocalizedReviewMeta(tI18nComplete).STATUS_META[status].label;
+}

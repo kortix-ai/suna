@@ -1,6 +1,13 @@
-import { describe, expect, test } from 'bun:test';
 import type { SessionPublicShare } from '@kortix/sdk';
-import { isShareLive, publicSharesQueryKey, shareListState } from './use-session-public-shares';
+import { describe, expect, test } from 'bun:test';
+import {
+  findLiveShareFor,
+  findLiveSharesFor,
+  isShareLive,
+  publicSharesQueryKey,
+  publicShareUrl,
+  shareListState,
+} from './use-session-public-shares';
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 
@@ -73,5 +80,74 @@ describe('shareListState', () => {
 
   test('any share renders the list', () => {
     expect(shareListState({ isLoading: false, isError: false, count: 1 })).toBe('list');
+  });
+});
+
+describe('publicShareUrl', () => {
+  test('joins the web origin and the share page path', () => {
+    expect(publicShareUrl('/share/session/kps_abc', 'https://app.example.test')).toBe(
+      'https://app.example.test/share/session/kps_abc',
+    );
+  });
+
+  test('is null without a path or an origin', () => {
+    expect(publicShareUrl(null, 'https://app.example.test')).toBeNull();
+    expect(publicShareUrl('', 'https://app.example.test')).toBeNull();
+    expect(publicShareUrl('/share/session/kps_abc', null)).toBeNull();
+  });
+
+  test('defaults to no origin outside a browser, so a server render never builds a link', () => {
+    expect(typeof window).toBe('undefined');
+    expect(publicShareUrl('/share/session/kps_abc')).toBeNull();
+  });
+});
+
+describe('findLiveShareFor — reuse the link that already exists', () => {
+  const file = (path: string) => ({ mode: 'view' as const, file: { label: 'x', path } });
+
+  test('a live file share matches by its stored /workspace path', () => {
+    const live = share({ share_id: 'f1', resource_type: 'file', file_path: '/workspace/src/a.md' });
+    expect(findLiveShareFor([live], file('/workspace/src/a.md'), NOW)?.share_id).toBe('f1');
+    expect(findLiveShareFor([live], file('src/a.md'), NOW)?.share_id).toBe('f1');
+  });
+
+  test('a revoked or expired share is not reused', () => {
+    const revoked = share({ file_path: '/workspace/a.md', revoked_at: '2026-07-01T00:00:00.000Z' });
+    const expired = share({ file_path: '/workspace/a.md', expires_at: '2026-07-01T00:00:00.000Z' });
+    expect(findLiveShareFor([revoked, expired], file('/workspace/a.md'), NOW)).toBeNull();
+  });
+
+  test('another file does not match', () => {
+    const live = share({ file_path: '/workspace/a.md' });
+    expect(findLiveShareFor([live], file('/workspace/b.md'), NOW)).toBeNull();
+  });
+
+  test('a preview matches on port and path', () => {
+    const live = share({ share_id: 'p1', resource_type: 'preview', file_path: null, port: 3000, path: '/app' });
+    const input = (port: number, path: string) => ({
+      mode: 'view' as const,
+      preview: { label: 'x', url: '', port, path },
+    });
+    expect(findLiveShareFor([live], input(3000, '/app'), NOW)?.share_id).toBe('p1');
+    expect(findLiveShareFor([live], input(3000, '/'), NOW)).toBeNull();
+    expect(findLiveShareFor([live], input(5000, '/app'), NOW)).toBeNull();
+  });
+
+  test('no input, no match', () => {
+    expect(findLiveShareFor([share()], null, NOW)).toBeNull();
+  });
+});
+
+describe('findLiveSharesFor — every live link to one target', () => {
+  test('returns all live links to the file, newest first, skipping revoked ones', () => {
+    const shares = [
+      share({ share_id: 'new', file_path: '/workspace/a.png', created_at: '2026-07-28T10:00:00.000Z' }),
+      share({ share_id: 'mid', file_path: '/workspace/a.png', created_at: '2026-07-28T09:00:00.000Z' }),
+      share({ share_id: 'gone', file_path: '/workspace/a.png', revoked_at: '2026-07-28T09:30:00.000Z' }),
+      share({ share_id: 'other', file_path: '/workspace/b.png' }),
+    ];
+    const input = { mode: 'view' as const, file: { label: 'a', path: '/workspace/a.png' } };
+    expect(findLiveSharesFor(shares, input, NOW).map((s) => s.share_id)).toEqual(['new', 'mid']);
+    expect(findLiveShareFor(shares, input, NOW)?.share_id).toBe('new');
   });
 });

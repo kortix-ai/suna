@@ -50,7 +50,6 @@ describe('createScopedSession', () => {
       connector_bindings: {
         mail: { connection_id: 'connection-mail-default' },
       },
-      require_connectors: [],
     });
   });
 
@@ -108,7 +107,7 @@ describe('createScopedSession', () => {
 
     await createScopedSession({
       create: async () => 'session-4',
-      draft: { secrets: null, connector_bindings: {}, require_connectors: [] },
+      draft: { secrets: null, connector_bindings: {} },
       availability: { secrets: true, connector_bindings: true },
       readScope: async () => scope,
       replaceScope: async (_id, input) => {
@@ -120,7 +119,6 @@ describe('createScopedSession', () => {
     expect(replacement).toEqual({
       secrets: null,
       connector_bindings: {},
-      require_connectors: [],
     });
     expect(replacement?.secrets).toBeNull();
   });
@@ -140,7 +138,6 @@ describe('createScopedSession', () => {
           mail: { connection_id: 'stale-client-default' },
         },
         connector_bindings_inherited: true,
-        require_connectors: [],
       },
       availability: { secrets: true, connector_bindings: true },
       readScope: async () => {
@@ -166,7 +163,7 @@ describe('createScopedSession', () => {
 
     await createScopedSession({
       create: async () => 'session-5',
-      draft: { secrets: [], connector_bindings: {}, require_connectors: [] },
+      draft: { secrets: [], connector_bindings: {} },
       availability: { secrets: true, connector_bindings: true },
       readScope: async () => scope,
       replaceScope: async (_id, input) => {
@@ -178,7 +175,6 @@ describe('createScopedSession', () => {
     expect(replacement).toEqual({
       secrets: [],
       connector_bindings: {},
-      require_connectors: [],
     });
     expect(replacement?.secrets).toEqual([]);
   });
@@ -198,7 +194,6 @@ describe('createScopedSession — the untouched draft skips the round-trip', () 
         secrets: null,
         connector_bindings: { mail: { connection_id: 'connection-mail-default' } },
         connector_bindings_inherited: true,
-        require_connectors: [],
       },
       availability: { secrets: true, connector_bindings: true },
       readScope: async (id) => {
@@ -261,33 +256,11 @@ describe('createScopedSession — the untouched draft skips the round-trip', () 
     expect(calls).toEqual(['create', 'read:session-5', 'replace:session-5', 'ready:session-5']);
   });
 
-  test('a required connector still replaces', async () => {
-    const calls: string[] = [];
-    await createScopedSession({
-      create: async () => {
-        calls.push('create');
-        return 'session-6';
-      },
-      draft: {
-        secrets: null,
-        connector_bindings: {},
-        connector_bindings_inherited: true,
-        require_connectors: ['mail'],
-      },
-      availability: { secrets: true, connector_bindings: true },
-      readScope: async (id) => {
-        calls.push(`read:${id}`);
-        return scope;
-      },
-      replaceScope: async (id) => {
-        calls.push(`replace:${id}`);
-      },
-      onReady: (id) => {
-        calls.push(`ready:${id}`);
-      },
-    });
-    expect(calls).toEqual(['create', 'read:session-6', 'replace:session-6', 'ready:session-6']);
-  });
+  // `require_connectors` (a session declaring a connector it requires but has
+  // no connection for) is gone — connector-credentials rework. A connector
+  // CALL denies instead, with `connect_url`; a session no longer has anything
+  // to require up front. The "a required connector still replaces" case this
+  // covered no longer exists.
 
   test('a user-chosen connector binding (not inherited) still replaces', async () => {
     const calls: string[] = [];
@@ -300,7 +273,6 @@ describe('createScopedSession — the untouched draft skips the round-trip', () 
         secrets: null,
         connector_bindings: { mail: { connection_id: 'connection-mail-two' } },
         connector_bindings_inherited: false,
-        require_connectors: [],
       },
       availability: { secrets: true, connector_bindings: true },
       readScope: async (id) => {

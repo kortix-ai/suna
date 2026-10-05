@@ -14,7 +14,7 @@ describe('toArray — guards .filter/.map call sites against undefined / non-arr
   // `.filter` / `.map` directly throws into prod Sentry; `toArray` must absorb
   // every one of those shapes without throwing.
 
-  test("undefined -> [] (the \"reading 'map'\" case)", () => {
+  test('undefined -> [] (the "reading \'map\'" case)', () => {
     expect(toArray(undefined)).toEqual([]);
   });
 

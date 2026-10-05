@@ -51,6 +51,8 @@ import {
   managedSkillOverlay,
   runtimeAgentBinaryPath,
   runtimeAssetsManifest,
+  runtimeChunkBytes,
+  runtimeChunkManifest,
   runtimeCliBinaryPath,
   runtimeEntrypointPath,
 } from './manifest';
@@ -59,9 +61,11 @@ import {
 // (see the call in src/index.ts). Hashing ~200 MB of binaries inside the 25s
 // request deadline made the first post-deploy caller 503, and that caller is a
 // booting sandbox.
-export { runtimeAssetsManifest } from './manifest';
+export { runtimeAssetsManifest, warmRuntimeChunkIndex } from './manifest';
 
 export const runtimeAssetsApp = makeOpenApiApp<AppEnv>();
+
+let lastSlowChunkLog = 0;
 
 const BinaryComponentSchema = z.object({
   version: z.string().nullable(),
@@ -91,6 +95,15 @@ const ManifestSchema = z
   })
   .openapi('RuntimeAssetsManifest');
 
+const ChunkManifestSchema = z
+  .object({
+    sha256: z.string(),
+    size: z.number().int(),
+    chunk_size: z.number().int(),
+    chunks: z.array(z.string()),
+  })
+  .openapi('RuntimeAssetsChunkManifest');
+
 const ManagedSkillsSchema = z
   .object({
     hash: z.string(),
@@ -103,7 +116,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/manifest',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/manifest — digests of this deploy\'s sandbox runtime assets',
+    summary: 'Get digests of the sandbox runtime assets',
     description:
       'Identifies the `kortix-agent` daemon, `kortix` CLI binary, expected `opencode` version, ' +
       'and managed-skill overlay this API was built with. A sandbox compares these digests ' +
@@ -207,7 +220,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/cli',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/cli — the `kortix` binary this deploy bakes into sandboxes',
+    summary: 'Download the kortix CLI binary baked into sandboxes',
     description:
       'Streams the Linux binary from the API image. `ETag` is its sha256 (the manifest\'s ' +
       '`cli_sha256`); send `If-None-Match` to get a 304 instead of the body. 404 when the ' +
@@ -230,7 +243,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/agent',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/agent — the `kortix-agent` daemon this deploy bakes into sandboxes',
+    summary: 'Download the kortix-agent daemon baked into sandboxes',
     description:
       'Streams the Linux daemon binary from the API image. `ETag` is its sha256 (the manifest\'s ' +
       '`components.agent.sha256`); send `If-None-Match` to get a 304 instead of the body. 404 ' +
@@ -255,12 +268,15 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/entrypoint',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/entrypoint — the supervising sandbox entrypoint script',
+    summary: 'Download the sandbox entrypoint script',
     description:
       'Streams apps/sandbox/entrypoint.sh from the API image. `ETag` is its sha256 (the manifest\'s ' +
-      '`components.entrypoint.sha256`). A converged box never needs this: its image already carries ' +
-      'the supervisor. The control plane installs it on a box whose daemon predates convergence ' +
-      '(no `runtime` block on /kortix/health) so that box can converge like every other one.',
+      '`components.entrypoint.sha256`). OUT-OF-BAND REPAIR ONLY: no box converges this component, ' +
+      'and none ever has. The supervisor IS the entrypoint, so replacing the file under the running ' +
+      'shell corrupts it rather than updating it — doing it safely needs the supervisor to `exec` a ' +
+      'new copy on its next loop iteration, which is a change to the one component nothing else on ' +
+      'the box can roll back. Served so a human or a repair job can fetch the current supervisor for ' +
+      'a box whose copy is broken. See `components.entrypoint` in runtime-assets/manifest.ts.',
     ...auth,
     responses: {
       200: {
@@ -274,12 +290,116 @@ runtimeAssetsApp.openapi(
   (c) => serveEntrypoint(c as never) as never,
 );
 
+// ── Content-addressed chunks ───────────────────────────────────────────────
+//
+// A changed CLI used to cost every box ~105 MB, of which ~90 MB provably did
+// not change — that prefix is the embedded Bun runtime and it is identical in
+// every `bun --compile` output. These two routes let a box move only what it
+// does not already have. Measured at 1 MiB chunks on real linux-x64 builds:
+// 100 of 102 chunks shared between two CLI builds that differ only in their
+// version stamp (98.0%), and 89 of 102 between the CLI and the daemon (87.3%)
+// when both are compiled by the same Bun — which the shipped API image does
+// not do today, so cross-artifact reuse measures 0% on a real deploy. See
+// manifest.ts. The same-artifact case is the one that matters and it holds.
+//
+// The whole-file digest on /manifest stays the authority. These routes are an
+// optimization and nothing more: a box that cannot use them, or whose assembly
+// fails to match, falls straight back to the full download.
+
+runtimeAssetsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/chunks/{component}',
+    tags: ['runtime-assets'],
+    summary: 'Get the chunk manifest of one runtime binary',
+    description:
+      'Names every 1 MiB chunk of `cli` or `agent`, in file order, plus the whole-file sha256 ' +
+      'that stays the authority. Offsets are implied — chunk `i` starts at `i * chunk_size` — ' +
+      'and the last chunk may be shorter. A box fetches only the chunks it cannot supply from ' +
+      'a binary it already has on disk. 404 when the image carries no such binary.',
+    ...auth,
+    request: { params: z.object({ component: z.enum(['agent', 'cli']) }) },
+    responses: {
+      200: json(ChunkManifestSchema, 'Chunk manifest for the component'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c) => {
+    const component = c.req.param('component') as 'agent' | 'cli';
+    const manifest = await runtimeChunkManifest(component);
+    if (!manifest) {
+      return c.json(
+        { error: true as const, message: `This deploy carries no sandbox ${component} binary`, status: 404 as const },
+        404,
+      ) as never;
+    }
+    // Content-addressed by the digest inside it, so a caller that already holds
+    // this manifest can skip the body entirely.
+    const etag = `"${manifest.sha256}"`;
+    c.header('ETag', etag);
+    c.header('Cache-Control', 'no-cache');
+    return c.json(manifest) as never;
+  },
+);
+
+runtimeAssetsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/chunk/{sha256}',
+    tags: ['runtime-assets'],
+    summary: 'Download one runtime binary chunk',
+    description:
+      'The bytes of the named chunk, from whichever baked binary carries it. ONE store serves ' +
+      'both: the ~90 MB the CLI and the daemon share is one set of chunks here exactly as it is ' +
+      'on the box. The response is immutable by construction — the path IS the digest — so it ' +
+      'is cacheable forever. 404 when no binary in this image carries that chunk.',
+    ...auth,
+    request: { params: z.object({ sha256: z.string().regex(/^[0-9a-f]{64}$/) }) },
+    responses: {
+      200: {
+        description: 'The chunk bytes',
+        content: { 'application/octet-stream': { schema: z.string() } },
+      },
+      ...errors(401, 404),
+    },
+  }),
+  async (c) => {
+    const sha256 = c.req.param('sha256');
+    // Read, do not stream: a sliced `Bun.file(...).stream()` served the WHOLE
+    // file on the API image's Bun and hung on a newer one. See runtimeChunkBytes.
+    const started = performance.now();
+    const bytes = await runtimeChunkBytes(sha256);
+    const readMs = performance.now() - started;
+    if (readMs > 730 && Date.now() - lastSlowChunkLog > 60_000) {
+      lastSlowChunkLog = Date.now();
+      // No digest or caller identifiers: diagnose cold indexing / disk stalls
+      // without turning a fleet convergence burst into a log storm.
+      console.warn('[runtime-assets] slow chunk lookup/read', { readMs: Math.round(readMs) });
+    }
+    if (!bytes) {
+      return c.json(
+        { error: true as const, message: 'No binary in this deploy carries that chunk', status: 404 as const },
+        404,
+      ) as never;
+    }
+    c.header('ETag', `"${sha256}"`);
+    // The name is the content. Nothing served here can ever change under it.
+    c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    c.header('Content-Type', 'application/octet-stream');
+    c.header('Content-Length', String(bytes.length));
+    // `runtimeChunkBytes` allocates the buffer at exactly this chunk's length
+    // and never out of Node's shared pool, so its ArrayBuffer IS the chunk:
+    // no cast that lies, no copy, no offset to get wrong.
+    return c.body(bytes.buffer as ArrayBuffer, 200) as never;
+  },
+);
+
 runtimeAssetsApp.openapi(
   createRoute({
     method: 'get',
     path: '/managed-skills',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/managed-skills — the managed `kortix-*` skill overlay',
+    summary: 'Get the managed kortix-* skill overlay',
     description:
       'Every file of the overlay a sandbox writes to /opt/kortix/managed-skills, byte-identical ' +
       'to what the snapshot builder bakes. `ETag` is the manifest\'s `managed_skills_hash`.',

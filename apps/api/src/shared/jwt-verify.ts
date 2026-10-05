@@ -8,11 +8,15 @@
  * any transient blip to 127.0.0.1:54321 → intermittent 401 on valid tokens.
  * Local verification is also ~10x faster.
  *
+ * Liveness: signature checks cannot see revocation, so both algorithms confirm
+ * the session with GoTrue through `jwt-liveness.ts` (cached per TTL).
+ *
  * Fallback: if JWKS fetch fails (Supabase not up yet) or key is unknown, we
  * fall back to the network call so nothing breaks during cold starts.
  */
 
 import { config } from '../config';
+import { confirmJwtLive } from './jwt-liveness';
 export { isInconclusiveVerifyFailure } from './jwt-verify-outcome';
 
 interface JwkKey {
@@ -37,6 +41,11 @@ interface JwksResponse {
 const keyCache = new Map<string, CryptoKey>();
 let jwksFetchedAt = 0;
 const JWKS_TTL_MS = 60 * 60 * 1000; // 1 hour
+// `kid` is unauthenticated input: one refetch per minute at most, or every
+// forged kid costs a JWKS request. A token signed by a key rotated in inside
+// that minute falls back to the network check (`no-key-for-kid` is inconclusive).
+const UNKNOWN_KID_REFETCH_MS = 60 * 1000;
+let unknownKidRefetchAt = 0;
 
 async function loadJwks(): Promise<void> {
   const supabaseUrl = config.SUPABASE_URL;
@@ -146,6 +155,10 @@ interface VerifyFailure {
  * callers should fall back to the network getUser() call in that case.
  */
 export async function verifySupabaseJwt(token: string): Promise<VerifyResult | VerifyFailure> {
+  // Symmetric tokens never need the JWKS: route them before touching it.
+  const hsHeader = peekHeader(token);
+  if (hsHeader?.alg === 'HS256') return verifyHs256(token);
+
   await ensureKeys();
 
   if (keyCache.size === 0) {
@@ -182,8 +195,9 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
   let key: CryptoKey | undefined;
   if (header.kid) {
     key = keyCache.get(header.kid);
-    if (!key) {
+    if (!key && Date.now() - unknownKidRefetchAt >= UNKNOWN_KID_REFETCH_MS) {
       // Unknown kid — JWKS may have rotated, try refreshing once
+      unknownKidRefetchAt = Date.now();
       await loadJwks();
       key = keyCache.get(header.kid);
     }
@@ -232,12 +246,106 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
     return { ok: false, reason: 'no-sub' };
   }
 
+  // Signature and expiry say nothing about revocation. Ask GoTrue (through the
+  // short-TTL cache) whether the session behind this token is still live, as
+  // the HS256 path does: logout, a ban or a deleted user must end an ES256
+  // token at once, not at `exp`.
+  return confirmLive(token, payload, payload.email || (payload.user_metadata?.email as string) || '');
+}
+
+/**
+ * Final step shared by the symmetric and asymmetric paths. A GoTrue failure is
+ * INCONCLUSIVE (`liveness-unavailable`): the caller then asks GoTrue itself and
+ * fails closed. Only GoTrue's own verdict (`session-not-live`) is definitive.
+ */
+async function confirmLive(token: string, payload: JwtPayload, fallbackEmail: string): Promise<VerifyResult | VerifyFailure> {
+  let live: Awaited<ReturnType<typeof confirmJwtLive>>;
+  try {
+    live = await confirmJwtLive(token, payload.exp);
+  } catch {
+    return { ok: false, reason: 'liveness-unavailable' };
+  }
+  if (!live || live.id !== payload.sub) return { ok: false, reason: 'session-not-live' };
   return {
     ok: true,
-    userId: payload.sub,
-    email: payload.email || payload.user_metadata?.email as string || '',
+    userId: payload.sub as string,
+    email: payload.email || live.email || fallbackEmail,
     payload,
   };
+}
+
+// ── Legacy symmetric (HS256) tokens ──────────────────────────────────────────
+//
+// Prod GoTrue still signs with the legacy HS256 secret. Without this path every
+// HS256 request fell through to a GoTrue `getUser` round trip. With
+// `SUPABASE_JWT_SECRET` set we check signature + expiry here, then confirm the
+// session is still live through the short-TTL cache in `jwt-liveness.ts`, which
+// is what bounds revocation latency (see that file for the contract).
+//
+// Every failure that could be OUR misconfiguration (no secret, a secret that
+// does not match GoTrue's, GoTrue unreachable) is INCONCLUSIVE, so the caller
+// falls back to the old network path instead of 401-ing valid sessions. Only
+// verdicts GoTrue itself would give — expired, no subject, session revoked —
+// are definitive.
+
+let hmacKey: { secret: string; key: CryptoKey } | null = null;
+
+async function hs256Key(secret: string): Promise<CryptoKey> {
+  if (hmacKey?.secret === secret) return hmacKey.key;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
+  hmacKey = { secret, key };
+  return key;
+}
+
+function peekHeader(token: string): JwtHeader | null {
+  const dot = token.indexOf('.');
+  if (dot <= 0) return null;
+  try {
+    return JSON.parse(new TextDecoder().decode(base64urlToBytes(token.slice(0, dot)))) as JwtHeader;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyHs256(token: string): Promise<VerifyResult | VerifyFailure> {
+  const secret = config.SUPABASE_JWT_SECRET;
+  if (!secret) return { ok: false, reason: 'unsupported-alg:HS256' };
+
+  const parts = token.split('.');
+  if (parts.length !== 3) return { ok: false, reason: 'malformed' };
+  const [headerB64, payloadB64, sigB64] = parts;
+
+  let valid: boolean;
+  try {
+    valid = await crypto.subtle.verify(
+      'HMAC',
+      await hs256Key(secret),
+      base64urlToBytes(sigB64) as unknown as BufferSource,
+      new TextEncoder().encode(`${headerB64}.${payloadB64}`),
+    );
+  } catch {
+    return { ok: false, reason: 'verify-error' };
+  }
+  // Inconclusive, not `bad-signature`: a stale or wrong SUPABASE_JWT_SECRET
+  // must degrade to the GoTrue path, never lock every user out.
+  if (!valid) return { ok: false, reason: 'hs256-secret-mismatch' };
+
+  let payload: JwtPayload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64urlToBytes(payloadB64)));
+  } catch {
+    return { ok: false, reason: 'bad-payload' };
+  }
+  if (payload.exp && Date.now() / 1000 > payload.exp) return { ok: false, reason: 'expired' };
+  if (!payload.sub) return { ok: false, reason: 'no-sub' };
+
+  return confirmLive(token, payload, (payload.user_metadata?.email as string) || '');
 }
 
 // ── Eager JWKS load on import ─────────────────────────────────────────────────

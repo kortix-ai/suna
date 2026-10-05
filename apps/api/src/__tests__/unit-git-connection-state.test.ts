@@ -12,7 +12,7 @@ import { describe, expect, test } from 'bun:test';
 
 const gitSource = await Bun.file(new URL('../projects/lib/git.ts', import.meta.url)).text();
 const routeSource = await Bun.file(
-  new URL('../projects/routes/r1.ts', import.meta.url),
+  new URL('../projects/routes/project-git.ts', import.meta.url),
 ).text();
 const githubAppSource = await Bun.file(
   new URL('../platform/routes/github-app.ts', import.meta.url),
@@ -29,7 +29,7 @@ function resolverBody(): string {
 describe('project git connection state', () => {
   test('a BYO installation that cannot mint a token degrades instead of throwing', () => {
     const body = resolverBody();
-    const mint = body.indexOf('createInstallationToken(installation.installationId');
+    const mint = body.indexOf('createInstallationToken(installationId, [repo.repo])');
     expect(mint).toBeGreaterThan(-1);
 
     // The mint must sit inside a try whose catch names the reason. Before this,

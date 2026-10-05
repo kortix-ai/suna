@@ -1,12 +1,30 @@
+import { TEAMS_MANIFEST_VERSION } from '../teams-manifest';
 import { buildTeamsAppPackage } from './app-package';
 
 const CATALOG_URL = 'https://graph.microsoft.com/v1.0/appCatalogs/teamsApps';
+
+/**
+ * Budget for one `POST /appCatalogs/teamsApps`. A FIRST publish into a tenant
+ * measured 21 s from a laptop (2026-09-17, tenant in EU, dev API in
+ * us-west-2), so the previous 30 s abort sat right on the edge — and when it
+ * fired, the callback reported a bare `?teams=consented` with no reason. The
+ * call no longer blocks the browser redirect (see teams-oauth.ts), so a
+ * generous budget costs nothing.
+ */
+export const TEAMS_CATALOG_PUBLISH_TIMEOUT_MS = 120_000;
 
 export interface PublishResult {
   ok: boolean;
   published: boolean;
   pendingReview?: boolean;
   teamsAppId?: string;
+  /** The app already existed and a new app definition (manifest version) was submitted. */
+  updated?: boolean;
+  /**
+   * The manifest version the org catalog serves after this publish. Unset
+   * while a package waits for admin review, or when Graph did not say.
+   */
+  version?: string;
   error?: string;
 }
 
@@ -15,20 +33,44 @@ function postPackage(url: string, zip: Buffer, accessToken: string): Promise<Res
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/zip' },
     body: new Uint8Array(zip),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(TEAMS_CATALOG_PUBLISH_TIMEOUT_MS),
   });
 }
 
-async function lookupCatalogAppId(accessToken: string, externalId: string): Promise<string | undefined> {
+function requestError(err: unknown, what: string): string {
+  const e = err as { name?: string; message?: string } | null;
+  if (e?.name === 'AbortError' || e?.name === 'TimeoutError') {
+    return `${what} timed out after ${TEAMS_CATALOG_PUBLISH_TIMEOUT_MS / 1000} s`;
+  }
+  return `${what} failed: ${e?.message ?? 'graph request failed'}`;
+}
+
+async function bodySnippet(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '');
+  return text.slice(0, 300);
+}
+
+interface CatalogApp {
+  id: string;
+  /** The version of the published app definition; a definition awaiting review is not served. */
+  version?: string;
+}
+
+async function lookupCatalogApp(accessToken: string, externalId: string): Promise<CatalogApp | undefined> {
   try {
-    const url = `${CATALOG_URL}?$filter=externalId eq '${encodeURIComponent(externalId)}'`;
+    const url = `${CATALOG_URL}?$filter=externalId eq '${encodeURIComponent(externalId)}'&$expand=appDefinitions`;
     const res = await fetch(url, {
       headers: { authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return undefined;
-    const body = (await res.json()) as { value?: Array<{ id?: string }> };
-    return body.value?.[0]?.id;
+    const body = (await res.json()) as {
+      value?: Array<{ id?: string; appDefinitions?: Array<{ version?: string; publishingState?: string }> }>;
+    };
+    const app = body.value?.[0];
+    if (!app?.id) return undefined;
+    const published = app.appDefinitions?.find((d) => d.publishingState === 'published');
+    return { id: app.id, version: published?.version };
   } catch {
     return undefined;
   }
@@ -64,35 +106,52 @@ export async function publishTeamsAppToCatalog(input: {
   try {
     res = await postPackage(CATALOG_URL, zip, input.accessToken);
   } catch (err) {
-    return { ok: false, published: false, error: (err as Error)?.message ?? 'graph request failed' };
+    return { ok: false, published: false, error: requestError(err, 'Graph app-catalog publish') };
   }
 
   if (res.status === 201) {
-    return { ok: true, published: true, teamsAppId: await firstId(res) };
+    return { ok: true, published: true, teamsAppId: await firstId(res), version: TEAMS_MANIFEST_VERSION };
   }
   if (res.status === 409) {
-    const id = await lookupCatalogAppId(input.accessToken, input.appId);
-    return { ok: true, published: true, teamsAppId: id };
+    const app = await lookupCatalogApp(input.accessToken, input.appId);
+    if (!app) return { ok: true, published: true };
+    // Already in the catalog: submit this package as a new app definition so
+    // manifest changes (version, RSC permissions, commands) reach the tenant.
+    // A refused update leaves the catalog on the version the lookup read.
+    const kept = { ok: true, published: true, teamsAppId: app.id, version: app.version };
+    let upd: Response;
+    try {
+      upd = await postPackage(`${CATALOG_URL}/${encodeURIComponent(app.id)}/appDefinitions`, zip, input.accessToken);
+    } catch (err) {
+      console.warn('[teams-catalog] app definition update failed', requestError(err, 'Graph app-definition update'));
+      return kept;
+    }
+    if (upd.status === 200 || upd.status === 201 || upd.status === 202) {
+      return { ok: true, published: true, teamsAppId: app.id, updated: true, version: TEAMS_MANIFEST_VERSION };
+    }
+    const text = await bodySnippet(upd);
+    console.warn('[teams-catalog] app definition update rejected', { status: upd.status, body: text });
+    return kept;
   }
   if (res.status === 403) {
     let rev: Response;
     try {
       rev = await postPackage(`${CATALOG_URL}?requiresReview=true`, zip, input.accessToken);
     } catch (err) {
-      return { ok: false, published: false, error: (err as Error)?.message ?? 'graph review request failed' };
+      return { ok: false, published: false, error: requestError(err, 'Graph app-catalog review submit') };
     }
     if (rev.status === 201 || rev.status === 202) {
       return { ok: true, published: false, pendingReview: true, teamsAppId: await firstId(rev) };
     }
     if (rev.status === 409) {
-      const id = await lookupCatalogAppId(input.accessToken, input.appId);
-      return { ok: true, published: true, teamsAppId: id };
+      const app = await lookupCatalogApp(input.accessToken, input.appId);
+      return { ok: true, published: true, teamsAppId: app?.id, version: app?.version };
     }
-    const text = await rev.text().catch(() => '');
-    console.warn('[teams-catalog] review submit failed', { status: rev.status, body: text.slice(0, 300) });
-    return { ok: false, published: false, error: `Graph app-catalog review submit failed (${rev.status})` };
+    const text = await bodySnippet(rev);
+    console.warn('[teams-catalog] review submit failed', { status: rev.status, body: text });
+    return { ok: false, published: false, error: `Graph app-catalog review submit failed (${rev.status}): ${text}` };
   }
-  const text = await res.text().catch(() => '');
-  console.warn('[teams-catalog] publish failed', { status: res.status, body: text.slice(0, 300) });
-  return { ok: false, published: false, error: `Graph app-catalog publish failed (${res.status})` };
+  const text = await bodySnippet(res);
+  console.warn('[teams-catalog] publish failed', { status: res.status, body: text });
+  return { ok: false, published: false, error: `Graph app-catalog publish failed (${res.status}): ${text}` };
 }

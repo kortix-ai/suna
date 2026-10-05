@@ -4,16 +4,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 // comment there). `mock.module` is keyed by the specifier STRING, so this
 // must stay byte-identical to the one the module under test uses — a
 // mismatch silently detaches the mock and lets the real IndexedDB run.
-// eslint-disable-next-line no-restricted-imports
-import * as idb from '@kortix/sdk/internal/idb-sync-cache';
+import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
+import { useTabStore } from '@/stores/tab-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import {
   clearImpersonationSession,
   getImpersonationSession,
   setImpersonationSession,
 } from '@kortix/sdk';
-import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
-import { useTabStore } from '@/stores/tab-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import * as idb from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-line no-restricted-imports
 
 /**
  * `resetClientState()` must SETTLE even when its IndexedDB purge never does.
@@ -128,7 +127,31 @@ function restoreLocalStorage(): void {
   });
 }
 
+/**
+ * The SDK keeps per-user session state at module scope (transcripts, pending
+ * permission and question asks, turn receipts, model picks). A cross-tab
+ * sign-in swaps the identity without a page load, so `resetClientState` must
+ * run the SDK's own identity reset. Counted through a spread of the real
+ * module, like the IndexedDB mock above.
+ */
+let sdkIdentityResets = 0;
+const sdkReact = await import('@kortix/sdk/react');
+mock.module('@kortix/sdk/react', () => ({
+  ...sdkReact,
+  resetIdentityState: () => {
+    sdkIdentityResets += 1;
+  },
+}));
+
 const { resetClientState } = await import('./reset-client-state');
+
+describe('resetClientState resets the SDK identity state', () => {
+  test('runs resetIdentityState once per reset', async () => {
+    const before = sdkIdentityResets;
+    await resetClientState({ idbTimeoutMs: 20 });
+    expect(sdkIdentityResets).toBe(before + 1);
+  });
+});
 
 describe('resetClientState with an IndexedDB purge that never settles', () => {
   test('still resolves, on the clock', async () => {

@@ -20,27 +20,30 @@
  * own status mapping on top so the same resolver serves HTTP and WebSocket.
  */
 
-import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { type SQL, and, eq, gt, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { config } from '../config';
+import { timeUpstream } from '../middleware/upstream-timing';
 import {
+  getProvider,
   type ProviderName,
   type ResolvedSandboxIngress,
   type SandboxIngressRequest,
   type SandboxIngressRoute,
-  getProvider,
 } from '../platform/providers';
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
 import { db } from '../shared/db';
-import { KORTIX_USER_CONTEXT_HEADER, encodeKortixUserContext } from '../shared/kortix-user-context';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
+import {
+  encodeKortixUserContext,
+  KORTIX_USER_CONTEXT_HEADER,
+} from '../shared/kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;
 
 /** Everything the proxy needs to know about a sandbox, from one row fetch. */
 export interface SandboxRecord {
-  /** Which half of the split runtime this provider box implements. */
-  runtimeKind: 'worker' | 'environment';
   /** Internal session-sandbox uuid. */
   sandboxId: string;
   /** Provider-side id used in proxy URLs (`/v1/p/<externalId>/<port>`). */
@@ -75,6 +78,16 @@ interface ServiceKeyEntry {
 }
 
 const previewLinkCache = new Map<string, PreviewLinkEntry>();
+/**
+ * Provider resolves in flight, by the cache key. Concurrent misses on one
+ * (sandbox, port, transport) share one provider call instead of each paying
+ * it. An entry lives only as long as its call: a rejection is never kept.
+ */
+// replica-local: single-flight dedup of concurrent resolves in one process.
+// An entry dies with its promise, so there is no state to share; another
+// replica resolving the same key again costs one redundant provider call,
+// never a stale answer.
+const ingressInFlight = new Map<string, Promise<ResolvedSandboxIngress>>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
 const sandboxTouchCache = new Map<string, number>();
 
@@ -131,22 +144,14 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
     return cached.externalId;
   }
 
-  const [workerMatch] = await db
+  const [match] = await db
     .select({ externalId: sessionSandboxes.externalId })
     .from(sessionSandboxes)
     .where(sql`replace(lower(${sessionSandboxes.externalId}), '_', '-') = ${key}`)
     .orderBy(...preferredSandboxOrder())
     .limit(1);
 
-  const [environmentMatch] = workerMatch
-    ? []
-    : await db
-        .select({ externalId: sessionEnvironments.externalId })
-        .from(sessionEnvironments)
-        .where(sql`replace(lower(${sessionEnvironments.externalId}), '_', '-') = ${key}`)
-        .limit(1);
-
-  const externalId = workerMatch?.externalId ?? environmentMatch?.externalId ?? null;
+  const externalId = match?.externalId ?? null;
   hostLabelCache.set(key, { externalId, expiresAt: Date.now() + HOST_LABEL_MISS_TTL_MS });
   return externalId;
 }
@@ -157,159 +162,58 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
 /**
- * THE SESSION A BOX UNAMBIGUOUSLY BELONGS TO, or null when it shares.
+ * The one query behind `loadSandbox`. Its behavior on real rows is proven in
+ * `__tests__/integration-correlated-subquery-isolation.test.ts`.
  *
- * `loadSandbox` resolves by `external_id` with `orderBy(...).limit(1)`, so on a
- * shared cell host it returns whichever row the ordering prefers — NOT the
- * session whose page is open. Using that to address a cell appears to work for
- * the newest session and silently routes every older one into a stranger's
- * conversation. Measured on dev 2026-09-09: one box, four active sessions, and
- * the row that came back was the same one whichever session was being viewed.
- *
- * So the question is not "which session is this box's" but "does this box have
- * exactly one". One indexed count, and a shared host gets no answer — the cell
- * then refuses honestly instead of serving the wrong conversation.
+ * The session's agent comes from a typed LEFT JOIN — never a raw `sql`
+ * subquery. INC-2026-09-15: the subquery that used to live here rendered its
+ * correlation unqualified (`where "session_id" = "session_id"`, true for every
+ * row), so every proxied request got the agent of the first tuple of
+ * `project_sessions` — an agent of another customer — and agent-less
+ * prompts re-pointed session tokens at it. `project_sessions.session_id` is the
+ * primary key, so the join never multiplies rows.
  */
-export async function soleSessionOfSandbox(externalId: string): Promise<string | null> {
-  const rows = await db
-    .select({ sessionId: sessionSandboxes.sessionId })
+function sandboxRecordQuery(condition: SQL) {
+  return db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      externalId: sessionSandboxes.externalId,
+      sessionId: sessionSandboxes.sessionId,
+      agentName: projectSessions.agentName,
+      projectId: sessionSandboxes.projectId,
+      accountId: sessionSandboxes.accountId,
+      provider: sessionSandboxes.provider,
+      status: sessionSandboxes.status,
+      baseUrl: sessionSandboxes.baseUrl,
+      config: sessionSandboxes.config,
+    })
     .from(sessionSandboxes)
-    .where(
-      and(
-        eq(sessionSandboxes.externalId, externalId),
-        inArray(sessionSandboxes.status, ['provisioning', 'active']),
-      ),
-    )
-    .limit(2);
-  return rows.length === 1 ? rows[0].sessionId : null;
+    .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+    .where(condition)
+    .orderBy(...preferredSandboxOrder())
+    .limit(1);
 }
 
 export async function loadSandbox(externalId: string): Promise<SandboxRecord | null> {
-  const columns = {
-    sandboxId: sessionSandboxes.sandboxId,
-    externalId: sessionSandboxes.externalId,
-    sessionId: sessionSandboxes.sessionId,
-    agentName: sql<string | null>`(
-      select ${projectSessions.agentName}
-      from ${projectSessions}
-      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-      limit 1
-    )`,
-    projectId: sessionSandboxes.projectId,
-    accountId: sessionSandboxes.accountId,
-    provider: sessionSandboxes.provider,
-    status: sessionSandboxes.status,
-    baseUrl: sessionSandboxes.baseUrl,
-    config: sessionSandboxes.config,
-  };
-  const selectOne = async (condition: SQL, prefer: SQL[] = []) => {
-    const [match] = await db
-      .select(columns)
-      .from(sessionSandboxes)
-      .where(condition)
-      .orderBy(...prefer, ...preferredSandboxOrder())
-      .limit(1);
+  const selectOne = async (condition: SQL) => {
+    const [match] = await sandboxRecordQuery(condition);
     return match ?? null;
   };
 
-  // THE ID IN THE URL MAY NAME A SESSION, NOT A BOX.
-  //
-  // A session's `sandbox_id` IS its session id (sessions.ts writes
-  // `sandboxId: sessionId`) and is unique per session, while `external_id` is
-  // the provider box — which on a shared cell runner is ONE box for many
-  // sessions. Resolved by box, `record.sessionId` was whichever row
-  // `preferredSandboxOrder` liked best, so the proxy could not tell one
-  // session's `/global/event` from another's: the cell refused, the browser
-  // polled, and a reply that already existed appeared seconds later. Measured
-  // on dev 2026-09-09, session 8e211e7c on a box shared by four: every in-box
-  // call 503, 57/39/39 polls in 30 minutes.
-  //
-  // So a per-session base URL carries the SESSION id in the sandbox segment —
-  // `/v1/p/<sessionId>/<port>` — and this lookup prefers that match. One query,
-  // not two: an exact `sandbox_id` hit is ordered ahead of an `external_id`
-  // hit, and the two cannot collide (a uuid against `sbx_…`). Ingress still
-  // goes to `record.externalId`, so the box is reached exactly as before; only
-  // WHICH session the request is for becomes knowable.
-  //
   // The exact comparison is the indexed path used by REST proxy URLs. Preview
-  // subdomains need the lower() fallback because browsers lowercase hostnames
-  // while Platinum external ids contain uppercase ULIDs.
-  //
-  // `sandbox_id` is a uuid column and the id in a URL is usually `sbx_…`:
-  // compared as uuid, Postgres refuses the string outright (22P02, "invalid
-  // input syntax for type uuid") and the whole request is a 500 — measured on
-  // dev 2026-09-09 the moment this shipped, on every box-shaped URL including
-  // the API's own prompt delivery. So the comparison is on the TEXT form.
+  // subdomains need the fallback because browsers lowercase hostnames while
+  // Platinum external ids contain uppercase ULIDs.
   const row =
-    (await selectOne(
-      or(
-        sql`${sessionSandboxes.sandboxId}::text = ${externalId}`,
-        eq(sessionSandboxes.externalId, externalId),
-      )!,
-      [sql`case when ${sessionSandboxes.sandboxId}::text = ${externalId} then 0 else 1 end`],
-    )) ??
+    (await selectOne(eq(sessionSandboxes.externalId, externalId))) ??
     (await selectOne(sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`));
 
-  if (!row) {
-    const environmentColumns = {
-      sandboxId: sql<string>`coalesce(${sessionEnvironments.environmentId}::text, ${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
-      externalId: sessionEnvironments.externalId,
-      sessionId: sessionEnvironments.sessionId,
-      agentName: sql<string | null>`(
-        select ${projectSessions.agentName}
-        from ${projectSessions}
-        where ${projectSessions.sessionId} = ${sessionEnvironments.sessionId}
-        limit 1
-      )`,
-      projectId: sessionEnvironments.projectId,
-      accountId: sessionEnvironments.accountId,
-      provider: sessionEnvironments.provider,
-      status: sessionEnvironments.status,
-      baseUrl: sessionEnvironments.baseUrl,
-      serviceKey: sql<string | null>`(
-        select ${sessionSandboxes.config}->>'serviceKey'
-        from ${sessionSandboxes}
-        where ${sessionSandboxes.sessionId} = ${sessionEnvironments.sessionId}
-        limit 1
-      )`,
-    };
-    const selectEnvironment = async (condition: SQL) => {
-      const [match] = await db
-        .select(environmentColumns)
-        .from(sessionEnvironments)
-        .where(condition)
-        .limit(1);
-      return match ?? null;
-    };
-    const environment =
-      (await selectEnvironment(eq(sessionEnvironments.externalId, externalId))) ??
-      (await selectEnvironment(
-        sql`lower(${sessionEnvironments.externalId}) = lower(${externalId})`,
-      ));
-    if (!environment) return null;
-
-    setCachedServiceKey(externalId, environment.serviceKey);
-    return {
-      runtimeKind: 'environment',
-      sandboxId: environment.sandboxId,
-      externalId: environment.externalId ?? externalId,
-      sessionId: environment.sessionId,
-      agentName: environment.agentName ?? null,
-      projectId: environment.projectId,
-      accountId: environment.accountId,
-      provider: environment.provider,
-      status: environment.status,
-      baseUrl: environment.baseUrl || '',
-      serviceKey: environment.serviceKey,
-    };
-  }
+  if (!row) return null;
 
   const config = (row.config || {}) as Record<string, unknown>;
   const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
   setCachedServiceKey(externalId, serviceKey);
 
   return {
-    runtimeKind: 'worker',
     sandboxId: row.sandboxId,
     externalId: row.externalId ?? externalId,
     sessionId: row.sessionId,
@@ -373,14 +277,32 @@ export async function resolveSandboxIngress(
 
   const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
   if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
-  const provider = getProvider(record.provider as ProviderName);
-  const ingress = await provider.resolveIngress(record.externalId, request);
-
-  const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
-  if (cacheTtlMs > 0) {
-    previewLinkCache.set(key, { ingress, expiresAt: Date.now() + cacheTtlMs });
+  let resolving = ingressInFlight.get(key);
+  if (!resolving) {
+    const provider = getProvider(record.provider as ProviderName);
+    const started: Promise<ResolvedSandboxIngress> = (async () =>
+      provider.resolveIngress(record.externalId, request))()
+      .then((ingress) => {
+        const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
+        // An invalidation during the call removed this entry: the link goes to
+        // the callers already waiting on it and is not cached.
+        if (cacheTtlMs > 0 && ingressInFlight.get(key) === started) {
+          previewLinkCache.set(key, { ingress, expiresAt: Date.now() + cacheTtlMs });
+        }
+        return ingress;
+      })
+      .finally(() => {
+        if (ingressInFlight.get(key) === started) ingressInFlight.delete(key);
+      });
+    ingressInFlight.set(key, started);
+    resolving = started;
   }
-  return ingress;
+  // A provider API call is upstream time by the middleware's own contract; a
+  // stale link makes every proxied request pay this inline (KRTX-471: ~5 s
+  // give-ups whose `upstream_ms` held only the failed dials). A request that
+  // joins a call in flight waits on the provider too, so it is timed the same.
+  const shared = resolving;
+  return timeUpstream(() => shared);
 }
 
 export function routeSandboxIngress(
@@ -390,12 +312,18 @@ export function routeSandboxIngress(
   return getProvider(sandbox.provider as ProviderName).routeIngress(request);
 }
 
+/** Drop every cached link, and every resolve in flight, under a key prefix. */
+function dropIngress(prefix: string): void {
+  for (const entries of [previewLinkCache, ingressInFlight]) {
+    for (const key of entries.keys()) {
+      if (key.startsWith(prefix)) entries.delete(key);
+    }
+  }
+}
+
 /** Drop a cached preview link — called when an upstream returns 502/503 (stale). */
 export function invalidatePreviewLink(sandboxId: string, port: number): void {
-  const prefix = `${sandboxId}:${port}:`;
-  for (const key of previewLinkCache.keys()) {
-    if (key.startsWith(prefix)) previewLinkCache.delete(key);
-  }
+  dropIngress(`${sandboxId}:${port}:`);
 }
 
 // ── Upstream auth headers (shared by HTTP forward + WebSocket) ────────────────
@@ -443,11 +371,7 @@ export async function wakeSandbox(externalId: string): Promise<void> {
     const [live] = await db
       .select({ deadlineAt: sessionSandboxes.deadlineAt })
       .from(sessionSandboxes)
-      .where(
-        record.runtimeKind === 'environment'
-          ? eq(sessionSandboxes.sessionId, record.sessionId)
-          : eq(sessionSandboxes.sandboxId, record.sandboxId),
-      )
+      .where(eq(sessionSandboxes.sandboxId, record.sandboxId))
       .limit(1);
     if (!live || live.deadlineAt.getTime() <= Date.now()) {
       console.log(`[PREVIEW] Wake refused for expired sandbox ${externalId}`);
@@ -457,24 +381,14 @@ export async function wakeSandbox(externalId: string): Promise<void> {
     // Read the provider state BEFORE starting: a box that was actually stopped
     // comes back with no runtime, and every turn open on it is over. Without
     // this the fresh runtime's first idle read closed such turns `completed`
-    // and the interrupted prompt was never redelivered (Essentia 2026-08-25).
+    // and the interrupted prompt was never redelivered (SampleCo 2026-08-25).
     const before =
       typeof provider.getStatus === 'function'
         ? await provider.getStatus(externalId).catch(() => 'unknown' as const)
         : ('unknown' as const);
     await provider.ensureRunning(externalId);
     console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
-    if (record.runtimeKind === 'environment') {
-      await db
-        .update(sessionEnvironments)
-        .set({ status: 'active', lastUsedAt: new Date(), updatedAt: new Date() })
-        .where(
-          and(
-            eq(sessionEnvironments.sessionId, record.sessionId),
-            eq(sessionEnvironments.externalId, externalId),
-          ),
-        );
-    } else if (before === 'stopped') {
+    if (before === 'stopped') {
       await recoverTurnsAfterRuntimeRestart({
         sandboxId: record.sandboxId,
         sessionId: record.sessionId,
@@ -513,23 +427,10 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
         metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
-      .where(
-        and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')),
-      )
+      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
       .orderBy(...preferredSandboxOrder())
       .limit(1);
-    if (!row) {
-      await db
-        .update(sessionEnvironments)
-        .set({ lastUsedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(sessionEnvironments.externalId, sandboxId),
-            eq(sessionEnvironments.status, 'active'),
-          ),
-        );
-      return;
-    }
+    if (!row) return;
 
     await db
       .update(sessionSandboxes)
@@ -544,19 +445,38 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
     // deadline BY CONSTRUCTION so the heal is refused for exactly the same
     // rows, and additionally a box stopped by a transient provider blip while
     // its deadline is still live IS healed — which the flag got wrong.
+    //
+    // The SESSION status follows the BOX, never the request. A stopped or
+    // errored box that the heal just revived is active, so its session is
+    // running; a REFUSED heal (the box is parked and its deadline has passed)
+    // must leave the session exactly as the stop left it. The session write
+    // used to be unconditional, so one passive request to a parked box —
+    // an open preview tab or a share link — flipped the session back to
+    // `running` while the box stayed stopped. That session then reported
+    // running for hours after its last turn (KRTX-378) and the DB-only
+    // stuck-session reconcile could not catch it while the traffic kept
+    // bumping `updated_at`.
+    let boxIsRunning = !['error', 'stopped'].includes(row.status);
     if (['error', 'stopped'].includes(row.status)) {
-      await db
+      const healed = await db
         .update(sessionSandboxes)
         .set({ status: 'active', lastUsedAt: now, updatedAt: now })
         .where(
-          and(eq(sessionSandboxes.sandboxId, row.sandboxId), gt(sessionSandboxes.deadlineAt, now)),
-        );
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            gt(sessionSandboxes.deadlineAt, now),
+          ),
+        )
+        .returning({ sandboxId: sessionSandboxes.sandboxId });
+      boxIsRunning = healed.length > 0;
     }
 
-    await db
-      .update(projectSessions)
-      .set({ status: 'running', updatedAt: now })
-      .where(eq(projectSessions.sessionId, row.sessionId));
+    if (boxIsRunning) {
+      await db
+        .update(projectSessions)
+        .set({ status: 'running', updatedAt: now })
+        .where(eq(projectSessions.sessionId, row.sessionId));
+    }
   } catch (err) {
     sandboxTouchCache.delete(sandboxId);
     console.warn('[PREVIEW] Failed to mark sandbox used:', err);
@@ -572,30 +492,15 @@ export async function markSandboxErrored(externalId: string): Promise<void> {
     const [row] = await db
       .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status })
       .from(sessionSandboxes)
-      .where(
-        and(eq(sessionSandboxes.externalId, externalId), ne(sessionSandboxes.status, 'archived')),
-      )
+      .where(and(eq(sessionSandboxes.externalId, externalId), ne(sessionSandboxes.status, 'archived')))
       .orderBy(...preferredSandboxOrder())
       .limit(1);
-    if (!row) {
-      await db
-        .update(sessionEnvironments)
-        .set({ status: 'error', updatedAt: new Date() })
-        .where(
-          and(
-            eq(sessionEnvironments.externalId, externalId),
-            ne(sessionEnvironments.status, 'archived'),
-          ),
-        );
-      return;
-    }
+    if (!row) return;
     await db
       .update(sessionSandboxes)
       .set({ status: 'error', updatedAt: new Date() })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-    console.warn(
-      `[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${externalId}) as error after all retries failed`,
-    );
+    console.warn(`[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${externalId}) as error after all retries failed`);
   } catch (err) {
     console.warn('[PREVIEW] Failed to auto-mark sandbox as error:', err);
   }
@@ -604,8 +509,5 @@ export async function markSandboxErrored(externalId: string): Promise<void> {
 /** Drop every cached entry for a sandbox (service key + all per-port links). */
 export function invalidateSandbox(externalId: string): void {
   serviceKeyCache.delete(externalId);
-  const prefix = `${externalId}:`;
-  for (const key of previewLinkCache.keys()) {
-    if (key.startsWith(prefix)) previewLinkCache.delete(key);
-  }
+  dropIngress(`${externalId}:`);
 }

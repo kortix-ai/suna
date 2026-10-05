@@ -13,51 +13,19 @@
  * zustand-like pattern via useState + useCallback.
  */
 
-import {
-  DEFAULT_MANAGED_MODEL_IDS,
-  MANAGED_FLAGSHIP_MODEL_ID,
-  defaultEnabledModelIds,
-} from '@kortix/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import type { ModelKey } from '../core/models/model-key';
+import { computeLatestSet, createModelVisibility } from '../core/models/model-visibility';
 import { safeSetItem } from '../platform/storage/managed-storage';
+import { registerIdentityReset } from './identity-reset-registry';
 import type { FlatModel } from './model-flatten';
-import { createModelLookup } from './model-lookup';
 import { shouldSetSessionAgentName } from './session-agent-name-guard';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ModelKey = {
-  providerID: string;
-  modelID: string;
-  /**
-   * The REAL upstream provider a `kortix`-gateway model resolves against
-   * ('anthropic', 'openai', 'codex', 'kortix', ...) — see `FlatModel.provider`
-   * (model-flatten.ts). When present, `subProviderOf` uses it directly instead
-   * of parsing `modelID`, so connection-gating never depends on the wire id
-   * happening to be namespaced `<provider>/<model>`. Optional so every
-   * existing caller (which only ever had `providerID`/`modelID`) keeps
-   * compiling unchanged.
-   */
-  provider?: string;
-};
-
-// ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
-// The LLM gateway identifies a model by its "wire model" — what opencode sends
-// as `body.model`. Under the kortix gateway provider that is just the modelID
-// (a bare managed id like 'glm-5.3-flash', or a BYOK 'provider/model'). A direct
-// provider model uses 'provider/model'.
-export function modelKeyToWire(model: ModelKey): string {
-  if (model.providerID === 'kortix' || model.providerID === 'opencode') return model.modelID;
-  return `${model.providerID}/${model.modelID}`;
-}
-
-export function wireToModelKey(wire: string): ModelKey {
-  // Managed (bare) and BYOK ('provider/model') both live under the kortix
-  // provider in the picker namespace, so the modelID carries the full wire id.
-  return { providerID: 'kortix', modelID: wire };
-}
+export { modelKeyToWire, wireToModelKey, type ModelKey } from '../core/models/model-key';
 
 type Visibility = 'show' | 'hide';
 
@@ -114,7 +82,7 @@ function capSessionMap<V>(map: Record<string, V> | undefined): Record<string, V>
 
 /**
  * Guarantee the persisted store's shape no matter what localStorage holds.
- * Proven live (Essentia 2026-08-26): a malformed `opencode-model-store-v1`
+ * Proven live (SampleCo 2026-08-26): a malformed `opencode-model-store-v1`
  * value crashed every route with "a.user is not iterable" because consumers
  * iterate `store.user` and `loadStore` returned `JSON.parse(raw)` unvalidated.
  * Corrupt or legacy data degrades to defaults — it never throws downstream.
@@ -171,6 +139,18 @@ function setStore(next: ModelStore) {
   for (const fn of _listeners) fn();
 }
 
+// On an identity change the previous user's picks must not survive in memory:
+// the next `setStore` would write them back to storage under the new user.
+registerIdentityReset(() => {
+  _store = { user: [], recent: [], variant: {} };
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(STORE_KEY);
+  } catch {
+    // Storage-blocked context: the in-memory reset above is what matters.
+  }
+  for (const fn of _listeners) fn();
+});
+
 function subscribe(fn: () => void) {
   _listeners.add(fn);
   return () => _listeners.delete(fn);
@@ -210,107 +190,9 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
   });
 }
 
-// ============================================================================
-// Latest logic — direct port from SolidJS reference
-// ============================================================================
-
-/**
- * Fallback allowlist for the rare non-gateway model that carries no release-date
- * metadata: only the flagship shows out of the box, everything else is opt-in via
- * "Manage models".
- */
-const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>([MANAGED_FLAGSHIP_MODEL_ID]);
-
-/**
- * Provider id of the managed Kortix LLM gateway (see the sandbox's
- * `opencode.ts` provider config). It's a small, hand-picked catalog we control,
- * so every model in it is shown by default — `isVisible` short-circuits the
- * date-based "latest" heuristic for this provider. The newest-per-family
- * behaviour is kept for BYO providers, which is what it's for.
- */
-const MANAGED_GATEWAY_PROVIDER_ID = 'kortix';
-
-const SUBSCRIPTION_PROVIDER_ID = 'codex';
-
-// The gateway bakes its ENTIRE routable catalog (every BYOK provider's models)
-// into opencode so any model is callable the instant its key is connected — no
-// session restart. The picker must therefore NOT show all of it by default: a
-// `kortix` model is on out-of-the-box only when it's a platform-managed default
-// or its underlying provider is connected (live, from project secrets). The
-// rest stay one search away. Single source for the managed set lives in
-// @kortix/llm-catalog (mirrors the gateway's managed-ids).
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
-
-// `explicitProvider` (a model's `FlatModel.provider` / `ModelKey.provider`) is
-// the robust path — the gateway now serves it directly, so grouping/gating
-// never has to guess the real provider from string-splitting `modelID`.
-// String-splitting on "/" remains only a fallback for a stale/older baked
-// catalog that predates the field.
-function subProviderOf(modelID: string, explicitProvider?: string): string {
-  if (explicitProvider) return explicitProvider;
-  const slash = modelID.indexOf('/');
-  return slash === -1 ? modelID : modelID.slice(0, slash);
-}
-
-/**
- * True when at least one model in `allModels` is actually usable right now —
- * i.e. would work if sent, not merely present in the catalog. The gateway
- * bakes its ENTIRE routable catalog into every project regardless of plan or
- * connected keys (`providers.connected` always includes `kortix`), so raw
- * catalog presence (`providerListHasModels`, `models.length`) is never a
- * reliable "nothing is connected" signal — it's true even for a brand-new,
- * unpaid, no-BYOK account. This mirrors the entitlement half of `isVisible`
- * (managed models gated by `!freeTier`, BYOK-under-gateway models gated by
- * their sub-provider being connected) without its display-curation half
- * (the "latest per family" / flagship-only default view) — a model can be
- * fully usable while `isVisible` still hides it by default.
- */
-export function hasUsableModel(
-  allModels: FlatModel[],
-  opts: { connectedProviderIds?: Set<string>; freeTier?: boolean },
-): boolean {
-  const connectedProviderIds = opts.connectedProviderIds;
-  const freeTier = opts.freeTier ?? false;
-  return allModels.some((m) => {
-    if (m.providerID !== MANAGED_GATEWAY_PROVIDER_ID) {
-      // Native/direct provider models: flattenModels only includes models
-      // from CONNECTED providers, so presence here already means usable.
-      return true;
-    }
-    if (MANAGED_MODEL_IDS.has(m.modelID)) return !freeTier;
-    const sub = subProviderOf(m.modelID, m.provider);
-    return sub === SUBSCRIPTION_PROVIDER_ID
-      ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
-      : (connectedProviderIds?.has(sub) ?? false);
-  });
-}
-
-export function isDefaultVisible(model: ModelKey): boolean {
-  return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
-}
-
-/**
- * "Latest" models, keyed `providerID:modelID` for the store's lookup maps.
- *
- * The RULE itself lives in `@kortix/llm-catalog` — the gateway enforces the
- * same default set server-side, and two copies of "newest per family within
- * the window" is exactly how the picker and "Manage models" drifted apart.
- * This is only the key-shape adapter.
- */
-export function computeLatestSet(models: FlatModel[]): Set<string> {
-  return defaultEnabledModelIds(
-    models.map((m) => ({
-      // Feed the store's own composite key through as the candidate id so the
-      // result needs no lossy id → model lookup on the way back out.
-      id: `${m.providerID}:${m.modelID}`,
-      released: m.releaseDate,
-      family: m.family,
-      // `provider` is the real upstream under the gateway (every model is
-      // served as `kortix`); for a native provider it IS the providerID.
-      provider: m.provider ?? m.providerID,
-    })),
-  );
-}
+// The default-visibility rule is framework-free (`createModelVisibility`), so
+// every host resolves the picker's default view identically.
+export { computeLatestSet, hasUsableModel, isDefaultVisible } from '../core/models/model-visibility';
 
 // ============================================================================
 // Hook
@@ -345,74 +227,19 @@ export function useModelStore(
   const freeTier = opts?.freeTier ?? false;
   const catalogModels = opts?.catalogModels ?? allModels;
 
-  // Compute latest set
+  // Compute latest set (for `isLatest`; `createModelVisibility` derives its own).
   const latestSet = useMemo(() => computeLatestSet(catalogModels), [catalogModels]);
-  const modelByKey = useMemo(() => createModelLookup(catalogModels), [catalogModels]);
 
-  // Visibility map from user preferences
-  const visibilityMap = useMemo(() => {
-    const map = new Map<string, Visibility>();
-    for (const item of store.user) {
-      map.set(`${item.providerID}:${item.modelID}`, item.visibility);
-    }
-    return map;
-  }, [store.user]);
-
-  // Check if a model is visible (port of SolidJS visible() function)
-  const isVisible = useCallback(
-    (model: ModelKey): boolean => {
-      const key = `${model.providerID}:${model.modelID}`;
-      const state = visibilityMap.get(key);
-      if (state === 'hide') return false;
-      // Gateway (kortix) models. The catalog is namespaced `<provider>/<model>`,
-      // and connection is AUTHORITATIVE — it overrides any stale `show` pin, so a
-      // disconnected provider's models disappear (even ones you'd used) and a
-      // freshly connected provider's models appear, with no per-model pinning.
-      // Visible only when: Codex subscription (`codex/<id>`, present once
-      // connected), a platform-managed default, or the BYOK provider is
-      // connected. Everything else is search-only so the catalog can't flood.
-      if (model.providerID === MANAGED_GATEWAY_PROVIDER_ID) {
-        const sub = subProviderOf(model.modelID, model.provider);
-        // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
-        // gate its display on the subscription being connected.
-        const connected =
-          sub === SUBSCRIPTION_PROVIDER_ID
-            ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
-            : (connectedProviderIds?.has(sub) ?? false);
-        if (MANAGED_MODEL_IDS.has(model.modelID)) {
-          if (freeTier) return false;
-          return true;
-        }
-        if (!connected) return false;
-        if (state === 'show') return true;
-        if (latestSet.has(key)) return true;
-        const m = modelByKey.get(key);
-        if (!m?.releaseDate) return isDefaultVisible(model);
-        try {
-          const d = new Date(m.releaseDate);
-          if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
-        } catch {
-          return isDefaultVisible(model);
-        }
-        return false;
-      }
-      if (state === 'show') return true;
-      if (latestSet.has(key)) return true;
-      const m = modelByKey.get(key);
-      // No (or invalid) release metadata — the managed Kortix gateway case.
-      // Default to showing only the flagship; every other model is opt-in via
-      // "Manage models". Providers that DO carry release dates keep the
-      // newest-per-family "latest" behaviour handled above.
-      if (!m?.releaseDate) return isDefaultVisible(model);
-      try {
-        const d = new Date(m.releaseDate);
-        if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
-      } catch {
-        return isDefaultVisible(model);
-      }
-      return false;
-    },
-    [visibilityMap, latestSet, modelByKey, connectedProviderIds, freeTier],
+  // Check if a model is visible — the framework-free rule, fed this store's pins.
+  const isVisible = useMemo(
+    () =>
+      createModelVisibility({
+        catalogModels,
+        pins: store.user,
+        connectedProviderIds,
+        freeTier,
+      }),
+    [catalogModels, store.user, connectedProviderIds, freeTier],
   );
 
   // Check if a model is in the latest set

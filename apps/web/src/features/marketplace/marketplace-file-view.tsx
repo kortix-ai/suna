@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 
 import { UnifiedMarkdown } from '@/components/markdown';
@@ -40,6 +41,7 @@ export function MarketplaceFileView({
   /** The already-loaded, SSR'd README/SKILL.md body (frontmatter already stripped). */
   readme: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The default doc's body is already loaded + SSR'd — don't refetch it.
   const useLoadedReadme = selected != null && selected === readmeTarget && readme != null;
   const fileQuery = useQuery({
@@ -60,22 +62,23 @@ export function MarketplaceFileView({
       {!useLoadedReadme && filename ? (
         <div className="text-muted-foreground px-1 font-mono text-xs">{filename}</div>
       ) : null}
-      <div className="bg-secondary rounded-md border p-4">
+      <div className="bg-secondary rounded-md border px-4 py-2.5">
         {!useLoadedReadme && fileQuery.isLoading ? (
           <div className="text-muted-foreground flex h-40 items-center justify-center">
             <Loading />
           </div>
         ) : content == null ? (
-          <p className="text-muted-foreground text-sm">Couldn&rsquo;t load this file.</p>
+          <p className="text-muted-foreground text-sm">{tI18nComplete.raw('text3fcb2c5a6ec8')}</p>
         ) : asMarkdown ? (
-          <div className="prose-sm text-foreground/90 max-w-none">
+          <div className="prose-sm text-foreground max-w-none">
             <UnifiedMarkdown
               content={useLoadedReadme ? content : stripFrontmatter(content)}
-              allowHtml={false}
+              trust="untrusted"
+              variant="document"
             />
           </div>
         ) : (
-          <pre className="text-foreground/90 overflow-x-auto font-mono text-xs leading-relaxed">
+          <pre className="text-foreground overflow-x-auto font-mono text-xs leading-relaxed">
             <code>{content}</code>
           </pre>
         )}

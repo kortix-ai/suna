@@ -2,6 +2,8 @@
  * Fetch-based SSE client with header-based authentication.
  */
 
+import { retiredEndpointError } from '../http/api/errors';
+
 export interface SSEStreamOptions {
   url: string;
   token: string;
@@ -20,10 +22,12 @@ export interface SSEStream {
   removeEventListener: (event: string, handler: (data: string) => void) => void;
 }
 
-export function buildTunnelEventStreamUrl(apiUrl: string): string {
-  let trimmed = apiUrl;
-  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
-  return `${trimmed}/tunnel/permission-requests/stream`;
+/**
+ * @deprecated The API deleted `/tunnel/permission-requests/stream` with tunnel
+ * permission requests. Always throws `ENDPOINT_RETIRED`. Removed in the next major.
+ */
+export function buildTunnelEventStreamUrl(_apiUrl: string): string {
+  throw retiredEndpointError('buildTunnelEventStreamUrl');
 }
 
 export function createSSEStream(options: SSEStreamOptions): SSEStream {
@@ -138,12 +142,13 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
   return { connect, close, addEventListener, removeEventListener };
 }
 
+/**
+ * @deprecated The API deleted `/tunnel/permission-requests/stream` with tunnel
+ * permission requests. Always throws `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export function createTunnelEventStream(
-  apiUrl: string,
-  options: Omit<SSEStreamOptions, 'url'>,
+  _apiUrl: string,
+  _options: Omit<SSEStreamOptions, 'url'>,
 ): SSEStream {
-  return createSSEStream({
-    ...options,
-    url: buildTunnelEventStreamUrl(apiUrl),
-  });
+  throw retiredEndpointError('createTunnelEventStream');
 }

@@ -1,20 +1,50 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, onKortixSandboxImage, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
-  it('runs the REST flows, SDK, worker quality, runner unit tests, and route coverage by default', () => {
+  it('keeps agentic tests opt-in and rejects combining them with another mode', () => {
+    const plan = buildLocalTestPlan(['--agentic-only', 'tests/example.e2e.ts', '--no-cache']);
+    expect(plan.mode).toBe('agentic');
+    expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/agentic.ts', 'tests/example.e2e.ts', '--no-cache']);
+    expect(buildLocalTestPlan([]).lanes.some((lane) => lane.name === 'agentic')).toBe(false);
+    expect(buildLocalTestPlan(['--agentic-only', '--tag', 'live-session']).lanes[0]?.command)
+      .toEqual(['bun', 'tests/bin/agentic.ts', '--tag', 'live-session']);
+    expect(() => buildLocalTestPlan(['--agentic-only', '--full'])).toThrow('choose only one');
+  });
+  it('runs the REST flows, SDK, DB suites, runner unit tests, and route coverage concurrently by default', () => {
     const plan = buildLocalTestPlan([]);
 
     expect(plan.mode).toBe('core');
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
       'sdk',
-      'worker-quality',
+      'db-suites',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
+      'package-quality',
     ]);
+    // Package quality is its own stage: the attestation's `packages` lane.
+    expect(plan.stages).toHaveLength(2);
+    expect(plan.stages[1]?.map((lane) => lane.name)).toEqual(['package-quality']);
+    expect(plan.lanes.find((lane) => lane.name === 'db-suites')?.command).toEqual([
+      'bun',
+      'tests/bin/db-suites.ts',
+    ]);
+  });
+
+  it('runs only the DB suites and passes path filters through', () => {
+    const plan = buildLocalTestPlan(['--db-only', 'integration-prompt-inbox', 'tests/migration']);
+
+    expect(plan.mode).toBe('db');
+    expect(plan.lanes).toEqual([
+      {
+        name: 'db-suites',
+        command: ['bun', 'tests/bin/db-suites.ts', 'integration-prompt-inbox', 'tests/migration'],
+      },
+    ]);
+    expect(() => buildLocalTestPlan(['--db-only', '--sdk-only'])).toThrow('choose only one');
   });
 
   it('runs one filtered flow without paying the SDK or unit-test cost', () => {
@@ -32,7 +62,7 @@ describe('local test runner', () => {
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
       'sdk',
-      'worker-quality',
+      'db-suites',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
@@ -42,20 +72,10 @@ describe('local test runner', () => {
     expect(plan.lanes.at(-1)).toEqual({
       name: 'package-quality',
       command: ['bun', 'tests/bin/package-quality.ts'],
-      env: {
-        KORTIX_PACKAGE_SKIP_SDK_TESTS: '1',
-        KORTIX_PACKAGE_SKIP_WORKER_QUALITY: '1',
-      },
+      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
     });
     expect(plan.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
-      [
-        'api-cli-flows',
-        'sdk',
-        'worker-quality',
-        'flow-runner-unit',
-        'route-coverage',
-        'worktree-unit',
-      ],
+      ['api-cli-flows', 'sdk', 'db-suites', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
       ['browser'],
       ['package-quality'],
     ]);
@@ -104,10 +124,10 @@ describe('local test runner', () => {
     );
   });
 
-  it('uses one CI browser worker and preserves explicit concurrency', () => {
-    expect(resolveBrowserWorkers(undefined, true)).toBe(1);
-    expect(resolveBrowserWorkers(undefined, false)).toBe(2);
-    expect(resolveBrowserWorkers('2', true)).toBe(2);
+  it('uses two browser workers in CI and locally, and preserves explicit concurrency', () => {
+    expect(resolveBrowserWorkers(undefined)).toBe(2);
+    expect(resolveBrowserWorkers('1')).toBe(1);
+    expect(resolveBrowserWorkers('3')).toBe(3);
   });
 
   it('runs app and package tests without starting the product stack', () => {
@@ -294,6 +314,28 @@ describe('local test runner', () => {
     );
   });
 
+  it('runs the turn-latency benchmark alone and forwards --target through untouched', () => {
+    const plan = buildLocalTestPlan(['--latency', '--target', 'https://dev-api.kortix.com']);
+
+    expect(plan.mode).toBe('latency');
+    expect(plan.lanes).toEqual([
+      {
+        name: 'latency',
+        command: [
+          'bun',
+          'tests/bin/latency-bench.ts',
+          '--target',
+          'https://dev-api.kortix.com',
+        ],
+      },
+    ]);
+    expect(plan.stages).toEqual([[plan.lanes[0]]]);
+  });
+
+  it('rejects --latency combined with another mode', () => {
+    expect(() => buildLocalTestPlan(['--latency', '--sdk-only'])).toThrow('choose only one');
+  });
+
   it('retries a cold local web route until it is ready', async () => {
     let attempts = 0;
     const sleeps: number[] = [];
@@ -312,5 +354,10 @@ describe('local test runner', () => {
 
     expect(attempts).toBe(3);
     expect(sleeps).toEqual([250, 250]);
+  });
+
+  it('detects a Kortix sandbox image by its baked model catalog', () => {
+    expect(onKortixSandboxImage(new URL(import.meta.url).pathname)).toBe(true);
+    expect(onKortixSandboxImage('/nonexistent/kortix-test-llm-catalog.json')).toBe(false);
   });
 });

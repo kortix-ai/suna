@@ -6,12 +6,14 @@ deployed, so a hand-edited ACL, an imported VPC, or a brand-new region cannot
 drift past the control unnoticed.
 
 Rules are evaluated the way AWS evaluates them: ascending rule number, first
-match wins. A permissive rule that sits behind an explicit deny is therefore
-not a finding, and a rule is only checked against the protocol it applies to
-("all protocols" applies to both TCP and UDP).
+match wins, and each address family walks the rule list on its own, because a
+rule only ever applies to packets whose source is in the rule's family. A
+permissive rule that sits behind an explicit deny is therefore not a finding,
+and a rule is only checked against the protocol it applies to ("all protocols"
+applies to both TCP and UDP).
 
   ./audit-nacl-admin-ports.py                       # current credentials
-  ./audit-nacl-admin-ports.py --profile essentia    # a specific account
+  ./audit-nacl-admin-ports.py --profile sampleco    # a specific account
   ./audit-nacl-admin-ports.py --region us-east-2    # one region
   ./audit-nacl-admin-ports.py --json                # machine-readable
 
@@ -28,7 +30,7 @@ import sys
 ADMIN_PORTS = {22: "SSH", 3389: "RDP"}
 # NACL protocol numbers. "-1" means every protocol.
 PROTOCOLS = {"6": "tcp", "17": "udp"}
-OPEN_CIDRS = {"0.0.0.0/0", "::/0"}
+FAMILIES = {"CidrBlock": "0.0.0.0/0", "Ipv6CidrBlock": "::/0"}
 
 
 def aws(args: list[str], profile: str | None) -> dict:
@@ -67,30 +69,29 @@ def audit_acl(acl: dict, region: str) -> list[dict]:
     findings = []
     for port, service in ADMIN_PORTS.items():
         for protocol, protocol_name in PROTOCOLS.items():
-            for entry in inbound:
-                if not rule_matches(entry, port, protocol):
-                    continue
-                cidr = entry.get("CidrBlock") or entry.get("Ipv6CidrBlock")
-                # Narrower sources are fine; only an internet-wide rule decides
-                # the outcome, and only the first matching one applies.
-                if cidr not in OPEN_CIDRS:
-                    continue
-                if entry["RuleAction"] == "allow":
-                    findings.append(
-                        {
-                            "region": region,
-                            "network_acl_id": acl["NetworkAclId"],
-                            "vpc_id": acl["VpcId"],
-                            "is_default": acl["IsDefault"],
-                            "port": port,
-                            "service": service,
-                            "protocol": protocol_name,
-                            "rule_number": entry["RuleNumber"],
-                            "cidr": cidr,
-                            "subnets": [a["SubnetId"] for a in acl.get("Associations", [])],
-                        }
-                    )
-                break  # first match wins, allow or deny
+            for cidr_field, wide_cidr in FAMILIES.items():
+                for entry in inbound:
+                    if not rule_matches(entry, port, protocol):
+                        continue
+                    cidr = entry.get(cidr_field)
+                    if cidr != wide_cidr:  # other family, or a narrower source
+                        continue
+                    if entry["RuleAction"] == "allow":
+                        findings.append(
+                            {
+                                "region": region,
+                                "network_acl_id": acl["NetworkAclId"],
+                                "vpc_id": acl["VpcId"],
+                                "is_default": acl["IsDefault"],
+                                "port": port,
+                                "service": service,
+                                "protocol": protocol_name,
+                                "rule_number": entry["RuleNumber"],
+                                "cidr": cidr,
+                                "subnets": [a["SubnetId"] for a in acl.get("Associations", [])],
+                            }
+                        )
+                    break  # first internet-wide rule of this family wins
     return findings
 
 

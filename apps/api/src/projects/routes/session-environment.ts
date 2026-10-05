@@ -7,22 +7,19 @@
  * traffic runs over the edge, never through the session proxy.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
-  SessionEnvironmentError,
-  SessionEnvironmentStopError,
   ensureSessionEnvironment,
   readSessionEnvironment,
+  SessionEnvironmentError,
   stopSessionEnvironment,
 } from '../../platform/services/session-environment';
-import { db } from '../../shared/db';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, type loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { guardSession, sessionAccessDenied, type SessionNeed } from '../lib/session-access';
 
 const EnvironmentSchema = z.object({
   session_id: z.string(),
@@ -30,9 +27,6 @@ const EnvironmentSchema = z.object({
   external_id: z.string().nullable(),
   preview_url: z.string().nullable(),
   preview_token: z.string().nullable(),
-});
-const EnsureEnvironmentSchema = EnvironmentSchema.extend({
-  rpc_secret: z.string().nullable(),
 });
 
 interface SessionForEnvironment {
@@ -42,13 +36,19 @@ interface SessionForEnvironment {
 }
 
 /**
- * Shared gate: the project loads for the caller, the session exists in it,
- * and — when the caller IS a session — it may only touch its OWN environment.
- * Returns the pieces every handler needs or a Response to send as-is.
+ * Shared gate: the project loads for the caller, and the session resolves
+ * through the shared session guard — scoped to THIS project and account,
+ * visible to the caller, not deleted. `read` needs only visibility; `ensure`
+ * and `stop` spend or stop compute, so they need lifecycle authority (owner or
+ * project manager). A session-scoped caller (the worker's KORTIX_TOKEN) may
+ * only address its OWN environment — a compromised worker cannot enumerate or
+ * boot siblings. Returns the pieces every handler needs or a Response to send
+ * as-is.
  */
 async function authorizeEnvironmentCall(
   c: Parameters<Parameters<typeof projectsApp.openapi>[1]>[0],
   action: (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTIONS],
+  need: SessionNeed,
 ): Promise<
   | { kind: 'error'; response: Response }
   | {
@@ -67,13 +67,9 @@ async function authorizeEnvironmentCall(
 > {
   const projectId = c.req.param('projectId') ?? '';
   const sessionId = c.req.param('sessionId') ?? '';
-  if (!UUID_V4_REGEX.test(sessionId)) {
-    return { kind: 'error', response: c.json({ error: 'Invalid session id' }, 400) };
-  }
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };
-  // A session-scoped caller (the worker's KORTIX_TOKEN) may only address its
-  // own environment — a compromised worker cannot enumerate or boot siblings.
+  const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+  if (binding.kind === 'error') return binding;
+  const { loaded } = binding;
   const callerSession = callerKortixSessionId(c);
   if (callerSession && callerSession !== sessionId) {
     return { kind: 'error', response: c.json({ error: 'Forbidden' }, 403) };
@@ -81,30 +77,9 @@ async function authorizeEnvironmentCall(
   if (!callerSession) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
   }
-  // Scoped to the project AND account the caller was just authorized for.
-  // Authorization above proves the caller may act on `projectId`; without
-  // these two predicates the ROW is fetched by session id alone, so a caller
-  // authorized on their own project could pass any other project's session id
-  // and act on it — authorization checked against one object, action taken on
-  // another. Mirrors `loadProjectSessionRow` (projects/lib/access.ts).
-  const [session] = await db
-    .select({
-      agentName: projectSessions.agentName,
-      baseRef: projectSessions.baseRef,
-      metadata: projectSessions.metadata,
-    })
-    .from(projectSessions)
-    .where(
-      and(
-        eq(projectSessions.sessionId, sessionId),
-        eq(projectSessions.projectId, loaded.row.projectId),
-        eq(projectSessions.accountId, loaded.row.accountId),
-      ),
-    )
-    .limit(1);
-  if (!session || (session.metadata as Record<string, unknown> | null)?.deletedAt) {
-    return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };
-  }
+  const guard = await guardSession(c, loaded, sessionId, need);
+  if (!guard.ok) return { kind: 'error', response: sessionAccessDenied(c, guard) };
+  const session = guard.session.row;
   return {
     kind: 'ok',
     projectId,
@@ -136,30 +111,23 @@ function serialize(info: {
   };
 }
 
-function serializeWithRpc(info: Parameters<typeof serialize>[0] & { rpcSecret: string | null }) {
-  return {
-    ...serialize(info),
-    rpc_secret: info.rpcSecret,
-  };
-}
-
 projectsApp.openapi(
   createRoute({
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/environment/ensure',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/environment/ensure',
+    summary: 'Ensure the session sandbox is running',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(EnsureEnvironmentSchema, 'The session environment, provisioned or resumed'),
+      200: json(EnvironmentSchema, 'The session environment, provisioned or resumed'),
       ...errors(400, 403, 404, 409, 502, 504),
     },
   }),
   async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START, 'lifecycle');
     if (gate.kind === 'error') return gate.response as never;
     // Environments exist for worker sessions only: an OpenCode session's own
     // sandbox IS its environment, and ensuring a second box for it would just
@@ -188,7 +156,7 @@ projectsApp.openapi(
           gitAuthToken: null,
         },
       });
-      return c.json(serializeWithRpc(info));
+      return c.json(serialize(info));
     } catch (err) {
       if (err instanceof SessionEnvironmentError) {
         return c.json({ error: err.message }, err.status as never);
@@ -203,7 +171,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/environment',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/environment',
+    summary: 'Get the session sandbox state',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -214,7 +182,7 @@ projectsApp.openapi(
     },
   }),
   async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ, 'read');
     if (gate.kind === 'error') return gate.response as never;
     const info = await readSessionEnvironment(gate.sessionId);
     if (!info) return c.json({ error: 'No environment' }, 404);
@@ -227,34 +195,21 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/environment/stop',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/environment/stop',
+    summary: 'Stop the session sandbox',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
       200: json(EnvironmentSchema, 'The stopped environment'),
-      ...errors(400, 403, 404, 502),
+      ...errors(400, 403, 404),
     },
   }),
   async (c) => {
-    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP, 'lifecycle');
     if (gate.kind === 'error') return gate.response as never;
-    try {
-      const info = await stopSessionEnvironment(gate.sessionId);
-      if (!info) return c.json({ error: 'No environment' }, 404);
-      return c.json(serialize(info));
-    } catch (err) {
-      if (err instanceof SessionEnvironmentStopError) {
-        return c.json(
-          {
-            error: 'Environment stop could not be confirmed',
-            provider_status: err.providerStatus,
-          },
-          502,
-        );
-      }
-      throw err;
-    }
+    const info = await stopSessionEnvironment(gate.sessionId);
+    if (!info) return c.json({ error: 'No environment' }, 404);
+    return c.json(serialize(info));
   },
 );

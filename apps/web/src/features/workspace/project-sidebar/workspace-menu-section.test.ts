@@ -21,12 +21,11 @@ describe('WorkspaceMenuSection reaches account settings two ways', () => {
   test('renders an "Account settings" row that navigates to the resolved account', () => {
     // Comments are stripped above, so this file's own prose about the row —
     // and the component's — cannot satisfy the match.
-    expect(code).toContain('Account settings');
-    // An anchor, not a handler. A menu row that calls `router.push` runs the
-    // RSC fetch cold at click time, and Next turns that fetch into a full
-    // document load whenever it answers wrong — an auth bounce, a build-id
-    // skew mid-deploy, a network blip (fetch-server-response.js:148/177/181).
-    expect(code).toContain('<Link href={`/accounts/${switcherAccountId}`} prefetch>');
+    expect(code).toContain("t('workspace.accountSettings')");
+    // A `HubLink`, not a `<Link>`: the account hub has no route — it is a
+    // modal over the page behind this menu — so the row must not navigate.
+    // Still an anchor, so a modified click opens the real URL in a new tab.
+    expect(code).toContain('<HubLink to={hubTarget(switcherAccountId)}>');
     expect(code).not.toContain('router.push');
     expect(code).toContain('resolveSwitcherAccountId({');
   });
@@ -41,7 +40,10 @@ describe('WorkspaceMenuSection reaches account settings two ways', () => {
     // Resolved during RENDER, which is what lets the row be an anchor at all.
     // Resolving inside the click handler is the shape that forced a cold fetch.
     expect(code).toContain('resolveWorkspaceRowNavigation(workspace, activeProjectId)');
+    // Two destinations, two elements: a switch is a navigation, the active
+    // row's account settings is a modal.
     expect(code).toContain('href={target.href}');
+    expect(code).toContain("target.kind === 'account-settings'");
     // The side effects hang off the ANCHOR's click, not Radix's `onSelect`.
     // `onSelect` fires for a cmd-click too, but `next/link` hands a modified
     // click back to the browser — so switch state would mutate in the tab the

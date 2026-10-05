@@ -3,8 +3,8 @@ import { Hono } from 'hono';
 
 import {
   TokenBucketRateLimiter,
-  consumeProjectSessionCreateBudget,
   createProjectSecretWriteRateLimitMiddleware,
+  createProjectWebhookRateLimitMiddleware,
   resetRateLimiters,
 } from './rate-limit';
 import { config } from '../config';
@@ -83,27 +83,43 @@ describe('createProjectSecretWriteRateLimitMiddleware — the 2026-08-21 storm b
   });
 });
 
-describe('consumeProjectSessionCreateBudget — hourly create ceiling', () => {
-  test('the default budget admits exactly 100 creates then refuses with retry timing', () => {
+describe('IP-keyed limiters read the caller through the trusted-proxy rule', () => {
+  function webhookApp(limit: number) {
     resetRateLimiters();
-    for (let i = 0; i < 100; i++) {
-      expect(consumeProjectSessionCreateBudget('proj-x').allowed).toBe(true);
+    (config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN = limit;
+    const app = new Hono();
+    app.use('/:projectId/hook', createProjectWebhookRateLimitMiddleware());
+    app.post('/:projectId/hook', (c) => c.json({ ok: true }));
+    return app;
+  }
+
+  test('a fresh forged X-Forwarded-For per request does not buy a fresh bucket', async () => {
+    const app = webhookApp(3);
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const res = await app.request('/proj-ip/hook', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': `10.0.0.${i}, 203.0.113.7, 172.70.1.2` },
+      });
+      statuses.push(res.status);
     }
-    const denied = consumeProjectSessionCreateBudget('proj-x');
-    expect(denied.allowed).toBe(false);
-    expect(denied.limit).toBe(100);
-    expect(denied.retryAfterMs).toBeGreaterThan(0);
+    expect(statuses).toEqual([200, 200, 200, 429, 429]);
+    delete (config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN;
     resetRateLimiters();
   });
 
-  test('projects never share a budget — one runaway cannot starve a neighbor', () => {
-    resetRateLimiters();
-    (config as any).KORTIX_PROJECT_SESSION_CREATES_PER_HOUR = 2;
-    expect(consumeProjectSessionCreateBudget('runaway').allowed).toBe(true);
-    expect(consumeProjectSessionCreateBudget('runaway').allowed).toBe(true);
-    expect(consumeProjectSessionCreateBudget('runaway').allowed).toBe(false);
-    expect(consumeProjectSessionCreateBudget('innocent').allowed).toBe(true);
-    delete (config as any).KORTIX_PROJECT_SESSION_CREATES_PER_HOUR;
+  test('two real callers behind the same proxies keep separate buckets', async () => {
+    const app = webhookApp(1);
+    const first = await app.request('/proj-ip/hook', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '203.0.113.7, 172.70.1.2' },
+    });
+    const second = await app.request('/proj-ip/hook', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '198.51.100.4, 172.70.1.2' },
+    });
+    expect([first.status, second.status]).toEqual([200, 200]);
+    delete (config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN;
     resetRateLimiters();
   });
 });

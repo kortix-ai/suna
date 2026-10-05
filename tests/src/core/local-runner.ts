@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
@@ -26,12 +27,15 @@ export interface LocalTestPlan {
     | 'core'
     | 'flows'
     | 'sdk'
+    | 'db'
     | 'browser'
     | 'packages'
     | 'target'
     | 'target-full'
     | 'target-api-full'
     | 'target-browser-full'
+    | 'latency'
+    | 'agentic'
     | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
@@ -87,8 +91,9 @@ function assertShardValue(value: string | undefined, flag: string): void {
 
 export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const full = args.includes('--full');
-  const flowsOnly = args.includes('--flows-only') || hasFlowFilter(args);
+  const flowsOnly = args.includes('--flows-only') || (!args.includes('--agentic-only') && hasFlowFilter(args));
   const sdkOnly = args.includes('--sdk-only');
+  const dbOnly = args.includes('--db-only');
   const browserOnly = args.includes('--browser-only');
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
@@ -99,22 +104,33 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // deploy-preview (one sandbox origin, one job by construction) and local use.
   const targetApiFullOnly = args.includes('--target-api-full');
   const targetBrowserFullOnly = args.includes('--target-browser-full');
+  // §5 of the turn-latency spec (PR #7840): `pnpm test -- --latency --target <origin>`.
+  // Deliberately NOT one of DEPLOYED_TARGET_MODES below — that preflight pins
+  // staging.kortix.com by hostname (resolveTargetSmokeConfig), but this lane's
+  // whole point is to run against an arbitrary deployed origin (dev today,
+  // preview or staging tomorrow). tests/bin/latency-bench.ts owns its own
+  // minimal target validation and health probe instead.
+  const latencyOnly = args.includes('--latency');
+  const agenticOnly = args.includes('--agentic-only');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
   const modes = [
     full,
     flowsOnly,
     sdkOnly,
+    dbOnly,
     browserOnly,
     packagesOnly,
     targetSmoke,
     targetFull,
     targetApiFullOnly,
     targetBrowserFullOnly,
+    latencyOnly,
+    agenticOnly,
   ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, or --target-browser-full',
+      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, --latency, or --agentic-only',
     );
   }
   if (browserShardArgs.length > 1) {
@@ -143,6 +159,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--full' &&
       arg !== '--flows-only' &&
       arg !== '--sdk-only' &&
+      arg !== '--db-only' &&
       arg !== '--browser-only' &&
       arg !== '--packages-only' &&
       arg !== '--target-smoke' &&
@@ -160,9 +177,13 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     name: 'sdk',
     command: ['pnpm', '--filter', '@kortix/sdk', 'test'],
   };
-  const workerQuality: LocalTestLane = {
-    name: 'worker-quality',
-    command: ['bun', 'tests/bin/worker-quality.ts'],
+  // Every PostgreSQL-backed test file, one process and one fresh database per
+  // file (src/core/db-suites.ts). Needs local Supabase; the runner starts it
+  // before any stage that contains this lane. `--db-only` passes the remaining
+  // arguments through as file-path filters.
+  const dbSuites: LocalTestLane = {
+    name: 'db-suites',
+    command: ['bun', 'tests/bin/db-suites.ts', ...(dbOnly ? flowArgs : [])],
   };
   const runnerUnit: LocalTestLane = {
     name: 'flow-runner-unit',
@@ -189,6 +210,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packageQuality: LocalTestLane = {
     name: 'package-quality',
     command: ['bun', 'tests/bin/package-quality.ts'],
+  };
+  // Everything except the mode flag itself passes straight through, so
+  // `--target <origin>`, `--iterations N`, etc. reach the binary untouched —
+  // it owns its own arg parsing, matching how `flowArgs` treats `--id`/`--domain`.
+  const latencyArgs = args.filter((arg) => arg !== '--latency');
+  const latency: LocalTestLane = {
+    name: 'latency',
+    command: ['bun', 'tests/bin/latency-bench.ts', ...latencyArgs],
   };
   const targetApi: LocalTestLane = {
     name: 'target-api-smoke',
@@ -245,8 +274,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     },
   };
 
+  if (agenticOnly) {
+    const agentic: LocalTestLane = {
+      name: 'agentic',
+      command: ['bun', 'tests/bin/agentic.ts', ...args.filter((arg) => arg !== '--agentic-only' && arg !== '--')],
+    };
+    return { mode: 'agentic', lanes: [agentic], stages: [[agentic]] };
+  }
   if (flowsOnly) return { mode: 'flows', lanes: [flows], stages: [[flows]] };
   if (sdkOnly) return { mode: 'sdk', lanes: [sdk], stages: [[sdk]] };
+  if (dbOnly) return { mode: 'db', lanes: [dbSuites], stages: [[dbSuites]] };
   if (browserOnly) return { mode: 'browser', lanes: [browser], stages: [[browser]] };
   if (packagesOnly) {
     return { mode: 'packages', lanes: [packageQuality], stages: [[packageQuality]] };
@@ -254,6 +291,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   if (targetSmoke) {
     const lanes = [targetApi, targetBrowser];
     return { mode: 'target', lanes, stages: [lanes] };
+  }
+  if (latencyOnly) {
+    return { mode: 'latency', lanes: [latency], stages: [[latency]] };
   }
   if (targetApiFullOnly) {
     return { mode: 'target-api-full', lanes: [targetApiFull], stages: [[targetApiFull]] };
@@ -289,15 +329,12 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       ...packageQuality,
       // Full mode runs the SDK as a named lane. Keep package-only mode complete,
       // but do not execute the same SDK tests twice inside one full run.
-      env: {
-        KORTIX_PACKAGE_SKIP_SDK_TESTS: '1',
-        KORTIX_PACKAGE_SKIP_WORKER_QUALITY: '1',
-      },
+      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
     };
     const lanes = [
       fullFlows,
       sdk,
-      workerQuality,
+      dbSuites,
       runnerUnit,
       routeCoverage,
       worktreeUnit,
@@ -311,17 +348,24 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
       stages: [
-        [fullFlows, sdk, workerQuality, runnerUnit, routeCoverage, worktreeUnit],
+        [fullFlows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit],
         [fullBrowser],
         [fullPackageQuality],
       ],
     };
   }
-  const lanes = [flows, sdk, workerQuality, runnerUnit, routeCoverage, worktreeUnit];
+  const lanes = [flows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
+  // `pnpm test` is the whole attested suite minus the browser journeys, so it
+  // also runs package quality (the attestation's `packages` lane) after the
+  // core stage. The SDK runs once, as its own lane.
+  const corePackageQuality: LocalTestLane = {
+    ...packageQuality,
+    env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+  };
   return {
     mode: 'core',
-    lanes,
-    stages: [lanes],
+    lanes: [...lanes, corePackageQuality],
+    stages: [lanes, [corePackageQuality]],
   };
 }
 
@@ -468,8 +512,51 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   }
 }
 
+/** Lanes that start the local Supabase, so they need Docker. */
+const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
+/** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
+const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
+
+/** The Kortix agent-box marker: the platform bakes its model catalog and the
+ *  rest of the box state (/opt/kortix/{scaffold.git,managed-skills},
+ *  /etc/pt-env) into every sandbox image, and nothing writes them elsewhere.
+ *  The agent-server suites read that state, so the `packages` lane cannot
+ *  attest a PR here; the scheduled Tests run on a clean CI runner is the
+ *  backstop. */
+export function onKortixSandboxImage(catalog = '/opt/kortix/llm-catalog.json'): boolean {
+  return existsSync(catalog);
+}
+
+function dockerAvailable(): boolean {
+  try {
+    return Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+  } catch {
+    return false; // no docker binary at all (a factory sandbox)
+  }
+}
+
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   const plan = buildLocalTestPlan(args);
+  // Sanctioned environment skips: verify-attestation.mjs records them, never
+  // counts a skip as a pass, and `--strict` (a push to main) rejects them.
+  const skipped = new Map<string, string>();
+  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
+    if (!dockerAvailable()) {
+      // No Docker (a factory sandbox): the DB lanes cannot run.
+      for (const lane of plan.lanes)
+        if (DOCKER_LANES.has(lane.name)) skipped.set(lane.name, 'skipped-no-db');
+    }
+    if (onKortixSandboxImage()) {
+      for (const lane of plan.lanes)
+        if (lane.name === 'package-quality') skipped.set(lane.name, 'skipped-sandbox-image');
+    }
+    if (skipped.size > 0) {
+      plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));
+      plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.has(l.name)));
+      for (const [name, value] of skipped) console.log(`[test] SKIP ${name} (${value}, not a pass)`);
+      if (plan.lanes.length === 0) return 1;
+    }
+  }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
   let localStack: LocalStackHandle | null = null;
@@ -483,6 +570,13 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
       console.log(
         `[test] deployed-target api=${target.apiUrl} web=${target.webUrl} sha=${target.expectedSha}`,
       );
+    }
+    if (plan.lanes.some((lane) => lane.name === 'db-suites') && plan.mode !== 'full') {
+      // The flows lane would start Supabase on its own, but the DB lane needs it
+      // too and must not race a second `supabase start`. Start it once here;
+      // `ke2e local` then reuses it, and the `finally` below stops it.
+      localSupabase = await ensureLocalSupabase(resolveLocalTopology(root), { autoStart: true });
+      console.log(`[test] local-supabase ${localSupabase.started ? 'started' : 'reused'}`);
     }
     if (plan.mode === 'browser' || plan.mode === 'full') {
       const topology = resolveLocalTopology(root);
@@ -545,5 +639,32 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     );
   }
   console.log(`[test] benchmark ${outputPath}`);
+  // A filtered (--id, path filter) or sharded run proves less than its lane
+  // name says, so it never writes an attestation.
+  const MODE_FLAGS = ['--', '--full', '--flows-only', '--sdk-only', '--db-only', '--browser-only', '--packages-only'];
+  const partial = args.some((a) => !MODE_FLAGS.includes(a));
+  if (ATTESTED_MODES.has(plan.mode) && !partial) {
+    // Attestation lanes group the runner lanes. A group is written only when
+    // every member ran (or was skipped) in this run, or when one failed.
+    const GROUPS: Record<string, string[]> = {
+      core: ['sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      packages: ['package-quality'],
+      'db-suites': ['api-cli-flows', 'db-suites'],
+      browser: ['browser'],
+    };
+    const lanes: Record<string, string> = {};
+    for (const [group, members] of Object.entries(GROUPS)) {
+      const ran = results.filter((r) => members.includes(r.name));
+      const skipValues = members.map((m) => skipped.get(m)).filter((v) => v !== undefined);
+      if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
+      else if (ran.length + skipValues.length === members.length) {
+        lanes[group] = skipValues[0] ?? 'pass';
+      }
+    }
+    Bun.spawnSync(
+      ['node', 'tests/verify-attestation.mjs', 'write', ...Object.entries(lanes).map(([k, v]) => `${k}=${v}`)],
+      { cwd: root, stdout: 'inherit', stderr: 'inherit' },
+    );
+  }
   return failed.length === 0 ? 0 : 1;
 }

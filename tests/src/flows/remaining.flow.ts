@@ -179,9 +179,7 @@ flow(
     domain: "sessions",
     routes: [
       "POST /v1/projects/:projectId/sessions/:sessionId/commit-push",
-      "POST /v1/projects/:projectId/sessions/:sessionId/ensure-opencode",
       "POST /v1/projects/:projectId/sessions/:sessionId/restart",
-      "POST /v1/projects/:projectId/sessions/:sessionId/wake",
     ],
   },
   async (ctx) => {
@@ -191,14 +189,8 @@ flow(
     await ctx.step("commit-push unknown session → 4xx", async () => {
       (await sub("/v1/projects/:projectId/sessions/:sessionId/commit-push")).status([400, 404]);
     });
-    await ctx.step("ensure-opencode unknown session → 4xx", async () => {
-      (await sub("/v1/projects/:projectId/sessions/:sessionId/ensure-opencode")).status([400, 404]);
-    });
     await ctx.step("restart unknown session → 4xx", async () => {
       (await sub("/v1/projects/:projectId/sessions/:sessionId/restart")).status([400, 404, 202]);
-    });
-    await ctx.step("wake unknown session → 4xx", async () => {
-      (await sub("/v1/projects/:projectId/sessions/:sessionId/wake")).status([400, 404, 202]);
     });
   },
 );

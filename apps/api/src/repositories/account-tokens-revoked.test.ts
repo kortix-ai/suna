@@ -19,34 +19,28 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { accountTokens, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { accountTokens, sessionSandboxes } from '@kortix/db';
 
 let capturedWhere: unknown = null;
 let rows: Array<Record<string, unknown>> = [];
 let leaseRows: Array<Record<string, unknown>> = [];
-let leaseTable: unknown = null;
-let leaseWhere: unknown = null;
 
 mock.module('../shared/db', () => ({
   db: {
     select: () => ({
-      from: (table: unknown) =>
-        table === sessionSandboxes || table === sessionEnvironments
-          ? {
-              where: (cond: unknown) => {
-                leaseTable = table;
-                leaseWhere = cond;
-                return { limit: async () => leaseRows };
-              },
-            }
-          : {
-              innerJoin: () => ({
-                where: (cond: unknown) => {
-                  capturedWhere = cond;
-                  return { limit: async () => rows };
-                },
-              }),
-            },
+      from: (table: unknown) => table === sessionSandboxes ? ({
+        where: (cond: unknown) => {
+          capturedWhere = cond;
+          return { limit: async () => leaseRows };
+        },
+      }) : ({
+        innerJoin: () => ({
+          where: (cond: unknown) => {
+            capturedWhere = cond;
+            return { limit: async () => rows };
+          },
+        }),
+      }),
     }),
     update: () => ({
       set: () => ({ where: async () => undefined, catch: () => undefined }),
@@ -82,8 +76,6 @@ beforeEach(() => {
   capturedWhere = null;
   rows = [];
   leaseRows = [];
-  leaseTable = null;
-  leaseWhere = null;
 });
 
 describe('validateAccountToken revocation gate', () => {
@@ -153,88 +145,39 @@ describe('validateAccountToken revocation gate', () => {
 
   test('a stopped session cannot use its retained sandbox credential', async () => {
     const { secretKey } = generateAccountTokenPair();
-    rows = [
-      {
-        tokenId: 'tok-session',
-        accountId: 'acct-1',
-        userId: 'user-1',
-        projectId: 'project-1',
-        sessionId: 'session-1',
-        status: 'active',
-        expiresAt: null,
-        lastUsedAt: new Date(),
-        createdAt: new Date(),
-        agentGrant: null,
-        patIdleRevokeDays: null,
-      },
-    ];
+    rows = [{
+      tokenId: 'tok-session', accountId: 'acct-1', userId: 'user-1',
+      projectId: 'project-1', sessionId: 'session-1', status: 'active',
+      expiresAt: null, lastUsedAt: new Date(), createdAt: new Date(),
+      agentGrant: null, patIdleRevokeDays: null,
+    }];
     leaseRows = [];
 
     const result = await validateAccountToken(secretKey);
 
-    expect(result).toEqual({ isValid: false, error: 'Session token is not active' });
+    expect(result).toEqual({
+      isValid: false,
+      error: 'Session token is not active',
+      // KRTX-446: the lease refusal is a DEAD credential — the auth gate
+      // marks it with the typed 401 so a retrying client can stop.
+      credentialDead: true,
+    });
   });
 
   test('an active session can use its sandbox credential', async () => {
     const { secretKey } = generateAccountTokenPair();
-    rows = [
-      {
-        tokenId: 'tok-session',
-        accountId: 'acct-1',
-        userId: 'user-1',
-        projectId: 'project-1',
-        sessionId: 'session-1',
-        status: 'active',
-        expiresAt: null,
-        lastUsedAt: new Date(),
-        createdAt: new Date(),
-        agentGrant: null,
-        patIdleRevokeDays: null,
-      },
-    ];
+    rows = [{
+      tokenId: 'tok-session', accountId: 'acct-1', userId: 'user-1',
+      projectId: 'project-1', sessionId: 'session-1', status: 'active',
+      expiresAt: null, lastUsedAt: new Date(), createdAt: new Date(),
+      agentGrant: null, patIdleRevokeDays: null,
+    }];
     leaseRows = [{ status: 'active' }];
 
     const result = await validateAccountToken(secretKey);
 
     expect(result.isValid).toBe(true);
     expect(result.sessionId).toBe('session-1');
-    expect(leaseTable).toBe(sessionSandboxes);
-  });
-
-  test('an environment credential leases only its exact environment row', async () => {
-    const { secretKey } = generateAccountTokenPair();
-    rows = [
-      {
-        tokenId: 'tok-environment',
-        accountId: 'acct-1',
-        userId: 'user-1',
-        projectId: 'project-1',
-        sessionId: 'session-1',
-        runtimeKind: 'environment',
-        runtimeId: '00000000-0000-4000-a000-000000000020',
-        status: 'active',
-        expiresAt: null,
-        lastUsedAt: new Date(),
-        createdAt: new Date(),
-        agentGrant: null,
-        patIdleRevokeDays: null,
-      },
-    ];
-    leaseRows = [{ status: 'active' }];
-
-    const result = await validateAccountToken(secretKey);
-
-    expect(result.isValid).toBe(true);
-    expect(result.runtimeKind).toBe('environment');
-    expect(result.runtimeId).toBe('00000000-0000-4000-a000-000000000020');
-    expect(leaseTable).toBe(sessionEnvironments);
-    expect(filteredColumns(leaseWhere)).toEqual([
-      'session_id',
-      'account_id',
-      'project_id',
-      'environment_id',
-      'status',
-    ]);
   });
 
   test('a malformed token is refused before any lookup runs', async () => {

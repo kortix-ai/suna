@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The ⋯ trigger and popover that expose a completed turn's numbers — when it
  * finished, how long it took, what it cost, how many tokens it burned.
@@ -16,7 +17,7 @@
  * gives for free.
  */
 
-import { DotsThreeOutlineIcon } from '@phosphor-icons/react';
+import { DotsThreeIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ export function SessionTurnMeta({
   cost: TurnCostInfo | null | undefined;
   className?: string;
 }): React.ReactElement | null {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState<number | null>(null);
 
@@ -61,8 +63,9 @@ export function SessionTurnMeta({
   // `rows.length` still has to decide whether the trigger exists at all —
   // so the fallback below stands in for a clock read that hasn't happened.
   const rows = useMemo(
-    () => sessionTurnMetaRows({ endedAt, now: now ?? endedAt ?? 0, durationMs, cost }),
-    [endedAt, now, durationMs, cost],
+    () =>
+      sessionTurnMetaRows({ endedAt, now: now ?? endedAt ?? 0, durationMs, cost }, tI18nComplete),
+    [endedAt, now, durationMs, cost, tI18nComplete],
   );
 
   // A ⋯ that opens onto an empty panel is worse than no ⋯ at all.
@@ -75,11 +78,11 @@ export function SessionTurnMeta({
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label="Turn details"
+          aria-label={tI18nComplete.raw('text3fa5e03012d7')}
           data-testid="session-turn-meta-trigger"
           className={cn(className)}
         >
-          <DotsThreeOutlineIcon weight="fill" className="text-foreground/70 size-[1.05rem]" />
+          <DotsThreeIcon weight="bold" className="text-foreground/70 size-5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent

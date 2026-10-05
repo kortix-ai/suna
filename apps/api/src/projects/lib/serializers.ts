@@ -2,9 +2,11 @@ import type {
   Project,
   ProjectSession,
   Secret,
+  SecretConsumer,
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
+import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -15,10 +17,12 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { normalizeAuditClientSource } from '../../shared/audit-client-source';
+import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
+import { requestClientIp } from '../../shared/client-ip';
+import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
@@ -34,7 +38,7 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { proxyGitUrl } from './sessions';
+import { isWarmProjectSession } from './warm-sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -51,10 +55,7 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
-  clientReportedSource?: string | null;
 };
-
-export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 // Session-status constants live in a dependency-free module so lean callers (the
 // sandbox reaper) can import them without this heavy serializer graph. Re-exported
@@ -120,6 +121,10 @@ export function serializeSession(
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
     ownerName?: string | null;
+    /** The owner's profile photo, for the starter mark. */
+    ownerAvatarUrl?: string | null;
+    /** Display name of a member/service-account initiator that is not the owner. */
+    initiatorName?: string | null;
     /** Whether created_by identifies a human, service account, or stale principal. */
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
@@ -142,10 +147,9 @@ export function serializeSession(
   // the metadata object alone would still have leaked the OpenCode-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
-  const opencodeSessions =
-    canAccess && Array.isArray(row.metadata?.opencode_sessions)
-      ? row.metadata.opencode_sessions
-      : [];
+  const opencodeSessions = canAccess
+    ? normalizeRuntimeSessionSnapshots(row.metadata?.opencode_sessions)
+    : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
   // over the auto title (metadata.name) mirrored from OpenCode server-side
@@ -164,7 +168,7 @@ export function serializeSession(
   // snapshot above is [] when canAccess is false). It outranks the generated
   // auto title so list reads resolve the SAME string the session header shows
   // live, but never a user rename.
-  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.opencodeSessionId);
+  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -174,11 +178,22 @@ export function serializeSession(
     sandbox_provider: row.sandboxProvider,
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.runtimeSessionId,
+    opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
+    labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
-    status: row.status,
+    // A warm (pre-created, never-prompted) session whose box is up must not
+    // claim `running`: nothing has ever run in it, and every list painted those
+    // shells as phantom green "Running" rows (KRTX-1466). Report the status it
+    // held while its box booted; the first accepted turn drops the warm marker
+    // (session-activity.ts) and the row reads `running` again. The row itself
+    // still lists and still bills — see session-inventory.ts (KRTX-1068).
+    status:
+      row.status === 'running' && isWarmProjectSession(row.metadata)
+        ? 'provisioning'
+        : row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
     // other callers that serialize with canAccess=false. Metadata holds
@@ -188,14 +203,30 @@ export function serializeSession(
         ? trimSessionMetadataForList(row.metadata ?? {})
         : (row.metadata ?? {})
       : {},
+    runtime_sessions: opencodeSessions,
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
     owner_name: ctx?.ownerName ?? null,
+    owner_avatar_url: ctx?.ownerAvatarUrl ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     origin: row.origin,
+    parent_session_id: row.parentSessionId ?? null,
+    initiator: row.initiatorType
+      ? {
+          type: row.initiatorType,
+          id: row.initiatorId,
+          label: sessionInitiatorLabel(
+            { type: row.initiatorType, id: row.initiatorId },
+            ctx?.initiatorName ??
+              (row.initiatorId && row.initiatorId === row.createdBy
+                ? (ctx?.ownerName ?? ctx?.ownerEmail ?? null)
+                : null),
+          ),
+        }
+      : null,
     secrets_allowlist: canAccess ? (row.secretsAllowlist ?? null) : null,
     sharing: visibilityToIntent(
       row.visibility as 'private' | 'project' | 'restricted',
@@ -359,19 +390,12 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-function clientIp(c: Context) {
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null
-  );
-}
-
 export function requestAuditContext(c: Context): RequestAuditContext {
   return {
     method: c.req.method,
     path: c.req.path,
-    ip: clientIp(c),
+    ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
-    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 
@@ -440,6 +464,46 @@ export function secretDeliveryBlockedReason(
   return granted ? null : 'no_agent_grant';
 }
 
+function secretConsumerFor(
+  row: SecretRow | undefined,
+  strategy: SecretDeliveryStrategy,
+): SecretConsumer | null {
+  if (strategy === 'denied') return null;
+  if (row?.scope === 'connector') return 'connector';
+  if (row?.consumer != null) return row.consumer;
+  if (strategy === 'runtime') return 'sandbox';
+  if (strategy === 'egress') return 'network';
+  switch (row?.egressPolicy?.backend) {
+    case 'llm_gateway':
+    case 'connector':
+    case 'git_proxy':
+      return row.egressPolicy.backend;
+    case 'kortix_fetch':
+      return 'http_broker';
+    default:
+      return null;
+  }
+}
+
+function secretDeliveryAvailable(
+  strategy: SecretDeliveryStrategy,
+  consumer: SecretConsumer | null,
+  backend: NonNullable<SecretRow['egressPolicy']>['backend'] | undefined,
+): boolean {
+  if (consumer === 'connector') return true;
+  switch (strategy) {
+    case 'runtime':
+      return consumer === 'sandbox';
+    case 'egress':
+      return consumer === 'network';
+    case 'broker':
+      return consumer === 'llm_gateway' || consumer === 'git_proxy' ||
+        (consumer === 'http_broker' && backend === 'kortix_fetch');
+    default:
+      return false;
+  }
+}
+
 /**
  * The view of one project secret (one IDENTIFIER): the shared/project row
  * merged with the requesting member's own private override (used today only by
@@ -471,30 +535,7 @@ export function buildSecretView(input: {
   const requiresRotation =
     strategy !== 'runtime' &&
     (!deliveryRow?.rotatedAt || deliveryRow.rotatedAt < deliveryRow.updatedAt);
-  const backend = deliveryRow?.egressPolicy?.backend;
-  const legacyConsumer =
-    strategy === 'runtime'
-      ? 'sandbox'
-      : strategy === 'denied'
-        ? null
-        : strategy === 'egress'
-          ? 'network'
-          : backend === 'llm_gateway'
-            ? 'llm_gateway'
-            : backend === 'connector'
-              ? 'connector'
-              : backend === 'git_proxy'
-                ? 'git_proxy'
-                : backend === 'kortix_fetch'
-                  ? 'http_broker'
-                  : null;
-  const storedConsumer =
-    strategy === 'denied'
-      ? null
-      : deliveryRow?.scope === 'connector'
-        ? 'connector'
-        : (deliveryRow?.consumer ?? legacyConsumer);
-  const consumer = storedConsumer;
+  const consumer = secretConsumerFor(deliveryRow, strategy);
   return {
     identifier,
     name,
@@ -520,25 +561,18 @@ export function buildSecretView(input: {
     can_manage_shared: canManageShared && !system,
     strategy,
     consumer,
-    delivery_status:
-      (strategy === 'runtime' && consumer === 'sandbox') ||
-      (strategy === 'broker' && consumer === 'llm_gateway') ||
-      (strategy === 'broker' && consumer === 'git_proxy') ||
-      (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' && consumer === 'network') ||
-      consumer === 'connector'
-        ? 'available'
-        : strategy === 'denied'
-          ? 'disabled'
-          : 'unavailable',
+    delivery_status: secretDeliveryAvailable(strategy, consumer, deliveryRow?.egressPolicy?.backend)
+      ? 'available'
+      : strategy === 'denied'
+        ? 'disabled'
+        : 'unavailable',
     // Two axes, deliberately not folded together. `delivery_status` answers
     // "does this deployment support the mode" and stays 'available' on a missing
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
     // Always true since the exposure/usage model: one mechanism serves every
-    // provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so
-    // there is no deployment where egress-enforced delivery is missing. Kept on
+    // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
     // the wire because published SDK and CLI versions still read it — an absent
     // field reads as "unknown" to them, a `false` would falsely disable the UI.
     network_boundary_available: true,
@@ -556,7 +590,9 @@ export function buildSecretView(input: {
 
 export async function loadSecretViewsForUser(input: {
   projectId: string;
-  userId: string;
+  /** Whose personal overrides merge in; null = shared rows only (an
+   *  agent-principal session with no on-behalf-of human, spec 2026-09-22 §2.3). */
+  userId: string | null;
   canManageShared: boolean;
   /** The project's loaded config. Callers that have already read it pass it so
    *  every row reports the agent-grant axis; omitting it reports null. */
@@ -572,7 +608,9 @@ export async function loadSecretViewsForUser(input: {
     .where(
       and(
         eq(projectSecrets.projectId, projectId),
-        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
+        userId
+          ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId))
+          : isNull(projectSecrets.ownerUserId),
       ),
     )
     .orderBy(desc(projectSecrets.updatedAt));
@@ -599,6 +637,15 @@ export async function loadSecretViewsForUser(input: {
 
 export function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
+}
+
+/**
+ * Written only by the Microsoft Teams connection (channels/install-store.ts):
+ * the tenant, bot credentials and service URL. Connecting or disconnecting
+ * Teams changes them; the generic secrets API does not.
+ */
+export function isTeamsInstallSecretName(name: string): boolean {
+  return name.toUpperCase().startsWith('MS_TEAMS_');
 }
 
 export function serializeSessionSandboxConfig(
@@ -637,54 +684,15 @@ export function serializeGitHubInstallation(
 }
 
 /**
- * Sentinel `installation_id` for the managed-git PAT backend ("Use a token"
- * self-host setup, platform/routes/github-app.ts POST /pat) when an account
- * has no real GitHub App installation. Real installation ids are GitHub's own
- * numeric ids, so this string can never collide with one. Lets the
- * Import-repo UI — which only understands the "installations" shape — pick
- * the PAT the same way it picks a real App install, instead of needing a
- * parallel UI/API surface just for the token backend. GET /github/repositories
- * and POST /link-repository both recognize this id and route to the PAT.
+ * Account connections only. The instance backend ("Kortix managed") used to
+ * be injected here as a synthetic entry, which made one instance-global
+ * credential look like this account's own GitHub connection.
  */
-export const PAT_MANAGED_GIT_INSTALLATION_ID = 'pat';
-
 export function serializeGitHubInstallations(
   rows: Array<typeof accountGithubInstallations.$inferSelect>,
   accountId: string,
   installUrl: string | null,
-  /** Owner of the account-level managed-git PAT, when this account has no
-   *  real App installation but the server has a working token configured —
-   *  see the route handlers in routes/r1.ts. */
-  patFallbackOwner?: string | null,
 ) {
-  if (rows.length === 0 && patFallbackOwner) {
-    const patInstallation = {
-      account_id: accountId,
-      installation_row_id: null,
-      installed: true,
-      configured: true,
-      requires_installation: false,
-      install_url: null,
-      installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
-      owner_login: patFallbackOwner,
-      owner_type: null,
-      repository_selection: 'all',
-      permissions: {},
-      installation_url: null,
-      updated_at: null,
-    };
-    return {
-      ...patInstallation,
-      // The PAT is a valid existing-repository import option, but it is not a
-      // GitHub App installation and cannot back POST /projects/create-repo.
-      // Keep the App install URL visible so the default create flow can offer
-      // a real user/org installation alongside the legacy PAT fallback.
-      requires_installation: Boolean(installUrl),
-      install_url: installUrl,
-      installations: [patInstallation],
-    };
-  }
-
   const primary = rows[0] ?? null;
   const base = serializeGitHubInstallation(primary, accountId, installUrl);
   return {
@@ -708,14 +716,6 @@ export function normalizeBoolean(value: unknown): boolean | null {
     if (normalized === 'false') return false;
   }
   return null;
-}
-
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function normalizeJsonObject(value: unknown): Record<string, unknown> {
-  return isPlainObject(value) ? value : {};
 }
 
 export function normalizeRepoUrl(value: unknown): string | null {
@@ -742,6 +742,15 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
     .replace(/\/v1$/, '');
 }
 
+/**
+ * The Kortix git-proxy origin for a project — the UNIVERSAL client-facing git
+ * URL. Clients clone/push this with a Kortix token; the API resolves the real
+ * upstream + mints the host credential server-side.
+ */
+export function proxyGitUrl(projectId: string): string {
+  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
+}
+
 // Display cap for user-supplied project names. Well under the projects.name
 // varchar(255) column so every write path (provision, GitHub link, PAT link)
 // fits the schema even after a linked repo's derived name is substituted.
@@ -758,14 +767,6 @@ export function deriveProjectName(repoUrl: string): string {
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
   if (!tail) return 'Untitled Project';
   return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-export async function readBody(c: Context) {
-  try {
-    return await c.req.json<Record<string, unknown>>();
-  } catch {
-    return {};
-  }
 }
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {

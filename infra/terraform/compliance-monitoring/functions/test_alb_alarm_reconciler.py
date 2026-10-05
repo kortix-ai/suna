@@ -57,7 +57,13 @@ class FakeCloudWatch:
         return FakeAlarmPaginator(self)
 
     def put_metric_alarm(self, **kwargs):
+        # AWS put_metric_alarm is an upsert on AlarmName; mirror that so a
+        # repaired alarm replaces its drifted copy instead of coexisting.
         self.put_calls.append(kwargs)
+        self.alarms = [
+            alarm for alarm in self.alarms if alarm["AlarmName"] != kwargs["AlarmName"]
+        ]
+        self.alarms.append(dict(kwargs))
 
     def delete_alarms(self, **kwargs):
         self.delete_calls.append(kwargs)
@@ -114,7 +120,7 @@ def target_group(name, identifier):
 class ReconcilerTest(unittest.TestCase):
     topic = "arn:aws:sns:us-west-2:935064898258:suna-api-alerts"
 
-    def test_creates_three_drata_compatible_alarms_for_each_application_lb(self):
+    def test_creates_four_drata_compatible_alarms_for_each_application_lb(self):
         elbv2 = FakeElbv2(
             [
                 {
@@ -131,9 +137,9 @@ class ReconcilerTest(unittest.TestCase):
         result = reconcile(elbv2, cloudwatch, self.topic)
 
         self.assertEqual(result["load_balancers"], 2)
-        self.assertEqual(result["covered_alarms"], 6)
-        self.assertEqual(len(result["updated_alarms"]), 6)
-        self.assertEqual(len(cloudwatch.put_calls), 6)
+        self.assertEqual(result["covered_alarms"], 8)
+        self.assertEqual(len(result["updated_alarms"]), 8)
+        self.assertEqual(len(cloudwatch.put_calls), 8)
         self.assertEqual(result["deleted_alarms"], [])
         self.assertEqual(cloudwatch.delete_calls, [])
         unhealthy_alarm = next(
@@ -154,11 +160,34 @@ class ReconcilerTest(unittest.TestCase):
         self.assertEqual(unhealthy_alarm["TreatMissingData"], "notBreaching")
         self.assertEqual(
             set(ALARM_SPECS),
-            {"elb-5xx", "unhealthy-hosts", "zero-healthy-hosts"},
+            {
+                "elb-5xx",
+                "unhealthy-hosts",
+                "zero-healthy-hosts",
+                "target-response-time",
+            },
         )
-        self.assertFalse(
-            any(spec["MetricName"] == "TargetResponseTime" for spec in ALARM_SPECS.values())
+        response_time_alarm = next(
+            alarm
+            for alarm in cloudwatch.put_calls
+            if alarm["AlarmName"] == "kortix-alb-a-target-response-time"
         )
+        self.assertEqual(response_time_alarm["Namespace"], "AWS/ApplicationELB")
+        self.assertEqual(response_time_alarm["MetricName"], "TargetResponseTime")
+        self.assertEqual(response_time_alarm["Statistic"], "Average")
+        self.assertEqual(response_time_alarm["Period"], 300)
+        self.assertEqual(response_time_alarm["EvaluationPeriods"], 3)
+        self.assertEqual(response_time_alarm["DatapointsToAlarm"], 3)
+        self.assertEqual(response_time_alarm["Threshold"], 30.0)
+        self.assertEqual(
+            response_time_alarm["ComparisonOperator"], "GreaterThanThreshold"
+        )
+        # Per load balancer: no target-group dimension on this alarm.
+        self.assertEqual(
+            response_time_alarm["Dimensions"],
+            [{"Name": "LoadBalancer", "Value": "app/a/a-id"}],
+        )
+        self.assertEqual(response_time_alarm["AlarmActions"], [self.topic])
         zero_healthy_alarm = next(
             alarm
             for alarm in cloudwatch.put_calls
@@ -191,7 +220,7 @@ class ReconcilerTest(unittest.TestCase):
 
         result = reconcile(elbv2, cloudwatch, self.topic)
 
-        self.assertEqual(result["covered_alarms"], 5)
+        self.assertEqual(result["covered_alarms"], 6)
         self.assertEqual(
             set(result["updated_alarms"]),
             {
@@ -200,6 +229,7 @@ class ReconcilerTest(unittest.TestCase):
                 "kortix-alb-a-blue-zero-healthy-hosts",
                 "kortix-alb-a-green-unhealthy-hosts",
                 "kortix-alb-a-green-zero-healthy-hosts",
+                "kortix-alb-a-target-response-time",
             },
         )
 
@@ -251,13 +281,14 @@ class ReconcilerTest(unittest.TestCase):
             ],
         )
 
-    def test_deletes_retired_target_response_time_alarms_it_created(self):
+    def test_deletes_per_target_group_response_time_variants_and_repairs_the_lb_alarm(self):
         lb = load_balancer("a", "app/a/a-id")
         first_cloudwatch = FakeCloudWatch()
         reconcile(FakeElbv2([{"LoadBalancers": [lb]}]), first_cloudwatch, self.topic)
         alarms = first_cloudwatch.put_calls + [
-            # Terraform's single-target-group name and the reconciler's
-            # per-target-group variants from a blue/green ALB.
+            # The per-target-group variants the Lambda itself created in the
+            # retired 2 s-threshold era, plus a drifted copy of the desired
+            # per-load-balancer name on an old ALB dimension.
             legacy_alb_alarm("kortix-alb-a-target-response-time"),
             legacy_alb_alarm("kortix-alb-a-blue-target-response-time"),
             legacy_alb_alarm("kortix-alb-a-green-target-response-time"),
@@ -266,15 +297,18 @@ class ReconcilerTest(unittest.TestCase):
 
         result = reconcile(FakeElbv2([{"LoadBalancers": [lb]}]), cloudwatch, self.topic)
 
-        self.assertEqual(result["updated_alarms"], [])
+        self.assertEqual(
+            result["updated_alarms"],
+            ["kortix-alb-a-target-response-time"],
+        )
         self.assertEqual(
             result["deleted_alarms"],
             [
                 "kortix-alb-a-blue-target-response-time",
                 "kortix-alb-a-green-target-response-time",
-                "kortix-alb-a-target-response-time",
             ],
         )
+        self.assertEqual(len(cloudwatch.put_calls), 1)
         self.assertEqual(len(cloudwatch.delete_calls), 1)
         self.assertEqual(
             sorted(cloudwatch.delete_calls[0]["AlarmNames"]),
@@ -284,6 +318,7 @@ class ReconcilerTest(unittest.TestCase):
             sorted(alarm["AlarmName"] for alarm in cloudwatch.alarms),
             [
                 "kortix-alb-a-elb-5xx",
+                "kortix-alb-a-target-response-time",
                 "kortix-alb-a-unhealthy-hosts",
                 "kortix-alb-a-zero-healthy-hosts",
             ],
@@ -329,7 +364,7 @@ class ReconcilerTest(unittest.TestCase):
 
         self.assertEqual(result["deleted_alarms"], [])
         self.assertEqual(cloudwatch.delete_calls, [])
-        self.assertEqual(len(cloudwatch.alarms), 3)
+        self.assertEqual(len(cloudwatch.alarms), 4)
 
 
 if __name__ == "__main__":

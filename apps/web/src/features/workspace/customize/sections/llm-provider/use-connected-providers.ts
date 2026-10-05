@@ -9,6 +9,9 @@ import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
@@ -19,6 +22,7 @@ import { useLlmProviderCatalogRevision } from './use-live-catalog';
 import { buildCodexProvider } from './utils';
 
 export function useConnectedProviders(projectId: string, enabled: boolean) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Re-renders this hook when LlmCatalogBootstrap's fetch lands (module
   // bindings are reassigned, not mutated — a plain memo dependency array
   // won't otherwise notice). See use-live-catalog.ts.
@@ -31,11 +35,15 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
+  // A member without project.secret.read gets 403 for this read. Skip it once
+  // the probe says so; project keys are then unknown to this caller, and the
+  // pooled connections they may use are listed separately.
+  const secretRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
     ...contract('config'),
-    enabled,
+    enabled: enabled && secretRead.allowed !== false,
   });
 
   const secretNames = useMemo(() => {
@@ -97,12 +105,12 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       helpUrl: null,
       // Synthetic entry: no models.dev row, so no vendor API host.
       apiHost: null,
-      hint: 'Included with your plan',
+      hint: tI18nComplete.raw('texte0a770200f93'),
       models,
       featured: true,
       managed: true,
     };
-  }, [llmGatewayEnabled, ocProviders]);
+  }, [llmGatewayEnabled, ocProviders, tI18nComplete]);
 
   const connectedProviders = useMemo(() => {
     const hasCodexSubscription =
@@ -112,7 +120,9 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       (p) =>
         p.id !== 'kortix' && isProviderAuthSatisfied(p.authRequirement, (v) => secretNames.has(v)),
     );
-    const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
+    const subscription = hasCodexSubscription
+      ? [buildCodexProvider(ocProviders, tI18nComplete)]
+      : [];
     return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
   }, [secretNames, kortixProvider, ocProviders, catalogRevision]);
@@ -120,6 +130,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   const providerStateLoading = isProviderStateLoading({
     projectDetailLoading: projectDetailQuery.isLoading,
     secretsLoading: secretsQuery.isLoading,
+    secretsSettledOnce: secretsQuery.isFetched,
   });
 
   return { secretsQuery, connectedProviders, llmGatewayEnabled, providerStateLoading };

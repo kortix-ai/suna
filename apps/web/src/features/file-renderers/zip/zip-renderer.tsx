@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `ZipRenderer` — an archive, opened.
  *
@@ -27,17 +28,16 @@
  * pixels only.
  */
 
-import { CodeEditor } from '@/components/file-editors/code-editor';
+import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@kortix/shared/constants';
 import {
   ArrowLeftIcon,
   CaretRightIcon,
-  DownloadSimpleIcon,
   FileXIcon,
 } from '@phosphor-icons/react';
 import JSZip from 'jszip';
@@ -57,6 +57,7 @@ import {
   type ZipEntry,
   type ZipFolder,
 } from './zip-entries';
+import { Download } from '@/features/icon/icons/download';
 
 // ---------------------------------------------------------------------------
 // Reading the archive
@@ -145,6 +146,7 @@ function saveBlob(blob: Blob, name: string) {
  * unlabelled glyph beside a `1 of 6`-style summary reads as decoration.
  */
 function DownloadArchiveButton({ blob, fileName }: { blob: Blob; fileName: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Button
       variant="ghost"
@@ -152,8 +154,8 @@ function DownloadArchiveButton({ blob, fileName }: { blob: Blob; fileName: strin
       className="h-7 shrink-0 gap-1.5 active:scale-[0.96]"
       onClick={() => saveBlob(blob, archiveFileName(fileName))}
     >
-      <DownloadSimpleIcon className="size-3.5 shrink-0" />
-      Download
+      <Download className="size-3.5 shrink-0" />
+      {tI18nComplete.raw('textd6eafe823591')}
     </Button>
   );
 }
@@ -183,6 +185,7 @@ function FolderRow({
   open: boolean;
   onToggle: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const count = folder.files.length + folder.folders.length;
   return (
     <button
@@ -201,7 +204,11 @@ function FolderRow({
           open && 'rotate-90',
         )}
       />
-      {getFileIcon(folder.name, { className: 'size-4 shrink-0', isDirectory: true, isOpen: open })}
+      {getFileIcon(folder.name, {
+        className: 'size-4 shrink-0',
+        isDirectory: true,
+        isOpen: open,
+      })}
       <span className="text-foreground min-w-0 flex-1 truncate text-sm">{folder.name}</span>
       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{count}</span>
     </button>
@@ -217,6 +224,7 @@ function FileRow({
   depth: number;
   onOpen: (entry: ZipEntry) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const previewable = canPreviewZipEntry(entry);
   return (
     <button
@@ -311,6 +319,7 @@ function Centered({ children }: { children: React.ReactNode }) {
  * keeps opening a large archive instant.
  */
 function EntryPreview({ zip, entry }: { zip: JSZip; entry: ZipEntry }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const kind = zipPreviewKind(entry.name);
   const [text, setText] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -368,7 +377,7 @@ function EntryPreview({ zip, entry }: { zip: JSZip; entry: ZipEntry }) {
     return (
       <Centered>
         <FileXIcon className="size-5" />
-        <span>This entry is listed in the archive but its bytes are missing.</span>
+        <span>{tI18nComplete.raw('text22e7a3b61f49')}</span>
       </Centered>
     );
   }
@@ -380,10 +389,12 @@ function EntryPreview({ zip, entry }: { zip: JSZip; entry: ZipEntry }) {
         <FileXIcon className="size-5" />
         <span>
           {tooBig
-            ? `This file is ${formatFileSize(entry.size)} unpacked — too large to preview here.`
-            : "This file can't be previewed here."}
+            ? tI18nComplete('textf37bf4f7a338', { value0: formatFileSize(entry.size) })
+            : tI18nComplete.raw('text05b10b151f65')}
         </span>
-        <span className="text-muted-foreground/70 text-xs">Extract it to open it.</span>
+        <span className="text-muted-foreground/70 text-xs">
+          {tI18nComplete.raw('text43f9e1786f27')}
+        </span>
       </Centered>
     );
   }
@@ -392,7 +403,7 @@ function EntryPreview({ zip, entry }: { zip: JSZip; entry: ZipEntry }) {
     return (
       <Centered>
         <FileXIcon className="size-5" />
-        <span>This entry couldn&apos;t be read from the archive.</span>
+        <span>{tI18nComplete.raw('text5a219a418ec7')}</span>
       </Centered>
     );
   }
@@ -448,6 +459,7 @@ export function ZipRenderer({
   fileName: string;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [loaded, setLoaded] = useState<LoadedZip | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
@@ -538,11 +550,11 @@ export function ZipRenderer({
     return (
       <div className={cn('flex h-full min-h-0 flex-col', className)}>
         <div className="flex shrink-0 items-center gap-2 border-b px-2.5 py-2">
-          <Hint label="Back to archive" side="bottom">
+          <Hint label={tI18nComplete.raw('text644c438ba508')} side="bottom">
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Back to archive"
+              aria-label={tI18nComplete.raw('text644c438ba508')}
               onClick={() => setSelected(null)}
               className="size-7 active:scale-[0.96]"
             >
@@ -559,7 +571,7 @@ export function ZipRenderer({
           <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
             {formatFileSize(selected.size)}
           </span>
-          <Hint label="Extract" side="bottom">
+          <Hint label={tI18nComplete.raw('textc15301c0e647')} side="bottom">
             <Button
               variant="ghost"
               size="icon"
@@ -567,7 +579,7 @@ export function ZipRenderer({
               onClick={() => void extract(selected)}
               className="size-7 active:scale-[0.96]"
             >
-              <DownloadSimpleIcon className="size-3.5" />
+              <Download className="size-3.5" />
             </Button>
           </Hint>
         </div>
@@ -592,22 +604,28 @@ export function ZipRenderer({
           </span>
           {summary.folders > 0 && (
             <>
-              <span className="text-muted-foreground/40">&bull;</span>
+              <span className="text-muted-foreground/40">
+                {tI18nComplete.raw('text3b9453dad42b')}
+              </span>
               <span className="tabular-nums">
                 {summary.folders} {summary.folders === 1 ? 'folder' : 'folders'}
               </span>
             </>
           )}
-          <span className="text-muted-foreground/40">&bull;</span>
-          <span className="tabular-nums">{formatFileSize(summary.bytes)} unpacked</span>
+          <span className="text-muted-foreground/40">{tI18nComplete.raw('text3b9453dad42b')}</span>
+          <span className="tabular-nums">
+            {formatFileSize(summary.bytes)} {tI18nComplete.raw('text83055ac70034')}
+          </span>
           {/* Never silent. A list that stops at 2000 rows without saying so
             reads as the whole archive, which is the one thing a file list
             must not get wrong. */}
           {loaded.truncated > 0 && (
             <>
-              <span className="text-muted-foreground/40">&bull;</span>
+              <span className="text-muted-foreground/40">
+                {tI18nComplete.raw('text3b9453dad42b')}
+              </span>
               <span className="text-kortix-orange tabular-nums">
-                {loaded.truncated} more not shown
+                {loaded.truncated} {tI18nComplete.raw('text37023affd996')}
               </span>
             </>
           )}
@@ -618,7 +636,7 @@ export function ZipRenderer({
       <div className="min-h-0 flex-1 overflow-auto py-1">
         {summary.files === 0 ? (
           <Centered>
-            <span>This archive is empty.</span>
+            <span>{tI18nComplete.raw('text49b0393b0546')}</span>
           </Centered>
         ) : (
           <FolderContents

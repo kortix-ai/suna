@@ -6,7 +6,7 @@
  * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  *
- * Voice rules: the `comms` skill. The bar is distilled from `CLAUDE.md`.
+ * Voice rules: the `kortix-brand` skill. The bar is distilled from `CLAUDE.md`.
  *
  * ACCURACY GATE for this page specifically:
  *  - INVENT NOTHING about employment. No salary band, no equity, no benefits,
@@ -109,7 +109,7 @@ export const openings = [
   {
     id: 'rnd',
     name: 'Product / R&D',
-    summary: 'Push what open AGI means: fully autonomous cognitive beings as digital coworkers.',
+    summary: 'Push what open AGI means: agents that do finished work, reviewed by people.',
     bullets: [
       'Where Product / Eng hardens the platform, R&D pushes what it becomes.',
       'Comfortable working a long way ahead of what ships.',
@@ -213,3 +213,14 @@ export const applyForm = {
     area: 'Pick the closest opening.',
   },
 } as const;
+
+export function getLocalizedCareersContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { LOCATIONS, hero, openings, bar, apply, applyForm },
+    tI18nComplete,
+    MARKETING_SECONDARY_TRANSLATION_KEYS,
+  );
+}
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { MARKETING_SECONDARY_TRANSLATION_KEYS } from '@/i18n/marketing-secondary-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';

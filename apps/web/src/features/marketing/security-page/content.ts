@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SECURITY_SELFHOST_TRANSLATION_KEYS } from '@/i18n/security-selfhost-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/security` copy — the page a security reviewer reads.
  *
@@ -5,7 +9,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. ACCURACY GATE for this page specifically —
+ * Voice rules: the `kortix-brand` skill. ACCURACY GATE for this page specifically —
  * every line below traces to shipped code, and the citation is in the comment
  * above it. This is the page an enterprise reviewer will hold us to.
  *
@@ -25,8 +29,7 @@
  *  1. "Never visible to the model" (the /enterprise secrets bullet) is FALSE
  *     for project secrets. A granted runtime secret is a real environment value
  *     inside the session, readable by any command the agent runs — that is how
- *     a tool uses it. See docs/ENV_SECRET_EXPOSURE_BASELINE.md, which states it
- *     plainly. What IS true, and is all this page claims: connector credentials
+ *     a tool uses it. What IS true, and is all this page claims: connector credentials
  *     are resolved server-side and never enter the machine, Kortix's own
  *     upstream keys never enter it either, and a session only receives the
  *     secrets both the person's role and the agent's declared grant allow.
@@ -34,7 +37,7 @@
  *     DEFAULT provider. Platinum is a Cloud Hypervisor microVM; Daytona, the
  *     default, is not. The copy claims one isolated sandbox per session, and
  *     names microVM only where it is accurate.
- *  3. "Egress controlled at the network" (a `comms` proof point) is NOT
+ *  3. "Egress controlled at the network" (a `kortix-brand` proof point) is NOT
  *     substantiated anywhere in this tree — E2B ships `allowInternetAccess:
  *     true` and the network design is "Proposed — not scheduled". Dropped.
  *  4. Approval gates are NOT on by default. `policy.default_mode` falls back to
@@ -125,9 +128,11 @@ export const isolation = {
    from HKDF-SHA256 over API_KEY_SECRET salted with the project id, versioned
    envelope), apps/api/src/iam/agent-scope.ts (the userRole ∩ agentGrant rule),
    apps/api/src/connectors/pipedream.ts (connector credentials resolved
-   server-side), apps/api/src/platform/sandbox-env.ts (the allowlist that keeps
-   Kortix's own upstream keys out of every sandbox) and
-   apps/kortix-sandbox-agent-server/src/agent-env-file.ts (tmpfs, 0600,
+   server-side), apps/api/src/projects/lib/sessions.ts
+   (buildSessionSandboxEnvVars builds the sandbox env from project secrets, never
+   from the API's own env) with apps/api/src/projects/lib/sandbox-env-names.ts
+   (the names a sandbox never receives) and
+   apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts (tmpfs, 0600,
    shredded on shutdown).
 
    DO NOT reintroduce "the model never sees it" for project secrets. It is
@@ -232,7 +237,7 @@ export const identity = {
       },
       { k: 'Groups', v: 'Grant to a group once instead of to twenty people twenty times.' },
     ],
-    note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.',
+    note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise license. The built-in roles above are free on every plan.',
   },
   agents: {
     title: 'Service accounts',
@@ -303,7 +308,7 @@ export const control = {
 } as const;
 
 /* ── 5 · change request ────────────────────────────────────────────────────
-   Grounded in apps/api/src/projects/routes/r9.ts, which gates merge twice: the
+   Grounded in apps/api/src/projects/routes/change-request-actions.ts, which gates merge twice: the
    human capability `project.gitops.merge` and the per-agent `project.cr.merge`,
    which is DEFAULT-DENY. CORRECTION: "only a human can merge" is too strong —
    an admin can grant an agent that capability. The grant lives in kortix.yaml,
@@ -391,7 +396,7 @@ export const posture = {
     {
       id: 'vpc',
       k: 'Your VPC or on-prem',
-      v: 'A single-tenant deployment inside your own network. Air-gapped and other isolated topologies are scoped with us rather than self-served.',
+      v: 'A single-tenant deployment inside your own network. Isolated topologies are scoped with us rather than self-served.',
     },
   ],
   compliance: {
@@ -407,10 +412,10 @@ export const posture = {
 } as const;
 
 /* ── disclosure ────────────────────────────────────────────────────────────
-   Grounded in docs/SECURITY.md. The mailbox is ALREADY published publicly on
+   The mailbox is ALREADY published publicly on
    /support (support/page.tsx), so naming it here adds no new exposure, and the
-   three timelines below are that document's policy quoted exactly.
-   ⚠️ BEFORE THIS PAGE GOES LIVE: docs/SECURITY.md marks security@kortix.com as
+   three timelines below are the security disclosure policy, quoted exactly.
+   ⚠️ BEFORE THIS PAGE GOES LIVE: security@kortix.com is
    a PLACEHOLDER that "must be created and monitored before this policy is
    published externally". Confirm the mailbox is real and watched, or cut the
    SLA rows — publishing a 3-day acknowledgement against an unread inbox is
@@ -437,3 +442,22 @@ export const closing = {
   ctaSecondary: 'See enterprise',
   ctaSecondaryHref: '/enterprise',
 } as const;
+
+export function getLocalizedSecurityContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      isolation,
+      credentials,
+      identity,
+      control,
+      landing,
+      audit,
+      posture,
+      disclosure,
+      closing,
+    },
+    tI18nComplete,
+    SECURITY_SELFHOST_TRANSLATION_KEYS,
+  );
+}

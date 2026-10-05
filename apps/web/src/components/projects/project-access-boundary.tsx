@@ -2,23 +2,29 @@
 
 import { ShieldWarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { AuthPendingScreen, DetailPanel, DetailRow } from '@/features/auth/auth-consent';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
+import { DetailPanel, DetailRow } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
+import { prefetchSessionOpen } from '@kortix/sdk/react';
+import { prefetchSessionRouteReads } from '@/features/session/session-route-prefetch';
+import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
 
 const QUERY_KEY = 'project-access-boundary';
 
@@ -172,6 +178,38 @@ export function resolveGateState(
   return waiting ?? errorState ?? 'unavailable';
 }
 
+/** What the boundary renders: the pending frame, the project, or a gate screen. */
+export type BoundaryView = 'pending' | 'project' | 'gate';
+
+/**
+ * Unresolved auth outranks everything, a cached project included: no result
+ * is an access decision until identity cleanup and token publication finish.
+ *
+ * After that the project stays up for as long as the query holds its data. A
+ * failed REFETCH keeps that data (TanStack v5 sets `status: 'error'` and leaves
+ * `data`), so a transient 500, timeout or tunnel drop used to replace a working
+ * shell with the error screen. Only a terminal verdict takes it away: 403 (the
+ * request-access form) or 404 (not found).
+ */
+export function resolveBoundaryView(input: {
+  authReady: boolean;
+  isPending: boolean;
+  hasData: boolean;
+  errorState: AccessGateState | null;
+}): BoundaryView {
+  if (!input.authReady || input.isPending) return 'pending';
+  if (input.hasData && input.errorState !== 'request' && input.errorState !== 'notFound') {
+    return 'project';
+  }
+  return 'gate';
+}
+
+/** The `[sessionId]` route segment, when the current route has one. */
+export function routeSessionIdFromParams(params: Record<string, unknown> | null | undefined): string | null {
+  const value = params?.sessionId;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 // ─── Boundary ────────────────────────────────────────────────────────────────
 
 interface ProjectAccessBoundaryProps {
@@ -179,38 +217,76 @@ interface ProjectAccessBoundaryProps {
   children: ReactNode;
 }
 
-export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoundaryProps) {
+export function ProjectAccessBoundary(props: ProjectAccessBoundaryProps) {
   const { user } = useAuth();
+  useSignedOutRedirect();
+  return <ProjectAccessForUser key={`${props.projectId}:${user?.id ?? "pending"}`} {...props} />;
+}
+
+function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProps) {
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const authReady = !isAuthLoading && !!user?.id;
   // A submitted request is held HERE, above the error branch, so a transient
   // 401/500/offline poll result cannot unmount the waiting screen and hand the
   // user a fresh request form for a request they already sent.
   const [waiting, setWaiting] = useState<WaitingGateState | null>(null);
 
   const query = useQuery({
-    queryKey: [QUERY_KEY, projectId],
+    queryKey: [QUERY_KEY, projectId, user?.id],
     queryFn: () => getProject(projectId, { showErrors: false }),
-    enabled: !!projectId,
+    enabled: authReady && !!projectId,
     retry: false,
   });
 
+  // A session route's open read needs only the two route ids, so it starts
+  // HERE, beside `getProject`, instead of after this boundary renders the
+  // session page. Staging HAR (cold open): the snapshot waited 1.68 s for
+  // `GET /projects/<id>` before it could start. Read-only — it never wakes a
+  // sandbox — and a project this user cannot read answers 403 to it as well.
+  //
+  // `prefetchSessionRouteReads` (config/scope) rides the SAME signal: those
+  // reads also only need the route ids, and were waiting on
+  // `ProjectSessionView`'s own chunk to mount. `/start` is not prefetched:
+  // see `session-route-prefetch.ts`.
+  const queryClient = useQueryClient();
+  const routeSessionId = routeSessionIdFromParams(useParams());
+  useEffect(() => {
+    if (!authReady || !routeSessionId) return;
+    void prefetchSessionOpen(queryClient, projectId, routeSessionId);
+    prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
+  }, [authReady, projectId, routeSessionId, queryClient]);
+
+  // The project SHELL's own reads (detail, sessions list, sandbox health, and
+  // — once detail says the gateway is on — the model picker) need only
+  // `projectId`, exactly like `getProject` above, so they start here too
+  // instead of waiting for `getProject` to resolve AND `ProjectShell`'s own
+  // chunk to mount. See `project-shell-prefetch.ts`.
+  useEffect(() => {
+    if (!authReady || !projectId) return;
+    prefetchProjectShellReads(queryClient, projectId);
+  }, [authReady, projectId, queryClient]);
+
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.
-  const recheck = useCallback(() => void refetch(), [refetch]);
+  const recheck = useCallback(() => {
+    if (authReady) void refetch();
+  }, [authReady, refetch]);
 
   // The user's own "Check now" press, tracked separately so the 15s background
   // poll cannot disable the button under their cursor.
   const [manualRecheck, setManualRecheck] = useState(false);
   const recheckNow = useCallback(() => {
+    if (!authReady) return;
     setManualRecheck(true);
     void refetch().finally(() => setManualRecheck(false));
-  }, [refetch]);
+  }, [authReady, refetch]);
 
   const errorState = query.isError ? gateStateForError(query.error) : null;
   const state = resolveGateState(waiting, errorState);
   // Stop the moment access lands, or the interval outlives the gate: this
   // component wraps the shell for the whole session, so a poll that ignores
   // success keeps calling getProject every 15s while the user works.
-  const polling = !query.isSuccess && shouldPollForApproval(state);
+  const polling = authReady && !query.isSuccess && shouldPollForApproval(state);
 
   // Poll while waiting so "this page opens on its own" is a fact, not a promise
   // the user has to keep by reloading. `recheck` is stable, so the interval is
@@ -238,14 +314,30 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
     forgetLastProjectId(user?.id, projectId);
   }, [unrenderable, projectId, user?.id]);
 
-  if (query.isSuccess) return <>{children}</>;
+  // The full-page frame every "opening a project" surface shares — the Kortix
+  // mark, nothing else. This is what a hard refresh of `/projects/<id>` or of
+  // a session route shows for the length of one session check plus one
+  // getProject, so it is the most-seen loading surface in the product.
+  //
+  // It used to be `AuthPendingScreen footer={false}` — the auth sub-flows'
+  // quiet spinner with its legal line switched off. Two things were wrong with
+  // it: a bare spinner on an empty field is the least branded frame we ship,
+  // and `footer={false}` existed only to stop Terms/Privacy flashing for the
+  // length of one fetch on the way into a shell that has no footer. Neither
+  // problem exists once the frame is the mark. `AuthPendingScreen` still owns
+  // the consent flows, and the gate screens below still use `AuthFrame`.
+  //
+  // A disabled query is pending, not loading. Wait for identity cleanup and
+  // token publication before interpreting any result as an access decision.
+  const view = resolveBoundaryView({
+    authReady,
+    isPending: query.isPending,
+    hasData: query.data !== undefined,
+    errorState,
+  });
+  if (view === 'pending') return <ProjectPendingScreen />;
 
-  // The same quiet spinner every auth sub-surface shows while it resolves —
-  // minus the legal footer. This branch resolves into the project shell, which
-  // carries no footer, so keeping it would flash Terms/Privacy for the length
-  // of one fetch on every project open. The gate screens below still show it:
-  // they are terminal, and there they are the whole page.
-  if (query.isLoading) return <AuthPendingScreen footer={false} />;
+  if (view === 'project') return <>{children}</>;
 
   return (
     <AccessGateScreen
@@ -288,7 +380,7 @@ function AccessGateScreen({
   // `/projects` list.
   //
   // `useAppHome` reads a cookie, so it is browser-only. This screen never
-  // reaches the server render — the boundary above returns AuthPendingScreen
+  // reaches the server render — the boundary above returns the pending frame
   // while its getProject query is loading, which is its state on the server —
   // so the value can go straight into an href without desyncing hydration.
   const appHome = useAppHome();
@@ -331,7 +423,7 @@ function AccessGateScreen({
   });
 
   // Platform-admin escape hatch: flips the client-wide admin-bypass header on,
-  // then re-fetches the shared [QUERY_KEY, projectId] query so the boundary
+  // then re-fetches the same user-scoped query so the boundary
   // above renders the actual project. Read-only server-side (see
   // apps/api/src/projects/lib/access.ts) and audit-logged against the project's
   // own account on every use.
@@ -339,7 +431,7 @@ function AccessGateScreen({
     mutationFn: async () => {
       setAdminBypass(true);
       return queryClient.fetchQuery({
-        queryKey: [QUERY_KEY, projectId],
+        queryKey: [QUERY_KEY, projectId, user?.id],
         queryFn: () => getProject(projectId, { showErrors: false }),
       });
     },

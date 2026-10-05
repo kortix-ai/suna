@@ -25,3 +25,18 @@ output "extra_api_hostnames" {
   description = "Unlocked public API hostnames pointing at the new ALB."
   value       = var.extra_api_hostnames
 }
+
+output "project_snapshot_bucket" {
+  description = "Value for KORTIX_PROJECT_SNAPSHOT_S3_BUCKET in this environment's non-secret task env overrides."
+  value       = module.project_snapshots.bucket_name
+}
+
+output "database_region" {
+  description = "Declared region of this environment's DATABASE_URL secret (see variables.tf). Exists so infra/terraform/scripts/test_region_colocation.py's source variable is a real, tflint-visible usage, and so `terraform output` surfaces it for a human too."
+  value       = var.database_region
+}
+
+output "audit_archive_bucket" {
+  description = "Value for AUDIT_ARCHIVE_BUCKET in this environment's non-secret task env overrides."
+  value       = module.audit_archive.bucket_name
+}

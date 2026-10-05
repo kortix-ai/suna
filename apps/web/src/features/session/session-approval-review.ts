@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Pure mapping + list logic behind every connector-approval surface.
  *
@@ -40,7 +41,11 @@ export function approvalArgsPreview(action: SessionAuditAction): Record<string, 
 }
 
 /** One-line "where is this going?" rendering for a collapsed row. */
-export function approvalArgsSummary(action: SessionAuditAction): string | null {
+export function approvalArgsSummary(
+  action: SessionAuditAction,
+  /** Bound Slack conversation ids → names: the summary reads the name. */
+  channelNames?: ReadonlyMap<string, string>,
+): string | null {
   const preview = approvalArgsPreview(action);
   if (!preview) return null;
 
@@ -57,7 +62,7 @@ export function approvalArgsSummary(action: SessionAuditAction): string | null {
     if (value === null || value === undefined || value === '[redacted]') continue;
     const rendered = Array.isArray(value) ? value.join(', ') : String(value);
     if (!rendered) continue;
-    parts.push(`${key}: ${rendered}`);
+    parts.push(`${key}: ${(typeof value === 'string' && channelNames?.get(value)) || rendered}`);
     if (parts.length === SUMMARY_FIELDS) break;
   }
   return parts.length > 0 ? parts.join(' · ') : null;
@@ -75,6 +80,8 @@ export function approvalRequestFromAction(
     risk: action.risk,
     requestedAt: action.at,
     argsPreview: approvalArgsPreview(action),
+    approvalContext:
+      typeof summary?.approval_context === 'string' ? summary.approval_context : null,
     // `!summary` used to count as complete, so a pending row that recorded
     // NOTHING offered an Approve button the server answers with 409
     // (`APPROVAL_PREVIEW_UNAVAILABLE`) — the client and the gate disagreed. A
@@ -127,17 +134,23 @@ export function approvalNoticeRows(
 }
 
 /** Headline for the notice. `hint` is null once nothing is left to decide. */
-export function approvalNoticeHeadline(pendingCount: number): {
+export function approvalNoticeHeadline(
+  pendingCount: number,
+  tI18nComplete: UiTranslator,
+): {
   title: string;
   hint: string | null;
 } {
-  if (pendingCount === 0) return { title: 'Decision recorded', hint: null };
+  if (pendingCount === 0) return { title: tI18nComplete.raw('text6f1de8b7c3e5'), hint: null };
   if (pendingCount === 1) {
-    return { title: 'The agent needs your approval', hint: 'waiting for one decision' };
+    return {
+      title: tI18nComplete.raw('textd24f71ceadfb'),
+      hint: tI18nComplete.raw('textce033f75c938'),
+    };
   }
   return {
-    title: `${pendingCount} actions need your approval`,
-    hint: `waiting for ${pendingCount} decisions`,
+    title: tI18nComplete('text54d14f0b67f3', { value0: pendingCount }),
+    hint: tI18nComplete('text5726504025dc', { value0: pendingCount }),
   };
 }
 

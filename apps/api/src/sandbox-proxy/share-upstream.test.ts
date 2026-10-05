@@ -1,0 +1,22 @@
+import { describe, expect, test } from 'bun:test';
+
+import { UNKNOWN_DAEMON_ROUTE_ERROR, shareUpstreamResult } from './share-upstream';
+
+describe('shareUpstreamResult', () => {
+  // 501, not 502: the edge middleware in `index.ts` rewrites every 502 into a
+  // retryable 503 with Retry-After, and retrying cannot add a missing route.
+  test('a daemon without share routes answers 501, not a sandbox-not-found 404', () => {
+    expect(shareUpstreamResult(404, { error: UNKNOWN_DAEMON_ROUTE_ERROR })).toEqual({
+      status: 501,
+      body: { error: 'This sandbox does not support share links' },
+    });
+  });
+
+  test('any other daemon answer passes through unchanged', () => {
+    expect(shareUpstreamResult(404, { error: 'share token not found' })).toEqual({
+      status: 404,
+      body: { error: 'share token not found' },
+    });
+    expect(shareUpstreamResult(200, { token: 't1' })).toEqual({ status: 200, body: { token: 't1' } });
+  });
+});

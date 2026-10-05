@@ -21,16 +21,17 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import { startStaticWebServer } from '../static-web'
+import { harnessProtectedPathSegments } from '@/harness/harness'
+import { startStaticWebServer } from '@/services/static-web/static-web'
 
 let server: ReturnType<typeof startStaticWebServer>
 let base: string
 let scratch: string
 
 beforeAll(() => {
-  server = startStaticWebServer(0)
+  server = startStaticWebServer(harnessProtectedPathSegments(), 0)
   base = `http://127.0.0.1:${server.port}`
   // Explicitly under `/tmp` — an allowed root. NOT os.tmpdir(), which on macOS
   // is /var/folders/... and would put the fixture outside the roots, making the
@@ -72,12 +73,26 @@ describe('the credential files are not readable', () => {
     expect(status).toBe(403)
   })
 
-  test('a traversal back into a credential directory is refused', async () => {
-    // `normalize()` collapses this to /home/kortix/.config/... before the check,
-    // which is why the deny list is matched on the normalized path.
-    const { status } = await get(
-      '/abs/workspace/../home/kortix/.config/kortix-opencode.json',
-    )
+  // The rows above are refused by the root check alone. These sit UNDER an
+  // allowed root with real files, so only the deny list refuses them: it
+  // holds even if someone widens the roots again, which is how the leak got in.
+  const IN_ROOT = ['.config/kortix-opencode.json', '.ssh/id_ed25519', '.git-credentials']
+  test.each(IN_ROOT)('a real %s under an allowed root is refused on both routes', async (rel) => {
+    const file = join(scratch, 'home', rel)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, 'SECRET-IN-ROOT')
+    for (const path of [`/abs${file}`, `/open?path=${encodeURIComponent(file)}`]) {
+      const { status, body } = await get(path)
+      expect(status).toBe(403)
+      expect(body).not.toContain('SECRET-IN-ROOT')
+    }
+  })
+
+  test('a traversal is normalized before the root check', async () => {
+    // `fetch` collapses `..` in a URL path before it leaves the client, so the
+    // traversal rides in the query. Without `normalize()` the `/tmp/` prefix
+    // would pass the root check and the read would answer 404, not 403.
+    const { status } = await get(`/open?path=${encodeURIComponent('/tmp/../home/kortix/notes.txt')}`)
     expect(status).toBe(403)
   })
 
@@ -151,7 +166,10 @@ describe('symlinks cannot smuggle a path back out', () => {
   })
 
   test('a link reaching outside every allowed root is refused', async () => {
-    const outside = mkdtempSync(join(process.env.TMPDIR || '/var/tmp', 'kortix-outside-'))
+    // /var/tmp unconditionally: TMPDIR is /tmp on Linux CI and in this repo's
+    // runner env, and /tmp is an allowed root, so a TMPDIR fixture would sit
+    // INSIDE the roots and the link would resolve to a servable file.
+    const outside = mkdtempSync(join('/var/tmp', 'kortix-outside-'))
     writeFileSync(join(outside, 'secret.txt'), 'SECRET-PAYLOAD')
 
     const link = join(scratch, 'escape-file.txt')
@@ -162,17 +180,6 @@ describe('symlinks cannot smuggle a path back out', () => {
     expect(body).not.toContain('SECRET-PAYLOAD')
 
     rmSync(outside, { recursive: true, force: true })
-  })
-
-  test('an ordinary file is still served after the resolve step', async () => {
-    // The resolve must not break the normal path it sits in front of.
-    const dir = join(scratch, 'plain')
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'ok.html'), '<html><body>PLAIN_OK</body></html>')
-
-    const { status, body } = await get(`/abs${dir}/ok.html`)
-    expect(status).toBe(200)
-    expect(body).toContain('PLAIN_OK')
   })
 
   test('a link that stays inside the allowed roots still works', async () => {

@@ -31,15 +31,16 @@
  * frames between the close and the new route painting are never white.
  */
 
-import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
-import { readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { projectPathFromId } from '@/lib/onboarding/landing-destination';
+import { readLastProjectId } from '@/lib/onboarding/last-project-cookie';
+import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
@@ -59,19 +60,9 @@ export const STANDALONE_DEFAULT_SETTINGS_TAB: SettingsTab = 'profile';
  *
  * The remembered project when the browser has one — the user goes back to
  * exactly where they were, and nothing is created. Otherwise `/projects`,
- * NOT `PROJECT_LANDING_PATH`.
- *
- * That fallback is deliberate and is the one place this file departs from
- * `latestProjectPath()`'s "never send an implicit destination to the list"
- * rule (`lib/onboarding/last-project-cookie.ts`). `/projects/start` creates a
- * project unconditionally (`ensureFirstProject`, gated only on the account
- * role and `navigationMayCreateProject()`), while the list applies the
- * entitlement-aware rule — `shouldAutoCreateFirstProject` returns `false`
- * when billing is on and `credits.can_run` is false, and otherwise creates
- * the project and `router.replace`s straight into it
- * (`app/(app)/projects/page.tsx:245,295`). So an entitled user still lands in
- * a project either way, and the no-app-access user this route exists for does
- * not get one handed to them by pressing Escape.
+ * which redirects to the `/projects/start` chooser. Neither path creates a
+ * project, so the no-app-access user this route exists for is never handed
+ * one by pressing Escape.
  *
  * Pure and exported for its unit test.
  */
@@ -79,12 +70,32 @@ export function resolveSettingsExitPath(lastProjectId: string | null | undefined
   return projectPathFromId(lastProjectId) ?? '/projects';
 }
 
-export function StandaloneSettingsRoute({ tab }: { tab: SettingsTab }) {
+/**
+ * The route's body, behind a Suspense boundary because it reads `?accountId=`
+ * — the same read `AccountHubPanel` makes one level up, under the layout's own
+ * boundary. On a route that renders statically (Vercel bakes the runtime
+ * config, so these routes can) the boundary keeps the read a CSR bailout
+ * into `null` instead of a build error, and the hub and the panel both come
+ * back at hydration.
+ */
+function StandaloneSettingsBody({ tab }: { tab: SettingsTab }) {
   const router = useRouter();
   const { user } = useAuth();
   // `ProjectShell` gets its account from the project; this mount has none, so
   // without this every account-scoped tab renders empty. See the hook.
   useEnsureSelectedAccount();
+
+  // The account hub is a full-screen modal over THIS route exactly like the
+  // panel is, and it is mounted one level up in `(app)/layout.tsx` with the
+  // `?accountId=` param as its open state (`stores/account-panel-store.ts`).
+  // On a hard-loaded hub deep link (`/settings?accountId=<id>` — the URL the
+  // hub shows in the address bar and the href of its Manage link) the hub is
+  // therefore already open when this route mounts, and the z-stack hands the
+  // top layer to the dialog that opened last (`lib/z-stack.tsx`): raising the
+  // personal panel here buries the hub the URL names, and the deep link lands
+  // on Profile. So the panel yields — it opens only when the hub is not on
+  // the URL, i.e. on a plain load, or once the hub closes and drops the param.
+  const hubOpen = useSearchParams().get(ACCOUNT_PANEL_PARAM) !== null;
 
   const open = useSettingsPanelStore((s) => s.open);
   // The store starts closed, so "closed" only means "the user closed it" after
@@ -92,9 +103,16 @@ export function StandaloneSettingsRoute({ tab }: { tab: SettingsTab }) {
   // `false` would fire the exit navigation before the panel ever appeared.
   const wasOpened = useRef(false);
 
+  const openedTab = useRef<SettingsTab | null>(null);
   useEffect(() => {
-    useSettingsPanelStore.getState().openSettings(tab);
-  }, [tab]);
+    if (hubOpen) return;
+    // Route changes select their tab; returning from the hub preserves the
+    // personal panel's selection if it is already open.
+    if (openedTab.current !== tab || !useSettingsPanelStore.getState().open) {
+      useSettingsPanelStore.getState().openSettings(tab);
+      openedTab.current = tab;
+    }
+  }, [hubOpen, tab]);
 
   useEffect(() => {
     if (open) {
@@ -105,12 +123,18 @@ export function StandaloneSettingsRoute({ tab }: { tab: SettingsTab }) {
     router.replace(resolveSettingsExitPath(readLastProjectId(user?.id)));
   }, [open, router, user?.id]);
 
+  return <SettingsPanel />;
+}
+
+export function StandaloneSettingsRoute({ tab }: { tab: SettingsTab }) {
   return (
     <>
       {/* Opaque, full-height, and behind the overlay's own backdrop — see this
           file's header comment on the blank page. */}
       <div className="bg-background min-h-screen" />
-      <SettingsPanel />
+      <Suspense fallback={null}>
+        <StandaloneSettingsBody tab={tab} />
+      </Suspense>
     </>
   );
 }

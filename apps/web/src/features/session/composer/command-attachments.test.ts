@@ -5,6 +5,7 @@ import Text from '@tiptap/extension-text';
 import { Node as PMNode } from '@tiptap/pm/model';
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   COMMAND_CHIP_ATTRIBUTE,
   COMMAND_CHIP_LABEL_ATTRIBUTE,
@@ -18,7 +19,9 @@ import { MentionNode } from './editor/mention-node';
 
 describe('planCommandAttachments', () => {
   test('a command with no attachments dispatches', () => {
-    expect(planCommandAttachments({ isCommand: true, attachmentCount: 0 })).toEqual({
+    expect(
+      planCommandAttachments({ isCommand: true, attachmentCount: 0 }, testUiTranslator),
+    ).toEqual({
       kind: 'dispatch',
     });
   });
@@ -26,18 +29,20 @@ describe('planCommandAttachments', () => {
   test('a plain message with attachments dispatches — the guard is command-only', () => {
     // The ordinary prompt path DOES carry files end to end. Refusing here
     // would break the feature this guard exists to protect.
-    expect(planCommandAttachments({ isCommand: false, attachmentCount: 3 })).toEqual({
+    expect(
+      planCommandAttachments({ isCommand: false, attachmentCount: 3 }, testUiTranslator),
+    ).toEqual({
       kind: 'dispatch',
     });
   });
 
   test('a command with one attachment is refused', () => {
-    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 1 });
+    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 1 }, testUiTranslator);
     expect(plan.kind).toBe('refuse');
   });
 
   test('the refusal names the singular file count and says the file is kept', () => {
-    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 1 });
+    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 1 }, testUiTranslator);
     if (plan.kind !== 'refuse') throw new Error('expected a refusal');
     expect(plan.description).toContain('1 file');
     expect(plan.description).toContain('stays attached');
@@ -45,14 +50,14 @@ describe('planCommandAttachments', () => {
   });
 
   test('the refusal names the plural file count and says the files are kept', () => {
-    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 3 });
+    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 3 }, testUiTranslator);
     if (plan.kind !== 'refuse') throw new Error('expected a refusal');
     expect(plan.description).toContain('3 files');
     expect(plan.description).toContain('stay attached');
   });
 
   test('the refusal states the command cannot send attachments', () => {
-    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 2 });
+    const plan = planCommandAttachments({ isCommand: true, attachmentCount: 2 }, testUiTranslator);
     if (plan.kind !== 'refuse') throw new Error('expected a refusal');
     // The one message the user must never get is silence. The headline names
     // the command as the reason so the fix is obvious without a doc.
@@ -63,8 +68,12 @@ describe('planCommandAttachments', () => {
   test('a negative or fractional count cannot produce a refusal', () => {
     // `attachmentCount` comes from `attachedFiles.length`, so this is defensive
     // only — but a refusal the user cannot clear would lock the composer.
-    expect(planCommandAttachments({ isCommand: true, attachmentCount: 0 }).kind).toBe('dispatch');
-    expect(planCommandAttachments({ isCommand: true, attachmentCount: -1 }).kind).toBe('dispatch');
+    expect(
+      planCommandAttachments({ isCommand: true, attachmentCount: 0 }, testUiTranslator).kind,
+    ).toBe('dispatch');
+    expect(
+      planCommandAttachments({ isCommand: true, attachmentCount: -1 }, testUiTranslator).kind,
+    ).toBe('dispatch');
   });
 });
 

@@ -105,9 +105,9 @@ describe('parseGroupPut', () => {
         schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
         id: UUID,
         displayName: 'Engineers',
-        members: [{ value: 'user-1', display: 'A' }, { value: 'user-2' }],
+        members: [{ value: UUID, display: 'A' }, { value: '00000000-0000-4000-8000-000000000002' }],
       }),
-    ).toEqual({ displayName: 'Engineers', externalId: null, members: ['user-1', 'user-2'] });
+    ).toEqual({ displayName: 'Engineers', externalId: null, members: [UUID, '00000000-0000-4000-8000-000000000002'] });
   });
 
   test('an EMPTY members array is authoritative (clears the group), absent is not', () => {
@@ -115,13 +115,8 @@ describe('parseGroupPut', () => {
     expect(parseGroupPut({ displayName: 'X' }).members).toBeNull();
   });
 
-  test('junk member entries and whitespace names are dropped', () => {
-    expect(
-      parseGroupPut({
-        displayName: '   ',
-        externalId: '  ext-9 ',
-        members: [{ value: 42 }, { display: 'no value' }, { value: 'ok' }],
-      }),
-    ).toEqual({ displayName: null, externalId: 'ext-9', members: ['ok'] });
+  test('malformed members and empty names are rejected', () => {
+    expect(() => parseGroupPut({ members: [{ value: 42 }] })).toThrow();
+    expect(() => parseGroupPut({ displayName: '   ' })).toThrow();
   });
 });

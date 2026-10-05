@@ -2,6 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
 import { config } from '../config';
+import { runWorkerTick } from '../shared/audit-scope';
 import { supabaseAuth } from '../middleware/auth';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
@@ -12,7 +13,6 @@ import { creditsRouter } from './routes/credits';
 import { paymentsRouter } from './routes/payments';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { webhooksRouter } from './routes/webhooks';
-import { billingRotationIntervalsEnabled } from './rotation-schedule';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -138,7 +138,7 @@ billingApp.openapi(
 );
 
 // Trial-expiry sweep cron endpoint. Pure status hygiene: the trial overlay
-// stops granting lazily at trial_ends_at (effective-tier.ts trialIsActive);
+// stops granting lazily at trial_ends_at (resolve-billing.ts trialIsActive);
 // this flips trial_status to 'expired' so rows read honestly.
 billingApp.openapi(
   createRoute({
@@ -163,38 +163,5 @@ billingApp.openapi(
     return c.json({ expired, monthly_regrants: monthlyRegrants });
   },
 );
-
-if (billingRotationIntervalsEnabled(config)) {
-  const TRIAL_EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(async () => {
-    try {
-      const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
-      await sweepExpiredTrials();
-      await sweepTrialMonthlyGrants();
-    } catch (err) {
-      console.error('[BillingApp] Trial-expiry sweep interval error:', err);
-    }
-  }, TRIAL_EXPIRY_SWEEP_INTERVAL_MS);
-
-  const YEARLY_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(async () => {
-    try {
-      const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
-      await processYearlyCreditRotation();
-    } catch (err) {
-      console.error('[BillingApp] Yearly rotation interval error:', err);
-    }
-  }, YEARLY_ROTATION_INTERVAL_MS);
-
-  const FREE_TIER_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(async () => {
-    try {
-      const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
-      await processFreeTierCreditRotation();
-    } catch (err) {
-      console.error('[BillingApp] Free-tier rotation interval error:', err);
-    }
-  }, FREE_TIER_ROTATION_INTERVAL_MS);
-}
 
 export { billingApp, accountDeletionApp };

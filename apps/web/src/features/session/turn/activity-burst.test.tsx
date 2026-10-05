@@ -1,3 +1,4 @@
+import '@/features/session/tool/tools/register';
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import type { Part, ToolPart } from '@/ui';
@@ -33,6 +34,20 @@ function tool(id: string, name: string, state: Record<string, unknown>): ToolPar
     state,
   } as unknown as ToolPart;
 }
+
+const triggerRow = (markup: string, label: string) => {
+  const row = markup
+    .match(/<div[^>]*class="[^"]*cursor-pointer[^"]*"[^>]*>[\s\S]*?<\/div>/g)
+    ?.find((html) => html.includes(label));
+  expect(row).toBeDefined();
+  return row!;
+};
+
+const rowNodes = (row: string) =>
+  row.replace(
+    /<svg[^>]*>[\s\S]*?<\/svg>/g,
+    (svg) => `<svg class="${svg.match(/class="([^"]+)"/)?.[1]}"/>`,
+  );
 
 describe('burstIsRunning', () => {
   test('a completed non-trailing burst is not running even while the turn works', () => {
@@ -121,6 +136,28 @@ describe('ActivityGroupStep', () => {
     expect(markup).toContain('Read 2 files');
     expect(markup).not.toContain('alpha.ts');
     expect(markup).not.toContain('beta.ts');
+  });
+
+  test('group trigger skeleton', () => {
+    expect(rowNodes(triggerRow(render(false), 'Read 2 files'))).toBe(
+      '<div data-status="done" class="select-none text-foreground/80 hover:text-foreground flex w-full cursor-pointer items-center gap-3 text-left text-sm leading-[1.5] transition-colors" role="button" aria-expanded="false" tabindex="0"><svg class="text-muted-foreground size-4 flex-none"/><span class="min-w-0 truncate font-medium">Read 2 files</span><svg class="text-muted-foreground/40 size-3.5 flex-none transition-transform group-data-[state=open]/step:rotate-90"/></div>',
+    );
+  });
+
+  test('two connector calls are ONE row that says connector, never app', () => {
+    // An App is a hosted Kortix web app. A connector call is not one.
+    const markup = render(false, [
+      tool('1', 'kortix-connectors_call', {
+        status: 'completed',
+        input: { connector: 'gmail', action: 'list_threads' },
+      }),
+      tool('2', 'kortix-connectors_call', {
+        status: 'completed',
+        input: { connector: 'gmail', action: 'get_thread' },
+      }),
+    ]);
+    expect(markup).toContain('Made 2 connector calls');
+    expect(markup).not.toMatch(/\bapps?\b/i);
   });
 
   test('open, the group renders its members — the second level', () => {
@@ -658,6 +695,20 @@ describe('ActivityBurst', () => {
     ]);
     expect(markup).toContain('Thinking');
     expect(markup).not.toContain('Weighing two schemas');
+  });
+
+  test('thought trigger skeleton', () => {
+    const markup = renderBurst([
+      {
+        id: 'r',
+        type: 'reasoning',
+        text: 'Synthetic thought',
+        time: { start: 1, end: 2 },
+      } as unknown as Part,
+    ]);
+    expect(rowNodes(triggerRow(markup, 'Thinking'))).toBe(
+      '<div class="select-none text-foreground/80 hover:text-foreground flex w-full cursor-pointer items-center gap-3 text-left text-sm leading-[1.5] transition-colors" role="button" aria-expanded="false" tabindex="0"><span class="font-medium tabular-nums">Thinking</span><svg class="text-muted-foreground/40 size-3.5 flex-none transition-transform group-data-[state=open]/step:rotate-90"/></div>',
+    );
   });
 
   test('a settled thought reports how long it took', () => {
@@ -1303,6 +1354,12 @@ describe('answered question step', () => {
     expect(markup).not.toContain('Completed 1 step');
     expect(markup).toContain('Questions');
     expect(markup).toContain('2 answered');
+  });
+
+  test('answered question trigger skeleton', () => {
+    expect(rowNodes(triggerRow(renderBurst([answered('q')]), '2 answered'))).toBe(
+      '<div class="select-none text-foreground/80 hover:text-foreground flex w-full cursor-pointer items-center gap-3 text-left text-sm leading-[1.5] transition-colors" role="button" aria-expanded="false" tabindex="0"><svg class="text-muted-foreground size-4 flex-none"/><span class="font-medium">Questions</span><span class="text-muted-foreground tabular-nums">2 answered</span><svg class="text-muted-foreground/40 size-3.5 flex-none transition-transform group-data-[state=open]/step:rotate-90"/></div>',
+    );
   });
 
   test('a question without answers stays off the answered-question row', () => {

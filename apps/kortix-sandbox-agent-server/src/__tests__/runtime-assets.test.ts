@@ -1,13 +1,30 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  isSafeOverlayPath,
+  bakeRuntimeAssetsState,
   overlayHash,
   reconcileRuntimeAssets,
-} from '../runtime-assets'
+  resetRuntimeConvergenceForTests,
+  runningRuntimeAssets,
+  __resetVerifiedDigestsForTests,
+  registerHarnessAssets,
+  resetHarnessAssetsForTests,
+} from '@/services/runtime-assets/runtime-assets'
+import {
+  SESSION_TOKEN_DEAD_PROBE_MS,
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
+import { resolveHarness } from '@/harness/harness'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 const API_URL = 'https://api.test.invalid'
 const TOKEN = 'kortix_pat_test'
@@ -27,7 +44,13 @@ async function workspace() {
 }
 
 afterEach(async () => {
+  resetRuntimeConvergenceForTests()
+  resetSessionTokenHealthForTests()
   while (dirs.length > 0) await rm(dirs.pop() as string, { recursive: true, force: true })
+})
+
+beforeEach(() => {
+  resetSessionTokenHealthForTests()
 })
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
@@ -93,31 +116,26 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Own the box: the chunk index hashes whatever these resolve to, and the
+    // defaults reach this host's real agent binary (/usr/local/bin/kortix-agent,
+    // ~100 MB hashed 8 bytes at a time by the stub's chunk size). A CI runner
+    // has neither, so pointing both into the fixture restores that shape.
+    agentStateDir: join(ws.root, 'agent-state'),
+    agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
+    // The fixtures are text files, not executables. A downloaded CLI is now
+    // EXECUTED before it replaces a working one, so every case that is not about
+    // that check says "it ran". See `ExecProbe` in ../runtime-assets.ts.
+    execProbe: async () => 0,
     ...extra,
   })
 }
 
-describe('overlay hashing and path safety', () => {
-  test('hash matches the API implementation for the same input', () => {
-    // Same framing as apps/api/src/runtime-assets/managed-skills.ts.
-    const h = createHash('sha256')
-    for (const f of SKILL_FILES) {
-      h.update(`file\0${f.path}\0${Buffer.byteLength(f.content)}\0`)
-      h.update(f.content)
-      h.update('\0')
-    }
-    expect(SKILLS_HASH).toBe(h.digest('hex'))
-  })
-
-  test('rejects traversal, absolute, and non-kortix overlay paths', () => {
-    expect(isSafeOverlayPath('kortix-system/SKILL.md')).toBe(true)
-    expect(isSafeOverlayPath('kortix-system/references/a.md')).toBe(true)
-    expect(isSafeOverlayPath('../etc/passwd')).toBe(false)
-    expect(isSafeOverlayPath('/etc/passwd')).toBe(false)
-    expect(isSafeOverlayPath('kortix-system/../../evil')).toBe(false)
-    expect(isSafeOverlayPath('other-skill/SKILL.md')).toBe(false)
-    expect(isSafeOverlayPath('')).toBe(false)
+describe('overlay hashing', () => {
+  test('hash is the one apps/api computes for the same input (golden vector)', () => {
+    // The same hex is pinned in apps/api/src/runtime-assets/__tests__/manifest.test.ts
+    // for managedSkillOverlayHash. Either side drifting fails its own suite.
+    expect(SKILLS_HASH).toBe('453944bd7d750bb9b878fee50df662da07552c962238bc37a95f96853a75bcf9')
   })
 })
 
@@ -137,6 +155,34 @@ describe('reconcileRuntimeAssets', () => {
     expect(stub.calls).toEqual([])
   })
 
+  test('a successful manifest fetch clears the shared dead-token breaker', async () => {
+    // KRTX-613: the breaker only ever saw failures, so it tripped and never
+    // cleared — a pause gated on it would be permanent. The manifest fetch is
+    // the control-plane call that runs every runtime-truth tick. KRTX-636 skips
+    // it while the breaker is tripped, so it goes out once per probe window,
+    // and its 2xx is the signal that the credential works again.
+    const ws = await workspace()
+    const stub = stubFetch()
+    setSystemTime(new Date('2026-09-28T00:00:00Z'))
+    try {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'Session token is not active')
+      }
+      expect(sessionTokenPresumedDead()).toBe(true)
+
+      await run(ws, stub) // inside the probe window: skipped
+      expect(stub.calls).toEqual([])
+
+      setSystemTime(new Date(Date.now() + SESSION_TOKEN_DEAD_PROBE_MS))
+      await run(ws, stub)
+    } finally {
+      setSystemTime()
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(false)
+    expect(stub.calls.some((url) => url.endsWith('/runtime-assets/manifest'))).toBe(true)
+  })
+
   test('digest mismatch → binary replaced, mode 0755, overlay written', async () => {
     const ws = await workspace()
     await writeFile(ws.cliPath.replace(/\/kortix$/, '/.keep'), '').catch(() => {})
@@ -146,7 +192,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stub)
 
     expect(result).toEqual({ cli: 'updated', skills: 'updated' })
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect((await stat(ws.cliPath)).mode & 0o777).toBe(0o755)
     expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toContain('body v2')
     expect(await readFile(join(ws.skillsDir, 'kortix-cli/SKILL.md'), 'utf8')).toBe('cli skill v2\n')
@@ -155,16 +201,23 @@ describe('reconcileRuntimeAssets', () => {
     expect(opt.filter((e) => e.includes('staging') || e.includes('retired'))).toEqual([])
   })
 
-  test('matching digests → no download, both halves current', async () => {
+  // Idempotent from either starting binary: once converged, a pass reads the
+  // manifest and nothing else, and leaves the binary's mtime alone.
+  test.each([
+    ['NEW-CLI-BYTES', 'current'],
+    ['OLD-CLI-BYTES', 'updated'],
+  ] as const)('starting from %s, the first pass reports cli %s and the second changes nothing', async (start, firstCli) => {
     const ws = await workspace()
-    await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
+    await Bun.write(ws.cliPath, start)
     const first = await run(ws, stubFetch())
-    expect(first).toEqual({ cli: 'current', skills: 'updated' })
+    expect(first).toEqual({ cli: firstCli, skills: 'updated' })
+    const afterFirst = await stat(ws.cliPath)
 
     const second = stubFetch()
     const result = await run(ws, second)
     expect(result).toEqual({ cli: 'current', skills: 'current' })
     expect(second.calls).toEqual([`${API_URL}/v1/runtime-assets/manifest`])
+    expect((await stat(ws.cliPath)).mtimeMs).toBe(afterFirst.mtimeMs)
   })
 
   test('manifest reports no CLI → CLI half skipped, binary untouched', async () => {
@@ -257,20 +310,28 @@ describe('reconcileRuntimeAssets', () => {
     expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toBe('body v1\n')
   })
 
-  test('unsafe overlay paths are dropped, safe siblings still land', async () => {
+  test.each([
+    '../escaped.md',
+    '/etc/escaped.md',
+    'kortix-system/../../escaped.md',
+    'other-skill/SKILL.md',
+    '',
+  ])('an unsafe overlay path %p is dropped, a safe sibling still lands', async (unsafe) => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
     const files = [
-      { path: 'kortix-system/SKILL.md', content: 'ok\n' },
-      { path: '../escaped.md', content: 'pwned\n' },
+      { path: 'kortix-system/references/a.md', content: 'ok\n' },
+      { path: unsafe, content: 'pwned\n' },
     ]
     const stub = stubFetch({ skillFiles: files, skillsHash: overlayHash(files) })
 
     const result = await run(ws, stub)
 
     expect(result.skills).toBe('updated')
-    expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toBe('ok\n')
+    expect(await readFile(join(ws.skillsDir, 'kortix-system/references/a.md'), 'utf8')).toBe('ok\n')
     expect(await stat(join(ws.root, 'opt', 'escaped.md')).catch(() => null)).toBeNull()
+    expect(await stat('/etc/escaped.md').catch(() => null)).toBeNull()
+    expect(await stat(join(ws.skillsDir, 'other-skill')).catch(() => null)).toBeNull()
   })
 
   test('missing overlay dir is created even when the hash already matches state', async () => {
@@ -292,8 +353,13 @@ describe('reconcileRuntimeAssets', () => {
     const injected: string[] = []
     const result = await run(ws, stubFetch(), {
       configDir: ws.configDir,
-      injectSkills: async (configDir: string, bakedDir: string) => {
-        injected.push(`${configDir}|${bakedDir}`)
+      assets: {
+        componentNames: [],
+        resolveConfigDir: async () => ws.configDir,
+        injectSkills: async (configDir: string, bakedDir: string) => {
+          injected.push(`${configDir}|${bakedDir}`)
+        },
+        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     })
     expect(result.skills).toBe('updated')
@@ -307,41 +373,275 @@ describe('reconcileRuntimeAssets', () => {
     const injected: string[] = []
     const result = await run(ws, stubFetch(), {
       configDir: ws.configDir,
-      injectSkills: async () => {
-        injected.push('called')
+      assets: {
+        componentNames: [],
+        resolveConfigDir: async () => ws.configDir,
+        injectSkills: async () => {
+          injected.push('called')
+        },
+        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     })
     expect(result.skills).toBe('current')
     expect(injected).toEqual([])
   })
 
-  test('the manifest always beats a stale digest cache', async () => {
+  test('the digest cache is keyed on size and mtime: a stale mtime forces a real hash and a download', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
-    const stats = await stat(ws.cliPath)
-    // A cache that claims the on-disk binary is already the new one.
+    // Stat through a handle, not the path: the code under test replaces this
+    // file before the read below, which a path stat-then-read reads as a race.
+    const handle = await open(ws.cliPath)
+    const stats = await handle.stat()
+    await handle.close()
+    // The cache claims the on-disk binary IS the manifest build, but for an
+    // mtime the file no longer has.
     await Bun.write(
       ws.statePath,
       JSON.stringify({
-        cli_sha256: sha('SOMETHING-ELSE'),
+        cli_sha256: sha('NEW-CLI-BYTES'),
         cli_size: stats.size,
-        cli_mtime_ms: Math.trunc(stats.mtimeMs),
+        cli_mtime_ms: Math.trunc(stats.mtimeMs) - 5_000,
       }),
     )
 
     const result = await run(ws, stubFetch())
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
+  })
+})
+
+// ── The image bake ─────────────────────────────────────────────────────────
+//
+// A sandbox image that carries the current CLI, daemon and skill overlay still
+// cannot SAY so: `/opt/kortix/runtime-assets-state.json` is written only by a
+// completed reconcile, so a freshly booted box answers `runtime.running` with
+// nulls until its first pass finishes — measured at ~140 s on a cold preview
+// box. Baking the bytes without the bookkeeping fixes half the defect. These
+// tests pin both halves: the bake states exactly what is on disk, and the pass
+// that follows it downloads nothing.
+describe('bakeRuntimeAssetsState', () => {
+  // The API serves the overlay PATH-SORTED (`managedSkillOverlayFiles`), and a
+  // bake reads it back off disk the same way. `SKILL_FILES` above is declared
+  // in hash-vector order, not sorted order, so the bake's hash is this one.
+  const BAKED_SKILL_FILES = [...SKILL_FILES].sort((a, b) => a.path.localeCompare(b.path))
+  const BAKED_SKILLS_HASH = overlayHash(BAKED_SKILL_FILES)
+
+  async function bakedImage() {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
+    await Bun.write(join(ws.root, 'bin', 'kortix-agent'), 'AGENT-BYTES')
+    for (const file of SKILL_FILES) await Bun.write(join(ws.skillsDir, file.path), file.content)
+    return ws
+  }
+
+  test('states the digests of the files the image actually carries', async () => {
+    const ws = await bakedImage()
+
+    const state = await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath: join(ws.root, 'bin', 'kortix-agent'),
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+
+    const onDisk = JSON.parse(await readFile(ws.statePath, 'utf8'))
+    expect(onDisk).toEqual(state)
+    expect(state.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+    expect(state.cli_path).toBe(ws.cliPath)
+    expect(state.agent_sha256).toBe(sha('AGENT-BYTES'))
+    expect(state.agent_path).toBe(join(ws.root, 'bin', 'kortix-agent'))
+    expect(state.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
+    expect(state.harness).toBe('opencode')
+    expect(state.harness_version).toBe('1.18.23')
+    // `build` is the epoch of a manifest this box READ. An image build reads
+    // none, so claiming one would let the epoch guard refuse a legitimate API.
+    expect(state.build).toBeUndefined()
   })
 
-  test('is idempotent — a second pass changes nothing', async () => {
+  test('the first reconcile on a baked box is a no-op: manifest only, nothing downloaded', async () => {
+    const ws = await bakedImage()
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath: join(ws.root, 'bin', 'kortix-agent'),
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+
+    const stub = stubFetch({
+      cliBody: 'NEW-CLI-BYTES',
+      skillsHash: BAKED_SKILLS_HASH,
+      skillFiles: BAKED_SKILL_FILES,
+    })
+    const result = await run(ws, stub)
+
+    expect(result).toMatchObject({ cli: 'current', skills: 'current' })
+    expect(stub.calls).toEqual([`${API_URL}/v1/runtime-assets/manifest`])
+  })
+
+  test('a box states which bytes it runs before any reconcile has happened', async () => {
+    const ws = await bakedImage()
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath: join(ws.root, 'bin', 'kortix-agent'),
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+    expect(running.agent_sha256).toBe(sha('AGENT-BYTES'))
+    expect(running.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
+    expect(running.harness).toBe('opencode')
+    expect(running.harness_version).toBe('1.18.23')
+  })
+
+  test('a binary replaced after the bake reports the bytes now on disk, not the baked digest', async () => {
+    // The Platinum agent-swap fast path patches the agent binary into the
+    // predecessor's rootfs and keeps its state file. Before this, a fresh box
+    // reported the predecessor's agent digest until its first reconcile, and
+    // session open relaunched a daemon that already ran the right bytes.
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    __resetVerifiedDigestsForTests()
+
+    await Bun.write(agentPath, 'SWAPPED-IN-AGENT-BYTES')
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBe(sha('SWAPPED-IN-AGENT-BYTES'))
+    expect(running.agent_path).toBe(agentPath)
+    // The CLI was not touched: the baked digest is still the truth.
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+  })
+
+  test('a baked digest whose file is gone cannot prove anything', async () => {
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    await rm(agentPath)
+
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBeNull()
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+  })
+
+  test('a missing baked asset fails the image build instead of shipping a lie', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
+
+    await expect(
+      bakeRuntimeAssetsState({
+        cliPath: ws.cliPath,
+        agentPath: join(ws.root, 'bin', 'kortix-agent'),
+        managedSkillsDir: ws.skillsDir,
+        statePath: ws.statePath,
+      }),
+    ).rejects.toThrow(/kortix-agent/)
+  })
+})
+
+// ── Chunked transfer, through the real reconcile ───────────────────────────
+//
+// `stubFetch` above answers 500 on the chunk routes, so every case in this file
+// takes the full download and proves the fallback is intact. This block is the
+// other half: the same reconcile, against an API that DOES serve chunks.
+describe('reconcileRuntimeAssets over chunks', () => {
+  const CHUNK = 8
+  const blocks = (letters: string) =>
+    Buffer.concat([...letters].map((ch) => Buffer.alloc(CHUNK, ch.charCodeAt(0))))
+  const shaBytes = (b: Uint8Array) => createHash('sha256').update(b).digest('hex')
+
+  function chunkAwareStub(oldCli: Buffer, newCli: Buffer) {
+    const chunks: string[] = []
+    for (let o = 0; o < newCli.length; o += CHUNK) {
+      chunks.push(shaBytes(newCli.subarray(o, o + CHUNK)))
+    }
+    const calls: string[] = []
+    const impl = (async (input: string | URL | Request) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/runtime-assets/manifest')) {
+        return Response.json({
+          cli_version: '0.12.9+abc12345',
+          cli_sha256: shaBytes(newCli),
+          cli_size: newCli.length,
+          managed_skills_hash: SKILLS_HASH,
+        })
+      }
+      if (url.endsWith('/runtime-assets/chunks/cli')) {
+        return Response.json({
+          sha256: shaBytes(newCli),
+          size: newCli.length,
+          chunk_size: CHUNK,
+          chunks,
+        })
+      }
+      if (url.includes('/runtime-assets/chunk/')) {
+        const index = chunks.indexOf(url.slice(url.lastIndexOf('/') + 1))
+        if (index === -1) return new Response('nope', { status: 404 })
+        return new Response(newCli.subarray(index * CHUNK, (index + 1) * CHUNK))
+      }
+      if (url.endsWith('/runtime-assets/cli')) return new Response(newCli)
+      if (url.endsWith('/runtime-assets/managed-skills')) {
+        return Response.json({ hash: SKILLS_HASH, files: SKILL_FILES })
+      }
+      return new Response('unexpected', { status: 500 })
+    }) as unknown as typeof fetch
+    return { impl, calls, chunks }
+  }
+
+  test('a version bump installs the new CLI without refetching the bytes that did not change', async () => {
+    // The measured shape of a real version bump: 1 of 11 chunks differs.
+    const oldCli = blocks('aaaaaaaaaaa')
+    const newCli = blocks('aaaaaXaaaaa')
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, oldCli)
+    const stub = chunkAwareStub(oldCli, newCli)
+
+    // The store is the box's previous CLI — not whatever real binaries this
+    // test box happens to run, which a Kortix sandbox image carries and the
+    // 8-byte fixture chunking would hash for minutes.
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>, {
+      localChunkSources: [ws.cliPath],
+    })
+
+    expect(result.cli).toBe('updated')
+    expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)
+    // The whole binary was never requested; exactly one chunk was.
+    expect(stub.calls.filter((u) => u.endsWith('/runtime-assets/cli'))).toEqual([])
+    expect(stub.calls.filter((u) => u.includes('/runtime-assets/chunk/'))).toEqual([
+      `${API_URL}/v1/runtime-assets/chunk/${stub.chunks[5]}`,
+    ])
+  })
+
+  test('an API that serves no chunk routes still converges — the full download is intact', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
-    await run(ws, stubFetch())
-    const afterFirst = await stat(ws.cliPath)
-    const result = await run(ws, stubFetch())
-    expect(result).toEqual({ cli: 'current', skills: 'current' })
-    expect((await stat(ws.cliPath)).mtimeMs).toBe(afterFirst.mtimeMs)
+    const stub = stubFetch()
+
+    const result = await run(ws, stub, { localChunkSources: [ws.cliPath] })
+
+    expect(result.cli).toBe('updated')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
+    expect(stub.calls).toContain(`${API_URL}/v1/runtime-assets/cli`)
   })
 })

@@ -21,8 +21,7 @@
  *    capability instead of naming the brand.
  *  - CONNECTOR credentials are brokered server-side and never enter the
  *    machine. A granted RUNTIME secret is a real env value in the session and
- *    IS readable by any command the agent runs
- *    (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). NEVER write "secrets the model
+ *    IS readable by any command the agent runs. NEVER write "secrets the model
  *    cannot see" about runtime secrets.
  *  - CHANNELS ARE A CLOSED ENUM: Slack live, Teams behind an operator switch,
  *    email experimental. Telegram, WhatsApp, SMS and Discord are NOT
@@ -41,7 +40,7 @@
  *  - ONE SANCTIONED SUPERLATIVE FORM: "the leading open-source alternative".
  *    No other superlative, ever.
  *
- * Voice rules: the `comms` skill. The product noun is CONNECTOR, never
+ * Voice rules: the `kortix-brand` skill. The product noun is CONNECTOR, never
  * "integration"; SESSION, never "chat"; CLOUD COMPUTER or SANDBOX, never
  * "container"; CHANGE REQUEST, never "PR" in prose.
  */

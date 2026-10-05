@@ -4,14 +4,17 @@ import {
   AT_END_PX,
   BOTTOM_GAP_PX,
   CHEVRON_PX,
+  GLIDE_MIN_PX,
+  OWN_SCROLL_MS,
   TURN_TOP_OFFSET,
   chevronVisible,
-  chooseAnchorIndex,
   classifyScrollKey,
   isAtEnd,
   isEditableTarget,
   keyScrollIntentFor,
+  pickAnchorIndex,
   roomUnderNewestTurn,
+  settleMotion,
   shouldReleaseFollow,
 } from './use-auto-scroll';
 
@@ -28,33 +31,104 @@ describe('roomUnderNewestTurn — FACT 1, the room is one value streaming or idl
   });
 });
 
-describe('chooseAnchorIndex — the anchor never retreats', () => {
-  const t = (id: string, pending = false) => ({ id, pending });
-  test('the newest non-pending turn, when nothing was anchored yet', () => {
-    expect(chooseAnchorIndex([t('a'), t('b')], null)).toBe(1);
-    expect(chooseAnchorIndex([t('a'), t('b', true)], null)).toBe(0);
+describe('pickAnchorIndex — a REACHED anchor never falls back to an older turn', () => {
+  /** Pending flags by DOM order, in the (count, isPending) shape the hook passes. */
+  const flags = (pending: boolean[]) => [pending.length, (i: number) => pending[i]] as const;
+
+  test('the newest turn the agent has reached is the anchor; queued turns under it are not', () => {
+    expect(pickAnchorIndex(...flags([false, false, true]), null)).toBe(1);
+    expect(pickAnchorIndex(...flags([false, false, false]), null)).toBe(2);
   });
-  test('all pending: the newest', () => {
-    expect(chooseAnchorIndex([t('a', true), t('b', true)], null)).toBe(1);
-    expect(chooseAnchorIndex([], null)).toBe(-1);
+
+  test('every turn queued: the last one (nothing has been reached)', () => {
+    expect(pickAnchorIndex(...flags([true, true]), null)).toBe(1);
+    expect(pickAnchorIndex(...flags([]), null)).toBe(-1);
   });
-  test('a pending mark landing on the turn already anchored does not move the anchor back (the send jump)', () => {
-    // +49 ms: b painted, anchored. ~+800 ms: the inbox poll marks b pending.
-    expect(chooseAnchorIndex([t('a'), t('b')], null)).toBe(1);
-    expect(chooseAnchorIndex([t('a'), t('b', true)], 'b')).toBe(1);
+
+  test('the reported double jump: the sent turn flips pending for a frame — the anchor holds', () => {
+    // Anchored on the fresh send (index 1), then a transient `data-turn-pending`
+    // on it. Falling back to index 0 collapsed the room under the new turn and
+    // clamped the viewport down, then re-anchoring glided it back up.
+    expect(pickAnchorIndex(...flags([false, true]), { index: 1, reached: true })).toBe(1);
   });
-  test('but a turn queued mid-turn — pending from its first paint — is never chosen over the streaming one', () => {
-    expect(chooseAnchorIndex([t('a'), t('b', true)], 'a')).toBe(0);
+
+  test('forward moves still happen — the agent reached a queued prompt', () => {
+    expect(pickAnchorIndex(...flags([false, false, false]), { index: 1, reached: true })).toBe(2);
   });
-  test('the anchor still moves forward when a newer turn is reached', () => {
-    expect(chooseAnchorIndex([t('a'), t('b'), t('c')], 'b')).toBe(2);
+
+  test('a FALLBACK anchor (chosen while everything was queued) yields to a reached turn above it', () => {
+    expect(pickAnchorIndex(...flags([false, true, true]), { index: 2, reached: false })).toBe(0);
   });
-  test('a removed anchor (queued bubble taken back) falls to the newest non-pending turn', () => {
-    expect(chooseAnchorIndex([t('a')], 'b')).toBe(0);
+
+  test('a previous anchor that left the transcript (rewind, failed send) holds nothing', () => {
+    expect(pickAnchorIndex(...flags([false, true]), { index: 3, reached: true })).toBe(0);
+    expect(pickAnchorIndex(...flags([false, true]), { index: -1, reached: true })).toBe(0);
+  });
+
+  test('the scan stops at the first reached turn from the end — one DOM query per settle', () => {
+    let queries = 0;
+    const isPending = (i: number) => {
+      queries++;
+      return i === 99;
+    };
+    expect(pickAnchorIndex(100, isPending, null)).toBe(98);
+    expect(queries).toBe(2);
+  });
+});
+
+describe('settleMotion — one motion per change, never a cut at the end of a glide', () => {
+  const base = {
+    distance: 0,
+    end: 1_000,
+    anchorChanged: false,
+    glideArmed: false,
+    glideTarget: null,
+    reduceMotion: false,
+  };
+
+  test('already at the end: nothing', () => {
+    expect(settleMotion(base)).toBe('none');
+  });
+
+  test('text streaming under the anchor follows instantly — a glide would lag the text', () => {
+    expect(settleMotion({ ...base, distance: 40 })).toBe('instant');
+    expect(settleMotion({ ...base, distance: 400 })).toBe('instant');
+  });
+
+  test('a new anchor glides once', () => {
+    expect(settleMotion({ ...base, distance: GLIDE_MIN_PX + 1, anchorChanged: true })).toBe(
+      'glide',
+    );
+    expect(settleMotion({ ...base, distance: GLIDE_MIN_PX, anchorChanged: true })).toBe('instant');
+  });
+
+  test('a send glides even when the anchor did not change (it was already the anchor)', () => {
+    expect(settleMotion({ ...base, distance: 600, glideArmed: true })).toBe('glide');
+  });
+
+  test('in flight: a moved end RE-AIMS the glide; an unchanged one lets it land', () => {
+    // The old code ignored every change for a fixed 420ms and then wrote
+    // `scrollTop` — a visible snap whenever the end had moved (or the browser's
+    // own smooth scroll had not finished).
+    expect(settleMotion({ ...base, distance: 300, glideTarget: 1_000 })).toBe('wait');
+    expect(settleMotion({ ...base, distance: 300, glideTarget: 1_000.5 })).toBe('wait');
+    expect(settleMotion({ ...base, distance: 300, end: 1_060, glideTarget: 1_000 })).toBe('glide');
+  });
+
+  test('reduced motion: every glide becomes an instant move', () => {
+    expect(
+      settleMotion({ ...base, distance: 600, anchorChanged: true, reduceMotion: true }),
+    ).toBe('instant');
+    expect(settleMotion({ ...base, distance: 600, glideArmed: true, reduceMotion: true })).toBe(
+      'instant',
+    );
   });
 });
 
 describe('isAtEnd — THE RULE resumes only at the end', () => {
+  test('the compatibility import keeps the original scroll timing constant', () => {
+    expect(OWN_SCROLL_MS).toBe(80);
+  });
   test('within AT_END_PX counts as at the end (drags rarely land on the pixel)', () => {
     expect(isAtEnd(0)).toBe(true);
     expect(isAtEnd(AT_END_PX)).toBe(true);

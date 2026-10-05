@@ -6,11 +6,17 @@ import {
   type AuditInsertClient,
   AuditQueue,
   type AuditRow,
+  retryBackoffMs,
   statementBatches,
 } from './audit-queue';
 
 function row(action: string): AuditRow {
   return { action, resourceType: 'account' } as AuditRow;
+}
+
+/** The shape a failed `postgres.js`/Drizzle write actually carries: a `code`. */
+function codedError(code: string, message = 'write failed'): Error {
+  return Object.assign(new Error(message), { code });
 }
 
 interface FakeClient {
@@ -21,7 +27,9 @@ interface FakeClient {
   conflictCalls: number;
   failNext: (fail: boolean) => void;
   /** Fail only the statements whose rows match — one contended session. */
-  failOn: (predicate: (rows: AuditRow[]) => boolean) => void;
+  failOn: (predicate: (rows: AuditRow[]) => boolean, error?: unknown) => void;
+  /** Fail every write with this error until called again with `null`. */
+  failWith: (error: unknown | null) => void;
   /** Blocks the write until released, so overlapping flushes can be observed. */
   gate: (enabled: boolean) => void;
   release: () => void;
@@ -31,6 +39,8 @@ function makeClient(): FakeClient {
   const batches: AuditRow[][] = [];
   let shouldFail = false;
   let failPredicate: ((rows: AuditRow[]) => boolean) | null = null;
+  let failPredicateError: unknown = new Error('write failed');
+  let failError: unknown | null = null;
   let gated = false;
   let releaseFn: (() => void) | null = null;
   const state = {
@@ -45,7 +55,9 @@ function makeClient(): FakeClient {
                 releaseFn = resolve;
               });
             }
-            if (shouldFail || failPredicate?.(rows)) throw new Error('write failed');
+            if (failError !== null) throw failError;
+            if (shouldFail) throw new Error('write failed');
+            if (failPredicate?.(rows)) throw failPredicateError;
           },
         }),
       }),
@@ -55,8 +67,12 @@ function makeClient(): FakeClient {
     failNext: (fail: boolean) => {
       shouldFail = fail;
     },
-    failOn: (predicate: (rows: AuditRow[]) => boolean) => {
+    failOn: (predicate: (rows: AuditRow[]) => boolean, error?: unknown) => {
       failPredicate = predicate;
+      if (error !== undefined) failPredicateError = error;
+    },
+    failWith: (error: unknown | null) => {
+      failError = error;
     },
     gate: (enabled: boolean) => {
       gated = enabled;
@@ -268,61 +284,17 @@ describe('AuditQueue', () => {
   });
 });
 
-/**
- * Essentia 2026-08-26. `kortix.audit_prepare_event` takes a per-session row
- * lock on `kortix.audit_session_sequences` that PostgreSQL holds until COMMIT,
- * so a statement built in arrival order held EVERY session it touched. Measured
- * against a 5.09M-row `audit_events`: a 100-row cross-session statement blocked
- * a same-session ingest to a hard 57014 at 10,004.957 ms, while a same-shaped
- * single-session statement left a different session's insert at 2.6 ms.
- */
 describe('statementBatches', () => {
-  function sessionRow(sessionId: string | null, action: string): AuditRow {
-    return { action, resourceType: 'session', sessionId } as unknown as AuditRow;
-  }
+  const sessionRow = (sessionId: string | null, action: string): AuditRow =>
+    ({ action, resourceType: 'session', sessionId }) as unknown as AuditRow;
 
-  test('never puts two sessions in one statement', () => {
-    const batches = statementBatches(
-      [
-        sessionRow('a', '1'),
-        sessionRow('b', '2'),
-        sessionRow('a', '3'),
-        sessionRow('c', '4'),
-        sessionRow('b', '5'),
-      ],
-      100,
-    );
+  test('splits at the statement maximum and keeps arrival order, across sessions', () => {
+    const rows = Array.from({ length: 7 }, (_, i) => sessionRow(`s${i % 2}`, String(i)));
 
-    for (const batch of batches) {
-      expect(new Set(batch.map((r) => (r as { sessionId: string }).sessionId)).size).toBe(1);
-    }
-    expect(batches).toHaveLength(3);
-  });
+    const batches = statementBatches(rows, 3);
 
-  test('preserves arrival order within a session — the only order session_sequence is defined over', () => {
-    const batches = statementBatches(
-      [sessionRow('a', '1'), sessionRow('b', 'x'), sessionRow('a', '2'), sessionRow('a', '3')],
-      100,
-    );
-
-    const first = batches.find((b) => (b[0] as { sessionId: string }).sessionId === 'a');
-    expect(first?.map((r) => r.action)).toEqual(['1', '2', '3']);
-  });
-
-  test('still caps a single session at the statement maximum', () => {
-    const rows = Array.from({ length: 7 }, (_, i) => sessionRow('a', String(i)));
-
-    expect(statementBatches(rows, 3).map((b) => b.length)).toEqual([3, 3, 1]);
-  });
-
-  test('rows with no session share one group and take no session lock', () => {
-    const batches = statementBatches(
-      [sessionRow(null, '1'), sessionRow('a', '2'), sessionRow(undefined as never, '3')],
-      100,
-    );
-
-    const sessionless = batches.find((b) => !(b[0] as { sessionId: string | null }).sessionId);
-    expect(sessionless?.map((r) => r.action)).toEqual(['1', '3']);
+    expect(batches.map((b) => b.length)).toEqual([3, 3, 1]);
+    expect(batches.flat().map((r) => r.action)).toEqual(['0', '1', '2', '3', '4', '5', '6']);
   });
 
   test('every row survives the split', () => {
@@ -335,8 +307,8 @@ describe('statementBatches', () => {
   });
 });
 
-describe('AuditQueue statement isolation', () => {
-  test('a flush that spans sessions writes one statement per session', async () => {
+describe('AuditQueue statements', () => {
+  test('a flush writes ONE statement for rows of several sessions (no per-session lock to avoid)', async () => {
     const fake = makeClient();
     const queue = new AuditQueue(fake.client, { flushMax: 100, flushMs: 10_000 });
 
@@ -345,27 +317,279 @@ describe('AuditQueue statement isolation', () => {
     }
     await queue.flush();
 
-    expect(fake.batches).toHaveLength(3);
-    expect(fake.batches.map((b) => b.length).sort()).toEqual([1, 1, 2]);
-    expect(queue.stats()).toMatchObject({ written: 4, failed: 0, flushes: 3 });
+    expect(fake.batches).toHaveLength(1);
+    expect(fake.batches[0]).toHaveLength(4);
+    expect(queue.stats()).toMatchObject({ written: 4, failed: 0, flushes: 1 });
   });
 
-  test('one contended session cannot drop another session rows', async () => {
+  test('a poison statement dead-letters only its own rows', async () => {
     const fake = makeClient();
     const errors: number[] = [];
     const queue = new AuditQueue(fake.client, {
-      flushMax: 100,
+      flushMax: 2,
       flushMs: 10_000,
       onError: (_error, rowCount) => errors.push(rowCount),
     });
 
-    fake.failOn((rows) => (rows[0] as unknown as { sessionId: string }).sessionId === 's2');
-    for (const sessionId of ['s1', 's2', 's3']) {
-      queue.enqueue({ action: 'a', resourceType: 'session', sessionId } as unknown as AuditRow);
+    fake.failOn((rows) => rows.some((r) => r.action === 'poison'));
+    for (const action of ['a', 'b', 'poison', 'c']) {
+      queue.enqueue({ action, resourceType: 'session' } as unknown as AuditRow);
     }
     await queue.flush();
 
+    expect(errors).toEqual([2]);
+    expect(queue.stats()).toMatchObject({ written: 2, failed: 2 });
+  });
+});
+
+describe('retryBackoffMs', () => {
+  test('grows exponentially and caps at retryMaxMs', () => {
+    expect(retryBackoffMs(1, 200, 5_000, 0)).toBe(100); // half of the base
+    expect(retryBackoffMs(1, 200, 5_000, 1)).toBe(200); // full base
+    expect(retryBackoffMs(4, 200, 5_000, 0)).toBe(800); // 200*2^3=1600, half=800
+    expect(retryBackoffMs(10, 200, 5_000, 1)).toBe(5_000); // capped, not 200*2^9
+  });
+
+  test('never returns a near-zero delay that would re-hammer the lock', () => {
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      expect(retryBackoffMs(attempt, 200, 5_000, 0)).toBeGreaterThan(0);
+    }
+  });
+});
+
+/**
+ * The actual production incident (`[audit] Dropped a batch of 1 events after
+ * a write failure: sqlstate=55P03 canceling statement due to lock timeout`):
+ * hundreds per hour, 100% lock-timeout contention, 0% a real data defect. The
+ * queue dropped every one of them. This is the regression suite for that bug.
+ */
+describe('AuditQueue never drops a contended batch', () => {
+  test('55P03 (lock_timeout) is requeued for the next flush, not dropped', async () => {
+    const fake = makeClient();
+    const errors: number[] = [];
+    const retries: Array<{ rowCount: number; attempt: number }> = [];
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      onError: (_e, count) => errors.push(count),
+      onRetry: (_error, rowCount, attempt) => retries.push({ rowCount, attempt }),
+    });
+
+    fake.failWith(codedError('55P03', 'canceling statement due to lock timeout'));
+    q.enqueue(row('a'));
+    await q.flush();
+
+    // Never dead-lettered, never counted as an overflow drop.
+    expect(errors).toEqual([]);
+    expect(q.stats().failed).toBe(0);
+    expect(q.stats().dropped).toBe(0);
+    expect(q.stats().written).toBe(0);
+    expect(q.stats().contended).toBe(1);
+    // The row goes back into the buffer, in original order, for a later try.
+    expect(q.stats().queued).toBe(1);
+    expect(retries).toEqual([{ rowCount: 1, attempt: 1 }]);
+
+    // Once the database recovers, the SAME row is written — it was never lost.
+    fake.failWith(null);
+    await q.flush();
+    expect(q.stats().written).toBe(1);
+    expect(q.stats().queued).toBe(0);
+    expect(fake.batches.map((b) => b.map((r) => r.action))).toEqual([['a'], ['a']]);
+  });
+
+  test('contention warnings are rate-limited to one per interval, without losing the accounting', async () => {
+    const fake = makeClient();
+    const warnings: number[] = [];
+    let clock = 1_000;
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      retryLogIntervalMs: 60_000,
+      now: () => clock,
+      onRetry: () => warnings.push(clock),
+    });
+
+    fake.failWith(codedError('55P03', 'canceling statement due to lock timeout'));
+    for (let i = 0; i < 5; i += 1) {
+      q.enqueue(row(`r${i}`));
+      await q.flush();
+      clock += 1_000; // five contentions inside one 60 s window
+    }
+
+    // One warning for the whole window; the first contention is never hidden.
+    expect(warnings).toHaveLength(1);
+    // Rate limiting suppresses the LINE, never the accounting: every contended
+    // row is still counted and still buffered for retry.
+    expect(q.stats().contended).toBeGreaterThan(0);
+    expect(q.stats().dropped).toBe(0);
+    expect(q.stats().queued).toBeGreaterThan(0);
+
+    clock += 60_001;
+    q.enqueue(row('later'));
+    await q.flush();
+    expect(warnings).toHaveLength(2);
+  });
+
+  test('every documented contention SQLSTATE is requeued, not dropped', async () => {
+    for (const code of ['57014', '55P03', '40001', '40P01', '57P03', '08006', '53300']) {
+      const fake = makeClient();
+      const errors: number[] = [];
+      const q = new AuditQueue(fake.client, {
+        flushMs: 10_000,
+        onError: (_e, c) => errors.push(c),
+      });
+      fake.failWith(codedError(code));
+      q.enqueue(row('a'));
+      await q.flush();
+      expect(errors).toEqual([]);
+      expect(q.stats().failed).toBe(0);
+      expect(q.stats().queued).toBe(1);
+    }
+  });
+
+  test('a driver-level connection code (no SQLSTATE) is requeued too', async () => {
+    const fake = makeClient();
+    const errors: number[] = [];
+    const q = new AuditQueue(fake.client, { flushMs: 10_000, onError: (_e, c) => errors.push(c) });
+    fake.failWith(codedError('ECONNREFUSED'));
+    q.enqueue(row('a'));
+    await q.flush();
+    expect(errors).toEqual([]);
+    expect(q.stats().queued).toBe(1);
+  });
+
+  test('a genuinely poison batch (a data error) is still dead-lettered once, not retried forever', async () => {
+    const fake = makeClient();
+    const errors: number[] = [];
+    const retries: unknown[] = [];
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      onError: (_e, count) => errors.push(count),
+      onRetry: () => retries.push(true),
+    });
+
+    fake.failWith(codedError('23505', 'duplicate key value violates unique constraint'));
+    q.enqueue(row('a'));
+    await q.flush();
+
     expect(errors).toEqual([1]);
-    expect(queue.stats()).toMatchObject({ written: 2, failed: 1 });
+    expect(retries).toEqual([]);
+    expect(q.stats().failed).toBe(1);
+    expect(q.stats().contended).toBe(0);
+    expect(q.stats().queued).toBe(0); // not requeued — retrying can never succeed
+  });
+
+  test('one contended statement does not block the other statements of the same flush', async () => {
+    const fake = makeClient();
+    const q = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 1 });
+    fake.failOn(
+      (rows) => (rows[0] as unknown as { sessionId: string }).sessionId === 's2',
+      codedError('55P03'),
+    );
+
+    for (const sessionId of ['s1', 's2', 's3']) {
+      q.enqueue({ action: 'a', resourceType: 'session', sessionId } as unknown as AuditRow);
+    }
+    await q.flush();
+
+    // The statements for s1 and s3 wrote cleanly; s2's alone is buffered for retry.
+    expect(q.stats().written).toBe(2);
+    expect(q.stats().queued).toBe(1);
+    expect(q.stats().failed).toBe(0);
+  });
+
+  test('backs off exponentially instead of retrying every flushMs', async () => {
+    const fake = makeClient();
+    const q = new AuditQueue(fake.client, {
+      flushMs: 5,
+      retryBaseMs: 100,
+      retryMaxMs: 2_000,
+      random: () => 0, // pins the delay to the deterministic floor (half the cap)
+    });
+    fake.failWith(codedError('55P03'));
+    q.enqueue(row('a'));
+    await q.flush(); // first attempt fails and schedules the backed-off retry
+
+    // Without backoff the 5ms timer would have retried several times by now.
+    await sleep(30);
+    expect(fake.batches).toHaveLength(1);
+
+    // The backoff floor for attempt 1 is retryBaseMs/2 = 50ms; well past it.
+    await sleep(120);
+    expect(fake.batches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('reaching flushMax during an active backoff does not bypass it', async () => {
+    const fake = makeClient();
+    const q = new AuditQueue(fake.client, {
+      // Small enough that, without the backoff guard, hitting flushMax would
+      // fire an unthrottled flush well before the backoff window elapses.
+      flushMs: 20,
+      flushMax: 2,
+      retryBaseMs: 300,
+      retryMaxMs: 2_000,
+      random: () => 0,
+    });
+    fake.failWith(codedError('55P03'));
+    q.enqueue(row('a'));
+    await q.flush(); // contended; backoff window now active
+    fake.failWith(null);
+
+    // These two enqueues hit flushMax immediately. Without the backoff guard
+    // this would trigger an unthrottled flush and re-hammer the same lock.
+    q.enqueue(row('b'));
+    q.enqueue(row('c'));
+    await sleep(20);
+    expect(fake.batches).toHaveLength(1); // only the first (failed) attempt so far
+
+    await sleep(300);
+    expect(fake.batches.length).toBeGreaterThanOrEqual(2);
+    expect(q.stats().written).toBe(3); // a, b, c all eventually land
+  });
+
+  test('shutdown retries a contended batch, respecting backoff, before giving up at its deadline', async () => {
+    const fake = makeClient();
+    fake.failWith(codedError('55P03'));
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      retryBaseMs: 5,
+      retryMaxMs: 20,
+      shutdownDeadlineMs: 200,
+      sleep: async (ms) => {
+        await new Promise((r) => setTimeout(r, Math.min(ms, 5)));
+      },
+    });
+    q.enqueue(row('a'));
+
+    await q.shutdown();
+
+    // The database never recovered: the row is still buffered, not silently
+    // dropped, and the loop terminated instead of hanging forever.
+    expect(q.stats().queued).toBe(1);
+    expect(q.stats().failed).toBe(0);
+    expect(fake.batches.length).toBeGreaterThan(1); // it did retry more than once
+  });
+
+  test('shutdown drains a contended batch once the database recovers mid-drain', async () => {
+    const fake = makeClient();
+    let attempts = 0;
+    const original = fake.failWith;
+    void original;
+    fake.failWith(codedError('55P03'));
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      retryBaseMs: 5,
+      retryMaxMs: 10,
+      shutdownDeadlineMs: 5_000,
+      sleep: async (ms) => {
+        attempts += 1;
+        if (attempts === 2) fake.failWith(null); // recovers after the 2nd wait
+        await new Promise((r) => setTimeout(r, Math.min(ms, 5)));
+      },
+    });
+    q.enqueue(row('a'));
+
+    await q.shutdown();
+
+    expect(q.stats().written).toBe(1);
+    expect(q.stats().queued).toBe(0);
   });
 });

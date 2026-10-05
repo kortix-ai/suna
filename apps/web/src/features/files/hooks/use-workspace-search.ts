@@ -15,15 +15,11 @@
  *   - Returns structured results with name, path, isDir
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { findText } from '../api/runtime-files';
+import { type WorkspaceSearchEntry } from '@kortix/sdk/workspace-search';
 import type { FindMatch } from '@/features/file-browser/types';
-import {
-  type WorkspaceSearchEntry,
-  parseWorkspacePaths,
-  rankWorkspaceSearchEntry,
-} from '@/features/file-browser/search/workspace-search-core';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { findText } from '../api/runtime-files';
 import {
   searchWorkspaceFileEntries,
   searchWorkspaceFilePaths,
@@ -65,34 +61,6 @@ export interface UseWorkspaceSearchOptions {
   minQueryLength?: number;
 }
 
-// ── Ranking ──────────────────────────────────────────────────────────────
-
-/**
- * Smart ranking for file search results.
- * Lower score = better match.
- *
- * Priority tiers:
- *   0xx — exact basename match
- *   1xx — basename startsWith
- *   2xx — basename includes
- *   3xx — full path startsWith
- *   4xx — full path includes
- *   5xx — fuzzy subsequence in basename
- *   6xx — fuzzy subsequence in path
- *  1000 — no match
- *
- * Within each tier, depth is used as tiebreaker (shallower = better).
- */
-export function rankFileResult(result: FileSearchResult, query: string): number {
-  return rankWorkspaceSearchEntry(result, query);
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-export function parseFileResults(paths: string[]): FileSearchResult[] {
-  return parseWorkspacePaths(paths);
-}
-
 // ── Standalone async search (for @-mentions, callbacks, etc.) ─────────────
 
 /**
@@ -110,7 +78,7 @@ export function useWorkspaceSearch(
   query: string,
   options?: UseWorkspaceSearchOptions,
 ): WorkspaceSearchState {
-  const serverUrl = useRuntimeStore((state) => state.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((state) => state.getActiveServerUrl());
   const {
     debounceMs = 150,
     maxResults = 50,

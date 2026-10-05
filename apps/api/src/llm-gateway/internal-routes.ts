@@ -6,6 +6,7 @@ import type {
 } from '@kortix/llm-gateway';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { logger } from '../lib/logger';
 import { checkBudget } from './budgets';
 import {
@@ -19,6 +20,10 @@ import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth
 import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { MAX_ACCOUNT_SECRET_REST_SECONDS, coolDownAccountSecret } from '../secrets/account-resource';
+import { refreshRefusedCodexAccountLogin } from './credentials/codex';
+import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
+import { codexDescriptor } from './resolution/descriptors';
 import { resolveGatewayRoute } from './routing';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
@@ -47,10 +52,9 @@ export function createInternalGatewayRoutes() {
     return c.json({ principal: await authenticatePrincipal(token) });
   });
 
-  // Combined gate (auth + billing + budget) — lets the standalone gateway fold
-  // three sequential RPCs into one on the chat-completions hot path.
+  // Combined authentication + budget gate. Billing runs after model resolution.
   app.post('/authorize', async (c) => {
-    const { token } = await c.req.json();
+    const { token, deferBilling } = await c.req.json();
     if (typeof token !== 'string' || !token) {
       return c.json({
         ok: false,
@@ -59,7 +63,7 @@ export function createInternalGatewayRoutes() {
         message: 'Invalid token',
       });
     }
-    return c.json(await authorizeRequest(token));
+    return c.json(await authorizeRequest(token, { deferBilling: deferBilling === true }));
   });
 
   app.post('/resolve-upstream', async (c) => {
@@ -89,11 +93,51 @@ export function createInternalGatewayRoutes() {
         logger.warn(`[gateway-internal] resolution failed for "${model}": ${err.code} — ${err.message}`);
         return c.json({
           candidates: [],
-          resolutionError: { code: err.code, message: err.message, suggestion: err.suggestion },
+          resolutionError: { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds },
         });
       }
       throw err;
     }
+  });
+
+  app.post('/pool-rate-limit', async (c) => {
+    const parsed = z.object({
+      principal: z.object({ accountId: z.string().uuid(), sessionId: z.string().uuid() }),
+      secretId: z.string().uuid(), seconds: z.number().int().min(1).max(MAX_ACCOUNT_SECRET_REST_SECONDS),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);
+    await coolDownAccountSecret(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.seconds);
+    return c.json({ ok: true });
+  });
+
+  // The provider refused a ChatGPT or OpenCode login (401): a fresh token to retry with,
+  // or null. Only the token and its headers change; the gateway keeps the rest
+  // of the descriptor it holds.
+  app.post('/refresh-credential', async (c) => {
+    const parsed = z.object({
+      principal: z.object({
+        accountId: z.string().uuid(), projectId: z.string().uuid(), userId: z.string().uuid(),
+        sessionId: z.string().nullish(),
+      }),
+      secretId: z.string().uuid(),
+      failedKeySha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid credential refresh' }, 400);
+    const { principal, secretId, failedKeySha256 } = parsed.data;
+    // An OpenCode Console login keeps its descriptor's base URL; only the token
+    // and the workspace header change.
+    const opencode = await refreshRefusedOpencodeLogin({
+      projectId: principal.projectId, accountId: principal.accountId, userId: principal.userId,
+      sessionId: principal.sessionId ?? null, secretId, failedKeySha256,
+    });
+    if (opencode) return c.json({ descriptor: { apiKey: opencode.access } });
+    const credential = await refreshRefusedCodexAccountLogin({
+      projectId: principal.projectId, accountId: principal.accountId, userId: principal.userId,
+      sessionId: principal.sessionId ?? null, secretId, failedKeySha256,
+    });
+    if (!credential) return c.json({ descriptor: null });
+    const { apiKey, headers } = codexDescriptor(credential, '');
+    return c.json({ descriptor: { apiKey, headers } });
   });
 
   app.post('/resolve-route', async (c) => {
@@ -120,6 +164,7 @@ export function createInternalGatewayRoutes() {
         projectId: p.projectId,
         accountId: p.accountId,
         principalUserId: p.userId,
+        personalUserId: p.personalUserId === undefined ? p.userId : p.personalUserId,
       });
       return c.json({ models: catalog.models });
     }
@@ -142,6 +187,9 @@ export function createInternalGatewayRoutes() {
     } catch (err) {
       return c.json({
         active: false,
+        reason: typeof (err as { reason?: unknown })?.reason === 'string'
+          ? (err as { reason: string }).reason
+          : 'subscription_required',
         message: err instanceof Error ? err.message : 'subscription required',
       });
     }
@@ -149,6 +197,17 @@ export function createInternalGatewayRoutes() {
 
   app.post('/usage', async (c) => {
     const { event } = await c.req.json();
+    // `requestId` is the settlement's idempotency key (one usage row, one
+    // debit, one refund per request). Without it a retry would bill twice.
+    if (
+      !event ||
+      typeof event !== 'object' ||
+      typeof event.accountId !== 'string' ||
+      typeof event.requestId !== 'string' ||
+      !event.requestId
+    ) {
+      return c.json({ ok: false, error: 'event.accountId and event.requestId are required' }, 400);
+    }
     await recordGatewayUsage(event as UsageEvent);
     return c.json({ ok: true });
   });
@@ -156,16 +215,16 @@ export function createInternalGatewayRoutes() {
   app.post('/trace', async (c) => {
     const { trace } = await c.req.json();
     if (!trace || typeof trace.requestId !== 'string') return c.json({ ok: false }, 400);
-    // Trace persistence is best-effort observability — never 500 the gateway's
-    // fire-and-forget trace post if the write fails.
-    try {
-      await persistGatewayTrace(trace as GatewayTrace);
-    } catch (err) {
+    // Best-effort telemetry the gateway already posts fire-and-forget. Never
+    // await it: this write fans out an audit_events row on the 2-backend audit
+    // pool, and under the per-session sequence-lock convoy it waits tens of
+    // seconds for a backend, which became this route's p95 (prod 2026-09-28).
+    // A failed write is logged, never surfaced.
+    void persistGatewayTrace(trace as GatewayTrace).catch((err) => {
       logger.warn(`[gateway] persistGatewayTrace failed for ${trace.requestId}`, {
         error: err instanceof Error ? err.message : String(err),
       });
-      return c.json({ ok: false }, 200);
-    }
+    });
     return c.json({ ok: true });
   });
 

@@ -1,8 +1,8 @@
 // Agent-scope CRUD — the dashboard surface for the inheritance PYRAMID's first
-// step: bind specific secrets + connectors to a specific agent. Writes the
-// `[[agents]].env` / `.connectors` allowlists straight into the manifest (same
-// git round-trip the connector/policy editors use), so a non-technical admin
-// never hand-edits config. The agent's declared scope is what members assigned
+// step: bind specific secrets, connectors and Kortix Apps to a specific agent.
+// Writes the `[[agents]].env` / `.connectors` / `.apps` allowlists straight into
+// the manifest (same git round-trip the connector/policy editors use), so a
+// non-technical admin never hand-edits config. The agent's declared scope is what members assigned
 // to it (Members → Resource access) inherit.
 //
 // NOTE: `applyAgentScope` (agents.ts) operates on the `[[agents]]` array shape
@@ -13,7 +13,7 @@
 // Manager-gated: an agent's scope decides what flows to everyone who inherits
 // it, so it's a governance control, not an editor convenience.
 //
-// `kortix_cli` is intentionally NOT editable here — granting Kortix-CLI powers
+// `kortix_permissions` is intentionally NOT editable here — granting Kortix permissions
 // is a sharper escalation; it stays a manifest change.
 //
 // Second route in this file: POST /:projectId/secrets/:identifier/grant, the
@@ -25,7 +25,7 @@ import { projectSecrets } from '@kortix/db';
 import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@kortix/api-contract';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
-import { applyAgentScope, extractAgents } from '../agents';
+import { applyAgentScope, extractAgents, grantsByAgent } from '../agents';
 import {
   applyAgentScopeV2,
   grantSecretToAgentV2,
@@ -34,10 +34,14 @@ import {
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { PROJECT_ACTIONS } from '../../iam';
-import { isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
+import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
 import { db } from '../../shared/db';
 import { isValidIdentifier } from '../secrets';
 import { commitManifest, loadManifestForEdit } from '../lib/triggers';
+import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/custom-roles';
+import { listAgentServiceAccounts } from '../../repositories/service-accounts';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
@@ -48,6 +52,11 @@ const AgentScopeBody = z.object({
   connectors: GrantSetSchema.optional(),
   connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
   connectors_personal: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
+  // Kortix App slugs the agent may open when the App is `restricted` or
+  // `private` (spec 2026-09-22 agents-as-principals §2.5). Same grant-set
+  // shape as `connectors`, same deny-by-default, so it belongs on the same
+  // route rather than forcing a whole-block `/config` PUT for one list.
+  apps: GrantSetSchema.optional(),
 });
 
 projectsApp.openapi(
@@ -55,7 +64,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/agents/{agentName}/scope',
     tags: ['projects'],
-    summary: 'PUT /:projectId/agents/:agentName/scope',
+    summary: 'Set which secrets and connectors an agent may use',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), agentName: z.string() }),
@@ -86,7 +95,7 @@ projectsApp.openapi(
 
     const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    const { env, connectors, connectors_required, connectors_personal } = parsed.data;
+    const { env, connectors, connectors_required, connectors_personal, apps } = parsed.data;
     const normalizedRequired = normalizeRequiredConnectorAliases({
       connectors_required,
       connectors_personal,
@@ -95,9 +104,17 @@ projectsApp.openapi(
       return c.json({ error: normalizedRequired.error, code: 'invalid_body' }, 400);
     }
     const connectorsRequired = normalizedRequired.block.connectors_required as string[] | undefined;
-    if (env === undefined && connectors === undefined && connectorsRequired === undefined) {
+    if (
+      env === undefined &&
+      connectors === undefined &&
+      connectorsRequired === undefined &&
+      apps === undefined
+    ) {
       return c.json(
-        { error: 'Provide env, connectors and/or connectors_required', code: 'nothing_to_update' },
+        {
+          error: 'Provide env, connectors, connectors_required and/or apps',
+          code: 'nothing_to_update',
+        },
         400,
       );
     }
@@ -111,6 +128,8 @@ projectsApp.openapi(
         400,
       );
     }
+    // Read before the edit below mutates `manifest.raw` (v1 in place).
+    const grantsBefore = grantsByAgent(extractAgents(manifest));
 
     // The agent must already be declared — this route SCOPES an existing agent,
     // it doesn't create the roster entry (that's the fuller /config editor). v1
@@ -122,6 +141,7 @@ projectsApp.openapi(
         env,
         connectors,
         connectorsRequired,
+        apps,
       });
       if (!applied.ok) {
         return applied.notFound
@@ -142,6 +162,14 @@ projectsApp.openapi(
           400,
         );
       }
+      // v1 `[[agents]]` has no `apps` key — `applyAgentScope` would drop it
+      // silently and answer 200 with a grant that was never written.
+      if (apps !== undefined) {
+        return c.json(
+          { error: 'apps requires a v2 (kortix.yaml) manifest', code: 'unsupported_in_v1' },
+          400,
+        );
+      }
       const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
       if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
       manifest.raw.agents = applied.agents;
@@ -152,15 +180,21 @@ projectsApp.openapi(
     const check = extractAgents(manifest);
     const problem = check.errors.find((e) => e.name === agentName);
     if (problem) return c.json({ error: problem.error, code: 'invalid_scope' }, 400);
+    // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
+    await assertNoGrantEscalation(c, projectId, grantsBefore, grantsByAgent(check));
 
     const committed = await commitManifest(
       loaded.row,
       manifest,
-      `chore: scope agent ${agentName} (secrets/connectors)`,
+      `chore: scope agent ${agentName} (secrets/connectors/apps)`,
     );
     if ('error' in committed) {
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
+    // Pushed now for a person and a governed agent. A session that borrows a
+    // human's authority may not force a re-push (POST /secrets/sync refuses it,
+    // the re-mint half of the policy-widening chain); its next prompt re-syncs.
+    if (!isBorrowedSessionPrincipal(c)) pushGrantChange(projectId);
 
     const spec = check.specs.find((s) => s.name === agentName);
     return c.json({
@@ -168,10 +202,28 @@ projectsApp.openapi(
       agent: agentName,
       env: spec?.env ?? 'all',
       connectors: spec?.connectors ?? [],
+      apps: spec?.apps ?? [],
       connectors_required: spec?.connectorsRequired ?? [],
     });
   },
 );
+
+/**
+ * A grant edit changes which secrets live sessions may receive. Push it now:
+ * the pre-prompt sync would deliver it only on the session's NEXT prompt, and
+ * the person who just enabled a secret is usually looking at a session that is
+ * waiting for it. Best-effort — the commit already landed, and the next prompt
+ * re-syncs regardless. The push re-resolves each session's own grant, so a
+ * narrowing is delivered the same way.
+ */
+function pushGrantChange(projectId: string): void {
+  void propagateProjectSecretsToActiveSandboxes(projectId).catch((err) => {
+    console.warn('[agent-scope] could not push the grant change to active sessions', {
+      projectId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+}
 
 // POST /:projectId/secrets/:identifier/grant
 //
@@ -194,7 +246,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/secrets/{identifier}/grant',
     tags: ['secrets'],
-    summary: 'POST /:projectId/secrets/:identifier/grant',
+    summary: 'Grant a secret to an agent',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), identifier: z.string() }),
@@ -229,7 +281,7 @@ projectsApp.openapi(
     // BOTH leaves, because this route straddles two boundaries. Writing the
     // agent entry is `project.agent.write`, but deciding what to write means
     // reading secret metadata, and the secrets list itself is gated on
-    // `project.secret.read` (r3.ts). They are separate entries in
+    // `project.secret.read` (secrets.ts). They are separate entries in
     // kortix.role_permissions, so a role can hold one without the other — and with
     // only the write leaf the 404/409/200 split below would answer "does this
     // identifier exist, and is its delivery denied?" for a caller deliberately
@@ -244,9 +296,9 @@ projectsApp.openapi(
     // Belt over the central agent-grant fold, which is not enough here: that
     // fold passes an agent session whose grant is NULL (an ungoverned project —
     // `agentMayPerform(null)` is true), and an ungoverned project is exactly the
-    // case this route serves. A running session must never widen its own secret
-    // grant, so refuse every project-session principal outright.
-    if (isProjectSessionPrincipal(c)) {
+    // case this route serves. A session that borrows a human's authority must
+    // never widen its own secret grant. A governed agent's permissions decide.
+    if (isBorrowedSessionPrincipal(c)) {
       return c.json(
         { error: 'Agent sessions cannot grant a secret to an agent', code: 'agent_session_forbidden' },
         403,
@@ -325,6 +377,14 @@ projectsApp.openapi(
         adopted_governance: false,
       });
     }
+    // An agent grants only what it holds: a governed agent cannot hand itself
+    // (or another agent) a secret outside its own `secrets:` list.
+    await assertNoGrantEscalation(
+      c,
+      projectId,
+      grantsByAgent(extractAgents(manifest)),
+      grantsByAgent(extractAgents({ ...manifest, raw: applied.raw })),
+    );
     manifest.raw = applied.raw;
 
     const committed = await commitManifest(
@@ -335,6 +395,7 @@ projectsApp.openapi(
     if ('error' in committed) {
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
+    pushGrantChange(projectId);
 
     return c.json({
       identifier,
@@ -342,5 +403,58 @@ projectsApp.openapi(
       already_granted: false,
       adopted_governance: applied.adoptedGovernance,
     });
+  },
+);
+
+// GET /v1/projects/:projectId/agent-identities
+// This project's agents as principals — each agent's auto-provisioned service
+// account — for a "Who can use it" picker (a secret value, a connector
+// account). Project read: an agent's id and name, which every agent row already
+// shows. The account-wide `/accounts/:id/iam/agent-identities` stays admin-only
+// (`policy.read`) because it spans every project.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/agent-identities',
+    tags: ['agents'],
+    summary: "List this project's agent identities (service accounts)",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({
+          agents: z.array(
+            z.object({
+              service_account_id: z.string(),
+              name: z.string(),
+              project_id: z.string().nullable(),
+              agent_name: z.string().nullable(),
+            }),
+          ),
+        }),
+        "The project's agent identities",
+      ),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const byKey = new Map<string, AgentIdentity>();
+    for (const row of await listAgentServiceAccounts(loaded.row.accountId)) {
+      if (row.projectId !== projectId) continue;
+      byKey.set(`${row.projectId}|${row.agentName}`, {
+        service_account_id: row.serviceAccountId,
+        name: row.name,
+        project_id: row.projectId,
+        agent_name: row.agentName,
+      });
+    }
+    await eagerlyProvisionAgentIdentities(loaded.row.accountId, [loaded.row], byKey);
+    const agents = [...byKey.values()]
+      .filter((agent) => agent.project_id === projectId)
+      .sort((a, b) => (a.agent_name ?? '').localeCompare(b.agent_name ?? ''));
+    return c.json({ agents });
   },
 );

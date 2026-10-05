@@ -1,4 +1,5 @@
 import { connectors, connectorCalls, projectSessions, projects } from '@kortix/db';
+import { composioToolkitLogo } from '../connectors/composio';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
  *
@@ -26,7 +27,8 @@ import { connectors, connectorCalls, projectSessions, projects } from '@kortix/d
  * subtly-weaker door to it.
  */
 import { and, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
+import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { summarizeArgsPreview } from '../connectors/args-preview';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
@@ -35,10 +37,43 @@ import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
 
-const approvalLinksApp = new Hono();
+const approvalLinksApp = makeOpenApiApp();
+
+/** What an approval link asks the signed-in human to decide. */
+const ApprovalLinkSchema = z.object({
+  kind: z.literal('approval'),
+  project_id: z.string(),
+  project_name: z.string(),
+  execution_id: z.string(),
+  session_id: z.string().nullable(),
+  action: z.string(),
+  connector: z.string().nullable(),
+  connector_name: z.string().nullable(),
+  connector_icon_url: z.string().nullable(),
+  risk: z.string().nullable(),
+  status: z.string(),
+  /** Only `pending_approval` is actionable; every other status is an outcome. */
+  pending: z.boolean(),
+  args_preview: z.record(z.string(), z.unknown()).nullable(),
+  review_complete: z.boolean(),
+  args_summary: z.string().nullable(),
+  approval_context: z.string().nullable(),
+  policy_source: z.string().nullable(),
+  requested_at: z.string(),
+  resolved_at: z.string().nullable(),
+  expires_at: z.string(),
+});
 
 /** GET /v1/approval-links/:token — what am I being asked to approve? */
-approvalLinksApp.get('/:token', async (c) => {
+approvalLinksApp.openapi(createRoute({
+  method: 'get',
+  path: '/{token}',
+  tags: ['approvals'],
+  summary: 'Read the decision an approval link asks for',
+  ...auth,
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: json(ApprovalLinkSchema, 'The pending decision'), ...errors(400, 403, 404, 410) },
+}), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'approval') return c.json({ error: 'Wrong link type' }, 400);
@@ -137,14 +172,28 @@ approvalLinksApp.get('/:token', async (c) => {
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
+  // The connector's own name and logo, so the approval page can say WHICH
+  // connector for any of the catalogue's thousands, not only the ones a client
+  // could guess a logo for from the slug. Same source as the connect card: the
+  // row's stored icon, else the Composio catalogue logo for its app.
   let connectorSlug: string | null = null;
+  let connectorName: string | null = null;
+  let connectorIconUrl: string | null = null;
   if (row.connectorId) {
     const [connector] = await db
-      .select({ slug: connectors.slug })
+      .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
       .from(connectors)
       .where(eq(connectors.connectorId, row.connectorId))
       .limit(1);
     connectorSlug = connector?.slug ?? null;
+    connectorName = connector?.name ?? null;
+    const config = (connector?.config ?? {}) as { icon_url?: unknown; app?: unknown };
+    connectorIconUrl =
+      typeof config.icon_url === 'string' && config.icon_url
+        ? config.icon_url
+        : typeof config.app === 'string' && config.app
+          ? await composioToolkitLogo(config.app)
+          : null;
   }
 
   const summary =
@@ -157,13 +206,15 @@ approvalLinksApp.get('/:token', async (c) => {
       : null;
 
   return c.json({
-    kind: 'approval',
+    kind: 'approval' as const,
     project_id: projectId,
     project_name: project?.name ?? 'this project',
     execution_id: row.executionId,
     session_id: row.sessionId,
     action: row.actionPath,
     connector: connectorSlug,
+    connector_name: connectorName,
+    connector_icon_url: connectorIconUrl,
     risk: row.risk,
     // 'pending_approval' is actionable. Every terminal status renders a
     // read-only outcome instead of buttons that would return 409.
@@ -172,6 +223,8 @@ approvalLinksApp.get('/:token', async (c) => {
     args_preview: argsPreview,
     review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
+    approval_context:
+      typeof summary.approval_context === 'string' ? summary.approval_context : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,

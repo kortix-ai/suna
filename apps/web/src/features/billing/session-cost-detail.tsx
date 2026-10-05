@@ -5,6 +5,7 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   ReceiptIcon as ReceiptText,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
@@ -50,6 +51,7 @@ function ledgerTimestamp(entry: SessionCostLedgerEntry): string {
 }
 
 function LedgerEntryDescription({ entry }: { entry: SessionCostLedgerEntry }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (entry.kind === 'llm') {
     return (
       <div className="min-w-0">
@@ -69,7 +71,9 @@ function LedgerEntryDescription({ entry }: { entry: SessionCostLedgerEntry }) {
         {entry.provider} · {entry.state}
       </p>
       <p className="text-muted-foreground mt-0.5 text-xs">
-        {entry.cpu_cores} vCPU · {entry.memory_gb} GB RAM · {entry.disk_gb} GB disk
+        {entry.cpu_cores} {tI18nComplete.raw('textd14431af93cf')} {entry.memory_gb}{' '}
+        {tI18nComplete.raw('text2cff97d794a4')} {entry.disk_gb}{' '}
+        {tI18nComplete.raw('text719c3c6a2b2f')}
       </p>
     </div>
   );
@@ -80,11 +84,12 @@ export function SessionCostDetailContent({
   isLoading,
   error,
 }: SessionCostDetailContentProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (error) {
     return (
       <div className="space-y-4">
-        <h2 className="text-lg font-medium">Session cost details</h2>
-        <InfoBanner tone="destructive" title="Failed to load session cost details">
+        <h2 className="text-lg font-medium">{tI18nComplete.raw('texte3a7167b0134')}</h2>
+        <InfoBanner tone="destructive" title={tI18nComplete.raw('text79910479b58e')}>
           {error.message}
         </InfoBanner>
       </div>
@@ -93,8 +98,8 @@ export function SessionCostDetailContent({
 
   if (isLoading || !detail) {
     return (
-      <div className="space-y-4" aria-label="Loading session cost details">
-        <h2 className="text-lg font-medium">Session cost details</h2>
+      <div className="space-y-4" aria-label={tI18nComplete.raw('text40d9b64dde44')}>
+        <h2 className="text-lg font-medium">{tI18nComplete.raw('texte3a7167b0134')}</h2>
         <Skeleton className="h-20 w-full rounded-md" />
         <Skeleton className="h-40 w-full rounded-md" />
       </div>
@@ -107,7 +112,7 @@ export function SessionCostDetailContent({
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-lg font-medium">Session cost details</h2>
+          <h2 className="text-lg font-medium">{tI18nComplete.raw('texte3a7167b0134')}</h2>
           <p className="text-muted-foreground mt-1 truncate font-mono text-xs">
             {detail.session_id}
           </p>
@@ -120,7 +125,7 @@ export function SessionCostDetailContent({
         </div>
         <Button variant="outline" size="sm" asChild>
           <Link href={`/projects/${detail.project_id}/sessions/${detail.session_id}`}>
-            Open session
+            {tI18nComplete.raw('textb205bb47f81a')}
             <ExternalLink className="size-3.5" />
           </Link>
         </Button>
@@ -147,7 +152,10 @@ export function SessionCostDetailContent({
           ['Compute', formatSessionCostUsd(detail.compute_cost)],
           ['Requests', detail.request_count.toLocaleString('en-US')],
           ['Tokens', tokenTotal.toLocaleString('en-US')],
-          ['Compute time', formatSessionCostDuration(detail.compute_seconds)],
+          [
+            tI18nComplete.raw('texte4fa25e6edd6'),
+            formatSessionCostDuration(detail.compute_seconds),
+          ],
         ].map(([label, value]) => (
           <div key={label} className="bg-popover px-3 py-2.5">
             <p className="text-muted-foreground text-xs">{label}</p>
@@ -158,22 +166,28 @@ export function SessionCostDetailContent({
 
       <section className="space-y-2">
         <div>
-          <h3 className="text-sm font-medium">Model usage</h3>
-          <p className="text-muted-foreground text-xs">
-            Finalized LLM requests grouped by provider and model.
-          </p>
+          <h3 className="text-sm font-medium">{tI18nComplete.raw('text3025ab46e129')}</h3>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textf06214d4673d')}</p>
         </div>
         {detail.model_usage.length === 0 ? (
-          <p className="text-muted-foreground py-4 text-sm">No model usage.</p>
+          <p className="text-muted-foreground py-4 text-sm">
+            {tI18nComplete.raw('texteb87e1709b57')}
+          </p>
         ) : (
           <div className="overflow-hidden rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Model</TableHead>
-                  <TableHead className="text-right">Requests</TableHead>
-                  <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
+                  <TableHead>{tI18nComplete.raw('text5e2c614c23f0')}</TableHead>
+                  <TableHead className="text-right">
+                    {tI18nComplete.raw('textada27592c957')}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {tI18nComplete.raw('texta039dfb9628b')}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {tI18nComplete.raw('text204a5eb2cd28')}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -202,28 +216,34 @@ export function SessionCostDetailContent({
 
       <section className="space-y-2">
         <div>
-          <h3 className="text-sm font-medium">Cost entries</h3>
-          <p className="text-muted-foreground text-xs">
-            Finalized LLM requests and billed compute windows.
-          </p>
+          <h3 className="text-sm font-medium">{tI18nComplete.raw('text9db6713e88de')}</h3>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text67f10b9f6d71')}</p>
         </div>
         {detail.ledger_entries.length === 0 ? (
           <EmptyState
             size="sm"
             icon={ReceiptText}
-            title="No cost entries"
-            description="This session has no finalized LLM or compute entries."
+            title={tI18nComplete.raw('textd03996038975')}
+            description={tI18nComplete.raw('texte769a2bfbd35')}
           />
         ) : (
           <div className="overflow-hidden rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[110px]">Type</TableHead>
-                  <TableHead>Entry</TableHead>
-                  <TableHead className="text-right">Usage</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
-                  <TableHead className="w-[170px]">Billed at</TableHead>
+                  <TableHead className="w-[110px]">
+                    {tI18nComplete.raw('textbaaddf70fb5d')}
+                  </TableHead>
+                  <TableHead>{tI18nComplete.raw('text2649e082d9a2')}</TableHead>
+                  <TableHead className="text-right">
+                    {tI18nComplete.raw('text8d59829c1e15')}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {tI18nComplete.raw('text204a5eb2cd28')}
+                  </TableHead>
+                  <TableHead className="w-[170px]">
+                    {tI18nComplete.raw('textc04730f12fa8')}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

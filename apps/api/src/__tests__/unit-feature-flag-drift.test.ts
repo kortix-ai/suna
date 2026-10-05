@@ -14,8 +14,7 @@
  * — add a flag to one list and not the others and it fails here.
  *
  * It lives in apps/api because apps/api is the only package that already
- * depends on BOTH `@kortix/api-contract` (runtime dep) and `@kortix/sdk`
- * (devDependency, test-only — see e2e-connector-faces.test.ts) AND owns the
+ * depends on BOTH `@kortix/api-contract` and `@kortix/sdk` AND owns the
  * registry. Putting it in packages/sdk is not an option: the **sdk** skill
  * keeps the core framework-free and import-graph-checked, and it has no
  * dependency on the API's registry at all.
@@ -29,10 +28,13 @@ import { FEATURE_FLAG_KEYS as SDK_FEATURE_FLAG_KEYS } from '@kortix/sdk';
 
 import { REGISTERED_FEATURE_FLAGS, buildFeatureFlagCatalog } from '../feature-flags/registry';
 
-const contractKeys = [...CONTRACT_FEATURE_FLAG_KEYS].sort();
-const sdkKeys = [...SDK_FEATURE_FLAG_KEYS].sort();
-const registryKeys = REGISTERED_FEATURE_FLAGS.map((flag) => flag.key).sort();
-const catalogKeys = buildFeatureFlagCatalog({})
+// Compared as plain strings: the SDK's `FeatureFlagKey` union still carries
+// deprecated graduated keys (`FEATURE_FLAG_KEYS` does not), so the two
+// packages' element types differ on purpose while the runtime lists must match.
+const contractKeys: string[] = [...CONTRACT_FEATURE_FLAG_KEYS].sort();
+const sdkKeys: string[] = [...SDK_FEATURE_FLAG_KEYS].sort();
+const registryKeys: string[] = REGISTERED_FEATURE_FLAGS.map((flag) => flag.key).sort();
+const catalogKeys: string[] = buildFeatureFlagCatalog({})
   .map((flag) => flag.key)
   .sort();
 
@@ -45,11 +47,21 @@ describe('feature-flag key lists — contract ↔ SDK ↔ API registry', () => {
     expect(registryKeys).toEqual(contractKeys);
   });
 
-  test('the catalog the clients render matches the SDK key list exactly', () => {
+  test('the catalog the clients render is the SDK key list minus the hidden flags', () => {
     // The catalog is what Settings → Feature flags actually draws, and the SDK
-    // list is what a host uses to name and gate a flag. A flag present in one
-    // and not the other is a row nobody can act on, or a gate with no row.
-    expect(catalogKeys).toEqual(sdkKeys);
+    // list is what a host uses to name and gate a flag. A catalogued flag with
+    // no SDK key is a row nobody can act on, so the catalog may never carry a
+    // key the SDK does not know. It may carry FEWER: a `catalogHidden` flag
+    // (registry.ts, "Hidden flags") still resolves and is still accepted by
+    // `PATCH /projects/:id/features`, but is no longer offered as a choice.
+    const hiddenKeys: string[] = REGISTERED_FEATURE_FLAGS.filter(
+      (flag) => flag.catalogHidden === true,
+    )
+      .map((flag) => flag.key as string)
+      .sort();
+    expect(catalogKeys).toEqual(sdkKeys.filter((key) => !hiddenKeys.includes(key)));
+    // And a hidden flag is still a real, registered, SDK-known key.
+    for (const key of hiddenKeys) expect(sdkKeys).toContain(key);
   });
 
   test('no list carries a duplicate key', () => {

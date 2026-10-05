@@ -64,11 +64,72 @@ export function turnDeliveryGraceMs(): number {
 }
 
 /**
+ * The wall-clock ceiling on ONE turn record's authority.
+ *
+ * Everything else in this file is a renewable grant: {@link turnGrantMs} is
+ * re-granted on every observed turn start, {@link turnUnconfirmedDripMs} drips
+ * while the daemon cannot describe its turn, and `renewActiveSandboxTurn` is
+ * deliberately uncapped so a genuinely long turn outlives one provider run.
+ * That design has no bound at all when a turn WEDGES: the daemon keeps
+ * answering "still running", the reaper keeps re-granting, and the box becomes
+ * immortal. Observation cannot tell a wedged turn from a live one — both say
+ * `active`.
+ *
+ * PROD 2026-09-09: 44 open turn records on `active` sandboxes, 42 of them older
+ * than 24 h, the oldest 20 DAYS (box created 2026-08-20, last used 2026-08-21).
+ * Those boxes never stopped running, and their audit relays produced 1,115,227
+ * `503` responses in seven days — ~13k/h, the single largest error class in
+ * production — because the ingest they hammer is contended. The reaper wanted
+ * them and could not have them.
+ *
+ * Age is the one bound a box cannot author: `startedAtMs` is written by the
+ * control plane when it mints the record, and nothing in the sandbox can move
+ * it. The default sits ~3x above the longest turn ever measured here (~8.4 h)
+ * and ~18x above the p99 (~78 min), so it can only ever catch a record that
+ * nothing is going to close. A record with no start instant is exempt: it can
+ * prove no age, and inventing one would expire live work.
+ */
+export function turnAbsoluteMaxMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_ABSOLUTE_MAX_HOURS', 24) * 3_600_000;
+}
+
+/**
+ * The wall-clock ceiling on an `active` turn record that has NO `messageId`.
+ *
+ * `messageId` is set by `relayTurnBeginToApi` (the daemon's boot.ts) within
+ * seconds of OpenCode accepting a prompt — it is the earliest thing a healthy
+ * turn establishes. A record still missing it after this ceiling did not lose
+ * a race; it lost its runtime before that relay ever ran.
+ *
+ * THIS BOUND EXISTS BECAUSE `turnAbsoluteMaxMs` CANNOT CATCH IT, and neither
+ * can ordinary observation. `observeSandboxTurn` asks the daemon a ROOT-scoped
+ * question when no `messageId` exists to scope it by, and the daemon's own
+ * turn-in-flight oracle (`opencode-turn-state.ts`'s `inspectOpencodeRoot`)
+ * deliberately reads an incomplete assistant message as "still in flight" even
+ * when `/session/status` reports the box idle — a rule that exists to protect
+ * a genuine husk recovery, but that means a turn severed by a daemon-level
+ * restart (2026-09-29 incident: an env-driven OpenCode respawn SIGTERMed a
+ * process 200ms after the API accepted its turn) reads `observation: 'active'`
+ * FOREVER: the reaper's per-pass branches below never see it as `terminal`,
+ * so it renews the record's deadline on every pass and only `kortix sessions
+ * stop` ever clears it. This ceiling settles the record on age + missing
+ * identity alone, independent of that ambiguous signal — the one thing this
+ * incident's daemon-side fix (relaying its own turn-end by identity) is
+ * itself supposed to make unnecessary, and the backstop for when it doesn't.
+ *
+ * Default 30 minutes: comfortably above the seconds a healthy turn takes to
+ * relay its begin, comfortably below `turnAbsoluteMaxMs`'s 24h.
+ */
+export function turnNoBeginRelayMaxMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_NO_MESSAGE_ID_MAX_MINUTES', 30) * 60_000;
+}
+
+/**
  * Granted when a provider-RUNNING box holds a recent control-plane-minted turn
  * record and its daemon ANSWERS the probe without saying anything about that
  * turn.
  *
- * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box's
+ * Incident 2026-08-17T20:40:03Z (a prod session on Daytona): the box's
  * `deadlineGrant` never left `boot_floor`. The daemon on that warm snapshot
  * answered the turn probe with neither `true` nor `false`, so
  * `observeSandboxTurn` returned `unknown` on every pass,
@@ -90,6 +151,35 @@ export function turnDeliveryGraceMs(): number {
  */
 export function turnUnconfirmedDripMs(): number {
   return positiveEnvInt('KORTIX_SANDBOX_TURN_UNCONFIRMED_DRIP_MINUTES', 15) * 60_000;
+}
+
+/**
+ * Granted when the control plane PARKS a queued prompt whose delivery found
+ * the runtime unreachable and commits to a bounded backoff before the next
+ * attempt (`parkPromptForUnreachableRuntime` in session-lifecycle/store.ts).
+ *
+ * A queued prompt holds no turn record of its own — a `delivering` entry is
+ * only ever created once a prompt actually reaches the daemon — so nothing
+ * else in this file keeps its box alive while it waits out that backoff. The
+ * box's own deadline can be as short as the 15-minute resume floor, and
+ * MAX_RUNTIME_UNREACHABLE_RETRIES's 30 s / 120 s / 480 s ladder plus one
+ * failed attempt is enough real time for the reaper to stop the box mid-ladder
+ * — the very next retry then finds a box the platform itself just stopped and
+ * burns a retry proving it.
+ *
+ * The park write is CONTROL-PLANE-authored (the API decided to retry, never
+ * the sandbox), so it satisfies the invariant stated at the top of this file.
+ * It is bounded exactly like every other non-turn grant: monotone and capped
+ * at NON_TURN_DEADLINE_CAP_MS through extendSandboxDeadline. It is bounded a
+ * second way too — MAX_RUNTIME_UNREACHABLE_RETRIES caps how many times a park
+ * can ever re-issue it, so a poisoned prompt still dead-letters instead of
+ * holding its box alive forever.
+ *
+ * 15 minutes comfortably covers the ladder's longest single backoff step
+ * (8 minutes) with margin for the retry's own processing time.
+ */
+export function promptRetryGraceMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_PROMPT_RETRY_GRACE_MINUTES', 15) * 60_000;
 }
 
 /**
@@ -210,31 +300,18 @@ export function isSandboxAuthored(
   return apiKeyType === 'sandbox' || (sessionId ?? null) !== null;
 }
 
-/** opencode's own ports, and the in-box agent that reverse-proxies to it. */
-const AGENT_PORT = 8000;
-
 /**
- * `/command` and `/summarize` are here because both start a real, billable turn
- * — a classifier admitting only prompt_async/message would kill a box mid
- * command. Do NOT reuse `isLongTurnCompletionRequest` from
- * sandbox-proxy/preview-retry-budget.ts: it matches only `/message` (every real
- * client uses prompt_async), and widening it would change that module's proxy
- * attempt-timeout behaviour.
+ * `isTurnStartRequest` moved to ./turn-start-request.ts, a LEAF that imports no
+ * `config`, so `sandbox-proxy/pre-prompt-env-sync.ts` can build its own turn
+ * predicate on it without dragging a module the proxy suites replace with
+ * `mock.module` into their graph. It is re-exported here because every existing
+ * call site imports it from this module, and the two must never drift back into
+ * two definitions. Do NOT reuse `isLongTurnCompletionRequest` from
+ * sandbox-proxy/preview-retry-budget.ts in its place: that one matches only
+ * `/message` (every real client uses prompt_async), and widening it would change
+ * that module's proxy attempt-timeout behaviour.
  */
-const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/;
-
-/** Does this proxied request START a turn? Used by the proxy to observe a run
- *  beginning without trusting anything the sandbox says about itself. */
-export function isTurnStartRequest(port: number, method: string, path: string): boolean {
-  if (method.toUpperCase() !== 'POST') return false;
-  // Either half of the opencode pair counts. A verified reload swaps which one
-  // is live, and letting the other through here would let the box's own agent
-  // traffic read as a human using a preview — extending the deadline, which is
-  // exactly the self-renewal bounded lifetimes exist to prevent.
-  if (port !== AGENT_PORT && !isOpencodePort(port)) return false;
-  const p = path.replace(/^\/proxy\/\d+(?=\/)/, ''); // in-box dynamic-port nesting
-  return TURN_START.test(p);
-}
+export { isTurnStartRequest } from './turn-start-request';
 
 /**
  * Is this proxied request a HUMAN USING THE BOX'S PREVIEW, and therefore a
@@ -300,21 +377,9 @@ export function isTerminalTurnEnd(
   return error?.isRetryable !== true;
 }
 
-/**
- * Is this sandbox row an unclaimed WARM-POOL box?
- *
- * The warm marker is written onto `project_sessions.metadata.warm_session` by
- * the warm coordinator and forwarded verbatim into the sandbox row's own
- * metadata at provision (projects/lib/sessions.ts passes `input.metadata`
- * through to provisionSessionSandbox), so this needs no join. It is a SNAPSHOT
- * of the state at bake time and is never updated on claim — which is fine and
- * deliberate: a claimed box is extended by its first real turn, and the warm
- * grant it was born with is only ever a floor.
- */
+/** A speculative session carries the same marker into its sandbox at provision. */
 export function isWarmPoolBox(metadata: Record<string, unknown> | null | undefined): boolean {
-  const warm = metadata?.warm_session;
-  if (!warm || typeof warm !== 'object' || Array.isArray(warm)) return false;
-  return (warm as { state?: unknown }).state === 'available';
+  return metadata?.warm === true;
 }
 
 /**

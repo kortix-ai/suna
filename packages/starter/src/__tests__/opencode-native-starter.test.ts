@@ -17,7 +17,7 @@ const OPENCODE_ROOT = join(
   'starter',
   'templates',
   'base',
-  '.kortix',
+  'harnesses',
   'opencode',
 );
 
@@ -49,20 +49,10 @@ describe('one starter', () => {
     expect(filesFor('bogus')).toEqual(filesFor('general-knowledge-worker'));
   });
 
-  // Scoped to the OPENCODE kits deliberately. `pi` is a different runtime with
-  // its own manifest (kortix_version 3, `.kortix/pi`), so folding it in here
-  // would either force the two runtimes to share one manifest or turn this
-  // assertion into a tautology. Its own contract lives in pi-template.test.ts.
-  test('every OpenCode id scaffolds the same OpenCode-native manifest', () => {
-    for (const id of STARTER_TEMPLATE_IDS.filter((candidate) => candidate !== 'pi')) {
+  test('every accepted id scaffolds the same OpenCode-native manifest', () => {
+    for (const id of STARTER_TEMPLATE_IDS) {
       expect(manifestFor(id)).toBe(manifestFor('general-knowledge-worker'));
     }
-  });
-
-  test('the pi kit is the one id that scaffolds a different runtime', () => {
-    expect(manifestFor('pi')).not.toBe(manifestFor('general-knowledge-worker'));
-    expect(manifestFor('pi')).toContain('kortix_version: 3');
-    expect(manifestFor('general-knowledge-worker')).toContain('kortix_version: 2');
   });
 });
 
@@ -84,7 +74,7 @@ describe('the starter is OpenCode-native', () => {
     const manifest = manifestFor();
 
     expect(manifest).toContain('opencode:');
-    expect(manifest).toContain('config_dir: .kortix/opencode');
+    expect(manifest).toContain('config_dir: harnesses/opencode');
     expect(manifest).not.toContain('runtime:');
   });
 
@@ -125,8 +115,8 @@ describe('the starter is OpenCode-native', () => {
   test('keeps the general-knowledge skill kit', () => {
     const paths = filesFor().map((file) => file.path);
 
-    expect(paths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/agents/kortix.md');
+    expect(paths).toContain('skills/pdf/SKILL.md');
+    expect(paths).toContain('agents/kortix.md');
   });
 
   test('keeps the fast starter tool ABI independent of the full plugin SDK', () => {
@@ -142,7 +132,7 @@ describe('the starter is OpenCode-native', () => {
     expect(lock).not.toContain('"@opencode-ai/plugin"');
     expect(lock).not.toContain('"effect"');
     expect(readFileSync(join(OPENCODE_ROOT, '..', '..', '.gitignore'), 'utf8')).toContain(
-      '.kortix/opencode/package-lock.json',
+      'harnesses/opencode/package-lock.json',
     );
 
     for (const file of [
@@ -215,6 +205,6 @@ describe('internal minimal build', () => {
   test('carries no general-knowledge domain skill', () => {
     const paths = filesFor('minimal').map((file) => file.path);
 
-    expect(paths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(paths).not.toContain('skills/pdf/SKILL.md');
   });
 });

@@ -62,8 +62,12 @@ describe('audited rate limits', () => {
     expect(await second.json()).toMatchObject({ error: 'rate_limit_exceeded' });
 
     expect(auditRows).toHaveLength(1);
+    // A fixed action and no path: a path segment can be a bearer capability
+    // (setup links, approval links), and the request's own row already names
+    // the route.
+    expect(JSON.stringify(auditRows[0])).not.toContain('/v1/account-invites/');
     expect(auditRows[0]).toMatchObject({
-      action: 'RATE_LIMIT POST /v1/account-invites/invite-1/accept',
+      action: 'api.rate_limit.exceeded',
       resourceType: 'account_invite',
       resourceId: 'invite-1',
       ip: '203.0.113.10',
@@ -89,7 +93,9 @@ describe('audited rate limits', () => {
     expect(second.headers.get('X-RateLimit-Limit')).toBe('1');
 
     expect(auditRows).toHaveLength(1);
+    expect(JSON.stringify(auditRows[0])).not.toContain('/global/health');
     expect(auditRows[0]).toMatchObject({
+      action: 'api.rate_limit.exceeded',
       actorUserId: '00000000-0000-4000-a000-000000000001',
       resourceType: 'sandbox_proxy',
       resourceId: 'sandbox-1',

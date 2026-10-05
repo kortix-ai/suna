@@ -1,5 +1,5 @@
-import { afterAll, describe, expect, it } from 'bun:test';
 import type { ToolPart } from '@/ui';
+import { afterAll, describe, expect, it } from 'bun:test';
 import {
   actionTimeLabel,
   clampIndex,
@@ -118,8 +118,9 @@ describe('actionTimeLabel', () => {
   });
 
   it('falls back to the start time while an action is still running', () => {
-    expect(actionTimeLabel(partAt(new Date('2026-07-23T14:12:30').getTime(), 'start'), now))
-      .not.toBe('');
+    expect(
+      actionTimeLabel(partAt(new Date('2026-07-23T14:12:30').getTime(), 'start'), now),
+    ).not.toBe('');
   });
 
   it('is empty when the action carries no time at all', () => {

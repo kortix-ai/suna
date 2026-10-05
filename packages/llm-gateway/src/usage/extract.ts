@@ -42,24 +42,3 @@ export function normalizeUsageChunk(raw: UpstreamChunkShape | undefined): Extrac
 export function extractUsageFromJson(json: unknown): ExtractedUsage {
   return normalizeUsageChunk(json as UpstreamChunkShape);
 }
-
-export function extractUsageFromSseBuffer(buffer: string): ExtractedUsage | null {
-  let lastUsage: ExtractedUsage | null = null;
-  let lastModel: string | undefined;
-
-  for (const line of buffer.split('\n')) {
-    if (!line.startsWith('data:')) continue;
-    const payload = line.slice(5).trim();
-    if (!payload || payload === '[DONE]') continue;
-    try {
-      const chunk = JSON.parse(payload) as UpstreamChunkShape;
-      if (chunk?.model) lastModel = chunk.model;
-      if (chunk?.usage) lastUsage = normalizeUsageChunk(chunk);
-    } catch {
-      continue;
-    }
-  }
-
-  if (lastUsage && !lastUsage.model && lastModel) lastUsage.model = lastModel;
-  return lastUsage;
-}

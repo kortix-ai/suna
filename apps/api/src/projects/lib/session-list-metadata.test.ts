@@ -27,7 +27,7 @@ const CLIENT_READ_METADATA = {
   trigger_type: 'cron',
   trigger_slug: 'nightly-watch',
   // Read off the SINGLE-session response.
-  sandbox_slug: 'essentia',
+  sandbox_slug: 'sampleco',
   opencode_model: 'kortix/codex/gpt-5.6-sol',
   warm: true,
 };
@@ -117,5 +117,48 @@ describe('list metadata trimming', () => {
     // Same object, not a defensive copy: the trim only allocates when it has
     // something to remove, which is the common case for a plain user session.
     expect(out.metadata).toBe(metadata);
+  });
+});
+test('session labels survive list metadata trimming', () => {
+  const output = serializeSession(row({ labels: ['urgent'], metadata: { initial_prompt: 'private' } }), { trimListMetadata: true });
+  expect(output.labels).toEqual(['urgent']);
+});
+
+/**
+ * A warm session (`metadata.warm`, pre-created and never prompted) whose box
+ * is up must not claim `running`: nothing has ever run in it, and the sidebar
+ * painted those shells as phantom green "Running" rows (KRTX-1466). The
+ * serialized status is the one it held while its box booted; the first
+ * accepted turn drops the marker and the row reads `running` again.
+ */
+describe('serializeSession warm status', () => {
+  test('a warm session whose box is up does not report running', () => {
+    const out = serializeSession(row({ status: 'running', metadata: { warm: true } }));
+    expect(out.status).toBe('provisioning');
+  });
+
+  test('a prompted session still reports running', () => {
+    const out = serializeSession(row({ status: 'running', metadata: {} }));
+    expect(out.status).toBe('running');
+  });
+
+  test('a warm session keeps every other status verbatim', () => {
+    for (const status of ['queued', 'branching', 'provisioning', 'stopped', 'failed', 'completed'] as const) {
+      const out = serializeSession(row({ status, metadata: { warm: true } }));
+      expect(out.status).toBe(status);
+    }
+  });
+
+  test('a warm session with no metadata does not crash', () => {
+    const out = serializeSession(row({ status: 'running', metadata: null }));
+    expect(out.status).toBe('running');
+  });
+
+  test('the reported status never mutates the row it was handed', () => {
+    const source = row({ status: 'running', metadata: { warm: true } });
+    serializeSession(source);
+
+    expect((source as { status: unknown }).status).toBe('running');
+    expect((source as { metadata: Record<string, unknown> }).metadata.warm).toBe(true);
   });
 });

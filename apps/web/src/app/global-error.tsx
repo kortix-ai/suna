@@ -1,7 +1,7 @@
 'use client';
 
 import { SystemFaultView } from '@/components/common/system-fault';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 export default function GlobalError({
   error,
@@ -16,9 +16,7 @@ export default function GlobalError({
         <meta charSet="utf-8" />
         <meta
           name="viewport"
-          content={tI18nHardcoded.raw(
-            'autoAppGlobalErrorJsxAttrContentWidthDeviceWidthInitiala69f7f42',
-          )}
+          content={"width=device-width, initial-scale=1"}
         />
         <title>{tI18nHardcoded.raw('autoAppGlobalErrorJsxTextSystemFaulta2da19e4')}</title>
       </head>

@@ -21,16 +21,20 @@ function findCatalogFlag(key: string) {
   return flag;
 }
 
+/** Registered but deliberately not offered as a toggle — see "Hidden flags" in
+ *  the registry header. */
+const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden).map((f) => f.key);
+
 describe('registry ↔ contract', () => {
   // Compared as sets: the registry's order is the Settings display order and is
   // deliberately independent of the contract schema's field order. Membership
   // is the invariant — a flag added to one side and not the other fails here.
-  test('the catalog covers exactly the contract key list', () => {
+  test('the catalog covers exactly the contract key list, minus hidden flags', () => {
     expect(
       buildFeatureFlagCatalog({})
         .map((f) => f.key)
         .sort(),
-    ).toEqual([...FEATURE_FLAG_KEYS].sort());
+    ).toEqual([...FEATURE_FLAG_KEYS].filter((key) => !HIDDEN_KEYS.includes(key)).sort());
   });
 
   test('every registered flag declares a complete, valid definition', () => {
@@ -67,22 +71,23 @@ describe('isFeatureFlagKey', () => {
 
 describe('resolveFeatureFlag — explicit override wins', () => {
   test('per-project map overrides the platform default', () => {
-    expect(resolveFeatureFlag({ experimental: { review_center: true } }, 'review_center')).toBe(
-      true,
-    );
-    expect(resolveFeatureFlag({ experimental: { review_center: false } }, 'review_center')).toBe(
-      false,
-    );
+    expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
   });
 
-  test('agent_tunnel respects an explicit choice but stays AND-gated on availability', () => {
-    const available = findCatalogFlag('agent_tunnel').available;
-    expect(resolveFeatureFlag({ experimental: { agent_tunnel: true } }, 'agent_tunnel')).toBe(
-      available,
-    );
-    expect(resolveFeatureFlag({ experimental: { agent_tunnel: false } }, 'agent_tunnel')).toBe(
-      false,
-    );
+  test('agent_principal graduated: no flag, and a stored override is inert', () => {
+    // A governed agent always authorizes as itself (spec 2026-09-22 §5): the
+    // one-release escape hatch back to the launcher model is gone.
+    expect(isFeatureFlagKey('agent_principal')).toBe(false);
+    const metadata = { experimental: { agent_principal: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agent_principal');
+  });
+
+  test('agent_tunnel graduated: computers need no flag and a stored override is inert', () => {
+    expect(isFeatureFlagKey('agent_tunnel')).toBe(false);
+    const metadata = { experimental: { agent_tunnel: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agent_tunnel');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
   test('agentmail_email is explicit opt-in', () => {
@@ -126,23 +131,33 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
   });
 
+  test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
+    // Saved history is how web, mobile and the CLI show a session while its
+    // computer is off. Projects that stored `false` keep theirs too.
+    expect(isFeatureFlagKey('session_transcript_history')).toBe(false);
+    const metadata = { experimental: { session_transcript_history: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('session_transcript_history');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(
+      'session_transcript_history',
+    );
+  });
+
   test('marketplace defaults ON platform-wide and is turned off only explicitly', () => {
     expect(resolveFeatureFlag({}, 'marketplace')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { marketplace: false } }, 'marketplace')).toBe(false);
   });
 
-  test('teams is explicit opt-in and needs no operator env var', () => {
-    expect(resolveFeatureFlag({}, 'teams')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { teams: true } }, 'teams')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { teams: false } }, 'teams')).toBe(false);
-    // The channel is always listable — server bot credentials only decide
-    // whether the MANAGED install path is offered, never whether a project may
-    // hold an opinion (bring-your-own works without them).
-    expect(findCatalogFlag('teams').available).toBe(true);
+  test('teams graduated: every project can connect Teams and a stored override is inert', () => {
+    // Projects that turned Teams on or off while it was a flag keep the value
+    // in metadata. It must not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('teams')).toBe(false);
+    const metadata = { experimental: { teams: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('teams');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('teams');
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
-  test('connectors_api_discover is explicit opt-in', () => {
+  test('connectors_api_discover requires explicit opt-in', () => {
     expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
     expect(
       resolveFeatureFlag(
@@ -215,46 +230,53 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('a malformed experimental subtree never throws', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
-      expect(typeof resolveFeatureFlag(metadata, 'review_center')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'agent_tunnel')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'agentmail_email')).toBe('boolean');
     }
   });
 });
 
 describe('resolveFeatureFlags', () => {
   test('returns a boolean for every registered key', () => {
-    const map = resolveFeatureFlags({ experimental: { review_center: true } });
+    const map = resolveFeatureFlags({ experimental: { meta_agent: true } });
     expect(Object.keys(map).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
     for (const key of FEATURE_FLAG_KEYS) {
       expect(typeof map[key]).toBe('boolean');
     }
-    expect(map.review_center).toBe(true);
+    expect(map.meta_agent).toBe(true);
+  });
+
+  test('a stored override for a graduated key is inert', () => {
+    // Review Center graduated out of the flag system. Projects that toggled it
+    // before graduation still carry `experimental.review_center` in metadata.
+    // That value must not resurface as a key, a catalog row, or a gate.
+    const metadata = { experimental: { review_center: false, meta_agent: true } };
+    expect(isFeatureFlagKey('review_center')).toBe(false);
+    expect(Object.keys(resolveFeatureFlags(metadata)).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('review_center');
+    expect(resolveFeatureFlags(metadata).meta_agent).toBe(true);
   });
 });
 
 describe('buildFeatureFlagCatalog', () => {
   test('describes each flag with effective + overridden state', () => {
-    const catalog = buildFeatureFlagCatalog({ experimental: { review_center: true } });
+    const catalog = buildFeatureFlagCatalog({ experimental: { meta_agent: true } });
 
-    const reviewCenter = catalog.find((f) => f.key === 'review_center');
-    if (!reviewCenter) throw new Error('Missing Review Center flag');
-    expect(reviewCenter.name).toBeTruthy();
-    expect(reviewCenter.description).toBeTruthy();
-    expect(reviewCenter.enabled).toBe(true);
-    expect(reviewCenter.overridden).toBe(true);
-    expect(typeof reviewCenter.available).toBe('boolean');
+    const metaAgent = catalog.find((f) => f.key === 'meta_agent');
+    if (!metaAgent) throw new Error('Missing Meta Agent flag');
+    expect(metaAgent.name).toBeTruthy();
+    expect(metaAgent.description).toBeTruthy();
+    expect(metaAgent.enabled).toBe(true);
+    expect(metaAgent.overridden).toBe(true);
+    expect(typeof metaAgent.available).toBe('boolean');
 
-    const teams = catalog.find((f) => f.key === 'teams');
-    if (!teams) throw new Error('Missing Microsoft Teams flag');
-    expect(teams.name).toBe('Microsoft Teams');
-    expect(teams.stability).toBe('experimental');
-    expect(teams.enabled).toBe(false);
-    expect(teams.overridden).toBe(false);
-
-    const tunnel = catalog.find((f) => f.key === 'agent_tunnel');
-    if (!tunnel) throw new Error('Missing Agent Computer Tunnel flag');
-    expect(tunnel.overridden).toBe(false);
+    const email = catalog.find((f) => f.key === 'agentmail_email');
+    if (!email) throw new Error('Missing AgentMail Email flag');
+    expect(email.name).toBe('AgentMail Email');
+    expect(email.stability).toBe('experimental');
+    expect(email.enabled).toBe(false);
+    expect(email.overridden).toBe(false);
   });
 
   test('an unavailable flag is never enabled', () => {
@@ -263,6 +285,52 @@ describe('buildFeatureFlagCatalog', () => {
       if (!f.available) expect(f.enabled).toBe(false);
     }
   });
+});
+
+/**
+ * A hidden flag is RESOLVABLE but UNADVERTISED (registry header, "Hidden
+ * flags"). The four properties below are the whole contract, and each one is a
+ * different way to get it wrong: `available: () => false` would break (a);
+ * dropping the entry from FLAGS would break (b); listing it would break (c);
+ * filtering `isFeatureFlagKey` through the catalog would break (d) and take
+ * the support escape hatch with it.
+ */
+describe('catalogHidden', () => {
+  test('no flag is hidden this release (agent_principal graduated)', () => {
+    expect(HIDDEN_KEYS).toEqual([]);
+  });
+
+  for (const key of HIDDEN_KEYS) {
+    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
+    if (!def) throw new Error(`Missing registered flag: ${key}`);
+
+    test(`${key}: (a) still resolves to its platform default`, () => {
+      // Hidden means "not offered", never "forced off".
+      expect(resolveFeatureFlag({}, key)).toBe(def.available() && def.platformDefault());
+      expect(resolveFeatureFlags({})[key]).toBe(resolveFeatureFlag({}, key));
+    });
+
+    test(`${key}: (b) still honours an explicit project override`, () => {
+      expect(resolveFeatureFlag({ experimental: { [key]: false } }, key)).toBe(false);
+      expect(resolveFeatureFlag({ experimental: { [key]: true } }, key)).toBe(def.available());
+    });
+
+    test(`${key}: (c) is absent from the catalog the UI renders`, () => {
+      const metadata = { experimental: { [key]: false } };
+      expect(buildFeatureFlagCatalog({}).map((f) => f.key)).not.toContain(key);
+      // Also when the project set an explicit override — an overridden hidden
+      // flag must not reappear as a row someone can flip back.
+      expect(buildFeatureFlagCatalog(metadata).map((f) => f.key)).not.toContain(key);
+    });
+
+    test(`${key}: (d) is still accepted by PATCH /projects/:id/features`, () => {
+      // The route validates the body with `isFeatureFlagKey` (project-settings.ts
+      // patchFeatureFlagHandler), not with the catalog. The full HTTP round
+      // trip is covered by flow AGP-3, which switches this flag off through
+      // the real route.
+      expect(isFeatureFlagKey(key)).toBe(true);
+    });
+  }
 });
 
 describe('featureDisabledBody', () => {

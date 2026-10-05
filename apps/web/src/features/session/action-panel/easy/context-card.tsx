@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `ContextCard` — "what the agent LOOKED AT," as rows.
  *
@@ -83,12 +84,13 @@ export function ContextCard({
    *  `easy-panel.tsx` for what it's wired to. */
   onAddContext: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const groups: ContextGroup[] = [];
 
   if (web.length) {
     groups.push({
       id: 'web',
-      label: 'Web sources',
+      label: tI18nComplete.raw('text033c214ae9a3'),
       count: web.length,
       icon: <Globe className="text-muted-foreground size-3.5 shrink-0" />,
       body: <WebSourceList items={web} />,
@@ -98,7 +100,7 @@ export function ContextCard({
   if (files.length) {
     groups.push({
       id: 'files',
-      label: 'Files read',
+      label: tI18nComplete.raw('text83480f565627'),
       count: files.length,
       icon: <FileText className="text-muted-foreground size-3.5 shrink-0" />,
       body: <FileList items={files} onOpenFile={onOpenFile} />,
@@ -139,15 +141,15 @@ export function ContextCard({
 
   return (
     <PanelCard
-      title="Context"
+      title={tI18nComplete.raw('texta6e600a10fed')}
       count={files.length + web.length + tools.length}
       isEmpty={groups.length === 0}
       emptyArt={<ContextArt />}
-      emptyText="Track tools and referenced files used in this task."
+      emptyText={tI18nComplete.raw('textc63adab9bd56')}
       emptyActions={
         <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddContext}>
           <Plus className="size-3.5" />
-          Add context
+          {tI18nComplete.raw('text0f01d14cacf0')}
         </Button>
       }
       // The same dense gutter Outputs uses. Rows carry their own inset, so the

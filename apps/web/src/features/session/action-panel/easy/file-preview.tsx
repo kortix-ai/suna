@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `FilePreview` — one file, fetched and shown.
  *
@@ -27,6 +28,8 @@ import {
 } from '@/features/file-viewer';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
+import { useFileRefresh } from '@/features/files/hooks/use-file-refresh';
+import { useContentRevision } from '@/features/file-viewer/use-content-revision';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
@@ -39,9 +42,12 @@ import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { FileViewer, isSvg } from './file-viewer';
 import {
   PanelWidthButton,
+  RefreshButton,
   type ShareContext,
   ViewerActions,
   type ViewerCopy,
+  ViewerDownloadAction,
+  ViewerPathPill,
   fileShareInput,
 } from './viewer-actions';
 
@@ -53,6 +59,9 @@ import {
 // same process, as this component's render tests need to. Reading through
 // `getState()` for both snapshots sidesteps that — same live value, same
 // reactivity via `subscribe`, no behavior change in the browser or real SSR.
+/** The toolbar's Refresh control, as both toolbars take it. */
+type ViewerRefresh = { onRefresh: () => void; refreshing: boolean };
+
 const getSandboxAliveSnapshot = () => {
   const s = useRuntimeConnectionStore.getState();
   return s.status === 'connected' && s.healthy === true;
@@ -60,9 +69,9 @@ const getSandboxAliveSnapshot = () => {
 
 /**
  * The toolbar for every state that isn't text. Same shape and same actions as
- * `FileViewer`'s — the difference is only what the split button's primary can
- * be: most of these states have no content a clipboard could hold, so `Copy`
- * gives way to `Copy link` (see `ViewerActions`). The binary-image branch is
+ * `FileViewer`'s — the difference is only which copy actions the pill holds:
+ * most of these states have no content a clipboard could hold, so only
+ * `Copy link` shows (see `ViewerActions`). The binary-image branch is
  * the exception and hands one in via `copy`. Without this shell, a file that
  * fails to load would strand the user in a pane with no title and no exit.
  */
@@ -74,6 +83,7 @@ function PreviewShell({
   onClose,
   onPresent,
   copy,
+  refresh,
   children,
 }: {
   /** The display name shown in the toolbar text — a human title when one
@@ -96,32 +106,40 @@ function PreviewShell({
   onPresent?: () => void;
   /** The clipboard action for the one preview state that has one — the
    *  binary-image branch, copying the picture itself. Omitted everywhere else,
-   *  which promotes `Copy link` to the split button's primary. */
+   *  which leaves `Copy link` as the pill's only copy action. */
   copy?: ViewerCopy;
+  /** Re-reads the file on demand. See `RefreshButton`. */
+  refresh: ViewerRefresh;
   children: React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2.5 py-2.5">
-        <span className="flex min-w-0 items-center gap-2.5">
-          <DetailSidebarToggle className="size-7" />
-          <span className="flex size-5 shrink-0 items-center justify-center">
-            {getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
-          </span>
-          <span className="text-foreground truncate text-sm font-medium">{name}</span>
-        </span>
+      <div className="flex shrink-0 items-center gap-1 border-b px-2.5 py-2">
+        <DetailSidebarToggle className="size-7" />
+        <ViewerPathPill
+          icon={getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
+          path={path}
+          fileName={name}
+        >
+          <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
+          <ViewerActions
+            copy={copy}
+            shareContext={shareContext}
+            shareInput={fileShareInput(path, fileName)}
+          />
+        </ViewerPathPill>
         <span className="flex shrink-0 items-center gap-1">
           {/* Present is not a way of taking the deck with you — it changes what
-              you are looking at — so it stays its own control rather than
-              joining the split button's menu. */}
+              you are looking at — so it stays its own control outside the pill. */}
           {onPresent && (
-            <Hint label="Present" side="bottom">
+            <Hint label={tI18nComplete.raw('text43f9b89c0b9d')} side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Present"
+                aria-label={tI18nComplete.raw('text43f9b89c0b9d')}
                 onClick={onPresent}
                 className="size-7 active:scale-[0.96]"
               >
@@ -129,12 +147,7 @@ function PreviewShell({
               </Button>
             </Hint>
           )}
-          <ViewerActions
-            copy={copy}
-            shareContext={shareContext}
-            shareInput={fileShareInput(path, fileName)}
-            download={{ path, fileName }}
-          />
+          <ViewerDownloadAction download={{ path, fileName }} />
           <PanelWidthButton isMobile={isMobile} />
           <CloseButton onClose={onClose} />
         </span>
@@ -173,8 +186,8 @@ async function copyImageToClipboard(mimeType: string, base64: string): Promise<v
 
 /**
  * `ClipboardItem` is missing on older browsers (and during SSR). Feature-detect
- * rather than offer a `Copy` that can only fail — without it the split button
- * falls back to `Copy link`, which every browser can do (W4).
+ * rather than offer a `Copy` that can only fail — without it the pill keeps
+ * only `Copy link`, which every browser can do (W4).
  */
 function canCopyImages(): boolean {
   return typeof ClipboardItem !== 'undefined';
@@ -297,6 +310,7 @@ export function FilePreview({
    *  entirely (not disabled) for anything that isn't a presentation_gen deck. */
   onPresent?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const rich = isRich(fileName);
 
   // Opening at fit-to-page is PDF-only. It is the one renderer here whose zoom
@@ -320,7 +334,17 @@ export function FilePreview({
 
   // The rich renderers fetch their own bytes (and stream the big ones), so
   // pulling the whole file into a string here first would be wasted work.
-  const { data, isLoading, isError, error } = useFileContent(path, { enabled: !rich });
+  const { data, isLoading, isError, error, dataUpdatedAt } = useFileContent(path, {
+    enabled: !rich,
+  });
+
+  // The agent's turn end refetches this file (the SDK invalidates the workspace
+  // file caches), so text updates in place. Refresh is the manual safety net.
+  // An HTML page reloads on every refetch, not only on changed markup: the
+  // stylesheets and scripts it points at are separate files.
+  const { refresh: onRefresh, refreshing, reloadKey } = useFileRefresh(path);
+  const refresh: ViewerRefresh = { onRefresh, refreshing };
+  const fetchRevision = useContentRevision(dataUpdatedAt || undefined);
 
   // A readiness 503 means the sandbox is parked or booting — a pending state,
   // never a failure. `useFileContent` keeps polling while this is true, so the
@@ -357,6 +381,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
       >
         <FileSourceProvider value={workspaceFileSource}>
           {/* Inside the source provider, not around it: a renderer that
@@ -375,6 +400,7 @@ export function FilePreview({
           >
             <FileContentRenderer
               filePath={path}
+              reloadKey={reloadKey}
               showHeader={false}
               className="h-full"
               fitOnOpen={isPdf}
@@ -395,6 +421,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
       >
         <Centered>
           <Loading />
@@ -412,20 +439,21 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
       >
         <Centered>
           {sandboxWaking ? (
             <>
               <Loading className="size-5" />
-              <span>Waking up the workspace… this file will load automatically.</span>
+              <span>{tI18nComplete.raw('textf7db0cb35bc2')}</span>
             </>
           ) : (
             <>
               <FileWarning className="size-5" />
               <span>
                 {!sandboxAlive
-                  ? "This session's workspace has ended, so its files can't be opened anymore."
-                  : "This file couldn't be opened."}
+                  ? tI18nComplete.raw('text2a0be92cc91f')
+                  : tI18nComplete.raw('textd59d8e8ed646')}
               </span>
             </>
           )}
@@ -447,11 +475,12 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
         copy={
           isImage && canCopyImages()
             ? {
                 run: () => copyImageToClipboard(data.mimeType!, data.content),
-                ariaLabel: 'Copy image',
+                ariaLabel: tI18nComplete.raw('text3cb27ae0fbca'),
               }
             : undefined
         }
@@ -477,7 +506,7 @@ export function FilePreview({
         ) : (
           <Centered>
             <FileWarning className="size-5" />
-            <span>This file can&apos;t be previewed here.</span>
+            <span>{tI18nComplete.raw('text3bfc0ea39768')}</span>
           </Centered>
         )}
       </PreviewShell>
@@ -491,6 +520,8 @@ export function FilePreview({
       path={path}
       shareContext={shareContext}
       onClose={onClose}
+      refresh={refresh}
+      reloadKey={`${fetchRevision}-${reloadKey}`}
     />
   );
 }

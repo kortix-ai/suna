@@ -20,7 +20,6 @@ export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor';
  *
  * Both shapes emit events as stdout lines, so nothing downstream (filter →
  * prompt template → session_mode) can tell them apart.
- * See docs/specs/2026-08-12-monitors.md.
  */
 export type ProjectMonitorMode = 'poll' | 'stream';
 
@@ -48,8 +47,9 @@ export interface TriggerSessionAccess {
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
-  /** Where the entry is sourced from. Always `kortix.yaml#triggers.<slug>`
-   *  now that triggers are centralized in the manifest. */
+  /** Where the entry is declared: `<file>#triggers.<slug>`. `<file>` is
+   *  `kortix.yaml`, or the imported file when the manifest's `imports:`
+   *  brought the trigger in (e.g. `.kortix/triggers/weekly.yaml`). */
   path: string;
   name: string;
   type: ProjectTriggerType;
@@ -103,6 +103,18 @@ export interface ProjectTrigger {
   /** Access policy applied to every session this trigger creates. */
   session_access: TriggerSessionAccess;
   last_fired_at: string | null;
+  /**
+   * The trigger's most recent outcome: `queued` (a prompt waits for its
+   * session), `fired` (delivered, or the last run succeeded), or `failed` (the
+   * prompt was not delivered, or the run it started ended with an error).
+   * A failed run stays `failed` across later fires until a run finishes.
+   * Null before the first fire.
+   */
+  last_status?: string | null;
+  /** Why the last fire or run failed, e.g. "Out of credits: …". Null otherwise. */
+  last_error?: string | null;
+  /** ISO time of the last fire attempt or run outcome. */
+  last_attempt_at?: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
 }

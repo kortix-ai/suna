@@ -1,32 +1,25 @@
 /**
- * Computer connectors — connected machines reached over the Agent Computer
- * Tunnel, as a first-class connector. Like `channel`, this is a
- * provider with a FIXED, hand-curated catalog (the tunnel RPC method set) rather
- * than a spec-driven one. Unlike every other provider it has NO credential — the
- * live WS relay IS the credential, and per-machine auth/scope is enforced by the
- * tunnel permission layer at call time.
+ * Computer connectors — machines reached over the Agent Computer Tunnel, as a
+ * first-class connector with a FIXED, hand-curated catalog (the tunnel RPC
+ * method set).
  *
- * One connector profile contains one or more selected machines. Tool schemas
- * include a machine selector, and the gateway restricts it to the profile's
- * server-side allowlist. The gateway routes `tunnel` bindings
- * through the shared tunnel RPC core
- * (`tunnel/core/rpc-core.ts`), NOT executeCall. See
- * docs/specs/computer-connector.md.
+ * A paired machine is an ACCOUNT on the project's `computer` connector: one
+ * `connector_connections` row whose `tunnel_id` names the machine, owned by
+ * one member (private) or by the project (shared). The generic connection
+ * resolver picks the account (`--account`, session bindings, reachability);
+ * the gateway relays through the shared tunnel RPC core
+ * (`tunnel/core/rpc-core.ts`), NOT executeCall.
  */
+import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { db } from '../shared/db';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 
-/** Human label for the computer connector (UI default name). */
-export function computerLabel(): string {
-  return 'Computer Tunnel';
-}
+/** Default name of a project's computer connector. */
+export const COMPUTER_CONNECTOR_NAME = 'Computers';
 
-/** Legacy aggregate slug. Kept for existing session bindings during migration. */
+/** The one computer connector slug per project. */
 export const COMPUTER_SLUG = 'computer';
-
-/** Legacy per-machine slug. Kept only for compatibility and migration. */
-export function computerConnectorSlug(tunnelId: string): string {
-  return `computer-${tunnelId.toLowerCase()}`;
-}
 
 /** One curated computer action — normalized into a `tunnel`-bound NormalizedAction. */
 interface ComputerActionDef {
@@ -40,17 +33,7 @@ interface ComputerActionDef {
   /** JSON-schema properties for the operation itself. */
   properties: Record<string, { type: string; description: string }>;
   required: string[];
-  /** Meta actions run server-side and do not accept a machine selector. */
-  meta?: boolean;
 }
-
-const COMPUTER_SELECTOR = {
-  computer: {
-    type: 'string',
-    description:
-      'Target machine name or id from list_computers. Optional when exactly one assigned machine is online.',
-  },
-} as const;
 
 /**
  * The computer catalog. `fs.*` + `shell.exec` are fully typed; the high-value
@@ -60,15 +43,14 @@ const COMPUTER_SELECTOR = {
  */
 const COMPUTER_ACTIONS: ComputerActionDef[] = [
   {
-    path: 'list_computers',
-    method: 'list_computers',
-    name: 'List computers',
+    path: 'status',
+    method: 'status',
+    name: 'Computer status',
     description:
-      'List the machines assigned to this connector profile — id, name, online status, declared capabilities, and platform. Use this to choose a `computer` for the other actions.',
+      'Call this first. Shows the computer this call resolves to: name, online status, platform, approved capabilities, home_dir, and allowed_paths (file tools only work inside these). Select another computer with the account flag.',
     risk: 'read',
     properties: {},
     required: [],
-    meta: true,
   },
   // ── filesystem ──────────────────────────────────────────────────────────
   {
@@ -93,14 +75,15 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     path: 'fs.write',
     method: 'fs.write',
     name: 'Write file',
-    description: 'Write (create or overwrite) a file on the machine. Provide `path` and `content`.',
+    description: 'Write (create or overwrite) a file on the machine. Never transcribe binary base64 from tool output. Use agent-tunnel-cli fs_upload with a local source path, or generate the artifact on the destination. For programmatic binary writes, supply the source SHA-256. The result includes the persisted sha256; size alone does not prove integrity.',
     risk: 'write',
     properties: {
       path: {
         type: 'string',
         description: 'Absolute path of the file to write.',
       },
-      content: { type: 'string', description: 'File contents.' },
+      content: { type: 'string', description: 'File contents. Pass binary bytes programmatically, never through model transcription.' },
+      sha256: { type: 'string', description: 'Optional SHA-256 of the source bytes. A mismatch rejects the write before modifying the destination.' },
       encoding: {
         type: 'string',
         description: 'Encoding of `content`: "utf-8" (default) or "base64".',
@@ -279,6 +262,26 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     required: [],
   },
   {
+    path: 'desktop.cua.list_tools',
+    method: 'desktop.cua.list_tools',
+    name: 'List desktop tools',
+    description: 'List tools exposed by the installed computer-use driver. Requires an approved desktop computer-use capability.',
+    risk: 'read',
+    properties: {},
+    required: [],
+  },
+  {
+    path: 'desktop.cua.describe',
+    method: 'desktop.cua.describe',
+    name: 'Describe desktop tool',
+    description: 'Describe a tool exposed by the installed computer-use driver. Discovery does not grant permission to run it.',
+    risk: 'read',
+    properties: {
+      tool: { type: 'string', description: 'Computer-use tool name to describe.' },
+    },
+    required: ['tool'],
+  },
+  {
     path: 'desktop.cua.call',
     method: 'desktop.cua.call',
     name: 'Call any desktop tool',
@@ -298,11 +301,10 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
 
 function toAction(def: ComputerActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'tunnel', method: def.method };
-  const properties = def.meta ? def.properties : { ...COMPUTER_SELECTOR, ...def.properties };
-  const inputSchema = Object.keys(properties).length
+  const inputSchema = Object.keys(def.properties).length
     ? {
         type: 'object',
-        properties,
+        properties: def.properties,
         ...(def.required.length ? { required: def.required } : {}),
       }
     : null;
@@ -317,7 +319,164 @@ function toAction(def: ComputerActionDef): NormalizedAction {
   };
 }
 
-/** The fixed catalog for every Computer Tunnel connector profile. */
+/** The fixed catalog of every computer connector. */
 export function computerCatalog(): NormalizedAction[] {
   return COMPUTER_ACTIONS.map(toAction);
 }
+
+type ActionRow = typeof connectorActions.$inferSelect;
+
+/**
+ * Computer actions always come from this code, never from `connector_actions`.
+ * An older API (a replica mid-rollout, or an old stack sharing the database)
+ * re-materializes its own catalog into that table, and an agent reading it
+ * then calls tools that no longer exist.
+ */
+export function withComputerCatalog(
+  connectorId: string,
+  providerType: string | null | undefined,
+  stored: ActionRow[],
+): ActionRow[] {
+  if (providerType !== 'computer') return stored;
+  const epoch = new Date(0);
+  return computerCatalog().map((action) => ({
+    actionId: `computer:${action.path}`,
+    connectorId,
+    path: action.path,
+    name: action.name,
+    description: action.description ?? null,
+    inputSchema: (action.inputSchema ?? null) as Record<string, unknown> | null,
+    outputSchema: null,
+    risk: action.risk,
+    binding: (action.binding ?? {}) as Record<string, unknown>,
+    createdAt: epoch,
+    updatedAt: epoch,
+  }));
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type ConnectionRow = typeof connectorConnections.$inferSelect;
+
+/** `name`, or `name (2)`, `name (3)`, … — the first label this owner does not hold. */
+export function uniqueComputerLabel(name: string, taken: ReadonlySet<string>): string {
+  const base = name.trim().slice(0, 240) || 'Computer';
+  const lower = new Set([...taken].map((label) => label.toLowerCase()));
+  if (!lower.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base} (${n})`;
+    if (!lower.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+/**
+ * Make one paired machine an account on a project's computer connector.
+ *
+ * Idempotent on (connector, owner, machine): the existing account is returned
+ * (and reactivated when it was revoked). A private attach of a machine that is
+ * already shared in this project returns the shared account. A revoked account of the same owner
+ * that lost its machine and carries the machine's name is reused, so re-pairing
+ * a computer keeps its label and every session binding to it. Otherwise a new
+ * account is created with a unique label; it becomes the owner's default when
+ * the owner has none.
+ *
+ * Attaches to one connector serialize on its row lock, so two concurrent
+ * approvals for the same owner cannot both pin a default or pick one label.
+ *
+ * Null when the machine is gone: unpaired before this attach, or while it
+ * waited. The key-share lock makes a concurrent unpair wait for this
+ * transaction; without it the unpair commits first and the account's
+ * `tunnel_id` fails its foreign key (Postgres 23503, a 500 on every caller).
+ */
+export async function attachComputerConnection(
+  tx: Tx,
+  input: {
+    accountId: string;
+    projectId: string;
+    connectorId: string;
+    ownerType: 'member' | 'project';
+    /** The member's user id; null for a project-shared account. */
+    ownerId: string | null;
+    tunnelId: string;
+    name: string;
+    createdBy: string;
+  },
+): Promise<{ connection: ConnectionRow; created: boolean } | null> {
+  const owner = and(
+    eq(connectorConnections.connectorId, input.connectorId),
+    eq(connectorConnections.ownerType, input.ownerType),
+    input.ownerId === null
+      ? isNull(connectorConnections.ownerId)
+      : eq(connectorConnections.ownerId, input.ownerId),
+  );
+  await tx
+    .select({ connectorId: connectors.connectorId })
+    .from(connectors)
+    .where(eq(connectors.connectorId, input.connectorId))
+    .for('update');
+  const [machine] = await tx
+    .select({ tunnelId: tunnelConnections.tunnelId })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, input.tunnelId))
+    .for('key share');
+  if (!machine) return null;
+  const rows = await tx.select().from(connectorConnections).where(owner);
+  const hasDefault = rows.some((row) => row.isDefault);
+  const reactivate = async (row: ConnectionRow) => {
+    const [updated] = await tx
+      .update(connectorConnections)
+      .set({
+        tunnelId: input.tunnelId,
+        status: 'active',
+        ...(hasDefault ? {} : { isDefault: true }),
+        updatedAt: new Date(),
+      })
+      .where(eq(connectorConnections.connectionId, row.connectionId))
+      .returning();
+    return { connection: updated!, created: false };
+  };
+
+  // A machine its owner shared here is already their account in this project
+  // (they keep a grant). A second, private account for it would duplicate it.
+  if (input.ownerType === 'member') {
+    const [shared] = await tx
+      .select()
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, input.connectorId),
+          eq(connectorConnections.tunnelId, input.tunnelId),
+          eq(connectorConnections.ownerType, 'project'),
+          eq(connectorConnections.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (shared) return { connection: shared, created: false };
+  }
+  const same = rows.find((row) => row.tunnelId === input.tunnelId);
+  if (same) return same.status === 'active' ? { connection: same, created: false } : reactivate(same);
+  const orphan = rows.find(
+    (row) =>
+      row.tunnelId === null &&
+      row.status === 'revoked' &&
+      row.label.toLowerCase() === input.name.trim().toLowerCase(),
+  );
+  if (orphan) return reactivate(orphan);
+
+  const [created] = await tx
+    .insert(connectorConnections)
+    .values({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      connectorId: input.connectorId,
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      label: uniqueComputerLabel(input.name, new Set(rows.map((row) => row.label))),
+      status: 'active',
+      isDefault: !hasDefault,
+      tunnelId: input.tunnelId,
+      createdBy: input.createdBy,
+    })
+    .returning();
+  return { connection: created!, created: true };
+}
+

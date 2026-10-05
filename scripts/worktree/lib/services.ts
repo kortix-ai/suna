@@ -3,7 +3,7 @@ import { run, which } from './exec';
 
 export async function ensureRuntimeArtifacts(worktreePath: string): Promise<number> {
   const packageBuilds: Array<[string, string]> = [
-    ['sandbox agent', '@kortix/sandbox-agent-server'],
+    ['sandbox agent', 'kortixd'],
     ['CLI', '@kortix/cli'],
   ];
   for (const [label, filter] of packageBuilds) {
@@ -12,6 +12,12 @@ export async function ensureRuntimeArtifacts(worktreePath: string): Promise<numb
     if (code !== 0) return code;
   }
   const [label, script] = ['Apps runtime', 'apps/kortix-app-runtime/build.sh'];
+  // The Apps runtime is a Go binary that only the local full stack consumes.
+  // A box without Go (a Kortix session sandbox) still gets a usable worktree.
+  if (!which('go')) {
+    console.warn(`  skipping ${label} runtime artifact: go is not installed (Kortix Apps will not run in this worktree)`);
+    return 0;
+  }
   console.log(`  building ${label} runtime artifact`);
   const code = await run(['bash', script], { cwd: worktreePath });
   if (code !== 0) return code;

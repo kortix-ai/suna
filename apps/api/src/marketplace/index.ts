@@ -1,6 +1,6 @@
 /**
  * /v1/marketplace — browse the registry catalog. Read-only routes are public; installing
- * is project-scoped and lives at /v1/projects/:id/marketplace/install-session (see r10.ts).
+ * is project-scoped and lives at /v1/projects/:id/marketplace/install-session (see projects/routes/marketplace-install-session.ts).
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
@@ -24,6 +24,7 @@ import {
   warmMarketplaceCatalog,
 } from './catalog';
 import { addSource, listSources, removeSource } from './sources-store';
+import { readJsonObject } from '../shared/http-body';
 
 // Wire DB-persisted sources into the catalog. Done here (not in catalog.ts) so
 // catalog.ts stays free of the config/db import graph for pure unit tests.
@@ -36,12 +37,19 @@ warmMarketplaceCatalog();
 
 export const marketplaceApp = makeOpenApiApp<AppEnv>();
 
+const AddMarketplaceSourceBodySchema = z.object({
+  address: z.string().min(1),
+  gitRef: z.string().optional(),
+  sparsePaths: z.array(z.string()).optional(),
+  label: z.string().optional(),
+});
+
 marketplaceApp.openapi(
   createRoute({
     method: 'get',
     path: '/items',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/items',
+    summary: 'List marketplace items',
     request: {
       query: z.object({
         query: z.string().optional(),
@@ -93,7 +101,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/marketplaces',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/marketplaces',
+    summary: 'List marketplaces',
     responses: {
       200: json(z.any(), 'Distinct marketplaces with item counts'),
     },
@@ -108,7 +116,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/marketplaces/featured',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/marketplaces/featured',
+    summary: 'List featured marketplaces',
     responses: {
       200: json(z.any(), 'Curated featured marketplaces'),
     },
@@ -123,7 +131,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/items/{id}',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/items/:id',
+    summary: 'Get a marketplace item',
     request: {
       params: z.object({ id: z.string() }),
     },
@@ -144,7 +152,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/items/{id}/file',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/items/:id/file',
+    summary: 'Read a file of a marketplace item',
     request: {
       params: z.object({ id: z.string() }),
       query: z.object({ path: z.string().min(1) }),
@@ -186,7 +194,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/sources',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/sources',
+    summary: 'List marketplace sources',
     ...auth,
     responses: {
       200: json(z.any(), 'Configured marketplace sources'),
@@ -203,19 +211,12 @@ marketplaceApp.openapi(
     method: 'post',
     path: '/sources',
     tags: ['marketplace'],
-    summary: 'POST /marketplace/sources',
+    summary: 'Add a marketplace source',
     ...auth,
     request: {
       body: {
         content: {
-          'application/json': {
-            schema: z.object({
-              address: z.string().min(1),
-              gitRef: z.string().optional(),
-              sparsePaths: z.array(z.string()).optional(),
-              label: z.string().optional(),
-            }),
-          },
+          'application/json': { schema: AddMarketplaceSourceBodySchema },
         },
       },
     },
@@ -225,12 +226,18 @@ marketplaceApp.openapi(
     },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
+    // The route validator runs only for a JSON content-type, so the handler
+    // parses the body with the same schema.
+    const parsed = AddMarketplaceSourceBodySchema.safeParse(await readJsonObject(c));
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid marketplace source' }, 400);
+    }
+    const body = parsed.data;
     // Adding an arbitrary source is admin-only; the curated FEATURED_MARKETPLACES
     // are vetted, public, read-only git repos (they resolve out of the box and
     // carry no SSRF/LFI surface) so any signed-in user may enable one to explore
     // it. See the module-level comment above for the full rationale.
-    const address = String((body as { address?: unknown })?.address ?? '').trim();
+    const address = body.address.trim();
     if (!FEATURED_SOURCE_ADDRESSES.has(address)) {
       // Throws (401/403) on failure — caught by the app's global onError and
       // turned into the right response; resolves to undefined on success.
@@ -238,7 +245,7 @@ marketplaceApp.openapi(
     }
     try {
       // LFI/SSRF guard — reject local-folder + private/non-https URL sources.
-      assertAllowedSourceAddress(String(body?.address ?? ''));
+      assertAllowedSourceAddress(body.address);
       const source = await addSource(body);
       _resetExternalCache();
       warmMarketplaceCatalog();
@@ -254,7 +261,7 @@ marketplaceApp.openapi(
     method: 'delete',
     path: '/sources/{id}',
     tags: ['marketplace'],
-    summary: 'DELETE /marketplace/sources/:id',
+    summary: 'Remove a marketplace source',
     ...auth,
     request: {
       params: z.object({ id: z.string() }),

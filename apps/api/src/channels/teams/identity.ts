@@ -1,20 +1,17 @@
-import { and, eq, isNull } from 'drizzle-orm';
-import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
-import { db } from '../../shared/db';
-import { authorize } from '../../iam';
-import { actorForUser } from '../../iam/actor';
-import { PROJECT_ACTIONS } from '../../iam/actions';
+import { config } from '../../config';
+import { accountRoleMap, isAccountManagerRole } from '../../iam/read-models';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { sendCard } from '../teams-api';
-import { buildConnectAccountCard, buildRequestAccessCard } from './cards';
-import { buildTeamsLoginUrl } from './login';
+import { lookupChatUserForKortixUser } from '../core/identity';
+import { openDirectConversation, sendCard, updateCard } from '../teams-api';
+import { buildAccessRequestNoticeCard, buildConnectedCard, buildRequestAccessCard } from './cards';
+import { sendTeamsLoginPrompt } from './login-card';
+import { replyPrivately } from './private-reply';
 import { createPendingTeamsAuthMessage } from './auth-resume';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
-const PLATFORM = 'teams';
-
-export type TeamsActor = { userId: string } | { reason: 'unlinked' | 'not_member' };
+// The Teams rendering of the chat identity link (core/identity.ts owns the
+// link itself and the actor check).
 
 export function teamsUserId(activity: TeamsActivity): string | null {
   return activity.from?.aadObjectId ?? activity.from?.id ?? null;
@@ -32,113 +29,18 @@ function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConv
   };
 }
 
-export async function resolveTeamsActor(
-  tenantId: string,
-  userId: string,
-  accountId: string,
-  projectId: string,
-): Promise<TeamsActor> {
-  if (!tenantId || !userId) return { reason: 'unlinked' };
-
-  const [link] = await db
-    .select({ userId: chatUserIdentities.userId })
-    .from(chatUserIdentities)
-    .where(
-      and(
-        eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, tenantId),
-        eq(chatUserIdentities.platformUserId, userId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .limit(1);
-  if (!link) return { reason: 'unlinked' };
-
-  if (!(await isAccountMember(link.userId, accountId))) return { reason: 'not_member' };
-  // A channel webhook carries no Kortix credential: it acts AS the Kortix user
-  // the Slack/Teams identity is linked to. Role-only is the honest classification
-  // and is exactly the authority this call had when the trailing `actingTokenId`
-  // was omitted.
-  const verdict = await authorize(actorForUser(link.userId, accountId), PROJECT_ACTIONS.PROJECT_WRITE, {
-    type: 'project',
-    id: projectId,
-  });
-  if (!verdict.allowed) return { reason: 'not_member' };
-  return { userId: link.userId };
-}
-
-export async function isAccountMember(userId: string, accountId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-    .limit(1);
-  return !!row;
-}
-
-export async function lookupTeamsIdentity(
-  tenantId: string,
-  userId: string,
-): Promise<{ userId: string } | null> {
-  const [row] = await db
-    .select({ userId: chatUserIdentities.userId })
-    .from(chatUserIdentities)
-    .where(
-      and(
-        eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, tenantId),
-        eq(chatUserIdentities.platformUserId, userId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-export async function linkTeamsIdentity(input: {
-  tenantId: string;
-  teamsUserId: string;
-  userId: string;
-}): Promise<void> {
-  await db
-    .insert(chatUserIdentities)
-    .values({
-      platform: PLATFORM,
-      workspaceId: input.tenantId,
-      platformUserId: input.teamsUserId,
-      userId: input.userId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        chatUserIdentities.platform,
-        chatUserIdentities.workspaceId,
-        chatUserIdentities.platformUserId,
-      ],
-      set: { userId: input.userId, linkedAt: new Date(), revokedAt: null },
-    });
-}
-
-export async function revokeTeamsIdentity(tenantId: string, userId: string): Promise<boolean> {
-  const rows = await db
-    .update(chatUserIdentities)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, tenantId),
-        eq(chatUserIdentities.platformUserId, userId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .returning({ identityId: chatUserIdentities.identityId });
-  return rows.length > 0;
-}
-
+/**
+ * Tell the sender why their message did not run: connect a Kortix account, or
+ * ask for access to the project. Only they can act on it, so a channel or
+ * group chat shows it to them alone, as Slack's ephemeral.
+ */
 export async function postTeamsIdentityPrompt(input: {
   projectId: string;
   tenantId: string;
   activity: TeamsActivity;
   reason: 'unlinked' | 'not_member';
+  /** This person's own "Working on it…" card in a 1:1 chat, which the prompt replaces. */
+  replaceActivityId?: string;
 }): Promise<void> {
   const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return;
@@ -152,71 +54,30 @@ export async function postTeamsIdentityPrompt(input: {
       teamsUserId: userId,
       activity: input.activity,
     });
-    const loginUrl = buildTeamsLoginUrl({
+    await sendTeamsLoginPrompt({
+      ref,
+      activity: input.activity,
       tenantId: input.tenantId,
       teamsUserId: userId,
-      ...(pendingId ? { pendingId } : {}),
+      pendingId,
+      ...(input.replaceActivityId ? { replaceActivityId: input.replaceActivityId } : {}),
     });
-    await sendCard(ref, buildConnectAccountCard(loginUrl));
     return;
   }
-  await sendCard(ref, buildRequestAccessCard(input.projectId));
+  const card = buildRequestAccessCard(input.projectId);
+  if (input.replaceActivityId && (await updateCard(ref, input.replaceActivityId, card))) return;
+  await replyPrivately(ref, input.activity, card);
 }
 
-export type TeamsAccessRequestOutcome =
-  | { status: 'created' | 'pending' | 'already-member'; requesterUserId: string; accountId: string }
-  | { status: 'no-identity' | 'no-project' };
-
-export async function createTeamsAccessRequest(input: {
-  tenantId: string;
-  teamsUserId: string;
-  projectId: string;
-}): Promise<TeamsAccessRequestOutcome> {
-  const identity = await lookupTeamsIdentity(input.tenantId, input.teamsUserId);
-  if (!identity) return { status: 'no-identity' };
-
-  const [project] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, input.projectId))
-    .limit(1);
-  if (!project) return { status: 'no-project' };
-
-  const base = { requesterUserId: identity.userId, accountId: project.accountId };
-  if (await isAccountMember(identity.userId, project.accountId)) {
-    const verdict = await authorize(
-      actorForUser(identity.userId, project.accountId),
-      PROJECT_ACTIONS.PROJECT_WRITE,
-      { type: 'project', id: input.projectId },
-    );
-    if (verdict.allowed) return { status: 'already-member', ...base };
-  }
-
-  const [existing] = await db
-    .select({ requestId: projectAccessRequests.requestId })
-    .from(projectAccessRequests)
-    .where(
-      and(
-        eq(projectAccessRequests.projectId, input.projectId),
-        eq(projectAccessRequests.requesterUserId, identity.userId),
-        eq(projectAccessRequests.status, 'pending'),
-      ),
-    )
-    .limit(1);
-  if (existing) return { status: 'pending', ...base };
-
-  const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
-  await db.insert(projectAccessRequests).values({
-    accountId: project.accountId,
-    projectId: input.projectId,
-    requesterUserId: identity.userId,
-    requesterEmail: email || identity.userId,
-    message: 'Requested from Microsoft Teams. Approve so they can run Kortix from Teams.',
-  });
-  return { status: 'created', ...base };
-}
-
+/**
+ * Tell the account's admins that someone asked for access. The notice every
+ * manager gets in Kortix goes first. Then each admin who linked Teams in this
+ * tenant gets a card in their 1:1 chat with the bot, as Slack DMs its admins.
+ * Best effort: Teams opens that chat only for an admin with the app installed
+ * personally, and the Kortix notice already covers everyone else.
+ */
 export async function notifyAdminsOfTeamsAccessRequest(input: {
+  tenantId: string;
   projectId: string;
   accountId: string;
   requesterUserId: string;
@@ -226,4 +87,48 @@ export async function notifyAdminsOfTeamsAccessRequest(input: {
     projectId: input.projectId,
     requesterUserId: input.requesterUserId,
   }).catch((err) => console.warn('[teams-auth] notify managers failed', err));
+
+  try {
+    const admins = [...(await accountRoleMap(input.accountId)).entries()]
+      .filter(([userId, role]) => isAccountManagerRole(role) && userId !== input.requesterUserId)
+      .map(([userId]) => userId);
+    if (admins.length === 0) return;
+    const email = (await lookupEmailsByUserIds([input.requesterUserId]).catch(() => null))?.get(input.requesterUserId);
+    const notice = buildAccessRequestNoticeCard({
+      requester: email ? `**${email}**` : 'A teammate',
+      reviewUrl: `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${input.projectId}/customize/members`,
+    });
+    for (const admin of admins) {
+      const teamsId = await lookupChatUserForKortixUser('teams', input.tenantId, admin);
+      if (!teamsId) continue;
+      const direct = await openDirectConversation({ projectId: input.projectId, tenantId: input.tenantId, userId: teamsId });
+      if (direct) await sendCard(direct, notice);
+    }
+  } catch (err) {
+    console.warn('[teams-auth] admin access-request notice failed', { err: (err as Error)?.message });
+  }
+}
+
+/**
+ * After `/login` completes in the browser: say so in the person's 1:1 chat,
+ * where the sign-in link was sent. Slack posts "Slack connected — picking up
+ * your message". Best effort: Teams opens the chat only when the app is
+ * installed for them.
+ */
+export async function confirmTeamsConnected(input: {
+  projectId: string;
+  tenantId: string;
+  teamsUserId: string;
+  userId: string;
+  resumed: boolean;
+  hasAccess: boolean;
+}): Promise<void> {
+  try {
+    const direct = await openDirectConversation({ projectId: input.projectId, tenantId: input.tenantId, userId: input.teamsUserId });
+    if (!direct) return;
+    const email = (await lookupEmailsByUserIds([input.userId]).catch(() => null))?.get(input.userId) ?? null;
+    await sendCard(direct, buildConnectedCard({ email, resumed: input.resumed, hasAccess: input.hasAccess, projectId: input.projectId }));
+  } catch (err) {
+    console.warn('[teams-auth] connected confirmation failed', { err: (err as Error)?.message });
+  }
 }

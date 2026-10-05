@@ -32,16 +32,7 @@
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
 import type { ReactNode } from 'react';
 
-/**
- * The conversation column: max width, centring, and gutters.
- *
- * 12px more inset than the composer on both sides (`COMPOSER_SHELL_CLASS` is
- * `px-4 md:pr-1`), so the input card reads slightly WIDER than the conversation
- * and a right-aligned bubble never sits flush with the card's edge. `pt-6` and
- * NO bottom padding: the space under the last message is the auto-scroll
- * spacer's job alone (use-auto-scroll.ts).
- */
-export const SESSION_TRANSCRIPT_CLASS = 'mx-auto w-full max-w-3xl min-w-0 px-7 pt-6 md:pr-4';
+export { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-transcript-class';
 
 /**
  * The chat + action-panel row.

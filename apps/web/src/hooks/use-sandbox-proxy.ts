@@ -2,12 +2,12 @@
 
 import { useCallback } from 'react';
 
-import { useActiveSandboxProxyContext } from '@kortix/sdk/react';
 import {
   getSandboxServiceUrl,
   proxySandboxUrl,
   rewriteSandboxPath,
 } from '@/lib/utils/sandbox-proxy';
+import { useActiveSandboxProxyContext } from '@kortix/sdk/react';
 
 /**
  * Proxy helpers bound to the session runtime that is active *right now*.

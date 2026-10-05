@@ -1,5 +1,6 @@
 'use client';
 
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 import type { CostSeriesPoint } from '@kortix/sdk';
@@ -11,6 +12,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import { formatSessionCostUsd } from '../session-cost-format';
 
@@ -22,9 +24,9 @@ const chartConfig = {
   compute_cost: { label: 'Compute', color: 'var(--chart-2)' },
 } satisfies ChartConfig;
 
-function formatDay(value: string): string {
+function formatDay(value: string, locale = 'en-US'): string {
   const date = new Date(`${value}T00:00:00Z`);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 export function formatAxisUsd(value: number): string {
@@ -39,13 +41,16 @@ export interface CostChartProps {
 }
 
 export function CostChart({ series, isLoading }: CostChartProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
+  const localizedChartConfig = useLocalizedUiCatalog(chartConfig);
   if (isLoading) {
     // Skeleton only forwards `className`/`children` (see
     // components/ui/skeleton.tsx), not arbitrary DOM props, so the label goes
     // on a wrapping element — the same shape CostSummaryTiles' loading state
     // uses for its own aria-label.
     return (
-      <div aria-label="Loading spend chart">
+      <div aria-label={tI18nComplete.raw('text5ca55f86beaf')}>
         <Skeleton className="h-[220px] w-full rounded-md" />
       </div>
     );
@@ -58,7 +63,7 @@ export function CostChart({ series, isLoading }: CostChartProps) {
   }
 
   return (
-    <ChartContainer config={chartConfig} className="h-[220px] w-full">
+    <ChartContainer config={localizedChartConfig} className="h-[220px] w-full">
       <BarChart accessibilityLayer data={series} margin={{ left: 4, right: 8, top: 4 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis
@@ -67,7 +72,7 @@ export function CostChart({ series, isLoading }: CostChartProps) {
           axisLine={false}
           tickMargin={8}
           minTickGap={24}
-          tickFormatter={formatDay}
+          tickFormatter={(value) => formatDay(value, locale)}
         />
         <YAxis
           tickLine={false}
@@ -79,9 +84,9 @@ export function CostChart({ series, isLoading }: CostChartProps) {
         <ChartTooltip
           content={
             <ChartTooltipContent
-              labelFormatter={(value) => formatDay(String(value))}
+              labelFormatter={(value) => formatDay(String(value), locale)}
               formatter={(value, name) => {
-                const cfg = chartConfig[name as keyof typeof chartConfig];
+                const cfg = localizedChartConfig[name as keyof typeof localizedChartConfig];
                 return (
                   <span className="flex w-full items-center justify-between gap-3">
                     <span className="text-muted-foreground flex items-center gap-1.5">
@@ -101,7 +106,12 @@ export function CostChart({ series, isLoading }: CostChartProps) {
           }
         />
         <Bar dataKey="llm_cost" stackId="cost" fill="var(--color-llm_cost)" />
-        <Bar dataKey="compute_cost" stackId="cost" fill="var(--color-compute_cost)" radius={[2, 2, 0, 0]} />
+        <Bar
+          dataKey="compute_cost"
+          stackId="cost"
+          fill="var(--color-compute_cost)"
+          radius={[2, 2, 0, 0]}
+        />
       </BarChart>
     </ChartContainer>
   );

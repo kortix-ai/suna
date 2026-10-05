@@ -11,15 +11,50 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
-import { planForcedRefresh } from './forced-refresh-window';
-import { planMirrorRefresh } from './mirror-refresh-policy';
+import { invalidateBranchList } from './branch-list-cache';
 import type { GitBackedProject } from './types';
+import { getRequestContext } from '../../lib/request-context';
+import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
 
 const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
 const lastRefreshAt = new Map<string, number>();
+/** projectId → branch → when that branch was last proven to be at the remote's tip. */
+// replica-local: each API replica refreshes its own bare mirror on local disk
+// (`KORTIX_GIT_CACHE_DIR`), so the proof describes that replica's copy. Every
+// base move Kortix makes or proxies broadcasts `invalidateProjectMirror` to
+// every process, so the copy expires on time; the interval only bounds pushes
+// made directly on the upstream, where a missed proof costs one
+// `git ls-remote`, never a stale read.
+const tipProvenAt = new Map<string, Map<string, number>>();
+/** Bumped by every invalidation: a refresh in flight across one records nothing. */
+// replica-local: the broadcast increments every replica's counter, so a
+// cross-replica refresh never records across an invalidation that mattered.
+const invalidations = new Map<string, number>();
+
+/**
+ * How fresh a mirror read must be.
+ *
+ * - `false`: serve the mirror, fetch when the refresh interval has passed.
+ * - `true`: ask the remote now.
+ * - `'tip-proof'`: the branch being read must have been at the remote's tip at
+ *   most one refresh interval ago. The per-prompt grant read uses it: it ran
+ *   `git ls-remote` (~600 ms) on every prompt and every connector call to learn
+ *   that nothing moved. Every base move Kortix makes or proxies drops the proof
+ *   in every API process (`notifyBaseBranchMoved` → `invalidateProjectMirror`),
+ *   so the interval only bounds a push made directly on the upstream: the same
+ *   backstop the desired config release has (`DESIRED_TTL_MS`).
+ *   Only for a base branch. A session branch push is not broadcast.
+ */
+export type MirrorRefresh = boolean | 'tip-proof';
+
+function tipProven(projectId: string, ref: string): boolean {
+  const at = Math.max(lastRefreshAt.get(projectId) ?? 0, tipProvenAt.get(projectId)?.get(ref) ?? 0);
+  return Date.now() - at < refreshIntervalMs();
+}
 
 /**
  * The per-project bare mirror is a SHARED resource: session provisioning, the
@@ -252,6 +287,184 @@ export function isGitOperationError(err: unknown): err is GitOperationError {
 }
 
 /**
+ * A bare clone/fetch can fail for a TRANSIENT, UPSTREAM reason — the network,
+ * GitHub's edge, or the mirror credential momentarily not being usable. That is
+ * the same class as a mid-clone timeout (`kind: 'timeout'`): retryable, and not
+ * worth paging Sentry. This is the classifier the clone retry loop and the
+ * global `app.onError` both use, so the two cannot drift.
+ *
+ * GitHub answers the smart-HTTP endpoint of a PRIVATE repository with
+ * `fatal: repository '<url>' not found` in two cases that `git` renders
+ * identically on stderr: the repository is genuinely absent, OR the App
+ * installation token is not (yet) usable — a token-propagation blip, a stale
+ * cached credential, a momentary edge 404. The two cannot be told apart from
+ * the message. Because this class is retryable in practice, it is classified
+ * transient: the mirror retries the clone, and a persistent failure surfaces as
+ * a retryable 503 + Retry-After instead of an unhandled 500.
+ *
+ * Incident 2026-09-23 (`incident-20260923T100537Z-hbcr`): the KX-HOURLY
+ * heartbeat probe's `sessions new` cold-cloned the private mirror of an
+ * internal project, got `fatal: repository '…/private-mirror-….git/'
+ * not found`, and hard-failed with HTTP 500 — while the git proxy served the
+ * same repository `200` seconds before and after, and a retry at 05:42 the same
+ * day succeeded. The message was a transient credential/visibility blip, not a
+ * missing repository.
+ *
+ * PERMANENT failures stay loud — a bad ref (`couldn't find remote ref`), a real
+ * auth denial (`Authentication failed`, `Permission denied`), and a corrupt
+ * local repo (`not a git repository`) do NOT match.
+ */
+const TRANSIENT_MIRROR_ERROR_PATTERN =
+  /repository '[^']*' not found|could not resolve host|temporary failure in name resolution|network is unreachable|couldn't connect to server|connection (?:reset|refused|timed out|closed)|remote end hung up unexpectedly|early eof|rpc failed|the requested url returned error: 5\d\d|operation timed out|timed out|ssl_error|gnutls_handshake|tls handshake/i;
+
+export function isTransientGitMirrorError(err: unknown): err is GitOperationError {
+  if (!isGitOperationError(err)) return false;
+  if (err.kind === 'timeout') return true;
+  const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
+  return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
+}
+
+/** Grant-resolution wrappers retain the original git failure via Error.cause. */
+export function transientGitMirrorCause(err: unknown): GitOperationError | null {
+  const seen = new Set<unknown>();
+  while (err instanceof Error && !seen.has(err)) {
+    if (isTransientGitMirrorError(err)) return err;
+    seen.add(err);
+    err = err.cause;
+  }
+  return null;
+}
+
+/**
+ * Stable error code the platform API returns (HTTP 503) when a project's git
+ * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
+ * (see `isTransientGitMirrorError`). The global `app.onError` in
+ * `apps/api/src/index.ts` attaches this code to the 503 body so the frontend
+ * can classify the response as an EXPECTED degradation instead of an opaque
+ * `ApiError` that pages Sentry (Better Stack frontend pattern `b4d05df2…`).
+ *
+ * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
+ * `packages/sdk/src/core/http/api-client.ts` (the SDK cannot import from the
+ * API, so the string is declared on both sides, exactly like
+ * `FEATURE_NOT_SUPPORTED_CODE`).
+ */
+export const GIT_MIRROR_UNAVAILABLE_CODE = 'git_mirror_unavailable';
+
+/**
+ * GitHub rejects a push that a repository rule, branch protection or a
+ * server-side hook forbids rather than a stale tip. The prod Better Stack
+ * pattern `5e505349…` is the canonical case:
+ *
+ *   ! [remote rejected] <sha> -> main (push declined due to repository rule violations)
+ *   error: failed to push some refs to 'https://github.com/<org>/<repo>.git'
+ *
+ * This is a PERMANENT, user-actionable REMOTE POLICY outcome: the same commit
+ * is rejected again on every retry. It is NOT a revision race
+ * (`isExpectedFileRevisionRace` — "our tip was stale, refetch and retry") and
+ * NOT transient (`isTransientGitMirrorError` — retry cannot help). It must
+ * surface as a typed 4xx the dashboard renders as a message, never as a 5xx
+ * that pages Better Stack.
+ *
+ * Anchored on the push subcommand so an identical phrase in a fetch/clone error
+ * is not misclassified, and on the explicit protection phrases so a
+ * non-fast-forward `[rejected]` still belongs to the race classifier.
+ */
+const REMOTE_PUSH_POLICY_REJECTION_PATTERN =
+  /push declined due to repository rule violations|protected branch hook declined|protected branch update failed|pre-receive hook declined|refusing to allow|GH006|GH013/i;
+
+export function isRemotePushPolicyRejection(err: unknown): err is GitOperationError {
+  if (!isGitOperationError(err)) return false;
+  if (err.gitArgs[0] !== 'push') return false;
+  const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
+  return REMOTE_PUSH_POLICY_REJECTION_PATTERN.test(text);
+}
+
+/** Build the policy warning without Git output, repository URLs, or refs. */
+export function pushPolicyWarning(method: string, err: GitOperationError) {
+  return {
+    message: `${method} -> 409 [GitOperationError:push-policy]`,
+    fields: {
+      method,
+      errorType: 'GitOperationError',
+      gitKind: err.kind,
+    },
+  };
+}
+
+/**
+ * Cold bare clone with bounded retry for TRANSIENT failures. Exported with
+ * injected side effects so the retry policy is unit-testable without a real git
+ * process or network — see `mirror-transient.test.ts`.
+ *
+ * EVERY failed attempt removes the partial bare repo a killed/failed clone
+ * leaves behind; otherwise the next access sees `existsSync(repoPath)` true,
+ * skips the clone, and wedges every reader on a broken half-repo.
+ *
+ * A PERMANENT failure (bad ref, auth denial, corrupt local repo) is rethrown on
+ * the first attempt — retrying it can never help.
+ */
+export async function retryTransientGitMirror(deps: {
+  run: () => Promise<unknown>;
+  /** Runs after EVERY failed attempt. Omit when a failed attempt leaves no
+   *  partial state to remove (the warm fetch). */
+  cleanup?: () => Promise<void>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  const maxAttempts = deps.maxAttempts ?? MIRROR_RETRY_MAX_ATTEMPTS;
+  const delayMs = deps.delayMs ?? MIRROR_RETRY_DELAY_MS;
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await deps.run();
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (deps.cleanup) await deps.cleanup().catch(() => {});
+      if (attempt >= maxAttempts || !isTransientGitMirrorError(err)) break;
+      await sleep(delayMs);
+    }
+  }
+  throw lastErr;
+}
+
+/** Cold bare clone with bounded retry for TRANSIENT failures. Thin wrapper over
+ *  {@link retryTransientGitMirror} that removes the partial bare dir on every
+ *  failed attempt. Kept as a named export for its callers + tests. */
+export function cloneBareWithRetry(deps: {
+  run: () => Promise<unknown>;
+  cleanup: () => Promise<void>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  return retryTransientGitMirror(deps);
+}
+
+/**
+ * Bounded retry for the WARM mirror fetch (`git fetch --prune origin`), the
+ * sibling of {@link cloneBareWithRetry}. The same transient upstream class hits
+ * a fetch as a clone — a network/DNS/socket blip or GitHub's ambiguous
+ * `fatal: repository '<url>' not found` for a private mirror whose credential
+ * is momentarily unusable. Without this, one blip hard-failed every caller that
+ * FORCED a refresh — most importantly the session-create manifest read
+ * (`loadProjectAgents` → `readManifestFromRepo` → `refreshMirror(project,true)`,
+ * which rethrows read errors so it can fail closed). A failed fetch leaves the
+ * warm bare mirror usable, so there is nothing to clean up.
+ */
+export function fetchMirrorWithRetry(deps: {
+  run: () => Promise<unknown>;
+  maxAttempts?: number;
+  delayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  return retryTransientGitMirror(deps);
+}
+
+/**
  * A "path does not exist" failure from `git show <ref>:<path>` is an EXPECTED
  * client condition (the user supplied a path that isn't in the repo), NOT a
  * server bug — it must not page Sentry as an unhandled 500 the way a real git
@@ -269,6 +482,12 @@ export function isGitPathNotFoundError(err: unknown): boolean {
   return text.includes('does not exist in');
 }
 
+/** `git` could not resolve the ref itself (a branch, tag or commit that does not exist). */
+export function isGitRefNotFoundError(err: unknown): boolean {
+  if (!isGitOperationError(err)) return false;
+  return /invalid object name|not a valid object name|unknown revision|bad revision/i.test(`${err.message}\n${err.stderr}`);
+}
+
 export async function runGit(
   args: string[],
   cwd?: string,
@@ -281,12 +500,13 @@ export async function runGit(
 ) {
   const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
   try {
-    const result = await execFileAsync('git', args, {
+    // `Server-Timing: git` — clone/fetch/ls-tree/show on the request path.
+    const result = await timeStage('git', () => execFileAsync('git', args, {
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: timeoutMs,
-    });
+    }));
     return {
       stdout: result.stdout.toString(),
       stderr: result.stderr.toString(),
@@ -311,12 +531,12 @@ export async function runGitCapture(
   authHeaders?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
-    const result = await execFileAsync('git', args, {
+    const result = await timeStage('git', () => execFileAsync('git', args, {
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost, authHeaders), ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
-    });
+    }));
     return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exitCode: 0 };
   } catch (error) {
     const err = error as { stderr?: Buffer | string; stdout?: Buffer | string; code?: number };
@@ -331,50 +551,6 @@ export async function runGitCapture(
 /** Re-export so callers that spawn directly (archive streaming) share one import surface. */
 export { spawn };
 
-/** Operator switch for serving a stale mirror while refreshing behind it.
- *  Off by default: it widens the staleness window by about one read, and that
- *  is a deployment's call rather than this file's. */
-/** When the last FORCED refresh for a project completed. Separate from
- *  `lastRefreshAt`, which any refresh bumps: only a force may satisfy a force. */
-const lastForcedRefreshAt = new Map<string, number>();
-
-/** When a turn last ENDED for a project. The only in-session event that can
- *  change `kortix.yaml`, so a forced refresh taken after it stays current for
- *  as long as nothing runs — see forced-refresh-window.ts. */
-const lastTurnEndAt = new Map<string, number>();
-
-/**
- * Stamped by the turn-end warm-up BEFORE it fetches, so the fetch it then
- * performs lands strictly after the stamp and the ordering is unambiguous.
- *
- * It also DROPS the previous forced stamp, and that is what makes the warm-up
- * work at all. Without it the warm-up's own `force` hits the coalesce window
- * left by the prompt three seconds earlier, returns `reuse_recent_force`, and
- * never fetches — so nothing is warmed and the next prompt pays the round trip
- * anyway. Measured on dev 2026-09-09: `[git-mirror] warmed after turn end`
- * logged while the next prompt still spent `remintGrant: 556 ms`.
- *
- * Dropping it is also the honest state: a refresh taken BEFORE this turn ended
- * predates the turn that could have narrowed the manifest, so it can no longer
- * satisfy a `force`.
- */
-export function noteTurnEnded(projectId: string, at = Date.now()): void {
-  lastTurnEndAt.set(projectId, at);
-  lastForcedRefreshAt.delete(projectId);
-}
-
-/** Window in which a second forced refresh reuses the first. 0 = off.
- *  Exported because the turn-end warm-up has to know whether a fetch it kicks
- *  would be reused by the next prompt — see turn-end-mirror-warmup.ts. */
-export function forcedRefreshCoalesceMs(): number {
-  const raw = Number(process.env.KORTIX_GIT_FORCE_COALESCE_MS ?? 0);
-  return Number.isFinite(raw) && raw > 0 ? raw : 0;
-}
-
-function backgroundMirrorRefreshEnabled(): boolean {
-  return String(process.env.KORTIX_GIT_BACKGROUND_REFRESH ?? '').toLowerCase() === 'true';
-}
-
 function refreshIntervalMs() {
   const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
@@ -387,10 +563,12 @@ function bareCloneTimeoutMs(): number {
 }
 
 const BARE_CLONE_TIMEOUT_MS = bareCloneTimeoutMs();
-/** Cold clones can transiently exceed the timeout (large repo / network blip);
- * retry once before surfacing — most timeouts clear on a 2nd attempt. */
-const BARE_CLONE_MAX_ATTEMPTS = 2;
-const BARE_CLONE_RETRY_DELAY_MS = 500;
+/** A cold clone OR a warm fetch can transiently fail (timeout, network blip, or
+ * GitHub's ambiguous `repository … not found` for a private mirror whose token
+ * is momentarily unusable); retry a bounded number of times before surfacing —
+ * most clear on a later attempt. See `isTransientGitMirrorError`. */
+const MIRROR_RETRY_MAX_ATTEMPTS = 3;
+const MIRROR_RETRY_DELAY_MS = 500;
 
 function looksLikeBareMirror(repoPath: string): boolean {
   return (
@@ -412,7 +590,79 @@ export function existingProjectMirrorPath(project: GitBackedProject): string | n
   return looksLikeBareMirror(repoPath) ? repoPath : null;
 }
 
-async function doRefreshMirror(project: GitBackedProject, force = false) {
+/**
+ * Is the mirror's tip for ONE branch already the remote's tip?
+ *
+ * `git ls-remote --heads origin <branch>` asks the git host for a single ref:
+ * one round trip, no pack, no objects. A `git fetch --prune` of a whole project
+ * mirror is the same question answered by transferring everything that moved —
+ * measured at ~0.9 s against the managed host, on EVERY prompt, because the
+ * per-prompt manifest read forces a refresh to stay fresh (see
+ * `remintGrantForAgentSwitch`). When the branch has not moved, the fetch had
+ * nothing to do and the ls-remote proves it.
+ *
+ * Answers false on anything unexpected — an unresolvable local ref, a sha
+ * instead of a branch, any git failure — so the caller falls back to the fetch
+ * it would have done anyway. It can never report "fresh" for a branch that
+ * moved: that is exactly the comparison it makes.
+ */
+async function mirrorMatchesRemoteTip(
+  repoPath: string,
+  access: ResolvedMirrorAccess,
+  authHost: string | undefined,
+  ref: string,
+): Promise<boolean> {
+  // Branch names only: a sha or a tag is not what `ls-remote --heads` answers.
+  if (/^[0-9a-f]{7,40}$/i.test(ref) || !/^[\w.\-\/]+$/.test(ref)) return false;
+  try {
+    const local = await runGitCapture(
+      ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`],
+      repoPath,
+    );
+    const localSha = local.exitCode === 0 ? local.stdout.trim() : '';
+    if (!/^[0-9a-f]{40}$/i.test(localSha)) return false;
+    const remote = await runGit(
+      ['ls-remote', '--heads', 'origin', ref],
+      repoPath,
+      true,
+      access.token,
+      undefined,
+      authHost,
+      GIT_DEFAULT_TIMEOUT_MS,
+      access.headers,
+    );
+    const remoteSha = remote.stdout.trim().split(/\s+/)[0] ?? '';
+    return /^[0-9a-f]{40}$/i.test(remoteSha) && remoteSha === localSha;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The remote tip of `ref`, read from the mirror, when that branch was proven
+ * current inside the refresh interval (see `MirrorRefresh`). Null otherwise:
+ * the caller asks the remote. Saves the `ls-remote` a caller would run right
+ * after a `'tip-proof'` read of the same branch.
+ */
+export async function provenMirrorTip(project: GitBackedProject, ref: string): Promise<string | null> {
+  if (!tipProven(project.projectId, ref)) return null;
+  const repoPath = existingProjectMirrorPath(project);
+  if (!repoPath) return null;
+  const local = await runGitCapture(
+    ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`],
+    repoPath,
+  ).catch(() => null);
+  const sha = local?.exitCode === 0 ? local.stdout.trim() : '';
+  return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
+}
+
+async function doRefreshMirror(
+  project: GitBackedProject,
+  force: MirrorRefresh = false,
+  freshRef?: string,
+) {
+  const epoch = invalidations.get(project.projectId) ?? 0;
+  const unmoved = () => (invalidations.get(project.projectId) ?? 0) === epoch;
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });
   if (existsSync(join(repoPath, 'shallow'))) {
@@ -428,53 +678,13 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     lastRefreshAt.delete(project.projectId);
     needsClone = true;
   }
+  if (!needsClone && force === 'tip-proof' && freshRef && tipProven(project.projectId, freshRef)) {
+    return repoPath;
+  }
   const lastRefresh = lastRefreshAt.get(project.projectId) || 0;
-  // WAIT FOR THE FETCH, OR SERVE WHAT WE HAVE AND FETCH BEHIND IT?
-  //
-  // Measured on dev 2026-09-09 inside readManifestFromRepo on the session-create
-  // path: a warm mirror is 3-12 ms and ls-tree/show are free, but a mirror past
-  // its TTL costs 462 ms because the caller waits. That wait was 92% of
-  // POST /v1/projects/:id/sessions (loadProjectAgents 625 ms of 675 ms), and
-  // sessions arrive minutes apart, so nearly every one paid it. The TTL is
-  // already a staleness contract — for a minute after a fetch every reader is
-  // deliberately served a possibly-outdated copy — so blocking to close the last
-  // moments of that window buys a guarantee the window itself does not make.
-  // See mirror-refresh-policy.ts for what still blocks and why.
-  // A FORCED REFRESH THAT JUST FINISHED IS STILL FRESH. `force` means "not the
-  // 60 s TTL copy", never "one round trip per caller", and session create plus
-  // the first prompt's grant remint both force within seconds of each other —
-  // ~500 ms each, measured. See forced-refresh-window.ts.
-  if (
-    force &&
-    !needsClone &&
-    planForcedRefresh({
-      sinceLastForcedMs: Date.now() - (lastForcedRefreshAt.get(project.projectId) ?? Number.NaN),
-      windowMs: forcedRefreshCoalesceMs(),
-      sinceLastTurnEndMs: lastTurnEndAt.has(project.projectId)
-        ? Date.now() - lastTurnEndAt.get(project.projectId)!
-        : null,
-    }) === 'reuse_recent_force'
-  ) {
-    return repoPath;
-  }
-
-  const plan = planMirrorRefresh({
-    present: !needsClone,
-    ageMs: Date.now() - lastRefresh,
-    ttlMs: refreshIntervalMs(),
-    force,
-    backgroundEnabled: backgroundMirrorRefreshEnabled(),
-  });
-  if (plan === 'serve_warm') return repoPath;
-  if (plan === 'serve_warm_refresh_behind') {
-    // Fire and forget, and never let it reject into a caller already served.
-    // `refreshMirror`'s lock keeps a second reader from starting a duplicate.
-    void doRefreshMirror(project, true).catch((err) => {
-      console.warn(`[git-mirror] background refresh failed for ${project.projectId}:`, err);
-    });
-    return repoPath;
-  }
-  const needsFetch = !needsClone;
+  const needsFetch = !needsClone && (!!force || Date.now() - lastRefresh >= refreshIntervalMs());
+  // Nothing to do over the network — serve the warm cache without touching git.
+  if (!needsClone && !needsFetch) return repoPath;
 
   // Resolve a token before EITHER network op. Whichever caller wins the
   // refresh lock, the shared clone/fetch is authenticated whenever the project
@@ -495,47 +705,140 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     // with no `shallow` marker, so the next access sees `existsSync(repoPath)`
     // true, skips the clone, and tries to `fetch` from a broken half-repo,
     // wedging every reader for the process lifetime. So: give the cold clone a
-    // longer budget, retry once on a transient timeout, and ALWAYS remove the
-    // partial dir on failure so the next caller re-clones cleanly.
+    // longer budget, retry a bounded number of times on a transient failure
+    // (timeout / network / GitHub's ambiguous private-repo 404 — see
+    // `isTransientGitMirrorError`), and ALWAYS remove the partial dir on
+    // failure so the next caller re-clones cleanly.
     const cloneArgs = ['clone', '--bare', access.repoUrl, repoPath] as const;
-    let lastErr: unknown = null;
-    for (let attempt = 1; attempt <= BARE_CLONE_MAX_ATTEMPTS; attempt++) {
-      try {
-        await runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers);
-        lastErr = null;
-        break;
-      } catch (err) {
-        lastErr = err;
-        // Remove the partial bare repo a killed/failed clone leaves behind.
-        await rm(repoPath, { recursive: true, force: true }).catch(() => {});
-        const transient = err instanceof GitOperationError && err.kind === 'timeout';
-        if (attempt >= BARE_CLONE_MAX_ATTEMPTS || !transient) break;
-        await new Promise((resolve) => setTimeout(resolve, BARE_CLONE_RETRY_DELAY_MS));
-      }
-    }
-    if (lastErr) throw lastErr;
-    lastRefreshAt.set(project.projectId, Date.now());
-    if (force) lastForcedRefreshAt.set(project.projectId, Date.now());
+    await cloneBareWithRetry({
+      run: () =>
+        runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers),
+      cleanup: () => rm(repoPath, { recursive: true, force: true }),
+    });
+    if (unmoved()) lastRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }
 
   await runGit(['remote', 'set-url', 'origin', access.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  await runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers);
-  lastRefreshAt.set(project.projectId, Date.now());
-  if (force) lastForcedRefreshAt.set(project.projectId, Date.now());
+  // A caller that forced this refresh to read ONE branch gets the cheap proof
+  // first. `lastRefreshAt` is deliberately NOT bumped: only that branch was
+  // compared, so the next interval-driven refresh must still fetch the rest.
+  if (force && freshRef && (await mirrorMatchesRemoteTip(repoPath, access, authHost, freshRef))) {
+    if (unmoved()) {
+      const proofs = tipProvenAt.get(project.projectId) ?? new Map<string, number>();
+      tipProvenAt.set(project.projectId, proofs.set(freshRef, Date.now()));
+    }
+    return repoPath;
+  }
+  // A warm fetch hits the SAME transient upstream class as a cold clone (see
+  // `fetchMirrorWithRetry`). Retry it in place — a failed fetch leaves the warm
+  // mirror usable, so no cleanup is needed.
+  await fetchMirrorWithRetry({
+    run: () =>
+      runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers),
+  });
+  if (unmoved()) lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
 
-export async function refreshMirror(project: GitBackedProject, force = false) {
+/**
+ * Page views read the warm mirror and refresh it behind the response.
+ *
+ * Why (2026-09-26): Customize pages (`/detail`, `/agents/:name/config`) paid a
+ * `git fetch` of 120–865 ms whenever a request landed after the 60 s refresh
+ * interval (dev-api `Server-Timing`), so a tab that had been open a minute
+ * felt slow on every click. A request that calls {@link allowStaleMirrorReads}
+ * is answered from the existing mirror when it is safe to:
+ *
+ *  - no base-branch move reached this process since the last fetch. Every move
+ *    Kortix makes or proxies (manifest write, API write, git-proxy push,
+ *    change-request merge) calls `notifyBaseBranchMoved`, which drops the
+ *    marker here in EVERY api process (`invalidateProjectMirror`, wired at
+ *    boot), so the next view read fetches first;
+ *  - the last fetch is younger than {@link viewMaxStaleMs} (default 5 min).
+ *    This bounds a push that bypassed Kortix (straight to GitHub).
+ *
+ * Otherwise the read blocks on the fetch exactly as before. Session boot,
+ * triggers, sweeps and every read-modify-write never opt in.
+ */
+const STALE_MIRROR_READS = Symbol.for('kortix.git-mirror-stale-reads');
+
+export function allowStaleMirrorReads(): void {
+  const ctx = getRequestContext() as ({ [STALE_MIRROR_READS]?: boolean } & object) | undefined;
+  if (ctx) ctx[STALE_MIRROR_READS] = true;
+}
+
+function staleMirrorReadsAllowed(): boolean {
+  const ctx = getRequestContext() as ({ [STALE_MIRROR_READS]?: boolean } & object) | undefined;
+  return ctx?.[STALE_MIRROR_READS] === true;
+}
+
+function viewMaxStaleMs(): number {
+  const value = Number(process.env.KORTIX_GIT_VIEW_MAX_STALE_MS || 5 * 60_000);
+  return Number.isFinite(value) && value >= 0 ? value : 5 * 60_000;
+}
+
+/** The warm mirror path when a view may read it without fetching, else null. */
+function viewableWarmMirror(project: GitBackedProject): string | null {
+  const lastRefresh = lastRefreshAt.get(project.projectId);
+  if (lastRefresh === undefined) return null;
+  if (Date.now() - lastRefresh >= viewMaxStaleMs()) return null;
+  const repoPath = repoCachePath(project);
+  if (!existsSync(repoPath) || existsSync(join(repoPath, 'shallow'))) return null;
+  if (!looksLikeBareMirror(repoPath)) return null;
+  return repoPath;
+}
+
+export async function refreshMirror(
+  project: GitBackedProject,
+  force: MirrorRefresh = false,
+  opts?: {
+    /** Freshness is only needed for THIS branch: prove it with one `ls-remote`
+     *  and skip the whole-mirror fetch when it has not moved. Ignored unless
+     *  `force` is set. */
+    freshRef?: string;
+  },
+) {
+  if (!force && staleMirrorReadsAllowed()) {
+    const warm = viewableWarmMirror(project);
+    if (warm) {
+      const lastRefresh = lastRefreshAt.get(project.projectId) ?? 0;
+      if (Date.now() - lastRefresh >= refreshIntervalMs()) {
+        // Behind the response. The lock makes concurrent views share one fetch.
+        void lockedRefreshMirror(project, false).catch(() => {});
+      } else {
+        const now = new Date();
+        void utimes(warm, now, now).catch(() => {});
+      }
+      return warm;
+    }
+  }
+  return lockedRefreshMirror(project, force, opts);
+}
+
+async function lockedRefreshMirror(
+  project: GitBackedProject,
+  force: MirrorRefresh,
+  opts?: { freshRef?: string },
+): Promise<string> {
+  // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
+  // that forced a full one: it registers as unforced, and such a caller waits
+  // for it and then runs its own real fetch.
+  const lockForced = !!force && !opts?.freshRef;
   const current = refreshLocks.get(project.projectId);
   if (current) {
     if (!force || current.forced) return current.promise;
-    await current.promise;
-    return refreshMirror(project, true);
+    // The in-flight refresh belongs to another caller, often with another
+    // credential: create-repo's template prebuild clones with the token it
+    // held. Its failure is not this caller's. Wait for it to settle, then run
+    // this caller's own forced refresh — rethrowing it failed the first
+    // session on a new project with 503 git_mirror_unavailable.
+    await current.promise.catch(() => {});
+    return refreshMirror(project, force, opts);
   }
-  const next = doRefreshMirror(project, force)
+  const next = doRefreshMirror(project, force, opts?.freshRef)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
       // size-budget reaper below uses it as the LRU signal, and a warm read
@@ -549,7 +852,7 @@ export async function refreshMirror(project: GitBackedProject, force = false) {
         refreshLocks.delete(project.projectId);
       }
     });
-  refreshLocks.set(project.projectId, { promise: next, forced: force });
+  refreshLocks.set(project.projectId, { promise: next, forced: lockForced });
   return next;
 }
 
@@ -644,6 +947,9 @@ export async function reapGitCacheOverBudget(
  */
 export function invalidateProjectMirror(projectId: string): void {
   lastRefreshAt.delete(projectId);
+  tipProvenAt.delete(projectId);
+  invalidations.set(projectId, (invalidations.get(projectId) ?? 0) + 1);
+  invalidateBranchList(projectId);
 }
 
 export function normalizeTreePath(input?: string | null) {
@@ -756,14 +1062,14 @@ async function scrubGeneratedSnapshotFiles(root: string): Promise<void> {
     await fs.rm(path.join(root, relativePath), { recursive: true, force: true }).catch(() => {});
   };
 
-  await Promise.all([
-    removeIfPresent('.kortix/opencode/node_modules'),
-    removeIfPresent('.kortix/opencode/package-lock.json'),
-    removeIfPresent('.kortix/opencode/npm-shrinkwrap.json'),
-    removeIfPresent('.kortix/opencode/pnpm-lock.yaml'),
-    removeIfPresent('.kortix/opencode/yarn.lock'),
-    removeIfPresent('.kortix/opencode/bun.lockb'),
-  ]);
+  // Both the current and the legacy default OpenCode config dir.
+  await Promise.all(
+    [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].flatMap((dir) =>
+      ['node_modules', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'].map(
+        (name) => removeIfPresent(`${dir}/${name}`),
+      ),
+    ),
+  );
 
   async function walk(dir: string): Promise<void> {
     let entries: import('node:fs').Dirent[];

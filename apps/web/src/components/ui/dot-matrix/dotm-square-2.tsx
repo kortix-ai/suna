@@ -1,15 +1,9 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { rowMajorIndex } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
+import { createDotm5x5Component, rowMajorIndex } from '@/lib/dotmatrix-core';
 
-export type DotmSquare2Props = DotMatrixCommonProps;
 
 const SNAKE_TAIL = [1, 0.82, 0.68, 0.54, 0.42, 0.31, 0.22, 0.14] as const;
 const BASE_OPACITY = 0.08;
@@ -47,29 +41,9 @@ function buildRowCyclePath(): number[] {
   return path;
 }
 
-export function DotmSquare2({
-  speed = 1.15,
-  pattern = "full",
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare2Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
-  });
-  const route = useMemo(() => buildRowCyclePath(), []);
-  const routeLen = route.length;
-  const head = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle" && routeLen > 0,
-    cycleMsBase: 1500,
-    steps: routeLen,
-    speed,
-  });
-
-  const visitsByIndex = useMemo(() => {
+const route = buildRowCyclePath();
+const routeLen = route.length;
+const visitsByIndex = (() => {
     const visits = new Map<number, number[]>();
     for (let step = 0; step < routeLen; step += 1) {
       const index = route[step]!;
@@ -78,12 +52,13 @@ export function DotmSquare2({
       visits.set(index, list);
     }
     return visits;
-  }, [route, routeLen]);
+})();
 
-  const animationResolver = useMemo<DotAnimationResolver>(() => {
+function makeResolver(cycle: number): DotAnimationResolver {
+
     return ({ isActive, index }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       if (routeLen <= 0) {
@@ -93,7 +68,7 @@ export function DotmSquare2({
       const visits = visitsByIndex.get(index) ?? [];
       let opacity = BASE_OPACITY;
       for (const stepIndex of visits) {
-        const distance = (head - stepIndex + routeLen) % routeLen;
+        const distance = (cycle - stepIndex + routeLen) % routeLen;
         if (distance >= 0 && distance < SNAKE_TAIL.length) {
           opacity = Math.max(opacity, SNAKE_TAIL[distance]!);
         }
@@ -101,21 +76,6 @@ export function DotmSquare2({
 
       return { style: { opacity } };
     };
-  }, [head, routeLen, visitsByIndex]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={animationResolver}
-    />
-  );
 }
+
+export const DotmSquare2 = createDotm5x5Component('DotmSquare2', makeResolver, { speed: 1.15, cycleMsBase: 1500, steps: routeLen });

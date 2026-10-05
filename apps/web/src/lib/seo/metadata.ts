@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
-import { headers } from 'next/headers';
+import { getLocale, getTranslations } from '@/i18n/get-translations';
 
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { PUBLIC_METADATA_TRANSLATION_KEYS } from '@/i18n/public-metadata-translation-keys.generated';
 import { getMarketingRecord } from '@/lib/seo/public-content';
 import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
 
@@ -37,15 +39,36 @@ export function socialMetadata(title: string, description: string | undefined, u
   } satisfies Pick<Metadata, 'openGraph' | 'twitter'>;
 }
 
-export function marketingMetadata(pathname: string): Metadata {
-  const record = getMarketingRecord(pathname);
+/** Search engines show about 155 characters. A record's description is
+ *  written in full for llms.txt and the .md mirrors; the meta description
+ *  keeps whole sentences up to that length; a longer first sentence is cut at
+ *  a word boundary. */
+export function metaDescription(description: string | undefined, max = 155): string | undefined {
+  if (!description || description.length <= max) return description;
+  const sentences = description.match(/[^.!?]+[.!?]+(?=\s|$)/g) ?? [description];
+  let out = '';
+  for (const sentence of sentences) {
+    const next = (out + sentence).trim();
+    if (next.length > max) break;
+    out = next;
+  }
+  // A first sentence longer than the limit is cut at a word, not mid-word.
+  return out || `${description.slice(0, max - 1).replace(/\s+\S*$/, '')}…`;
+}
+
+export function marketingMetadata(
+  pathname: string,
+  recordOverride?: ReturnType<typeof getMarketingRecord>,
+): Metadata {
+  const record = recordOverride ?? getMarketingRecord(pathname);
   if (!record) throw new Error(`Missing marketing SEO record for ${pathname}`);
   const url = `${CANONICAL_ORIGIN}${pathname}`;
+  const description = metaDescription(record.description);
   return {
     title: record.title,
-    description: record.description,
+    description,
     alternates: { canonical: url },
-    ...socialMetadata(record.title, record.description, url),
+    ...socialMetadata(record.title, description, url),
   };
 }
 
@@ -64,12 +87,12 @@ export function languageAlternates(pathname: string): Record<string, string> {
   return languages;
 }
 
-// The middleware rewrites /de, /fr, … onto the unprefixed route and records the
-// requested locale in the `x-locale` header. Reading it here lets each locale
-// variant self-canonicalize to its own URL instead of the English one.
+// Every page renders under app/[locale]. The locale comes from that segment
+// (next/root-params via i18n/request.ts), not from a request header, so each
+// locale variant stays static and self-canonicalizes to its own URL.
 export async function requestLocale(): Promise<Locale> {
-  const locale = (await headers()).get('x-locale');
-  return locale && locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
+  const locale = await getLocale();
+  return locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
 }
 
 // Metadata for the locale-routed marketing pages (/, /legal, /support and the
@@ -77,7 +100,12 @@ export async function requestLocale(): Promise<Locale> {
 // <head>. MARKETING_ROUTES in middleware.ts matches by prefix, so anything
 // under /support is locale-routed without a further entry there.
 export async function localizedMarketingMetadata(pathname: string): Promise<Metadata> {
-  const base = marketingMetadata(pathname);
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const sourceRecord = getMarketingRecord(pathname);
+  const record = sourceRecord
+    ? localizeUiCatalog(sourceRecord, tI18nComplete, PUBLIC_METADATA_TRANSLATION_KEYS)
+    : undefined;
+  const base = marketingMetadata(pathname, record);
   const locale = await requestLocale();
   const canonical = `${CANONICAL_ORIGIN}${localePath(locale, pathname)}`;
   return {
@@ -87,7 +115,7 @@ export async function localizedMarketingMetadata(pathname: string): Promise<Meta
     // rendered title distinct from the root-layout default — a resolved title
     // identical to the parent default is dropped from the streamed metadata,
     // leaving the page with no <title> in the served HTML.
-    ...(pathname === '/' ? { title: { absolute: siteMetadata.title } } : {}),
+    ...(pathname === '/' ? { title: { absolute: record?.title ?? siteMetadata.title } } : {}),
     alternates: { canonical, languages: languageAlternates(pathname) },
     openGraph: { ...base.openGraph, url: canonical },
   };

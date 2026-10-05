@@ -1,35 +1,86 @@
-import { accountMembers, projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import {
+  accountDeletionRequests,
+  accountMembers,
+  accounts,
+  appDeploymentEvents,
+  appDeployments,
+  apps,
+  changeRequests,
+  connectorCalls,
+  connectorConnections,
+  gatewayRequestLogs,
+  impersonationGrants,
+  kortixApiKeys,
+  legacySandboxMigrations,
+  platformUserRoles,
+  projectSessionConnectorBindings,
+  projectSessions,
+  projectTriggerExecutions,
+  projectTriggerRuntime,
+  projects,
+  providerEvents,
+  reviewItems,
+  sandboxes,
+  sandboxComputeSessions,
+  sessionEnvironments,
+  sessionLifecycleCommands,
+  sessionPendingQuestions,
+  sessionSandboxes,
+  sessionTurns,
+  sunaAccountMigrations,
+  tunnelAuditLogs,
+  tunnelConnections,
+  tunnelDeviceAuthRequests,
+  usageEvents,
+} from '@kortix/db';
+import { getSupabase } from '../../shared/supabase';
+import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
+import { getStripe } from '../../shared/stripe';
+import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
+import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
-import { deleteSessionEnvironment } from '../../platform/services/session-environment-teardown';
+import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
   reconcileSandboxStoppedByExternalId,
 } from '../../projects/sandbox-reaper';
-import { db } from '../../shared/db';
-import { getStripe } from '../../shared/stripe';
-import {
-  cancelDeletionRequest,
-  createDeletionRequest,
-  getActiveDeletionRequest,
-  getScheduledDeletions,
-  markDeletionCompleted,
-} from '../repositories/account-deletion';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
-import { insertLedgerEntry } from '../repositories/transactions';
+import { wallet } from '../wallet';
+import {
+  getActiveDeletionRequest,
+  createDeletionRequest,
+  cancelDeletionRequest,
+  markDeletionCompleted,
+  getScheduledDeletions,
+} from '../repositories/account-deletion';
 
 const GRACE_PERIOD_DAYS = 14;
+const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
 
-export async function requestAccountDeletion(accountId: string, userId: string, reason?: string) {
+export async function requestAccountDeletion(
+  accountId: string,
+  userId: string,
+  reason?: string,
+) {
   const existing = await getActiveDeletionRequest(accountId);
   if (existing) {
-    throw new BillingError('An active deletion request already exists for this account');
+    throw new BillingError(ACTIVE_DELETION_REQUEST_EXISTS);
   }
 
   const scheduledFor = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+  let request: Awaited<ReturnType<typeof createDeletionRequest>>;
+  try {
+    request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+  } catch (err) {
+    // A concurrent request inserted its pending row after our read.
+    // uniq_account_deletion_requests_pending refuses the second one; answer it
+    // the same way as the read above.
+    if (isUniqueViolation(err)) throw new BillingError(ACTIVE_DELETION_REQUEST_EXISTS);
+    throw err;
+  }
 
   return {
     success: true,
@@ -81,6 +132,16 @@ export async function cancelAccountDeletion(accountId: string) {
 export async function deleteAccountImmediately(accountId: string, userId?: string) {
   const request = await getActiveDeletionRequest(accountId);
   await performDeletion(accountId, userId ?? request?.userId);
+  // The account's data goes before the auth identity: a failure here must not
+  // sign a user out of an account whose data survived (the browser signs out
+  // only when the route answered success).
+  await deleteAccountData(accountId);
+  const deletingUserId = userId ?? request?.userId;
+  if (deletingUserId) {
+    const { error } = await getSupabase().auth.admin.deleteUser(deletingUserId);
+    if (error) throw error;
+    forgetUserJwtLiveness(deletingUserId);
+  }
   if (request) {
     await markDeletionCompleted(request.id);
   }
@@ -125,16 +186,19 @@ const STOP_CONCURRENCY = 8;
  * `archived` are terminal. The release-gate incident that motivated this found
  * 47 sessions in exactly these non-`active` states with live Daytona boxes.
  */
-export const RECLAIMABLE_SANDBOX_STATUSES = ['provisioning', 'active', 'error'] as const;
+const RECLAIMABLE_SANDBOX_STATUSES = ['provisioning', 'active', 'error'] as const;
 
 /** `project_sessions` states that still claim the session is doing something. */
-export const LIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
+const LIVE_SESSION_STATUSES = [
+  'queued',
+  'branching',
+  'provisioning',
+  'running',
+] as const;
 
 export interface SandboxReclaimSummary {
   accounts: number;
   boxes: number;
-  environments: number;
-  environmentsDeleted: number;
   stopped: number;
   removed: number;
   sessionsSettled: number;
@@ -157,7 +221,10 @@ export interface SandboxReclaimSummary {
  * requires (ACCOUNT_ACTIONS.ACCOUNT_DELETE), so this widens the sweep to
  * exactly the accounts the caller could have deleted one at a time anyway.
  */
-export async function reclaimableAccountIds(accountId: string, userId?: string): Promise<string[]> {
+export async function reclaimableAccountIds(
+  accountId: string,
+  userId?: string,
+): Promise<string[]> {
   const ids = new Set<string>([accountId]);
   if (!userId) return [...ids];
   try {
@@ -192,12 +259,21 @@ export async function reclaimableAccountIds(accountId: string, userId?: string):
  * Best-effort per box: one provider failure must never block deletion, abort
  * the remaining boxes, or leave the row claiming to be alive.
  */
+async function markRemovalIntent(sandboxId: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        [KORTIX_REMOVAL_INTENT_KEY]: new Date().toISOString(),
+      })}::jsonb`,
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+}
+
 async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxReclaimSummary> {
   const summary: SandboxReclaimSummary = {
     accounts: accountIds.length,
     boxes: 0,
-    environments: 0,
-    environmentsDeleted: 0,
     stopped: 0,
     removed: 0,
     sessionsSettled: 0,
@@ -237,6 +313,16 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
           // unset on this deployment must not throw and skip the box — the row
           // still has to be settled so nothing keeps billing against it.
           const provider = tryGetProvider(row.provider as string);
+
+          // Stamp the intent BEFORE the provider call: its `removed` webhook can
+          // arrive before this request settles the row, and must not read as a
+          // lost runtime.
+          await markRemovalIntent(row.sandboxId).catch((err) =>
+            console.warn(
+              `[AccountDeletion] failed to stamp removal intent for sandbox ${row.sandboxId}:`,
+              err instanceof Error ? err.message : err,
+            ),
+          );
 
           if (provider) {
             try {
@@ -308,37 +394,6 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
     );
   }
 
-  try {
-    const environments = await db
-      .select({ sessionId: sessionEnvironments.sessionId })
-      .from(sessionEnvironments)
-      .where(inArray(sessionEnvironments.accountId, accountIds));
-    summary.environments = environments.length;
-    summary.boxes += environments.length;
-    for (let i = 0; i < environments.length; i += STOP_CONCURRENCY) {
-      await Promise.all(
-        environments.slice(i, i + STOP_CONCURRENCY).map(async ({ sessionId }) => {
-          try {
-            await deleteSessionEnvironment(sessionId);
-            summary.environmentsDeleted++;
-          } catch (err) {
-            summary.errors++;
-            console.error(
-              `[AccountDeletion] Failed to delete environment for session ${sessionId}:`,
-              err instanceof Error ? err.message : err,
-            );
-          }
-        }),
-      );
-    }
-  } catch (err) {
-    summary.errors++;
-    console.error(
-      `[AccountDeletion] environment teardown failed for ${accountIds.join(', ')}:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
-
   // Settle sessions the sandbox sweep could not reach: a session that never got
   // a `session_sandboxes` row, or whose row had no `external_id`, still shows as
   // `running` forever. Those are the rows the manual playbook had to fix by
@@ -364,7 +419,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
   }
 
   console.log(
-    `[AccountDeletion] reclaim: accounts=${summary.accounts} boxes=${summary.boxes} environments=${summary.environments} environments_deleted=${summary.environmentsDeleted} stopped=${summary.stopped} removed=${summary.removed} sessions=${summary.sessionsSettled} errors=${summary.errors}`,
+    `[AccountDeletion] reclaim: accounts=${summary.accounts} boxes=${summary.boxes} stopped=${summary.stopped} removed=${summary.removed} sessions=${summary.sessionsSettled} errors=${summary.errors}`,
   );
   return summary;
 }
@@ -380,36 +435,104 @@ async function performDeletion(accountId: string, userId?: string) {
       const stripe = getStripe();
       await stripe.subscriptions.cancel(account.stripeSubscriptionId);
     } catch (err) {
-      console.error(
-        `[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`,
-        err,
-      );
+      console.error(`[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`, err);
     }
   }
 
-  // Record forfeiture ledger entry for any remaining balance
-  const currentBalance = account ? Number(account.balance) : 0;
-  if (currentBalance > 0) {
-    await insertLedgerEntry({
-      accountId,
-      amount: String(-currentBalance),
-      balanceAfter: '0',
-      type: 'forfeiture',
-      description: 'Account deletion: credit balance forfeited',
-      isExpiring: false,
-    });
-  }
+  // Record any remaining balance as forfeited and empty every bucket.
+  await wallet.forfeit(accountId);
 
-  // Zero out all credit balances
   await updateCreditAccount(accountId, {
-    balance: '0',
-    expiringCredits: '0',
-    nonExpiringCredits: '0',
-    dailyCreditsBalance: '0',
     tier: 'free',
     stripeSubscriptionStatus: 'canceled',
     paymentStatus: 'deleted',
   } as any);
 
   console.log(`[AccountDeletion] Account deleted: ${accountId}`);
+}
+
+/**
+ * Delete the account row and every row the database cascade cannot reach, in
+ * one transaction: either the account and all of its data go, or nothing does.
+ *
+ * A bare `DELETE FROM accounts` aborts the moment its cascade fires a
+ * non-cascading FK edge (ON DELETE NO ACTION / RESTRICT) against rows that
+ * still exist — e.g. `project_session_connector_bindings` RESTRICTs the
+ * connector deletes, a `usage_events` row NO-ACTIONs the project deletes. The
+ * sweep therefore runs three ordered passes inside one transaction:
+ *
+ *   1. child rows whose non-cascading edges would abort the cascade, each
+ *      edge's child before its parent;
+ *   2. the pure orphans — tables keyed by `account_id` with no foreign key to
+ *      `accounts` at all;
+ *   3. the accounts row itself, whose FK cascade takes the 90+ remaining
+ *      tables (projects, sessions, memberships, IAM, PATs, OAuth, chat
+ *      threads, gateway state…) with it.
+ *
+ * Retained on purpose, matching `performDeletion`'s `paymentStatus='deleted'`
+ * marker: the audit trail (`audit_events` with its partitions, legacy store
+ * and reconciliation state) and the financial records (`billing_customers`,
+ * `credit_accounts`, `credit_ledger`, `credit_purchases`, `credit_usage`)
+ * outlive the account. `prompt_attachments` and `connector_attachments` stay
+ * with their existing TTL sweeps, which own both their rows and their Storage
+ * objects — deleting the rows here would orphan their objects forever.
+ */
+async function deleteAccountData(accountId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    // Scopes for the child rows that carry no account_id of their own.
+    const accountProjects = tx
+      .select({ projectId: projects.projectId })
+      .from(projects)
+      .where(eq(projects.accountId, accountId));
+    const accountSessions = tx
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(eq(projectSessions.accountId, accountId));
+    const accountApps = tx.select({ appId: apps.appId }).from(apps).where(eq(apps.accountId, accountId));
+    const accountDeployments = tx
+      .select({ deploymentId: appDeployments.deploymentId })
+      .from(appDeployments)
+      .where(inArray(appDeployments.appId, accountApps));
+
+    // Pass 1 — children of non-cascading FK edges, before anything they
+    // reference. (usage_events, connector_calls, review_items and the rest
+    // are cascade children of the account themselves; sweeping them early
+    // keeps their NO ACTION / RESTRICT edges into projects, project_sessions,
+    // connectors and connector_connections from aborting the final DELETE.)
+    await tx.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.accountId, accountId));
+    await tx.delete(connectorCalls).where(eq(connectorCalls.accountId, accountId));
+    await tx.delete(connectorConnections).where(eq(connectorConnections.accountId, accountId));
+    await tx.delete(changeRequests).where(eq(changeRequests.accountId, accountId));
+    await tx.delete(gatewayRequestLogs).where(eq(gatewayRequestLogs.accountId, accountId));
+    await tx.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.accountId, accountId));
+    await tx.delete(usageEvents).where(eq(usageEvents.accountId, accountId));
+    await tx.delete(reviewItems).where(inArray(reviewItems.projectId, accountProjects));
+    await tx.delete(projectTriggerExecutions).where(inArray(projectTriggerExecutions.projectId, accountProjects));
+    await tx.delete(projectTriggerRuntime).where(inArray(projectTriggerRuntime.projectId, accountProjects));
+    await tx.delete(sandboxComputeSessions).where(eq(sandboxComputeSessions.accountId, accountId));
+    await tx.delete(appDeploymentEvents).where(inArray(appDeploymentEvents.deploymentId, accountDeployments));
+    await tx.delete(appDeployments).where(inArray(appDeployments.appId, accountApps));
+
+    // Pass 2 — the orphans: account rows no foreign key can reach. Ordered by
+    // their own NO ACTION edges (tunnel device auth and the connector
+    // bindings before the tunnels, the tunnels before the sandboxes).
+    await tx.delete(tunnelDeviceAuthRequests).where(eq(tunnelDeviceAuthRequests.accountId, accountId));
+    await tx.delete(tunnelAuditLogs).where(eq(tunnelAuditLogs.accountId, accountId));
+    await tx.delete(tunnelConnections).where(eq(tunnelConnections.accountId, accountId));
+    await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
+    await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
+    await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
+    await tx.delete(sessionEnvironments).where(eq(sessionEnvironments.accountId, accountId));
+    await tx.delete(sessionTurns).where(inArray(sessionTurns.sessionId, accountSessions));
+    await tx.delete(sessionPendingQuestions).where(inArray(sessionPendingQuestions.sessionId, accountSessions));
+    await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));
+    await tx.delete(legacySandboxMigrations).where(eq(legacySandboxMigrations.accountId, accountId));
+    await tx.delete(sunaAccountMigrations).where(eq(sunaAccountMigrations.accountId, accountId));
+    await tx.delete(platformUserRoles).where(eq(platformUserRoles.accountId, accountId));
+    await tx.delete(impersonationGrants).where(eq(impersonationGrants.targetAccountId, accountId));
+    await tx.delete(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, accountId));
+
+    // Pass 3 — the row itself: the FK cascade takes every remaining table.
+    await tx.delete(accounts).where(eq(accounts.accountId, accountId));
+  });
 }

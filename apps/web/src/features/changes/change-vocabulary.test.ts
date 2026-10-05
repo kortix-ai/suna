@@ -102,16 +102,22 @@ describe('normalising the two API shapes', () => {
   });
 
   test('a live session file maps `file` onto `path` and carries its own patch', () => {
-    const e = entryFromVcsFile({ file: 'x.ts', status: 'added', patch: 'P', additions: 9, deletions: 0 });
+    const e = entryFromVcsFile({
+      file: 'x.ts',
+      status: 'added',
+      patch: 'P',
+      additions: 9,
+      deletions: 0,
+    });
     expect(e.path).toBe('x.ts');
     expect(e.kind).toBe('added');
     expect(e.patch).toBe('P');
   });
 
   test('a live session file with no status still renders as an edit', () => {
-    expect(changeKind(entryFromVcsFile({ file: 'x.ts', additions: 1, deletions: 1 }).kind).label).toBe(
-      'Edited',
-    );
+    expect(
+      changeKind(entryFromVcsFile({ file: 'x.ts', additions: 1, deletions: 1 }).kind).label,
+    ).toBe('Edited');
   });
 });
 
@@ -166,13 +172,15 @@ describe('the proposal timeline', () => {
   });
 
   test('a dismissed proposal reports when it was dismissed', () => {
-    expect(
-      proposedChangeTimeline({ status: 'closed', created_at: 'C', closed_at: 'X' }, rel),
-    ).toBe('Dismissed after X');
+    expect(proposedChangeTimeline({ status: 'closed', created_at: 'C', closed_at: 'X' }, rel)).toBe(
+      'Dismissed after X',
+    );
   });
 
   test('an open proposal reports when it was proposed', () => {
-    expect(proposedChangeTimeline({ status: 'open', created_at: 'C' }, rel)).toBe('Proposed after C');
+    expect(proposedChangeTimeline({ status: 'open', created_at: 'C' }, rel)).toBe(
+      'Proposed after C',
+    );
   });
 
   test('a merged proposal with no timestamp falls back to when it was proposed', () => {
@@ -238,7 +246,7 @@ describe('which rows start open', () => {
 });
 
 describe('re-seeding expansion when the dialog is reused', () => {
-  test('seeds once the first change request\'s files arrive', () => {
+  test("seeds once the first change request's files arrive", () => {
     expect(shouldReseedExpansion(null, 'cr-a', 3)).toBe(true);
   });
 

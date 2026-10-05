@@ -3,9 +3,6 @@ title: Kortix as a Backend
 description: Start and manage Kortix sessions from your backend with explicit connector, model, context, and secret scope.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Use a Kortix API key to start sessions from your server. Each session has one
 Kortix owner, one project, and one cost record.
 
@@ -35,9 +32,7 @@ before use — see [Accounts & access](/docs/accounts#one-access-model).
 ## 2. Start a session
 
 <Steps>
-<Step>
-### Create with HTTP
-
+<Step title="Create with HTTP">
 ```bash
 curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -H "Authorization: Bearer $KORTIX_API_KEY" \
@@ -45,7 +40,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
     "agent_name": "support",
-    "opencode_model": "kortix/glm-5.3-flash",
+    "model": "kortix/glm-5.3-flash",
     "runtime_context": { "ticket_id": "ticket-123" },
     "connector_bindings": {
       "gmail": { "connection_id": "<connection-id>" }
@@ -55,9 +50,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
 ```
 
 </Step>
-<Step>
-### Create with the SDK
-
+<Step title="Create with the SDK">
 ```ts
 import { createScopedKortix } from '@kortix/sdk/server';
 
@@ -68,7 +61,7 @@ const kortix = createScopedKortix({
 
 const session = await kortix.project(projectId).sessions.create({
   agent_name: 'support',
-  opencode_model: 'kortix/glm-5.3-flash',
+  model: 'kortix/glm-5.3-flash',
   runtime_context: { ticket_id: 'ticket-123' },
   connector_bindings: {
     gmail: { connection_id: connectionId },
@@ -93,13 +86,13 @@ export SESSION_ID="<session-id>"
 
 | Field                | Contract                                                                                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_name`         | Selects a declared OpenCode agent.                                                                                                                      |
-| `opencode_model`     | Selects the initial OpenCode model. An unavailable model returns `400 INVALID_SESSION_MODEL`.                                                          |
+| `agent_name`         | Selects a declared agent.                                                                                                                               |
+| `model`              | Selects the initial model. An unavailable model returns `400 INVALID_SESSION_MODEL`. `opencode_model` is the deprecated name; the API accepts both, and `model` wins. |
 | `runtime_context`    | Stores non-secret scalar context. The API rejects credential-like keys, more than 64 entries, or more than 16 KiB.                                      |
 | `connector_bindings` | Maps a connector slug to one strategy-compatible `connection_id`. The credential stays outside the sandbox.                                  |
 | `inherit_unbound`    | Keeps strategy-based default resolution for connectors omitted from an explicit binding map. The default is `false`.                            |
 | `secrets`            | Narrows the selected agent's project-secret grant. An empty list delivers no project secrets. Only backend-origin callers can set it.                   |
-| `require_connectors` | Adds mandatory connectors for this create request. Missing connections return `409 CONNECTOR_CONNECTION_REQUIRED`, and unconfigured slugs return `409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`, before the session row is inserted and before sandbox startup. |
+| `require_connectors` | Deprecated and inert — accepted and ignored. A session no longer declares connectors it requires; a call to a connector with nothing connected is denied with `connector_not_connected` and a `connect_url` instead. |
 
 ## 3. Configure connectors and connections
 
@@ -161,10 +154,10 @@ For a Pipedream OAuth connection, call `pipedreamConnect()` and
 `pipedreamFinalize()`. Do not place its provider token in
 `updateCredential()`.
 
-<Callout type="info">
+:::info
   The connection object and new session binding input use `connection_id`.
   `authorization_id` remains a deprecated SDK input alias.
-</Callout>
+:::
 
 ## 4. Read and replace session scope
 
@@ -247,7 +240,7 @@ const sameDetail = await kortix.session(projectId, sessionId).cost();
 
 ## 6. Stream the answer
 
-Await runtime readiness before using the OpenCode REST methods:
+Await runtime readiness before using the runtime methods:
 
 ```ts
 const handle = kortix.session(projectId, session.session_id);
@@ -301,8 +294,6 @@ different secret allowlist, connector binding map, or runtime context returns
 | `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector.                           |
 | `404` create / `403` rescope | `CONNECTOR_CONNECTION_NOT_FOUND`                    | The connection does not exist in this project or violates the connector's authorization strategy. |
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist contains an unknown project-secret identifier.                |
-| `409`                        | `CONNECTOR_CONNECTION_REQUIRED`               | A mandatory connector has no valid active connection. Every failing connector is listed in `connector_connections`. |
-| `409`                        | `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`         | A required slug has no configured connector at all. Every failing alias is listed in `connectors`. |
 | `409`                        | `CONNECTOR_PROVIDER_UNSUPPORTED`                 | The alias is a connector on the project but its provider has no hosted authorization page, so no connect link exists for it. |
 | `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_CONNECTION_INACTIVE`                     | The selected connection or connector is inactive.                       |

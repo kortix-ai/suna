@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast, progressToast, successToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useRef, useState } from 'react';
 import { downloadDirectory } from '../api/runtime-files';
 
@@ -16,6 +17,7 @@ import { downloadDirectory } from '../api/runtime-files';
  *  - `downloadingPaths` — Set of paths currently being downloaded
  */
 export function useDirectoryDownload() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Use a ref for the set so mutations don't cause re-renders,
   // and a counter to trigger re-renders only when the set changes size.
   const activeRef = useRef<Set<string>>(new Set());
@@ -30,7 +32,7 @@ export function useDirectoryDownload() {
       activeRef.current.add(dirPath);
       rerender();
 
-      const toastId = progressToast(`Zipping ${dirName}…`);
+      const toastId = progressToast(tI18nComplete('texta236d1b1454f', { value0: dirName }));
 
       try {
         let lastPct = 0;
@@ -39,14 +41,22 @@ export function useDirectoryDownload() {
           const pct = Math.round(progress * 100);
           if (pct !== lastPct) {
             lastPct = pct;
-            progressToast(`Zipping ${dirName}… ${pct}%`, { id: toastId });
+            progressToast(tI18nComplete('texte98258ade585', { value0: dirName, value1: pct }), {
+              id: toastId,
+            });
           }
         });
 
-        successToast(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
+        successToast(tI18nComplete('textd8e4cc72a516', { value0: dirName }), {
+          id: toastId,
+          duration: 3000,
+        });
       } catch (err) {
         errorToast(
-          `Failed to download ${dirName}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          tI18nComplete('textf323a777d921', {
+            value0: dirName,
+            value1: err instanceof Error ? err.message : tI18nComplete.raw('text27c2ccd962c2'),
+          }),
           { id: toastId, duration: 5000 },
         );
       } finally {
@@ -54,7 +64,7 @@ export function useDirectoryDownload() {
         rerender();
       }
     },
-    [rerender],
+    [rerender, tI18nComplete],
   );
 
   const isDownloading = useCallback(

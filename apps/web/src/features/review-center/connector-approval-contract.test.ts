@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { resolve } from 'node:path';
 
 const read = (path: string) => readFileSync(resolve(import.meta.dir, path), 'utf8');
@@ -35,12 +35,12 @@ describe('connector approval review contract', () => {
     expect(source).not.toContain('bg-amber-');
   });
 
-  test('Review Center uses the shared full-parameter component', () => {
-    const modal = read('./review-detail.tsx');
+  test('Review Center opens Connector calls in the approve page panel', () => {
+    const modal = read('./approval-modal.tsx');
     const center = read('./review-center.tsx');
 
-    expect(modal).toContain('<ApprovalRequest');
-    expect(modal).toContain('argsPreview: adaptedAction.rawArgsPreview');
+    expect(modal).toContain('<ApprovalDecisionPanel');
+    expect(center).toContain('<ApprovalDecisionModal');
     expect(modal).not.toContain('Always allow this');
     expect(center).not.toContain('Approve all safe');
     // Multi-select left the inbox UI (2026-09-03); the keyboard `d` path still

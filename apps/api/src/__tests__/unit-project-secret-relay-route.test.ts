@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   projectSecrets,
   projectSessionSecretHandles,
+  roleAssignments,
   projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
@@ -43,7 +44,7 @@ const SECRET_VALUE = 'sk_live_the_real_value';
 
 const POLICY = {
   backend: 'kortix_fetch' as const,
-  rules: [{ host: 'api.example.com', methods: ['GET', 'POST'], path: '/v1/*' }],
+  rules: [{ host: 'api.example.com', methods: ['GET', 'HEAD', 'POST'], path: '/v1/*' }],
 };
 
 const HANDLE = mintHandle({ lookupId: LOOKUP_ID, prefix: null, rootSecret: config.API_KEY_SECRET });
@@ -53,7 +54,7 @@ let tokenProjectId: string | undefined = PROJECT_ID;
 let sessionId: string | undefined = SESSION_ID;
 let agentGrant: Record<string, unknown> | null = {
   agent: 'default',
-  kortixCli: 'all',
+  permissions: 'all',
   connectors: 'all',
   env: ['PRIMARY'],
 };
@@ -96,13 +97,14 @@ const databaseMock = {
   select: () => ({
     from: (table: unknown) => ({
       where: () => {
-        if (table === projectSessions)
-          return { limit: async () => (sessionRow ? [sessionRow] : []) };
+        if (table === projectSessions) return { limit: async () => (sessionRow ? [sessionRow] : []) };
         if (table === sessionSandboxes) {
           return { limit: async () => (sandboxRow ? [sandboxRow] : []) };
         }
         if (table === projectSecrets) return Promise.resolve(secretRows);
         if (table === projectSessionSecretHandles) return { orderBy: async () => handleRows };
+        // Secret audiences (secret-audience.ts): this project narrows none.
+        if (table === roleAssignments) return Promise.resolve([]);
         throw new Error('unexpected table');
       },
     }),
@@ -147,6 +149,7 @@ let upstreamBody: string[] = ['{"ok":true}'];
 let upstreamDelayMs = 0;
 /** Destroy the upstream body after N pieces, to model a mid-stream death. */
 let upstreamFailAfter: number | null = null;
+let upstreamThrows = false;
 
 mock.module('../secrets/relay-transport', () => ({
   RELAY_CONNECT_TIMEOUT_MS: 10_000,
@@ -154,6 +157,7 @@ mock.module('../secrets/relay-transport', () => ({
     head: { url: URL; method: string; headers: Record<string, string> },
     body: Readable | Buffer | null,
   ) => {
+    if (upstreamThrows) throw new Error('synthetic upstream failure');
     const call: UpstreamCall = {
       url: head.url.href,
       method: head.method,
@@ -219,8 +223,6 @@ function buildApp() {
       authType: 'pat' | 'supabase';
       tokenProjectId?: string;
       sessionId?: string;
-      sandboxId?: string;
-      sessionRuntimeKind?: 'worker' | 'environment';
       agentGrant?: Record<string, unknown> | null;
     };
   }>();
@@ -228,11 +230,7 @@ function buildApp() {
     c.set('userId', USER_ID);
     c.set('authType', authType);
     if (tokenProjectId) c.set('tokenProjectId', tokenProjectId);
-    if (sessionId) {
-      c.set('sessionId', sessionId);
-      c.set('sandboxId', sessionId);
-      c.set('sessionRuntimeKind', 'worker');
-    }
+    if (sessionId) c.set('sessionId', sessionId);
     c.set('agentGrant', agentGrant);
     await next();
   });
@@ -252,11 +250,7 @@ function meta(overrides: Partial<SecretRelayMeta> = {}): SecretRelayMeta {
 }
 
 function relay(
-  init: {
-    meta?: SecretRelayMeta | string | null;
-    body?: BodyInit | null;
-    headers?: Record<string, string>;
-  } = {},
+  init: { meta?: SecretRelayMeta | string | null; body?: BodyInit | null; headers?: Record<string, string> } = {},
 ) {
   const headers: Record<string, string> = {
     'content-type': 'application/octet-stream',
@@ -276,7 +270,7 @@ beforeEach(() => {
   authType = 'pat';
   tokenProjectId = PROJECT_ID;
   sessionId = SESSION_ID;
-  agentGrant = { agent: 'default', kortixCli: 'all', connectors: 'all', env: ['PRIMARY'] };
+  agentGrant = { agent: 'default', permissions: 'all', connectors: 'all', env: ['PRIMARY'] };
   sessionRow = { sessionId: SESSION_ID, secretsAllowlist: ['PRIMARY'] };
   secretRows = [sharedSecret()];
   handleRows = [handleFor()];
@@ -288,6 +282,7 @@ beforeEach(() => {
   upstreamBody = ['{"ok":true}'];
   upstreamDelayMs = 0;
   upstreamFailAfter = null;
+  upstreamThrows = false;
   upstreamScript = [];
 });
 
@@ -375,9 +370,7 @@ describe('substitution covers every carrier the guest can use', () => {
   });
 
   test('a handle in the URL QUERY is replaced', async () => {
-    await relay({
-      meta: meta({ url: `https://api.example.com/v1/m?key=${HANDLE}`, method: 'GET' }),
-    });
+    await relay({ meta: meta({ url: `https://api.example.com/v1/m?key=${HANDLE}`, method: 'GET' }) });
     expect(upstreamCalls[0]?.url).toContain(encodeURIComponent(SECRET_VALUE));
     expect(upstreamCalls[0]?.url).not.toContain(HANDLE);
   });
@@ -418,10 +411,8 @@ describe('substitution covers every carrier the guest can use', () => {
   });
 
   test('a handle this session may NOT spend is left alone, not substituted', async () => {
-    agentGrant = { agent: 'default', kortixCli: 'all', connectors: 'all', env: [] };
-    const response = await relay({
-      meta: meta({ headers: [['authorization', `Bearer ${HANDLE}`]] }),
-    });
+    agentGrant = { agent: 'default', permissions: 'all', connectors: 'all', env: [] };
+    const response = await relay({ meta: meta({ headers: [['authorization', `Bearer ${HANDLE}`]] }) });
     // The route's own secret is no longer deliverable, so the relay refuses
     // outright rather than sending a request with a worthless string in it.
     expect(response.status).toBe(403);
@@ -499,6 +490,51 @@ describe('echo redaction is inline, on BOTH exits', () => {
 });
 
 describe('framing', () => {
+  test('bodyless GET and HEAD preserve the relay envelope', async () => {
+    for (const method of ['GET', 'HEAD'] as const) {
+      const response = await relay({ meta: meta({ method, body: { present: false } }) });
+      expect(response.status).toBe(200);
+      expect(response.headers.get(RELAY_ERROR_HEADER)).toBeNull();
+      expect(decodeRelayStatus(response.headers.get(RELAY_STATUS_HEADER)!)).toMatchObject({ status: 200 });
+      expect(await response.text()).toBe('{"ok":true}');
+      expect(upstreamCalls.at(-1)).toMatchObject({ method, body: Buffer.alloc(0) });
+      expect(upstreamCalls.at(-1)?.headers['content-length']).toBeUndefined();
+    }
+  });
+
+  test('a bounded body pins substituted bytes, response and post-substitution framing', async () => {
+    const body = JSON.stringify({ token: HANDLE });
+    const response = await relay({ meta: meta({ body: { present: true, length: body.length } }), body });
+    const expected = JSON.stringify({ token: SECRET_VALUE });
+    expect(response.status).toBe(200);
+    expect(response.headers.get(RELAY_ERROR_HEADER)).toBeNull();
+    expect(decodeRelayStatus(response.headers.get(RELAY_STATUS_HEADER)!)).toMatchObject({ status: 200 });
+    expect(await response.text()).toBe('{"ok":true}');
+    expect(upstreamCalls[0]?.body.toString()).toBe(expected);
+    expect(upstreamCalls[0]?.headers['content-length']).toBe(String(Buffer.byteLength(expected)));
+  });
+
+  test('an unknown-length body substitutes across chunks without a length header', async () => {
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from(`{"token":"${HANDLE.slice(0, 12)}`));
+        controller.enqueue(Buffer.from(`${HANDLE.slice(12)}"}`));
+        controller.close();
+      },
+    });
+    const response = await relay({ meta: meta({ body: { present: true, length: null } }), body: source });
+    expect(response.status).toBe(200);
+    expect(response.headers.get(RELAY_ERROR_HEADER)).toBeNull();
+    expect(decodeRelayStatus(response.headers.get(RELAY_STATUS_HEADER)!)).toMatchObject({ status: 200 });
+    expect(await response.text()).toBe('{"ok":true}');
+    expect(upstreamCalls[0]?.body.toString()).toBe(JSON.stringify({ token: SECRET_VALUE }));
+    expect(upstreamCalls[0]?.headers['content-length']).toBeUndefined();
+  });
+
+  // CASE 2 (pass-through with a known length) cannot be reached through this
+  // route: authorization requires the route secret's spendable handle first.
+  // The transport's Readable framing is covered separately; the route cannot
+  // exercise its pass-through branch with this authorization contract.
   test('a small body of known length is sent with an EXACT content-length', async () => {
     const body = JSON.stringify({ token: HANDLE });
     await relay({ meta: meta({ body: { present: true, length: body.length } }), body });
@@ -544,15 +580,36 @@ describe('the kill switch', () => {
       const response = await relay();
       expect(response.status).toBe(503);
       expect(response.headers.get(RELAY_ERROR_HEADER)).toBe('relay_disabled');
-      expect(await response.json()).toMatchObject({ code: 'relay_disabled' });
+      expect(response.headers.get(RELAY_STATUS_HEADER)).toBeNull();
+      expect(await response.json()).toEqual({ error: 'The streaming secret relay is disabled', code: 'relay_disabled' });
       // And the probe fails too, which is what puts a NEW shim in legacy mode.
       const probe = await relay({ meta: null, headers: { [RELAY_PROBE_HEADER]: '1' } });
       expect(probe.status).toBe(503);
     } finally {
-      (
-        config as { KORTIX_SECRET_RELAY_STREAM_ENABLED: boolean }
-      ).KORTIX_SECRET_RELAY_STREAM_ENABLED = original;
+      (config as { KORTIX_SECRET_RELAY_STREAM_ENABLED: boolean }).KORTIX_SECRET_RELAY_STREAM_ENABLED =
+        original;
     }
+  });
+});
+
+describe('pre-upstream refusals', () => {
+  test('a GET with a declared body is refused before the upstream', async () => {
+    const response = await relay({ meta: meta({ method: 'GET', body: { present: true, length: 1 } }), body: 'x' });
+    expect(response.status).toBe(400);
+    expect(response.headers.get(RELAY_STATUS_HEADER)).toBeNull();
+    expect(response.headers.get(RELAY_ERROR_HEADER)).toBe('invalid_request');
+    expect(await response.json()).toEqual({ error: 'GET requests cannot contain a body', code: 'invalid_request' });
+    expect(upstreamCalls).toHaveLength(0);
+  });
+
+  test('a transport exception maps to a 502 refusal and failure audit', async () => {
+    upstreamThrows = true;
+    const response = await relay();
+    expect(response.status).toBe(502);
+    expect(response.headers.get(RELAY_STATUS_HEADER)).toBeNull();
+    expect(response.headers.get(RELAY_ERROR_HEADER)).toBe('upstream_failed');
+    expect(await response.json()).toEqual({ error: 'Secret relay request failed', code: 'upstream_failed' });
+    expect(audits.at(-1)?.after).toMatchObject({ reason: 'upstream_failed' });
   });
 });
 
@@ -560,9 +617,7 @@ describe('redirects', () => {
   test('a 3xx after a secret rode out is refused, as on the buffered path', async () => {
     upstreamStatus = 302;
     upstreamHeaders = [['location', 'https://evil.example.com/']];
-    const response = await relay({
-      meta: meta({ headers: [['authorization', `Bearer ${HANDLE}`]] }),
-    });
+    const response = await relay({ meta: meta({ headers: [['authorization', `Bearer ${HANDLE}`]] }) });
     expect(response.status).toBe(502);
     expect(response.headers.get(RELAY_ERROR_HEADER)).toBe('upstream_failed');
   });
@@ -591,7 +646,10 @@ describe('redirects', () => {
     const response = await relay({ meta: meta({ method: 'GET', body: { present: false } }) });
     expect(response.status).toBe(403);
     expect(response.headers.get(RELAY_ERROR_HEADER)).toBe('policy_denied');
+    expect(response.headers.get(RELAY_STATUS_HEADER)).toBeNull();
+    expect(await response.json()).toMatchObject({ code: 'policy_denied' });
     expect(upstreamCalls).toHaveLength(1);
+    expect(audits.at(-1)?.after).toMatchObject({ reason: 'policy_denied' });
   });
 
   test('a redirect LOOP stops at the limit instead of spinning', async () => {
@@ -626,6 +684,13 @@ describe('redirects', () => {
     });
     expect(response.status).toBe(502);
     expect(response.headers.get(RELAY_ERROR_HEADER)).toBe('redirect_not_replayable');
+    expect(response.headers.get(RELAY_STATUS_HEADER)).toBeNull();
+    expect(await response.json()).toEqual({
+      error: 'the upstream redirected a streamed request body, which cannot be replayed',
+      code: 'redirect_not_replayable',
+    });
+    expect(upstreamCalls).toHaveLength(1);
+    expect(audits.at(-1)?.after).toMatchObject({ reason: 'redirect_not_replayable' });
   });
 });
 
@@ -641,9 +706,7 @@ describe('the audit trail names the transport', () => {
 
   test('no audit row ever contains the secret value', async () => {
     upstreamBody = [`{"echo":"${SECRET_VALUE}"}`];
-    const response = await relay({
-      meta: meta({ headers: [['authorization', `Bearer ${HANDLE}`]] }),
-    });
+    const response = await relay({ meta: meta({ headers: [['authorization', `Bearer ${HANDLE}`]] }) });
     await response.text();
     expect(JSON.stringify(audits)).not.toContain(SECRET_VALUE);
     expect(JSON.stringify(audits)).not.toContain(HANDLE);
@@ -772,11 +835,7 @@ describe('a handle presented in a STREAMED body is still classified', () => {
   // indistinguishable from ordinary traffic in the audit trail, while the same
   // probe through /broker was recorded. Substitution was fail-closed the whole
   // time; the forensic line was not.
-  const FORGED = mintHandle({
-    lookupId: 'bbbbbbbbbbbbbbbbbbbb',
-    prefix: null,
-    rootSecret: 'a-different-root-secret',
-  });
+  const FORGED = mintHandle({ lookupId: 'bbbbbbbbbbbbbbbbbbbb', prefix: null, rootSecret: 'a-different-root-secret' });
 
   test('a forged handle in a length-less (streamed) body is audited', async () => {
     const body = `{"probe":"${FORGED}"}`;

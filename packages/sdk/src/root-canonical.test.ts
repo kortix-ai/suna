@@ -30,10 +30,13 @@ import { join } from 'node:path';
  *  - `./react`  — React is an optional peer dependency. Pulling it into the
  *                 root barrel would force it onto every consumer, including
  *                 the CLI and worker hosts that have no React at all.
+ *  - `./workspace-search` — phase-2 workspace-search API is deliberately isolated
+ *                 from the root: the factory merge gate forbids changes to root exports.
+ *                 Hosts import this named subpath until the SDK boundary can be revised.
  *  - `./server` — imports `node:async_hooks`. The root barrel is
  *                 `isomorphic-core` tier, which forbids every `node:` import.
- *  - the five zustand stores (and their un-prefixed `@deprecated` aliases) —
- *                 `browser-only` tier. `zustand` is a forbidden import in
+ *  - the `./internal/*` modules (and the un-prefixed `@deprecated` aliases of
+ *                 the stores) — `browser-only` tier. `zustand` is a forbidden import in
  *                 `isomorphic-core`, so re-exporting these from root would
  *                 break the framework-free tripwire in `index.isomorphic.test.ts`
  *                 and drag zustand into every consumer's bundle. These are
@@ -43,11 +46,14 @@ import { join } from 'node:path';
 const NOT_ROOT_REACHABLE = new Set([
   './react',
   './server',
+  './workspace-search',
   './internal/sync-store',
   './internal/server-store',
   './internal/sandbox-connection-store',
   './internal/opencode-pending-store',
   './internal/idb-sync-cache',
+  './internal/diagnostics-store',
+  './internal/managed-storage',
   './sync-store',
   './server-store',
   './sandbox-connection-store',

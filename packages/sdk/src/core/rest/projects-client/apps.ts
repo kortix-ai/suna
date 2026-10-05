@@ -276,9 +276,24 @@ export async function updateApp(
   );
 }
 
-export async function deleteApp(projectId: string, appId: string): Promise<{ ok: boolean }> {
+/**
+ * Provider images a delete freed. Each deployment build leaves one image, and
+ * providers cap how many an organization may hold. `pending` images were not
+ * released yet (a stopping sandbox still pins one, or the provider call
+ * failed); the platform retries them.
+ */
+export interface AppImageRelease {
+  released: number;
+  pending: number;
+}
+
+/** Deletes the App, its runtimes, and every deployment image it built. */
+export async function deleteApp(
+  projectId: string,
+  appId: string,
+): Promise<{ ok: boolean; images?: AppImageRelease }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/apps/${appId}`),
+    await backendApi.delete<{ ok: boolean; images?: AppImageRelease }>(`/projects/${projectId}/apps/${appId}`),
     'Failed to delete App',
   );
 }
@@ -288,6 +303,27 @@ export async function getAppAccess(projectId: string, appId: string): Promise<Ap
     await backendApi.get<AppAccessConfig>(`/projects/${projectId}/apps/${appId}/access`),
     'Failed to load App access policy',
   );
+}
+
+/**
+ * One agent whose `kortix.yaml` grant `agents.<name>.apps` names an App.
+ * `grant` is `all` when the agent lists `apps: all`, `listed` when it names the
+ * App's slug. Read-only: the manifest is the source of truth, so an agent's App
+ * access changes through a change to `kortix.yaml`, never through this API.
+ */
+export interface AppAgentAccess {
+  agent_name: string;
+  grant: 'all' | 'listed';
+  /** Where the grant is declared, e.g. `kortix.yaml#agents.report-writer`. */
+  path: string;
+}
+
+/** The agents whose `apps:` grant names this App (or is `all`). */
+export async function listAppAgents(projectId: string, appId: string): Promise<AppAgentAccess[]> {
+  return unwrap(
+    await backendApi.get<{ agents: AppAgentAccess[] }>(`/projects/${projectId}/apps/${appId}/agents`),
+    'Failed to load the agents with access to this App',
+  ).agents;
 }
 
 export async function updateAppAccess(
@@ -449,6 +485,37 @@ export async function stopApp(projectId: string, appId: string): Promise<App> {
   return unwrap(
     await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/stop`, {}),
     'Failed to stop App',
+  );
+}
+
+export interface DeleteAppDeploymentResult {
+  ok: boolean;
+  deployment_id: string;
+  /**
+   * `released`: the provider no longer holds the deployment's image.
+   * `pending`: not released yet (a stopping sandbox pins it, or the provider
+   *   call failed); the platform retries the delete.
+   * `none`: the deployment never built an image.
+   */
+  image: 'released' | 'pending' | 'none';
+}
+
+/**
+ * Deletes one deployment, its runtime, and its image. The live deployment
+ * (`409 deployment_live`) and an in-progress build (`409
+ * deployment_in_progress`) are refused. A deleted deployment is no longer
+ * listed and can no longer receive rollback traffic.
+ */
+export async function deleteAppDeployment(
+  projectId: string,
+  appId: string,
+  deploymentId: string,
+): Promise<DeleteAppDeploymentResult> {
+  return unwrap(
+    await backendApi.delete<DeleteAppDeploymentResult>(
+      `/projects/${projectId}/apps/${appId}/deployments/${deploymentId}`,
+    ),
+    'Failed to delete App deployment',
   );
 }
 

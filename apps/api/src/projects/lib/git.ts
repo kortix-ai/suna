@@ -4,7 +4,8 @@ import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
-import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { mintInstallationTokenHealing } from './installation-healing';
+import { getBackend, managedGithubInstallId, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import {
   decryptProjectSecret,
@@ -12,14 +13,11 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
-import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { bindAuditPrincipal } from '../../shared/audit-scope';
+import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, readStoredAgentGrant, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import type { AgentGrant } from '@kortix/db';
+import { and, countDistinct, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { ttlMemo } from '../../shared/ttl-memo';
-import {
-  isImpersonatingAccount,
-  isImpersonationBlockedAccount,
-} from '../../shared/impersonation';
 // Imported from the leaf modules, not the `../../iam` barrel: this file is
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
@@ -29,63 +27,98 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/actor';
-import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
-import { accountRoleFor } from '../../iam/read-models';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from './serializers';
+import { normalizeJsonObject } from '../../shared/json';
 import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
+import { repositoryGeneration } from './repository-generation';
 
-// Memoized briefly (positive hits only): this runs on every project-scoped
-// request. Each DB statement is a fast same-region roundtrip (~3ms measured,
-// not the cross-region cost this comment used to claim), but the same
-// lookup repeats across a burst of parallel requests, so caching still cuts
-// redundant query volume. A revoked membership lingers for at most one TTL
-// window; a fresh grant is visible immediately because null results are
-// never cached.
-const loadAccountMembership = ttlMemo({
-  ttlMs: 15_000,
-  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
-  loader: async (userId: string, accountId: string) => {
-    // Membership IS the account-scope assignment (spec §1). The
-    // `account_members.account_role` column this used to read is no longer
-    // written by every path — an assignment made through `assignRole()` leaves
-    // it stale on purpose — so reading it here would hand a project request a
-    // role the engine disagrees with.
-    const accountRole = await accountRoleFor(accountId, userId);
-    return accountRole ? { accountId, accountRole } : null;
-  },
-  shouldCache: (membership) => membership !== null,
-});
-// Key is `${userId}|${accountId}` → bust per principal on account-member changes.
-registerPrincipalScopedMemo(loadAccountMembership);
-
-export async function getAccountMembership(userId: string, accountId: string) {
-  // Act-as: a platform admin holding a live grant on this account resolves as
-  // its owner. Checked BEFORE the memo, never inside it — `loadAccountMembership`
-  // is keyed `${userId}|${accountId}` and shared across requests, so caching an
-  // impersonation-derived membership would hand the operator owner rights on
-  // their own later, non-impersonated requests for the whole TTL window.
-  if (isImpersonatingAccount(userId, accountId)) {
-    return { accountId, accountRole: 'owner' as const };
-  }
-  // …and CONFINES: while a grant is live, the operator's own memberships are
-  // out of reach. Otherwise "open the app" lands on their last project (a
-  // cookie), which is theirs, under a banner naming the customer.
-  if (isImpersonationBlockedAccount(userId, accountId)) return null;
-  return loadAccountMembership(userId, accountId);
+/**
+ * Every account connection, NEWEST first. The order is explicit because
+ * callers that pass no installation id take the FIRST row, and an unordered
+ * select returns whatever the heap hands back — so the same request could
+ * resolve to a different connection between two calls.
+ *
+ * Newest, not oldest: a reconnect mints a new installation id for the same
+ * owner, and the retired one answers 404 on `/access_tokens`. Oldest-first made
+ * that dead row the default on `/new`, which is how a user who had just
+ * reconnected was told to reconnect. `upsertAccountGitHubInstallation` now
+ * keeps one row per owner, so this ordering is the second line of defence, not
+ * the only one.
+ */
+export function accountGitHubInstallationsQuery(accountId: string) {
+  return db
+    .select()
+    .from(accountGithubInstallations)
+    .where(eq(accountGithubInstallations.accountId, accountId))
+    .orderBy(
+      desc(accountGithubInstallations.createdAt),
+      desc(accountGithubInstallations.installationId),
+    );
 }
 
 
 export async function listAccountGitHubInstallations(accountId: string) {
-  return await db
-    .select()
-    .from(accountGithubInstallations)
-    .where(eq(accountGithubInstallations.accountId, accountId));
+  return await accountGitHubInstallationsQuery(accountId);
 }
 
 
+/**
+ * How many OTHER accounts hold each of these installations. A count only: the
+ * picker may say "also connected to 2 other accounts" and can never say which,
+ * so one tenant cannot read another tenant's name out of it.
+ */
+export async function countInstallationsLinkedToOtherAccounts(
+  accountId: string,
+  installationIds: string[],
+): Promise<Map<string, number>> {
+  const ids = [...new Set(installationIds.filter(Boolean))];
+  if (ids.length === 0) return new Map();
+  const rows = await installationsLinkedToOtherAccountsQuery(accountId, ids);
+  return new Map(rows.map((row) => [row.installationId, Number(row.accounts)]));
+}
+
+
+export function installationsLinkedToOtherAccountsQuery(
+  accountId: string,
+  installationIds: string[],
+) {
+  return db
+    .select({
+      installationId: accountGithubInstallations.installationId,
+      accounts: countDistinct(accountGithubInstallations.accountId),
+    })
+    .from(accountGithubInstallations)
+    .where(
+      and(
+        inArray(accountGithubInstallations.installationId, installationIds),
+        ne(accountGithubInstallations.accountId, accountId),
+      ),
+    )
+    .groupBy(accountGithubInstallations.installationId);
+}
+
+
+/** Raised when a caller must say WHICH connection it means. */
+export class GitHubInstallationAmbiguousError extends Error {
+  constructor(
+    readonly accountId: string,
+    readonly installationIds: string[],
+  ) {
+    super('This account has several GitHub connections — pass installation_id to choose one');
+    this.name = 'GitHubInstallationAmbiguousError';
+  }
+}
+
+
+/**
+ * One account connection. With an explicit id it is exact. Without one it
+ * returns the NEWEST connection — deterministic, and only correct for a
+ * caller that genuinely has no id to pass. Anything a user drives should pass
+ * the id and let `requireAccountGitHubInstallation` refuse an ambiguity.
+ */
 export async function getAccountGitHubInstallation(accountId: string, installationId?: string | null) {
   const rows = await listAccountGitHubInstallations(accountId);
   if (installationId) {
@@ -95,10 +128,33 @@ export async function getAccountGitHubInstallation(accountId: string, installati
 }
 
 
+/**
+ * Like `getAccountGitHubInstallation`, but refuses to GUESS: with no id and
+ * more than one connection it throws instead of silently picking one. Every
+ * write path that creates or links a repository uses this.
+ */
+export async function requireAccountGitHubInstallation(
+  accountId: string,
+  installationId?: string | null,
+) {
+  const rows = await listAccountGitHubInstallations(accountId);
+  if (installationId) {
+    return rows.find((row) => row.installationId === installationId) ?? null;
+  }
+  if (rows.length > 1) {
+    throw new GitHubInstallationAmbiguousError(
+      accountId,
+      rows.map((row) => row.installationId),
+    );
+  }
+  return rows[0] ?? null;
+}
+
+
 export async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
   if (!isGithubAppConfigured()) return null;
   const nonce = randomUUID();
-  const installUrl = buildGitHubAppInstallUrl(
+  const installUrl = await buildGitHubAppInstallUrl(
     accountId,
     nonce,
     'account_link',
@@ -193,24 +249,55 @@ async function resolveImportedDefaultBranch(
 }
 
 
+/** Remove one connection row. Only ever called for an installation GitHub
+ *  itself reported gone (404 on `/access_tokens`). */
+export async function dropAccountGitHubInstallation(accountId: string, installationId: string) {
+  await db
+    .delete(accountGithubInstallations)
+    .where(
+      and(
+        eq(accountGithubInstallations.accountId, accountId),
+        eq(accountGithubInstallations.installationId, installationId),
+      ),
+    );
+}
+
+/** The real mint + deletes behind `mintInstallationTokenHealing`. */
+function installationHealingDeps(accountId: string) {
+  return {
+    accountId,
+    mint: (installationId: string) => createInstallationToken(installationId),
+    dropInstallation: dropAccountGitHubInstallation,
+    siblings: async (account: string, ownerLogin: string) => {
+      const rows = await listAccountGitHubInstallations(account);
+      return rows.filter((row) => row.ownerLogin === ownerLogin);
+    },
+  };
+}
+
 export async function resolveGitHubRepoAuth(accountId: string, installationId?: string | null): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation';
   installation?: typeof accountGithubInstallations.$inferSelect;
 }> {
-  const installation = await getAccountGitHubInstallation(accountId, installationId);
+  const installation = await requireAccountGitHubInstallation(accountId, installationId);
   if (installation) {
-    const token = await createInstallationToken(installation.installationId);
+    // A retired installation id answers 404 here. `mintInstallationTokenHealing`
+    // deletes that row and continues with another connection for the same
+    // owner, so a reconnect heals itself instead of telling the user to
+    // reconnect again.
+    const minted = await mintInstallationTokenHealing(installation, installationHealingDeps(accountId));
+    const resolved = minted.installation;
     return {
       auth: {
-        token: token.token,
+        token: minted.token,
         source: 'app_installation',
-        owner: installation.ownerLogin,
-        ownerType: installation.ownerType,
-        installationId: installation.installationId,
+        owner: resolved.ownerLogin,
+        ownerType: resolved.ownerType,
+        installationId: resolved.installationId,
       },
       authSource: 'app_installation',
-      installation,
+      installation: resolved,
     };
   }
   if (installationId) {
@@ -409,6 +496,31 @@ export function emptyGitRemote(): ProjectGitRemote {
 }
 
 
+/**
+ * `managed` means the repository lives in the Kortix managed-git backend. A row
+ * that says so while it points at ANOTHER installation under ANOTHER owner is a
+ * repository in the account's own GitHub: `POST /projects/create-repo` wrote
+ * `managed: true` for those until 2026-09-28. Read as managed, the managed-org
+ * PAT authenticated them, GitHub answered `Repository not found`, and the first
+ * session failed with `503 git_mirror_unavailable`.
+ *
+ * Both signals are required, so a managed repo survives a backend switch: a
+ * PAT-backend repo has no installation id, and an App-backend repo keeps the
+ * managed owner after the backend moves to a PAT.
+ */
+function livesInManagedBackend(
+  stored: boolean,
+  provider: string,
+  installationId: string | null,
+  repoOwner: string | null,
+): boolean {
+  if (!stored || provider !== 'github' || !installationId) return stored;
+  const owner = managedGithubOwner();
+  if (!owner || !repoOwner) return stored;
+  if (installationId === managedGithubInstallId()) return true;
+  return owner.toLowerCase() === repoOwner.toLowerCase();
+}
+
 export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnectionRow | null): ProjectGitRemote {
   if (connection) {
     return {
@@ -421,7 +533,12 @@ export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGit
       repoName: connection.repoName,
       externalRepoId: connection.externalRepoId,
       upstreamUrl: connection.upstreamUrl ?? null,
-      managed: connection.managed ?? false,
+      managed: livesInManagedBackend(
+        connection.managed ?? false,
+        connection.provider,
+        connection.installationId,
+        connection.repoOwner,
+      ),
     };
   }
 
@@ -429,17 +546,25 @@ export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGit
   const git = meta.git;
   if (git && typeof git === 'object') {
     const method = String(git.auth?.method ?? 'none');
+    const provider = String(git.provider ?? 'generic');
+    const installationId = git.auth?.installation_id ?? git.installation_id ?? null;
+    const repoOwner = git.owner ?? null;
     return {
-      provider: String(git.provider ?? 'generic'),
+      provider,
       authMethod: method,
       repoId: git.repo_id ?? null,
       ref: git.auth?.ref ?? null,
-      installationId: git.auth?.installation_id ?? git.installation_id ?? null,
-      repoOwner: git.owner ?? null,
+      installationId,
+      repoOwner,
       repoName: git.name ?? null,
       externalRepoId: git.external_repo_id ?? git.repo_id ?? null,
       upstreamUrl: typeof git.upstream_url === 'string' ? git.upstream_url : null,
-      managed: git.managed === true || method === 'managed',
+      managed: livesInManagedBackend(
+        git.managed === true || method === 'managed',
+        provider,
+        installationId == null ? null : String(installationId),
+        repoOwner,
+      ),
     };
   }
   if (meta.github) {
@@ -518,14 +643,25 @@ export type GitAuthUnavailableReason =
   | 'installation_mismatch'
   | 'repo_url_unparseable'
   | 'managed_git_unavailable'
+  | 'managed_git_token_mint_failed'
   | 'no_credential';
+
+/**
+ * Reasons that are worth trying again on the very next request. Everything else
+ * needs a person to act (reconnect the App, fix the stored URL), so telling a
+ * client to retry would only loop it.
+ */
+export const RETRYABLE_GIT_AUTH_REASONS: ReadonlySet<string> = new Set<GitAuthUnavailableReason>([
+  'managed_git_token_mint_failed',
+]);
 
 export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
   reason?: GitAuthUnavailableReason;
 }> {
-  const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
+  const connection = await getProjectGitConnection(project.projectId);
+  const remote = getProjectGitRemote(project, connection);
 
   // Managed GitHub repos use the server PAT first. The managed GitHub App can
   // exist without access to every repository. Repeated failed token minting
@@ -543,24 +679,40 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     const installId = remote.installationId ?? managedGithubInstallId();
     if (installId && isGithubAppConfigured()) {
       const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
-      try {
-        const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
-        return {
-          auth: {
-            token: token.token,
-            source: 'app_installation',
-            owner: remote.repoOwner ?? undefined,
-            ownerType: 'Organization',
-            installationId: installId,
-          },
-          authSource: 'app_installation',
-        };
-      } catch (err) {
-        console.warn(
-          `[projects] failed to mint managed GitHub installation token for ${project.projectId}:`,
-          err,
-        );
+      // Scoping the token to the single repository is what makes this mint
+      // fragile: GitHub answers `422 … at least one repository that does not
+      // exist or is not accessible` the moment the repo is not yet visible to
+      // the installation — a fresh managed repo, a replication lag, an
+      // in-flight rename. That window is short, so try once more before giving
+      // up; a second failure is reported as its own reason, never as "no
+      // managed backend".
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
+          return {
+            auth: {
+              token: token.token,
+              source: 'app_installation',
+              owner: remote.repoOwner ?? undefined,
+              ownerType: 'Organization',
+              installationId: installId,
+            },
+            authSource: 'app_installation',
+          };
+        } catch (err) {
+          lastErr = err;
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 250));
+        }
       }
+      console.warn(
+        `[projects] failed to mint managed GitHub installation token for ${project.projectId}:`,
+        lastErr,
+      );
+      // A mint failure is TRANSIENT and retryable. `managed_git_unavailable`
+      // means the deployment has no managed backend at all — a different,
+      // permanent condition that must not be confused with this one.
+      return { authSource: 'none', reason: 'managed_git_token_mint_failed' };
     }
     return { authSource: 'none', reason: 'managed_git_unavailable' };
   }
@@ -573,8 +725,19 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
       : (await listAccountGitHubInstallations(project.accountId)).find(
           (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
         ) ?? null;
-    if (!installation) return { authSource: 'none', reason: 'installation_missing' };
-    if (repo.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
+    // A project grant was verified with GitHub organization-admin credentials
+    // at creation. It authorizes only this connection's owner/repository pair;
+    // linking the full installation to the customer account would expose every
+    // other selected repository in account pickers.
+    const projectGrant = connection?.metadata?.project_grant === true
+      && connection.authMethod === 'github_app'
+      && connection.installationId === remote.installationId
+      && connection.repoOwner?.toLowerCase() === repo.owner.toLowerCase()
+      && connection.repoName?.toLowerCase() === repo.repo.toLowerCase();
+    const installationId = installation?.installationId ?? (projectGrant ? remote.installationId : null);
+    const ownerLogin = installation?.ownerLogin ?? (projectGrant ? connection!.repoOwner : null);
+    if (!installationId || !ownerLogin) return { authSource: 'none', reason: 'installation_missing' };
+    if (repo.owner.toLowerCase() !== ownerLogin.toLowerCase()) {
       return { authSource: 'none', reason: 'installation_mismatch' };
     }
     if (remote.repoOwner && remote.repoOwner.toLowerCase() !== repo.owner.toLowerCase()) {
@@ -593,20 +756,20 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     // "reconnect GitHub". Degrade to a named reason and let
     // resolveProjectGitConnection turn it into a prompt.
     try {
-      const token = await createInstallationToken(installation.installationId, [repo.repo]);
+      const token = await createInstallationToken(installationId, [repo.repo]);
       return {
         auth: {
           token: token.token,
           source: 'app_installation',
-          owner: installation.ownerLogin,
-          ownerType: installation.ownerType,
-          installationId: installation.installationId,
+          owner: ownerLogin,
+          ownerType: installation?.ownerType ?? 'Organization',
+          installationId,
         },
         authSource: 'app_installation',
       };
     } catch (err) {
       console.warn(
-        `[projects] GitHub App installation ${installation.installationId} no longer mints tokens for ${project.projectId}:`,
+        `[projects] GitHub App installation ${installationId} no longer mints tokens for ${project.projectId}:`,
         err,
       );
       return { authSource: 'none', reason: 'installation_unusable' };
@@ -641,6 +804,9 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     accountId: project.accountId,
     name: PROJECT_GIT_AUTH_SECRET_NAME,
     consumer: 'git_proxy',
+    // An optional legacy fallback checked on every git request: its absence is
+    // the normal case, not an access attempt, so it writes no missing row.
+    probe: true,
   });
   if (legacyToken) {
     return {
@@ -735,12 +901,38 @@ export async function resolveProjectUpstream(
   const ref = buildConnectionRef(project, remote);
   if (!ref.upstreamUrl) return null;
   const backend = getBackend(ref.provider);
-  return backend.buildUpstream(ref, gitAuth.auth?.token ?? null, scope);
+  const upstream = backend.buildUpstream(ref, gitAuth.auth?.token ?? null, scope);
+  // A MANAGED repository is always private (`provision-core.ts` creates it with
+  // `isPrivate: true`), so a credential is never optional for one. If none could
+  // be produced, say so on the upstream rather than handing back a
+  // credential-less request for the caller to send anyway: the provider answers
+  // that with `404 Repository not found.`, which reads as a deleted repository.
+  //
+  // Deliberately NOT extended to BYO `github_app` connections. Those may point
+  // at a PUBLIC repository that clones perfectly well with no credential, and
+  // refusing those would break a working project to improve an error message.
+  if (ref.managed && gitAuth.authSource === 'none') {
+    return { ...upstream, credentialUnavailable: gitAuth.reason ?? 'no_credential' };
+  }
+  return upstream;
 }
 
 
 export type GitProxyAuth =
-  | { ok: true; project: ProjectRow; principal: GitPrincipal }
+  | {
+      ok: true;
+      project: ProjectRow;
+      principal: GitPrincipal;
+      /**
+       * The resolved agent grant for a session principal (null otherwise). The
+       * receive-pack route places this on the request context so the ref-scope
+       * resolver can honor `project.gitops.ref.any` / `kortix_permissions: all` for the
+       * session pushing. Without it a session is default-denied beyond its own
+       * branch no matter what its manifest grants — the exact failure behind the
+       * 2026-09-07 monitoring-metadata persistence incident.
+       */
+      agentGrant: AgentGrant | null;
+    }
   | { ok: false; status: number; message: string };
 
 /**
@@ -798,15 +990,37 @@ export async function authorizeGitProxy(
   const key = authzMemoKey(token, projectId, scope);
   const now = Date.now();
   const hit = gitProxyAuthzMemo.get(key);
-  if (hit && hit.expiresAt > now) return hit.value;
+  if (hit && hit.expiresAt > now && hit.value.ok) {
+    const current = await currentGitProxyProject(projectId);
+    if (current && sameRepository(current, hit.value.project)) {
+      return { ...hit.value, project: current };
+    }
+    gitProxyAuthzMemo.delete(key);
+  }
   const verdict = await authorizeGitProxyUncached(token, projectId, scope, requestCtx);
   if (verdict.ok) {
-    gitProxyAuthzMemo.set(key, { value: verdict, expiresAt: now + GIT_PROXY_AUTHZ_TTL_MS });
+    const current = await currentGitProxyProject(projectId);
+    if (!current || !sameRepository(current, verdict.project)) {
+      return { ok: false, status: 409, message: 'Repository changed during authorization; retry the request' };
+    }
+    const checked = { ...verdict, project: current };
+    gitProxyAuthzMemo.set(key, { value: checked, expiresAt: now + GIT_PROXY_AUTHZ_TTL_MS });
     if (gitProxyAuthzMemo.size > 10_000) {
       for (const [k, v] of gitProxyAuthzMemo) if (v.expiresAt <= now) gitProxyAuthzMemo.delete(k);
     }
+    return checked;
   }
   return verdict;
+}
+
+async function currentGitProxyProject(projectId: string): Promise<ProjectRow | null> {
+  const [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  return project?.status === 'archived' ? null : (project ?? null);
+}
+
+function sameRepository(a: ProjectRow, b: ProjectRow): boolean {
+  return a.repoUrl === b.repoUrl &&
+    repositoryGeneration(a.metadata as Record<string, unknown>) === repositoryGeneration(b.metadata as Record<string, unknown>);
 }
 
 async function authorizeGitProxyUncached(
@@ -836,6 +1050,11 @@ async function authorizeGitProxyUncached(
   if (!project || project.status === 'archived') {
     return { ok: false, status: 404, message: 'Not found' };
   }
+  // A credential was presented for a real project: its owner should see the
+  // attempt in their audit log whatever the verdict. Each branch below then
+  // binds WHO, the moment its token is proven — so a refusal still names the
+  // caller. The git proxy binds the full principal on success.
+  bindAuditPrincipal({ accountId: project.accountId, projectId: project.projectId });
 
   /** Does this token's USER hold the git capability this operation needs? */
   const grantedByProjectRole = async (
@@ -864,6 +1083,16 @@ async function authorizeGitProxyUncached(
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid PAT' };
     }
+    bindAuditPrincipal({
+      actorUserId: result.userId ?? null,
+      actorType: result.sessionId ? 'agent' : result.userId ? 'human' : 'system',
+      authoritativeSource: result.sessionId ? 'agent' : 'api_key',
+      authMethod: {
+        kind: 'account_token',
+        ...(result.tokenId ? { token_id: result.tokenId } : {}),
+        ...(result.sessionId ? { session_id: result.sessionId } : {}),
+      },
+    });
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
@@ -902,9 +1131,17 @@ async function authorizeGitProxyUncached(
         kind: 'session',
         sessionId: sessionRow.sessionId,
         branch: sessionRow.branchName,
+        userId: result.userId ?? null,
+        tokenId: result.tokenId ?? null,
       };
     }
-    if (result.accountId !== project.accountId) {
+    // A user PAT is checked against the PROJECT role, whatever account it was
+    // minted in. Account membership is not project access: this check used to
+    // run only for a foreign-account token, so any member of the owning account
+    // could mint a personal PAT and clone or push `main` of a project they hold
+    // no role on. A session PAT keeps its own-branch ref policy
+    // (git-proxy/ref-policy.ts); a cross-account session still needs the role.
+    if (!sessionPrincipal || result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
       if (!(await grantedByProjectRole(result.userId, result.tokenId))) {
@@ -920,6 +1157,10 @@ async function authorizeGitProxyUncached(
           userId: result.userId ?? null,
           tokenId: result.tokenId ?? null,
         },
+      // A session-scoped PAT already carries the resolved grant on the token row
+      // (`validateAccountToken` returns it). Only meaningful for the session
+      // principal; null for the laptop-CLI-PAT user principal.
+      agentGrant: sessionPrincipal ? (result.agentGrant ?? null) : null,
     };
   }
 
@@ -928,6 +1169,24 @@ async function authorizeGitProxyUncached(
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid token' };
     }
+    bindAuditPrincipal(
+      result.type === 'sandbox'
+        ? {
+            actorUserId: null,
+            actorType: 'agent',
+            authoritativeSource: 'agent',
+            authMethod: {
+              kind: 'sandbox_token',
+              ...(result.sandboxId ? { sandbox_id: result.sandboxId } : {}),
+            },
+          }
+        : {
+            actorUserId: null,
+            actorType: 'system',
+            authoritativeSource: 'api_key',
+            authMethod: { kind: 'api_key' },
+          },
+    );
     if (result.type === 'sandbox') {
       if (!result.sandboxId) {
         return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };
@@ -958,15 +1217,16 @@ async function authorizeGitProxyUncached(
       if (!sandbox) {
         // Not a session box — a MONITOR box authenticates with the same token
         // class but lives in `project_monitor_boxes` (it has no session row by
-        // design; docs/specs/2026-08-12-monitors.md §Security model). It clones
-        // the repo at default-branch HEAD through this proxy.
+        // design). It clones the repo at default-branch HEAD through this proxy.
         const { loadMonitorBoxForToken } = await import('./monitor-ingest');
         const monitorBox = await loadMonitorBoxForToken({
           projectId,
           accountId: result.accountId,
           sandboxId: result.sandboxId,
         });
-        if (monitorBox) return { ok: true, project, principal: { kind: 'monitor' } };
+        if (monitorBox) {
+          return { ok: true, project, principal: { kind: 'monitor' }, agentGrant: null };
+        }
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
@@ -979,6 +1239,27 @@ async function authorizeGitProxyUncached(
       if (!sandbox.branchName) {
         return { ok: false, status: 403, message: 'session has no branch to push' };
       }
+      // Resolve the session's agent grant so the ref-scope resolver can widen a
+      // session that deliberately holds `project.gitops.ref.any` / `kortix_permissions:
+      // all`. The grant lives on the session's connector token(s) in
+      // `account_tokens`; a sandbox key carries no grant of its own. Missing row
+      // (or a project with no per-agent governance) reads null = default-deny.
+      const [grantRow] = await db
+        .select({
+          agentGrant: accountTokens.agentGrant,
+          userId: accountTokens.userId,
+          tokenId: accountTokens.tokenId,
+        })
+        .from(accountTokens)
+        .where(
+          and(
+            eq(accountTokens.sessionId, sandbox.sessionId),
+            eq(accountTokens.accountId, result.accountId),
+            eq(accountTokens.status, 'active'),
+            isNull(accountTokens.revokedAt),
+          ),
+        )
+        .limit(1);
       return {
         ok: true,
         project,
@@ -986,7 +1267,10 @@ async function authorizeGitProxyUncached(
           kind: 'session',
           sessionId: sandbox.sessionId,
           branch: sandbox.branchName,
+          userId: grantRow?.userId ?? null,
+          tokenId: grantRow?.tokenId ?? null,
         },
+        agentGrant: readStoredAgentGrant(grantRow?.agentGrant),
       };
     }
     // Account-scoped user API key. No per-project fallback here: an API key
@@ -995,7 +1279,7 @@ async function authorizeGitProxyUncached(
     if (result.accountId !== project.accountId) {
       return { ok: false, status: 403, message: 'token does not own this project' };
     }
-    return { ok: true, project, principal: { kind: 'user', userId: null } };
+    return { ok: true, project, principal: { kind: 'user', userId: null }, agentGrant: null };
   }
 
   return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };
@@ -1147,29 +1431,6 @@ export async function resolveProjectGitAccessById(projectId: string): Promise<{
     );
     return null;
   }
-}
-
-/**
- * Resolve a project's upstream git auth token from just its id — loads the
- * project row, then runs the normal `resolveProjectGitAuth` resolution
- * (managed App/PAT, BYO App, project_credential, legacy secret).
- *
- * This is the lazy fallback the shared mirror layer (`git/mirror.ts`) calls
- * when a caller reaches `refreshMirror()` without a token. The per-project
- * mirror is a shared resource hit by ~15 code paths; relying on every caller to
- * thread a non-null token is fragile, and `refreshMirror`'s per-project dedup
- * means a single tokenless caller can make the cold bare-clone of a PRIVATE
- * repo run unauthenticated (`fatal: could not read Username for github.com`)
- * and fail every concurrent caller piggybacking on that shared clone. Resolving
- * here guarantees the network git op is authenticated whenever a credential
- * exists, regardless of which caller won the refresh lock.
- *
- * Returns null when the project is gone or has no resolvable git auth. Never
- * throws — a resolution failure must degrade to "no token" (caller behaves
- * exactly as before this hook existed), never crash the mirror refresh.
- */
-export async function resolveProjectGitAuthTokenById(projectId: string): Promise<string | null> {
-  return (await resolveProjectGitAccessById(projectId))?.token ?? null;
 }
 
 // GET /v1/projects/:projectId/sandboxes

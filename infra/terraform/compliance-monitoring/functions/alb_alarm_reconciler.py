@@ -13,14 +13,12 @@ TARGET_GROUP_METRICS = {
     "zero-healthy-hosts",
 }
 
-# Alarm suffixes this reconciler used to own and now deletes on every run.
-#
-# "target-response-time" alarmed on average TargetResponseTime >= 2 s. The
-# gateway ALB streams LLM completions and the API ALB holds SSE streams, so a
-# 6-11 s average is normal traffic there. The alarm flapped ALARM/OK every
-# 5-10 minutes and produced ~300 SNS emails in one day (2026-08-26) without
-# one real incident. Availability is still covered by elb-5xx,
-# unhealthy-hosts, and zero-healthy-hosts.
+# Alarm names that are never desired as written but must not outlive their
+# creator. The desired target-response-time alarm is per load balancer
+# (ALARM_SPECS above); the per-target-group variants the Lambda itself created
+# in the retired 2 s-threshold era are not, so every run deletes any alarm
+# carrying this suffix that is not in the desired set. Availability stays
+# covered by elb-5xx, unhealthy-hosts, and zero-healthy-hosts regardless.
 RETIRED_ALARM_SUFFIXES = ("-target-response-time",)
 
 # Hand-made ALB alarms from the 2026-07-27 compliance evidence pass. They
@@ -59,6 +57,21 @@ ALARM_SPECS: dict[str, dict[str, Any]] = {
         "DatapointsToAlarm": 2,
         "Threshold": 1.0,
         "ComparisonOperator": "LessThanThreshold",
+    },
+    # Drata DCF-86 / test 294 requires a TargetResponseTime alarm on every ALB.
+    # Threshold 30 s: streaming traffic (LLM completions, SSE) legitimately
+    # averages 6-11 s and peaked at ~25 s over 15 minutes in the 14 days before
+    # restoration, so only a genuine stall crosses 30 s for 15 minutes. Keep in
+    # sync with the *_target_response_time Terraform resources.
+    "target-response-time": {
+        "AlarmDescription": "SOC2 DCF-86: ALB target response time is elevated",
+        "MetricName": "TargetResponseTime",
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 30.0,
+        "ComparisonOperator": "GreaterThanThreshold",
     },
 }
 
@@ -193,10 +206,11 @@ def _stale_alarm_names(cloudwatch: Any, desired_names: set[str]) -> list[str]:
 
     Two families qualify:
 
-    - kortix-alb-* alarms whose suffix is retired. Terraform only ever managed
-      the single-target-group name; the per-target-group variants
-      (kortix-alb-<lb>-<tg>-target-response-time) were created by this
-      function alone, so only this function can remove them.
+    - kortix-alb-* alarms whose suffix is never a desired name as written. The
+      desired target-response-time alarm is per load balancer; the
+      per-target-group variants (kortix-alb-<lb>-<tg>-target-response-time)
+      were created by this function alone in the retired 2 s-threshold era, so
+      only this function can remove them.
     - compliance-* alarms in the ALB namespace. They are unmanaged duplicates
       of the kortix-alb-* coverage.
 

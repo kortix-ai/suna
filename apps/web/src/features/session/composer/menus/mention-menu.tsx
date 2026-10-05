@@ -1,16 +1,16 @@
 'use client';
 
-import { getFileIcon } from '@/features/project-files';
 import Loading from '@/components/ui/loading';
-import { cn } from '@/lib/utils';
+import { getFileIcon } from '@/features/project-files';
 import type { Agent, Session } from '@kortix/sdk/react';
 import { ChatIcon, FolderIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo } from 'react';
 
 import { useFileSearch } from '../hooks/use-file-search';
-import { MenuCard, MenuRow as MenuRowButton, MenuSectionHeading } from './menu-shell';
+import type { MentionSection, MenuRow } from './menu-items';
 import { buildMentionSections } from './menu-items';
-import type { MenuRow, MentionSection } from './menu-items';
+import { MenuCard, MenuRow as MenuRowButton, MenuSectionHeading } from './menu-shell';
 
 /**
  * Purely presentational — every prop is already the final thing to render.
@@ -34,6 +34,8 @@ export function MentionMenu({
    *  highlight honest: what you point at is what Enter takes. */
   onHover?: (row: MenuRow) => void;
 }) {
+  const t = useTranslations('sessionUi.composerMenus');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // A query that matches nothing keeps the card, with one dead row saying so.
   // Returning `null` made the menu DISAPPEAR mid-word — indistinguishable from
   // the menu having closed, and one backspace brought it back from nowhere.
@@ -41,7 +43,7 @@ export function MentionMenu({
     return (
       <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-lg">
         <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
-          No matches
+          {t('noMatches')}
         </p>
       </MenuCard>
     );
@@ -56,7 +58,7 @@ export function MentionMenu({
     <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-lg">
       <div
         role="listbox"
-        aria-label="Mention suggestions"
+        aria-label={t('mentionSuggestions')}
         aria-activedescendant={`mention-row-${selectedIndex}`}
         // Focusable for AT, but not a tab stop — keyboard interaction stays in
         // the composer textarea, which proxies arrow/Enter to this listbox.
@@ -88,7 +90,7 @@ export function MentionMenu({
         {loading && (
           <div className="text-muted-foreground flex items-center gap-2 px-2 py-2 text-xs">
             <Loading className="size-3.5" />
-            Searching…
+            {t('searching')}
           </div>
         )}
       </div>
@@ -105,13 +107,14 @@ function rowTitle(row: MenuRow): string {
 function RowIcon({ row }: { row: MenuRow }) {
   if (row.kind === 'agent') {
     return (
-      <span className="bg-foreground/10 text-foreground/60 flex size-4 shrink-0 items-center justify-center rounded text-xs font-semibold">
+      <span className="bg-muted text-muted-foreground flex size-4 shrink-0 items-center justify-center rounded text-xs font-semibold">
         @
       </span>
     );
   }
   if (row.kind === 'session') return <ChatIcon className="text-muted-foreground size-4 shrink-0" />;
-  if (row.label.endsWith('/')) return <FolderIcon className="text-muted-foreground size-4 shrink-0" />;
+  if (row.label.endsWith('/'))
+    return <FolderIcon className="text-muted-foreground size-4 shrink-0" />;
   return getFileIcon(row.label, { className: 'size-4 shrink-0 text-muted-foreground' });
 }
 
@@ -153,10 +156,20 @@ export function MentionMenuHost({
   onHover,
   onRowsChange,
 }: MentionMenuHostProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { files, isLoading } = useFileSearch(query, true);
   const sections = useMemo(
-    () => buildMentionSections({ agents, sessions, files, query, currentSessionId, now }),
-    [agents, sessions, files, query, currentSessionId, now],
+    () =>
+      buildMentionSections({
+        agents,
+        sessions,
+        files,
+        query,
+        currentSessionId,
+        now,
+        tI18nComplete,
+      }),
+    [agents, sessions, files, query, currentSessionId, now, tI18nComplete],
   );
   const rows = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 

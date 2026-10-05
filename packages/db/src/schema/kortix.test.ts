@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { getTableConfig } from 'drizzle-orm/pg-core';
+import { getTableConfig, getViewConfig } from 'drizzle-orm/pg-core';
 import {
   permissions,
   objectPolicies,
@@ -21,6 +21,7 @@ import {
   changeRequestStatusEnum,
   accounts,
   accountMembers,
+  accountMemberships,
   projects,
   projectMembers,
   projectSessions,
@@ -37,6 +38,7 @@ import {
   appDeployments,
   appRuntimes,
   appDeploymentEvents,
+  accountTokens,
   creditAccounts,
   creditLedger,
   usageEvents,
@@ -45,10 +47,13 @@ import {
   auditSessionSequences,
   auditWebhookDeliveries,
   accountSsoProviders,
+  accountScimUsers,
   connectorAuthorizationStrategyEnum,
   connectorCalls,
   connectorConnections,
   connectors,
+  providerEvents,
+  sessionLifecycleCommands,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -177,6 +182,8 @@ describe('canonical audit ledger', () => {
         'delegation_depth',
         'authoritative_source',
         'client_reported_source',
+        'credential_kind',
+        'credential_id',
         'phase',
         'causation_id',
         'source_ledger',
@@ -197,12 +204,43 @@ describe('canonical audit ledger', () => {
   test('indexes ordered session reads and idempotent source-ledger projections', () => {
     expect(indexNames(auditEvents)).toEqual(
       expect.arrayContaining([
-        'idx_audit_events_account_project_sequence',
-        'idx_audit_events_account_session_sequence',
+        'idx_audit_events_session_sequence',
         'idx_audit_events_source_phase',
         'idx_audit_events_action_pattern',
       ]),
     );
+  });
+
+  test('does not re-add the audit indexes no read path uses', () => {
+    // Dropped by 20261001214716390_drop_unused_audit_events_indexes. Each one is
+    // an index write on every audit row. No query orders by session_sequence
+    // under an account/project predicate, and none filters resource_id.
+    for (const dropped of [
+      'idx_audit_events_account_project_sequence',
+      'idx_audit_events_account_session_sequence',
+      'idx_audit_events_resource',
+    ]) {
+      expect(indexNames(auditEvents)).not.toContain(dropped);
+    }
+  });
+
+  test('serves the bare session-scoped audit read from an index', () => {
+    // GET /v1/projects/:projectId/sessions/:sessionId/audit runs
+    //   where session_id = $1 order by session_sequence asc, event_id asc limit $2
+    // with NO account predicate (chain completeness — see the route). Without an
+    // index leading with session_id that query seq-scans the whole ledger and
+    // dies on the 25 s request-path statement_timeout (prod 2026-09-25, 57014).
+    // Regression guard: some index must carry (session_id, session_sequence,
+    // event_id) as its leading columns, in that order, so the planner walks the
+    // index and stops at LIMIT.
+    const serving = getTableConfig(auditEvents).indexes.find((i) => {
+      const cols = i.config.columns.map((c: any) => c.name as string | undefined);
+      return cols[0] === 'session_id' && cols[1] === 'session_sequence' && cols[2] === 'event_id';
+    });
+    // A partial index with an excluding predicate would keep the leading-column
+    // guard green while the planner stops serving the route's general read.
+    expect(serving).toBeDefined();
+    expect(serving?.config.where).toBeUndefined();
   });
 
   test('preserves tenant scope when the account record is deleted', () => {
@@ -269,6 +307,8 @@ describe('connectors', () => {
       'idx_connector_connections_project_label',
       'idx_connector_connections_project',
       'idx_connector_connections_connector',
+      'idx_connector_connections_tunnel',
+      'idx_connector_connections_owner_tunnel',
     ]);
     expect(indexNames(connectorCalls)).toEqual([
       'idx_connector_calls_project',
@@ -276,7 +316,25 @@ describe('connectors', () => {
       'idx_connector_calls_connector',
       'idx_connector_calls_connection',
       'idx_connector_calls_status',
+      'idx_connector_calls_account',
     ]);
+  });
+
+  test('indexes every audit-reconciliation source-ledger account_id predicate', () => {
+    // `reconcileAuditEvents` (apps/api/src/shared/audit-reconciliation.ts) runs
+    // its 8-way `candidates` query per account with a bare
+    // `WHERE account_id = $1` on each source ledger. Without an index on that
+    // column, one branch seq-scans and the whole query times out at the audit
+    // pool's 10 s statement_timeout. #7970 added the connector_calls and
+    // session_lifecycle_commands indexes; provider_events was the last gap.
+    // Regression guard: this list must stay in step with the query's branches.
+    for (const [table, index] of [
+      [connectorCalls, 'idx_connector_calls_account'],
+      [sessionLifecycleCommands, 'idx_session_lifecycle_commands_account'],
+      [providerEvents, 'idx_provider_events_account'],
+    ] as const) {
+      expect(indexNames(table)).toContain(index);
+    }
   });
 
   test('uses connection_id for every active connection reference', () => {
@@ -285,6 +343,28 @@ describe('connectors', () => {
     expect(columnNames(connectorCalls)).toContain('connection_id');
     expect(columnNames(connectorCalls)).not.toContain('profile_id');
     expect(columnNames(projectSessionConnectorBindings)).toContain('connection_id');
+  });
+});
+
+describe('account_tokens foreign-key coverage', () => {
+  // The Supabase performance advisor (unindexed_foreign_keys) flags a foreign
+  // key whose referencing column is not the leading column of any index: every
+  // ON DELETE CASCADE / SET NULL walk over that column seq-scans the table.
+  // account_tokens carries four FKs — three declared here (account_id,
+  // project_id, service_account_id) plus the SQL-only
+  // account_tokens_on_behalf_of_user_fk (auth.users is outside this schema;
+  // added NOT VALID by 20260922135103135_agent_session_on_behalf_of). The
+  // advisor reported service_account_id and on_behalf_of_user_id unindexed in
+  // prod (KRTX-1091); account_id and project_id were already covered.
+  // Regression guard: every FK column must lead some index on the table.
+  test('indexes every foreign key column the table carries', () => {
+    const leading = getTableConfig(accountTokens).indexes.map((i) => {
+      const first = i.config.columns[0];
+      return first && 'name' in first ? first.name : undefined;
+    });
+    for (const fk of ['account_id', 'project_id', 'service_account_id', 'on_behalf_of_user_id']) {
+      expect(leading).toContain(fk);
+    }
   });
 });
 
@@ -341,6 +421,15 @@ describe('Kortix Apps schema', () => {
     expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
     expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
     expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+  });
+
+  test('covers the app_deployment_events runtime foreign key with an index', () => {
+    // The FK runtime_id -> app_runtimes.runtime_id is ON DELETE set null: a
+    // runtime delete scans app_deployment_events for referencing rows. The
+    // advisor (supabase:advisor:unindexed-foreign-keys:kortix.app_deployment_events)
+    // flags the FK when no index leads with runtime_id; the deployment_idx
+    // leads with deployment_id and cannot serve it.
+    expect(indexNames(appDeploymentEvents)).toContain('app_deployment_events_runtime_idx');
   });
 
   test('attributes compute windows to App runtimes', () => {
@@ -426,33 +515,30 @@ describe('accounts table', () => {
   });
 });
 
-describe('account_members table', () => {
-  test('maps to the account_members table name', () => {
-    expect(getTableConfig(accountMembers).name).toBe('account_members');
+describe('account membership', () => {
+  test('account_members is the compatibility view, not a table', () => {
+    expect(getViewConfig(accountMembers).name).toBe('account_members');
   });
 
-  test('declares a composite primary key on user_id and account_id', () => {
-    const pks = getTableConfig(accountMembers).primaryKeys;
+  test('account_memberships declares a composite primary key on user_id and account_id', () => {
+    const pks = getTableConfig(accountMemberships).primaryKeys;
     expect(pks).toHaveLength(1);
     const pkColumns = pks[0]!.columns.map((c) => c.name);
     expect(pkColumns).toEqual(['user_id', 'account_id']);
   });
 
-  test('has a foreign key back to accounts', () => {
-    const fks = getTableConfig(accountMembers).foreignKeys;
+  test('account_memberships has a foreign key back to accounts', () => {
+    const fks = getTableConfig(accountMemberships).foreignKeys;
     expect(fks.length).toBeGreaterThan(0);
   });
 
-  test('defines the documented indexes', () => {
-    const idx = indexNames(accountMembers);
-    expect(idx).toContain('idx_account_members_user_id');
-    expect(idx).toContain('idx_account_members_account_id');
-    expect(idx).toContain('idx_account_members_user_account');
-  });
-
-  test('account_role defaults to owner', () => {
-    const col = getTableConfig(accountMembers).columns.find((c) => c.name === 'account_role');
-    expect(col?.default).toBe('owner');
+  test('account_memberships declares the indexes the database has', () => {
+    // The primary key leads with user_id, so account-only reads need their own index.
+    // idx_account_members_user_account duplicated the primary key and was dropped
+    // by 20261003145424803_drop_duplicate_account_memberships_index.
+    expect(indexNames(accountMemberships).sort()).toEqual([
+      'idx_account_members_account_id',
+    ]);
   });
 });
 
@@ -513,25 +599,14 @@ describe('project_llm_routing_policies table', () => {
   });
 });
 
-describe('project_members table', () => {
-  test('project_role defaults to member (the floor role)', () => {
-    const col = getTableConfig(projectMembers).columns.find((c) => c.name === 'project_role');
-    expect(col?.default).toBe('member');
+describe('RBAC compatibility views', () => {
+  test('project_members and project_group_grants are views, not tables', () => {
+    expect(getViewConfig(projectMembers).name).toBe('project_members');
+    expect(getViewConfig(projectGroupGrants).name).toBe('project_group_grants');
   });
 
-  test('enforces a unique project/user index', () => {
-    const cfg = getTableConfig(projectMembers);
-    const unique = cfg.indexes.find((i) => i.config.name === 'idx_project_members_project_user');
-    expect(unique?.config.unique).toBe(true);
-  });
-});
-
-describe('project_group_grants table', () => {
-  test('does not carry branch selection outside the project boundary', () => {
-    const col = getTableConfig(projectGroupGrants).columns.find(
-      (column) => column.name === 'default_base_ref',
-    );
-    expect(col).toBeUndefined();
+  test('project_group_grants does not carry branch selection outside the project boundary', () => {
+    expect(Object.keys(getViewConfig(projectGroupGrants).selectedFields)).not.toContain('defaultBaseRef');
   });
 });
 
@@ -715,21 +790,10 @@ describe('canonical RBAC tables (PR2)', () => {
     expect(names).toContain('idx_role_assignments_account');
   });
 
-  test('iam_roles.account_id is nullable so a system role can be one row', () => {
+  test('roles.account_id is nullable so a system role can be one row', () => {
     // NULL = a seeded system role shared by every account. Every legacy read
     // filters account_id = :id, so those rows are invisible to old code.
     const col = getTableConfig(iamRoles).columns.find((c) => c.name === 'account_id');
     expect(col?.notNull).toBe(false);
-  });
-
-  test('project_members finally has a primary key', () => {
-    // It shipped with only idx_project_members_project_user, which is also every
-    // upsert's ON CONFLICT target — the one index guaranteeing correctness was
-    // the one a cleanup was most likely to drop (42P10, the account_members
-    // incident). The unique index is deliberately kept alongside the PK.
-    const cfg = getTableConfig(projectMembers);
-    const pk = cfg.primaryKeys[0];
-    expect(pk?.columns.map((c) => c.name)).toEqual(['project_id', 'user_id']);
-    expect(cfg.indexes.some((i) => i.config.name === 'idx_project_members_project_user')).toBe(true);
   });
 });

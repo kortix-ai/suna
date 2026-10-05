@@ -1,4 +1,6 @@
-export type SandboxPreviewProvider = 'auto' | 'platinum' | 'daytona';
+import { buildPreviewGuardInstall } from './preview-guard';
+
+export type SandboxPreviewProvider = 'auto' | 'platinum';
 
 export interface SandboxPreviewInput {
   provider: SandboxPreviewProvider;
@@ -8,7 +10,7 @@ export interface SandboxPreviewInput {
 }
 
 export interface SandboxPreviewResult {
-  provider: 'platinum' | 'daytona';
+  provider: 'platinum';
   exitCode: number;
   sandboxId?: string;
   /** Where people go. The stable name when there is one, else `sandboxOrigin`. */
@@ -28,6 +30,103 @@ export function previewLockfileHash(value: string): string {
   return hash;
 }
 
+export function previewDeploymentStatusPath(runId: string, runAttempt: string): string {
+  if (![runId, runAttempt].every((value) => /^[a-z0-9_-]+$/i.test(value))) {
+    throw new Error('invalid preview workflow run identity');
+  }
+  return `/workspace/kortix-preview/run-${runId}-${runAttempt}.exit`;
+}
+
+/** Suite exit code when it refused to start: no report was written for this commit. */
+export const PREVIEW_SUITE_REFUSED = 3;
+
+/** Suite exit code when a newer commit (or removing the label) superseded it and the runner stopped it. */
+export const PREVIEW_SUITE_SUPERSEDED = 4;
+
+/** The suite script's PID. `setsid` makes it the process-group leader, so `kill -- -PID` stops the whole suite. */
+export const PREVIEW_SUITE_PID_PATH = '/workspace/kortix-preview/suite.pid';
+
+/**
+ * Whether the commit a suite tests is still the one the pull request wants
+ * tested. The suite holds the deploy lock for ~40 min, so a stale suite keeps a
+ * push's redeploy queued behind it; the runner stops it instead.
+ */
+export function previewSuiteSuperseded(
+  pull: { state?: string; head?: { sha?: string }; labels?: Array<{ name?: string }> },
+  sha: string,
+): boolean {
+  if (pull.state && pull.state !== 'open') return true;
+  if (pull.head?.sha && pull.head.sha !== sha) return true;
+  return !(pull.labels ?? []).some((label) => label.name === 'preview');
+}
+
+/** Completion record for the suite a run launches after its deploy. */
+export function previewSuiteStatusPath(runId: string, runAttempt: string): string {
+  return previewDeploymentStatusPath(runId, runAttempt).replace(/\.exit$/, '-suite.exit');
+}
+
+/**
+ * `pnpm test -- --target-full` against a preview stack a deploy of THIS run
+ * already proved healthy on `sha`. A separate script, launched after the
+ * deploy returns, so the workflow publishes the preview origin ~40 min before
+ * the suite finishes instead of after it.
+ *
+ * It holds the same `deploy.lock` as the bootstrap, so a redeploy cannot
+ * replace the API while the suite runs, and it refuses to start when the local
+ * edge no longer serves `sha` (a redeploy won the lock in between).
+ */
+export function buildPreviewSuiteScript(input: {
+  prNumber: number;
+  sha: string;
+  statusPath: string;
+}): string {
+  if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
+  previewSandboxName(input.prNumber);
+  const state = '/workspace/kortix-preview';
+  const instanceDir = `${state}/self-host/pr-${input.prNumber}`;
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=/workspace/suna
+STATE=${state}
+LOG="$STATE/kortix-preview.log"
+STATUS=${shellQuote(input.statusPath)}
+PHASE="$STATE/kortix-preview.phase"
+export HOME=/root
+export CI=1
+export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
+
+exec 9>"$STATE/deploy.lock"
+flock -x 9
+rm -f "$STATUS"
+printf '%s\n' "$$" > ${shellQuote(PREVIEW_SUITE_PID_PATH)}
+exec > >(tee -a "$LOG") 2>&1
+
+finish() {
+  local code="$1"
+  set +e
+  rm -f ${shellQuote(PREVIEW_SUITE_PID_PATH)}
+  tar -czf /workspace/kortix-test-results.tar.gz -C "$ROOT" tests/test-results
+  printf '%s\n' "$code" > "$STATUS"
+}
+trap 'code=$?; finish "$code"' EXIT
+
+curl -fsS --max-time 10 http://127.0.0.1:8080/v1/health \
+  | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .commit == $sha' >/dev/null || {
+  echo "the preview no longer serves ${input.sha}; refusing to test another commit" >&2
+  exit ${PREVIEW_SUITE_REFUSED}
+}
+
+printf 'tests\n' > "$PHASE"
+cd "$ROOT"
+set -a
+source ${shellQuote(`${instanceDir}/.env.test`)}
+set +a
+pnpm test -- --target-full
+printf 'ready\n' > "$PHASE"
+`;
+}
+
 export interface PreviewSandboxRecord {
   id: string;
   /** Present on Platinum records; teardown matches on it as well as ownership. */
@@ -39,44 +138,40 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+/**
+ * The image the self-healing guard runs from: the same docker:cli the
+ * self-host updater already pins, so it is present on a warm sandbox and
+ * installing the guard never needs a pull.
+ */
+export const PREVIEW_DOCKER_CLI_IMAGE =
+  'docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b';
+
 export function buildPreviewBootstrapScript(input: {
   repository: string;
   ref: string;
   sha: string;
   prNumber: number;
   origin: string;
+  statusPath?: string;
   /**
-   * Run the full suite inside the environment once it is up. Default true.
-   *
-   * A PR preview exists to be a gate, so it runs it. A branch environment
-   * exists to be WORKED IN, and the suite is ~10 of the ~14 minutes a deploy
-   * takes — a tax on every push that proves nothing the health check above
-   * has not already proved. Run it there on demand instead.
+   * The host sandbox's name. The stack tags every session box with it
+   * (`kortix.instance`), which is how teardown and the sweep find the session
+   * boxes a preview owns. See previewWorkerEnvironment().
    */
-  runTests?: boolean;
-  /**
-   * The commit the images were built from, when it is not `sha`. A hand deploy
-   * iterating on the tooling (tests/, .github/) reuses images from an earlier
-   * commit with identical product code instead of rebuilding three images per
-   * tooling fix. Default: `sha`.
-   */
-  imageSha?: string;
-  /** The Docker Hub namespace holding the images. Default: `kortix`. */
-  imageRepo?: string;
+  hostName?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
   }
   if (!/^[a-z0-9_./-]+$/i.test(input.ref)) throw new Error(`invalid Git ref: ${input.ref}`);
   if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
-  const imageSha = input.imageSha ?? input.sha;
-  if (!/^[a-f0-9]{40}$/i.test(imageSha)) throw new Error(`invalid image SHA: ${imageSha}`);
-  const imageRepo = input.imageRepo ?? 'kortix';
-  if (!/^[a-z0-9][a-z0-9._/-]*$/.test(imageRepo)) throw new Error(`invalid image repo: ${imageRepo}`);
   previewSandboxName(input.prNumber);
   const origin = new URL(input.origin);
   if (origin.protocol !== 'https:' || origin.pathname !== '/') {
     throw new Error('preview origin must be an HTTPS origin');
+  }
+  if (input.hostName !== undefined && !/^kortix-[a-z0-9-]+$/.test(input.hostName)) {
+    throw new Error(`invalid preview host name: ${input.hostName}`);
   }
   const instance = `pr-${input.prNumber}`;
   const state = '/workspace/kortix-preview';
@@ -88,7 +183,7 @@ set -euo pipefail
 ROOT=/workspace/suna
 STATE=${state}
 LOG="$STATE/kortix-preview.log"
-STATUS="$STATE/kortix-preview.exit"
+STATUS=${shellQuote(input.statusPath ?? `${state}/kortix-preview.exit`)}
 PHASE="$STATE/kortix-preview.phase"
 SECRETS="$STATE/runtime-secrets.json"
 export HOME=/root
@@ -96,7 +191,16 @@ export CI=1
 export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
 
 mkdir -p "$STATE" "$ROOT/tests/test-results"
+# A cancelled workflow can leave its remote bootstrap running. Hold this lock
+# through checkout, redeploy, and tests so the next run cannot replace the API
+# while the first run is still testing it.
+exec 9>"$STATE/deploy.lock"
+flock -x 9
 rm -f "$STATUS" "$PHASE"
+# Results belong to one commit. The preview serves this directory at /_tests/
+# and the run uploads it, so an earlier run's report would read as this one's.
+# Empty it, keep the directory: it is bind-mounted into the edge container.
+find "$ROOT/tests/test-results" -mindepth 1 -delete
 exec > >(tee -a "$LOG") 2>&1
 
 finish() {
@@ -110,41 +214,6 @@ trap 'code=$?; finish "$code"' EXIT
 printf 'checkout\n' > "$PHASE"
 test -d "$ROOT/.git"
 git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.repository}.git`)}
-
-# Authenticate the fetch when we were given a token.
-#
-# GitHub answers this sandbox's ref advertisement anonymously and then REFUSES
-# the fetch that follows. Measured 2026-09-02 from the stable branch preview sandbox:
-# GET /info/refs?service=git-upload-pack returned 200 ten times out of ten while
-# POST /git-upload-pack returned 401 with www-authenticate: Basic realm="GitHub",
-# and \`git ls-remote\` failed 10 times out of 10. The repository is PUBLIC —
-# GitHub throttles unauthenticated fetches from that datacenter range, and it
-# does it on the expensive request only, which is why a plain curl of the GET
-# looks perfectly healthy. The checkout phase exited 128 and every deploy went
-# red while the stable branch preview served an older commit.
-#
-# The helper is written as its own FILE rather than inlined into
-# \`git config credential.helper "!f() { ... }"\`. That inline form is a quoting
-# trap: the nested double quotes collapse, the shell expands the \$(cat ...) at
-# config time, and git stores the literal token in .git/config — verified by
-# doing exactly that. A file keeps the token out of .git/config, out of this
-# script (which lands in the sandbox mode 0755), and out of the remote URL.
-#
-# No token => anonymous, exactly as before. Most sandboxes are not throttled and
-# a preview must not start REQUIRING a credential it never needed.
-if [ -s "$STATE/.checkout-token" ]; then
-  cat > "$STATE/.checkout-credential-helper" <<'KORTIX_CRED_HELPER'
-#!/bin/sh
-# Only the "get" operation returns anything; store/erase are no-ops.
-[ "$1" = get ] || exit 0
-echo username=x-access-token
-echo "password=$(cat /workspace/kortix-preview/.checkout-token)"
-KORTIX_CRED_HELPER
-  chmod 0700 "$STATE/.checkout-credential-helper"
-  git -C "$ROOT" config credential.helper "$STATE/.checkout-credential-helper"
-else
-  git -C "$ROOT" config --unset-all credential.helper 2>/dev/null || true
-fi
 git -C "$ROOT" fetch --depth=1 origin ${shellQuote(input.ref)}
 git -C "$ROOT" checkout --detach --force FETCH_HEAD
 git -C "$ROOT" clean -ffd
@@ -152,11 +221,25 @@ actual_sha="$(git -C "$ROOT" rev-parse HEAD)"
 test "$actual_sha" = "${input.sha}"
 
 cd "$ROOT"
+# A persistent branch environment keeps the rootfs it was created with. A new
+# template therefore does not update Node in an existing sandbox. Repair that
+# floor in place before pnpm reads dependency engine constraints. The archive
+# checksum comes from Node's v22.22.2 SHASUMS256.txt.
+if [ "$(node --version)" != "v22.22.2" ]; then
+  node_archive=/tmp/node-v22.22.2-linux-x64.tar.xz
+  curl -fsSL https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz -o "$node_archive"
+  printf '%s  %s\n' '88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a' "$node_archive" | sha256sum -c -
+  tar -xJf "$node_archive" -C /usr/local --strip-components=1
+  rm -f "$node_archive"
+fi
+test "$(node --version)" = "v22.22.2"
 corepack enable
-# A persistent branch sandbox can outlive its dependency template. Keep the
-# fast offline path, then repair an incomplete package store from the frozen
-# lockfile. The 2026-09-04 pi-worker deploy reused an older store and failed on
-# @earendil-works/pi-agent-core before the stack could start.
+# A reused branch sandbox keeps the rootfs of the template it was created
+# from, so its pnpm store can predate a dependency the branch has since added.
+# Offline is the fast path; when the store is short of a tarball, repair it
+# from the frozen lockfile instead of failing the deploy at checkout — which is
+# how every pi-worker deploy died on @earendil-works/pi-agent-core on
+# 2026-09-04 while the stack behind the public name stayed down.
 pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile
 
 printf 'docker\n' > "$PHASE"
@@ -165,81 +248,73 @@ for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; 
 done
 if ! docker info >/dev/null 2>&1; then
   rm -f /var/run/docker.pid /var/run/docker.sock
-  nohup dockerd --host=unix:///var/run/docker.sock > "$STATE/dockerd.log" 2>&1 &
+  nohup dockerd --host=unix:///var/run/docker.sock 9>&- > "$STATE/dockerd.log" 2>&1 &
   timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 fi
 docker info >/dev/null
 
+# The self-healing guard, installed before anything below can fail so that a
+# deploy which dies at configure or stack still leaves a watcher behind. See
+# tests/src/core/preview-guard.ts.
+${buildPreviewGuardInstall({ stateDir: state, instance, dockerCliImage: PREVIEW_DOCKER_CLI_IMAGE })}
 printf 'configure\n' > "$PHASE"
 bun apps/cli/src/index.ts self-host init --yes --local-images --no-restrict-account-creation --instance ${instance}
 PREVIEW_INSTANCE_DIR=${shellQuote(instanceDir)} \
 PREVIEW_STATE_DIR=${shellQuote(state)} \
 PREVIEW_ORIGIN=${shellQuote(origin.origin)} \
 PREVIEW_SHA=${shellQuote(input.sha)} \
-PREVIEW_IMAGE_SHA=${shellQuote(imageSha)} \
-PREVIEW_IMAGE_REPO=${shellQuote(imageRepo)} \
-PREVIEW_REQUIRE_MANAGED_GIT=${input.runTests === false ? '0' : '1'} \
 PREVIEW_SECRETS_FILE="$SECRETS" \
-bun tests/bin/preview-stack.ts
+${input.hostName ? `PREVIEW_INSTANCE_ID=${shellQuote(input.hostName)} \
+` : ''}bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
 
-# Reclaim BEFORE pulling, not only after.
-#
-# There is a prune at the end of this script, and it is the right steady-state
-# one: it runs once the new stack is proven healthy, when the running
-# containers pin exactly the images worth keeping. But it is gated on that
-# health check, and a full disk is precisely the condition under which the
-# stack never becomes healthy — supabase-db crash-loops on \`could not write
-# lock file "postmaster.pid": No space left on device\`, preview-edge never
-# starts, and the deploy dies before reaching the cleanup that would have
-# fixed it. The cleanup sat behind the failure it was meant to prevent.
-#
-# So: a second prune, ahead of a ~3 GB pull, gated on the disk actually being
-# tight. \`image prune -af\` spares any image a container references — running,
-# created or exited — so the stack still standing here keeps everything it
-# needs, and this only reclaims what previous deploys superseded.
+# Reclaim BEFORE pulling. A full disk is precisely the state in which the
+# stack cannot become healthy — supabase-db crash-loops on \`could not write
+# lock file "postmaster.pid": No space left on device\` — and every deploy adds
+# ~2.5 GB of images that nothing else removes. \`image prune -af\` spares any
+# image a container references (running, created or exited), so the stack
+# standing here keeps everything it needs; only superseded deploys go.
+# Measured on the pi-worker branch environment 2026-09-04: 34 GB of images, 25 GB unreferenced,
+# 0 bytes free, every container in Created.
 used="$(df --output=pcent / | tail -1 | tr -dc '0-9')"
-echo "disk before pull: $used%" >&2
-if [ "\${used:-0}" -ge 80 ]; then
+echo "disk before pull: \${used:-?}%" >&2
+if [ "\${used:-0}" -ge 70 ]; then
   docker image prune -af >/dev/null 2>&1 || true
   docker builder prune -af >/dev/null 2>&1 || true
   df -h / | tail -1 >&2
 fi
-${compose} pull --policy always frontend kortix-api llm-gateway preview-edge mailpit
 
-# Restart anything RUNNING-BUT-UNHEALTHY before waiting on it.
-#
-# \`compose up -d\` recreates a container for a new image, env or port (see the
-# Caddyfile note below) and for NOTHING else — so a long-running container that
-# has gone unhealthy is left exactly as it is, forever. Every dependent then
-# fails \`depends_on: service_healthy\`, \`--wait\` times out, and the deploy dies
-# without ever touching the thing that is actually broken. The retry below does
-# not help either: attempt 2 runs the same comparison and reaches the same
-# no-op.
-#
-# Cost of that gap, measured 2026-08-29 on the pi-worker environment:
-# supabase-kong sat \`Up 27 hours (unhealthy)\` while still routing traffic, so
-# nothing looked wrong from outside. The next deploy — an unrelated one-line
-# Mailpit change — could not start a single dependent, and FOUR consecutive
-# deploys across two different commits died on it. The whole origin was down
-# until the container was restarted by hand.
-#
-# A restart, never a recreate: the container keeps its volumes and its config,
-# so this is safe for stateful services too (postgres included) and cannot lose
-# data. Best-effort — a box with nothing unhealthy prints nothing and moves on.
-unhealthy="$(docker ps --filter health=unhealthy --format '{{.Names}}' | grep "^kortix-${instance}-" || true)"
-if [ -n "$unhealthy" ]; then
-  printf 'restarting unhealthy containers before wait: %s\n' "$(printf '%s' "$unhealthy" | tr '\n' ' ')"
-  printf '%s\n' "$unhealthy" | xargs -r docker restart
-  sleep 5
-fi
+# When the NEW stack cannot come up, put the LAST GOOD one back rather than
+# leaving nothing serving. The image tags live in the instance .env, and the
+# health check below saves a copy of the .env that last proved healthy; a
+# failed deploy then restores it and brings that stack up before reporting
+# failure, so the public name keeps answering on the previous commit. The
+# deploy still fails — this is a fallback, not a pass.
+restore_last_good() {
+  if [ -f "$STATE/last-good.env" ]; then
+    echo "stack failed on this commit; restoring the last good image set" >&2
+    cp "$STATE/last-good.env" ${shellQuote(`${instanceDir}/.env`)}
+    ${compose} up -d --wait --wait-timeout 300 >&2 || true
+  fi
+  exit 1
+}
 
+# Every image here is immutable: \`pr-<sha>\` tags and digest-pinned third-party
+# images. \`missing\` skips the ones this host already has. Docker Hub counts
+# each manifest request as a pull and limits anonymous pulls per IP per hour;
+# \`always\` spent 5 per deploy, and a second deploy within the hour failed with
+# \`toomanyrequests\` (2026-09-28). Wait out that window instead of failing.
+for pull_attempt in 1 2 3 4 5; do
+  ${compose} pull --policy missing frontend kortix-api llm-gateway preview-edge mailpit && break
+  test "$pull_attempt" -lt 5 || exit 1
+  sleep $((pull_attempt * 60))
+done
 for stack_attempt in 1 2; do
   if ${compose} up -d --wait --wait-timeout 300; then
     break
   fi
-  test "$stack_attempt" -lt 2
+  test "$stack_attempt" -lt 2 || restore_last_good
 
   # WHY THE STACK FAILED, in the log, before anything retries.
   #
@@ -294,46 +369,18 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 curl -fsS --max-time 10 "$HEALTH" | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null
+# This image set is proven; it is what restore_last_good falls back to.
+cp ${shellQuote(`${instanceDir}/.env`)} "$STATE/last-good.env"
 
-# A branch environment is REUSED, so nothing ever reclaims the images it
-# replaces: every deploy pulls ~3 GB of new api/frontend/gateway layers and the
-# ones they supersede stay on a 50 GB disk forever. It reached 100% and the
-# stack stopped coming up; 22 GB had to be pruned by hand. Prune here, AFTER the
-# new stack is proven healthy — the running containers hold references to their
-# own images, so this can only take the ones nothing runs from any more.
-#
-# NO age filter. \`until=24h\` was the first attempt and it reclaimed 0 B: a
-# branch environment redeploys several times a day, so every superseded image
-# is younger than a day. Without the filter the same box went 90% -> 46% (20.35
-# GB) with all 12 services still running. Never fatal: a healthy deploy must not
-# fail because a prune did.
-df -h / | tail -1 >&2
-docker container prune -f >/dev/null 2>&1 || true
-docker image prune -af >/dev/null 2>&1 || true
-docker builder prune -af >/dev/null 2>&1 || true
-df -h / | tail -1 >&2
-
-${
-  input.runTests === false
-    ? `printf 'tests-skipped\\n' > "$PHASE"
-printf 'suite skipped — this is a branch environment, not a gate. Run it with:\\n' >&2
-printf '  cd %s && set -a && . %s && set +a && pnpm test -- --target-full\\n' "$ROOT" ${shellQuote(`${instanceDir}/.env.test`)} >&2`
-    : `printf 'tests\\n' > "$PHASE"
-set -a
-source ${shellQuote(`${instanceDir}/.env.test`)}
-set +a
-pnpm test -- --target-full`
-}
-
+# The deploy ends here, once the stack serves this commit, so the workflow
+# can publish the preview before the suite starts. The suite, when this deploy
+# runs it, is a separate script: buildPreviewSuiteScript.
 printf 'ready\n' > "$PHASE"
 `;
 }
 
 export class PreviewInfrastructureError extends Error {
-  constructor(
-    message: string,
-    readonly cause?: unknown,
-  ) {
+  constructor(message: string, readonly cause?: unknown) {
     super(message);
     this.name = 'PreviewInfrastructureError';
   }
@@ -351,11 +398,7 @@ export class PreviewInfrastructureError extends Error {
  * session and its Postgres volume across deploys.
  */
 export function branchEnvSandboxName(branch: string): string {
-  const slug = branch
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  const slug = branch.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   if (!slug) throw new Error(`invalid branch for a persistent environment: ${branch}`);
   return `kortix-env-${slug}`;
 }
@@ -488,22 +531,21 @@ export function selectStalePreviewSandboxIds(
     .map((sandbox) => sandbox.id);
 }
 
+/**
+ * Previews run on Platinum only, host and sessions. There is no Daytona
+ * fallback: from 2026-08-10 an infrastructure failure moved the preview to
+ * Daytona, and on 2026-09-21 the shared Daytona org hit its snapshot quota and
+ * every preview session failed there. A Platinum failure now fails the preview
+ * loudly. Daytona code remains only to tear down previews created before this.
+ */
 export async function runSandboxPreview(
   input: SandboxPreviewInput,
   runners: {
     platinum: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
-    daytona: (input: SandboxPreviewInput) => Promise<SandboxPreviewResult>;
   },
 ): Promise<SandboxPreviewResult> {
-  if (input.provider === 'platinum') return runners.platinum(input);
-  if (input.provider === 'daytona') return runners.daytona(input);
-  try {
-    return await runners.platinum(input);
-  } catch (error) {
-    if (!(error instanceof PreviewInfrastructureError)) throw error;
-    console.warn(
-      `[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`,
-    );
-    return runners.daytona(input);
+  if (input.provider !== 'auto' && input.provider !== 'platinum') {
+    throw new Error(`previews run on Platinum only; received provider ${String(input.provider)}`);
   }
+  return runners.platinum(input);
 }

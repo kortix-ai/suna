@@ -20,7 +20,7 @@
  * ACCURACY GATE — every line below is checked against shipped code, not against
  * the manifesto. The rules that keep getting broken:
  *   - A granted runtime secret IS a real env value inside the session and any
- *     command the agent runs can read it (docs/ENV_SECRET_EXPOSURE_BASELINE.md).
+ *     command the agent runs can read it.
  *     Never write "the model never sees them". "Brokered server-side and never
  *     enters the machine" is true for CONNECTOR credentials only.
  *   - Egress is not controlled at the network. Nothing implements it.
@@ -162,3 +162,14 @@ export const LAYERS: Layer[] = [
     ],
   },
 ];
+
+export function getLocalizedHowItWorksContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { SECTION, LAYERS },
+    tI18nComplete,
+    MARKETING_SECONDARY_TRANSLATION_KEYS,
+  );
+}
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { MARKETING_SECONDARY_TRANSLATION_KEYS } from '@/i18n/marketing-secondary-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';

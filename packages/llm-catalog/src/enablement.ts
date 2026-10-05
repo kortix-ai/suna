@@ -134,7 +134,7 @@ export function defaultEnabledModelIds(
  * id Bedrock refuses ("Invocation of model ID xai.grok-4.6 with on-demand
  * throughput isn't supported. Retry your request with the ID or ARN of an
  * inference profile"), then looped "Retrying in Ns" forever. Proven live on
- * the Essentia self-host 2026-08-26.
+ * the SampleCo self-host 2026-08-26.
  *
  * Rule: when a set carries ANY inference-profile id, its bare ids are not
  * auto-selectable. An inference profile is always invokable; a bare id may
@@ -143,9 +143,18 @@ export function defaultEnabledModelIds(
  * user. A set with no profile ids at all (every non-Bedrock provider) is
  * returned unchanged, so this is inert outside Bedrock.
  */
-export function autoSeedableModels<T extends { id: string }>(models: T[]): T[] {
-  if (!models.some((model) => bedrockInferenceProfileRank(model.id) > 0)) return models;
-  return models.filter((model) => bedrockInferenceProfileRank(model.id) > 0);
+export function autoSeedableModels<T extends { id: string; status?: string; tool_call?: boolean }>(
+  models: T[],
+): T[] {
+  // models.dev marks experiments and retirees `beta`/`deprecated`, and an
+  // agent default must call tools; nothing is auto-selected from those while
+  // a stable, tool-capable model exists.
+  const stable = models.filter(
+    (model) => model.status !== 'deprecated' && model.status !== 'beta' && model.tool_call !== false,
+  );
+  const pool = stable.length > 0 ? stable : models;
+  if (!pool.some((model) => bedrockInferenceProfileRank(model.id) > 0)) return pool;
+  return pool.filter((model) => bedrockInferenceProfileRank(model.id) > 0);
 }
 
 /**
@@ -159,7 +168,9 @@ export function autoSeedableModels<T extends { id: string }>(models: T[]): T[] {
  * (packages/sdk) — because two copies of "which model do we pick for you" is
  * exactly how they drifted apart before.
  */
-export function autoSeedDefaultModel<T extends { id: string; released?: string | null }>(
+export function autoSeedDefaultModel<
+  T extends { id: string; released?: string | null; status?: string; tool_call?: boolean },
+>(
   models: T[],
 ): T | undefined {
   let best: T | undefined;

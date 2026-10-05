@@ -35,6 +35,7 @@ export interface ClientOptions {
    *  (and validates membership); project-id routes ignore it. Without it the
    *  server falls back to the caller's earliest-joined account. */
   accountId?: string;
+  signal?: AbortSignal;
 }
 
 /** Normalize an incoming CLI path to the SDK-relative endpoint. The SDK's
@@ -60,6 +61,20 @@ function withAccountId(endpoint: string, accountId?: string): string {
  *  which the CLI never had — keep the generous ceiling so nothing that worked
  *  before starts aborting mid-flight. */
 const CLI_REQUEST_TIMEOUT_MS = 600_000;
+
+/** A DELETE (`sessions rm`, `projects rm`, …) is a short, bounded control-plane
+ *  op — it never long-polls like `provision`/`create`. The 600s ceiling above
+ *  let a single STALLED DELETE ride far past any caller's contract window:
+ *  incident-20260922T210537Z had a `sessions rm` hang >120s and leave the child
+ *  session running, while a fresh retry deleted it in ~1.1s. A per-attempt DELETE
+ *  deadline lets a stalled attempt abort well inside that window; the SDK then
+ *  replays it (safe — the session delete is an idempotent soft-tombstone), so
+ *  3 attempts at this budget stay under a 120s wall while a transient stall
+ *  self-heals. Env-tunable for an operator who needs a different budget. */
+const CLI_DELETE_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.KORTIX_CLI_DELETE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30_000;
+})();
 
 /** Translate the SDK's `ApiResponse` envelope into the CLI's throw-on-error
  *  `ApiError`, preserving `.status` — commands branch on 402/404/409/5xx.
@@ -127,7 +142,7 @@ async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,
-  opts: { auth: Auth; accountId?: string },
+  opts: { auth: Auth; accountId?: string; signal?: AbortSignal },
 ): Promise<T> {
   try {
     return await requestOnce<T>(method, path, body, opts);
@@ -142,10 +157,10 @@ async function requestOnce<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,
-  opts: { auth: Auth; accountId?: string },
+  opts: { auth: Auth; accountId?: string; signal?: AbortSignal },
 ): Promise<T> {
   const endpoint = withAccountId(toEndpoint(path), opts.accountId);
-  const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS };
+  const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS, signal: opts.signal, deadlineCoversBody: Boolean(opts.signal) };
   return withKortixScope(opts.auth, async () => {
     switch (method) {
       case 'GET': {
@@ -160,7 +175,15 @@ async function requestOnce<T>(
       case 'PATCH':
         return unwrap<T>(await backendApi.patch<T>(endpoint, body, options));
       case 'DELETE':
-        return unwrap<T>(await backendApi.delete<T>(endpoint, options));
+        // Bounded per-attempt deadline (not the 600s ceiling) so a stalled
+        // delete aborts inside the caller's contract window and the SDK replays
+        // it. See CLI_DELETE_TIMEOUT_MS.
+        return unwrap<T>(
+          await backendApi.delete<T>(endpoint, {
+            ...options,
+            timeout: CLI_DELETE_TIMEOUT_MS,
+          }),
+        );
     }
   });
 }
@@ -178,7 +201,7 @@ export function createApiClient(opts: ClientOptions): ApiClient {
     account_id: accountId ?? '',
     logged_in_at: '',
   };
-  const base = { auth, accountId };
+  const base = { auth, accountId, signal: opts.signal };
   return {
     apiBase,
     get: <T>(path: string) => request<T>('GET', path, undefined, base),

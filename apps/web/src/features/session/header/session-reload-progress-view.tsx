@@ -3,14 +3,16 @@ import {
   RELOAD_PROGRESS_STEPS,
   reloadProgressPosition,
 } from '@/hooks/projects/session-reload-progress';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { SessionReloadPhase } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';
 
 export function SessionReloadProgressView({ phase }: { phase: SessionReloadPhase | null }) {
+  const steps = useLocalizedUiCatalog(RELOAD_PROGRESS_STEPS);
   return (
     <div className="mt-3 space-y-2" aria-live="polite" aria-atomic="true">
-      {RELOAD_PROGRESS_STEPS.map((step) => {
-        const position = reloadProgressPosition(phase, step.phase, false);
+      {steps.map((step) => {
+        const position = reloadProgressPosition(phase, step.phase);
         return (
           <div
             key={step.phase}
@@ -32,7 +34,6 @@ export function SessionReloadProgressView({ phase }: { phase: SessionReloadPhase
               }
             >
               {step.label}
-              {position === 'skipped' ? ' · Skipped' : ''}
             </span>
           </div>
         );

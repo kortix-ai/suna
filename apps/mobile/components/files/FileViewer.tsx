@@ -8,16 +8,16 @@ import {
   View,
   Modal,
   Pressable,
-  Share,
   Platform,
   TextInput,
+  Keyboard,
   KeyboardAvoidingView,
   Alert,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
-import { X, Download, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { XIcon as X, DownloadIcon as Download, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, PencilIcon as Pencil, CheckIcon as Check } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -29,12 +29,22 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
-import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
-import { useOpenCodeFileContent, useOpenCodeFileBlob, blobToDataURL, useOpenCodeWriteFile } from '@/lib/files/hooks';
+import { FilePreview } from './FilePreviewRenderers';
+import { useFilePreviewData } from './use-file-preview-data';
+import { useWriteSandboxFile, downloadSandboxFileToCache } from '@/lib/files/hooks';
+import { saveFileToDevice } from '@/lib/files/save-to-device';
+import { useToast } from '@/components/kortix/toast-provider';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
+import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { sheetHandleIndicatorStyle } from '@/components/kortix/sheet';
+import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
+import { PortalHost } from '@rn-primitives/portal';
+
+/** Portal host inside the viewer's native `Modal`: the root host draws under it. */
+const FILE_VIEWER_PORTAL_HOST = 'file-viewer';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -68,63 +78,29 @@ export function FileViewer({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const closeScale = useSharedValue(1);
-  const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
   const [isDownloading, setIsDownloading] = useState(false);
   // In-place text editing
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const writeMutation = useOpenCodeWriteFile();
+  const writeMutation = useWriteSandboxFile();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog({ portalHost: FILE_VIEWER_PORTAL_HOST });
+  const toast = useToast();
 
-  const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
-  const isImage = previewType === FilePreviewType.IMAGE;
-  // Binary file types that should be fetched as blob, not text
-  const isBinaryFile = previewType === FilePreviewType.IMAGE ||
-                       previewType === FilePreviewType.PDF ||
-                       previewType === FilePreviewType.XLSX ||
-                       previewType === FilePreviewType.DOCX ||
-                       previewType === FilePreviewType.BINARY;
-  const shouldFetchText = file && !isBinaryFile;
-  const shouldFetchBlob = file && isBinaryFile;
-  
-  // Can show raw view for non-binary files
-  const canShowRaw =
-    file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
-
-  // Fetch file content for text-based files (via OpenCode API)
   const {
-    data: textContent,
-    isLoading: isLoadingText,
-    error: textError,
-  } = useOpenCodeFileContent(
-    shouldFetchText ? sandboxUrl : undefined,
-    shouldFetchText ? file?.path : undefined
-  );
-
-  // Fetch blob for binary files (via OpenCode API)
-  const {
-    data: imageBlob,
-    isLoading: isLoadingImage,
-    error: imageError,
-  } = useOpenCodeFileBlob(
-    shouldFetchBlob ? sandboxUrl : undefined,
-    shouldFetchBlob ? file?.path : undefined
-  );
-
-  // Convert blob to data URL for binary files (images, PDFs, etc.)
-  useEffect(() => {
-    let cancelled = false;
-    if (imageBlob && file?.path) {
-      blobToDataURL(imageBlob, file.path).then((url) => {
-        if (!cancelled) setBlobUrl(url);
-      });
-    } else {
-      setBlobUrl(undefined);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [imageBlob, file?.path]);
+    previewType,
+    isBinaryFile,
+    shouldFetchText,
+    textContent,
+    textError,
+    blob: imageBlob,
+    blobError: imageError,
+    blobTooLarge,
+    blobUrl,
+    isLoading,
+    error: hasError,
+    size: previewSize,
+  } = useFilePreviewData(file, sandboxUrl);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -140,57 +116,33 @@ export function FileViewer({
     setIsDownloading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      // For binary files (images, PDFs, etc.) write to file and share
-      if (imageBlob && isBinaryFile) {
-        // Convert blob to base64
+      // The file as it is, in the cache first, then saved on the device
+      // (`saveFileToDevice`). No PDF export and no share sheet on mobile.
+      const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+      let source: string | null = null;
+      if (imageBlob && isBinaryFile && !blobTooLarge) {
         const reader = new FileReader();
         const base64Data = await new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            const base64 = result.split(',')[1];
-            resolve(base64);
-          };
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
           reader.onerror = reject;
           reader.readAsDataURL(imageBlob);
         });
-
-        // Write to temporary file
-        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        // Share the file
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        }
-        return;
-      }
-      
-      // For text files, write to file and share
-      if (textContent) {
-        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+        source = fileUri;
+      } else if (textContent) {
         await FileSystem.writeAsStringAsync(fileUri, textContent);
-        
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        } else {
-          await Share.share({
-            message: textContent,
-            title: file.name,
-          });
-        }
-        return;
+        source = fileUri;
+      } else if (sandboxUrl) {
+        // Nothing loaded (over the preview limit, not previewable, or still
+        // loading): stream the file to disk natively.
+        source = await downloadSandboxFileToCache(sandboxUrl, file.path, file.name);
       }
+      if (!source) return;
+      const result = await saveFileToDevice(source, file.name);
+      if (result.status === 'saved') toast.success(`Saved to ${result.folder}`);
     } catch (error) {
       log.error('Download failed:', error);
+      toast.error('Unable to save the file. Try again.');
     } finally {
       setIsDownloading(false);
     }
@@ -210,8 +162,6 @@ export function FileViewer({
     }
   };
 
-  const isLoading = isLoadingText || isLoadingImage;
-  const hasError = textError || imageError;
   const canNavigate = fileList && fileList.length > 1 && currentIndex >= 0;
 
   // ── In-place editing ──────────────────────────────────────────────────────
@@ -226,6 +176,12 @@ export function FileViewer({
     setDraft('');
   }, [file?.path, visible, initialEditing]);
 
+  // A native modal does not take the focus from the field behind it, so the
+  // keyboard would stay up over the viewer. Same rule as the sheets.
+  useEffect(() => {
+    if (visible) Keyboard.dismiss();
+  }, [visible]);
+
   const handleStartEdit = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDraft(textContent ?? '');
@@ -234,14 +190,18 @@ export function FileViewer({
 
   const handleCancelEdit = useCallback(() => {
     if (dirty) {
-      Alert.alert('Discard changes?', 'Your edits will be lost.', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => setEditing(false) },
-      ]);
+      confirm({
+        title: 'Discard changes?',
+        description: 'Your edits will be lost.',
+        cancelLabel: 'Keep editing',
+        confirmLabel: 'Discard',
+        destructive: true,
+        onConfirm: () => setEditing(false),
+      });
       return;
     }
     setEditing(false);
-  }, [dirty]);
+  }, [dirty, confirm]);
 
   const handleSave = useCallback(async () => {
     if (!file || !sandboxUrl) return;
@@ -250,20 +210,29 @@ export function FileViewer({
       await writeMutation.mutateAsync({ sandboxUrl, path: file.path, content: draft });
       setEditing(false); // content query is invalidated → refetches the saved text
     } catch (e: any) {
+      // One-button acknowledgement, not a toast: the root toaster draws under
+      // this native Modal on Android.
       Alert.alert('Save failed', e?.message || 'Could not save the file. Your edits are kept — try again.');
     }
   }, [file, sandboxUrl, draft, writeMutation]);
 
   const handleCloseGuarded = useCallback(() => {
     if (editing && dirty) {
-      Alert.alert('Discard changes?', 'Your edits will be lost.', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => { setEditing(false); handleClose(); } },
-      ]);
+      confirm({
+        title: 'Discard changes?',
+        description: 'Your edits will be lost.',
+        cancelLabel: 'Keep editing',
+        confirmLabel: 'Discard',
+        destructive: true,
+        onConfirm: () => {
+          setEditing(false);
+          handleClose();
+        },
+      });
       return;
     }
     handleClose();
-  }, [editing, dirty, handleClose]);
+  }, [editing, dirty, handleClose, confirm]);
 
   const insets = useSafeAreaInsets();
 
@@ -277,31 +246,24 @@ export function FileViewer({
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={handleCloseGuarded}>
-      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         {/* Drag handle indicator (visible on iOS pageSheet) */}
         <View
           style={{
             alignItems: 'center',
             paddingTop: 8,
             paddingBottom: 4,
-            backgroundColor: isDark ? '#121215' : '#ffffff',
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
           }}
         >
-          <View
-            style={{
-              width: 36,
-              height: 5,
-              borderRadius: 3,
-              backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-            }}
-          />
+          <View style={sheetHandleIndicatorStyle(isDark)} />
         </View>
         {/* Header */}
         <View
           style={{
-            backgroundColor: isDark ? '#121215' : '#ffffff',
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
             borderBottomWidth: 1,
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+            borderBottomColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.1),
           }}>
           <Animated.View
             entering={FadeIn.duration(200)}
@@ -309,14 +271,14 @@ export function FileViewer({
             className="flex-row items-center justify-between px-4 py-4">
             <View className="mr-4 min-w-0 flex-1">
               <Text
-                style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+                style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground }}
                 className="font-roobert-medium text-base"
                 numberOfLines={1}>
                 {file.name}
               </Text>
               {canNavigate && (
                 <Text
-                  style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+                  style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.5) }}
                   className="mt-0.5 font-roobert text-xs">
                   {currentIndex + 1} of {fileList?.length}
                 </Text>
@@ -328,7 +290,7 @@ export function FileViewer({
               <View className="flex-row items-center gap-2">
                 <Pressable onPress={handleCancelEdit} className="px-2 py-2" hitSlop={8}>
                   <Text
-                    style={{ color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}
+                    style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.6 : 0.5) }}
                     className="font-roobert-medium text-sm">
                     Cancel
                   </Text>
@@ -339,17 +301,17 @@ export function FileViewer({
                   hitSlop={6}
                   className="flex-row items-center rounded-full px-3.5 py-2"
                   style={{
-                    backgroundColor: isDark ? '#f8f8f8' : '#121215',
+                    backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     opacity: writeMutation.isPending || !dirty ? 0.5 : 1,
                     gap: 6,
                   }}>
                   {writeMutation.isPending ? (
                     <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
                   ) : (
-                    <Icon as={Check} size={16} color={isDark ? '#121215' : '#f8f8f8'} strokeWidth={2.4} />
+                    <Icon as={Check} size={16} color={isDark ? THEME.dark.background : THEME.light.background} />
                   )}
                   <Text
-                    style={{ color: isDark ? '#121215' : '#f8f8f8' }}
+                    style={{ color: isDark ? THEME.dark.background : THEME.light.background }}
                     className="font-roobert-medium text-sm">
                     {writeMutation.isPending ? 'Saving…' : 'Save'}
                   </Text>
@@ -363,47 +325,46 @@ export function FileViewer({
                       onPress={handlePrevious}
                       disabled={currentIndex <= 0}
                       className="p-2"
-                      style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}>
+                      style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Previous file">
                       <Icon
                         as={ChevronLeft}
                         size={24}
-                        color={isDark ? '#f8f8f8' : '#121215'}
-                        strokeWidth={2}
+                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                       />
                     </AnimatedPressable>
                     <AnimatedPressable
                       onPress={handleNext}
                       disabled={currentIndex >= (fileList?.length || 0) - 1}
                       className="p-2"
-                      style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}>
+                      style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Next file">
                       <Icon
                         as={ChevronRight}
                         size={24}
-                        color={isDark ? '#f8f8f8' : '#121215'}
-                        strokeWidth={2}
+                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                       />
                     </AnimatedPressable>
                   </>
                 )}
                 {canEdit && (
-                  <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6}>
-                    <Icon as={Pencil} size={20} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                  <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6} accessibilityRole="button" accessibilityLabel="Edit file">
+                    <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   </AnimatedPressable>
                 )}
                 <AnimatedPressable
-                  onPress={handleDownload}
+                  onPress={() => void handleDownload()}
                   disabled={isDownloading}
                   className="p-2"
-                  style={{ opacity: isDownloading ? 0.6 : 1 }}>
+                  style={{ opacity: isDownloading ? 0.6 : 1 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Download">
                   {isDownloading ? (
                     <KortixLoader size="small" />
                   ) : (
-                    <Icon
-                      as={Download}
-                      size={22}
-                      color={isDark ? '#f8f8f8' : '#121215'}
-                      strokeWidth={2}
-                    />
+                    <Icon as={Download} size={22} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   )}
                 </AnimatedPressable>
                 <AnimatedPressable
@@ -415,8 +376,10 @@ export function FileViewer({
                   }}
                   onPress={handleCloseGuarded}
                   style={closeAnimatedStyle}
-                  className="p-2">
-                  <Icon as={X} size={24} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                  className="p-2"
+                  accessibilityRole="button"
+                  accessibilityLabel="Close">
+                  <Icon as={X} size={24} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                 </AnimatedPressable>
               </View>
             )}
@@ -445,16 +408,16 @@ export function FileViewer({
                   paddingHorizontal: 16,
                   paddingTop: 12,
                   paddingBottom: insets.bottom + 12,
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                  fontFamily: MONO_FONT_FAMILY,
                   fontSize: 13,
                   lineHeight: 19,
-                  color: isDark ? '#f8f8f8' : '#121215',
+                  color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                 }}
               />
             </KeyboardAvoidingView>
           ) : isLoading ? (
             <View className="flex-1 items-center justify-center">
-              <KortixLoader size="large" />
+              <KortixLoader size="small" />
               <Text className="mt-4 text-sm text-muted-foreground">Loading file...</Text>
             </View>
           ) : hasError ? (
@@ -472,9 +435,12 @@ export function FileViewer({
               blobUrl={blobUrl}
               filePath={file.path}
               sandboxUrl={sandboxUrl}
+              size={previewSize}
             />
           )}
         </View>
+        {confirmDialog}
+        <PortalHost name={FILE_VIEWER_PORTAL_HOST} />
       </View>
     </Modal>
   );

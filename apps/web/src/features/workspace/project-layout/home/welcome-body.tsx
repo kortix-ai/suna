@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { IdentityConfetti } from '@/components/ui/identity-confetti';
@@ -55,14 +56,30 @@ import {
 export function ProjectHomeWelcomeBody({
   projectId,
   composer,
+  sentTurn,
   onPickSuggestion,
 }: {
   projectId: string;
   /** The composer input rendered in the hero position, directly under the heading. */
   composer?: ReactNode;
+  /**
+   * A message this column has just sent, standing IN PLACE OF the heading while
+   * it is in flight.
+   *
+   * The heading asks what is next; once that is answered it is the wrong thing
+   * for the column to still be saying, and the answer itself is the right one.
+   * Swapping rather than stacking keeps the column roughly the same height, so
+   * the composer does not slide down the page at the keypress.
+   *
+   * It is a SLOT rather than a second layout because the composer must keep its
+   * exact position in this tree — see `ProjectHome` on the upload handles a
+   * remount destroys.
+   */
+  sentTurn?: ReactNode;
   /** When provided, starter-prompt chips render directly below the composer. */
   onPickSuggestion?: (text: string) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
   // The SAME `qk.project.detail(projectId)` entry `useProjectName` reads, so
@@ -131,7 +148,10 @@ export function ProjectHomeWelcomeBody({
               centred block, and this one is ragged-right by design; pretty just
               keeps the last line off a single orphan word.
             */}
-          <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl">
+          <h1
+            className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl"
+            hidden={!!sentTurn}
+          >
             {greeting.before}{' '}
             {/*
                 A real <button>, not a <span> with an onClick: this is the only
@@ -154,7 +174,7 @@ export function ProjectHomeWelcomeBody({
               */}
             <button
               type="button"
-              title="Throw some confetti"
+              title={tI18nComplete.raw('texteff2ec3d9dcd')}
               onClick={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 setBurst((current) => ({
@@ -190,6 +210,11 @@ export function ProjectHomeWelcomeBody({
               origin={burst.origin}
             />
           ) : null}
+
+          {/* The sent message takes the heading's slot — same column, same rail,
+              so the bubble the instant shell paints a moment later is already
+              the width it will be there. */}
+          {sentTurn ? <div className="w-full px-4">{sentTurn}</div> : null}
 
           {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
         </div>

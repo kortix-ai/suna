@@ -6,13 +6,7 @@
  * A step whose key no longer matched would silently read as incomplete
  * forever — a checklist that never finishes is worse than no checklist.
  */
-export type ProjectSetupStepKey =
-  | 'connectors'
-  | 'triggers'
-  | 'skills'
-  | 'slack'
-  | 'team'
-  | 'agent';
+export type ProjectSetupStepKey = 'connectors' | 'triggers' | 'skills' | 'slack' | 'team' | 'agent';
 
 /**
  * What the checklist's probes actually saw, with every "is it done" judgement

@@ -32,7 +32,7 @@
  *
  * Do not "optimise" this back to `false` without redoing both probes above.
  */
-export type FreshnessTier = 'live' | 'config' | 'inventory' | 'volatile';
+export type FreshnessTier = 'live' | 'config' | 'inventory' | 'volatile' | 'directory';
 
 const GC_TIME = 30 * 60 * 1000;
 
@@ -55,6 +55,7 @@ const TIERS: Record<FreshnessTier, { staleTime: number }> = {
    * is materially wrong at t+30s.
    */
   volatile: { staleTime: 5_000 },
+  directory: { staleTime: 10_000 },
 };
 
 export function contract(tier: FreshnessTier) {
@@ -62,6 +63,14 @@ export function contract(tier: FreshnessTier) {
     staleTime: TIERS[tier].staleTime,
     gcTime: GC_TIME,
     refetchOnMount: true as const,
+    ...(tier === 'directory'
+      ? {
+          refetchInterval: 10_000,
+          refetchIntervalInBackground: false,
+          refetchOnWindowFocus: 'always' as const,
+          refetchOnReconnect: 'always' as const,
+        }
+      : {}),
   };
 }
 
@@ -77,7 +86,14 @@ export const FRESHNESS = {
   session: 'inventory',
   sessions: 'inventory',
   messages: 'live',
-  connectors: 'config',
+  /**
+   * The Connectors page list. Connectors change from outside that page: an
+   * agent adds one in chat, a setup link or an OAuth return completes in
+   * another tab, a teammate edits the manifest. `config` refetched only on
+   * mount, and the page's top-level query never remounts, so the Connected tab
+   * showed the new state only after a browser reload (prod, 2026-09-26).
+   */
+  connectors: 'directory',
   connectorConfig: 'config',
   /** A provider metadata probe; it changes on the provider's schedule, not ours. */
   connectorOAuth2Discovery: 'config',

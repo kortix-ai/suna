@@ -14,6 +14,41 @@ const html = () => renderToStaticMarkup(<AppearanceTabView />);
 const EXPECTED_HEADINGS = ['h2:Appearance', 'h3:Theme', 'h3:Conversation density', 'h3:Wallpaper'];
 
 describe('AppearanceTabView', () => {
+  test('renders injected locale copy instead of fixed English labels', () => {
+    const out = renderToStaticMarkup(
+      <AppearanceTabView
+        copy={{
+          theme: 'Тема',
+          themeDescription: 'Изаберите изглед.',
+          conversationDensity: 'Густина разговора',
+          conversationDensityDescription: 'Колико детаља се приказује.',
+          wallpaper: 'Позадина',
+          wallpaperDescription: 'Позадина радног простора.',
+          themes: { light: 'Светла', dark: 'Тамна', system: 'Системска' },
+          densities: {
+            normal: { label: 'Нормално', description: 'Пуни приказ' },
+            minimal: { label: 'Минимално', description: 'Сажети приказ' },
+          },
+          wallpapers: {
+            dither: 'Дитеринг',
+            brandmark: 'Знак бренда',
+            nebula: 'Пикселски зраци',
+            silk: 'Свила',
+            grain: 'Зрно',
+            neuro: 'Неуро',
+            blank: 'Празно',
+          },
+          defaultWallpaper: 'Подразумевано',
+        }}
+      />,
+    );
+    expect(out).toContain('Тема');
+    expect(out).toContain('Густина разговора');
+    expect(out).toContain('Системска');
+    expect(out).toContain('Пикселски зраци');
+    expect(out).not.toContain('>Theme<');
+  });
+
   test('theme leads, then density, then wallpaper — one h2, the rest h3', () => {
     expect(headings(html())).toEqual(EXPECTED_HEADINGS);
   });

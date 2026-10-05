@@ -1,4 +1,5 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { authUsersRows } from './helpers/auth-users-execute';
 import {
   accountMembers,
   projectGitConnections,
@@ -41,9 +42,23 @@ process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
 const { config } = await import('../config');
 
 let branchCreateCalls = 0;
+// Committed manifest text served by the git mock; null = a blank project.
+// A declared agent only gets the project checkout with `repository_access: true`
+// (KRTX-165), so a test that names a non-default agent declares it here.
+let manifestYaml: string | null = null;
+const REVIEWER_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'agents:',
+  '  kortix: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
+  '  reviewer: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
+  '',
+].join('\n');
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStopCalls = 0;
+let deadDaemonRepairs = 0;
+let providerStopHook: (() => void) | null = null;
 let providerStatus = 'stopped';
 let providerStatusSequence: string[] = [];
 let providerStatusAfterStart: string | null = null;
@@ -56,15 +71,17 @@ let providerRecoveryCalls = 0;
 let providerRecoveryEnabled = false;
 let providerRecoveryStatus: 'running' | 'recovering' | 'unavailable' = 'unavailable';
 let providerRecoveryGate: Promise<void> | null = null;
+/** Every call that reaches a sandbox: provider status or ingress, runtime health, OpenCode. */
+let runtimeContactCalls = 0;
 let releaseProviderRecovery: (() => void) | null = null;
 let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
-let activeSessionCount = 0;
+/** The signed daemon endpoint `/start` reads the runtime capabilities from. Null: unresolvable. */
+let runtimeEndpoint: { url: string; headers: Record<string, string> } | null = null;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let lastSessionInsertValues: Record<string, unknown> | null = null;
 const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
 let lifecycleDrainClaimWhere: unknown = null;
-let lastSessionListWhere: unknown = null;
 // `active_since` / `deadline_at` are assigned by a DB trigger, never by
 // application code, so these HTTP-contract fixtures deliberately omit them —
 // none of the routes under test reads either column (only the reaper does, and
@@ -113,9 +130,12 @@ const projectRow: typeof projects.$inferSelect = {
 
 function resetState() {
   branchCreateCalls = 0;
+  manifestYaml = null;
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
   providerStopCalls = 0;
+  deadDaemonRepairs = 0;
+  providerStopHook = null;
   providerStatus = 'stopped';
   providerStatusSequence = [];
   providerStatusAfterStart = null;
@@ -125,13 +145,14 @@ function resetState() {
   releaseProviderStart = null;
   runtimeInspectionHealth = null;
   providerRecoveryCalls = 0;
+  runtimeContactCalls = 0;
   providerRecoveryEnabled = false;
   providerRecoveryStatus = 'unavailable';
   providerRecoveryGate = null;
   releaseProviderRecovery = null;
   computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
-  activeSessionCount = 0;
+  runtimeEndpoint = null;
   lastSessionInsertValues = null;
   lifecycleCommandInserts.length = 0;
   lifecycleDrainClaimWhere = null;
@@ -153,7 +174,7 @@ function resetState() {
     sandboxProvider: 'daytona',
     sandboxId: SESSION_ID,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'provisioning',
     error: null,
@@ -161,10 +182,14 @@ function resetState() {
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -214,7 +239,7 @@ mock.module('../middleware/auth', () => ({
       c.set('agentGrant', {
         agent: 'contract-agent',
         connectors: 'all',
-        kortixCli: 'all',
+        permissions: 'all',
         env: 'all',
       });
       await next();
@@ -286,7 +311,17 @@ mock.module('../projects/git', () => ({
   // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
   // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
   // exercises get no compiled agent config, matching their pre-compiler behavior.
-  readManifestFromRepo: async () => null,
+  readManifestFromRepo: async (_project: unknown, candidates: string[]) =>
+    manifestYaml === null
+      ? null
+      : {
+          path: candidates[0] ?? 'kortix.yaml',
+          content: manifestYaml,
+          rootContent: manifestYaml,
+          sha: 'manifest-sha',
+          candidatePaths: candidates,
+          commit: null,
+        },
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -320,14 +355,6 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
-  ensureFastSandboxImage: async () => ({
-    snapshotName: 'kortix-fast-test',
-    slug: 'default',
-    contentHash: 'f'.repeat(64),
-    built: false,
-    isDefault: true,
-    runtimeProfile: 'fast',
-  }),
   ensureMetaSandboxImage: async () => ({
     snapshotName: 'kortix-meta-test',
     slug: 'meta',
@@ -355,7 +382,14 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
+// that only lists the exports it overrides deletes every other one — and the
+// next export added to `projects/github.ts` becomes
+// `SyntaxError: Export named 'X' not found` in this file, which that change
+// never touched (.claude/skills/learnings/SKILL.md).
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: TEST_GITHUB_OWNER,
     repo:
@@ -418,10 +452,20 @@ mock.module('../projects/github', () => ({
   createBranchRef: async () => undefined,
 }));
 
+// Spread the real module (see the comment on the next mock — the same rule
+// applies here): a bare stub deleted `mintSessionToken`, which the
+// session-open runtime guarantee's dynamic import
+// (legacy-runtime-bootstrap-wiring.ts) now reaches on every `/start`,
+// surfacing as an unrelated 500 attributed to no test.
+const realSessionSandbox = await import('../platform/services/session-sandbox');
 mock.module('../platform/services/session-sandbox', () => ({
+  ...realSessionSandbox,
   provisionSessionSandbox: async (input: any) => {
+    // The env arrives as a promise: provisioning awaits it where it builds the
+    // provider input, as the real function does. Recorded once it is in hand.
+    const extraEnvVars = await input.extraEnvVars;
+    lastProvisionInput = { ...input, extraEnvVars };
     sandboxProvisionCalls += 1;
-    lastProvisionInput = input;
   },
 }));
 
@@ -440,7 +484,15 @@ mock.module('../platform/providers', () => ({
     }
   },
   getProvider: () => ({
+    resolveIngress: async () => {
+      runtimeContactCalls += 1;
+      return {
+        url: `https://preview-${providerStartCalls}.test`,
+        headers: { 'x-preview-token': `preview-${providerStartCalls}` },
+      };
+    },
     getStatus: async () => {
+      runtimeContactCalls += 1;
       if (providerStatusSessionMetadataUpdate && sessionRow) {
         sessionRow = {
           ...sessionRow,
@@ -460,6 +512,7 @@ mock.module('../platform/providers', () => ({
     },
     stop: async () => {
       providerStopCalls += 1;
+      providerStopHook?.();
     },
     remove: async () => undefined,
     ...(providerRecoveryEnabled
@@ -474,26 +527,49 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
+// Count the open path's dead-daemon relaunches instead of running one: the
+// real repair is fire-and-forget against the mocked provider above.
+const realBootstrapWiring = await import('../projects/lib/legacy-runtime-bootstrap-wiring');
+mock.module('../projects/lib/legacy-runtime-bootstrap-wiring', () => ({
+  ...realBootstrapWiring,
+  scheduleLegacyRuntimeBootstrap: (_row: unknown, reason?: string) => {
+    if (reason === 'session-open-dead-daemon') deadDaemonRepairs += 1;
+    return true;
+  },
+}));
+
 const realRuntimeInspection = await import('../projects/runtime-inspection');
 mock.module('../projects/runtime-inspection', () => ({
   ...realRuntimeInspection,
-  inspectSandboxRuntime: async () => runtimeInspectionHealth,
+  inspectSandboxRuntime: async () => {
+    runtimeContactCalls += 1;
+    return runtimeInspectionHealth;
+  },
 }));
 
 mock.module('../projects/opencode-mapping', () => ({
   pickCanonicalRoot: () => 'ses_root_existing',
   resolveRootSessionId: () => 'ses_root_existing',
-  sandboxOpencodeEndpoint: async () => null,
-  listSandboxOpencodeSessions: async () => ({
-    ok: false,
-    reason: opencodeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
-  }),
-  ensureOpencodeSessionPin: async (input: { currentPin: string | null }) => ({
-    pin: input.currentPin ?? 'ses_root_existing',
-    changed: false,
-    reason: opencodeEnsureReason,
-    sessions: [],
-  }),
+  sandboxOpencodeEndpoint: async () => {
+    runtimeContactCalls += 1;
+    return runtimeEndpoint;
+  },
+  listSandboxOpencodeSessions: async () => {
+    runtimeContactCalls += 1;
+    return {
+      ok: false,
+      reason: opencodeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
+    };
+  },
+  ensureOpencodeSessionPin: async (input: { currentPin: string | null }) => {
+    runtimeContactCalls += 1;
+    return {
+      pin: input.currentPin ?? 'ses_root_existing',
+      changed: false,
+      reason: opencodeEnsureReason,
+      sessions: [],
+    };
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -555,20 +631,10 @@ mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async () => null,
 }));
 
-// Pin the concurrent-session cap to 1 regardless of env mode so this test
-// always exercises the rate-limit branch — the real implementation bypasses
-// the cap when KORTIX_BILLING_INTERNAL_ENABLED is false.
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
-  maxConcurrentSessionsForTier: () => 1,
-  resolveAccountSessionLimit: async () => ({
-    tier: 'free',
-    limit: 1,
-    source: 'tier',
-  }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
-  accountEntitledToLlmGateway: async () => true,
   FREE_TIER_PROJECT_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
 }));
@@ -590,6 +656,39 @@ mock.module('../shared/supabase', () => ({
     },
   }),
 }));
+
+/**
+ * Apply a project-session UPDATE to the fixture row. A `metadata` value is a
+ * `projectSessionMetadataMerge()` SQL expression (jsonb `||`), not a plain
+ * object, so evaluate it here exactly like `applySandboxUpdates`: start from
+ * the row's current metadata and assign each JSON parameter on top. This is
+ * what lets a test prove the merge does not drop keys the row already had.
+ */
+function applyProjectSessionUpdates(
+  row: typeof projectSessions.$inferSelect,
+  updates: Partial<typeof projectSessions.$inferSelect>,
+): typeof projectSessions.$inferSelect {
+  let metadata = updates.metadata;
+  if (metadata && typeof metadata === 'object' && 'queryChunks' in metadata) {
+    const query = new PgDialect().sqlToQuery(metadata as unknown as SQL);
+    const merged = { ...((row.metadata ?? {}) as Record<string, unknown>) };
+    for (const param of query.params) {
+      if (typeof param !== 'string' || !param.trimStart().startsWith('{')) continue;
+      try {
+        Object.assign(merged, JSON.parse(param) as Record<string, unknown>);
+      } catch {
+        // Non-JSON SQL parameters are unrelated to metadata merges.
+      }
+    }
+    metadata = merged as unknown as typeof updates.metadata;
+  }
+  return {
+    ...row,
+    ...updates,
+    metadata: metadata === undefined ? row.metadata : metadata,
+    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+  };
+}
 
 function applySandboxUpdates(
   row: SandboxRowFixture,
@@ -624,7 +723,10 @@ mock.module('../shared/db', () => ({
     transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
       return fn(this);
     },
-    execute: async () => [],
+    // Owner identities come from auth.users; every id is the contract user,
+    // matching the auth admin mock above.
+    execute: async (query: unknown) =>
+      authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: (predicate?: unknown) => ({
@@ -638,18 +740,21 @@ mock.module('../shared/db', () => ({
             }
             if (table === projectSecrets) return secretRows;
             if (table === projectSessions) {
-              // Recorded so a test can assert WHICH predicate the list route
-              // built. This mock returns rows regardless of the filter, so
-              // asserting on the response alone would pass even if the filter
-              // were never applied.
-              lastSessionListWhere = predicate ?? null;
-              return Promise.resolve(sessionRow ? [sessionRow] : []);
+              const rows = sessionRow ? [sessionRow] : [];
+              // Thenable AND `.limit()`-able: the session list reads a bounded
+              // keyset PAGE (`.where().orderBy().limit()`), while other callers
+              // still await the ordered read directly.
+              return {
+                limit: async () => rows,
+                then: (
+                  resolve: (value: unknown[]) => unknown,
+                  reject?: (reason: unknown) => unknown,
+                ) => Promise.resolve(rows).then(resolve, reject),
+              };
             }
             return Promise.resolve([]);
           },
           limit: async () => {
-            if (fields && Object.keys(fields).includes('activeCount'))
-              return [{ activeCount: activeSessionCount }];
             if (table === projectSecrets) {
               return secretRows.filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN').slice(0, 1);
             }
@@ -769,7 +874,7 @@ mock.module('../shared/db', () => ({
             sandboxProvider: values.sandboxProvider,
             sandboxId: values.sandboxId,
             sandboxUrl: null,
-            opencodeSessionId: null,
+            runtimeSessionId: null,
             agentName: values.agentName,
             status: values.status,
             error: null,
@@ -777,10 +882,14 @@ mock.module('../shared/db', () => ({
             visibility: values.visibility ?? 'private',
             origin: values.origin ?? 'user',
             originRef: values.originRef ?? null,
+            parentSessionId: values.parentSessionId ?? null,
+            initiatorType: values.initiatorType ?? null,
+            initiatorId: values.initiatorId ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
             connectorBindingsConfigured: values.connectorBindingsConfigured ?? false,
+            labels: values.labels ?? [],
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
@@ -926,11 +1035,7 @@ mock.module('../shared/db', () => ({
                 !('metadata' in updates)
               )
                 return [];
-              sessionRow = {
-                ...sessionRow,
-                ...updates,
-                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-              };
+              sessionRow = applyProjectSessionUpdates(sessionRow, updates);
               return [sessionRow];
             }
             if (table === sessionSandboxes) {
@@ -964,11 +1069,7 @@ mock.module('../shared/db', () => ({
               const rows = await (async () => {
                 if (table === projectSessions) {
                   if (!sessionRow) return [];
-                  sessionRow = {
-                    ...sessionRow,
-                    ...updates,
-                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                  };
+                  sessionRow = applyProjectSessionUpdates(sessionRow, updates);
                   return [sessionRow];
                 }
                 if (table === sessionSandboxes) {
@@ -1012,10 +1113,25 @@ mock.module('../shared/db', () => ({
   },
 }));
 
+// Session delete releases prompt attachment references. The contract DB mock
+// does not model those tables; the release SQL is covered by
+// integration-prompt-attachments.test.ts.
+const releasedAttachmentSessions: string[] = [];
+const realPromptAttachments = await import('../projects/prompt-attachments');
+mock.module('../projects/prompt-attachments', () => ({
+  ...realPromptAttachments,
+  releasePromptAttachmentsForSession: async (input: { sessionId: string }) => {
+    releasedAttachmentSessions.push(input.sessionId);
+    return 0;
+  },
+}));
+
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
-const { applyStoppedState, reconcileSandboxStoppedByExternalId } = await import(
+const { TITLE_SOURCE_MAX_CHARS } = await import('../projects/session-title-generate');
+const { invalidateSandbox, resolveSandboxIngress } = await import('../sandbox-proxy/backend');
+const { reconcileSandboxStoppedByExternalId } = await import(
   '../projects/reaping/sandbox-state-sync'
 );
 
@@ -1193,6 +1309,78 @@ describe('project session API contract', () => {
     expect(created.visibility).toBe('project');
   });
 
+  test('a spawn under a trigger run belongs to that run: initiator, origin and source (KRTX-639)', async () => {
+    // The coordinator a trigger started. Its worker's in-session token resolves
+    // origin `user`, yet nobody attended the run: the worker must carry the
+    // trigger as its starter, the unattended origin, and `agent` as its source.
+    sessionRow = {
+      ...sessionRow!,
+      origin: 'schedule',
+      initiatorType: 'trigger',
+      initiatorId: 'software-factory',
+    };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.parent_session_id).toBe(SESSION_ID);
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.initiator).toEqual({ type: 'trigger', id: 'software-factory', label: 'software-factory' });
+    expect(created.origin).toBe('schedule');
+    expect(created.metadata?.source).toBe('agent');
+    // Ownership does not move: the coordinator's token still owns its worker.
+    expect(lastSessionInsertValues?.createdBy).toBe(sessionRow!.createdBy);
+  });
+
+  test('a spawn under a backend session never inherits `backend` (KRTX-639)', async () => {
+    sessionRow = { ...sessionRow!, origin: 'backend', initiatorType: 'api', initiatorId: 'sa-1' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.origin).toBe('user');
+    expect(created.initiator?.type).toBe('api');
+  });
+
+  test('a browser create is its member’s, from the web; the CLI names itself (KRTX-639)', async () => {
+    const app = createApp();
+    const web = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(web.status).toBe(201);
+    const webSession = await web.json();
+    expect(webSession.parent_session_id).toBeNull();
+    expect(webSession.initiator).toMatchObject({ type: 'member', id: webSession.created_by });
+    expect(webSession.metadata?.source).toBe('ui');
+
+    // A self-reported X-Kortix-Client changes nothing: the API never reads it.
+    const cli = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Kortix-Client': 'cli' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(cli.status).toBe(201);
+    expect((await cli.json()).metadata?.source).toBe('ui');
+  });
+
   test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {
     // Same shared-project-wide parent state as above, but with the Supabase
     // browser auth path (no Authorization header) instead of a session-bound
@@ -1244,10 +1432,10 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: staleReadyWaitStartedAt,
-          opencodeReadyWaitReason: 'unreachable',
-          opencodeUnreachableWaitStartedAt: staleReadyWaitStartedAt,
-          opencodeNotReadyWaitStartedAt: staleReadyWaitStartedAt,
+          runtimeReadyWaitStartedAt: staleReadyWaitStartedAt,
+          runtimeReadyWaitReason: 'unreachable',
+          runtimeUnreachableWaitStartedAt: staleReadyWaitStartedAt,
+          runtimeNotReadyWaitStartedAt: staleReadyWaitStartedAt,
           runtimeIdentityState: 'unavailable',
           runtimeUnavailableReason: 'runtime_not_ready_timeout',
         },
@@ -1258,6 +1446,24 @@ describe('project session API contract', () => {
     ];
     providerStartGate = new Promise<void>((resolve) => {
       releaseProviderStart = resolve;
+    });
+
+    const ingressRecord = {
+      sandboxId: SESSION_ID,
+      externalId: 'original-provider-identity',
+      sessionId: SESSION_ID,
+      agentName: 'kortix',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      status: 'stopped',
+      baseUrl: '',
+      serviceKey: null,
+    };
+    const ingressRequest = { port: 8000, transport: 'http' } as const;
+    invalidateSandbox(ingressRecord.externalId);
+    expect((await resolveSandboxIngress(ingressRecord, ingressRequest)).headers).toEqual({
+      'x-preview-token': 'preview-0',
     });
 
     const won = await resumeStoppedSandbox({
@@ -1280,10 +1486,10 @@ describe('project session API contract', () => {
       },
     });
     const resumedMetadata = sessionSandboxRows[0]!.metadata as Record<string, unknown>;
-    expect(resumedMetadata.opencodeReadyWaitStartedAt).toBeUndefined();
-    expect(resumedMetadata.opencodeReadyWaitReason).toBeUndefined();
-    expect(resumedMetadata.opencodeUnreachableWaitStartedAt).toBeUndefined();
-    expect(resumedMetadata.opencodeNotReadyWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.runtimeReadyWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.runtimeReadyWaitReason).toBeUndefined();
+    expect(resumedMetadata.runtimeUnreachableWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.runtimeNotReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.runtimeIdentityState).toBeUndefined();
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
@@ -1296,6 +1502,9 @@ describe('project session API contract', () => {
     expect(sessionRow).toMatchObject({ status: 'running', error: null });
     expect(sessionSandboxRows[0]?.status).toBe('active');
     expect(computeReopenCalls).toBe(1);
+    expect((await resolveSandboxIngress(ingressRecord, ingressRequest)).headers).toEqual({
+      'x-preview-token': 'preview-1',
+    });
   });
 
   test('provider reconciliation observes a stopped row while an in-place resume is starting', async () => {
@@ -1447,9 +1656,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    // Essentia 2026-08-26: this gate used to answer `false` for ever, so the
-    // stamp could only be cleared by a human pressing Restart (sessions
-    // e06ad0c4 and 9c8749ac). Past the cooldown it is permission to try again.
+    // SampleCo 2026-08-26: this gate used to answer `false` for ever, so the
+    // stamp could only be cleared by a human pressing Restart (two
+    // SampleCo sessions). Past the cooldown it is permission to try again.
     expect(
       await resumeStoppedSandbox({
         sandboxId: SESSION_ID,
@@ -1477,8 +1686,8 @@ describe('project session API contract', () => {
   });
 
   test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
-    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
-    // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
+    // SampleCo 2026-08-26, one session on an E2B box. Attempt 1's
+    // `runtimeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
     // boot was judged against a 10-minute cap that had already run ~7 minutes.
     // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
     // turn at 13:34:49.216.
@@ -1503,10 +1712,10 @@ describe('project session API contract', () => {
           runtimeStartFailedAt: attempt1,
           runtimeStartRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
           // Attempt 1's clocks, which nothing used to clear.
-          opencodeBootWaitFirstSeenAt: attempt1,
-          opencodeNotReadyWaitStartedAt: attempt1,
-          opencodeReadyWaitReason: 'not_ready',
-          opencodeBootPhase: 'config-deps|opencode=starting',
+          runtimeBootWaitFirstSeenAt: attempt1,
+          runtimeNotReadyWaitStartedAt: attempt1,
+          runtimeReadyWaitReason: 'not_ready',
+          runtimeBootPhase: 'config-deps|opencode=starting',
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -1527,117 +1736,15 @@ describe('project session API contract', () => {
 
     const claimed = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
     // Every readiness clock is gone: attempt 2 boots against a clean budget.
-    expect(claimed.opencodeBootWaitFirstSeenAt).toBeUndefined();
-    expect(claimed.opencodeBootPhase).toBeUndefined();
-    expect(claimed.opencodeNotReadyWaitStartedAt).toBeUndefined();
-    expect(claimed.opencodeReadyWaitReason).toBeUndefined();
+    expect(claimed.runtimeBootWaitFirstSeenAt).toBeUndefined();
+    expect(claimed.runtimeBootPhase).toBeUndefined();
+    expect(claimed.runtimeNotReadyWaitStartedAt).toBeUndefined();
+    expect(claimed.runtimeReadyWaitReason).toBeUndefined();
     // …and the escalation accounting survives, unlike a human Restart.
     expect(claimed.runtimeStartFailureCount).toBe(2);
     expect(claimed.runtimeStartFailedAt).toBe(attempt1);
     // The claim is live, so /start reports a wake rather than a stamp.
     expect(typeof claimed.runtimeWakeId).toBe('string');
-  });
-
-  test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
-    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'platinum',
-        externalId: 'platinum-single-flight-wake',
-        baseUrl: null,
-        status: 'stopped',
-        config: {},
-        metadata: { initStatus: 'ready' },
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-01T00:00:00Z'),
-        updatedAt: new Date('2026-01-01T00:00:00Z'),
-      },
-    ];
-    providerStartGate = new Promise<void>((resolve) => {
-      releaseProviderStart = resolve;
-    });
-    const input = {
-      sandboxId: SESSION_ID,
-      sessionId: SESSION_ID,
-      accountId: ACCOUNT_ID,
-      provider: 'platinum',
-      externalId: 'platinum-single-flight-wake',
-      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
-    };
-
-    const [first, second] = await Promise.all([
-      resumeStoppedSandbox(input),
-      resumeStoppedSandbox(input),
-    ]);
-    await flushUntil(() => providerStartCalls > 0);
-
-    expect([first, second].filter(Boolean)).toHaveLength(1);
-    expect(providerStartCalls).toBe(1);
-    expect(computeReopenCalls).toBe(0);
-
-    providerStatus = 'running';
-    releaseProviderStart?.();
-    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
-    expect(computeReopenCalls).toBe(1);
-  });
-
-  test('a manual stop wins when provider start resolves after the stop', async () => {
-    sessionRow = {
-      ...sessionRow!,
-      status: 'stopped',
-      error: null,
-    };
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'platinum',
-        externalId: 'platinum-cancelled-wake',
-        baseUrl: null,
-        status: 'stopped',
-        config: {},
-        metadata: { initStatus: 'ready' },
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-01T00:00:00Z'),
-        updatedAt: new Date('2026-01-01T00:00:00Z'),
-      },
-    ];
-    providerStartGate = new Promise<void>((resolve) => {
-      releaseProviderStart = resolve;
-    });
-
-    expect(
-      await resumeStoppedSandbox({
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        provider: 'platinum',
-        externalId: 'platinum-cancelled-wake',
-        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
-      }),
-    ).toBe(true);
-    await applyStoppedState({
-      sandboxId: SESSION_ID,
-      sessionId: SESSION_ID,
-      externalId: 'platinum-cancelled-wake',
-      // Top-level, not nested in `metadata`: the patch sets `stopReason` from
-      // the required field AFTER spreading `metadata`, so a nested one is
-      // overwritten and `JSON.stringify` drops the resulting undefined.
-      stopReason: 'manual',
-      metadata: { stoppedBy: USER_ID },
-    });
-    releaseProviderStart?.();
-    await flushUntil(() => providerStopCalls === 1);
-
-    expect(providerStopCalls).toBe(1);
-    expect(sessionSandboxRows[0]?.status).toBe('stopped');
-    expect(sessionRow?.status).toBe('stopped');
   });
 
   test('upserts and lists project secrets without exposing secret values', async () => {
@@ -1671,6 +1778,8 @@ describe('project session API contract', () => {
     expect(gitAuthSecret).toBeUndefined();
     expect(Array.isArray(listed.required)).toBe(true);
     expect(Array.isArray(listed.optional)).toBe(true);
+    // A dashboard caller is not an agent: nothing narrows what it lists.
+    expect(listed.agent_scope).toBeNull();
 
     const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
       method: 'DELETE',
@@ -1710,6 +1819,9 @@ describe('project session API contract', () => {
           configured: true,
         }),
       ],
+      // The caller's own grant, so a client can say "not granted to this
+      // agent" instead of "missing" for a name the list omits.
+      agent_scope: { agent: 'contract-agent', secrets: 'all' },
     });
   });
 
@@ -1842,31 +1954,8 @@ describe('project session API contract', () => {
     expect(patBody).not.toHaveProperty('origin_ref');
   });
 
-  test('rejects client-supplied trigger authorization metadata at session create', async () => {
-    const app = createApp();
-    for (const [key, value] of [
-      ['source', 'trigger:scheduler'],
-      ['trigger_kind', 'git'],
-      ['trigger_slug', 'forged-trigger'],
-    ] as const) {
-      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'daytona',
-          base_ref: 'main',
-          metadata: { [key]: value },
-        }),
-      });
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({
-        error: `metadata key is server-managed: ${key}`,
-      });
-    }
-  });
-
   test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
-    sessionRow!.metadata = { workspace_mode: 'runtime' };
+    sessionRow!.metadata = { repository_access: false };
     sessionSandboxRows = [
       {
         sandboxId: SESSION_ID,
@@ -1913,30 +2002,6 @@ describe('project session API contract', () => {
       expect(await crRes.json()).toMatchObject({
         message: 'session workspace does not allow repository access',
       });
-    }
-  });
-
-  test('rejects removed session attribution fields', async () => {
-    const app = createApp();
-
-    for (const body of [
-      {
-        provider: 'daytona',
-        base_ref: 'main',
-        end_user_ref: 'legacy-reference',
-      },
-      { provider: 'daytona', base_ref: 'main', origin_ref: 'legacy-reference' },
-    ]) {
-      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      expect(response.status).toBe(400);
     }
   });
 
@@ -2060,6 +2125,7 @@ describe('project session API contract', () => {
   });
 
   test('backend overrides for model, secrets, and agent apply at boot', async () => {
+    manifestYaml = REVIEWER_MANIFEST;
     const app = createApp();
 
     for (const [name, value] of [
@@ -2130,25 +2196,26 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_AGENT_NAME).toBe('reviewer');
   });
 
-  test('legacy attribution query parameters do not filter session inventory', async () => {
+  test('create takes the model under its neutral name `model`', async () => {
     const app = createApp();
-    const renderWhere = () => new PgDialect().sqlToQuery(lastSessionListWhere as SQL);
-
-    lastSessionListWhere = null;
-    const first = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=legacy-reference`,
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        model: 'anthropic/claude-opus-4-8',
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { metadata: Record<string, unknown> }).metadata.opencode_model).toBe(
+      'anthropic/claude-opus-4-8',
     );
-    expect(first.status).toBe(200);
-    expect(renderWhere().sql).not.toContain('origin_ref');
-    expect(renderWhere().params).not.toContain('legacy-reference');
-
-    lastSessionListWhere = null;
-    const second = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?origin_ref=legacy-reference`,
-    );
-    expect(second.status).toBe(200);
-    expect(renderWhere().sql).not.toContain('origin_ref');
-    expect(renderWhere().params).not.toContain('legacy-reference');
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_MODEL).toBe('anthropic/claude-opus-4-8');
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
@@ -2211,99 +2278,6 @@ describe('project session API contract', () => {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(404);
-  });
-
-  test('rejects reserved platform secret names', async () => {
-    const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'KORTIX_TOKEN',
-        value: 'should-not-shadow-platform-auth',
-      }),
-    });
-
-    expect(res.status).toBe(400);
-    expect(secretRows).toHaveLength(0);
-  });
-
-  test('rejects server-managed and unknown PATCH fields', async () => {
-    const app = createApp();
-    const forbiddenBodies: Array<{
-      body: Record<string, unknown>;
-      message: string;
-    }> = [
-      {
-        body: { status: 'running' },
-        message: 'field is server-managed: status',
-      },
-      {
-        body: { sandbox_url: 'https://sandbox.example' },
-        message: 'field is server-managed: sandbox_url',
-      },
-      {
-        body: { sandboxUrl: 'https://sandbox.example' },
-        message: 'field is server-managed: sandboxUrl',
-      },
-      {
-        body: { error: 'client-owned' },
-        message: 'field is server-managed: error',
-      },
-      {
-        body: { metadata: { deletedAt: '2026-07-13T00:00:00Z' } },
-        message: 'metadata key is server-managed: deletedAt',
-      },
-      {
-        body: { metadata: { deletedBy: 'user-x' } },
-        message: 'metadata key is server-managed: deletedBy',
-      },
-      {
-        // metadata.name is owned by the title generator; planting a non
-        // placeholder value pre-empts titling forever. Renaming is `name` →
-        // metadata.custom_name.
-        body: { metadata: { name: 'zzz' } },
-        message: 'metadata key is server-managed: name',
-      },
-      {
-        body: { metadata: { title_source: 'zzz' } },
-        message: 'metadata key is server-managed: title_source',
-      },
-      {
-        body: { metadata: { source: 'trigger:scheduler' } },
-        message: 'metadata key is server-managed: source',
-      },
-      {
-        body: { metadata: { trigger_kind: 'git' } },
-        message: 'metadata key is server-managed: trigger_kind',
-      },
-      {
-        body: { metadata: { trigger_slug: 'forged-trigger' } },
-        message: 'metadata key is server-managed: trigger_slug',
-      },
-      {
-        body: { metadata: { workspace_mode: 'branch' } },
-        message: 'metadata key is server-managed: workspace_mode',
-      },
-      {
-        body: { metadata: { sandbox_slug: 'default' } },
-        message: 'metadata key is server-managed: sandbox_slug',
-      },
-      {
-        body: { random: 'field' },
-        message: 'field is not user-editable: random',
-      },
-    ];
-
-    for (const { body, message } of forbiddenBodies) {
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      expect(res.status).toBe(400);
-      expect(await res.json()).toMatchObject({ error: message });
-    }
   });
 
   test('returns deterministic read errors for invalid or missing sessions and pending sandboxes', async () => {
@@ -2376,6 +2350,40 @@ describe('project session API contract', () => {
     const missingSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
     expect(missingSession.status).toBe(404);
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
+  });
+
+  // A list or detail read renders rows. It never reaches a sandbox: the sidebar
+  // polls these routes, and one runtime round-trip per session made them slow.
+  test('session list and detail read rows only, even for a running sandbox', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, status: 'running', runtimeSessionId: 'ses_root_existing' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'running-provider-identity',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    for (const path of [
+      `/v1/projects/${PROJECT_ID}/sessions`,
+      `/v1/projects/${PROJECT_ID}/sessions?scope=project`,
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+    ]) {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+    }
+    expect(runtimeContactCalls).toBe(0);
   });
 
   test('dashboard start leaves fresh no-external-id provisioning rows alone', async () => {
@@ -2681,54 +2689,13 @@ describe('project session API contract', () => {
     expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
   });
 
-  test('dashboard start of an existing sandbox wakes in place and never allocates a second runtime', async () => {
+  test('dashboard start of an existing sandbox wakes it in place and does not expose it while waking', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
-    };
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'daytona',
-        externalId: 'box-existing',
-        baseUrl: null,
-        status: 'active',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    providerStatus = 'stopped';
-
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
-      method: 'POST',
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({
-      stage: 'starting',
-      agent_name: 'default',
-      retriable: true,
-    });
-    expect(providerStartCalls).toBe(1);
-    expect(sandboxProvisionCalls).toBe(0);
-    expect(branchCreateCalls).toBe(0);
-  });
-
-  test('dashboard start does not expose a stale sandbox while the provider is waking', async () => {
-    const app = createApp();
-    sessionRow = {
-      ...sessionRow!,
-      sandboxProvider: 'daytona',
-      status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2762,10 +2729,11 @@ describe('project session API contract', () => {
     });
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
+    expect(branchCreateCalls).toBe(0);
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): a box
+  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): a box
   // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
   // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
   // This endpoint is polled every second and Daytona folds `stopping` and
@@ -2780,7 +2748,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2840,7 +2808,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2903,7 +2871,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2954,14 +2922,14 @@ describe('project session API contract', () => {
   // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
   // provider lost the box — the provider just answered `stopped`, which proves
   // the box exists. The row parks retriable instead of being preserved as
-  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  // "computer was lost".
   test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3007,13 +2975,67 @@ describe('project session API contract', () => {
     expect(parkedMetadata.stopReason).toBe('runtime_wake_failed');
   });
 
+  // The client assumes every capability until it knows the list. `/start`
+  // hands it over with `ready`, before the client's own first health probe.
+  test('a ready start carries what the runtime serves, read from the daemon health', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', runtimeSessionId: 'ses_root_existing' };
+    const box = (externalId: string): typeof sessionSandboxRows => [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: { initStatus: 'ready', initSucceededAt: new Date(Date.now() - 2 * 60 * 1000).toISOString() },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    const start = () => app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    const realFetch = globalThis.fetch;
+    let health: unknown = { status: 'ok', capabilities: ['runtime.turns.v1', 'session.subagents'] };
+    globalThis.fetch = (async (url: unknown) =>
+      String(url).endsWith('/kortix/health')
+        ? Response.json(health)
+        : new Response(null, { status: 404 })) as unknown as typeof fetch;
+    try {
+      runtimeEndpoint = { url: 'https://daemon.test', headers: {} };
+      sessionSandboxRows = box('box-capabilities');
+      expect(await (await start()).json()).toMatchObject({
+        stage: 'ready',
+        capabilities: ['runtime.turns.v1', 'session.subagents'],
+      });
+
+      // A daemon that lists nothing: unknown, not "serves nothing". No field.
+      health = { status: 'ok' };
+      sessionSandboxRows = box('box-no-capability-list');
+      expect(await (await start()).json()).not.toHaveProperty('capabilities');
+
+      // The health read fails: the start still answers ready, without the field.
+      runtimeEndpoint = null;
+      sessionSandboxRows = box('box-health-unreadable');
+      const unreadable = await (await start()).json();
+      expect(unreadable).toMatchObject({ stage: 'ready' });
+      expect(unreadable).not.toHaveProperty('capabilities');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3065,7 +3087,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3115,7 +3137,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'stopped',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3168,7 +3190,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
@@ -3220,7 +3242,7 @@ describe('project session API contract', () => {
       },
     });
     expect(sessionRow?.status).toBe('stopped');
-    expect(sessionRow?.opencodeSessionId).toBe('ses_root_existing');
+    expect(sessionRow?.runtimeSessionId).toBe('ses_root_existing');
   });
 
   // The wake cooldown is a "the provider did not confirm this wake, retry
@@ -3235,7 +3257,7 @@ describe('project session API contract', () => {
   // cooldown of the wake that just failed — so the cooldown must yield to it.
   test('a preserved-unavailable identity is not reported as a retryable wake cooldown', async () => {
     const app = createApp();
-    sessionRow = { ...sessionRow!, status: 'stopped', opencodeSessionId: 'ses_root_existing' };
+    sessionRow = { ...sessionRow!, status: 'stopped', runtimeSessionId: 'ses_root_existing' };
     sessionSandboxRows = [
       {
         sandboxId: SESSION_ID,
@@ -3284,7 +3306,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3346,7 +3368,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3397,12 +3419,16 @@ describe('project session API contract', () => {
     expect(providerRecoveryCalls).toBe(1);
   });
 
+  // Route wiring only: a refused recovery accept is reported as cancelled and
+  // opens no meter. The DB shim refuses the accept here; the real guards are
+  // proven on PostgreSQL in `integration-session-status-transitions.test.ts`
+  // ("a delete that lands during recovery wins over the accept").
   test('explicit deletion winning during recovery prevents status and billing resurrection', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3462,13 +3488,115 @@ describe('project session API contract', () => {
   // showed the box alive. A failed boot on a present box parks retriable and
   // stops the provider box, so a DB-stopped row cannot keep burning unmetered
   // compute.
-  test('dashboard start parks (not preserves) a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  // 2026-09-28 prod: a Platinum daemon exited, pt-init never relaunched it, and
+  // every /start parked the box and resumed the same dead snapshot for 18 h.
+  test('dashboard start relaunches a dead daemon on a running Platinum box instead of parking it', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', runtimeSessionId: 'ses_root_existing' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-daemon-dead',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'unreachable',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'starting', retriable: true, reason: 'runtime_updating' });
+    expect(deadDaemonRepairs).toBe(1);
+    expect(providerStopCalls).toBe(0);
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(typeof (sessionSandboxRows[0]?.metadata as Record<string, unknown>).deadDaemonRepairRequestedAt).toBe('string');
+
+    // The next poll waits for that relaunch; it neither parks nor asks again.
+    const again = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(await again.json()).toMatchObject({ stage: 'starting', reason: 'runtime_updating' });
+    expect(deadDaemonRepairs).toBe(1);
+    expect(providerStopCalls).toBe(0);
+  });
+
+  test('a probe miss on a box proven this boot keeps answering ready: never starting, never parked', async () => {
+    // prod 2026-09-29: ~18 min of provider-ingress timeouts to a healthy daemon
+    // flipped a live session to `starting` and asked for a relaunch mid-answer.
+    const app = createApp();
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', runtimeSessionId: 'ses_root_existing' };
+    const proven = (extra: Record<string, unknown> = {}): Array<SandboxRowFixture> => [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-ingress-flaky',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          runtimeProvenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'unreachable',
+          ...extra,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    sessionSandboxRows = proven();
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(await res.json()).toMatchObject({ stage: 'ready', retriable: false, opencode_session_id: 'ses_root_existing' });
+    // A daemon that really died still gets its relaunch (confirmed in-box first).
+    expect(deadDaemonRepairs).toBe(1);
+    expect(providerStopCalls).toBe(0);
+
+    // Even after a failed relaunch — the park case for an unproven box — a
+    // proven box keeps serving and is never parked on a probe miss.
+    sessionSandboxRows = proven({
+      deadDaemonRepairRequestedAt: new Date(Date.now() - 20_000).toISOString(),
+      legacyRuntimeBootstrap: {
+        state: 'failed',
+        attempts: 1,
+        manifestBuild: 1,
+        lastAttemptAt: new Date(Date.now() - 15_000).toISOString(),
+        finishedAt: new Date(Date.now() - 10_000).toISOString(),
+      },
+    });
+    const again = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(await again.json()).toMatchObject({ stage: 'ready', opencode_session_id: 'ses_root_existing' });
+    expect(providerStopCalls).toBe(0);
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+  });
+
+  test('dashboard start parks (not preserves) a running sandbox whose relaunch could not revive its runtime', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3484,8 +3612,17 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
-          opencodeReadyWaitReason: 'unreachable',
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'unreachable',
+          // The open already asked for a relaunch and it failed: only now park.
+          deadDaemonRepairRequestedAt: new Date(Date.now() - 20_000).toISOString(),
+          legacyRuntimeBootstrap: {
+            state: 'failed',
+            attempts: 1,
+            manifestBuild: 1,
+            lastAttemptAt: new Date(Date.now() - 19_000).toISOString(),
+            finishedAt: new Date(Date.now() - 10_000).toISOString(),
+          },
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -3517,7 +3654,7 @@ describe('project session API contract', () => {
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
 
     // The park stamps a retry clock, so the immediate re-poll is a COOLDOWN,
-    // not the 10-hour `stage:"failed"` replay session 9c8749ac lived in.
+    // not the 10-hour `stage:"failed"` replay a SampleCo session lived in.
     expect(typeof parkedMetadata.runtimeStartRetryAfterAt).toBe('string');
     expect(parkedMetadata.runtimeStartFailureCount).toBe(1);
 
@@ -3543,7 +3680,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3558,8 +3695,8 @@ describe('project session API contract', () => {
         config: {},
         metadata: {
           initStatus: 'ready',
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
-          opencodeReadyWaitReason: 'not_ready',
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'not_ready',
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -3577,8 +3714,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ stage: 'starting', reason: 'unreachable' });
     const metadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
-    expect(metadata.opencodeReadyWaitReason).toBe('unreachable');
-    expect(Date.parse(String(metadata.opencodeReadyWaitStartedAt))).toBeGreaterThanOrEqual(before);
+    expect(metadata.runtimeReadyWaitReason).toBe('unreachable');
+    expect(Date.parse(String(metadata.runtimeReadyWaitStartedAt))).toBeGreaterThanOrEqual(before);
     expect(providerStopCalls).toBe(0);
   });
 
@@ -3588,7 +3725,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3671,7 +3808,8 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
+      sandboxUrl: 'https://box-restart-restorable.test',
     };
     sessionSandboxRows = [
       {
@@ -3712,9 +3850,11 @@ describe('project session API contract', () => {
       externalId: 'box-restart-restorable',
       status: 'provisioning',
     });
+    // The box keeps its identity, so the session keeps its runtime URL.
     expect(sessionRow).toMatchObject({
       status: 'provisioning',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
+      sandboxUrl: 'https://box-restart-restorable.test',
     });
   });
 
@@ -3723,7 +3863,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3766,7 +3906,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3804,12 +3944,74 @@ describe('project session API contract', () => {
     });
   });
 
+  test('a restart that loses its claim mid-flight stops and says so in a warning', async () => {
+    // SESS-9 (2026-09): a concurrent writer overwrote `metadata` without the
+    // restart claim. The detached restart then returned without starting the
+    // box and without a log line, so the row sat in `provisioning` for minutes
+    // with nothing to diagnose it by.
+    const { logger } = await import('../lib/logger');
+    const warn = spyOn(logger, 'warn');
+    try {
+      const app = createApp();
+      sessionRow = { ...sessionRow!, status: 'running', runtimeSessionId: 'ses_root_existing' };
+      sessionSandboxRows = [
+        {
+          sandboxId: SESSION_ID,
+          sessionId: SESSION_ID,
+          accountId: ACCOUNT_ID,
+          projectId: PROJECT_ID,
+          provider: 'platinum',
+          externalId: 'box-restart-claim-lost',
+          baseUrl: null,
+          status: 'active',
+          config: {},
+          metadata: {},
+          lastUsedAt: null,
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+          updatedAt: new Date('2026-01-02T00:00:00Z'),
+        },
+      ];
+      providerStatus = 'running';
+      providerStopHook = () => {
+        const { runtimeRestartId: _lost, ...rest } = (sessionSandboxRows[0]!.metadata ?? {}) as Record<
+          string,
+          unknown
+        >;
+        sessionSandboxRows[0] = { ...sessionSandboxRows[0]!, metadata: rest };
+      };
+
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(202);
+      const operationId = (await res.json()).operation_id;
+      await flushUntil(() =>
+        warn.mock.calls.some(([message]) => String(message).includes('lost the restart claim')),
+      );
+
+      const abandon = warn.mock.calls.find(([message]) =>
+        String(message).includes('lost the restart claim'),
+      );
+      expect(abandon?.[1]).toMatchObject({
+        session_id: SESSION_ID,
+        external_id: 'box-restart-claim-lost',
+        restart_id: operationId,
+        step: 'after_stop',
+        current_restart_id: null,
+      });
+      expect(providerStopCalls).toBe(1);
+      expect(providerStartCalls).toBe(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('restart preserves identity when provider accepts start but then reports removed', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3851,7 +4053,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
@@ -3937,7 +4139,7 @@ describe('project session API contract', () => {
     expect(drainClaim.params).toContain(`prompt:${SESSION_ID}:pending-first`);
   });
 
-  test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {
+  test('a pending prompt with a staged ZIP rides the durable row; an empty one makes no row', async () => {
     const app = createApp();
     const withParts = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -3945,14 +4147,14 @@ describe('project session API contract', () => {
       body: JSON.stringify({
         provider: 'daytona',
         pending_prompt: {
-          text: 'Look at this screenshot.',
+          text: 'Inspect the bundle.',
           parts: [
-            { type: 'text', text: 'Look at this screenshot.' },
+            { type: 'text', text: 'Inspect the bundle.' },
             {
               type: 'file',
-              mime: 'image/png',
-              url: 'data:image/png;base64,AAAA',
-              filename: 'shot.png',
+              mime: 'application/zip',
+              url: 'data:application/zip;base64,UEsDBA==',
+              filename: 'bundle.zip',
             },
           ],
         },
@@ -3961,8 +4163,13 @@ describe('project session API contract', () => {
     expect(withParts.status).toBe(201);
     expect(lifecycleCommandInserts.length).toBe(1);
     expect((lifecycleCommandInserts[0] as any).payload.parts).toEqual([
-      { type: 'text', text: 'Look at this screenshot.' },
-      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AAAA', filename: 'shot.png' },
+      { type: 'text', text: 'Inspect the bundle.' },
+      {
+        type: 'file',
+        mime: 'application/zip',
+        filename: 'bundle.zip',
+        url: 'data:application/zip;base64,UEsDBA==',
+      },
     ]);
 
     lifecycleCommandInserts.length = 0;
@@ -3979,6 +4186,34 @@ describe('project session API contract', () => {
     });
     expect(blank.status).toBe(201);
     expect(lifecycleCommandInserts.length).toBe(0);
+  });
+
+  test('session create rejects a remote ZIP pending prompt', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: {
+          text: 'Inspect the bundle.',
+          parts: [
+            { type: 'text', text: 'Inspect the bundle.' },
+            {
+              type: 'file',
+              mime: 'application/zip',
+              filename: 'bundle.zip',
+              url: 'https://files.example.test/bundle.zip',
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'pending_prompt: file "bundle.zip" must be uploaded before it can be sent',
+    });
   });
 
   test('allows only user-owned PATCH fields', async () => {
@@ -4002,6 +4237,75 @@ describe('project session API contract', () => {
       custom: 'ok',
       custom_name: 'Human name',
     });
+  });
+
+  // A name supplied at create is an EXPLICIT user name, so it must land in the
+  // same override key a rename uses (`metadata.custom_name`) — never the
+  // `metadata.name` auto-title slot, which the runtime title outranks on the
+  // display chain and the first prompt is allowed to fill.
+  test('a session created with a name stores it as the explicit override', async () => {
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'default',
+        name: 'My Explicit Session',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const metadata = lastSessionInsertValues?.metadata as Record<string, unknown>;
+    expect(metadata.custom_name).toBe('My Explicit Session');
+    expect(metadata).not.toHaveProperty('name');
+    // The display chain resolves the explicit name, and it is exposed as
+    // `custom_name` so a client can tell an override from an auto title.
+    expect(body.custom_name).toBe('My Explicit Session');
+    expect(body.name).toBe('My Explicit Session');
+  });
+
+  // The warm create runs `createProjectSession` with an empty body: no prompt,
+  // so no title source. The first real prompt titles the session later.
+  test('a warm session is created without a prompt or a title source', async () => {
+    const app = createApp();
+    sessionRow = null;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/warm`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ reused: false });
+    const metadata = lastSessionInsertValues?.metadata as Record<string, unknown>;
+    expect(metadata.warm).toBe(true);
+    for (const key of ['initial_prompt', 'pending_prompt', 'title_source', 'name']) {
+      expect(metadata).not.toHaveProperty(key);
+    }
+    expect(lifecycleCommandInserts).toEqual([]);
+  });
+
+  test('clients cannot forge or change server-owned warm placement intent', async () => {
+    const app = createApp();
+    const before = sessionRow;
+    for (const [method, path] of [
+      ['POST', `/v1/projects/${PROJECT_ID}/sessions`],
+      ['PATCH', `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`],
+    ] as const) {
+      const res = await app.request(path, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ metadata: { warmSandboxLocation: 'us-east' } }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'metadata key is server-managed: warmSandboxLocation' });
+    }
+    expect(sessionRow).toBe(before);
+    expect(branchCreateCalls).toBe(0);
   });
 
   test('rejects unknown providers before creating a git branch', async () => {
@@ -4096,6 +4400,7 @@ describe('project session API contract', () => {
   });
 
   test('inherits the project environment branch and preserves the session/sandbox invariant', async () => {
+    manifestYaml = REVIEWER_MANIFEST;
     projectRow.defaultBranch = 'dev';
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -4110,8 +4415,8 @@ describe('project session API contract', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.headers.get('X-RateLimit-Limit')).toBe('1');
-    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
+    expect(res.headers.get('X-RateLimit-Limit')).toBeNull();
+    expect(res.headers.get('X-RateLimit-Remaining')).toBeNull();
     const body = await res.json();
     expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.session_id).toBe(body.sandbox_id);
@@ -4124,7 +4429,7 @@ describe('project session API contract', () => {
     await flushUntil(() => branchCreateCalls === 1);
     expect(branchCreateCalls).toBe(1);
     expect(sessionRow?.baseRef).toBe('dev');
-    expect(sessionRow?.opencodeSessionId).toBeNull();
+    expect(sessionRow?.runtimeSessionId).toBeNull();
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
@@ -4133,10 +4438,31 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });
 
+  // A channel bakes a rendered envelope into `initial_prompt` and sends the
+  // person's words as `title_source`. The create stores those words, capped, so
+  // a later titling retry (which only sees the envelope) titles from them.
+  test('stores the create-time title_source, capped, beside the rendered prompt', async () => {
+    const app = createApp();
+    const words = `bump the node version in CI ${'x'.repeat(TITLE_SOURCE_MAX_CHARS)}`;
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        initial_prompt: `Rendered channel envelope\nMessage:\n${words}`,
+        title_source: words,
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const metadata = lastSessionInsertValues?.metadata as Record<string, unknown>;
+    expect(metadata.title_source).toBe(words.slice(0, TITLE_SOURCE_MAX_CHARS));
+    expect(metadata.initial_prompt).toStartWith('Rendered channel envelope');
+  });
+
   test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {
     const app = createApp();
     const runtimeContext = {
-      workspace_id: 'veyris_org_123',
+      workspace_id: 'org_context_123',
       'wrapper.locale': 'de',
       licensed: true,
       risk_score: 0.25,
@@ -4159,7 +4485,7 @@ describe('project session API contract', () => {
     const env = lastProvisionInput?.extraEnvVars ?? {};
     expect(JSON.parse(env.KORTIX_SESSION_CONTEXT!)).toEqual(runtimeContext);
     expect(env).not.toHaveProperty('workspace_id');
-    expect(env).not.toHaveProperty('VEYRIS_WORKSPACE_ID');
+    expect(env).not.toHaveProperty('WRAPPER_WORKSPACE_ID');
   });
 
   test('rejects invalid runtime_context before persisting or provisioning a session', async () => {
@@ -4184,14 +4510,20 @@ describe('project session API contract', () => {
     }
   });
 
-  test('rejects unknown session-create fields at the HTTP boundary', async () => {
+  // The create schema is strict. The removed attribution fields are unknown
+  // fields like any other.
+  test.each([
+    { field: 'arbitrary_env', body: { initial_prompt: 'noop', arbitrary_env: 'nope' } },
+    { field: 'end_user_ref', body: { base_ref: 'main', end_user_ref: 'legacy-reference' } },
+    { field: 'origin_ref', body: { base_ref: 'main', origin_ref: 'legacy-reference' } },
+  ])('rejects the unknown session-create field $field at the HTTP boundary', async ({ body }) => {
     const app = createApp();
     sessionRow = null;
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initial_prompt: 'noop', arbitrary_env: 'nope' }),
+      body: JSON.stringify(body),
     });
 
     expect(res.status).toBe(400);
@@ -4202,7 +4534,7 @@ describe('project session API contract', () => {
 
   test('cold /start restores durable runtime_context into a replacement runtime', async () => {
     const app = createApp();
-    const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
+    const context = { workspace_id: 'org_context_cold', locale: 'fr' };
     runtimeContextRows = [
       {
         sessionId: SESSION_ID,
@@ -4215,7 +4547,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_existing',
+      runtimeSessionId: 'ses_existing',
     };
     sessionSandboxRows = [];
 
@@ -4229,7 +4561,7 @@ describe('project session API contract', () => {
 
   test('replacement restart restores durable runtime_context', async () => {
     const app = createApp();
-    const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
+    const context = { workspace_id: 'org_context_restart', locale: 'en' };
     runtimeContextRows = [
       {
         sessionId: SESSION_ID,
@@ -4242,7 +4574,8 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_existing',
+      runtimeSessionId: 'ses_existing',
+      sandboxUrl: 'https://replaced-box.test',
     };
     sessionSandboxRows = [];
 
@@ -4252,6 +4585,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(202);
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
+    // A replacement runtime has a new URL. The old one must not be served.
+    expect(sessionRow?.sandboxUrl).toBeNull();
   });
 
   test('explicit restart replaces an unmaterialized capacity failure without auto-sending its prompt', async () => {
@@ -4341,6 +4676,7 @@ describe('project session API contract', () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(sessionRow?.status).toBe('stopped');
     expect(sessionRow?.branchName).toBe(SESSION_ID);
+    expect(releasedAttachmentSessions).toContain(SESSION_ID);
 
     sessionRow = null;
     const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
@@ -4350,8 +4686,7 @@ describe('project session API contract', () => {
     expect(await missing.json()).toMatchObject({ error: 'Not found' });
   });
 
-  test('rejects concurrent session cap before creating a git branch', async () => {
-    activeSessionCount = 1;
+  test('never refuses a create for the number of sessions already running', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -4359,14 +4694,8 @@ describe('project session API contract', () => {
       body: JSON.stringify({ provider: 'daytona' }),
     });
 
-    expect(res.status).toBe(429);
-    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
-    expect(await res.json()).toMatchObject({
-      code: 'concurrent_session_limit',
-      limit: 1,
-      active_sessions: 1,
-    });
-    expect(branchCreateCalls).toBe(0);
-    expect(sandboxProvisionCalls).toBe(0);
+    expect(res.status).toBe(201);
+    expect(res.headers.get('X-RateLimit-Remaining')).toBeNull();
+    expect(await res.json()).not.toHaveProperty('code', 'concurrent_session_limit');
   });
 });

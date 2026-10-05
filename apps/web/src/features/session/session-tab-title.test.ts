@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SESSION_TAB_TITLE_MAX_NAME, sessionTabTitle, sessionTabTitleFromSession } from './session-tab-title';
 import type { ProjectSession } from '@kortix/sdk';
+import {
+  SESSION_TAB_TITLE_MAX_NAME,
+  sessionTabTitle,
+  sessionTabTitleFromSession,
+} from './session-tab-title';
 
 const session = (over: Partial<ProjectSession> = {}) =>
   ({ session_id: 'bb9f9ed2-52bc-4db7-b41f-97656d6ff599', ...over }) as ProjectSession;

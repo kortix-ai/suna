@@ -5,6 +5,10 @@
  * the inbox always reads fresh.
  */
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REVIEW_MOCK_TRANSLATION_KEYS } from '@/i18n/review-mock-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 import type { ReviewItem } from './types';
 
 const now = Date.now();
@@ -411,3 +415,11 @@ export const MOCK_ITEMS: ReviewItem[] = [
     },
   },
 ];
+
+export function getLocalizedMockItems(tI18nComplete: UiTranslator): ReviewItem[] {
+  return localizeUiCatalog(
+    { batchChildren, items: MOCK_ITEMS },
+    tI18nComplete,
+    REVIEW_MOCK_TRANSLATION_KEYS,
+  ).items;
+}

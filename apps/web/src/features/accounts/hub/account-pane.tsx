@@ -16,13 +16,15 @@
  */
 
 import { ArrowLeftIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
+import type { HubTarget } from '@/stores/account-panel-store';
+
+import { HubLink } from './account-hub-location';
 import type { AccountPaneWidth } from './sections';
 
 const WIDTH_CLASS: Record<AccountPaneWidth, string> = {
@@ -32,8 +34,9 @@ const WIDTH_CLASS: Record<AccountPaneWidth, string> = {
 };
 
 export interface AccountPaneProps {
-  /** The one way out of this pane — rendered below `md` only. Omit on the routes that ARE the way out. */
-  back?: { href: string; label: string };
+  /** The one way out of this pane — rendered below `md` only, where the
+   *  sidebar is a sheet. Omit on the pane that IS the way out. */
+  back?: { to: HubTarget; label: string };
   title?: ReactNode;
   description?: ReactNode;
   /** One control, right of the title. */
@@ -62,10 +65,10 @@ export function AccountPane({
             size="xs"
             className="text-muted-foreground hover:text-foreground -ml-2 gap-1 text-xs"
           >
-            <Link href={back.href}>
+            <HubLink to={back.to}>
               <ArrowLeftIcon className="size-3.5 shrink-0" />
               {back.label}
-            </Link>
+            </HubLink>
           </Button>
         </div>
       ) : null}

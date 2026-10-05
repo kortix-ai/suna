@@ -25,6 +25,54 @@ describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
 
 });
 
+describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
+  test('omits the key for an OpenCode session (default and explicit) — byte-for-byte unchanged', () => {
+    expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_HARNESS');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode' })).not.toHaveProperty('KORTIX_HARNESS');
+  });
+
+  test('sets KORTIX_HARNESS=pi for a pi session, next to the same model and compiled config keys', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      harness: 'pi',
+      opencodeModel: 'kortix/claude-sonnet-5',
+      compiledAgentConfig: JSON.stringify({ agent: { build: { prompt: 'x' } } }),
+    });
+    expect(env.KORTIX_HARNESS).toBe('pi');
+    // D3: the harness-neutral name, plus the pre-W3 name for an older daemon.
+    expect(env.KORTIX_MODEL).toBe('kortix/claude-sonnet-5');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/claude-sonnet-5');
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toContain('"build"');
+    expect(env.KORTIX_BOOTSTRAP_RUNTIME_SESSION).toBe('1');
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+  });
+});
+
+describe('buildSessionRuntimeEnv — KORTIX_PI_PACKAGES', () => {
+  const packages = ['npm:pi-web-access@0.30.0', { source: './.kortix/pi/audit.ts' }];
+
+  test('a pi session carries the project packages as JSON', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages });
+    expect(JSON.parse(env.KORTIX_PI_PACKAGES!)).toEqual(packages);
+  });
+
+  test('a built bundle travels as its URL and digest, to a pi session only', () => {
+    const bundle = { digest: 'a'.repeat(64), url: 'https://bucket.example/pi-packages/x.tar.gz?sig=1', fallbackUrl: 'https://bucket.example/pi-packages/x.node_modules.tar.gz?sig=2' };
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: bundle });
+    expect(env.KORTIX_PI_PACKAGES_BUNDLE_URL).toBe(bundle.url);
+    expect(env.KORTIX_PI_PACKAGES_BUNDLE_DIGEST).toBe(bundle.digest);
+    expect(env.KORTIX_PI_PACKAGES_FALLBACK_URL).toBe(bundle.fallbackUrl);
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackagesBundle: bundle })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: null })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
+  });
+
+  test('no key for an OpenCode session, or a pi session without packages', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackages: packages })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: [] })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi' })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
@@ -68,10 +116,10 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
   test('runtime mode removes every project Git coordinate', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      workspaceMode: 'runtime',
+      repositoryAccess: false,
     });
 
-    expect(env.KORTIX_WORKSPACE_MODE).toBe('runtime');
+    expect(env.KORTIX_REPOSITORY_ACCESS).toBe('0');
     expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
     expect(env).not.toHaveProperty('KORTIX_REPO_URL');
     expect(env).not.toHaveProperty('KORTIX_DEFAULT_BRANCH');
@@ -82,10 +130,10 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
   test('read mode cannot clone before exact-path artifacts are implemented', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      workspaceMode: 'read',
+      repositoryAccess: false,
     });
 
-    expect(env.KORTIX_WORKSPACE_MODE).toBe('read');
+    expect(env.KORTIX_REPOSITORY_ACCESS).toBe('0');
     expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
     expect(env).not.toHaveProperty('KORTIX_REPO_URL');
     expect(env).not.toHaveProperty('KORTIX_DEFAULT_BRANCH');
@@ -96,7 +144,7 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
   test('legacy and branch sessions keep the project clone and Git coordinates', () => {
     for (const env of [
       buildSessionRuntimeEnv(BASE_INPUT),
-      buildSessionRuntimeEnv({ ...BASE_INPUT, workspaceMode: 'branch' }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, repositoryAccess: true }),
     ]) {
       expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('1');
       expect(env.KORTIX_REPO_URL).toBe(BASE_INPUT.repoUrl);
@@ -108,11 +156,10 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
-  test('enables compiled checkout independently from the legacy fast-cold-boot flag', () => {
+  test('enables compiled checkout for a fresh session', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       compiledBootMode: 'prefer',
-      fastColdBootEnabled: false,
       freshSession: true,
       baseSha: 'a'.repeat(40),
     });
@@ -120,7 +167,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('prefer');
     expect(env.KORTIX_SESSION_FRESH).toBe('1');
     expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
   });
 
   test('emits required mode for strict compiled runtime verification', () => {
@@ -151,7 +197,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       }),
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
-        workspaceMode: 'runtime',
+        repositoryAccess: false,
         compiledBootMode: 'prefer',
         freshSession: true,
         baseSha: 'a'.repeat(40),
@@ -174,42 +220,19 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
   test('does not emit branch-restore authority for repository-free workspaces', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      workspaceMode: 'runtime',
+      repositoryAccess: false,
       restoreSessionBranch: true,
     });
 
     expect(env).not.toHaveProperty('KORTIX_SESSION_BRANCH_RESTORE');
   });
 
-  test('sends fresh-session and base-tip hints when the experiment is enabled', () => {
-    const baseSha = 'a'.repeat(40);
-    const gitDeltaBundleBase64 = 'R0lUIEJVTkRMRQ==';
-    const gitDeltaParentSha = 'b'.repeat(40);
-    const gitDeltaParentCommitBase64 = 'dHJlZSBkZWFkYmVlZgo=';
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      fastColdBootEnabled: true,
-      freshSession: true,
-      baseSha,
-      gitDeltaBundleBase64,
-      gitDeltaParentSha,
-      gitDeltaParentCommitBase64,
-    });
-
-    expect(env.KORTIX_SESSION_FRESH).toBe('1');
-    expect(env.KORTIX_BASE_SHA).toBe(baseSha);
-    expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe(gitDeltaBundleBase64);
-    expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe(gitDeltaParentSha);
-    expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe(gitDeltaParentCommitBase64);
-  });
-
-  test('sends fresh-session and base-tip hints even with the experiment disabled', () => {
+  test('sends fresh-session and base-tip hints for a fresh session', () => {
     // 2026-08-27: the fresh-session fast path is the default boot
     // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create). Only the compiled-boot
     // mode stays gated here (see the compiled-boot tests above).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      fastColdBootEnabled: false,
       freshSession: true,
       baseSha: 'a'.repeat(40),
       gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
@@ -223,10 +246,9 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe('b'.repeat(40));
     expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe('dHJlZSBkZWFkYmVlZgo=');
     expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
-    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
   });
 
-  test('marks a remote delta and ships the OpenCode config-dir hint for fresh sessions only', () => {
+  test('marks a remote delta for fresh sessions only; no config-dir hint (nothing reads it)', () => {
     const fresh = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,
@@ -234,37 +256,16 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       gitDeltaBundleRemote: true,
       gitDeltaParentSha: 'b'.repeat(40),
       gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
-      opencodeConfigDir: '.kortix/opencode',
     });
     expect(fresh.KORTIX_GIT_DELTA_BUNDLE_REMOTE).toBe('1');
     expect(fresh).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
-    expect(fresh.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('.kortix/opencode');
-
-    // '' = "this tip ships no project OpenCode config" — still a usable hint.
-    const bare = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-      opencodeConfigDir: null,
-    });
-    expect(bare.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('');
+    expect(fresh).not.toHaveProperty('KORTIX_OPENCODE_CONFIG_DIR_HINT');
 
     for (const env of [
       buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, baseSha: 'a'.repeat(40) }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        freshSession: false,
-        opencodeConfigDir: '.kortix/opencode',
-        gitDeltaBundleRemote: true,
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        workspaceMode: 'runtime',
-        freshSession: true,
-        opencodeConfigDir: '.kortix/opencode',
-      }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: false, gitDeltaBundleRemote: true }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, repositoryAccess: false, freshSession: true }),
     ]) {
-      expect(env).not.toHaveProperty('KORTIX_OPENCODE_CONFIG_DIR_HINT');
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_REMOTE');
     }
   });
@@ -273,7 +274,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     for (const env of [
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
-        fastColdBootEnabled: true,
         freshSession: false,
         baseSha: 'a'.repeat(40),
         gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
@@ -282,8 +282,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       }),
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
-        workspaceMode: 'runtime',
-        fastColdBootEnabled: true,
+        repositoryAccess: false,
         freshSession: true,
         baseSha: 'a'.repeat(40),
         gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
@@ -297,41 +296,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_SHA');
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64');
     }
-  });
-});
-
-describe('buildSessionRuntimeEnv — OpenCode executable prefetch', () => {
-  test('enables prefetch through the single fast cold boot flag', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      fastColdBootEnabled: true,
-      freshSession: false,
-    });
-
-    expect(env.KORTIX_OPENCODE_BINARY_PREFETCH).toBe('1');
-    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
-  });
-
-  test('omits prefetch when the fast cold boot flag is disabled', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      fastColdBootEnabled: false,
-      freshSession: true,
-    });
-
-    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
-  });
-
-  test('keeps prefetch enabled for runtime-only sessions', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      workspaceMode: 'runtime',
-      fastColdBootEnabled: true,
-      freshSession: true,
-    });
-
-    expect(env.KORTIX_OPENCODE_BINARY_PREFETCH).toBe('1');
-    expect(env).not.toHaveProperty('KORTIX_REPO_URL');
   });
 });
 
@@ -361,30 +325,6 @@ describe('audit relay emission knobs', () => {
 });
 
 describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
-  // 2026-08-28: every pi session on pi.kortix.com answered with an EMPTY
-  // assistant turn and no error. The worker reads
-  // `KORTIX_MODEL_MODE ?? 'faux'`, this builder never set it, and the faux
-  // provider emits nothing — so the model, the credential and the entitlement
-  // all looked fine while nothing could ever reply.
-  test('boots the worker in real model mode, never the benchmark faux provider', () => {
-    const env = buildPiWorkerSessionEnvVars({
-      projectId: 'p',
-      sessionId: 's',
-      agentName: 'kortix',
-      apiUrl: 'https://api.example.test',
-    });
-    expect(env.KORTIX_MODEL_MODE).toBe('real');
-    // The worker appends `/sessions/<id>/log` to this base, so it must be the
-    // PROJECT root with no trailing slash — otherwise every append doubles the
-    // slash and 404s.
-    expect(env.KORTIX_STORE_URL).toBe('https://api.example.test/projects/p');
-    expect(env.KORTIX_STORE_URL).not.toMatch(/\/$/);
-    // No explicit session model: the compiled artifact's baked model is used,
-    // so KORTIX_MODEL must stay absent rather than fall back to the platform
-    // resolution, which would clobber the bake.
-    expect(env.KORTIX_MODEL).toBeUndefined();
-  });
-
   const input = {
     projectId: 'proj-1',
     sessionId: 'sess-1',
@@ -402,11 +342,6 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
       KORTIX_SERVICE_PORT: '8000',
       KORTIX_AGENT_NAME: 'dev',
       KORTIX_AGENT: 'dev',
-      // A session is always REAL. The worker's own default is the benchmark
-      // faux provider, which answers every prompt with an empty turn.
-      KORTIX_MODEL_MODE: 'real',
-      // P1.8: the durable transcript log the worker write-throughs to.
-      KORTIX_STORE_URL: 'https://api.kortix.test/v1/projects/proj-1',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_FRONTEND_URL: 'https://kortix.test',
       KORTIX_PROJECT_AUTO_CLONE: '0',
@@ -429,5 +364,75 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     });
     expect(env).not.toHaveProperty('KORTIX_MODEL');
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
+  });
+});
+
+describe('buildSessionRuntimeEnv — S3 project snapshot pin', () => {
+  const PIN = `${'a'.repeat(40)}:${'b'.repeat(64)}:3177064`;
+
+  test('git mode (the default) emits neither the mode nor the pin', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'git', projectSnapshotPin: PIN });
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+  });
+
+  test('a fresh full-repository session carries the mode and the identity-only pin', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: PIN });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_MODE).toBe('prefer-s3');
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).toBe(PIN);
+    // The pin is identity only: never a URL, never a credential.
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).not.toMatch(/https?:|X-Amz-/);
+  });
+
+  test('a presigned descriptor rides along with the pin, and never without it', () => {
+    const descriptor = Buffer.from(JSON.stringify({ format: 'project-snapshot-v2', tree: { url: 'https://s3/x?X-Amz-Signature=1' } })).toString('base64');
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: true,
+      projectSnapshotMode: 'prefer-s3',
+      projectSnapshotPin: PIN,
+      projectSnapshotDescriptor: descriptor,
+    });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).toBe(PIN);
+    expect(env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR).toBe(descriptor);
+    // A descriptor without a pin is meaningless (the daemon checks the pin first).
+    const noPin = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: true,
+      projectSnapshotMode: 'prefer-s3',
+      projectSnapshotPin: null,
+      projectSnapshotDescriptor: descriptor,
+    });
+    expect(noPin).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR');
+    // And a resumed session receives neither.
+    const resumed = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: false,
+      restoreSessionBranch: true,
+      projectSnapshotMode: 'prefer-s3',
+      projectSnapshotPin: PIN,
+      projectSnapshotDescriptor: descriptor,
+    });
+    expect(resumed).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR');
+  });
+
+  test('a cache miss carries the mode without a pin (the daemon records the miss and boots from Git)', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: null });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_MODE).toBe('prefer-s3');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+  });
+
+  test('a resumed (not fresh) session never receives the S3 keys', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: false, restoreSessionBranch: true, projectSnapshotMode: 'require-s3', projectSnapshotPin: PIN });
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+    expect(env.KORTIX_SESSION_BRANCH_RESTORE).toBe('1');
+  });
+
+  test('a restricted workspace mode receives no repository and therefore no archive', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, repositoryAccess: false, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: PIN });
+    expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
   });
 });

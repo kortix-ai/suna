@@ -73,6 +73,9 @@ describe('secrets-registry pure helpers', () => {
 
     expect(servicesForKeys(['NOT_A_REAL_KEY'])).toEqual(['kortix-api']);
     expect(servicesForKeys(['COMPOSIO_API_KEY'])).toEqual(['kortix-api']);
+    expect(servicesForKeys(['KORTIX_FRONTEND_MEMORY_LIMIT'])).toEqual(['frontend']);
+    // Read by the web auth page AND the API's /v1/auth/client-config.
+    expect(servicesForKeys(['KORTIX_PUBLIC_AUTH_METHODS'])).toEqual(['frontend', 'kortix-api']);
     expect(servicesForKeys([])).toEqual([]);
   });
 

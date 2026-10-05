@@ -96,3 +96,16 @@ pnpm --filter @kortix/whitelabel-demo test
 ```
 
 All three commands must exit `0`. The SDK boundary must report `0 violations`.
+
+## Customer data
+
+Never write customer names, people's names, emails, or real prod IDs into code,
+commits, PRs, docs, or comments. The full rule and the commit guard are in the
+root `AGENTS.md` → "NEVER write customer data or PII".
+
+## Design references
+
+This app's UI is its own `src/components/ui/` primitives and semantic tokens,
+not the Kortix product design system. For Kortix product UI on web or desktop,
+read the canonical design references in the root `AGENTS.md` →
+"Frontend design standard".

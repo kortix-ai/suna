@@ -66,8 +66,8 @@ describe('matchesSettingsShortcut', () => {
     // this constant; the matcher compares against it. One source, so a keycap
     // cannot advertise a key nothing handles.
     expect(SETTINGS_SHORTCUT_KEY).toBe(',');
-    expect(matchesSettingsShortcut(ev({ key: SETTINGS_SHORTCUT_KEY, code: undefined, ctrlKey: true }))).toBe(
-      true,
-    );
+    expect(
+      matchesSettingsShortcut(ev({ key: SETTINGS_SHORTCUT_KEY, code: undefined, ctrlKey: true })),
+    ).toBe(true);
   });
 });

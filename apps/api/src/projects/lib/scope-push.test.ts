@@ -12,7 +12,6 @@
 //
 // These tests mirror `agent-config-push.test.ts` for the model/config push.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { sessionEnvironments } from '@kortix/db';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
 
@@ -50,7 +49,6 @@ let activeSandbox: {
   // silently swallowed; the double has to be able to carry it.
   status?: string;
 } | null;
-let activeEnvironment: typeof activeSandbox;
 let gatewayEnabled = false;
 
 function freshSessionRow(): typeof SESSION_ROW {
@@ -71,17 +69,12 @@ function freshSessionRow(): typeof SESSION_ROW {
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: (table: unknown) => ({
+      from: () => ({
         where: () => ({
           // One row satisfies BOTH the session lookup (resolveOwnerRawEnv) and
           // the sandbox lookup (the active-sandbox select) — the fake merges
           // them. The sandbox's externalId/provider/config overlay wins.
-          limit: async () => {
-            if (table === sessionEnvironments) {
-              return activeEnvironment ? [activeEnvironment] : [];
-            }
-            return activeSandbox ? [{ ...SESSION_ROW, ...activeSandbox }] : [];
-          },
+          limit: async () => (activeSandbox ? [{ ...SESSION_ROW, ...activeSandbox }] : []),
         }),
       }),
     }),
@@ -109,10 +102,6 @@ mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: async () => gatewayEnabled,
 }));
 
-mock.module('./network-secret-boundary', () => ({
-  resolveSessionNetworkBoundary: async () => [],
-}));
-
 mock.module('../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
@@ -130,15 +119,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
       llmGatewayEnabled: body.llmGatewayEnabled as boolean | undefined,
       llmGatewayDenyEnv: body.llmGatewayDenyEnv as string | undefined,
     } satisfies RecordedPost);
-    return Response.json({
-      ok: true,
-      opencode: 'ok',
-      revision: body.revision,
-      exported: Object.keys((body.env as Record<string, unknown> | undefined) ?? {}).length,
-      managed: 1,
-      withheld: 0,
-      agent_env_written: true,
-    });
+    return Response.json({ ok: true, opencode: 'ok' });
   };
 }
 
@@ -159,7 +140,6 @@ afterAll(() => {
 beforeEach(() => {
   posted = [];
   activeSandbox = SANDBOX_ROW;
-  activeEnvironment = null;
   SESSION_ROW = freshSessionRow();
   gatewayEnabled = false;
   // Each test starts from the recording fetch; a test that swaps it restores
@@ -168,20 +148,6 @@ beforeEach(() => {
 });
 
 describe('pushSessionScopeToSandbox', () => {
-  test('pushes the same scope to an active environment without restarting OpenCode there', async () => {
-    activeEnvironment = {
-      externalId: 'env-ext-1',
-      provider: 'daytona',
-      config: { serviceKey: 'environment-key' },
-      status: 'active',
-    };
-
-    const result = await pushSessionScopeToSandbox(INPUT);
-
-    expect(result).toEqual({ applied: true });
-    expect(posted.map((entry) => entry.refreshModels)).toEqual([true, false]);
-  });
-
   test('pushes the re-derived snapshot and asks for the opencode restart', async () => {
     // opencode's process env is shaped at spawn, so the snapshot alone changes
     // nothing — `refreshModels: true` is what makes the daemon respawn it and
@@ -267,7 +233,7 @@ describe('pushSessionScopeToSandbox', () => {
   });
 });
 
-// Prod 2026-08-27, session b3848cf5: `session_sandboxes.status` was 'stopped'
+// A prod session, 2026-08-27: `session_sandboxes.status` was 'stopped'
 // while the Platinum VM was genuinely running and serving prompts. Every push
 // filtered the lookup on `status = 'active'` and returned a bare
 // 'no active sandbox' that no caller logged, so the session silently received
@@ -275,12 +241,7 @@ describe('pushSessionScopeToSandbox', () => {
 // agent that could not read a secret the UI said it had.
 describe('a live box behind a non-active row is named, not swallowed', () => {
   test('the skip reason carries the actual status', async () => {
-    activeSandbox = {
-      externalId: 'ext-1',
-      provider: 'platinum',
-      config: { serviceKey: 'k' },
-      status: 'stopped',
-    };
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'stopped' };
     const result = await pushSessionScopeToSandbox(INPUT);
     expect(result.applied).toBe(false);
     expect(result.reason).toBe("sandbox row is 'stopped', not active");
@@ -288,12 +249,7 @@ describe('a live box behind a non-active row is named, not swallowed', () => {
   });
 
   test('an active row still pushes', async () => {
-    activeSandbox = {
-      externalId: 'ext-1',
-      provider: 'platinum',
-      config: { serviceKey: 'k' },
-      status: 'active',
-    };
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'active' };
     const result = await pushSessionScopeToSandbox(INPUT);
     expect(result.applied).toBe(true);
   });

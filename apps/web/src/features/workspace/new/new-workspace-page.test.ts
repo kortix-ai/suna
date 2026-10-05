@@ -14,6 +14,8 @@ const source = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'ut
  * what the comments say about it.
  */
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+/** The shared top row `/new` renders (Back, account menu, desktop Close). */
+const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
 
 /**
  * The full text of the element that opens at `from`, found by counting nested
@@ -57,11 +59,17 @@ describe('/new page: no invented constraints', () => {
     // of assertion a second effect slips past when it is relaxed to a
     // `toContain`. The body is pinned too, so this stays a WRITE ban rather
     // than an effect budget.
-    // Back to ZERO effects. The signed-out guard this page needs is the shared
-    // `useSignedOutRedirect()` hook — one copy for all eight surfaces that had
-    // hand-rolled it, and the only place the `isSigningOut()` stand-down has to
-    // be written.
-    expect(code).not.toContain('useEffect(');
+    // The signed-out guard this page needs is the shared `useSignedOutRedirect()`
+    // hook — one copy for all eight surfaces that had hand-rolled it.
+    //
+    // ONE effect is allowed, and its body is pinned: it seeds the default
+    // project name after mount (a random value in the `useState` initializer
+    // would differ between the server render and hydration). It only sets
+    // local state and never replaces a name the user already has — no request.
+    expect(code.match(/useEffect\(/g) ?? []).toHaveLength(1);
+    expect(code).toContain(
+      'setState((current) => (current.name ? current : { ...current, name: suggestWorkspaceName() }));',
+    );
     expect(code).toContain('useSignedOutRedirect();');
 
     // Paired presence check: there IS a submit path, just not an eager one.
@@ -101,10 +109,18 @@ describe('/new page: no invented constraints', () => {
 });
 
 describe('/new page: escape hatch for a user with zero workspaces', () => {
-  test('shows the create-into AccountPicker (email fallback) next to a Log out control, unconditionally rendered', () => {
-    expect(code).toContain('<AccountPicker');
-    expect(code).toContain('fallbackLabel={user?.email}');
-    expect(code).toContain('Log out');
+  test('a Back link to the project selector sits ahead of the form, and Log out beside it', () => {
+    // Log out alone was the only way off `/new` on the web; a user with an
+    // invalid form read it as "you cannot leave" (dev, 2026-09-17). The exit
+    // is a plain link to the project selector, rendered ahead of the <form> so
+    // it is reachable regardless of form state. The row is the shared
+    // `AccountTopBar`; Log out lives in its account menu.
+    expect(code).toContain("back={{ href: '/projects', label: t('actions.back') }}");
+    const formIndex = code.indexOf('<form');
+    expect(code.indexOf('<AccountTopBar')).toBeGreaterThan(0);
+    expect(code.indexOf('<AccountTopBar')).toBeLessThan(formIndex);
+    expect(bar).toContain('<Link href={back.href}>');
+    expect(bar).toContain("t('actions.logOut')");
     // `performSignOut()`, not the old bare `void signOut()`. Spelled in full on
     // purpose: `signOut()` is a SUBSTRING of `performSignOut()`, so the previous
     // assertion could not tell the fixed control from the broken one — which
@@ -114,16 +130,47 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     // ...and it now says so while it works. The sign-out makes a server round
     // trip this control never made before and is bounded at four steps, which
     // is long enough that a silent button reads as a dead one.
-    expect(code).toContain('disabled={signingOut}');
-    expect(code).toContain("{signingOut ? 'Signing out' : 'Log out'}");
+    expect(code).toContain('signingOut={signingOut}');
+    expect(bar).toContain('disabled={signingOut}');
+    expect(bar).toContain("signingOut ? t('actions.signingOut') : t('actions.logOut')");
+  });
 
-    // Rendered ahead of the <form>, not gated behind form state — a user
-    // blocked by an invalid/incomplete form must still be able to leave.
+  test('the create-into account is a field IN the form, above the repository fields', () => {
+    // It decides where the project lands and which GitHub connections the
+    // Git account picker can offer, so it sits with them — not in the page's
+    // far corner, where a multi-account user missed it and was told nothing
+    // was connected (dev, 2026-09-17).
+    expect(code).toContain('<AccountPicker');
+    expect(code).toContain('fallbackLabel={user?.email}');
     const formIndex = code.indexOf('<form');
     const pickerIndex = code.indexOf('<AccountPicker');
-    expect(formIndex).toBeGreaterThan(0);
-    expect(pickerIndex).toBeGreaterThan(0);
-    expect(pickerIndex).toBeLessThan(formIndex);
+    const advancedIndex = code.indexOf('<AdvancedFields');
+    expect(pickerIndex).toBeGreaterThan(formIndex);
+    expect(pickerIndex).toBeLessThan(advancedIndex);
+  });
+
+  // The desktop shell has no browser toolbar. Without this control, Log out was
+  // the only way off `/new` there.
+  test('on desktop, a Close control after Log out returns to the project selector', () => {
+    // Extreme right: the bar renders `trailing` after the account menu.
+    expect(code).toContain('trailing={<DesktopCloseButton');
+    expect(bar.indexOf('{trailing}')).toBeGreaterThan(bar.indexOf('</DropdownMenu>'));
+    const closeAt = code.indexOf('<DesktopCloseButton');
+    expect(closeAt).toBeLessThan(code.indexOf('<AnimatePresence'));
+
+    const close = code.match(/<DesktopCloseButton[\s\S]*?\/>/)?.[0];
+    expect(close).toContain("router.replace('/projects')");
+    expect(code).toContain("from '@/components/desktop/desktop-close-button'");
+  });
+
+  test('the top row sits below the title-bar band on desktop', () => {
+    // The band holds the macOS traffic lights and the Win/Linux controls. The
+    // email used to sit directly under the lights.
+    const row = bar.match(/<div className="[^"]*absolute inset-x-0 top-3[^"]*"/)?.[0];
+    expect(row).toBeDefined();
+    expect(row).toContain('kx-desktop-band-row');
+    // The old side indents and their gutter variable are gone.
+    expect(row).not.toContain('--kx-band-row-gutter');
   });
 });
 
@@ -151,8 +198,8 @@ describe('/new page: uses the shared form model, not local rules', () => {
   });
 
   test('computes creatableAccounts via the shared filterCreatableAccounts helper, matching create-account-selection.ts', () => {
-    expect(code).toContain('const creatableAccounts = filterCreatableAccounts(accounts)');
-    expect(code).toContain("from '@/features/workspace/new/new-workspace-form'");
+    expect(code).toContain('const creatableAccounts = useCreatableAccounts(accounts)');
+    expect(code).toContain("from '@/features/workspace/new/use-creatable-accounts'");
     // Paired negative: the filter is not re-implemented inline on the page —
     // there is exactly one place (`new-workspace-form.ts`) that decides who
     // can create, so it can never drift from `create-account-selection.ts`.
@@ -192,7 +239,6 @@ describe('/new page: ProjectIconField wiring', () => {
     expect(field).not.toContain('onClear');
   });
 });
-
 
 /**
  * The form's field group: the outermost `<div>` that holds the icon and the
@@ -261,7 +307,9 @@ describe('/new page: layout shape (design is a release gate here)', () => {
     expect(code).not.toContain('col-span-2');
     // A static padding would survive `width: 0` (border-box clamps content, not
     // padding) and hold the column open by 12px.
-    expect(code).toContain("paddingRight: showIcon ? '0.75rem' : 0");
+    expect(code).toContain('paddingRight: showIcon ? ICON_GAP : 0');
+    // The open width holds the tile AND the gap, or the gap clips the tile.
+    expect(code).toContain("const ICON_WIDTH = '2.8rem';");
     expect(code).not.toContain('overflow-hidden pr-3');
     expect(code).toContain('aria-hidden={!showIcon}');
     expect(code).toContain('inert={!showIcon ? true : undefined}');
@@ -313,17 +361,19 @@ describe('/new page: layout shape (design is a release gate here)', () => {
 });
 
 describe('/new page: AccountPicker wiring', () => {
-  test('renders AccountPicker in the top bar, wired to the CREATABLE accounts list and state.accountId', () => {
+  test('renders AccountPicker as a form field, wired to the CREATABLE accounts list and state.accountId', () => {
     const pickers = code.match(/<AccountPicker[\s\S]*?\/>/g) ?? [];
     expect(pickers).toHaveLength(1);
     const picker = pickers[0]!;
 
-    // Lives ahead of the form — top-bar escape / identity chrome, not a form
-    // field. Same filter + state wiring as before.
+    // Lives IN the form, above the repository fields — it decides where the
+    // project lands and which GitHub connections the Git account picker can
+    // offer (it moved out of the top bar on 2026-09-17, where a multi-account
+    // user missed it). Same filter + state wiring as before.
     const formIndex = code.indexOf('<form');
     const pickerIndex = code.indexOf('<AccountPicker');
-    expect(pickerIndex).toBeGreaterThan(0);
-    expect(pickerIndex).toBeLessThan(formIndex);
+    expect(pickerIndex).toBeGreaterThan(formIndex);
+    expect(pickerIndex).toBeLessThan(code.indexOf('<AdvancedFields'));
 
     // Review round 1, Important 3: `accounts` is ALWAYS the REAL
     // `creatableAccounts` list — the page used to hand AccountPicker a
@@ -338,9 +388,7 @@ describe('/new page: AccountPicker wiring', () => {
     // Effective id = explicit pick OR identity-matched / primary default —
     // null outright for a FOREIGN list (Task 2 item 2).
     expect(picker).toContain('value={effectiveAccountId}');
-    expect(picker).toContain(
-      "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
-    );
+    expect(picker).toContain('onChange={(accountId) => setState((s) => ({ ...s, accountId }))}');
     expect(picker).toContain('fallbackLabel={user?.email}');
     expect(picker).toContain('showAccountLine={showAccountLine}');
     expect(code).toContain('shouldShowAccountLine(creatableAccounts, userId)');
@@ -392,7 +440,7 @@ describe('/new page: AccountPicker wiring', () => {
 describe('/new page: zero-creatable-accounts state', () => {
   test('renders an explanatory note instead of a silently-disabled button when nothing is creatable', () => {
     expect(code).toContain('creatableAccounts.length === 0');
-    expect(code).toContain('You need owner or admin access in an account to create a workspace.');
+    expect(code).toContain("t('permissions.noCreatableAccount')");
     // Paired negative: it is plain text in the field group's own flow, not a
     // second bordered surface — `advanced-fields.tsx`'s GitHub-source note
     // already had to fix exactly this (InfoBanner nested inside this same
@@ -423,7 +471,7 @@ describe('/new page: foreign-accounts-list state (B3)', () => {
   // worse than the 403 this branch set out to fix.
   test('renders a reason with an escape hatch instead of a silent dead end', () => {
     expect(code).toContain('!accountsQuery.isLoading && foreignAccountList');
-    expect(code).toContain("We can't tell which of your accounts is yours");
+    expect(code).toContain("t('permissions.unknownAccountPrefix')");
     expect(code).toContain('mailto:support@kortix.ai');
     // Same restrained treatment as the sibling zero-accounts note — no new
     // chrome introduced for this one state.
@@ -444,7 +492,7 @@ describe('/new page: foreign-accounts-list state (B3)', () => {
 
 describe('/new page: exports', () => {
   test('exports NewWorkspacePage', () => {
-    expect(code).toContain('export function NewWorkspacePage()');
+    expect(code).toContain('export function NewWorkspacePage(');
   });
 });
 
@@ -458,34 +506,38 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     const handoff = code.match(/<WorkspaceHandoff[\s\S]*?\/>/)?.[0];
     expect(handoff).toBeDefined();
     expect(handoff).toContain('workspaceName={state.name.trim()}');
-    expect(handoff).toContain('projectId={onboardingProjectId}');
   });
 
   test('the form and the handoff are mutually exclusive — never both, never neither', () => {
-    // A single ternary on one derived flag, not two independent conditionals:
-    // the second shape can render neither branch (or both) as `submitting`
-    // and `onboardingProjectId` drift relative to each other, which is exactly
-    // what happens at the moment a create succeeds.
-    const swapMatch = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
-    expect(swapMatch).not.toBeNull();
-    const [, handoffBranch, formBranch] = swapMatch ?? [];
+    // A single ternary on the create status, not two independent conditionals:
+    // the second shape can render neither branch (or both) as conditions drift
+    // relative to each other.
+    expect(code).toContain('{submitting ? (');
+    const handoffBranch = code.slice(code.indexOf('key="handoff"'), code.indexOf('key="form"'));
+    const formBranch = code.slice(code.indexOf('key="form"'), code.indexOf('</AnimatePresence>'));
     expect(handoffBranch).toContain('<WorkspaceHandoff');
     expect(formBranch).toContain('<form');
   });
 
-  test('one waiting state spans BOTH windows — the create, and the wizard mounting', () => {
-    // The seam between "creating" and "onboarding" is where the old UI swapped
-    // one screen for another. Folding both into `handingOff` is what makes a
-    // successful create a visual non-event.
-    expect(code).toContain('const handingOff = submitting || Boolean(onboardingProjectId);');
+  test('the handoff covers only the in-flight create — the success navigates away (KRTX-1419)', () => {
+    // A successful create must land on `/projects/<id>`, not hold this page.
+    // The wizard that used to mount here over the handoff is gone: this page
+    // neither mounts `ProjectOnboardingWizard` nor reads the `?onboarding=`
+    // param any more — the redirect decision lives entirely in
+    // `useCreateWorkspace` (`runCreate`), which is where the behavioural
+    // regression test for it runs.
+    expect(code).not.toContain('ProjectOnboardingWizard');
+    expect(code).not.toContain('onboarding');
   });
 
   test('nothing renders phase progress — the create reports no steps to the user', () => {
     expect(code).not.toContain('phase');
     expect(code).not.toContain('provision-progress');
     expect(code).not.toContain('provision-phases');
-    expect(code).toContain(
-      'const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();',
+    // Multi-line since `limitReached` joined the destructure (2026-09-17);
+    // the pin is on WHICH names the page takes from the hook, not the wrap.
+    expect(code.replace(/\s+/g, ' ')).toContain(
+      'const { create, status, error: createError, retry, canRetry, limitReached, } = useCreateWorkspace();',
     );
   });
 
@@ -493,10 +545,10 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     // "Create a workspace" above a screen that is already creating one is
     // stale, and a heading holding still while the block under it fades reads
     // as two motions rather than the page turning over.
-    const swapMatch = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
-    const [, handoffBranch, formBranch] = swapMatch ?? [];
-    expect(formBranch).toContain('Create a workspace');
-    expect(handoffBranch).not.toContain('Create a workspace');
+    const handoffBranch = code.slice(code.indexOf('key="handoff"'), code.indexOf('key="form"'));
+    const formBranch = code.slice(code.indexOf('key="form"'), code.indexOf('</AnimatePresence>'));
+    expect(formBranch).toContain("t('title')");
+    expect(handoffBranch).not.toContain("t('title')");
   });
 
   // ONE. The icon reveal is a persistent element retargeting its width, not an

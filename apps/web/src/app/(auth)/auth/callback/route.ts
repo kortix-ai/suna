@@ -10,16 +10,14 @@ import {
 import {
   AUTH_BOUNCE_COOKIE,
   LAST_PROJECT_COOKIE,
-  POST_AUTH_INTENT_COOKIE,
-  POST_AUTH_INTENT_MAX_AGE,
   PROJECT_LANDING_PATH,
   parseAuthBounceOwner,
   parseLastProjectForUser,
   projectPathFromId,
 } from '@/lib/onboarding/landing-destination';
-import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
+import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -40,7 +38,6 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type'); // signup, recovery, etc.
   const next = sanitizeAuthReturnUrl(searchParams.get('returnUrl') || searchParams.get('redirect'));
   const termsAccepted = searchParams.get('terms_accepted') === 'true';
-  const email = searchParams.get('email') || ''; // Email passed from magic link redirect URL
   const desktop = searchParams.get('desktop') === 'true';
   const mobile = searchParams.get('mobile_callback') === '1' && Boolean(searchParams.get('state'));
   const runtimeEnv = getServerPublicEnv();
@@ -103,7 +100,6 @@ export async function GET(request: NextRequest) {
       // Redirect to auth page with expired state to show resend form
       const expiredUrl = new URL(`${baseUrl}/auth`);
       expiredUrl.searchParams.set('expired', 'true');
-      if (email) expiredUrl.searchParams.set('email', email);
       if (next) expiredUrl.searchParams.set('returnUrl', next);
 
       return NextResponse.redirect(expiredUrl);
@@ -135,6 +131,22 @@ export async function GET(request: NextRequest) {
       if (error) {
         console.error('Error exchanging code for session:', error);
 
+        // The PKCE verifier lives in a browser cookie that must survive the
+        // mailbox detour and a redirect chain before this handler runs. When it
+        // does not, auth-js throws pkce_code_verifier_not_found BEFORE any
+        // request leaves the server: the code is untouched and still fresh.
+        // Hand it back to the browser that started the flow — it re-seeds the
+        // verifier it snapshotted at send time and re-enters THIS handler,
+        // which then runs the normal exchange and the normal success path
+        // (return-URL demotion, terms stamp, billing-aware landing). Every
+        // other exchange failure keeps today's behavior below.
+        if (error.code === 'pkce_code_verifier_not_found') {
+          const resumeUrl = new URL(`${baseUrl}/auth`);
+          resumeUrl.searchParams.set('pkce_code', code);
+          if (next) resumeUrl.searchParams.set('returnUrl', next);
+          return NextResponse.redirect(resumeUrl);
+        }
+
         // Check if the error is due to expired/invalid link
         const isExpired =
           error.message?.toLowerCase().includes('expired') ||
@@ -148,8 +160,7 @@ export async function GET(request: NextRequest) {
           // Redirect to auth page with expired state to show resend form
           const expiredUrl = new URL(`${baseUrl}/auth`);
           expiredUrl.searchParams.set('expired', 'true');
-          if (email) expiredUrl.searchParams.set('email', email);
-          if (next) expiredUrl.searchParams.set('returnUrl', next);
+              if (next) expiredUrl.searchParams.set('returnUrl', next);
 
           return NextResponse.redirect(expiredUrl);
         }
@@ -170,8 +181,7 @@ export async function GET(request: NextRequest) {
         // email travels through the redirect (query param or short-lived
         // cookie set before the IdP hop), compare it to data.user.email here
         // and carry a "You signed in as {actual_email}" notice through to the
-        // redirect instead of proceeding silently. See docs/ENTRA_SSO_SCIM_SETUP.md
-        // "Known behaviors & caveats".
+        // redirect instead of proceeding silently.
         // Determine if this is a new user (for analytics tracking)
         const createdAt = new Date(data.user.created_at).getTime();
         const now = Date.now();
@@ -278,10 +288,7 @@ export async function GET(request: NextRequest) {
           // the previous account's project — i.e. onto "Request access to this
           // project", on every login.
           const lastProjectPath = projectPathFromId(
-            parseLastProjectForUser(
-              request.cookies.get(LAST_PROJECT_COOKIE)?.value,
-              data.user.id,
-            ),
+            parseLastProjectForUser(request.cookies.get(LAST_PROJECT_COOKIE)?.value, data.user.id),
           );
           if (lastProjectPath) finalDestination = lastProjectPath;
         }
@@ -292,17 +299,6 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
       const response = NextResponse.redirect(redirectUrl);
-
-      // Authentication just completed, and this redirect is about to land on
-      // the landing door with whatever referrer the magic link / IdP hop
-      // carried — usually a cross-origin one. The marker is what lets the door
-      // provision a first project anyway; without it a webmail signup is
-      // demoted to the projects list. See navigationMayCreateProject.
-      response.cookies.set(POST_AUTH_INTENT_COOKIE, '1', {
-        maxAge: POST_AUTH_INTENT_MAX_AGE,
-        path: '/',
-        sameSite: 'lax',
-      });
 
       // The bounce is spent: its attribution has been used to resolve this
       // destination and must not survive to demote the next sign-in.

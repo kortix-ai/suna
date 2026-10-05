@@ -7,7 +7,7 @@
  *     Stripe backfill) reconciles what the customer is paying for;
  *   - an OPERATOR (admin routes, trial issue/revoke) records intent the
  *     provider knows nothing about — a contracted Enterprise entitlement, a
- *     managed-models override, a raised session cap, an issued trial.
+ *     managed-models override, a custom compute rate, an issued trial.
  *
  * They collided on `tier`. An operator sets `enterprise_entitled` (or, on the
  * older path, `tier='enterprise'`); the next `customer.subscription.updated`
@@ -31,8 +31,8 @@
  *
  * Wallet and credit-bookkeeping columns (balances, lifetime totals, auto-topup,
  * grant timestamps) are on NEITHER list on purpose: both writers legitimately
- * move money, and money flows through `grantCredits`/`resetExpiringCredits`
- * anyway, which have their own idempotency contract.
+ * move money, and money flows through `wallet` (billing/wallet) anyway, which
+ * has its own idempotency contract.
  *
  * Naming: the provider-side verb is `applyStripeSync` because Stripe is the
  * writer that caused the damage, but the boundary it enforces is

@@ -38,3 +38,17 @@ describe('resolveComposerResetOnSend', () => {
     expect(resolveComposerResetOnSend(true, [])).toEqual({ clear: true, urlsToRevoke: [] });
   });
 });
+
+describe("resolveComposerResetOnSend — 'text-only' (project home)", () => {
+  test('clears the box so the message visibly leaves it', () => {
+    expect(resolveComposerResetOnSend('text-only', []).clear).toBe(true);
+  });
+
+  test('revokes NOTHING: the instant shell draws its previews from these URLs', () => {
+    const files = [localFile('blob:local-1'), remoteFile(), localFile('blob:local-2')];
+    expect(resolveComposerResetOnSend('text-only', files)).toEqual({
+      clear: true,
+      urlsToRevoke: [],
+    });
+  });
+});

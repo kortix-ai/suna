@@ -5,7 +5,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * WHAT THIS SECTION IS. Two things and nothing else: the live star count, and
  * the reason the code is open at all. The number on its own is a vanity metric;
@@ -32,9 +32,9 @@
  * ACCURACY GATE for this section specifically. Every item is still binding on
  * whatever this file grows back into:
  *  1. NEVER name a licence. "open source" and stop — no badge, no Apache/MIT/
- *     Elastic. (`comms` §7, "On the license".)
+ *     Elastic. (`kortix-brand` verbal/claims.md, "On the license".)
  *  2. ONE superlative form is sanctioned: "the leading open-source
- *     alternative" (`comms` §7, decided 2026-07-31). The hero already carries
+ *     alternative" (`kortix-brand` verbal/claims.md, decided 2026-07-31). The hero already carries
  *     it (`marketing/landing/content.ts` → `heroEyebrow.lead`), so this
  *     section does not repeat it. No other superlative — "the go-to", "#1",
  *     "the best" — is allowed, and the sanctioned one is never extended.
@@ -64,12 +64,11 @@
  *     (`apps/api/src/marketplace/index.ts` is read-only + admin source
  *     registration). This section makes neither claim.
  *  9. Do NOT write that secrets are invisible to the model. A granted runtime
- *     secret is a real env value any command in the session can read
- *     (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). This section claims nothing
+ *     secret is a real env value any command in the session can read.
+ *     This section claims nothing
  *     about secrets.
- * 10. "The open AGI platform" is aspiration, and `/about` is allowed to say it
- *     because that page is explicitly a vision page. It must never be dressed
- *     up as shipped capability here: training, RL and evals are NOT shipped, so
+ * 10. Never write "open AGI platform" (retired, D1). The about line is the
+ *     tagline. Do not dress direction up as shipped capability here: training, RL and evals are NOT shipped, so
  *     do not name them in this section at all.
  */
 
@@ -84,7 +83,7 @@ export const openSource = {
    * The whole note. Sentence one is `/about` → `hero.title` verbatim; sentence
    * two is the first clause of `hero.lead`. Keep the two files in step.
    */
-  title: 'We are building the open AGI platform. Every company should own all of it.',
+  title: 'We are building the open-source AI Operating System. Every company should own all of it.',
 
   /** Primary way out: the rest of the reason. */
   aboutLabel: 'Why we are building it',

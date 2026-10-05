@@ -1,9 +1,9 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { CodeEditor } from '@/components/file-editors/code-editor';
+import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,19 +11,15 @@ import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { StatusDot } from '@/components/ui/status';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { useHeicBlob } from '@/hooks/use-heic-url';
+import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { cn } from '@/lib/utils';
-import { isHeicFile } from '@/lib/utils/heic-convert';
-import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
-import { isSandboxNotReadyError, toSandboxAbsolutePath } from '@kortix/sdk';
+import { toSandboxAbsolutePath } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   BracketsCurlyIcon as Braces,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   CodeIcon as Code,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   GitDiffIcon as FileDiff,
   FileXIcon as FileWarning,
@@ -32,11 +28,13 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFileSource } from './file-source';
+import React, { lazy, Suspense } from 'react';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
-import { usePreviewFit } from './preview-fit';
+import { JsonTreeView } from './json-tree-view';
+import { FileHeader } from './file-header';
+import { useFileContentState } from './use-file-content-state';
+import { Download } from '@/features/icon/icons/download';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -76,176 +74,12 @@ const ZipRenderer = lazy(() =>
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Categories that need a blob fetched via readFileAsBlob */
-const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx', 'zip'] as const;
-type BlobCategory = (typeof BLOB_CATEGORIES)[number];
-
-export type FileCategory =
-  | 'image'
-  | 'pdf'
-  | 'docx'
-  | 'pptx'
-  | 'xlsx'
-  | 'csv'
-  | 'sqlite'
-  | 'video'
-  | 'audio'
-  | 'html'
-  | 'zip'
-  | 'code'
-  | 'text'
-  | 'binary';
-
-export function getFileCategory(filename: string, mimeType?: string): FileCategory {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-
-  if (
-    [
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'svg',
-      'webp',
-      'ico',
-      'bmp',
-      'avif',
-      'tiff',
-      'tif',
-      'heic',
-      'heif',
-    ].includes(ext)
-  )
-    return 'image';
-  if (ext === 'pdf') return 'pdf';
-  if (ext === 'docx') return 'docx';
-  if (['pptx', 'ppt'].includes(ext)) return 'pptx';
-  if (['xlsx', 'xls'].includes(ext)) return 'xlsx';
-  if (['csv', 'tsv'].includes(ext)) return 'csv';
-  if (['db', 'sqlite', 'sqlite3', 'db3', 'sdb', 's3db'].includes(ext)) return 'sqlite';
-  if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'].includes(ext)) return 'video';
-  if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma'].includes(ext)) return 'audio';
-  if (['html', 'htm'].includes(ext)) return 'html';
-  // Zip CONTAINERS only. `.docx`/`.xlsx`/`.pptx` are zips too and are matched
-  // above, because their contents are an implementation detail rather than
-  // something anyone wants to browse. `.tar.gz`/`.tgz` are deliberately absent
-  // — they are not zip, and jszip cannot read them.
-  if (['zip', 'jar', 'war', 'whl', 'vsix', 'nupkg', 'xpi', 'apk'].includes(ext)) return 'zip';
-
-  // Code/text files
-  if (getLanguageFromExt(filename) !== 'plaintext') return 'code';
-  if (mimeType?.startsWith('text/')) return 'text';
-
-  return 'binary';
-}
-
-export function getLanguageFromExt(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  const fileNameLower = filename.toLowerCase();
-  const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
-
-  // .env files (e.g., .env, .env.local, .env.production)
-  if (fileNameLower.includes('.env') || fileNameLower.startsWith('.env')) {
-    return 'properties';
-  }
-
-  // Files without a useful extension — detect by base name
-  if (baseName === 'dockerfile' || fileNameLower.startsWith('dockerfile.')) return 'dockerfile';
-  if (baseName === 'makefile' || baseName === 'gnumakefile') return 'makefile';
-
-  const map: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'tsx',
-    js: 'javascript',
-    jsx: 'jsx',
-    mjs: 'javascript',
-    cjs: 'javascript',
-    py: 'python',
-    rb: 'ruby',
-    go: 'go',
-    rs: 'rust',
-    java: 'java',
-    c: 'c',
-    cpp: 'cpp',
-    h: 'c',
-    hpp: 'cpp',
-    cs: 'csharp',
-    swift: 'swift',
-    kt: 'kotlin',
-    php: 'php',
-    html: 'html',
-    css: 'css',
-    scss: 'scss',
-    less: 'less',
-    json: 'json',
-    jsonc: 'json',
-    json5: 'json',
-    yaml: 'yaml',
-    yml: 'yaml',
-    toml: 'toml',
-    xml: 'xml',
-    sql: 'sql',
-    sh: 'bash',
-    bash: 'bash',
-    zsh: 'bash',
-    fish: 'bash',
-    md: 'markdown',
-    mdx: 'markdown',
-    txt: 'plaintext',
-    dockerfile: 'dockerfile',
-    makefile: 'makefile',
-    vue: 'vue',
-    svelte: 'svelte',
-    env: 'properties',
-    ini: 'properties',
-    conf: 'properties',
-    cfg: 'properties',
-    properties: 'properties',
-    graphql: 'graphql',
-    gql: 'graphql',
-    prisma: 'prisma',
-    proto: 'proto',
-    nix: 'nix',
-    lua: 'lua',
-    r: 'r',
-    dart: 'dart',
-    tf: 'hcl',
-    hcl: 'hcl',
-    tfvars: 'hcl',
-    diff: 'diff',
-    patch: 'diff',
-    vim: 'vim',
-  };
-  return map[ext] || 'plaintext';
-}
-
-function isImageMime(mimeType?: string): boolean {
-  return !!mimeType && mimeType.startsWith('image/');
-}
-
-function isBlobCategory(cat: FileCategory): cat is BlobCategory {
-  return (BLOB_CATEGORIES as readonly string[]).includes(cat);
-}
-
 /** Spinner placeholder used inside <Suspense> for lazy-loaded renderers. */
 function RendererFallback() {
   return (
     <div className="flex h-full items-center justify-center">
       <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
-  );
-}
-
-/** Detect error messages that indicate "file not found" vs other failures. */
-function isNotFoundError(errorMsg: string): boolean {
-  const lower = errorMsg.toLowerCase();
-  return (
-    lower.includes('404') ||
-    lower.includes('not found') ||
-    lower.includes('no such file') ||
-    lower.includes('enoent') ||
-    lower.includes('does not exist') ||
-    lower.includes('path not found')
   );
 }
 
@@ -310,6 +144,10 @@ export interface FileContentRendererProps {
   fitOnOpen?: boolean;
   /** Additional class name for the code editor */
   codeEditorEditorClassName?: string;
+  /** Bumped by the surface's Refresh control. Remounts the renderers that read
+   *  their own bytes (xlsx, sqlite, the HTML frame), which a cache refetch
+   *  cannot reach. */
+  reloadKey?: number;
 }
 
 export function FileContentRenderer({
@@ -327,325 +165,29 @@ export function FileContentRenderer({
   onStatusChange,
   fitOnOpen = false,
   codeEditorEditorClassName,
+  reloadKey = 0,
 }: FileContentRendererProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const fileName = filePath.split('/').pop() || '';
-  const isHeicImage = isHeicFile(fileName);
-
-  // `null` outside a <PreviewFitProvider>. Used for one thing only: telling a
-  // ratio-fitting surface that an `image` produced nothing to render, in which
-  // case no ImageRenderer is ever mounted and no renderer is left to say so
-  // itself. Every other failure is reported by the renderer that hit it.
-  const previewFit = usePreviewFit();
-
-  // Data access is supplied by the surface (live workspace vs. project git-ref)
-  // via <FileSourceProvider>, so this renderer stays presentation-only.
-  const source = useFileSource();
-  const { useFileContent, useBinaryBlob, Breadcrumbs } = source;
-
-  // Text content (for code/text files, CSV, non-HEIC images).
-  // HEIC files are loaded exclusively via the blob pipeline — the text/base64
-  // endpoint often returns 500 for HEIC because the server can't encode them.
-  // A zip is fetched ONCE, as bytes. Left on the text path as well it would
-  // also be pulled as base64 through /file/content — a second full download of
-  // an archive that is often the largest thing in the workspace, for a string
-  // no branch below reads (`isContentReady` resolves off the blob for every
-  // BLOB_CATEGORY). Keyed off the filename alone, so it cannot depend on the
-  // response it is disabling.
-  const isZipArchive = getFileCategory(fileName) === 'zip';
   const {
-    data: fileContent,
-    isLoading,
-    error,
-    refetch,
-  } = useFileContent(isHeicImage || isZipArchive ? null : filePath);
-
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveFlash, setSaveFlash] = useState(false);
-  // Tracks the latest editor content so we can save from the header button.
-  const latestContentRef = useRef<string>('');
-  // Bumped on discard to force-remount the CodeEditor and reset its internal state.
-  const [discardKey, setDiscardKey] = useState(0);
-
-  const language = getLanguageFromExt(fileName);
-  const fileCategory = getFileCategory(fileName, fileContent?.mimeType);
-  const isMarkdownFile = language === 'markdown';
-  const isJsonFile = language === 'json';
-  const isHtmlFile = fileCategory === 'html';
-  // Markdown defaults to rendered preview (UnifiedMarkdown). Users can flip to
-  // source/edit via the eye/code toggle in the header. The state is optionally
-  // controlled by the caller (file-preview-modal lifts it into its own chrome).
-  const [internalMarkdownPreview, setInternalMarkdownPreview] = useState(true);
-  const isMarkdownPreview = markdownPreview ?? internalMarkdownPreview;
-  const setIsMarkdownPreview = useCallback(
-    (next: boolean | ((prev: boolean) => boolean)) => {
-      const resolved = typeof next === 'function' ? next(isMarkdownPreview) : next;
-      if (onMarkdownPreviewChange) onMarkdownPreviewChange(resolved);
-      if (markdownPreview === undefined) setInternalMarkdownPreview(resolved);
-    },
-    [isMarkdownPreview, markdownPreview, onMarkdownPreviewChange],
-  );
-  const [isJsonTreeView, setIsJsonTreeView] = useState(false);
-  // HTML files default to rendered preview mode
-  const [isHtmlPreview, setIsHtmlPreview] = useState(true);
-
-  const saveFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clear the transient "saved" flash timer if we unmount before it fires.
-  useEffect(
-    () => () => {
-      if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
-    },
-    [],
-  );
-
-  // LSP diagnostics for this file from the global diagnostics store
-  // Uses suffix-matching because LSP stores absolute paths but we use relative paths
-  const diagByFile = useDiagnosticsStore((s) => s.byFile);
-  const fileDiagnostics = useMemo(
-    () => findDiagnosticsForFile(diagByFile, filePath),
-    [diagByFile, filePath],
-  );
-  const fileDiagErrorCount = useMemo(
-    () => fileDiagnostics?.filter((d) => d.severity === 1).length ?? 0,
-    [fileDiagnostics],
-  );
-  const fileDiagWarningCount = useMemo(
-    () => fileDiagnostics?.filter((d) => d.severity === 2).length ?? 0,
-    [fileDiagnostics],
-  );
-
-  // Binary blob for DOCX, video, audio, PPTX — AND HEIC images.
-  // PDFs intentionally use /file/content base64 so PdfRenderer can create a Blob URL from the string.
-  const blobPath = isBlobCategory(fileCategory) || isHeicImage ? filePath : null;
-  const {
-    blobUrl,
-    blob: rawBlob,
-    isLoading: blobLoading,
-    error: blobError,
-  } = useBinaryBlob(blobPath);
-
-  // HEIC conversion — converts the raw HEIC blob to a renderable JPEG URL
-  const { url: heicImageUrl, isConverting: heicConverting } = useHeicBlob(
-    isHeicImage ? rawBlob : null,
-    fileName,
-  );
-
-  const displayContent = fileContent?.content ?? '';
-
-  // Keep latestContentRef in sync with loaded content
-  useEffect(() => {
-    if (fileContent?.content) {
-      latestContentRef.current = fileContent.content;
-    }
-  }, [fileContent?.content]);
-
-  // Reset state when the FILE changes — markdown defaults to rendered preview.
-  //
-  // `setIsMarkdownPreview` MUST NOT be a dependency here, and this effect must
-  // not call it. That callback is memoized on the preview flag itself, so
-  // listing it made every toggle re-run this effect and force the flag back to
-  // `true` inside the same commit: the source/preview button flipped and
-  // snapped back, which reads as a dead button. It killed BOTH toggles — this
-  // component's own header button and `file-preview-modal`'s toolbar button,
-  // which drives the same state through `onMarkdownPreviewChange`.
-  //
-  // Only the internal (uncontrolled) flag is reset. A controlling parent owns
-  // its copy and resets it on the same file change — see
-  // `file-preview-modal.tsx`'s own `[selectedFilePath]` effect — so notifying
-  // it from here would be a second writer for one piece of state.
-  useEffect(() => {
-    setInternalMarkdownPreview(true);
-    setIsJsonTreeView(false);
-    setHasUnsavedChanges(false);
-    setSaveFlash(false);
-    // HTML files always default to preview mode
-    setIsHtmlPreview(true);
-    latestContentRef.current = '';
-  }, [filePath]);
-
-  // Notify parent of unsaved state changes
-  useEffect(() => {
-    onUnsavedChange?.(hasUnsavedChanges);
-  }, [hasUnsavedChanges, onUnsavedChange]);
-
-  // Download handler
-  const handleDownload = useCallback(async () => {
-    if (!fileName) return;
-    try {
-      await source.download(filePath, fileName);
-    } catch {
-      errorToast(`Failed to download ${fileName}`);
-    }
-  }, [filePath, fileName, source]);
-
-  // Save handler — called by CodeEditor (Cmd+S) and by the header Save button.
-  // When called from the header button we pass latestContentRef.current.
-  // When called from CodeEditor's Cmd+S, CodeEditor passes its own localContent.
-  const handleSave = useCallback(
-    async (content: string) => {
-      if (readOnly) return;
-      setIsSaving(true);
-      try {
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-        const file = new File([blob], fileName, { type: 'text/plain' });
-        const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
-        await source.upload(file, parentPath || undefined);
-        // Refetch so fileContent.content (= originalContent for CodeEditor) updates.
-        // CodeEditor's originalContent effect will then sync savedContent.current
-        // to match localContent, clearing its internal hasChanges flag.
-        await refetch();
-        setHasUnsavedChanges(false);
-        setSaveFlash(true);
-        if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
-        saveFlashTimerRef.current = setTimeout(() => setSaveFlash(false), 2000);
-        onSaved?.();
-        successToast('File saved');
-      } catch (err) {
-        errorToast(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      } finally {
-        setIsSaving(false);
-      }
-    },
-    [filePath, fileName, refetch, onSaved, readOnly, source],
-  );
-
-  // Discard handler — force-remounts CodeEditor so it re-initialises from fileContent.content.
-  const handleDiscard = useCallback(() => {
-    if (readOnly) return;
-    latestContentRef.current = fileContent?.content ?? '';
-    setHasUnsavedChanges(false);
-    setDiscardKey((k) => k + 1);
-  }, [readOnly, fileContent?.content]);
-
-  // Track editor content changes (called on every keystroke by CodeEditor)
-  const handleEditorChange = useCallback(
-    (content: string) => {
-      if (readOnly) return;
-      latestContentRef.current = content;
-    },
-    [readOnly],
-  );
-
-  // Cmd+S handler for when CodeEditor is not mounted (e.g. markdown preview)
-  useEffect(() => {
-    if (readOnly || !isMarkdownPreview) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        if (hasUnsavedChanges && latestContentRef.current) {
-          handleSave(latestContentRef.current);
-        }
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [readOnly, isMarkdownPreview, hasUnsavedChanges, handleSave]);
-
-  // Warn before leaving the page with unsaved changes
-  useEffect(() => {
-    if (readOnly || !hasUnsavedChanges) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [readOnly, hasUnsavedChanges]);
-
-  // Image rendering — skip HEIC (handled separately via blob pipeline)
-  const imageDataUrl = useMemo(() => {
-    if (isHeicImage) return null;
-    if (fileContent?.encoding === 'base64' && isImageMime(fileContent.mimeType)) {
-      return `data:${fileContent.mimeType};base64,${fileContent.content}`;
-    }
-    return null;
-  }, [fileContent, isHeicImage]);
-
-  // Determine loading state
-  const needsBlob = isBlobCategory(fileCategory) || isHeicImage;
-  const isContentReady = needsBlob ? !blobLoading && !blobError : !isLoading && !error;
-  const contentError = needsBlob
-    ? blobError
-    : error instanceof Error
-      ? error.message
-      : error
-        ? String(error)
-        : null;
-  const showLoadingState = needsBlob ? blobLoading : isLoading;
-
-  // A readiness 503 means the sandbox is parked or still booting — a pending
-  // state, never a failure. The file hooks keep polling while this is true
-  // (SANDBOX_WAKING_REFETCH_INTERVAL_MS), so the content appears on its own
-  // once the box is up.
-  const isSandboxWaking = !!contentError && isSandboxNotReadyError(contentError);
-
-  // Detect "file not found" — either via explicit error or empty resolution
-  const isNotFound = useMemo(() => {
-    if (contentError) return isNotFoundError(contentError);
-    // Query settled with no data and no error → file likely doesn't exist
-    if (!showLoadingState && !contentError && !needsBlob && !isLoading && !fileContent) return true;
-    if (!showLoadingState && !contentError && needsBlob && !blobLoading && !blobError && !rawBlob)
-      return true;
-    return false;
-  }, [
-    contentError,
-    showLoadingState,
-    needsBlob,
-    isLoading,
-    fileContent,
-    blobLoading,
-    blobError,
-    rawBlob,
-  ]);
-
-  // Report load status up (used by `show` cards to hide dead references). Only
-  // fires when a caller opts in via `onStatusChange`; the default viewer is
-  // unaffected.
-  useEffect(() => {
-    if (!onStatusChange) return;
-    if (isNotFound) onStatusChange('error');
-    else if (showLoadingState || isSandboxWaking) onStatusChange('loading');
-    else onStatusChange('ready');
-  }, [onStatusChange, isNotFound, showLoadingState, isSandboxWaking]);
-
-  // An `image` that settled without an image to show: bytes whose mime is not
-  // `image/*` (so `imageDataUrl` stayed null and the binary/text fallback ran
-  // instead), or a HEIC whose blob never arrived. No ImageRenderer is mounted
-  // on those paths, so nothing downstream can report the failure — this is the
-  // case the surface itself has to speak for.
-  //
-  // A HEIC whose CONVERSION fails is deliberately not one of them:
-  // `use-heic-url.ts` catches the `heic2any` rejection and falls back to a blob
-  // URL over the raw bytes, which a browser with native HEIC support then
-  // renders correctly. So `heicImageUrl` is set, this predicate is false, and
-  // ImageRenderer mounts. Where the browser also cannot decode it, the release
-  // comes from ImageRenderer exhausting its own retries ~5s later — a known,
-  // accepted window during which a ratio-fitting consumer still holds the
-  // previous document's width. Widening this predicate to pre-empt it would
-  // break the browsers the fallback exists for.
-  //
-  // A HEIC whose blob just resolved is ALSO not one of them, for one render:
-  // `useHeicBlob` flips `isConverting` to true inside its effect
-  // (`use-heic-url.ts:29`), which runs after this render commits. On the
-  // render where `blobLoading` first goes false, `heicConverting` is still
-  // `false` and `heicImageUrl` is still `null` even though conversion is
-  // about to start — not because it failed. Only a HEIC whose blob never
-  // arrived (`rawBlob` still null/absent) counts as producing nothing.
-  const heicAboutToConvert = isHeicImage && !!rawBlob;
-  const imageProducedNothing =
-    fileCategory === 'image' &&
-    !showLoadingState &&
-    !heicConverting &&
-    !imageDataUrl &&
-    !heicImageUrl &&
-    !heicAboutToConvert;
-
-  useEffect(() => {
-    if (!previewFit || !imageProducedNothing) return;
-    previewFit.reportUnmeasurable();
-  }, [previewFit, imageProducedNothing]);
+    source, Breadcrumbs, fileContent, isLoading, error,
+    contentRevision, fetchRevision, hasUnsavedChanges, setHasUnsavedChanges, isSaving,
+    saveFlash, latestContentRef, discardKey, fileName, isHeicImage,
+    language, fileCategory, isMarkdownFile, isMermaidFile, hasPreviewToggle,
+    isJsonFile, isHtmlFile, isMarkdownPreview, setIsMarkdownPreview, isJsonTreeView,
+    setIsJsonTreeView, isHtmlPreview, setIsHtmlPreview, fileDiagErrorCount, fileDiagWarningCount,
+    fileDiagnostics, tHardcodedUi, tI18nHardcoded, blobUrl, rawBlob,
+    blobLoading, blobError, heicImageUrl, heicConverting, displayContent,
+    handleDownload, handleSave, handleDiscard, handleEditorChange, imageDataUrl,
+    needsBlob, isContentReady, contentError, showLoadingState, isSandboxWaking,
+    isNotFound,
+  } = useFileContentState({
+    filePath,
+    onUnsavedChange,
+    onSaved,
+    readOnly,
+    markdownPreview,
+    onMarkdownPreviewChange,
+    onStatusChange,
+  });
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
@@ -677,150 +219,7 @@ export function FileContentRenderer({
 
   return (
     <div className={cn('flex h-full flex-col', className)}>
-      {/* Header */}
-      {showHeader && (
-        <div className="border-border/50 flex h-10 shrink-0 items-center gap-2 border-b px-3 py-1.5">
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            {Breadcrumbs && <Breadcrumbs filePath={filePath} />}
-            {/* Edit state indicator */}
-            {!readOnly && hasUnsavedChanges && (
-              <Badge variant="warning" size="sm" className="shrink-0">
-                <StatusDot tone="warning" pulse />
-                Edited
-              </Badge>
-            )}
-            {!readOnly && saveFlash && !hasUnsavedChanges && (
-              <Badge variant="success" size="sm" className="shrink-0">
-                <Check className="h-3 w-3" />
-                Saved
-              </Badge>
-            )}
-            {readOnly && (
-              <Badge variant="muted" size="sm" className="shrink-0 tracking-wider uppercase">
-                {tHardcodedUi.raw(
-                  'featuresFilesComponentsFileContentRenderer.line554JsxTextViewOnly',
-                )}
-              </Badge>
-            )}
-            {/* Inline diagnostic counts */}
-            {(fileDiagErrorCount > 0 || fileDiagWarningCount > 0) && (
-              <span className="inline-flex shrink-0 items-center gap-1.5">
-                {fileDiagErrorCount > 0 && (
-                  <span className="text-destructive inline-flex items-center gap-0.5 text-xs font-medium tabular-nums">
-                    <CircleAlert className="h-3 w-3" />
-                    {fileDiagErrorCount}
-                  </span>
-                )}
-                {fileDiagWarningCount > 0 && (
-                  <span className="text-kortix-orange inline-flex items-center gap-0.5 text-xs font-medium tabular-nums">
-                    <AlertTriangle className="h-3 w-3" />
-                    {fileDiagWarningCount}
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-
-          <div className="flex shrink-0 items-center gap-0.5">
-            {/* Explicit Save button — only when editing and has changes */}
-            {!readOnly && hasUnsavedChanges && fileContent?.type === 'text' && (
-              <>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="h-7 gap-1.5 px-3 text-xs font-medium"
-                  onClick={() => handleSave(latestContentRef.current)}
-                  disabled={isSaving}
-                  title={tHardcodedUi.raw(
-                    'featuresFilesComponentsFileContentRenderer.line586JsxAttrTitleSaveS',
-                  )}
-                >
-                  {isSaving ? (
-                    <Loading className="h-3.5 w-3.5" />
-                  ) : (
-                    <Save className="h-3.5 w-3.5" />
-                  )}
-                  Save
-                </Button>
-                <Hint label={discardLabel} side="bottom">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={discardLabel}
-                    className="text-muted-foreground hover:text-foreground h-7 w-7 active:scale-[0.96]"
-                    onClick={handleDiscard}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                  </Button>
-                </Hint>
-              </>
-            )}
-
-            {/* HTML preview toggle */}
-            {isHtmlFile && (
-              <Hint label={isHtmlPreview ? 'View source' : 'Preview'} side="bottom">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={isHtmlPreview ? 'View source' : 'Preview'}
-                  aria-pressed={isHtmlPreview}
-                  className={cn('h-7 w-7 active:scale-[0.96]', isHtmlPreview && 'text-primary')}
-                  onClick={() => setIsHtmlPreview((v) => !v)}
-                >
-                  {isHtmlPreview ? <Code className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
-                </Button>
-              </Hint>
-            )}
-
-            {/* JSON tree toggle */}
-            {isJsonFile && fileContent?.type === 'text' && (
-              <Hint label={isJsonTreeView ? 'View source' : 'Tree view'} side="bottom">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={isJsonTreeView ? 'View source' : 'Tree view'}
-                  aria-pressed={isJsonTreeView}
-                  className={cn('h-7 w-7 active:scale-[0.96]', isJsonTreeView && 'text-primary')}
-                  onClick={() => setIsJsonTreeView((v) => !v)}
-                >
-                  <Braces className="h-4 w-4" />
-                </Button>
-              </Hint>
-            )}
-
-            {/* Markdown preview toggle */}
-            {isMarkdownFile && fileContent?.type === 'text' && (
-              <Hint label={isMarkdownPreview ? 'View source' : 'Preview'} side="bottom">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={isMarkdownPreview ? 'View source' : 'Preview'}
-                  aria-pressed={isMarkdownPreview}
-                  className={cn('h-7 w-7 active:scale-[0.96]', isMarkdownPreview && 'text-primary')}
-                  onClick={() => setIsMarkdownPreview((v) => !v)}
-                >
-                  {isMarkdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </Hint>
-            )}
-
-            {/* Additional header actions from parent */}
-            {headerActions}
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 px-3 text-xs font-medium"
-              onClick={handleDownload}
-              disabled={!fileContent && !blobUrl && !rawBlob}
-              aria-label="Download"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download
-            </Button>
-          </div>
-        </div>
-      )}
+      <FileHeader {...{ showHeader, Breadcrumbs, filePath, readOnly, hasUnsavedChanges, saveFlash, fileDiagErrorCount, fileDiagWarningCount, fileContent, isSaving, handleSave, latestContentRef, discardLabel, handleDiscard, isHtmlFile, isHtmlPreview, setIsHtmlPreview, isJsonFile, isJsonTreeView, setIsJsonTreeView, hasPreviewToggle, isMarkdownPreview, setIsMarkdownPreview, headerActions, handleDownload, blobUrl, rawBlob, tI18nHardcoded, tHardcodedUi }} />
 
       {/* Content area — readOnly uses overflow-auto so the read-only editor
           (which renders at auto height) can scroll within the fixed-size parent. */}
@@ -841,7 +240,7 @@ export function FileContentRenderer({
               </p>
               <Button variant="outline" size="sm" onClick={handleDownload}>
                 <Download className="mr-1.5 h-3.5 w-3.5" />
-                Download
+                {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
               </Button>
             </div>
           )}
@@ -860,12 +259,14 @@ export function FileContentRenderer({
           {contentError && !showLoadingState && isSandboxWaking && (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
               <Loading className="text-muted-foreground/40 h-4 w-4" />
-              <p className="text-muted-foreground text-sm font-medium">Waking up the workspace…</p>
+              <p className="text-muted-foreground text-sm font-medium">
+                {tI18nHardcoded.raw('i18nComplete.text5e3de76869f3')}
+              </p>
               <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
                 {filePath}
               </p>
               <p className="text-muted-foreground/40 max-w-xs text-xs">
-                The sandbox is starting. This file will load automatically.
+                {tI18nHardcoded.raw('i18nComplete.textd4707c58c4a4')}
               </p>
             </div>
           )}
@@ -910,6 +311,11 @@ export function FileContentRenderer({
             </Suspense>
           )}
 
+          {/* The rich renderers below get `showDownload={false}`: every host of
+              this component (the session panel, the file preview modal, the
+              public share page) already shows Download in its own toolbar, and
+              a second one inside the viewer is the duplicate we removed. */}
+
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
@@ -918,6 +324,7 @@ export function FileContentRenderer({
                 fileName={fileName}
                 className="h-full"
                 fitOnOpen={fitOnOpen}
+                showDownload={false}
               />
             </Suspense>
           )}
@@ -925,7 +332,12 @@ export function FileContentRenderer({
           {/* DOCX preview */}
           {isContentReady && fileCategory === 'docx' && rawBlob && (
             <Suspense fallback={<RendererFallback />}>
-              <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
+              <DocxRenderer
+                blob={rawBlob}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -944,7 +356,13 @@ export function FileContentRenderer({
           {/* XLSX / XLS preview */}
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
-              <XlsxRenderer filePath={filePath} fileName={fileName} className="h-full" />
+              <XlsxRenderer
+                key={`xlsx-${filePath}-${contentRevision}-${reloadKey}`}
+                filePath={filePath}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
@@ -952,6 +370,7 @@ export function FileContentRenderer({
           {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (
             <Suspense fallback={<RendererFallback />}>
               <SqliteRenderer
+                key={`sqlite-${filePath}-${contentRevision}-${reloadKey}`}
                 filePath={filePath}
                 fileName={fileName}
                 className="h-full"
@@ -963,14 +382,19 @@ export function FileContentRenderer({
           {/* CSV / TSV preview */}
           {!isLoading && !error && fileCategory === 'csv' && fileContent && (
             <Suspense fallback={<RendererFallback />}>
-              <CsvRenderer content={fileContent.content} fileName={fileName} className="h-full" />
+              <CsvRenderer
+                content={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+                showDownload={false}
+              />
             </Suspense>
           )}
 
           {/* Video preview */}
           {isContentReady && fileCategory === 'video' && blobUrl && (
             <Suspense fallback={<RendererFallback />}>
-              <VideoRenderer url={blobUrl} className="h-full" onDownload={handleDownload} />
+              <VideoRenderer url={blobUrl} className="h-full" />
             </Suspense>
           )}
 
@@ -1016,6 +440,7 @@ export function FileContentRenderer({
             <HtmlPreview
               key={`html-preview-${filePath}`}
               path={toSandboxAbsolutePath(filePath)}
+              reloadKey={`${fetchRevision}-${reloadKey}`}
               fileName={fileName}
               pendingLabel={tHardcodedUi.raw(
                 'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',
@@ -1052,7 +477,7 @@ export function FileContentRenderer({
                 </p>
                 <Button variant="outline" size="sm" className="" onClick={handleDownload}>
                   <Download className="mr-1.5 h-3.5 w-3.5" />
-                  Download
+                  {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
                 </Button>
               </div>
             )}
@@ -1065,7 +490,14 @@ export function FileContentRenderer({
             !imageDataUrl &&
             fileCategory !== 'csv' &&
             fileCategory !== 'html' && (
-              <div className={cn('relative flex flex-col', readOnly ? 'min-h-full' : 'h-full')}>
+              <div
+                className={cn(
+                  'relative flex flex-col',
+                  // The diagram fits the pane, so it needs a definite height
+                  // even read-only; `min-h-full` would collapse it to zero.
+                  readOnly && !(isMermaidFile && isMarkdownPreview) ? 'min-h-full' : 'h-full',
+                )}
+              >
                 {/* Diff indicator */}
                 {fileContent.patch && fileContent.patch.hunks.length > 0 && (
                   <InfoBanner
@@ -1084,6 +516,16 @@ export function FileContentRenderer({
                       content={hasUnsavedChanges ? latestContentRef.current : displayContent}
                     />
                   </div>
+                ) : isMarkdownPreview && isMermaidFile ? (
+                  // Reads the unsaved editor text, like the markdown preview
+                  // below, so an edit in Source shows up here before saving.
+                  <MermaidDiagram
+                    key={filePath}
+                    source={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                    fileName={fileName}
+                    onShowSource={() => setIsMarkdownPreview(false)}
+                    className="h-full"
+                  />
                 ) : isMarkdownPreview && isMarkdownFile ? (
                   // Markdown is prose, so it gets a measure. The markdown root
                   // renders at text-[15px]; full-bleed on a wide viewport that
@@ -1121,176 +563,4 @@ export function FileContentRenderer({
       </div>
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Inline JSON Tree View
-// ---------------------------------------------------------------------------
-
-function JsonTreeView({ content }: { content: string }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const parsed = useMemo(() => {
-    try {
-      return JSON.parse(content);
-    } catch {
-      return null;
-    }
-  }, [content]);
-
-  if (parsed === null) {
-    return (
-      <div className="text-destructive/70 p-4 font-mono text-sm">
-        {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line915JsxTextInvalidJson')}
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4 font-mono text-sm leading-relaxed">
-      <JsonNode value={parsed} keyName={null} depth={0} />
-    </div>
-  );
-}
-
-function JsonNode({
-  value,
-  keyName,
-  depth,
-}: {
-  value: unknown;
-  keyName: string | null;
-  depth: number;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [isCollapsed, setIsCollapsed] = useState(depth > 2);
-
-  if (value === null) {
-    return (
-      <div style={{ paddingLeft: depth * 20 }}>
-        {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-muted-foreground/50 italic">null</span>
-      </div>
-    );
-  }
-
-  if (typeof value === 'boolean') {
-    return (
-      <div style={{ paddingLeft: depth * 20 }}>
-        {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-kortix-yellow">{String(value)}</span>
-      </div>
-    );
-  }
-
-  if (typeof value === 'number') {
-    return (
-      <div style={{ paddingLeft: depth * 20 }}>
-        {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-kortix-blue">{String(value)}</span>
-      </div>
-    );
-  }
-
-  if (typeof value === 'string') {
-    const isUrl = /^https?:\/\//.test(value);
-    return (
-      <div style={{ paddingLeft: depth * 20 }} className="break-all">
-        {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-kortix-green">
-          {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line963JsxTextQuot')}
-          {value.length > 200 ? value.slice(0, 200) + '...' : value}
-          {tHardcodedUi.raw(
-            'featuresFilesComponentsFileContentRenderer.line963JsxTextQuotb4125902',
-          )}
-        </span>
-        {isUrl && (
-          <a
-            href={value}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-kortix-blue/70 hover:text-kortix-blue ml-1 text-xs"
-          >
-            open
-          </a>
-        )}
-      </div>
-    );
-  }
-
-  if (Array.isArray(value)) {
-    const count = value.length;
-    return (
-      <div>
-        <button
-          type="button"
-          style={{ paddingLeft: depth * 20 }}
-          aria-expanded={!isCollapsed}
-          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-sm text-left transition-colors"
-          onClick={() => setIsCollapsed((v) => !v)}
-        >
-          <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
-            {isCollapsed ? '\u25B6' : '\u25BC'}
-          </span>
-          {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-          {isCollapsed ? (
-            <span className="text-muted-foreground/40">
-              [{count} item{count !== 1 ? 's' : ''}]
-            </span>
-          ) : (
-            <span className="text-muted-foreground/30">[</span>
-          )}
-        </button>
-        {!isCollapsed && (
-          <>
-            {value.map((item, idx) => (
-              <JsonNode key={idx} value={item} keyName={null} depth={depth + 1} />
-            ))}
-            <div style={{ paddingLeft: depth * 20 }} className="text-muted-foreground/30">
-              ]
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>);
-    const count = entries.length;
-    return (
-      <div>
-        <button
-          type="button"
-          style={{ paddingLeft: depth * 20 }}
-          aria-expanded={!isCollapsed}
-          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-sm text-left transition-colors"
-          onClick={() => setIsCollapsed((v) => !v)}
-        >
-          <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
-            {isCollapsed ? '\u25B6' : '\u25BC'}
-          </span>
-          {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-          {isCollapsed ? (
-            <span className="text-muted-foreground/40">
-              {'{' + count + ' key' + (count !== 1 ? 's' : '') + '}'}
-            </span>
-          ) : (
-            <span className="text-muted-foreground/30">{'{'}</span>
-          )}
-        </button>
-        {!isCollapsed && (
-          <>
-            {entries.map(([k, v]) => (
-              <JsonNode key={k} value={v} keyName={k} depth={depth + 1} />
-            ))}
-            <div style={{ paddingLeft: depth * 20 }} className="text-muted-foreground/30">
-              {'}'}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  return null;
 }

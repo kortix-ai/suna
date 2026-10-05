@@ -6,7 +6,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * WHY IT EXISTS. Everything above it on the page is an argument. By the time a
  * reader reaches the end they have stopped listening to arguments and started
@@ -61,11 +61,11 @@
  *    (`apps/api/src/projects/policies.ts:73`). Write "you set allow, ask or
  *    block", never "it asks first".
  *  - MERGE is default-deny for AGENTS, not human-only. `project.cr.merge` is a
- *    grantable capability (`apps/api/src/projects/routes/r9.ts:58`). Do not
+ *    grantable capability (`apps/api/src/projects/routes/change-request-actions.ts:63`). Do not
  *    write "only a human can merge".
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value in the session, readable by any
- *    command the agent runs (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). Only
+ *    command the agent runs. Only
  *    CONNECTOR credentials never enter the machine (`apps/api/src/projects/
  *    secrets.ts:173,226`).
  *  - AUDIT. Recording is NEVER gated — every tier's actions are always captured.
@@ -76,9 +76,9 @@
  *    true for the Platinum provider (Cloud Hypervisor) and not for the default.
  *    Never "container" in external copy. Never claim egress is controlled at the
  *    network; nothing implements it.
- *  - HARNESS. OpenCode only. ACP, `kortix_version: 3` and the Claude Code /
- *    Codex / Pi harnesses sit behind `KORTIX_ACP_RUNTIME` (default false) and
- *    are not shipped. Never name them.
+ *  - HARNESS. OpenCode only. pi is an experimental, opt-in harness
+ *    (`pi_harness` flag or `runtime: pi`); brand decision D9 is open, so do
+ *    not name it. No Claude Code or Codex harness exists. Never name them.
  *  - LICENCE. Say "open source" and stop. Never name one.
  *  - NO CUSTOMER NAMES. NO INVENTED METRICS. The live GitHub star count is the
  *    only sanctioned figure on the site and it belongs to the open-source

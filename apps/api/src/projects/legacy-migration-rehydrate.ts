@@ -12,7 +12,7 @@
  * runs through `beforeActive` (session-sandbox.ts), and additionally restores
  * the pin at the end so a lost race self-heals on the next open.
  *
- * Mechanics proven live on prod (project 79d76143, sandbox d265e212):
+ * Mechanics proven live on a prod project and sandbox:
  * download the archive captured at migration time, re-key its project ids to the
  * workspace's opencode projectID (opencode scopes session lists by project),
  * SIGKILL the server (pattern must match `opencode.exe serve`), swap the db in,
@@ -38,16 +38,30 @@ export interface LegacyRehydrateSpec {
 
 /**
  * Decide whether a session being provisioned needs a chat rehydrate.
- * `source_sandbox_id` comes from the session's own `legacy_migration` metadata,
- * falling back to the project's (both are written by the migration db phase).
+ *
+ * The archive key (`source_sandbox_id`) must belong to the session's own
+ * project. Two server writers exist, and both satisfy that rule:
+ *   - the Suna migration keys the archive by the project id and writes it on
+ *     the project and on every session;
+ *   - the legacy-sandbox migration keys it by the source sandbox id and writes
+ *     the same value on the project and on its sessions.
+ * So the session value is accepted only when it equals the project id or the
+ * project's own `legacy_migration.source_sandbox_id`. Project metadata is not
+ * client-writable; session metadata is, so any other session value is ignored
+ * and the project value applies.
  */
 export function legacyRehydrateSpec(
   sessionMetadata: Record<string, unknown> | null | undefined,
   projectMetadata: Record<string, unknown> | null | undefined,
+  projectId: string,
 ): LegacyRehydrateSpec | null {
   const fromSession = asObject(asObject(sessionMetadata).legacy_migration);
   const fromProject = asObject(asObject(projectMetadata).legacy_migration);
-  const sourceSandboxId = firstString(fromSession.source_sandbox_id, fromProject.source_sandbox_id);
+  const projectArchive = firstString(fromProject.source_sandbox_id);
+  const sessionArchive = firstString(fromSession.source_sandbox_id);
+  const sessionArchiveBelongsToProject =
+    sessionArchive !== null && (sessionArchive === projectId || sessionArchive === projectArchive);
+  const sourceSandboxId = sessionArchiveBelongsToProject ? sessionArchive : projectArchive;
   if (!sourceSandboxId) return null;
   const opencodeSessionId = firstString(asObject(fromSession.rehydrate).opencode_session_id);
   return { sourceSandboxId, opencodeSessionId: opencodeSessionId ?? null };
@@ -188,7 +202,7 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
   if (spec.opencodeSessionId) {
     await db
       .update(projectSessions)
-      .set({ opencodeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
+      .set({ runtimeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
       .where(eq(projectSessions.sessionId, sessionId));
   }
 }

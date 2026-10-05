@@ -82,7 +82,7 @@ describe('useSettingsNav — inside a provider', () => {
     expect(seen).toBe(navigate);
   });
 
-  test('isOpen=false still resolves the hook (only closed-panel behavior is a view\'s concern, not the context\'s)', () => {
+  test("isOpen=false still resolves the hook (only closed-panel behavior is a view's concern, not the context's)", () => {
     const html = renderToStaticMarkup(
       <SettingsNavProvider value={baseNav({ isOpen: false })}>
         <Probe />

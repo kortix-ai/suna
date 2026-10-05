@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, test } from 'bun:test';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { getFileCategory } from '@/features/file-viewer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { isRich, reportsIntrinsicSize } from './file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 
@@ -43,7 +43,48 @@ function renderShareable(fileName: string, content = 'x'): string {
   );
 }
 
+/** How many times `needle` occurs in `haystack`. */
+function count(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 describe('file kind predicates', () => {
+  test('source viewer retains its extension language and rendered-kind contract', () => {
+    const languages = {
+      md: 'markdown',
+      mdx: 'markdown',
+      ts: 'typescript',
+      tsx: 'tsx',
+      js: 'javascript',
+      jsx: 'jsx',
+      json: 'json',
+      py: 'python',
+      rb: 'ruby',
+      go: 'go',
+      rs: 'rust',
+      sh: 'bash',
+      bash: 'bash',
+      yml: 'yaml',
+      yaml: 'yaml',
+      toml: 'toml',
+      css: 'css',
+      html: 'html',
+      htm: 'html',
+      svg: 'xml',
+      sql: 'sql',
+      mmd: 'mermaid',
+      mermaid: 'mermaid',
+    };
+    for (const [ext, language] of Object.entries(languages)) {
+      const name = `file.${ext}`;
+      expect(languageFor(name)).toBe(language);
+      expect(isMarkdown(name)).toBe(ext === 'md' || ext === 'mdx');
+      expect(isHtml(name)).toBe(getFileCategory(name) === 'html');
+    }
+    expect(languageFor('file.unknown')).toBe('text');
+    expect(isSvg('x.svg')).toBe(true);
+  });
+
   test('svg is recognised, and is not confused with the other rendered kind', () => {
     expect(isSvg('logo.svg')).toBe(true);
     expect(isSvg('LOGO.SVG')).toBe(true);
@@ -131,7 +172,7 @@ describe('FileViewer toolbar', () => {
   });
 
   test('a file with only one form gets no toggle — it would have one position', () => {
-    // Markdown is the other no-toggle kind, but `DocMarkdown` can't be rendered
+    // Markdown is the other no-toggle kind, but `UnifiedMarkdown` can't be rendered
     // by this effect-free harness, so plain source stands in for both.
     const txt = render('notes.txt', 'hi');
     expect(txt).not.toContain('aria-label="Preview"');
@@ -148,13 +189,6 @@ describe('FileViewer toolbar', () => {
     expect(svg).not.toContain('aria-label="Open in a new tab"');
   });
 });
-
-// ── The split button ────────────────────────────────────────────────────────
-// The toolbar used to be six flat icon peers. Everything that is a way of
-// TAKING the output with you now lives in one labelled control plus a caret,
-// and only full screen and close — which act on the panel, not the file — stay
-// outside it. These lock the shape, because "one more little icon button" is
-// exactly how the old row grew.
 
 // ── An HTML file is SERVED, never injected ─────────────────────────────────
 // The regression: the preview handed the file's text to the frame as `srcDoc`.
@@ -215,28 +249,46 @@ describe('FileViewer — HTML is served, not injected', () => {
   });
 });
 
+// ── The address pill ────────────────────────────────────────────────────────
+// The header is one filled pill naming the file, with the file's own actions
+// (Refresh, Copy, Copy link) inside it, then Download, full screen and close
+// outside it. There is no menu: "one more little control behind a caret" is
+// how the old row grew, so these lock the shape.
 describe('FileViewer actions', () => {
-  test('the primary action is a word, with no icon at all', () => {
-    // Owner direction: an icon beside a label that already reads "Copy" is
-    // decoration, and decoration is what made the old row unreadable. The
-    // button's whole content is the word — asserted on the rendered element,
-    // not on its neighbours, so a re-added <svg> fails this immediately.
-    const md = renderShareable('notes.txt', 'hi');
-    const open = md.indexOf('aria-label="Copy file contents"');
-    expect(open).toBeGreaterThan(-1);
-    const button = md.slice(md.lastIndexOf('<button', open), md.indexOf('</button>', open));
-    expect(button).not.toContain('<svg');
-    expect(button.endsWith('>Copy')).toBe(true);
+  test('the pill shows the folders and the file name', () => {
+    const nested = renderToStaticMarkup(
+      <Wrapped>
+        <FileViewer content="hi" fileName="Home.tsx" path="/workspace/src/pages/Home.tsx" />
+      </Wrapped>,
+    );
+    expect(nested).toContain('src / pages /');
+    expect(nested).toContain('title="/workspace/src/pages/Home.tsx"');
   });
 
-  test('Copy link and Download file are behind the caret, not beside it', () => {
+  test('Copy is an icon button in the pill, before Copy link', () => {
     const md = renderShareable('notes.txt', 'hi');
-    expect(md).toContain('aria-label="More actions"');
-    // Radix renders menu content only once opened, so the items themselves
-    // cannot appear in static markup — their absence here is the proof they
-    // are not sitting in the toolbar row.
-    expect(md).not.toContain('title="Copy public link"');
-    expect(md).not.toContain('aria-label="Download"');
+    const copy = md.indexOf('aria-label="Copy file contents"');
+    const link = md.indexOf('aria-label="Copy link"');
+    expect(copy).toBeGreaterThan(-1);
+    expect(link).toBeGreaterThan(copy);
+    const button = md.slice(md.lastIndexOf('<button', copy), md.indexOf('</button>', copy));
+    expect(button).toContain('<svg');
+  });
+
+  test('there is no menu — every action is one click', () => {
+    expect(renderShareable('notes.txt', 'hi')).not.toContain('aria-label="More actions"');
+  });
+
+  test('Download is a visible button outside the pill, exactly one', () => {
+    const md = renderShareable('notes.txt', 'hi');
+    expect(count(md, 'aria-label="Download"')).toBe(1);
+    expect(count(md, 'data-viewer-download=""')).toBe(1);
+    // Order: pill actions, then Download, then the panel controls.
+    const link = md.indexOf('aria-label="Copy link"');
+    const download = md.indexOf('aria-label="Download"');
+    const fullScreen = md.indexOf('aria-label="Full screen"');
+    expect(link).toBeLessThan(download);
+    expect(download).toBeLessThan(fullScreen);
   });
 
   test('the removed icon peers stay removed', () => {
@@ -247,37 +299,66 @@ describe('FileViewer actions', () => {
     expect(md).not.toContain('aria-label="Open in a new tab"');
   });
 
-  test('full screen and close stay outside the group — they act on the panel', () => {
-    const md = renderShareable('notes.txt', 'hi');
-    expect(md).toContain('aria-label="Full screen"');
-  });
-
-  test('a file with nothing but its text offers no caret at all', () => {
-    // No path (nothing to download) and no share context (no link to mint), so
-    // Copy is the only action. A menu holding zero items is a click for
-    // nothing, so the group collapses to the lone button.
+  test('a file with nothing but its text offers Copy alone', () => {
+    // No path (nothing to download) and no share context (no link to mint).
     const bare = renderToStaticMarkup(
       <Wrapped>
         <FileViewer content="hi" fileName="notes.txt" />
       </Wrapped>,
     );
     expect(bare).toContain('aria-label="Copy file contents"');
-    expect(bare).not.toContain('aria-label="More actions"');
+    expect(bare).not.toContain('aria-label="Copy link"');
+    expect(bare).not.toContain('aria-label="Download"');
   });
 
   test('share context alone is not enough — a file with no path cannot be shared', () => {
     // `fileShareInput` returns null without a path, which is what withholds
-    // Copy link. Download needs the path too, so nothing is left for a menu.
+    // Copy link.
     const noPath = renderToStaticMarkup(
       <Wrapped>
         <FileViewer content="hi" fileName="notes.txt" shareContext={SHARE_CONTEXT} />
       </Wrapped>,
     );
-    expect(noPath).not.toContain('aria-label="More actions"');
+    expect(noPath).not.toContain('aria-label="Copy link"');
   });
 
-  test('a path with no share context still earns the caret — Download lives there', () => {
-    expect(render('notes.txt', 'hi')).toContain('aria-label="More actions"');
+  test('a path with no share context shows Download, and no Copy link', () => {
+    const md = render('notes.txt', 'hi');
+    expect(md).not.toContain('aria-label="Copy link"');
+    expect(count(md, 'aria-label="Download"')).toBe(1);
+  });
+});
+
+describe('FileViewer — Save as PDF (markdown only)', () => {
+  /** The rendered `<button …>` opening tag that carries `marker`. */
+  function buttonTag(html: string, marker: string): string {
+    const at = html.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    return html.slice(html.lastIndexOf('<button', at), html.indexOf('>', at) + 1);
+  }
+
+  test('a markdown file offers one Save as PDF button, and Download stays the raw file', () => {
+    for (const name of ['notes.md', 'guide.mdx']) {
+      const md = renderShareable(name, '# Title');
+      expect(count(md, 'data-save-as-pdf=""')).toBe(1);
+      expect(count(md, 'aria-label="Save as PDF"')).toBe(1);
+      expect(buttonTag(md, 'data-save-as-pdf=""')).not.toContain(' disabled=""');
+      // One click each: the PDF is not hidden behind Download, and Download is
+      // not replaced by a menu.
+      expect(count(md, 'data-viewer-download=""')).toBe(1);
+      expect(md.indexOf('data-save-as-pdf=""')).toBeLessThan(md.indexOf('data-viewer-download=""'));
+    }
+  });
+
+  test('no other text file gets it', () => {
+    for (const name of ['notes.txt', 'page.html', 'diagram.mmd', 'logo.svg', 'app.ts']) {
+      expect(renderShareable(name, 'x')).not.toContain('data-save-as-pdf');
+    }
+  });
+
+  test('an empty markdown file shows the button disabled — there is nothing to print', () => {
+    const md = renderShareable('empty.md', '  \n');
+    expect(buttonTag(md, 'data-save-as-pdf=""')).toContain(' disabled=""');
   });
 });
 
@@ -333,26 +414,36 @@ You are **Veyris Internal**.
 
 describe('FileViewer — markdown frontmatter', () => {
   // Rendered assertions live in markdown-frontmatter.test.ts: `parseFrontmatter`
-  // owns the behaviour and is tested directly there. DocMarkdown needs the full
-  // i18n + sandbox-proxy provider stack, which this suite does not stand up (the
-  // other cases here only render non-markdown paths), so what is asserted here
-  // is the WIRING — that the viewer splits the file before the markdown parser
-  // can see the fences.
+  // owns the behaviour and is tested directly there. The markdown renderer
+  // needs the full i18n + sandbox-proxy provider stack, which this suite does
+  // not stand up (the other cases here only render non-markdown paths), so what
+  // is asserted here is the WIRING — that the viewer hands the whole file to
+  // the component that splits frontmatter off before the parser sees it.
 
-  test('the markdown branch splits frontmatter off instead of passing raw content', () => {
-    // The bug: `<DocMarkdown content={content} />`. Markdown then read `---` as
-    // a thematic break and the closing `---` as a setext underline, turning the
-    // whole metadata block into one giant <h2>.
-    expect(FILE_VIEWER_SOURCE).toContain('parseFrontmatter');
-    expect(FILE_VIEWER_SOURCE).not.toMatch(/<DocMarkdown\s+content=\{content\}/);
+  test('the markdown branch renders through MarkdownWithFrontmatter', () => {
+    // The bug: the raw file went straight to the markdown renderer. Markdown
+    // then read `---` as a thematic break and the closing `---` as a setext
+    // underline, turning the whole metadata block into one giant <h2>.
+    expect(FILE_VIEWER_SOURCE).toMatch(/<MarkdownWithFrontmatter\s+content=\{content\}/);
+    expect(FILE_VIEWER_SOURCE).not.toContain('<UnifiedMarkdown');
+  });
+});
+
+describe('FileViewer — source pane inset', () => {
+  // The detail layer opens a file with `padded: false` (the viewer owns its
+  // toolbar), so each view inside `FileBody` supplies its own inset. Markdown
+  // did (`p-6`); the code pane rendered `pb-4` only and the text sat flush
+  // against the panel's left edge under a padded toolbar.
+  test('the code pane is inset on every side, the same 4-step the toolbar uses', () => {
+    const txt = render('notes.txt', 'hi');
+    expect(txt).toMatch(/class="[^"]*\bp-4\b[^"]*\[&amp;_code\]:text-\[13px\]/);
+    expect(txt).not.toMatch(/class="[^"]*\bpb-4 \[&amp;_code\]/);
   });
 
-  test('the parsed body — not the original file — reaches DocMarkdown', () => {
-    expect(FILE_VIEWER_SOURCE).toMatch(/<DocMarkdown[\s\S]{0,120}content=\{body\}/);
-  });
-
-  test('the metadata renders through the shared card, not a bespoke one', () => {
-    // Same component the chat's inline preview uses, so the two panes agree.
-    expect(FILE_VIEWER_SOURCE).toContain('MarkdownFrontmatterCard');
+  test('the inset survives a horizontal scroll — the wrapper grows with its longest line', () => {
+    const txt = render('notes.txt', 'hi');
+    expect(txt).toMatch(
+      /class="[^"]*\bw-fit\b[^"]*\bmin-w-full\b[^"]*\[&amp;_code\]:text-\[13px\]/,
+    );
   });
 });

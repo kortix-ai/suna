@@ -3,7 +3,8 @@
 import { Reveal } from '@/components/home/reveal';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
-import { audit } from './content';
+import { useTranslations } from '@/i18n/use-translations';
+import { getLocalizedConnectorsContent } from './content';
 import { Eyebrow, Section } from './shared';
 
 /**
@@ -11,6 +12,8 @@ import { Eyebrow, Section } from './shared';
  * `kortix.connector_calls` — do not add a field to sound thorough.
  */
 export function AuditSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { audit } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <Section id="audit">
       <SectionHeader eyebrow={audit.eyebrow} title={audit.title} description={audit.sub} />

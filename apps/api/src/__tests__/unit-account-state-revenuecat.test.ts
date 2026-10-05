@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import * as realDb from '../shared/db';
+
 let account: any = null;
 let creditSummary: any = null;
 let autoTopup: any = null;
@@ -16,13 +18,8 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 mock.module('../billing/services/credits', () => ({
-  getCreditSummary: async () => creditSummary,
+  getCreditSummary: () => creditSummary,
   calculateTokenCost: () => 0,
-  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
-  deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
-  refreshDailyCredits: async () => null,
-  grantCredits: async () => undefined,
-  resetExpiringCredits: async () => undefined,
 }));
 
 mock.module('../billing/services/auto-topup', () => ({
@@ -32,6 +29,16 @@ mock.module('../billing/services/auto-topup', () => ({
 mock.module('../shared/platform-roles', () => ({
   isPlatformAdmin: async () => isAdmin,
 }));
+
+// The unit gate's DATABASE_URL is a closed port, and every read the service
+// makes beside the mocked row (instances, sessions, seats) went to it: ~11 s
+// of connect failures per file, one test past the 5 s default timeout. Every
+// such read returns no rows here.
+const noRows: unknown = new Proxy(() => undefined, {
+  get: (_target, property) =>
+    property === 'then' ? (resolve: (rows: unknown[]) => void) => resolve([]) : () => noRows,
+});
+mock.module('../shared/db', () => ({ ...realDb, db: noRows }));
 
 const { buildMinimalAccountState } = await import('../billing/services/account-state');
 
@@ -64,7 +71,7 @@ describe('buildMinimalAccountState revenuecat', () => {
       revenuecatCancelAtPeriodEnd: null,
     };
 
-    creditSummary = { total: 25, daily: 0, monthly: 20, extra: 5, canRun: true };
+    creditSummary = { total: 25, daily: 0, monthly: 20, extra: 5 };
     autoTopup = { enabled: true, threshold: 1, amount: 5 };
     isAdmin = false;
   });

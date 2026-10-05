@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Compaction, as ONE minimal marker — the divider pill IS the whole UI:
  *
@@ -31,7 +32,7 @@ import { SandboxUrlDetector } from '../sandbox-url-detector';
 const PILL_CLASS = 'bg-muted/80 flex shrink-0 items-center gap-2 rounded-md  px-3 py-1.5';
 const PILL_LABEL_CLASS = 'text-muted-foreground text-xs tracking-wide';
 
-/** Transcript copy — sentence case, one idea per line (comms). */
+/** Transcript copy — sentence case, one idea per line (kortix-brand voice-and-tone.md). */
 const COMPACTION_LABEL_LOADING = 'Compacting context…';
 const COMPACTION_LABEL_DONE = 'Context automatically compacted';
 
@@ -66,6 +67,7 @@ function CompactionMarkerImpl({
    */
   onOpenSummary?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const hasSummary = !running && Boolean(summary?.trim());
   const opensDetail = hasSummary && Boolean(onOpenSummary);
@@ -84,10 +86,10 @@ function CompactionMarkerImpl({
             aria-expanded={opensDetail ? undefined : open}
             aria-label={
               opensDetail
-                ? 'Open compaction summary'
+                ? tI18nComplete.raw('textab742f4db494')
                 : open
-                  ? 'Hide compaction summary'
-                  : 'Show compaction summary'
+                  ? tI18nComplete.raw('text92bfa8a05e5a')
+                  : tI18nComplete.raw('text84459dc0a0ee')
             }
             onClick={() => {
               if (onOpenSummary) {

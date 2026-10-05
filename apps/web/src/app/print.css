@@ -1,0 +1,460 @@
+/*
+ * Cmd+P — the session transcript as a document.
+ *
+ * Before this file, printing a session gave one clipped page of app chrome:
+ * the shell is a stack of `h-full` flex boxes, every one `overflow-hidden`
+ * (`session-layout.tsx`), so the browser printed exactly one viewport and threw
+ * the rest of the conversation away.
+ *
+ * Three things fix that, in this order:
+ *
+ *  1. DISSOLVE THE SHELL. `use-session-print.ts` walks from the transcript up to
+ *     `<body>` and stamps every ancestor (`print-chain.ts`). Those boxes get
+ *     `display: contents` here, which removes the box outright — no height, no
+ *     overflow, no clipping — and promotes its children into the page flow.
+ *     Every child of a stamped box that is NOT itself on the chain is hidden,
+ *     which is what removes the sidebar, header, action panel and composer
+ *     without this file naming a single one of them.
+ *  2. UNSKIP THE TURNS. Each turn carries `content-visibility: auto`
+ *     (`turn-viewport.tsx`) so the browser can skip off-screen layout. A skipped
+ *     turn prints as its stand-in box — a blank rectangle. Every turn is forced
+ *     back to `visible` below.
+ *  3. REPAGINATE. Bubbles, code blocks and tables get break rules so a page
+ *     boundary never lands mid-thought.
+ *
+ * Paper is always light. The tokens are re-pinned to their light values for the
+ * printed page rather than hand-writing colors per element, so the transcript
+ * prints in the same palette it was designed in (the values are the `:root`
+ * block of globals.css, which is the source of truth).
+ */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    /* Roomy enough for a stapled read; the header block carries the title. */
+    margin: 16mm 14mm 18mm;
+  }
+
+  /* ---- Paper is light, whatever the app was set to ------------------ */
+
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: oklch(1 0 0);
+    --pane: oklch(1 0 0);
+    --surface: oklch(0.9911 0 0);
+    --foreground: oklch(0 0 0);
+    --card: oklch(0.9672 0 0);
+    --popover: oklch(1 0 0);
+    --secondary: oklch(0.9461 0 0);
+    --muted: oklch(0.9461 0 0);
+    --muted-foreground: oklch(0.5103 0 0);
+    --accent: oklch(0.9672 0 0);
+    --border: oklch(0.9128 0 0);
+    --input: oklch(0.9461 0 0);
+  }
+
+  html,
+  body {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  /* ---- 1. Dissolve the shell --------------------------------------- */
+
+  [data-print-passthrough] {
+    display: contents !important;
+  }
+
+  /* Everything hanging off the chain is app chrome. One rule, no names. */
+  [data-print-passthrough]
+    > *:not([data-print-passthrough]):not([data-print-root]):not([data-print-keep]) {
+    display: none !important;
+  }
+
+  [data-print-root] {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  /* The transcript column is centred and gutter-padded for a 1440px window;
+     on paper the page margin is the gutter. */
+  [data-print-root] > * {
+    max-width: none !important;
+    width: auto !important;
+    margin-inline: 0 !important;
+    padding-inline: 0 !important;
+  }
+
+  /* ---- 2. Un-skip every turn --------------------------------------- */
+
+  [data-print-root] [data-turn-id] {
+    content-visibility: visible !important;
+    contain-intrinsic-size: auto !important;
+    contain: none !important;
+  }
+
+  /* The auto-scroll spacer is a viewport-sized empty box — a blank page. */
+  [data-print-root] [data-scroll-spacer],
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /*
+   * Controls are not content.
+   *
+   * The transcript's per-message affordances — Edit message, Copy response,
+   * Copy code, Turn details, Expand message — are icon-only buttons, and a
+   * printed page rendered them as floating glyphs beside the text with nothing
+   * to click. Every one of them carries an `aria-label` and no text of its own
+   * (audited on a real 9-turn session: 52 buttons, 5 shapes, all icon-only), so
+   * that is the hook. A button that ever carries readable text stays — it would
+   * be content, and hiding it would take words off the page.
+   */
+  [data-print-root] button[aria-label] {
+    display: none !important;
+  }
+
+  /* The paper half of a screen/paper pair — see `message-time-label.tsx`. */
+  [data-print-only] {
+    display: inline !important;
+  }
+
+  /*
+   * A message stamp prints the instant, not "45 minutes ago".
+   *
+   * `font-size: 0` collapses the relative label the element actually contains
+   * and the generated content restores a readable size, so the swap costs no
+   * extra DOM: the on-screen text, the accessible name and a copied transcript
+   * are all untouched, and only paper sees the exact form.
+   */
+  [data-print-root] time[data-print-exact] {
+    font-size: 0 !important;
+  }
+
+  [data-print-root] time[data-print-exact]::after {
+    content: attr(data-print-exact);
+    font-size: var(--text-xs);
+  }
+
+  /* ---- 3. Repaginate ----------------------------------------------- */
+
+  /* A turn is the unit of thought: keep one together when it fits, and never
+     leave its first or last line stranded alone on a page when it does not. */
+  [data-turn-id] {
+    break-inside: auto;
+    orphans: 3;
+    widows: 3;
+    /* The shell spaces turns with `mt-12` (≈44px) for a scrolling reader.
+       On paper that is a third of a page of white between exchanges. */
+    margin-top: 0 !important;
+    padding-top: 7mm;
+  }
+
+  [data-turn-id]:first-child {
+    padding-top: 0;
+  }
+
+  /* Never split these across a page — a half table or a half code block is
+     unreadable, and they are short enough that moving them whole is cheap. */
+  pre,
+  table,
+  blockquote,
+  figure,
+  img,
+  [data-slot='badge'] {
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
+  /* ---- Legibility on paper ----------------------------------------- */
+
+  /* Code scrolls sideways on screen; on paper there is no sideways. Wrap it,
+     or every long line is silently truncated at the page edge — which is what
+     the first print of a Bloomberg/BLPAPI answer did. */
+  pre,
+  code,
+  pre code {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  pre {
+    border: 1px solid var(--border) !important;
+    background: var(--muted) !important;
+    font-size: 9pt;
+    line-height: 1.45;
+  }
+
+  /* Links are worth keeping as text — a PDF of a conversation is often read
+     on paper, where a bare underline tells you nothing. */
+  [data-print-root] a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 8pt;
+    color: var(--muted-foreground);
+    word-break: break-all;
+  }
+
+  /* Screen media is sized to a viewport; paper is sized to the column. */
+  [data-print-root] img,
+  [data-print-root] svg,
+  [data-print-root] video {
+    max-width: 100% !important;
+    max-height: 120mm !important;
+    height: auto !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 9pt;
+  }
+
+  th,
+  td {
+    border: 1px solid var(--border) !important;
+    padding: 1.5mm 2mm !important;
+  }
+
+  /* Elevation is a screen idea. On paper it is a grey smudge. */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Anything mid-animation at print time should print at its resting state. */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* ---- The document header ----------------------------------------- */
+
+  [data-print-header] {
+    display: block !important;
+    margin-bottom: 8mm;
+    padding-bottom: 4mm;
+    border-bottom: 1px solid var(--border);
+    break-after: avoid;
+  }
+}
+
+/* Print-only nodes exist in the DOM at all times so printing needs no
+   re-render: `window.print()` is synchronous, and a React commit scheduled
+   beside it is not guaranteed to land first. They are simply never shown on
+   screen. */
+[data-print-header],
+[data-print-only] {
+  display: none;
+}
+
+/*
+ * Save as PDF — a markdown file as a document (`file-viewer/print-document.ts`).
+ *
+ * The rendered file is mounted as a hidden last child of <body>. While that
+ * print is active, <html> carries `data-print-document-active`: every other
+ * child of <body> — the app, the file-viewer portal, toasts — is removed from
+ * the page, and the document prints alone in the light tokens pinned above.
+ *
+ * The markup is plain HTML from the markdown pipeline (`markdown-pdf.ts`), with
+ * no utility classes, so each element is styled here. The values mirror the
+ * preview's `UnifiedMarkdown` components class for class (`mt-10` is
+ * `calc(var(--spacing) * 10)`), so paper reads like the screen. Tables, code
+ * blocks and page breaks already get the paper rules above.
+ */
+
+[data-print-document] {
+  display: none;
+}
+
+@media print {
+  html[data-print-document-active] body > :not([data-print-document]) {
+    display: none !important;
+  }
+
+  html[data-print-document-active] body > [data-print-document] {
+    display: block !important;
+    color: var(--foreground);
+    font-family: var(--font-sans), ui-sans-serif, sans-serif;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: 1.625;
+    overflow-wrap: anywhere;
+  }
+
+  [data-print-document] > :first-child {
+    margin-top: 0;
+  }
+
+  [data-print-document] :is(h1, h2, h3, h4, h5, h6) {
+    color: var(--foreground);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  [data-print-document] h1 {
+    font-size: var(--text-xl);
+    margin: calc(var(--spacing) * 10) 0 calc(var(--spacing) * 4);
+  }
+
+  [data-print-document] h2 {
+    font-size: var(--text-xl);
+    margin: calc(var(--spacing) * 8) 0 calc(var(--spacing) * 3);
+  }
+
+  [data-print-document] :is(h3, h4) {
+    font-size: var(--text-lg);
+    margin: calc(var(--spacing) * 6) 0 calc(var(--spacing) * 2);
+  }
+
+  [data-print-document] :is(h5, h6) {
+    font-size: var(--text-base);
+    margin: calc(var(--spacing) * 4) 0 calc(var(--spacing) * 1);
+  }
+
+  [data-print-document] :is(p, ul, ol) {
+    margin: calc(var(--spacing) * 4) 0;
+  }
+
+  [data-print-document] :is(ul, ol) {
+    padding-left: calc(var(--spacing) * 6);
+  }
+
+  [data-print-document] ul {
+    list-style: disc;
+  }
+
+  [data-print-document] ol {
+    list-style: decimal;
+  }
+
+  [data-print-document] li + li {
+    margin-top: calc(var(--spacing) * 1);
+  }
+
+  [data-print-document] li :is(p, ul, ol) {
+    margin: calc(var(--spacing) * 1) 0;
+  }
+
+  [data-print-document] li::marker {
+    color: var(--muted-foreground);
+  }
+
+  [data-print-document] ul.contains-task-list {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  [data-print-document] .task-list-item input {
+    margin: 0 calc(var(--spacing) * 2) 0 0;
+    vertical-align: middle;
+  }
+
+  [data-print-document] a {
+    color: var(--kortix-blue);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--kortix-blue) 40%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  [data-print-document] blockquote {
+    margin: calc(var(--spacing) * 5) 0;
+    padding-left: calc(var(--spacing) * 6);
+    border-left: 2px solid var(--border);
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+
+  [data-print-document] hr {
+    margin: calc(var(--spacing) * 6) 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  [data-print-document] :not(pre) > code {
+    padding: 0 calc(var(--spacing) * 1);
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--muted);
+    font-size: 0.875em;
+  }
+
+  [data-print-document] pre {
+    margin: calc(var(--spacing) * 5) 0;
+    padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
+    border-radius: calc(var(--radius) - 2px);
+  }
+
+  [data-print-document] pre code {
+    background: none;
+  }
+
+  [data-print-document] table {
+    margin: calc(var(--spacing) * 5) 0;
+  }
+
+  [data-print-document] th {
+    background: var(--muted);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  [data-print-document] td {
+    font-weight: 400;
+  }
+
+  /* Frontmatter prints as a key/value table, like the preview's card. */
+  [data-print-document] [data-print-frontmatter] th {
+    width: 30%;
+    background: none;
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  [data-print-document] img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /*
+   * Math prints as MathML, which every current engine lays out natively. The
+   * KaTeX HTML twin needs KaTeX's stylesheet and fonts, which a file-viewer
+   * page may never have loaded — without them it prints as scrambled glyphs.
+   */
+  [data-print-document] .katex-html {
+    display: none !important;
+  }
+
+  [data-print-document] .katex .katex-mathml {
+    position: static;
+    clip: auto;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    padding: 0;
+    border: 0;
+  }
+
+  [data-print-document] .katex-display {
+    display: block;
+    margin: calc(var(--spacing) * 5) 0;
+    text-align: center;
+  }
+}

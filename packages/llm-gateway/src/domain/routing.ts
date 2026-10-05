@@ -37,18 +37,15 @@ export interface ModelRoutePlan {
   primaryModel: string;
   fallbackModels?: readonly string[];
   fallbackOn?: ModelFallbackCondition;
-  /** `generationDefaultsForModel(primaryModel)` — kept for callers/tests that
-   *  only care about the primary model. The actual dispatch loop
-   *  (`runFailover`) does NOT trust this for fallback candidates; it
-   *  re-derives fresh, per-candidate defaults via `generationDefaultsForModel`
-   *  below, because a failover candidate can have different capabilities
-   *  (temperature support, reasoning_options, output-token ceiling) than
-   *  `primaryModel`. */
+  /** Defaults for `primaryModel` — used only when `generationDefaultsForModel`
+   *  returns none for it. Dispatch (pipeline/dispatch.ts) never applies these
+   *  to a fallback model, because a fallback can have different capabilities
+   *  (temperature support, reasoning_options, output-token ceiling). */
   generationDefaults?: ModelGenerationDefaults;
   /**
    * Re-derive `ModelGenerationDefaults` for an ARBITRARY model, not just
-   * `primaryModel` — called once per candidate inside the failover loop
-   * (`runFailover`) so a turn that fails over to a fallback model gets that
+   * `primaryModel` — called for each model dispatch attempts
+   * (pipeline/dispatch.ts), so a turn that falls back to a fallback model gets that
    * model's OWN clamped defaults instead of the primary model's stale,
    * unrevalidated ones (e.g. injecting `temperature` into a request that's
    * about to hit a temperature:false fallback, or a `reasoning_effort` the

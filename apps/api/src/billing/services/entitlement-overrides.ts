@@ -26,6 +26,8 @@
  * gate that reads it.
  */
 
+import { isPlainObject } from '../../shared/json';
+
 /** One override: the value, plus an optional ISO-8601 expiry. */
 export interface OverrideEntry<T> {
   value: T;
@@ -36,7 +38,7 @@ export interface OverrideEntry<T> {
 /**
  * Every override an account can carry.
  *
- * The first four mirror the legacy columns of the same name (which are still
+ * The first three mirror the legacy columns of the same name (which are still
  * written — see the migration). `computeRateMultiplier` is new: custom compute
  * pricing for one account. The last five are per-entitlement booleans that
  * apply AFTER the enterprise-flag expansion, so `sso: {value:false}` can switch
@@ -46,7 +48,6 @@ export interface EntitlementOverrides {
   enterpriseEntitled?: OverrideEntry<boolean>;
   demoEnterprise?: OverrideEntry<boolean>;
   managedModelsOverride?: OverrideEntry<boolean>;
-  maxConcurrentSessions?: OverrideEntry<number>;
   computeRateMultiplier?: OverrideEntry<number>;
   sso?: OverrideEntry<boolean>;
   scim?: OverrideEntry<boolean>;
@@ -58,7 +59,7 @@ export interface EntitlementOverrides {
 
 export type OverrideKey = keyof EntitlementOverrides;
 
-/** The value type of one key, e.g. `boolean` for `sso`, `number` for `maxConcurrentSessions`. */
+/** The value type of one key, e.g. `boolean` for `sso`, `number` for `computeRateMultiplier`. */
 export type OverrideValue<K extends OverrideKey> = NonNullable<EntitlementOverrides[K]>['value'];
 
 /** The six per-entitlement booleans, applied after the enterprise expansion. */
@@ -72,30 +73,19 @@ export const ENTITLEMENT_OVERRIDE_KEYS = [
 ] as const;
 
 /** Keys whose value is a number. Everything else in the catalog is a boolean. */
-export const NUMERIC_OVERRIDE_KEYS = ['maxConcurrentSessions', 'computeRateMultiplier'] as const;
+export const NUMERIC_OVERRIDE_KEYS = ['computeRateMultiplier'] as const;
 
 /** Every key the parser accepts. Anything else is dropped. */
 export const OVERRIDE_KEYS = [
   'enterpriseEntitled',
   'demoEnterprise',
   'managedModelsOverride',
-  'maxConcurrentSessions',
   'computeRateMultiplier',
   ...ENTITLEMENT_OVERRIDE_KEYS,
 ] as const satisfies readonly OverrideKey[];
 
 const NUMERIC_KEYS: ReadonlySet<string> = new Set(NUMERIC_OVERRIDE_KEYS);
 const KNOWN_KEYS: ReadonlySet<string> = new Set(OVERRIDE_KEYS);
-
-/**
- * Upper bound for a `maxConcurrentSessions` override. Deliberately the same
- * number as `MAX_ACCOUNT_SESSION_LIMIT` (admin/account-session-limit.ts), which
- * bounds the legacy column — the two spellings of one override must not accept
- * different ranges. Duplicated rather than imported because this module is a
- * pure billing primitive and must not depend on the admin surface;
- * `unit-entitlement-overrides.test.ts` fails if the two ever diverge.
- */
-export const MAX_CONCURRENT_SESSIONS_OVERRIDE = 100_000;
 
 /**
  * Upper bound for a compute rate multiplier. 10× list is already an extreme
@@ -109,10 +99,6 @@ export const MAX_COMPUTE_RATE_MULTIPLIER = 10;
 
 /** No override anywhere: the multiplier every account bills at by default. */
 export const DEFAULT_COMPUTE_RATE_MULTIPLIER = 1;
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Milliseconds for an `expires_at`, or `null` when it is absent or unusable.
@@ -243,12 +229,11 @@ export function clampComputeRateMultiplier(value: number | null | undefined): nu
   return Math.min(Math.max(value, 0), MAX_COMPUTE_RATE_MULTIPLIER);
 }
 
-/** The four legacy columns a patch can also have to write. */
+/** The three legacy columns a patch can also have to write. */
 export interface LegacyOverrideColumns {
   enterpriseEntitled?: boolean;
   demoEnterprise?: boolean;
   managedModelsOverride?: boolean | null;
-  maxConcurrentSessions?: number | null;
 }
 
 /**
@@ -278,9 +263,6 @@ export function legacyMirrorPatch(patch: EntitlementOverridePatch): LegacyOverri
   }
   if ('managedModelsOverride' in patch) {
     columns.managedModelsOverride = permanent(patch.managedModelsOverride) ?? null;
-  }
-  if ('maxConcurrentSessions' in patch) {
-    columns.maxConcurrentSessions = permanent(patch.maxConcurrentSessions) ?? null;
   }
   return columns;
 }
@@ -316,14 +298,6 @@ export function validateOverridePatch(
     if (NUMERIC_KEYS.has(key)) {
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         return { ok: false, error: `"${key}.value" must be a finite number` };
-      }
-      if (key === 'maxConcurrentSessions') {
-        if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENT_SESSIONS_OVERRIDE) {
-          return {
-            ok: false,
-            error: `"maxConcurrentSessions.value" must be an integer from 1 to ${MAX_CONCURRENT_SESSIONS_OVERRIDE}`,
-          };
-        }
       }
       if (key === 'computeRateMultiplier') {
         if (value < 0 || value > MAX_COMPUTE_RATE_MULTIPLIER) {

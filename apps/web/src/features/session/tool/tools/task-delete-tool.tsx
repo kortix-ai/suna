@@ -9,7 +9,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TrashIcon as Trash2 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
@@ -24,7 +24,10 @@ export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
   return (
     <BasicTool
       icon={<Trash2 className="size-3.5 shrink-0" />}
-      trigger={{ title: 'Delete task', subtitle: isError ? 'failed' : undefined }}
+      trigger={{
+        title: tHardcodedUi.raw('i18nComplete.text3baf55478483'),
+        subtitle: isError ? 'failed' : undefined,
+      }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >
@@ -38,22 +41,4 @@ export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('task_delete', TaskDeleteTool);
 ToolRegistry.register('task-delete', TaskDeleteTool);
-
-function extractSkillContent(output: string): string {
-  const match = output.match(/<skill_content[^>]*>([\s\S]*?)<\/skill_content>/);
-  return match ? match[1].trim() : output;
-}
-
-function extractSkillFiles(output: string): string[] {
-  const filesMatch = output.match(/<skill_files>([\s\S]*?)<\/skill_files>/);
-  if (!filesMatch) return [];
-  const fileRegex = /<file>(.*?)<\/file>/g;
-  const files: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = fileRegex.exec(filesMatch[1])) !== null) {
-    files.push(m[1].trim());
-  }
-  return files;
-}

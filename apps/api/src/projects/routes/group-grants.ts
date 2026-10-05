@@ -18,22 +18,30 @@ import {
   isAccountManagerRole,
 } from '../../iam/read-models';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
-import { AnyObject, GroupGrantSchema, projectsApp } from '../lib/app';
-import { normalizeString, readBody } from '../lib/serializers';
+import { GroupGrantSchema, projectsApp } from '../lib/app';
+import { normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { requireEntitlement } from '../../accounts/iam/helpers';
+
+// ─── Project group grants (IAM V2 bulk-access channel) ────────────────────
+//
+// A row in project_group_grants attaches an account_group to a project
+// with a chosen project_role. Every member of the group inherits that
+// role on that project. These routes work for both V1 and V2 accounts —
+// V1 just ignores the rows because V1's engine reads from iam_policies.
 
 projectsApp.openapi(
   createRoute({
     method: 'get',
     path: '/{projectId}/group-grants',
     tags: ['access'],
-    summary: 'GET /:projectId/group-grants',
+    summary: 'List group access grants of a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -152,11 +160,15 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/group-grants',
     tags: ['access'],
-    summary: 'POST /:projectId/group-grants',
+    summary: 'Grant a group access to a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            group_id: z.string().openapi({ description: 'Group id.' }),
+            role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
+            expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
+          }) } } },
       },
     responses: {
         201: json(GroupGrantSchema, 'The created group grant'),
@@ -187,7 +199,7 @@ projectsApp.openapi(
     if (denied) return denied;
   }
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
   // parseAssignableProjectRole folds the legacy `viewer`/`user` aliases into
   // `member` and REJECTS the removed `editor`, so a grant is never persisted
@@ -230,11 +242,14 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/group-grants/{groupId}',
     tags: ['access'],
-    summary: 'PATCH /:projectId/group-grants/:groupId',
+    summary: 'Change a group\'s role on a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), groupId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
+            expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. null removes it.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -264,7 +279,7 @@ projectsApp.openapi(
     if (denied) return denied;
   }
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const role = parseAssignableProjectRole(body.role);
   if (!role) {
     return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
@@ -339,7 +354,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/group-grants/{groupId}',
     tags: ['access'],
-    summary: 'DELETE /:projectId/group-grants/:groupId',
+    summary: 'Remove a group\'s access to a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), groupId: z.string() }),

@@ -1,16 +1,16 @@
-import { createHmac } from 'crypto'
+import { createHmac } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
-import { buildOpencodeApp } from '../proxy'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { INLINE_ATTACHMENT_MAX_BYTES } from '../inline-attachments'
+import { loadOpenCodeConfig, type OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { INLINE_ATTACHMENT_MAX_BYTES } from '@/harness/shared/inline-attachments'
 
 /**
  * End to end through the daemon: a transcript list leaves WITHOUT its
  * attachment bytes, and those bytes are served back one part at a time.
  *
- * Why: on a real session (essentia, 2026-08-24) 20 messages weighed 7-19 MB
+ * Why: on a real session (sampleco, 2026-08-24) 20 messages weighed 7-19 MB
  * because every file part carried its whole file as a `data:` url, reads died
  * on the browser's 30 s deadline, and the retry re-issued the whole thing. The
  * same read answered in-VM in 276 ms. The bytes were the entire cost.
@@ -36,13 +36,14 @@ function signCtx(secret: string): string {
 
 function config(): Config {
   return {
+    ...loadOpenCodeConfig({}),
     servicePort: 8000,
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     sandboxToken: SECRET,
-  } as unknown as Config
+  }
 }
 
 function fakeOpencode(internalUrl: string): Opencode {
@@ -91,7 +92,7 @@ afterAll(() => {
 })
 
 function app() {
-  return buildOpencodeApp(config(), fakeOpencode(`http://127.0.0.1:${upstream.port}`), Date.now())
+  return buildOpenCodeTestApp(config(), fakeOpencode(`http://127.0.0.1:${upstream.port}`), Date.now())
 }
 
 describe('attachment bytes leave the daemon on demand, never in the list', () => {
@@ -121,7 +122,9 @@ describe('attachment bytes leave the daemon on demand, never in the list', () =>
   })
 
   it('the part endpoint serves the exact bytes with the part mime, cacheable forever', async () => {
-    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`)
+    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`, {
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx(SECRET) },
+    })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('image/png')
     expect(res.headers.get('cache-control')).toContain('immutable')
@@ -132,19 +135,21 @@ describe('attachment bytes leave the daemon on demand, never in the list', () =>
 
   it('a revalidation with the etag costs nothing', async () => {
     const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`, {
-      headers: { 'if-none-match': '"prt_img"' },
+      headers: { 'if-none-match': '"prt_img"', [KORTIX_USER_CONTEXT_HEADER]: signCtx(SECRET) },
     })
     expect(res.status).toBe(304)
   })
 
-  it('an unknown part is a 404, not a crash', async () => {
-    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_nope`)
+  it('an unknown message is a 404, not a crash', async () => {
+    const res = await app().request(`/kortix/part/${SESSION}/msg_nope/prt_img`, {
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx(SECRET) },
+    })
     expect(res.status).toBe(404)
   })
 
-  it('an unknown message is a 404, not a crash', async () => {
-    const res = await app().request(`/kortix/part/${SESSION}/msg_nope/prt_img`)
-    expect(res.status).toBe(404)
+  it('the part endpoint rejects a request with no credential', async () => {
+    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`)
+    expect(res.status).toBe(401)
   })
 
   it('a single-message read is NOT stripped — that is where the part endpoint reads the bytes from', async () => {

@@ -1,7 +1,10 @@
 import type { ConnectorAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import { describeConnectorActionCounts, summarizeConnectorActions } from './connector-action-summary';
+import {
+  describeConnectorActionCounts,
+  summarizeConnectorActions,
+} from './connector-action-summary';
 
 const action = (over: Partial<ConnectorAction> = {}): ConnectorAction => ({
   path: 'GET /things',

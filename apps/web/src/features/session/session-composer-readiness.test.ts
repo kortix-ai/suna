@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { SESSION_NOTICE } from '@kortix/sdk';
 import { projectWorking, type SessionTurn } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 import {
   resolveLastTurnWorking,
@@ -8,13 +9,31 @@ import {
 } from './session-composer-readiness';
 
 describe('sessionComposerReadiness', () => {
+  test('a submitted prompt replaces the idle notice while its computer starts', () => {
+    expect(sessionComposerReadiness({
+      runtimeReady: false,
+      connection: 'waking',
+      pendingPrompt: true,
+    })).toEqual({
+      ready: false,
+      notice: SESSION_NOTICE.starting,
+      retryable: false,
+    });
+  });
+
+  test('a pending prompt cannot hide a startup failure or keep the ready notice visible', () => {
+    expect(sessionComposerReadiness({ runtimeReady: false, pendingPrompt: true, unreachable: true }).retryable).toBe(true);
+    expect(sessionComposerReadiness({ runtimeReady: true, pendingPrompt: true }).notice).toBeNull();
+  });
   // The connection projection replaces the settle TIMER this file used to
   // carry. A timer was the same mistake in miniature: it guessed how long to
   // stay quiet instead of asking whether anything was actually wrong. Now the
   // notice is a function of what the control plane and the runtime have
   // actually said.
   test('a cold load says nothing — unknown is not a fault', () => {
-    expect(sessionComposerReadiness({ runtimeReady: false, connection: 'unknown' }).notice).toBeNull();
+    expect(
+      sessionComposerReadiness({ runtimeReady: false, connection: 'unknown' }).notice,
+    ).toBeNull();
   });
 
   test('a running sandbox we have not reached yet says nothing either', () => {
@@ -29,11 +48,21 @@ describe('sessionComposerReadiness', () => {
   // PARKED, not actively booting. It resumes on the next send, so the composer
   // states that honestly instead of showing a "waking" spinner-lie: no infinite
   // spinner, no retry, and the copy names what a send does.
+  // The page's own /start is bringing a stopped computer up. "Idle — your next
+  // message wakes it" beside a boot pill saying "Reserving your computer" was two
+  // claims about one computer; only one was true.
+  test('a computer the page is starting reads as waking, not idle', () => {
+    const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking', starting: true });
+    expect(readiness.notice).toBe(SESSION_NOTICE.waking);
+    expect(readiness.ready).toBe(false);
+    expect(readiness.retryable).toBe(false);
+  });
+
   test('a parked/idle box gets an honest idle state, not a waking spinner', () => {
     const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking' });
-    expect(readiness.notice).toMatch(/idle/i);
+    expect(readiness.notice).toMatch(/computer is asleep/i);
     expect(readiness.notice).not.toMatch(/waking/i);
-    expect(readiness.notice).toMatch(/starts it automatically|send/i);
+    expect(readiness.notice).toMatch(/next message wakes.*delivered/i);
     expect(readiness.ready).toBe(false);
     // No retry: there is nothing to reset — the box is simply parked, and a
     // send (not a retry button) is what wakes it.
@@ -93,7 +122,11 @@ describe('sessionComposerReadiness', () => {
     expect(unreachable.notice).toMatch(/lost contact/i);
     expect(unreachable.retryable).toBe(true);
 
-    const stalled = sessionComposerReadiness({ runtimeReady: false, settling: true, stalled: true });
+    const stalled = sessionComposerReadiness({
+      runtimeReady: false,
+      settling: true,
+      stalled: true,
+    });
     expect(stalled.notice).toMatch(/taking longer/i);
     expect(stalled.retryable).toBe(true);
   });
@@ -237,7 +270,9 @@ describe('serverHoldsOpenTurn', () => {
 
     expect(working.state).toBe('working');
     expect(serverHoldsOpenTurn(working)).toBe(true);
-    expect(sessionComposerReadiness({ runtimeReady: false, serverTurnLive: true }).notice).toBeNull();
+    expect(
+      sessionComposerReadiness({ runtimeReady: false, serverTurnLive: true }).notice,
+    ).toBeNull();
   });
 
   test('a turn started with no wire messageID counts — triggers, Slack, and every `/` command', () => {
@@ -384,4 +419,8 @@ describe('resolveLastTurnWorking', () => {
       resolveLastTurnWorking({ isChildSession: true, projectionBusy: true, rawSlotBusy: false }),
     ).toBe(false);
   });
+});
+
+test('a queued send does not ask the user to send another message to wake the session', () => {
+  expect(sessionComposerReadiness({ runtimeReady: false, connection: 'waking', pendingDelivery: true }).notice).toBeNull();
 });

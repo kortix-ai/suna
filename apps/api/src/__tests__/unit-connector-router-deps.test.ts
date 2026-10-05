@@ -18,11 +18,17 @@ const DB_DEPS_SOURCE = await Bun.file(
 
 const REQUIRED_DEP_KEYS = [
   'listDiscoverConnectors',
+  'listDiscoverSections',
   'getDiscoverConnector',
   'discoverConnectorAuth',
   'listPipedreamApps',
   'getProjectPolicies',
   'setProjectPolicies',
+  // Optional on GatewayDeps; without it Slack/Teams reads reach every
+  // conversation of the shared workspace token (channel-read-scope.ts).
+  'gateChannelRead',
+  // Same for writes (channel-write-scope.ts): posts, edits, deletes, reactions.
+  'gateChannelWrite',
 ];
 
 describe('dbConnectorRouterDeps wiring', () => {

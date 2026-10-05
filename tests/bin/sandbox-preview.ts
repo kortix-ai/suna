@@ -3,15 +3,18 @@ import { appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+  PREVIEW_SUITE_REFUSED,
+  PREVIEW_SUITE_SUPERSEDED,
+  previewSuiteSuperseded,
   type SandboxPreviewProvider,
   branchEnvSandboxName,
   runSandboxPreview,
 } from '../src/core/sandbox-preview';
 import {
   type SandboxPreviewDeploymentInput,
-  deployDaytonaPreview,
   deployPlatinumPreview,
   reconcileDaytonaPreviews,
+  runPlatinumPreviewSuite,
   reconcilePlatinumPreviews,
   teardownDaytonaPreview,
   teardownPlatinumPreview,
@@ -30,39 +33,42 @@ function required(name: string): string {
 
 function positiveInteger(name: string): number {
   const result = Number(required(name));
-  if (!Number.isSafeInteger(result) || result < 1) throw new Error(`${name} must be a positive integer`);
+  if (!Number.isSafeInteger(result) || result < 1)
+    throw new Error(`${name} must be a positive integer`);
   return result;
-}
-
-function optionalPositiveInteger(name: string): number | undefined {
-  if (!value(name)) return undefined;
-  return positiveInteger(name);
-}
-
-/**
- * PREVIEW_SANDBOX_CPU / _RAM_MB / _DISK_GB size the sandbox and the template
- * VMs that prepare it. Unset — the CI shape — means 8 vCPU / 16 GB / 50 GB. A
- * hand deploy onto a smaller Platinum (a dev host) passes what it can hold;
- * any of the three may be given, the others keep the CI value.
- */
-function sandboxResources(): { cpu: number; ramMb: number; diskGb: number } | undefined {
-  const cpu = optionalPositiveInteger('PREVIEW_SANDBOX_CPU');
-  const ramMb = optionalPositiveInteger('PREVIEW_SANDBOX_RAM_MB');
-  const diskGb = optionalPositiveInteger('PREVIEW_SANDBOX_DISK_GB');
-  if (cpu === undefined && ramMb === undefined && diskGb === undefined) return undefined;
-  return { cpu: cpu ?? 8, ramMb: ramMb ?? 16_384, diskGb: diskGb ?? 50 };
 }
 
 function provider(): SandboxPreviewProvider {
   const selected = value('PREVIEW_SANDBOX_PROVIDER', 'auto').toLowerCase();
-  if (selected === 'auto' || selected === 'platinum' || selected === 'daytona') return selected;
-  throw new Error(`PREVIEW_SANDBOX_PROVIDER must be auto, platinum, or daytona; received ${selected}`);
+  if (selected === 'auto' || selected === 'platinum') return selected;
+  throw new Error(
+    `previews run on Platinum only: PREVIEW_SANDBOX_PROVIDER must be auto or platinum; received ${selected}`,
+  );
 }
 
 async function writeOutput(name: string, outputValue: string): Promise<void> {
   const output = process.env.GITHUB_OUTPUT;
   if (output) await appendFile(output, `${name}=${outputValue}\n`);
   console.log(`[sandbox-preview] ${name}=${outputValue}`);
+}
+
+/** False when GitHub cannot answer: only a positive answer stops a suite. */
+async function pullRequestSuperseded(
+  repository: string,
+  prNumber: number,
+  sha: string,
+  token: string,
+): Promise<boolean> {
+  const response = await fetch(`https://api.github.com/repos/${repository}/pulls/${prNumber}`, {
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) return false;
+  return previewSuiteSuperseded(await response.json(), sha);
 }
 
 async function activePreviewPullRequests(
@@ -150,10 +156,10 @@ if (action === 'deploy') {
   // environment: the sandbox is reused instead of replaced, so the URL is
   // stable across pushes (see branchEnvSandboxName).
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
-  // A PR preview is a gate, so it runs the suite. A branch environment is a
-  // place to work: the suite is ~10 of the ~14 minutes a deploy takes and
-  // proves nothing the stack health check has not, so it is off by default
-  // there. PREVIEW_RUN_TESTS=1 forces it back on for a deliberate full run.
+  // A branch environment is a place to work: the suite is 40-80 min and proves
+  // nothing the stack health check has not, so it is off by default there.
+  // PREVIEW_RUN_TESTS=1 (the workflow's dispatch) forces a deliberate full run. The deploy never runs it: it is the
+  // separate `suite` action, so the workflow publishes the origin first.
   const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;
   // PREVIEW_PUBLIC_ORIGIN is the stable name a proxy serves the environment at.
   // The stack is configured with it; the provider's own hostname stays the
@@ -161,23 +167,9 @@ if (action === 'deploy') {
   // caller, never hardcoded here — a preview origin is provider-issued unless
   // an operator deliberately fronts it.
   const publicOrigin = process.env.PREVIEW_PUBLIC_ORIGIN?.trim() || undefined;
-  const resources = sandboxResources();
-  // PREVIEW_IMAGE_SHA / PREVIEW_IMAGE_REPO: images built from another commit
-  // (identical product code, different tooling) or held in another Docker Hub
-  // namespace. Unset — the CI shape — means kortix/*:pr-<PREVIEW_SHA>.
-  const imageSha = value('PREVIEW_IMAGE_SHA') || undefined;
-  const imageRepo = value('PREVIEW_IMAGE_REPO') || undefined;
-  // PREVIEW_WARM_TEMPLATE=0 skips deriving the warm (stateful) template — on a
-  // one-host Platinum its seed-baker builder VM costs more than it saves.
-  const warmTemplate = value('PREVIEW_WARM_TEMPLATE') !== '0';
   const deployment: SandboxPreviewDeploymentInput = {
     ...(branchEnv ? { branchEnv } : {}),
     ...(publicOrigin ? { publicOrigin } : {}),
-    ...(resources ? { resources } : {}),
-    ...(warmTemplate ? {} : { warmTemplate }),
-    ...(imageSha ? { imageSha } : {}),
-    ...(imageRepo ? { imageRepo } : {}),
-    runTests,
     repository,
     ref: value('PREVIEW_REF', sha),
     sha,
@@ -187,25 +179,17 @@ if (action === 'deploy') {
     root: resolve(value('PREVIEW_ROOT', resolve(import.meta.dir, '../..'))),
     lockfileHash: required('PREVIEW_LOCKFILE_SHA256'),
     secrets: readPreviewRuntimeSecrets(process.env),
-    // The runner already holds a token good for reading this repo; the sandbox
-    // never got one, and GitHub throttles unauthenticated fetches from
-    // datacenter ranges by 401-ing the upload-pack POST. Optional by design:
-    // absent, the fetch stays anonymous.
-    checkoutToken: value('GH_TOKEN') || value('GITHUB_TOKEN'),
     platinum,
-    daytona,
   };
   const result = await runSandboxPreview(
     { provider: provider(), prNumber, repository, sha },
     {
       platinum: () => deployPlatinumPreview(deployment),
-      daytona: () => deployDaytonaPreview(deployment),
     },
   );
-  const staleProviderCleanup = result.provider === 'platinum'
-    ? teardownDaytonaPreview({ ...daytona, prNumber })
-    : teardownPlatinumPreview({ ...platinum, prNumber });
-  await staleProviderCleanup.catch((error) => {
+  // Previews created before Platinum-only (2026-09-22) may still exist on
+  // Daytona. Remove this pull request's one; nothing new is ever created there.
+  await teardownDaytonaPreview({ ...daytona, prNumber }).catch((error) => {
     console.warn(
       `[sandbox-preview] stale provider cleanup failed; scheduled reconciliation will retry: ${String(error)}`,
     );
@@ -213,17 +197,53 @@ if (action === 'deploy') {
   await writeOutput('provider', result.provider);
   await writeOutput('sandbox_id', result.sandboxId ?? '');
   await writeOutput('preview_url', result.previewUrl ?? '');
-  await writeOutput('report_url', result.previewUrl ? `${result.previewUrl}/_tests/` : '');
+  // WHETHER THE SUITE WILL RUN, from the one place that decided it. The
+  // workflow gates its `suite` step on this, and its status line and sticky
+  // comment read the suite step's own outcome — never "tested" from a deploy.
+  // Emitted rather than re-derived from PREVIEW_RUN_TESTS in YAML: the rule is
+  // `PREVIEW_RUN_TESTS === '1' || !branchEnv`, and a second copy of it in the
+  // workflow is a second copy that can drift.
+  await writeOutput('suite', runTests ? '1' : '0');
   process.exitCode = result.exitCode;
+} else if (action === 'suite') {
+  // `pnpm test -- --target-full` against the sandbox this run's deploy step
+  // returned. Only a run that tests links `/_tests/`: a persistent sandbox
+  // keeps whatever an earlier run left there.
+  const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
+  const sha = required('PREVIEW_SHA');
+  // A push (or removing the label) makes this run's commit stale. Stop the
+  // suite then, so the newer commit's redeploy is not queued behind it.
+  const token = process.env.GH_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim();
+  const superseded = token ? () => pullRequestSuperseded(repository, prNumber, sha, token) : undefined;
+  const exitCode = await runPlatinumPreviewSuite({
+    repository,
+    sha,
+    ...(superseded ? { superseded } : {}),
+    prNumber,
+    runId: value('GITHUB_RUN_ID', `local-${Date.now()}`),
+    runAttempt: value('GITHUB_RUN_ATTEMPT', '1'),
+    root: resolve(value('PREVIEW_ROOT', resolve(import.meta.dir, '../..'))),
+    sandboxId: required('PREVIEW_SANDBOX_ID'),
+    platinum,
+    ...(process.env.PREVIEW_BRANCH_ENV?.trim() ? { branchEnv: process.env.PREVIEW_BRANCH_ENV.trim() } : {}),
+  });
+  // A refused or superseded suite wrote no report; `/_tests/` still holds an older run's.
+  const previewUrl = value('PREVIEW_URL');
+  const wroteReport = exitCode !== PREVIEW_SUITE_REFUSED && exitCode !== PREVIEW_SUITE_SUPERSEDED;
+  await writeOutput('report_url', previewUrl && wroteReport ? `${previewUrl.replace(/\/$/, '')}/_tests/` : '');
+  // Superseded is not a failure of this commit: the step succeeds and says why.
+  await writeOutput('superseded', exitCode === PREVIEW_SUITE_SUPERSEDED ? '1' : '0');
+  process.exitCode = exitCode === PREVIEW_SUITE_SUPERSEDED ? 0 : exitCode;
 } else if (action === 'teardown') {
   // A persistent environment's sandbox is named after the BRANCH, so teardown
   // has to be told which branch or it deletes nothing and the box runs forever.
   // A branch-deleted event carries the branch and no pull request, so the number
   // is optional whenever the branch is known.
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
-  const prNumber = branchEnv && !process.env.PREVIEW_PR_NUMBER?.trim()
-    ? undefined
-    : positiveInteger('PREVIEW_PR_NUMBER');
+  const prNumber =
+    branchEnv && !process.env.PREVIEW_PR_NUMBER?.trim()
+      ? undefined
+      : positiveInteger('PREVIEW_PR_NUMBER');
   const [platinumDeleted, daytonaDeleted] = await Promise.all([
     teardownPlatinumPreview({
       ...platinum,

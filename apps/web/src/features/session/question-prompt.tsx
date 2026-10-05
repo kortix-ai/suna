@@ -1,3 +1,6 @@
+'use client';
+
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * QuestionPrompt — compact self-contained inline chip inside the chat input card.
  *
@@ -7,8 +10,6 @@
  * - Multi-select toggle + Next/Confirm flow
  * - Custom answers typed in the main chat textarea (no nested input)
  */
-
-'use client';
 
 import { cn } from '@/lib/utils';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@/ui';
@@ -92,6 +93,7 @@ interface QuestionPromptProps {
 
 export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPromptProps>(
   function QuestionPrompt({ request, onReply, onReject, onActionChange }, ref) {
+    const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
     const questions = request.questions;
     const isSingle = questions.length === 1 && !questions[0].multiple;
 
@@ -287,7 +289,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
         <div className="flex w-full items-center gap-2 p-2 py-1.5">
           <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
-            {isSingle ? '' : `${questions.length} questions \u00B7 `}
+            {isSingle ? '' : tI18nComplete('texte870362067ac', { value0: questions.length })}
             <span className="text-foreground/80 truncate font-medium">{headerSummary}</span>
           </span>
           {/* A real <button>: Enter AND Space activate it natively, and Space no
@@ -295,7 +297,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
           <button
             type="button"
             onClick={reject}
-            aria-label="Dismiss question"
+            aria-label={tI18nComplete.raw('text31d11513a187')}
             className="text-muted-foreground/40 hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
           >
             <Close className="size-3" />
@@ -308,7 +310,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
           {!isSingle && (
             <div
               role="tablist"
-              aria-label="Questions"
+              aria-label={tI18nComplete.raw('text9a72221a2747')}
               className="scrollbar-hide border-border/30 bg-muted/20 flex items-center gap-0.5 overflow-x-auto border-b px-2 py-1"
             >
               {questions.map((q, i) => {
@@ -366,7 +368,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent',
                 )}
               >
-                Confirm
+                {tI18nComplete.raw('texteebdd24a77d9')}
               </button>
             </div>
           )}
@@ -422,7 +424,10 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                 {/* Question text */}
                 <div className="text-foreground/95 max-h-[300px] overflow-y-auto text-xs leading-relaxed font-medium md:text-sm">
                   <QuestionMarkdown
-                    content={currentQuestion.question + (isMulti ? ' *(select multiple)*' : '')}
+                    content={
+                      currentQuestion.question +
+                      (isMulti ? tI18nComplete.raw('text79139c621384') : '')
+                    }
                   />
                 </div>
 

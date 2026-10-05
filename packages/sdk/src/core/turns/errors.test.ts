@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractGatewayErrorDetails, unwrapError } from './errors';
+import { extractGatewayErrorDetails, rawErrorText, unwrapError } from './errors';
 
 // The gateway's structured error envelope — mirrors gatewayErrorBody()
 // (packages/llm-gateway/src/pipeline/error-response.ts) exactly, both the
@@ -81,6 +81,8 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
       suggestion: 'Add an openai API key in project settings, then retry.',
       upstreamStatus: undefined,
       requestId: 'req_abc123',
+      requestedModel: 'openai/gpt-4.1',
+      resolvedModel: 'openai/gpt-4.1',
     });
   });
 
@@ -93,6 +95,27 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
     expect(details?.code).toBe('provider_not_connected');
     expect(details?.suggestion).toBe('Add an openai API key in project settings, then retry.');
     expect(details?.requestId).toBe('req_abc123');
+  });
+
+  // A resolution error (no upstream chosen yet) carries `provider: ''` — the
+  // model ids are the only way a host can tell WHICH connection is missing,
+  // e.g. a ChatGPT subscription (`codex/…`) that needs reconnecting.
+  test('carries the requested and resolved model of a resolution error with an empty provider', () => {
+    const details = extractGatewayErrorDetails(gatewayBody({
+      message: 'The selected ChatGPT connections need reconnection.',
+      code: 'provider_reauth_required',
+      provider: '',
+      requested_model: 'codex/gpt-6-sol',
+      resolved_model: 'codex/gpt-6-sol',
+      suggestion: 'Reconnect a selected ChatGPT account or select another granted connection.',
+      error: undefined,
+    }));
+    expect(details).toMatchObject({
+      code: 'provider_reauth_required',
+      requestedModel: 'codex/gpt-6-sol',
+      resolvedModel: 'codex/gpt-6-sol',
+    });
+    expect(details?.provider).toBeUndefined();
   });
 
   test('carries upstream_status as a number when present', () => {
@@ -270,13 +293,35 @@ describe('unwrapError — a message that is itself a serialized body is unwrappe
     expect(unwrapError(html)).toBe('502 Bad Gateway');
   });
 
-  test('hostile unclosed HTML tags are processed in linear time', () => {
-    for (const tag of ['title', 'script', 'style']) {
-      const html = `<html>${`<${tag}`.repeat(10_000)}`;
-      const startedAt = performance.now();
-      expect(unwrapError(html)).toBeDefined();
-      expect(performance.now() - startedAt).toBeLessThan(100);
-    }
+  // CodeQL js/bad-tag-filter: `<\/script>` does not match a close tag with
+  // whitespace before the bracket, which HTML permits. The script body then
+  // survives the strip and lands in the user's transcript row.
+  test('a close tag with whitespace still strips the script body out of the visible text', () => {
+    const html = '<html><body><script >alert(1)</script >Service unavailable</body></html>';
+    expect(unwrapError(html)).toBe('Service unavailable');
+  });
+
+  test('the same holds for style, and for an uppercase close tag', () => {
+    const html = '<html><body><STYLE>.a{color:red}</STYLE >Gateway timeout</body></html>';
+    expect(unwrapError(html)).toBe('Gateway timeout');
+  });
+
+  // CodeQL js/polynomial-redos: `<title[^>]*>` and `<script[\s\S]*?<\/script>`
+  // each rescan the tail from every match position, so an error page that is a
+  // long run of unclosed tags costs O(n^2). The body is attacker-influenced —
+  // it is whatever an upstream gateway returned — so this must stay linear.
+  test('a pathological unclosed-tag body is parsed in linear time, not quadratically', () => {
+    const hostile = `<html>${'<title'.repeat(30_000)}`;
+    const started = Date.now();
+    unwrapError(hostile);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('the same bound holds for a long run of unclosed script tags', () => {
+    const hostile = `<html><body>${'<script'.repeat(30_000)}`;
+    const started = Date.now();
+    unwrapError(hostile);
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 
   test('a body with no recognizable sentence never renders "[object Object]" or empty', () => {
@@ -300,5 +345,103 @@ describe('extractGatewayErrorDetails — a gateway body serialized into data.mes
     expect(details?.provider).toBe('openai');
     expect(details?.code).toBe('provider_not_connected');
     expect(details?.requestId).toBe('req_abc123');
+  });
+
+  // The daemon stores a failed turn as `{ name, code, data }`; its `code` is the
+  // daemon's own class (`rate_limit`), not the gateway's. A prod session showed
+  // the whole `429: {…}` body as its error row because that outer `code` was
+  // taken for the envelope.
+  test('the gateway envelope in data.message wins over the daemon code beside it', () => {
+    const body = {
+      message: 'All selected ChatGPT connections are cooling down.',
+      type: 'provider_pool_rate_limited',
+      code: 'provider_pool_rate_limited',
+      provider: '',
+      requested_model: 'codex/gpt-6.1-sol',
+      resolved_model: 'codex/gpt-6.1-sol',
+      request_id: 'req_pool429',
+      suggestion: 'Select a granted ChatGPT connection in session settings.',
+    };
+    const details = extractGatewayErrorDetails({
+      name: 'UnknownError',
+      code: 'rate_limit',
+      data: { message: `429: ${JSON.stringify(body)}`, statusCode: 429 },
+    });
+    expect(details?.message).toBe('All selected ChatGPT connections are cooling down.');
+    expect(details?.code).toBe('provider_pool_rate_limited');
+    expect(details?.suggestion).toBe('Select a granted ChatGPT connection in session settings.');
+    expect(details?.requestId).toBe('req_pool429');
+  });
+
+  test('a daemon error with no envelope inside still reports its own code', () => {
+    const details = extractGatewayErrorDetails({
+      name: 'UnknownError',
+      code: 'rate_limit',
+      data: { message: 'Too many requests', statusCode: 429 },
+    });
+    expect(details?.code).toBe('rate_limit');
+    expect(details?.message).toBe('Too many requests');
+  });
+});
+
+// The AI SDK's `JSONParseError` text when a streamed chunk fails to parse —
+// here several `chat.completion.chunk` bodies arrived in one SSE event. The
+// message embeds the whole unparsed text, so a transcript that prints it
+// verbatim shows a wall of JSON instead of the failure.
+function chunk(content: string, model = 'glm-5.3-flash') {
+  return JSON.stringify({
+    id: 'chatcmpl-00000000-0000-4000-8000-000000000000',
+    choices: [{ index: 0, delta: { reasoning_content: content }, finish_reason: null }],
+    created: 1700000000,
+    model,
+    object: 'chat.completion.chunk',
+  });
+}
+const STREAM_PARSE_TEXT =
+  `JSON parsing failed: Text: ${chunk('58')} ${chunk('90 USD')} ${chunk('USD).')}. ` +
+  'Error message: JSON Parse error: Unable to parse JSON string';
+
+describe('unwrapError — unparseable stream chunks', () => {
+  test('names the model instead of printing the chunks', () => {
+    expect(unwrapError(STREAM_PARSE_TEXT)).toBe(
+      'The response from glm-5.3-flash could not be read.',
+    );
+  });
+
+  test('reads through the AI SDK class prefix and the OpenCode envelope', () => {
+    expect(
+      unwrapError({
+        name: 'UnknownError',
+        data: { message: `AI_JSONParseError: ${STREAM_PARSE_TEXT}` },
+      }),
+    ).toBe('The response from glm-5.3-flash could not be read.');
+  });
+
+  test('falls back to a model-neutral sentence when the text names no model', () => {
+    expect(
+      unwrapError('JSON parsing failed: Text: {"choices":[. Error message: Unexpected end of JSON input'),
+    ).toBe('The model response could not be read.');
+  });
+});
+
+describe('rawErrorText — the technical text behind the sentence', () => {
+  test('returns the original text when unwrapError summarized it', () => {
+    expect(rawErrorText(STREAM_PARSE_TEXT)).toBe(STREAM_PARSE_TEXT);
+    expect(rawErrorText({ name: 'UnknownError', data: { message: STREAM_PARSE_TEXT } })).toBe(
+      STREAM_PARSE_TEXT,
+    );
+  });
+
+  test('returns a serialized body when the error is structured', () => {
+    expect(rawErrorText({ name: 'APIError', data: { message: '{"message":"Rate limited"}' } })).toBe(
+      '{"message":"Rate limited"}',
+    );
+  });
+
+  test('undefined when the raw text adds nothing to the sentence', () => {
+    expect(rawErrorText({ message: 'boom' })).toBeUndefined();
+    expect(rawErrorText('Error: something broke')).toBeUndefined();
+    expect(rawErrorText(null)).toBeUndefined();
+    expect(rawErrorText('')).toBeUndefined();
   });
 });

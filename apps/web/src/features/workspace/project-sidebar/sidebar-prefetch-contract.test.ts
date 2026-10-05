@@ -13,7 +13,7 @@ import { join } from 'node:path';
  *
  * Twenty of those 21 were `<Link>`'s automatic viewport prefetch firing for
  * every OTHER session row — each one a dynamic server render of a full session
- * page (~24KB of flight payload, median 480ms on the Essentia deployment,
+ * page (~24KB of flight payload, median 480ms on the SampleCo deployment,
  * 423 hits across a 20-open HAR corpus). The same shape charged /files,
  * /apps and /customize two requests each per open.
  *
@@ -35,6 +35,7 @@ const LIST_FILES = [
   'project-session-list.tsx',
   'project-settings-nav.tsx',
   'footer/project-files-nav.tsx',
+  'footer/project-reminders-nav.tsx',
   'footer/project-apps-nav.tsx',
 ] as const;
 
@@ -58,7 +59,9 @@ describe('sidebar prefetch contract', () => {
   });
 
   test('HoverPrefetchLink defers the prefetch until pointer, focus or touch', () => {
-    const code = strip(readFileSync(join(dir, '../../../components/common/hover-prefetch-link.tsx'), 'utf8'));
+    const code = strip(
+      readFileSync(join(dir, '../../../components/common/hover-prefetch-link.tsx'), 'utf8'),
+    );
     // The whole mechanism: `false` until armed, the caller's kind afterwards.
     expect(code).toContain('prefetch={armed ? prefetch : false}');
     expect(code).toMatch(/onMouseEnter=\{\(event\) => \{\s*setArmed\(true\)/);

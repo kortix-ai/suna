@@ -1,13 +1,14 @@
-export {
-  createSession,
-  startSession,
-  continueSession,
-  drainSessionLifecycleQueue,
-} from './engine';
+export { createSession } from './create-session';
+export { startSession } from './start-session';
+export { continueSession } from './continue-session';
+export { drainSessionLifecycleQueue } from './drain';
 export { buildContinueSessionCommandValues, enqueueContinueSessionCommand } from './store';
 export {
   deleteInboxPrompt,
+  editInboxPrompt,
+  enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
   releaseInboxHold,
   retryInboxPrompt,

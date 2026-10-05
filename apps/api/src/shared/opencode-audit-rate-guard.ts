@@ -6,7 +6,7 @@
  * `kortix.audit_events` carries 14 indexes (packages/db/src/schema/kortix.ts:2688-2741)
  * and is written on essentially every request. The sandbox relay forwards EVERY
  * OpenCode SSE event 1:1 with no type filter
- * (apps/kortix-sandbox-agent-server/src/opencode-events.ts:223 ->
+ * (apps/kortix-sandbox-agent-server/src/harness/open-code/events.ts:223 ->
  * opencode-audit-relay.ts), and it stamps a fresh `randomUUID()` per emission,
  * so the `idx_audit_events_source_phase` unique index only ever catches a
  * transport retry — never a genuine repeat delta. Nothing bounded the write
@@ -127,6 +127,7 @@ interface SessionWindow {
   lastSeenMs: number;
 }
 
+// replica-local: a session pinned to one replica per stream; a spread costs limit × replicas.
 const windows = new Map<string, SessionWindow>();
 
 function evictIfNeeded(now: number, windowMs: number): void {

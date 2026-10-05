@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -7,30 +8,22 @@ import {
   CopyIcon as Copy,
   DotsThreeIcon,
   ArrowSquareOutIcon as ExternalLink,
-  KeyIcon as KeyRound,
   LockIcon as Lock,
-  type Icon as LucideIcon,
   EnvelopeIcon as Mail,
-  PencilSimpleIcon,
   PlugIcon as Plug,
   PlusIcon as Plus,
-  ArrowClockwiseIcon as RefreshCw,
   MagnifyingGlassIcon as Search,
-  ShieldWarningIcon as ShieldAlert,
-  ShieldCheckIcon as ShieldCheck,
-  TrashIcon as Trash2,
+  ShareNetworkIcon,
   UsersIcon as Users,
   XIcon as X,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import Image from 'next/image';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Slack } from '@/features/icon/icons/slack';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
-import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -58,7 +51,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -71,6 +63,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useAuth } from '@/features/providers/auth-provider';
+import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
+import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
+import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
+import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
+import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
   type EmailInstallation,
   type EmailSenderPolicy,
@@ -86,23 +84,18 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
-import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
-import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
+import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
+import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
   type Connection,
-  type ConnectorAction,
+  type ConnectionCredentialInput,
   type ConnectorAuthDiscovery,
-  type ConnectorAuthorizationStrategy,
   type ConnectorConfig,
   type ConnectorDraftInput,
-  type ConnectorPolicyAction,
-  type ConnectorPolicyRule,
   type ConnectorRequestAuthType,
   createConnector,
   deleteConnector,
@@ -111,34 +104,39 @@ import {
   discoverConnectorAuth,
   ensureProjectConnectorConnection,
   getConnectorConfig,
-  getConnectorPolicies,
   getConnectStatus,
   getProjectDetail,
   listAllConnections,
   listConnections,
-  listConnectors,
   listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
-  type OAuth2ResourceDiscovery,
   pollConnectionOAuth2DeviceAuthorization,
   putConnectionOAuth2Application,
   reconcileConnection,
   reconcileMemberConnection,
   registerConnectionOAuth2Client,
+  renameConnection,
   revokeConnection,
-  setConnectorAuthorizationStrategy,
   setConnectorCredential,
-  setConnectorName,
-  setConnectorPolicies,
-  setConnectorSensitive,
   setDefaultConnection,
   startConnectionOAuth2Authorization,
   startConnectionOAuth2DeviceAuthorization,
-  syncConnectors,
   updateConnectionCredential,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { AddAccountFields } from './add-account-fields';
+import {
+  buildEasyConnectConnectorDraft,
+  buildEmailConnectorConnectionSlug,
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  type EasyConnectApp,
+  type EasyConnectConnectionInput,
+  proposeConnectorConnectionSlug,
+} from './connector-connection-form';
+import { ConnectorConnectionModal } from './connector-connection-modal';
+import { credentialWriteTarget, oauth2DiscoveryConnectionKey } from './connector-credential-target';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -151,258 +149,25 @@ import {
   type OAuth2CredentialForm,
   oauth2CredentialFormValid,
 } from './connector-oauth2';
+import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import {
   autoConnectPlan,
   buildClientRegistrationInput,
   mergeResourceDiscoveryIntoForm,
 } from './connector-oauth2-auto';
-import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
-import {
-  connectionOwnerTypeForStrategy,
-  buildEasyConnectConnectorDraft,
-  buildEmailConnectorConnectionSlug,
-  connectorConnectionQueryKeys,
-  connectorAuthorizationStrategyForProvider,
-  connectorAuthorizationStrategyIsEditable,
-  connectorAuthorizationUpdateIsPending,
-  connectorSetupStatus,
-  connectorSyncErrorForSlug,
-  createOnlyConnectorDraft,
-  type EasyConnectApp,
-  proposeConnectorConnectionSlug,
-} from './connector-connection-form';
-import { AuthorizationStrategyField, ConnectorConnectionModal } from './connector-connection-modal';
 import { DiscoverCatalogue } from './discover-catalogue';
-import { connectorConnectionRows } from './view/connector-connections';
-
-// All moved OUT of this file. It is 5,219 lines and 50 components; a plain
-// function and a hook exported beside them took the whole module off React Fast
-// Refresh's hot path (every edit = full page reload) and forced any consumer of
-// either symbol to bundle all of it.
-//
-// `providerLabel` and `usePipedreamConnect` came back byte-identical.
-// `ConnectorStatusBadge` and `ConnectorAppIcon` did NOT — the new catalog needs
-// a quieter row, so the badge dropped its green "Connected" case (an active
-// connector now renders nothing) and moved "Needs setup" from `warning` to
-// `info`, and the icon dropped its `p-1` inset. Those three changes land on
-// this legacy surface too, at the detail header below. That is a deliberate
-// shared definition, not an accident: two connector badges that disagree is
-// worse than one that changed.
 import {
-  ConnectorAppIcon,
-  ConnectorStatusBadge,
-} from '@/features/workspace/capabilities/connectors/connector-identity';
-import {
-  composioConnectionIsAuthorized,
-  isManagedConnectorProvider,
-  providerLabel,
-} from '@/features/workspace/capabilities/connectors/provider-label';
-import { usePipedreamConnect } from '@/hooks/connectors/use-pipedream-connect-app';
-import { useCopy } from '@/hooks/use-copy';
-
-const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'destructive'> = {
-  read: 'outline',
-  write: 'secondary',
-  destructive: 'destructive',
-};
+  accountVisibility,
+  connectorConnectionRows,
+  type NewAccountDraft,
+  newAccountGrantees,
+  newAccountLabelTaken,
+  newAccountReady,
+} from './view/connector-connections';
+import { AudienceBadge } from './view/audience-badge';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
-const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
-
-type Selection = { kind: 'connector'; slug: string } | { kind: 'global' } | { kind: 'add' };
-
-export function ConnectorsView({ projectId }: { projectId: string }) {
-  return (
-    <div className="bg-background flex h-full min-h-0 flex-col">
-      <ConnectorsMasterDetail projectId={projectId} />
-    </div>
-  );
-}
-
-function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const queryClient = useQueryClient();
-  const connectionQueryKeys = useMemo(() => connectorConnectionQueryKeys(projectId), [projectId]);
-  const queryKey = connectionQueryKeys[0];
-  const invalidate = () => {
-    for (const affectedQueryKey of connectionQueryKeys) {
-      void queryClient.invalidateQueries({ queryKey: affectedQueryKey });
-    }
-  };
-
-  const query = useQuery({
-    queryKey,
-    queryFn: () => listConnectors(projectId),
-    staleTime: 10_000,
-  });
-  const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
-  // One gating primitive. `useFeatureFlag` fetches the same
-  // `qk.project.detail(projectId)` entry the hand-rolled query here used to,
-  // with the same `=== true` fail-closed read.
-  const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
-  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
-  const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
-  // READ vs WRITE: the section is visible to project.connector.read, but every
-  // mutating control (rename/remove/reconnect/credentials/permissions/channels/
-  // config) is gated on project.connector.write. Fails closed until the probe
-  // resolves, matching the backend's assertProjectCapability on those routes.
-  const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
-
-  // Selection persists in ?c= (slug | "global" | "add") for deep links.
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-  const rawC = search?.get('c') ?? '';
-  const oauth2Result = search?.get('oauth2');
-  const oauth2Error = search?.get('oauth2_error');
-  useEffect(() => {
-    if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
-    if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
-    else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
-    for (const affectedQueryKey of connectionQueryKeys) {
-      void queryClient.invalidateQueries({ queryKey: affectedQueryKey });
-    }
-    const params = new URLSearchParams(search?.toString() ?? '');
-    params.delete('oauth2');
-    params.delete('oauth2_error');
-    const suffix = params.toString();
-    router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
-  }, [connectionQueryKeys, oauth2Error, oauth2Result, pathname, queryClient, router, search]);
-  const select = (sel: Selection) => {
-    const key = sel.kind === 'connector' ? sel.slug : sel.kind;
-    const params = new URLSearchParams(search?.toString() ?? '');
-    params.set('c', key);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  };
-
-  // Resolve the active selection, defaulting to the first connector (or Add).
-  const selection: Selection = useMemo(() => {
-    if (rawC === 'global') return { kind: 'global' };
-    if (rawC === 'add') return { kind: 'add' };
-    if (rawC && connectors.some((c) => c.slug === rawC)) return { kind: 'connector', slug: rawC };
-    if (connectors.length > 0) return { kind: 'connector', slug: connectors[0]!.slug };
-    return { kind: 'add' };
-  }, [rawC, connectors]);
-
-  const sync = useMutation({
-    mutationFn: () => syncConnectors(projectId),
-    onSuccess: (res) => {
-      invalidate();
-      if (res.errors.length) warningToast(`Synced ${res.synced}, ${res.errors.length} with issues`);
-      else successToast(`Synced ${res.synced} connector(s)`);
-    },
-    onError: (err: Error) => errorToast(err.message || 'Sync failed'),
-  });
-
-  if (query.isLoading) return <MasterDetailSkeleton />;
-  if (isForbidden) {
-    return (
-      <div className="mx-auto w-full max-w-2xl space-y-8">
-        <InfoBanner
-          tone="warning"
-          icon={ShieldAlert}
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleAdminb2173330',
-          )}
-        >
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextOnlyProject51266c7d',
-          )}
-        </InfoBanner>
-      </div>
-    );
-  }
-  if (query.isError) {
-    return (
-      <div className="mx-auto w-full max-w-2xl space-y-8">
-        <InfoBanner
-          tone="destructive"
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleFailed959d47d5',
-          )}
-          action={
-            <Button variant="outline" size="sm" onClick={() => query.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {(query.error as Error)?.message ?? 'Unknown error'}
-        </InfoBanner>
-      </div>
-    );
-  }
-
-  const active =
-    selection.kind === 'connector'
-      ? (connectors.find((c) => c.slug === selection.slug) ?? null)
-      : null;
-
-  return (
-    <div className="flex min-h-0 flex-1">
-      {connectors.length > 0 && (
-        <ConnectorRail
-          connectors={connectors}
-          selection={selection}
-          onSelect={select}
-          onSync={() => sync.mutate()}
-          syncing={sync.isPending}
-          canWrite={canWrite}
-        />
-      )}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        {selection.kind === 'add' ? (
-          <AddAppPanel
-            projectId={projectId}
-            emailChannelEnabled={emailChannelEnabled}
-            discoverEnabled={discoverEnabled}
-            existingSlugs={connectors.map((connector) => connector.slug)}
-            canWrite={canWrite}
-            onAdded={(slug) => {
-              invalidate();
-              if (slug) select({ kind: 'connector', slug });
-            }}
-          />
-        ) : selection.kind === 'global' ? (
-          <GlobalRulesPanel projectId={projectId} />
-        ) : active ? (
-          <ConnectorDetail
-            key={active.slug}
-            projectId={projectId}
-            connector={active}
-            canWrite={canWrite}
-            onChanged={invalidate}
-            onRemoved={() => {
-              invalidate();
-              select({ kind: 'add' });
-            }}
-          />
-        ) : (
-          <div className="grid h-full place-items-center p-10">
-            <EmptyState
-              icon={Plug}
-              title={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2',
-              )}
-              description={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e',
-              )}
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function statusDot(c: AdminConnector): string {
-  const status = connectorSetupStatus(c);
-  if (status === 'error') return 'bg-destructive';
-  if (status === 'needs_setup') return 'bg-kortix-orange';
-  if (status === 'user_managed') return 'bg-kortix-blue';
-  return 'bg-kortix-green';
-}
 
 function SaveBar({
   dirty,
@@ -431,166 +196,13 @@ function SaveBar({
       </span>
       {onReset && (
         <Button size="sm" variant="ghost" onClick={onReset} disabled={saving}>
-          Reset
+          {tI18nHardcoded.raw('i18nComplete.textdaee7606b339')}
         </Button>
       )}
       <Button size="sm" onClick={onSave} disabled={saving || disabled} className="gap-1.5">
         {saving && <Loading className="size-4 shrink-0" />}
         {label}
       </Button>
-    </div>
-  );
-}
-
-function ConnectorRail({
-  connectors,
-  selection,
-  onSelect,
-  onSync,
-  syncing,
-  canWrite = false,
-}: {
-  connectors: AdminConnector[];
-  selection: Selection;
-  onSelect: (s: Selection) => void;
-  onSync: () => void;
-  syncing: boolean;
-  canWrite?: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [q, setQ] = useState('');
-  const filtered = q.trim()
-    ? connectors.filter((c) => c.slug.toLowerCase().includes(q.trim().toLowerCase()))
-    : connectors;
-  const ready = filtered.filter((c) => connectorSetupStatus(c) !== 'needs_setup');
-  const needsSetup = filtered.filter((c) => connectorSetupStatus(c) === 'needs_setup');
-  const isSel = (slug: string) => selection.kind === 'connector' && selection.slug === slug;
-
-  return (
-    <nav
-      aria-label="Connectors"
-      className="border-border/60 bg-muted/20 flex w-72 shrink-0 flex-col border-r"
-    >
-      <div className="border-border/60 space-y-2 border-b p-3">
-        {canWrite && (
-          <Button
-            size="sm"
-            className="w-full justify-start gap-2"
-            variant={selection.kind === 'add' ? 'secondary' : 'default'}
-            onClick={() => onSelect({ kind: 'add' })}
-          >
-            <Plus className="h-4 w-4" />
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa',
-            )}
-          </Button>
-        )}
-        <div className="relative">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch833758cc',
-            )}
-            className="h-8 pl-8 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto p-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        <RailItem
-          icon={ShieldCheck}
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleGlobal199e18a1',
-          )}
-          subtitle={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleApply5b0aa03c',
-          )}
-          active={selection.kind === 'global'}
-          onClick={() => onSelect({ kind: 'global' })}
-        />
-
-        {connectors.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoConnectors6d11de92',
-            )}
-          </p>
-        ) : (
-          <>
-            {ready.length > 0 && <RailGroupLabel>Available</RailGroupLabel>}
-            {ready.map((c) => (
-              <RailItem
-                key={c.slug}
-                leading={<ConnectorAppIcon connector={c} size="sm" />}
-                title={c.name || c.slug}
-                subtitle={`${c.actions.length} ${c.actions.length === 1 ? 'tool' : 'tools'}`}
-                dot={statusDot(c)}
-                active={isSel(c.slug)}
-                onClick={() => onSelect({ kind: 'connector', slug: c.slug })}
-              />
-            ))}
-            {needsSetup.length > 0 && (
-              <RailGroupLabel>
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49',
-                )}
-              </RailGroupLabel>
-            )}
-            {needsSetup.map((c) => (
-              <RailItem
-                key={c.slug}
-                leading={<ConnectorAppIcon connector={c} size="sm" />}
-                title={c.name || c.slug}
-                subtitle={tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleNot1feeff2e',
-                )}
-                dot={statusDot(c)}
-                active={isSel(c.slug)}
-                onClick={() => onSelect({ kind: 'connector', slug: c.slug })}
-              />
-            ))}
-            {filtered.length === 0 && (
-              <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoMatchf1f9a197',
-                )}
-                {q}”.
-              </p>
-            )}
-          </>
-        )}
-      </div>
-
-      {canWrite && (
-        <div className="border-border/60 border-t p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground w-full justify-start gap-2"
-            onClick={onSync}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSyncFromb820661f',
-            )}
-          </Button>
-        </div>
-      )}
-    </nav>
-  );
-}
-
-function RailGroupLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground/50 px-3 pt-3 pb-1 text-xs font-medium tracking-wider uppercase">
-      {children}
     </div>
   );
 }
@@ -607,7 +219,7 @@ function CodeSnippet({
   return (
     <div
       className={cn(
-        'border-border/60 bg-card flex w-full overflow-x-auto rounded-2xl border',
+        'border-border/60 bg-card flex w-full overflow-x-auto rounded-md border',
         className,
       )}
     >
@@ -622,82 +234,53 @@ function CodeSnippet({
   );
 }
 
-function RailItem({
-  icon: Icon,
-  appIcon,
-  leading,
-  title,
-  subtitle,
-  dot,
-  active,
-  onClick,
-}: {
-  icon?: LucideIcon;
-  appIcon?: LucideIcon;
-  leading?: ReactNode;
-  title: string;
-  subtitle?: string;
-  dot?: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
-        active ? 'bg-primary/10' : 'hover:bg-muted/60',
-      )}
-    >
-      {leading ? (
-        leading
-      ) : appIcon ? (
-        <EntityAvatar icon={appIcon} size="sm" />
-      ) : Icon ? (
-        <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-lg">
-          <Icon className="h-3.5 w-3.5" />
-        </span>
-      ) : null}
-      <span className="min-w-0 flex-1">
-        <span className="text-foreground block truncate text-sm font-medium">{title}</span>
-        {subtitle && (
-          <span className="text-muted-foreground block truncate text-xs">{subtitle}</span>
-        )}
-      </span>
-      {dot && <span className={cn('size-2 shrink-0 rounded-full', dot)} />}
-    </button>
-  );
-}
-
 /** One row in the connections list — a single connected account. */
 function ConnectionRow({
   connection,
+  viewerId,
   isMine,
   canManage,
   onSetDefault,
   onDisconnect,
+  onRename,
   onStartSession,
+  onSetCredential,
+  onShare,
   pending,
   disabled = false,
 }: {
   connection: Connection;
+  /** The signed-in user, so an account narrowed to them alone reads "Only you". */
+  viewerId: string | null;
   isMine: boolean;
   canManage: boolean;
   onSetDefault: () => void;
   onDisconnect: () => void;
+  /** Change the label only. The account stays authorized. */
+  onRename: () => void;
   onStartSession?: () => void;
+  /** Re-open the credential entry for THIS account. Direct providers
+   *  (openapi/http/mcp/graphql/…) hold their own static credential per
+   *  account instead of a connector-wide one; managed (Composio/Pipedream)
+   *  providers re-authorize through OAuth instead, so this is omitted there. */
+  onSetCredential?: () => void;
+  /** Open the share dialog: who may use this SHARED account. */
+  onShare?: () => void;
   pending: boolean;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   const isProjectAuthorization = connection.owner_type === 'project';
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
   // or, for a project authorization, a project manager.
   const mayMutate = isProjectAuthorization ? canManage : isMine;
+  const visibility = accountVisibility(connection, viewerId);
+  const everyoneWithAccess = (connection.shared_with ?? []).map((share) => share.label);
 
-  const { copy } = useCopy({ successMessage: 'Connection ID copied to clipboard.' });
+  const { copy } = useCopy({ successMessage: tI18nComplete.raw('text56ee71f3ece0') });
 
   return (
     <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
@@ -718,28 +301,76 @@ function ConnectionRow({
           <span className="truncate text-sm font-medium">{connection.label}</span>
           {connection.is_default && (
             <Badge variant="outline" size="xs">
-              Default
+              {tI18nComplete.raw('text21b111cbfe6e')}
             </Badge>
           )}
+          {/* Who may use this account, on every card: the list has one group. */}
+          <AudienceBadge visibility={visibility} labels={everyoneWithAccess} />
         </div>
         <InlineMeta>
-          {isProjectAuthorization ? 'Shared with the project' : 'Private — only you'}
+          {/* Listed only because the caller manages the project's connections. */}
+          {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
+          {/* A computer account: whether its machine is connected right now. */}
+          {active && connection.machine ? (
+            <span className="inline-flex items-center gap-1.5">
+              <ComputerStateDot state={connection.machine.online ? 'online' : 'offline'} />
+              {tComputers(connection.machine.online ? 'online' : 'offline')}
+            </span>
+          ) : null}
+          {/* WHO the account was authorized as. Hidden when the label already
+              says it (finalize names a default-labelled account after it). */}
+          {connection.connected_as && connection.connected_as !== connection.label
+            ? tI18nComplete('texte9e0b20cf289', { value0: connection.connected_as })
+            : null}
           {/* Every connection carries its own id — this is what a backend passes
               in connector_bindings to run as THIS account. Truncated to keep the
               row readable; the row menu copies the full value. */}
-          <Hint label="Connection ID — use it in the backend (connector_bindings) to run as this connection.">
+          <Hint label={tI18nComplete.raw('text48d73db2396c')}>
             <code className="cursor-help font-mono">{connection.connection_id.slice(0, 8)}…</code>
           </Hint>
         </InlineMeta>
       </div>
+      {onShare && mayMutate ? (
+        // Your own private account is shared by turning it into a shared one,
+        // which needs the same right as creating a shared account.
+        isProjectAuthorization || canManage ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={onShare}
+            disabled={pending || disabled}
+            aria-label={tSharing('shareTitle', { label: connection.label })}
+          >
+            <ShareNetworkIcon className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('text29887a5ff984')}
+          </Button>
+        ) : (
+          <Hint label={tSharing('shareRequiresManage')}>
+            {/* A span, so the hint still opens over a disabled button. */}
+            <span className="inline-flex shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                disabled
+                aria-label={tSharing('shareTitle', { label: connection.label })}
+              >
+                <ShareNetworkIcon className="size-3.5 shrink-0" />
+                {tI18nComplete.raw('text29887a5ff984')}
+              </Button>
+            </span>
+          </Hint>
+        )
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
             className="size-8 shrink-0"
-            aria-label={`Actions for ${connection.label}`}
+            aria-label={tI18nComplete('text33da220b1a34', { value0: connection.label })}
             disabled={pending || disabled}
           >
             {pending ? (
@@ -751,29 +382,61 @@ function ConnectionRow({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
           <DropdownMenuItem onClick={() => copy(connection.connection_id)}>
-            Copy connection ID
+            {tI18nComplete.raw('text99775327d988')}
           </DropdownMenuItem>
+          {mayMutate && (
+            <DropdownMenuItem onClick={onRename}>
+              {tI18nComplete.raw('text3064d79a295c')}
+            </DropdownMenuItem>
+          )}
           {mayMutate && isMine && active && onStartSession && (
-            <DropdownMenuItem onClick={onStartSession}>Use in a new session</DropdownMenuItem>
+            <DropdownMenuItem onClick={onStartSession}>
+              {tI18nComplete.raw('textfae237eed0c5')}
+            </DropdownMenuItem>
+          )}
+          {mayMutate && onSetCredential && (
+            <DropdownMenuItem onClick={onSetCredential}>
+              {tI18nComplete.raw('text3d6627454174')}
+            </DropdownMenuItem>
           )}
           {mayMutate && !connection.is_default && active && (
             <DropdownMenuItem onClick={onSetDefault}>
-              Use by default{isProjectAuthorization ? ' for the project' : ''}
+              {tI18nComplete.raw('texta92f66fd3d83')}
+              {isProjectAuthorization ? ` ${tI18nComplete.raw('text801a345cd406')}` : ''}
             </DropdownMenuItem>
           )}
-          {mayMutate && <DropdownMenuItem onClick={onDisconnect}>Disconnect</DropdownMenuItem>}
+          {mayMutate && (
+            <DropdownMenuItem onClick={onDisconnect}>
+              {tI18nComplete.raw('textacfc5be785a9')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </li>
   );
 }
 
-/**
- * Every connection that matches the connector's exclusive owner strategy.
- * A project connector lists project-managed accounts. A user connector
- * lists only the current member's accounts.
- */
+const EMPTY_NEW_ACCOUNT: NewAccountDraft = {
+  label: '',
+  audience: 'private',
+  picked: { memberIds: [], groupIds: [] },
+};
 
+/**
+ * Every account this connector can run as, in one list. Each card states who
+ * may use it (`accountVisibility`); one "Add account" asks the name and who may
+ * use the new account.
+ *
+ * An account is an authorized identity on the connector, owned by the project
+ * (shared) or by one member (only you), and both can coexist on the same
+ * connector. Sharing an account is manager-gated
+ * (`PROJECT_CONNECTOR_CONNECTIONS_MANAGE`, the same right the API checks);
+ * adding your own never is.
+ *
+ * The API already scopes the list to the caller, so a member-owned row is
+ * always the caller's own. Another member's private account is not visible
+ * here and is not meant to be.
+ */
 export function ConnectionsList({
   projectId,
   connector,
@@ -781,6 +444,7 @@ export function ConnectionsList({
   canManageConnections,
   onChanged,
   onStartSession,
+  addRequest = 0,
   disabled = false,
 }: {
   projectId: string;
@@ -788,155 +452,292 @@ export function ConnectionsList({
   displayName: string;
   canManageConnections: boolean;
   onChanged: () => void;
-  onStartSession?: () => void;
+  /** Start a session bound to this exact account. Omitted where that is not offered. */
+  onStartSession?: (connection: Connection) => void;
+  /** Bumped by a caller outside the list (the connector header's Connect) to
+   *  open the same Add account dialog. */
+  addRequest?: number;
   disabled?: boolean;
 }) {
-  const [addScope, setAddScope] = useState<'project' | 'member' | null>(null);
-  const [labelDraft, setLabelDraft] = useState('');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
+  // A direct provider (openapi/http/mcp/graphql/...) has no hosted OAuth: "Add"
+  // creates the account and this then opens `SetCredentialModal` for it. A
+  // managed provider (Composio/Pipedream) runs hosted OAuth through
+  // `useAddManagedAccount`.
+  // A computer account is a paired machine: "Add" pairs one (desktop one-click,
+  // or download + npx) instead of asking for a credential.
+  const isComputer = connector.provider === 'computer';
+  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
+  const [computerOpen, setComputerOpen] = useState(false);
+  const { user } = useAuth();
+  const viewerId = user?.id ?? null;
+  const [addOpen, setAddOpen] = useState(false);
+  const [draft, setDraft] = useState<NewAccountDraft>(EMPTY_NEW_ACCOUNT);
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [credentialTarget, setCredentialTarget] = useState<{
+    connectionId: string;
+    owner: 'project' | 'me';
+  } | null>(null);
+  // The shared account whose audience the share dialog edits.
+  const [shareTarget, setShareTarget] = useState<Connection | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const accountId = useProjectAccountId(projectId);
+  const projectDetailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const projectName = projectDetailQuery.data?.project?.name ?? '';
+  const everyoneLabel = projectName
+    ? tSharing('everyone', { project: projectName })
+    : tSharing('visibilityEveryone');
 
   const connectionsQuery = useQuery({
     queryKey: ['connections', projectId],
     queryFn: () => listConnections(projectId),
     staleTime: 30_000,
+    // A computer goes online and offline on its own: keep its status current.
+    refetchInterval: isComputer ? 15_000 : false,
   });
-  const connectionOwnerType = connectionOwnerTypeForStrategy(connector.authorizationStrategy);
-  useEffect(() => {
-    setAddScope(null);
-    setLabelDraft('');
-  }, [connector.authorizationStrategy]);
   const refresh = () => {
     void connectionsQuery.refetch();
     onChanged();
   };
 
-  const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug).filter(
-    (connection) => connection.owner_type === connectionOwnerType,
-  );
+  const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
 
-  const addProject = usePipedreamConnectProject(projectId, connector.slug, () => {
-    setAddScope(null);
-    setLabelDraft('');
+  const openAdd = () => {
+    if (isComputer) {
+      setComputerOpen(true);
+      return;
+    }
+    setDraft(EMPTY_NEW_ACCOUNT);
+    setAddOpen(true);
+  };
+  const closeAdd = () => setAddOpen(false);
+  // Adjusted during render, not in an effect: each new request opens the dialog once.
+  const [seenAddRequest, setSeenAddRequest] = useState(addRequest);
+  if (addRequest !== seenAddRequest) {
+    setSeenAddRequest(addRequest);
+    if (addRequest > 0) openAdd();
+  }
+
+  const addManaged = useAddManagedAccount(projectId, connector.slug, accountId, () => {
+    closeAdd();
     refresh();
   });
-  const addMine = usePipedreamConnectMember(projectId, connector.slug, () => {
-    setAddScope(null);
-    setLabelDraft('');
-    refresh();
+  // Direct providers: create the account, narrow it before it holds a
+  // credential (so it is never open to everyone), then collect the credential.
+  const createAccount = useMutation({
+    mutationFn: async (label: string) => {
+      if (draft.audience === 'private') {
+        return reconcileMemberConnection(projectId, { connector_alias: connector.slug, label });
+      }
+      const connection = await reconcileConnection(projectId, {
+        connector_alias: connector.slug,
+        owner_type: 'project',
+        label,
+      });
+      if (draft.audience === 'members') {
+        await grantConnectionAccess(
+          accountId ?? '',
+          projectId,
+          connection.connection_id,
+          newAccountGrantees(draft.picked),
+        );
+      }
+      return connection;
+    },
+    onSuccess: (connection) => {
+      closeAdd();
+      // A connector with no auth has no credential to enter: the account is ready.
+      if (!connector.authSecret) {
+        refresh();
+        return;
+      }
+      setCredentialTarget({
+        connectionId: connection.connection_id,
+        owner: draft.audience === 'private' ? 'me' : 'project',
+      });
+    },
+    onError: (e: Error) => {
+      // A partly written account (created, then a grant refused) is listed now.
+      refresh();
+      errorToast(e.message || tI18nComplete.raw('texta2cf78785484'));
+    },
   });
   const setDefault = useMutation({
     mutationFn: (connectionId: string) => setDefaultConnection(projectId, connectionId),
     onSuccess: () => {
-      successToast('Default connection updated');
+      successToast(tI18nComplete.raw('text109ff88aec78'));
       refresh();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to set the default'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
   });
+  // Your own computer row follows you into every project, so its Disconnect
+  // removes the machine from Kortix (every project), not one account.
+  const unpairComputer = useDeleteTunnelConnection();
   const disconnect = useMutation({
     mutationFn: (connectionId: string) => revokeConnection(projectId, connectionId),
     onSuccess: () => {
-      successToast('Disconnected');
+      successToast(tI18nComplete.raw('text04dfac3671b4'));
       setConfirmDisconnect(null);
       refresh();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to disconnect'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textb7668a581f59')),
   });
 
-  const adding = addProject.isPending || addMine.isPending;
-  const submitAdd = () => {
-    if (disabled || !labelDraft.trim()) return;
-    if (connectionOwnerType === 'project') addProject.mutate({ label: labelDraft });
-    else addMine.mutate({ label: labelDraft });
+  const rename = useMutation({
+    mutationFn: (input: { connectionId: string; label: string }) =>
+      renameConnection(projectId, input.connectionId, input.label),
+    onSuccess: () => {
+      successToast(tI18nComplete.raw('text499d7f6dfdfc'));
+      setRenameTarget(null);
+      refresh();
+    },
+    // The API names the refusal (a clash with another account, a reserved
+    // word), so show its message rather than a generic one.
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text11ef24ea6e15')),
+  });
+  const openRename = (connection: Connection) => {
+    setRenameDraft(connection.label);
+    setRenameTarget(connection);
+  };
+  const submitRename = () => {
+    const label = renameDraft.trim();
+    if (disabled || !renameTarget || !label) return;
+    if (label === renameTarget.label) {
+      setRenameTarget(null);
+      return;
+    }
+    rename.mutate({ connectionId: renameTarget.connection_id, label });
   };
 
-  return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <Label>Connections</Label>
-        <div className="flex items-center gap-2">
-          {connectionOwnerType === 'project' && canManageConnections && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => setAddScope('project')}
-              disabled={disabled}
-            >
-              <Plus className="size-4" />
-              Add project connection
-            </Button>
-          )}
-          {connectionOwnerType === 'member' && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setAddScope('member')}
-              disabled={disabled}
-            >
-              <Lock className="size-3.5 shrink-0" />
-              Add my own
-            </Button>
-          )}
-        </div>
-      </div>
+  const adding = createAccount.isPending || addManaged.isPending;
+  const labelTaken = newAccountLabelTaken(draft, rows);
+  const canSubmitAdd =
+    !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
+  const submitAdd = () => {
+    if (!canSubmitAdd) return;
+    if (isDirectProvider) createAccount.mutate(draft.label.trim());
+    // The hooks toast their own errors.
+    else void addManaged.add(draft).catch(() => undefined);
+  };
+  const pendingConnectionId =
+    setDefault.isPending && typeof setDefault.variables === 'string'
+      ? setDefault.variables
+      : disconnect.isPending && typeof disconnect.variables === 'string'
+        ? disconnect.variables
+        : rename.isPending && rename.variables
+          ? rename.variables.connectionId
+          : null;
+  // Re-open the credential entry for an existing direct-provider account —
+  // wired from the row menu ("Set credential") and reused right after
+  // `createAccount` creates a brand new one.
+  const setCredential = isDirectProvider
+    ? (connection: Connection) =>
+        setCredentialTarget({
+          connectionId: connection.connection_id,
+          owner: connection.owner_type === 'project' ? 'project' : 'me',
+        })
+    : undefined;
 
-      {connectionsQuery.isLoading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-14 rounded-md" />
-          <Skeleton className="h-14 rounded-md" />
+  // A member's computer account follows them into every project, so it is
+  // never removed from one project: Disconnect unpairs the machine.
+  const ownComputer = (connection: Connection) => isComputer && connection.owner_type === 'member';
+  const renderRow = (connection: Connection) => (
+    <ConnectionRow
+      key={connection.connection_id}
+      connection={connection}
+      viewerId={viewerId}
+      isMine={connection.owner_type === 'member'}
+      canManage={canManageConnections}
+      pending={pendingConnectionId === connection.connection_id}
+      disabled={disabled}
+      onSetDefault={() => setDefault.mutate(connection.connection_id)}
+      onDisconnect={() => setConfirmDisconnect(connection)}
+      onRename={() => openRename(connection)}
+      onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
+      onSetCredential={setCredential ? () => setCredential(connection) : undefined}
+      onShare={
+        accountId
+          ? () => {
+              setShareTarget(connection);
+              setShareOpen(true);
+            }
+          : undefined
+      }
+    />
+  );
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <Label>{tSharing('accountsTitle')}</Label>
+          <Button size="sm" variant="secondary" onClick={openAdd} disabled={disabled}>
+            <Plus className="size-4" />
+            {tSharing('addAccount')}
+          </Button>
         </div>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          size="sm"
-          icon={Plug}
-          title={`No ${displayName} connections yet`}
-          description={
-            connectionOwnerType === 'project'
-              ? 'Connect a project-managed account for allowed sessions.'
-              : 'Connect your own account for your private sessions.'
-          }
+        {connectionsQuery.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-14 rounded-md" />
+            <Skeleton className="h-14 rounded-md" />
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            size="sm"
+            icon={Plug}
+            title={tSharing('noAccountsTitle')}
+            description={tSharing('noAccountsDescription', { connector: displayName })}
+          />
+        ) : (
+          <ul className="space-y-2">{rows.map(renderRow)}</ul>
+        )}
+      </section>
+
+      {accountId && shareTarget ? (
+        <AccessDialog
+          key={shareTarget.connection_id}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          accountId={accountId}
+          scope={{ kind: 'project', projectId, projectName }}
+          mode={{
+            kind: 'share',
+            object: {
+              type: 'connection',
+              id: shareTarget.connection_id,
+              label: shareTarget.label,
+              // Your own private account: sharing makes it a shared one.
+              ...(shareTarget.owner_type === 'member' && viewerId
+                ? { privateOwner: { userId: viewerId, label: user?.email ?? tSharing('onlyYou') } }
+                : {}),
+            },
+            current:
+              connectionsQuery.data?.connections.find(
+                (connection) => connection.connection_id === shareTarget.connection_id,
+              )?.shared_with ?? [],
+          }}
+          onDone={refresh}
         />
-      ) : (
-        <ul className="space-y-2">
-          {rows.map((connection) => (
-            <ConnectionRow
-              key={connection.connection_id}
-              connection={connection}
-              isMine={connection.owner_type === 'member'}
-              canManage={canManageConnections}
-              pending={
-                (setDefault.isPending && setDefault.variables === connection.connection_id) ||
-                (disconnect.isPending && disconnect.variables === connection.connection_id)
-              }
-              disabled={disabled}
-              onSetDefault={() => setDefault.mutate(connection.connection_id)}
-              onDisconnect={() => setConfirmDisconnect(connection)}
-              onStartSession={onStartSession}
-            />
-          ))}
-        </ul>
-      )}
+      ) : null}
 
       <Modal
-        open={addScope !== null}
+        open={addOpen}
         onOpenChange={(open) => {
-          if (!open && !adding) {
-            setAddScope(null);
-            setLabelDraft('');
-          }
+          if (!open && !adding) closeAdd();
         }}
       >
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
-            <ModalTitle>
-              {addScope === 'project'
-                ? `Add a project ${displayName} connection`
-                : `Add your own ${displayName}`}
-            </ModalTitle>
-            <ModalDescription>
-              {addScope === 'project'
-                ? 'Everyone on this project can use it. Name it so people can tell your accounts apart.'
-                : 'Only you can use it, in your own private sessions. Name it to tell your accounts apart.'}
-            </ModalDescription>
+            <ModalTitle>{tSharing('addAccountTitle', { connector: displayName })}</ModalTitle>
+            <ModalDescription>{tSharing('addAccountDescription')}</ModalDescription>
           </ModalHeader>
           <form
             onSubmit={(e) => {
@@ -944,36 +745,84 @@ export function ConnectionsList({
               submitAdd();
             }}
           >
+            <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+              <AddAccountFields
+                projectId={projectId}
+                value={draft}
+                onChange={setDraft}
+                labelTaken={labelTaken}
+                canManageConnections={canManageConnections}
+                accountId={accountId}
+                everyoneLabel={everyoneLabel}
+                hint={tI18nComplete.raw('text99953938d987')}
+                disabled={adding || disabled}
+                autoFocus
+              />
+            </ModalBody>
+            <ModalFooter className="sm:justify-between">
+              <Button type="button" variant="outline-ghost" onClick={closeAdd} disabled={adding}>
+                {tI18nComplete.raw('text19766ed6ccb2')}
+              </Button>
+              <Button type="submit" disabled={!canSubmitAdd}>
+                {adding ? <Loading className="size-4 shrink-0" /> : null}
+                {tI18nComplete.raw('text31fbef162594')}
+              </Button>
+            </ModalFooter>
+          </form>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !rename.isPending) setRenameTarget(null);
+        }}
+      >
+        <ModalContent className="lg:max-w-md">
+          <ModalHeader>
+            <ModalTitle>
+              {tI18nComplete('textbb7a240d3660', { value0: renameTarget?.label ?? '' })}
+            </ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text64f07c825803')}</ModalDescription>
+          </ModalHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitRename();
+            }}
+          >
             <ModalBody>
               <Field>
-                <FieldLabel htmlFor="connection-label">Name</FieldLabel>
+                <FieldLabel htmlFor="connection-rename-label">
+                  {tI18nComplete.raw('textdcd1d5223f73')}
+                </FieldLabel>
                 <Input
-                  id="connection-label"
-                  value={labelDraft}
-                  onChange={(e) => setLabelDraft(e.target.value)}
-                  placeholder={addScope === 'project' ? 'Support inbox' : 'Work'}
+                  id="connection-rename-label"
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value)}
                   maxLength={255}
                   autoFocus
-                  disabled={adding || disabled}
+                  disabled={rename.isPending || disabled}
                 />
-                <FieldDescription>You'll authorize the account in the next step.</FieldDescription>
+                {renameTarget?.connected_as ? (
+                  <FieldDescription>
+                    {tI18nComplete('texte9e0b20cf289', { value0: renameTarget.connected_as })}
+                  </FieldDescription>
+                ) : null}
               </Field>
             </ModalBody>
             <ModalFooter className="sm:justify-between">
               <Button
                 type="button"
                 variant="outline-ghost"
-                onClick={() => {
-                  setAddScope(null);
-                  setLabelDraft('');
-                }}
-                disabled={adding}
+                onClick={() => setRenameTarget(null)}
+                disabled={rename.isPending}
               >
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
-              <Button type="submit" disabled={adding || disabled || !labelDraft.trim()}>
-                {adding ? <Loading className="size-4 shrink-0" /> : null}
-                Continue
+              <Button type="submit" disabled={rename.isPending || disabled || !renameDraft.trim()}>
+                {rename.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                {tI18nComplete.raw('text1509f561f241')}
               </Button>
             </ModalFooter>
           </form>
@@ -983,26 +832,69 @@ export function ConnectionsList({
       <ConfirmDialog
         open={confirmDisconnect !== null}
         onOpenChange={(open) => !open && setConfirmDisconnect(null)}
-        title={`Disconnect "${confirmDisconnect?.label ?? ''}"?`}
+        title={tI18nComplete('text13716a578591', { value0: confirmDisconnect?.label ?? '' })}
         description={
-          confirmDisconnect?.owner_type === 'project'
-            ? 'Everyone on this project loses access to this account. Sessions bound to it will stop working.'
-            : 'Your own connection is removed. Sessions bound to it will stop working.'
+          confirmDisconnect && ownComputer(confirmDisconnect)
+            ? tComputers('unpairDescription')
+            : confirmDisconnect?.owner_type === 'project'
+              ? tI18nComplete.raw('texte2cbafcec553')
+              : tI18nComplete.raw('text64db32d83da9')
         }
-        confirmLabel="Disconnect"
+        confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
-        isPending={disconnect.isPending}
-        onConfirm={() => confirmDisconnect && disconnect.mutate(confirmDisconnect.connection_id)}
+        isPending={disconnect.isPending || unpairComputer.isPending}
+        onConfirm={() => {
+          if (!confirmDisconnect) return;
+          if (ownComputer(confirmDisconnect) && confirmDisconnect.tunnel_id) {
+            unpairComputer.mutate(confirmDisconnect.tunnel_id, {
+              onSuccess: () => {
+                successToast(tComputers('disconnected'));
+                setConfirmDisconnect(null);
+                refresh();
+              },
+              onError: (e: Error) => errorToast(e.message || tComputers('disconnectFailed')),
+            });
+            return;
+          }
+          disconnect.mutate(confirmDisconnect.connection_id);
+        }}
       />
-    </section>
+
+      {isComputer ? (
+        <ComputerConnectModal
+          projectId={projectId}
+          open={computerOpen}
+          onOpenChange={setComputerOpen}
+          onConnected={refresh}
+        />
+      ) : null}
+
+      {isDirectProvider ? (
+        <SetCredentialModal
+          projectId={projectId}
+          connector={credentialTarget ? connector : null}
+          connectionId={credentialTarget?.connectionId ?? null}
+          owner={credentialTarget?.owner ?? 'me'}
+          open={credentialTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setCredentialTarget(null);
+          }}
+          onSaved={() => {
+            setCredentialTarget(null);
+            refresh();
+          }}
+        />
+      ) : null}
+    </div>
   );
 }
 
 function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (status === 'active') {
     return (
-      <Badge variant="outline" size="sm" className="text-emerald-600">
-        Connected
+      <Badge variant="outline" size="sm" className="text-kortix-green">
+        {tI18nComplete.raw('text22965568d22a')}
       </Badge>
     );
   }
@@ -1027,6 +919,7 @@ export function ConnectionRoster({
   connectorSlug: string;
   displayName: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const connectionsQuery = useQuery({
     queryKey: ['connections-all', projectId],
     queryFn: () => listAllConnections(projectId),
@@ -1051,13 +944,17 @@ export function ConnectionRoster({
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="text-muted-foreground border-b px-4 py-2.5 text-xs font-medium">
-        Project members' own {displayName} connections
+        {tI18nComplete.raw('texta2d64eeafcb9')} {displayName}{' '}
+        {tI18nComplete.raw('text1e5fac867454')}
       </div>
       {connectionsQuery.isLoading ? (
-        <div className="text-muted-foreground px-4 py-3 text-sm">Loading…</div>
+        <div className="text-muted-foreground px-4 py-3 text-sm">
+          {tI18nComplete.raw('textba3bbbe10d8b')}
+        </div>
       ) : rows.length === 0 ? (
         <div className="text-muted-foreground px-4 py-3 text-sm">
-          No project member has connected their own {displayName} yet.
+          {tI18nComplete.raw('text56e264eb39f6')} {displayName}{' '}
+          {tI18nComplete.raw('textf55f49c47f7f')}
         </div>
       ) : (
         <ul className="divide-y">
@@ -1069,555 +966,13 @@ export function ConnectionRoster({
               <span className="min-w-0 truncate text-sm">
                 {emailByUser.get(connection.owner_id ?? '') ??
                   connection.owner_id ??
-                  'Unknown member'}
+                  tI18nComplete.raw('text29824c5acaf8')}
               </span>
               <RosterStatusBadge status={connection.status} />
             </li>
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-export function ConnectorDetail({
-  projectId,
-  connector,
-  onChanged,
-  onRemoved,
-  canWrite = false,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  onChanged: () => void;
-  onRemoved: () => void;
-  canWrite?: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const isManagedProvider = isManagedConnectorProvider(connector.provider);
-  const isChannel = connector.provider === 'channel';
-  // A computer profile has no generic credential or connection form. Its
-  // project-scoped tool policy remains editable here like every other connector.
-  const isComputer = connector.provider === 'computer';
-  const isManaged = isComputer;
-  const authorizationStrategyEditable = connectorAuthorizationStrategyIsEditable(
-    connector.provider,
-  );
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  // The connection's connection_id — the reference a backend (Kortix as a Backend)
-  // passes in `connector_bindings` to run a session AS this connection. It isn't
-  // surfaced anywhere else, so we expose + copy it here. Project-default connection
-  // only (the account this connector is connected as for the whole project).
-  const connectionsQuery = useQuery({
-    queryKey: ['connections', projectId],
-    queryFn: () => listConnections(projectId),
-    staleTime: 30_000,
-    enabled: !isChannel && !isComputer,
-  });
-  const connection = connectionsQuery.data?.connections.find(
-    (p) => p.connector_alias === connector.slug && p.owner_type === 'project' && p.is_default,
-  );
-  // The CURRENT USER's own private (member-owned) connection for this connector,
-  // if any — separate from the project's shared connection. The API scopes this
-  // list to the caller, so a member sees only their own member connection here.
-  const myPrivateConnection = connectionsQuery.data?.connections.find(
-    (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
-  );
-  const selectedConnection = usesProjectAuthorization ? connection : myPrivateConnection;
-  const connected =
-    connector.provider === 'composio'
-      ? composioConnectionIsAuthorized(selectedConnection?.metadata)
-      : usesProjectAuthorization && connector.secretSet;
-  const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
-  // Administering project connections (adding another, changing the project default)
-  // is manager-gated; a member always manages their OWN connections.
-  const canManageConnections =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE).allowed === true;
-  // Start a new session that uses this member's OWN connection for this connector.
-  // `inherit_unbound` keeps the project default for every OTHER connector the agent
-  // uses, so binding just this one doesn't null the rest. The session is private by
-  // default, which is required for a member-owned binding to resolve.
-  const newSession = useNewProjectSession(projectId);
-  const startPrivateSession = () => {
-    // Require THIS user's own connection by alias — the server resolves their
-    // member connection and, if it was revoked, the connect-to-start gate re-prompts.
-    newSession({ create: { require_connectors: [connector.slug] } });
-  };
-  const [credOpen, setCredOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const displayName = connector.name?.trim() || connector.slug;
-
-  // Which tabs this connector actually has. Pipedream connectors hold many
-  // connections (project + per-member), so they get Connections; everything else
-  // has at most one shared credential, which lives under Connection.
-  const showConnections = isManagedProvider && !isChannel && !isComputer;
-  const showConnectionTab = canWrite && !isManagedProvider && !isManaged;
-  const showPermissions = canWrite;
-  const showRoster =
-    showConnections && canManageConnections && connector.authorizationStrategy === 'user';
-  const defaultDetailTab = showConnections
-    ? 'connections'
-    : showConnectionTab
-      ? 'connection'
-      : showPermissions
-        ? 'permissions'
-        : '';
-  const detailTabCount =
-    (showConnections ? 1 : 0) +
-    (showConnectionTab ? 1 : 0) +
-    (showPermissions ? 1 : 0) +
-    (showRoster ? 1 : 0);
-  const [detailTab, setDetailTab] = useState(defaultDetailTab);
-  // Re-pin when the user switches to a connector whose tab set differs.
-  useEffect(() => setDetailTab(defaultDetailTab), [defaultDetailTab, connector.slug]);
-
-  // Same query key + filter as ConnectionsList, so the badge can never disagree
-  // with the rows it counts (react-query dedupes the fetch).
-  const detailConnectionsQuery = useQuery({
-    queryKey: ['connections', projectId],
-    queryFn: () => listConnections(projectId),
-    staleTime: 30_000,
-    enabled: showConnections,
-  });
-  const connectionCount = connectorConnectionRows(
-    detailConnectionsQuery.data?.connections,
-    connector.slug,
-  ).filter(
-    (connection) =>
-      connection.owner_type === connectionOwnerTypeForStrategy(connector.authorizationStrategy),
-  ).length;
-
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState(displayName);
-  const [authorizationStrategyAwaitingRefresh, setAuthorizationStrategyAwaitingRefresh] =
-    useState<ConnectorAuthorizationStrategy | null>(null);
-  useEffect(() => {
-    setEditingName(false);
-    setNameDraft(displayName);
-  }, [connector.slug, displayName]);
-  useEffect(() => {
-    if (authorizationStrategyAwaitingRefresh === connector.authorizationStrategy) {
-      setAuthorizationStrategyAwaitingRefresh(null);
-    }
-  }, [authorizationStrategyAwaitingRefresh, connector.authorizationStrategy]);
-
-  const rename = useMutation({
-    mutationFn: () => setConnectorName(projectId, connector.slug, nameDraft.trim()),
-    onSuccess: () => {
-      successToast('Renamed');
-      setEditingName(false);
-      onChanged();
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to rename'),
-  });
-
-  const updateAuthorizationStrategy = useMutation({
-    mutationFn: (next: ConnectorAuthorizationStrategy) =>
-      setConnectorAuthorizationStrategy(projectId, connector.slug, next),
-    onSuccess: (result, next) => {
-      const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
-      if (syncError) {
-        warningToast(
-          `Authorization owner changed, but synchronization failed: ${syncError.error}. Use Sync to retry.`,
-        );
-        onChanged();
-        return;
-      }
-      successToast(`Authorization owner set to ${next === 'project' ? 'Project' : 'User'}`);
-      onChanged();
-    },
-    onError: (error: Error) => {
-      setAuthorizationStrategyAwaitingRefresh(null);
-      errorToast(error.message || 'Failed to update authorization owner');
-    },
-  });
-  const strategyUpdating = connectorAuthorizationUpdateIsPending(
-    connector.authorizationStrategy,
-    authorizationStrategyAwaitingRefresh,
-    updateAuthorizationStrategy.isPending,
-  );
-
-  const remove = useMutation({
-    mutationFn: () => deleteConnector(projectId, connector.slug),
-    onSuccess: () => {
-      successToast(`Removed ${displayName}`);
-      onRemoved();
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to remove'),
-  });
-
-  const toolCount = connector.actions.length;
-
-  return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-7">
-      {/* Header */}
-      <div className="flex items-start gap-3.5">
-        <ConnectorAppIcon connector={connector} size="lg" />
-        <div className="min-w-0 flex-1">
-          {editingName && canWrite ? (
-            <form
-              className="flex items-center gap-1.5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (nameDraft.trim() && nameDraft.trim() !== displayName) rename.mutate();
-                else setEditingName(false);
-              }}
-            >
-              <Input
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                className="h-9 max-w-xs text-lg font-semibold"
-                autoFocus
-                disabled={strategyUpdating}
-              />
-              <Button
-                type="submit"
-                size="icon"
-                variant="ghost"
-                className="h-9 w-9"
-                disabled={rename.isPending || strategyUpdating}
-                aria-label={tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabela08f6c74',
-                )}
-              >
-                {rename.isPending ? (
-                  <Loading className="size-4 shrink-0" />
-                ) : (
-                  <Check className="h-4 w-4" />
-                )}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setEditingName(false);
-                  setNameDraft(displayName);
-                }}
-                disabled={rename.isPending || strategyUpdating}
-              >
-                Cancel
-              </Button>
-            </form>
-          ) : (
-            <div className="group flex items-center gap-2">
-              <h2 className="text-foreground truncate text-lg font-semibold">{displayName}</h2>
-              {canWrite && (
-                <Hint label="Rename">
-                  <button
-                    type="button"
-                    onClick={() => !strategyUpdating && setEditingName(true)}
-                    disabled={strategyUpdating}
-                    aria-label="Rename"
-                    className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                  >
-                    <PencilSimpleIcon className="h-3.5 w-3.5" />
-                  </button>
-                </Hint>
-              )}
-            </div>
-          )}
-          <div className="mt-1.5 flex items-center gap-2">
-            <Badge variant="outline" size="sm">
-              {providerLabel(connector.provider)}
-            </Badge>
-            <ConnectorStatusBadge connector={connector} />
-            <InlineMeta>
-              <code className="font-mono">{connector.slug}</code>
-              {toolCount > 0 ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : null}
-            </InlineMeta>
-          </div>
-        </div>
-        {/* When connected, a compact Reconnect/Replace lives in the header.
-            When NOT connected, the connect action is a big CTA below — not a
-            small header button buried next to the title. (Channel connectors
-            are managed from the Channels tab, so neither shows.) */}
-        {canWrite &&
-          (isManagedProvider || connector.authSecret) &&
-          connected &&
-          !isChannel &&
-          usesProjectAuthorization &&
-          (isManagedProvider ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => reconnect.mutate()}
-              disabled={reconnect.isPending || strategyUpdating}
-            >
-              {reconnect.isPending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
-                <KeyRound className="h-4 w-4" />
-              )}
-              Reconnect
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => setCredOpen(true)}
-              disabled={strategyUpdating}
-            >
-              <KeyRound className="h-4 w-4" />
-              Replace credential
-            </Button>
-          ))}
-      </div>
-
-      <div className="mt-7 space-y-5">
-        <section className="space-y-2">
-          <Label>Authorization</Label>
-          <div className="bg-popover rounded-md border px-4 py-3">
-            <AuthorizationStrategyField
-              idPrefix={`connector-${connector.slug}`}
-              value={connector.authorizationStrategy}
-              onChange={(next) => {
-                setCredOpen(false);
-                setAuthorizationStrategyAwaitingRefresh(next);
-                updateAuthorizationStrategy.mutate(next);
-              }}
-              disabled={!canWrite || !authorizationStrategyEditable}
-              // Settled once the connector exists. Switching owner after the
-              // fact silently changes WHOSE account every future session runs
-              // as, and orphans the connections and permission rules already
-              // attached under the old owner — a change that looks like a
-              // toggle and behaves like a migration.
-              //
-              // UI-only: `updateAuthorizationStrategy` below and its route are
-              // left intact, so re-enabling is deleting this one prop.
-              lockedReason="Set when the connector was created. Remove and re-add the connector to change it — switching now would orphan the connections and permission rules already stored under the current owner."
-              pending={strategyUpdating}
-            />
-          </div>
-        </section>
-        {/* Project-owned connectors accept only project-managed connections. */}
-        {(isManagedProvider || connector.authSecret) &&
-          !connected &&
-          !isChannel &&
-          usesProjectAuthorization && (
-            <InfoBanner
-              tone="info"
-              icon={Users}
-              title={`Connect ${displayName} for the project`}
-              action={
-                canWrite ? (
-                  <Button
-                    size="lg"
-                    className="h-11 shrink-0 gap-2 px-5 font-semibold"
-                    onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
-                    disabled={strategyUpdating || (isManagedProvider && reconnect.isPending)}
-                  >
-                    {isManagedProvider && reconnect.isPending && (
-                      <Loading className="size-4 shrink-0" />
-                    )}
-                    {isManagedProvider ? 'Connect for the project' : 'Set shared credential'}
-                  </Button>
-                ) : undefined
-              }
-            >
-              {isManagedProvider
-                ? `One project-managed ${displayName} account is available to allowed sessions and triggers.`
-                : `One shared credential that everyone on this project uses — the agent and your triggers run on it.`}
-            </InfoBanner>
-          )}
-        {connector.authSecret &&
-          !isManagedProvider &&
-          !isChannel &&
-          !isComputer &&
-          !usesProjectAuthorization && (
-            <InfoBanner
-              tone="info"
-              icon={Lock}
-              title={`Connect ${displayName} for your sessions`}
-              action={
-                <Button
-                  size="lg"
-                  className="h-11 shrink-0 gap-2 px-5 font-semibold"
-                  onClick={() => setCredOpen(true)}
-                  disabled={strategyUpdating}
-                >
-                  <KeyRound className="size-4 shrink-0" />
-                  Set or replace my credential
-                </Button>
-              }
-            >
-              Your credential is private to your account. Only your private sessions can use this
-              connection.
-            </InfoBanner>
-          )}
-        {/* One tab per question this page answers: what can I use (Connections),
-            what may the agent do with it (Permissions), which project members
-            connected their own (Project members). Before this, everything stacked
-            into one long scroll above a lone "Permissions" tab, because the only
-            other trigger — Connection — is hidden for Pipedream connectors. */}
-        {detailTabCount > 0 && (
-          <Tabs value={detailTab} onValueChange={setDetailTab} className="gap-3">
-            {/* A single trigger is not a choice — it reads as a broken tab bar. */}
-            <TabsList
-              type="underline"
-              className={cn(
-                'flex w-full items-center justify-start',
-                detailTabCount < 2 && 'hidden',
-              )}
-            >
-              {showConnections && (
-                <TabsTrigger value="connections" className="w-fit flex-none gap-2">
-                  Connections
-                  {connectionCount > 0 ? (
-                    <Badge variant="secondary" size="sm">
-                      {connectionCount}
-                    </Badge>
-                  ) : null}
-                </TabsTrigger>
-              )}
-              {showConnectionTab && (
-                <TabsTrigger value="connection" className="w-fit flex-none">
-                  Connection
-                </TabsTrigger>
-              )}
-              {showPermissions && (
-                <TabsTrigger value="permissions" className="w-fit flex-none">
-                  Permissions
-                </TabsTrigger>
-              )}
-              {showRoster && (
-                <TabsTrigger value="roster" className="w-fit flex-none">
-                  Project members
-                </TabsTrigger>
-              )}
-            </TabsList>
-            {/* Only connections that match this connector's owner strategy. */}
-            {showConnections && (
-              <TabsContent value="connections" className="space-y-5">
-                <ConnectionsList
-                  projectId={projectId}
-                  connector={connector}
-                  displayName={displayName}
-                  canManageConnections={canManageConnections}
-                  onChanged={onChanged}
-                  onStartSession={startPrivateSession}
-                  disabled={strategyUpdating}
-                />
-              </TabsContent>
-            )}
-            {/* The sensitive toggle lives under Permissions (it IS a permission
-              default), so this tab only exists when there's a single shared
-              credential to manage — for Pipedream connectors the Connections
-              tab owns that, and this one would be empty. */}
-            {showConnectionTab && (
-              <TabsContent value="connection" className="space-y-5">
-                {isChannel ? (
-                  <ChannelConnectionSection
-                    projectId={projectId}
-                    connector={connector}
-                    onChanged={onChanged}
-                    onRemoved={onRemoved}
-                    canWrite={canWrite && !strategyUpdating}
-                  />
-                ) : (
-                  <ConnectionSection
-                    projectId={projectId}
-                    connector={connector}
-                    onChanged={onChanged}
-                    canWrite={canWrite && !strategyUpdating}
-                    onSetCredential={
-                      isManagedProvider || !usesProjectAuthorization ? undefined : () => setCredOpen(true)
-                    }
-                  />
-                )}
-              </TabsContent>
-            )}
-            {showPermissions && (
-              <TabsContent value="permissions" className="space-y-5">
-                <PermissionsSection
-                  projectId={projectId}
-                  connector={connector}
-                  onChanged={onChanged}
-                  canWrite={canWrite && !strategyUpdating}
-                />
-              </TabsContent>
-            )}
-            {showRoster && (
-              <TabsContent value="roster" className="space-y-5">
-                <ConnectionRoster
-                  projectId={projectId}
-                  connectorSlug={connector.slug}
-                  displayName={displayName}
-                />
-              </TabsContent>
-            )}
-          </Tabs>
-        )}
-
-        {canWrite && !isManaged && !isChannel && (
-          <div className="bg-popover rounded-md border px-4 py-3">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-foreground text-sm font-medium">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleRemove74be1411',
-                  )}
-                </p>
-                <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionDeletes0a130396',
-                  )}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0 gap-1.5"
-                onClick={() => setConfirmDelete(true)}
-                disabled={strategyUpdating}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={`Remove ${displayName}?`}
-        description={
-          <>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextThisRemoves82d0b969',
-            )}
-            <code className="font-mono">{connector.slug}</code>{' '}
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextFromKortixeb47b479',
-            )}
-          </>
-        }
-        confirmLabel={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrConfirmLabelRemoved2120640',
-        )}
-        confirmVariant="destructive"
-        confirmIcon={<Trash2 className="h-4 w-4" />}
-        isPending={remove.isPending}
-        onConfirm={() => remove.mutate()}
-      />
-      <SetCredentialModal
-        projectId={projectId}
-        connector={credOpen ? connector : null}
-        connectionId={
-          usesProjectAuthorization
-            ? (connection?.connection_id ?? null)
-            : (myPrivateConnection?.connection_id ?? null)
-        }
-        authorizationStrategy={connector.authorizationStrategy}
-        open={credOpen}
-        onOpenChange={setCredOpen}
-        onSaved={onChanged}
-      />
     </div>
   );
 }
@@ -1652,6 +1007,7 @@ export function ChannelConnectionSection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const platform = connectorPlatform(connector);
   if (platform === 'email') {
     return (
@@ -1676,11 +1032,9 @@ export function ChannelConnectionSection({
   }
   return (
     <section className="space-y-4">
-      <Label>Connection</Label>
+      <Label>{tI18nComplete.raw('text639a40e82b9a')}</Label>
       <div className="bg-popover rounded-md border px-4 py-3">
-        <InfoBanner tone="warning">
-          This channel connection is missing its platform setting.
-        </InfoBanner>
+        <InfoBanner tone="warning">{tI18nComplete.raw('text53f76274b923')}</InfoBanner>
       </div>
     </section>
   );
@@ -1699,17 +1053,16 @@ function EmailChannelConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const install = useEmailInstall(projectId, connector.slug);
 
   return (
     <section className="space-y-4">
-      <Label>Email connection</Label>
-      <p className="text-muted-foreground -mt-2 text-xs">
-        AgentMail inbox assigned to this connection.
-      </p>
+      <Label>{tI18nComplete.raw('text7033ce3d1e7a')}</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">{tI18nComplete.raw('text28d1c949e5e6')}</p>
       <div className="bg-popover rounded-md border px-4 py-3">
         {install.isLoading ? (
-          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-md" />
         ) : install.data ? (
           <ConnectedEmailConnection
             projectId={projectId}
@@ -1725,8 +1078,8 @@ function EmailChannelConnection({
             onConnected={onChanged}
           />
         ) : (
-          <InfoBanner tone="neutral" icon={Mail} title="Email not connected">
-            This channel connection has no AgentMail inbox yet.
+          <InfoBanner tone="neutral" icon={Mail} title={tI18nComplete.raw('textf0aea4d97b8e')}>
+            {tI18nComplete.raw('text2dec6c273b47')}
           </InfoBanner>
         )}
       </div>
@@ -1747,17 +1100,23 @@ function ConnectedEmailConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const disconnect = useDisconnectEmail();
   const [confirming, setConfirming] = useState(false);
 
   return (
     <div className="space-y-4">
-      <InfoBanner tone="success" icon={Check} title="Email connected">
-        Address <code className="font-mono">{installation.email}</code>
-        {' · '}Inbox <code className="font-mono">{installation.inboxId}</code>
+      <InfoBanner tone="success" icon={Check} title={tI18nComplete.raw('textc23cc1f72afe')}>
+        {tI18nComplete.raw('text56ef8f20955f')}{' '}
+        <code className="font-mono">{installation.email}</code>
+        {' · '}
+        {tI18nComplete.raw('text94835ea2fcf7')}{' '}
+        <code className="font-mono">{installation.inboxId}</code>
         {installation.webhookId ? (
           <>
-            {' · '}Webhook <code className="font-mono">{installation.webhookId}</code>
+            {' · '}
+            {tI18nComplete.raw('text4814f62c108d')}{' '}
+            <code className="font-mono">{installation.webhookId}</code>
           </>
         ) : null}
       </InfoBanner>
@@ -1772,10 +1131,10 @@ function ConnectedEmailConnection({
           {confirming ? (
             <>
               <span className="text-muted-foreground mr-auto text-xs">
-                Removes the Email connection from this project.
+                {tI18nComplete.raw('text2a528ae2d4ae')}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
               <Button
                 variant="destructive"
@@ -1794,12 +1153,12 @@ function ConnectedEmailConnection({
                 }
               >
                 {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-                Disconnect
+                {tI18nComplete.raw('textacfc5be785a9')}
               </Button>
             </>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-              Disconnect
+              {tI18nComplete.raw('textacfc5be785a9')}
             </Button>
           )}
         </div>
@@ -1841,6 +1200,7 @@ function EmailSenderPolicyEditor({
   policy: EmailSenderPolicy | null | undefined;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const update = useUpdateEmailPolicy();
   const initial = normalizeEmailSenderPolicy(policy);
   const [restricted, setRestricted] = useState(initial.mode === 'restricted');
@@ -1889,7 +1249,7 @@ function EmailSenderPolicyEditor({
     regex !== (initial.allowedRegex ?? '');
 
   return (
-    <div className="border-border/60 bg-card rounded-2xl border p-4">
+    <div className="border-border/60 bg-card rounded-md border p-4">
       <div className="flex items-start gap-3">
         <Checkbox
           id="email-sender-restricted"
@@ -1900,10 +1260,9 @@ function EmailSenderPolicyEditor({
         />
         <div className="min-w-0 flex-1 space-y-3">
           <div>
-            <Label htmlFor="email-sender-restricted">Restrict who can start email sessions</Label>
+            <Label htmlFor="email-sender-restricted">{tI18nComplete.raw('texta48c89f63885')}</Label>
             <p className="text-muted-foreground mt-1 text-xs">
-              Leave off to accept every inbound sender. Turn on to allow exact emails, domains, or a
-              regex.
+              {tI18nComplete.raw('text8c67b476d59b')}
             </p>
           </div>
           {restricted ? (
@@ -1912,7 +1271,7 @@ function EmailSenderPolicyEditor({
                 <Input
                   value={emails}
                   onChange={(e) => setEmails(e.target.value)}
-                  placeholder="person@example.com"
+                  placeholder={tI18nComplete.raw('text542d24012988')}
                   disabled={!canWrite}
                 />
               </Field>
@@ -1920,7 +1279,7 @@ function EmailSenderPolicyEditor({
                 <Input
                   value={domains}
                   onChange={(e) => setDomains(e.target.value)}
-                  placeholder="example.com"
+                  placeholder={tI18nComplete.raw('texta379a6f6eeaf')}
                   disabled={!canWrite}
                 />
               </Field>
@@ -1929,7 +1288,7 @@ function EmailSenderPolicyEditor({
                   <Input
                     value={regex}
                     onChange={(e) => setRegex(e.target.value)}
-                    placeholder=".*@customer-[0-9]+\\.com$"
+                    placeholder={tI18nComplete.raw('text8b21058f3253')}
                     spellCheck={false}
                     disabled={!canWrite}
                   />
@@ -1949,7 +1308,7 @@ function EmailSenderPolicyEditor({
                 setDomains(initial.allowedDomains.join('\n'));
                 setRegex(initial.allowedRegex ?? '');
               }}
-              label="Save policy"
+              label={tI18nComplete.raw('text57ee14ce1425')}
             />
           )}
         </div>
@@ -1967,6 +1326,7 @@ export function EmailConnectForm({
   connectorSlug: string;
   onConnected: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const mode = useEmailMode(projectId);
   const connect = useConnectEmail();
   const [displayName, setDisplayName] = useState('Kortix Agent');
@@ -2040,33 +1400,39 @@ export function EmailConnectForm({
       <InfoBanner
         tone={managedAvailable ? 'info' : 'warning'}
         icon={Mail}
-        title={managedAvailable ? 'Create managed Email inbox' : 'Managed Email is not configured'}
+        title={
+          managedAvailable
+            ? tI18nComplete.raw('texte654b63c8098')
+            : tI18nComplete.raw('textafe9444782eb')
+        }
       >
         {managedAvailable
-          ? 'Kortix will create and manage the AgentMail inbox for this connection.'
-          : 'This deployment needs a project-specific AgentMail key before it can create an inbox.'}
+          ? tI18nComplete.raw('textec9ace8d8ff6')
+          : tI18nComplete.raw('text608977655d2d')}
       </InfoBanner>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field>
           <Input
             id="email-channel-display-name"
             name="email-channel-display-name"
-            aria-label="Email display name"
+            aria-label={tI18nComplete.raw('textf912567c97f2')}
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Kortix Agent"
+            placeholder={tI18nComplete.raw('text952144fe1418')}
           />
         </Field>
         {attachExisting ? (
           <Field>
-            <FieldLabel htmlFor="email-channel-existing-email">Existing inbox email</FieldLabel>
+            <FieldLabel htmlFor="email-channel-existing-email">
+              {tI18nComplete.raw('text2fcfd290b610')}
+            </FieldLabel>
             <Input
               id="email-channel-existing-email"
               name="email-channel-existing-email"
-              aria-label="Existing AgentMail email"
+              aria-label={tI18nComplete.raw('textaa042b472947')}
               value={existingEmail}
               onChange={(e) => setExistingEmail(e.target.value.trim().toLowerCase())}
-              placeholder="support@agentmail.to"
+              placeholder={tI18nComplete.raw('textbca888f9f9fd')}
               autoComplete="off"
               spellCheck={false}
             />
@@ -2076,18 +1442,18 @@ export function EmailConnectForm({
             <Input
               id="email-channel-username"
               name="email-channel-username"
-              aria-label="Email address prefix"
+              aria-label={tI18nComplete.raw('textcbf297bfb5e6')}
               value={username}
               onChange={(e) =>
                 setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))
               }
-              placeholder="support"
+              placeholder={tI18nComplete.raw('texta18603086e5b')}
               autoComplete="off"
               spellCheck={false}
             />
             <p className="text-muted-foreground text-xs">
-              AgentMail will create this prefix when available, for example {username || 'support'}
-              @agentmail.to.
+              {tI18nComplete.raw('textf0a216500b54')} {username || 'support'}
+              {tI18nComplete.raw('text39e4dae21daa')}
             </p>
           </Field>
         )}
@@ -2102,22 +1468,25 @@ export function EmailConnectForm({
           />
           <div className="min-w-0 flex-1 space-y-3">
             <div>
-              <Label htmlFor="email-channel-existing-inbox">Attach existing AgentMail inbox</Label>
+              <Label htmlFor="email-channel-existing-inbox">
+                {tI18nComplete.raw('textd7cc97510eb3')}
+              </Label>
               <p className="text-muted-foreground mt-1 text-xs">
-                Use this when the mailbox already exists or the AgentMail account has reached its
-                inbox limit. Kortix will still create the webhook for this connection.
+                {tI18nComplete.raw('text3bb2e4fa1c03')}
               </p>
             </div>
             {attachExisting ? (
               <Field>
-                <FieldLabel htmlFor="email-channel-existing-inbox-id">Existing inbox ID</FieldLabel>
+                <FieldLabel htmlFor="email-channel-existing-inbox-id">
+                  {tI18nComplete.raw('texta35f4f3f0587')}
+                </FieldLabel>
                 <Input
                   id="email-channel-existing-inbox-id"
                   name="email-channel-existing-inbox-id"
-                  aria-label="Existing AgentMail inbox ID"
+                  aria-label={tI18nComplete.raw('textdc5376ca47b4')}
                   value={existingInboxId}
                   onChange={(e) => setExistingInboxId(e.target.value.trim())}
-                  placeholder="support@agentmail.to"
+                  placeholder={tI18nComplete.raw('textbca888f9f9fd')}
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -2137,28 +1506,26 @@ export function EmailConnectForm({
           <ChevronDown
             className={cn('h-3.5 w-3.5 transition-transform', customKeyOpen && 'rotate-180')}
           />
-          Use custom AgentMail key
+          {tI18nComplete.raw('text1bb320d9db5d')}
         </Button>
         {customKeyOpen ? (
           <Field>
             <Input
               id="email-channel-agentmail-api-key"
               name="email-channel-agentmail-api-key"
-              aria-label="AgentMail API key"
+              aria-label={tI18nComplete.raw('text87b0e5101fd8')}
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="am_..."
+              placeholder={tI18nComplete.raw('text3ce8275b54eb')}
               autoComplete="off"
               spellCheck={false}
             />
-            <p className="text-muted-foreground text-xs">
-              Optional when managed Email is configured. Stored as an encrypted project secret.
-            </p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text0ec2e7ccbd17')}</p>
           </Field>
         ) : null}
       </div>
-      <div className="border-border/60 bg-card rounded-2xl border p-4">
+      <div className="border-border/60 bg-card rounded-md border p-4">
         <div className="flex items-start gap-3">
           <Checkbox
             id="email-channel-restrict-senders"
@@ -2169,11 +1536,10 @@ export function EmailConnectForm({
           <div className="min-w-0 flex-1 space-y-3">
             <div>
               <Label htmlFor="email-channel-restrict-senders">
-                Restrict who can start sessions
+                {tI18nComplete.raw('textb1fb183269ba')}
               </Label>
               <p className="text-muted-foreground mt-1 text-xs">
-                Optional. Allow exact emails, domains, or a regex before inbound mail can trigger
-                the agent.
+                {tI18nComplete.raw('text5284184cef68')}
               </p>
             </div>
             {restricted ? (
@@ -2182,7 +1548,7 @@ export function EmailConnectForm({
                   <Input
                     value={emails}
                     onChange={(e) => setEmails(e.target.value)}
-                    placeholder="person@example.com"
+                    placeholder={tI18nComplete.raw('text542d24012988')}
                     spellCheck={false}
                   />
                 </Field>
@@ -2190,7 +1556,7 @@ export function EmailConnectForm({
                   <Input
                     value={domains}
                     onChange={(e) => setDomains(e.target.value)}
-                    placeholder="example.com"
+                    placeholder={tI18nComplete.raw('texta379a6f6eeaf')}
                     spellCheck={false}
                   />
                 </Field>
@@ -2199,7 +1565,7 @@ export function EmailConnectForm({
                     <Input
                       value={regex}
                       onChange={(e) => setRegex(e.target.value)}
-                      placeholder=".*@customer-[0-9]+\\.com$"
+                      placeholder={tI18nComplete.raw('text8b21058f3253')}
                       spellCheck={false}
                     />
                   </Field>
@@ -2213,7 +1579,7 @@ export function EmailConnectForm({
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={connect.isPending || mode.isLoading}>
           {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-          Create inbox
+          {tI18nComplete.raw('text72d9ee78a15c')}
         </Button>
       </div>
     </div>
@@ -2231,16 +1597,15 @@ function SlackChannelConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const install = useSlackInstall(projectId);
   return (
     <section className="space-y-4">
-      <Label>Slack connection</Label>
-      <p className="text-muted-foreground -mt-2 text-xs">
-        Slack workspace assigned to this connection.
-      </p>
+      <Label>{tI18nComplete.raw('text51b3bfca2e8c')}</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">{tI18nComplete.raw('textff5091ba4fe1')}</p>
       <div className="bg-popover rounded-md border px-4 py-3">
         {install.isLoading ? (
-          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-md" />
         ) : install.data ? (
           <ConnectedSlackConnection
             projectId={projectId}
@@ -2251,8 +1616,12 @@ function SlackChannelConnection({
         ) : canWrite ? (
           <SlackConnectForm projectId={projectId} onConnected={onChanged} />
         ) : (
-          <InfoBanner tone="neutral" icon={<SlackLogo />} title="Slack not connected">
-            This channel connection has no Slack workspace yet.
+          <InfoBanner
+            tone="neutral"
+            icon={<SlackLogo />}
+            title={tI18nComplete.raw('textb36d622566f6')}
+          >
+            {tI18nComplete.raw('text98d27bdc2fa7')}
           </InfoBanner>
         )}
       </div>
@@ -2271,12 +1640,13 @@ function ConnectedSlackConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const disconnect = useDisconnectSlack();
   const [confirming, setConfirming] = useState(false);
   return (
     <div className="space-y-4">
-      <InfoBanner tone="success" icon={Check} title="Slack connected">
-        Workspace{' '}
+      <InfoBanner tone="success" icon={Check} title={tI18nComplete.raw('text4fce550efde4')}>
+        {tI18nComplete.raw('text87bb59ba2f92')}{' '}
         <code className="font-mono">{installation.workspaceName || installation.workspaceId}</code>
       </InfoBanner>
       {canWrite && (
@@ -2284,10 +1654,10 @@ function ConnectedSlackConnection({
           {confirming ? (
             <>
               <span className="text-muted-foreground mr-auto text-xs">
-                Removes the Slack connection from this project.
+                {tI18nComplete.raw('text73b407259d54')}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
               <Button
                 variant="destructive"
@@ -2303,12 +1673,12 @@ function ConnectedSlackConnection({
                 }
               >
                 {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-                Disconnect
+                {tI18nComplete.raw('textacfc5be785a9')}
               </Button>
             </>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-              Disconnect
+              {tI18nComplete.raw('textacfc5be785a9')}
             </Button>
           )}
         </div>
@@ -2326,6 +1696,7 @@ export function SlackConnectForm({
   onConnected: () => void;
   customOnly?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const mode = useSlackMode(projectId);
   const manifest = useSlackManifest(projectId);
   const connect = useConnectSlack();
@@ -2353,10 +1724,10 @@ export function SlackConnectForm({
     try {
       await navigator.clipboard.writeText(manifest.data);
       setCopiedManifest(true);
-      successToast('Slack manifest copied');
+      successToast(tI18nComplete.raw('text1f1228d5e972'));
       setTimeout(() => setCopiedManifest(false), 1500);
     } catch {
-      errorToast('Copy failed - select and copy manually');
+      errorToast(tI18nComplete.raw('text1801bed8cea5'));
     }
   };
 
@@ -2364,30 +1735,30 @@ export function SlackConnectForm({
     <div className="space-y-4">
       {!customOnly &&
         (mode.isLoading ? (
-          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-md" />
         ) : installUrl ? (
           <InfoBanner
             tone="info"
             icon={<SlackLogo />}
-            title="Add Kortix to your Slack workspace"
+            title={tI18nComplete.raw('text0e671041e03f')}
             action={
               <Button size="sm" className="shrink-0 gap-1.5" asChild>
                 <a href={installUrl}>
-                  Add to Slack
+                  {tI18nComplete.raw('text3357cd3d0cee')}
                   <ChevronRight className="h-4 w-4" />
                 </a>
               </Button>
             }
           >
-            One-click install - authorize Kortix in your workspace, no setup required.
+            {tI18nComplete.raw('text8b3305c40176')}
           </InfoBanner>
         ) : (
           <InfoBanner
             tone="warning"
             icon={<SlackLogo />}
-            title="Managed Slack install is not configured"
+            title={tI18nComplete.raw('text36e7df856716')}
           >
-            Use a custom Slack app for this deployment.
+            {tI18nComplete.raw('text51e0d22747d7')}
           </InfoBanner>
         ))}
       <div className={cn(!customOnly && 'space-y-3')}>
@@ -2402,23 +1773,23 @@ export function SlackConnectForm({
             <ChevronDown
               className={cn('h-3.5 w-3.5 transition-transform', showCustom && 'rotate-180')}
             />
-            Use custom Slack app
+            {tI18nComplete.raw('textaed3545ea8e4')}
           </Button>
         )}
         {showCustom ? (
           <div
             className={cn(
               'space-y-5',
-              !customOnly && 'border-border/60 bg-card rounded-2xl border p-4',
+              !customOnly && 'border-border/60 bg-card rounded-md border p-4',
             )}
           >
             {!customOnly && (
               <div className="space-y-1">
                 <h3 className="text-foreground text-base font-semibold">
-                  Bring your own Slack app
+                  {tI18nComplete.raw('text6e3fcca472c5')}
                 </h3>
                 <p className="text-muted-foreground text-sm">
-                  For self-hosted setups or custom-scoped installs.
+                  {tI18nComplete.raw('text0881271239f3')}
                 </p>
               </div>
             )}
@@ -2432,9 +1803,11 @@ export function SlackConnectForm({
               >
                 <div className="space-y-1">
                   <div className="text-foreground text-sm font-medium">
-                    Step 1 of 2 - paste the manifest into Slack and install the app.
+                    {tI18nComplete.raw('text8cd1f7bcdc71')}
                   </div>
-                  <div className="text-muted-foreground text-xs font-medium">App manifest</div>
+                  <div className="text-muted-foreground text-xs font-medium">
+                    {tI18nComplete.raw('textcc6e921330d3')}
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button
@@ -2454,7 +1827,7 @@ export function SlackConnectForm({
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5" asChild>
                     <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">
-                      Open Slack
+                      {tI18nComplete.raw('text4ddf02a36df5')}
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   </Button>
@@ -2462,22 +1835,22 @@ export function SlackConnectForm({
               </div>
 
               {manifest.isLoading ? (
-                <Skeleton className={cn('h-52 w-full', !customOnly && 'rounded-2xl')} />
+                <Skeleton className={cn('h-52 w-full', !customOnly && 'rounded-md')} />
               ) : manifest.isError ? (
                 <InfoBanner tone="destructive">
-                  {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
+                  {(manifest.error as Error)?.message || tI18nComplete.raw('text65a8ec4a4a48')}
                 </InfoBanner>
               ) : manifest.data ? (
-                <div className={cn('max-h-[26rem] overflow-auto', !customOnly && 'rounded-2xl')}>
+                <div className={cn('max-h-[26rem] overflow-auto', !customOnly && 'rounded-md')}>
                   <CodeSnippet code={manifest.data} language="json" />
                 </div>
               ) : null}
 
               <ol className="space-y-2">
                 {[
-                  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
-                  'On the next screen, click Install to Workspace and approve.',
-                  'Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.',
+                  tI18nComplete.raw('texta89d28175307'),
+                  tI18nComplete.raw('text690ee10ca19e'),
+                  tI18nComplete.raw('text2cf7a6e21f7e'),
                 ].map((step, index) => (
                   <li key={step} className="text-muted-foreground flex gap-2 text-xs">
                     <span className="border-border/60 bg-muted/40 text-foreground flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-medium">
@@ -2492,10 +1865,10 @@ export function SlackConnectForm({
             <div className="space-y-3">
               <div>
                 <div className="text-foreground text-sm font-medium">
-                  Step 2 of 2 - paste tokens from Slack.
+                  {tI18nComplete.raw('textf00ff63fb851')}
                 </div>
                 <p className="text-muted-foreground mt-0.5 text-xs">
-                  Copy the Bot User OAuth Token and Signing Secret from the installed Slack app.
+                  {tI18nComplete.raw('texte5974d3936df')}
                 </p>
               </div>
               <div className={cn('grid gap-3', !customOnly && 'sm:grid-cols-2')}>
@@ -2503,11 +1876,11 @@ export function SlackConnectForm({
                   <Input
                     id="slack-channel-bot-token"
                     name="slack-channel-bot-token"
-                    aria-label="Slack bot token"
+                    aria-label={tI18nComplete.raw('textc297a4c9177d')}
                     type="password"
                     value={botToken}
                     onChange={(e) => setBotToken(e.target.value)}
-                    placeholder="xoxb-..."
+                    placeholder={tI18nComplete.raw('textdf964376e432')}
                     autoComplete="off"
                     spellCheck={false}
                   />
@@ -2516,11 +1889,11 @@ export function SlackConnectForm({
                   <Input
                     id="slack-channel-signing-secret"
                     name="slack-channel-signing-secret"
-                    aria-label="Slack signing secret"
+                    aria-label={tI18nComplete.raw('text52594f72e6fc')}
                     type="password"
                     value={signingSecret}
                     onChange={(e) => setSigningSecret(e.target.value)}
-                    placeholder="Slack signing secret"
+                    placeholder={tI18nComplete.raw('text52594f72e6fc')}
                     autoComplete="off"
                     spellCheck={false}
                   />
@@ -2534,7 +1907,7 @@ export function SlackConnectForm({
                   disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
                 >
                   {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-                  Connect custom Slack app
+                  {tI18nComplete.raw('text75b86fa11745')}
                 </Button>
               </div>
             </div>
@@ -2631,18 +2004,19 @@ export function ConnectionSection({
         slug: connector.slug,
       }),
     onSuccess: () => {
-      successToast('Connection saved');
+      successToast(tI18nHardcoded.raw('i18nComplete.text23922935b1f8'));
       queryClient.invalidateQueries({
         queryKey: qk.project.connectorConfig(projectId, connector.slug),
       });
       onChanged();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to save connection'),
+    onError: (e: Error) =>
+      errorToast(e.message || tI18nHardcoded.raw('i18nComplete.textf9581c8d3b47')),
   });
 
   return (
     <section className="space-y-4">
-      <Label>Connection</Label>
+      <Label>{tI18nHardcoded.raw('i18nComplete.text639a40e82b9a')}</Label>
       <p className="text-muted-foreground -mt-2 text-xs">
         {tI18nHardcoded.raw(
           'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionHowa31daf50',
@@ -2657,17 +2031,18 @@ export function ConnectionSection({
             )}
             action={
               <Button size="sm" variant="outline" onClick={() => configQuery.refetch()}>
-                Retry
+                {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
               </Button>
             }
           >
-            {(configQuery.error as Error)?.message ?? 'Unknown error'}
+            {(configQuery.error as Error)?.message ??
+              tI18nHardcoded.raw('i18nComplete.text27c2ccd962c2')}
           </InfoBanner>
         ) : configQuery.isLoading || !draft ? (
           <div className="space-y-3">
-            <Skeleton className="h-9 w-full rounded-2xl" />
-            <Skeleton className="h-9 w-2/3 rounded-2xl" />
-            <Skeleton className="h-9 w-full rounded-2xl" />
+            <Skeleton className="h-9 w-full rounded-md" />
+            <Skeleton className="h-9 w-2/3 rounded-md" />
+            <Skeleton className="h-9 w-full rounded-md" />
           </div>
         ) : (
           <div className="space-y-4">
@@ -2678,11 +2053,13 @@ export function ConnectionSection({
               onSetCredential && (
                 <div className="border-border/60 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">Credential</p>
+                    <p className="text-sm font-medium">
+                      {tI18nHardcoded.raw('i18nComplete.textb1c42b3ce118')}
+                    </p>
                     <p className="text-muted-foreground text-xs">
                       {connector.secretSet
-                        ? 'Kortix holds this credential and attaches it to every call.'
-                        : 'Not connected yet — the agent and your triggers cannot call this connector.'}
+                        ? tI18nHardcoded.raw('i18nComplete.text0b7bd1b43899')
+                        : tI18nHardcoded.raw('i18nComplete.text44160e26b787')}
                     </p>
                   </div>
                   {/* One credential action per connector, and it lives in the
@@ -2690,7 +2067,9 @@ export function ConnectionSection({
                       connector-modal.tsx). A second button here read as a
                       different action and gave the same modal a third label. */}
                   <Badge variant={connector.secretSet ? 'secondary' : 'outline'}>
-                    {connector.secretSet ? 'Connected' : 'Not connected'}
+                    {connector.secretSet
+                      ? 'Connected'
+                      : tI18nHardcoded.raw('i18nComplete.text0303e1824670')}
                   </Badge>
                 </div>
               )}
@@ -2710,721 +2089,6 @@ export function ConnectionSection({
         )}
       </div>
     </section>
-  );
-}
-
-type PolicyChoice = 'default' | ConnectorPolicyAction;
-
-const POLICY_CHOICES: { value: PolicyChoice; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'always_run', label: 'Allow' },
-  { value: 'require_approval', label: 'Ask' },
-  { value: 'block', label: 'Block' },
-];
-
-const POLICY_LABEL: Record<ConnectorPolicyAction, { label: string; tint: string }> = {
-  always_run: { label: 'Allow', tint: 'text-kortix-green' },
-  require_approval: { label: 'Ask', tint: 'text-kortix-yellow' },
-  block: { label: 'Block', tint: 'text-destructive' },
-};
-
-function PermissionPicker({
-  value,
-  onChange,
-  readOnly = false,
-}: {
-  value: PolicyChoice;
-  onChange: (c: PolicyChoice) => void;
-  readOnly?: boolean;
-}) {
-  const meta =
-    value === 'default'
-      ? { label: 'Default', tint: 'text-muted-foreground' }
-      : { label: POLICY_LABEL[value].label, tint: POLICY_LABEL[value].tint };
-  if (readOnly) {
-    return (
-      <span
-        className={cn(
-          'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium',
-          meta.tint,
-        )}
-      >
-        {meta.label}
-      </span>
-    );
-  }
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'hover:bg-muted inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium transition-colors',
-            meta.tint,
-          )}
-        >
-          {meta.label}
-          <ChevronDown className="size-3 opacity-40" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-28">
-        {POLICY_CHOICES.map((c) => (
-          <DropdownMenuItem key={c.value} onClick={() => onChange(c.value)} className="text-xs">
-            <span className={cn(c.value !== 'default' && POLICY_LABEL[c.value].tint)}>
-              {c.label}
-            </span>
-            {c.value === value && <Check className="ml-auto size-3.5" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-let _rid = 0;
-const ruleId = () => `r${++_rid}`;
-
-function isPatternMatch(m: string): boolean {
-  return m === '*' || m.includes('*') || /^\/.*\/[a-z]*$/.test(m);
-}
-
-function clientMatch(pattern: string, path: string): boolean {
-  if (pattern === '*') return true;
-  const rx = /^\/(.+)\/([a-z]*)$/.exec(pattern);
-  try {
-    if (rx) {
-      const flags = rx[2]!.includes('i') ? rx[2]! : `${rx[2]}i`;
-      return new RegExp(rx[1]!, flags).test(path);
-    }
-    const glob = '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$';
-    return new RegExp(glob, 'i').test(path);
-  } catch {
-    return false;
-  }
-}
-
-function policiesSig(
-  perTool: Record<string, ConnectorPolicyAction>,
-  rules: { match: string; action: ConnectorPolicyAction }[],
-): string {
-  const pt = Object.entries(perTool)
-    .filter(([, a]) => a)
-    .sort()
-    .map(([k, a]) => `${k}=${a}`)
-    .join(',');
-  const rlParts: string[] = [];
-  for (const r of rules) {
-    const match = r.match.trim();
-    if (match) rlParts.push(`${match}=${r.action}`);
-  }
-  return `${pt}|${rlParts.join(',')}`;
-}
-
-function tsSignature(slug: string, action: ConnectorAction): string {
-  const props =
-    (action.inputSchema as { properties?: Record<string, { type?: string }> } | null)?.properties ??
-    {};
-  const required = new Set((action.inputSchema as { required?: string[] } | null)?.required ?? []);
-  const args = Object.entries(props).map(([k, v]) => {
-    const t = v?.type === 'integer' ? 'number' : (v?.type ?? 'string');
-    return `  ${k}${required.has(k) ? '' : '?'}: ${t};`;
-  });
-  const argBlock = args.length ? `{\n${args.join('\n')}\n}` : '{}';
-  return `connector.call("${slug}", "${action.path}", ${argBlock}): Promise<unknown>`;
-}
-
-export function PermissionsSection({
-  projectId,
-  connector,
-  onChanged,
-  canWrite = false,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  onChanged: () => void;
-  canWrite?: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const queryClient = useQueryClient();
-  const tools = connector.actions;
-  const toolPaths = useMemo(() => new Set(tools.map((t) => t.path)), [tools]);
-
-  const sensitiveMut = useMutation({
-    mutationFn: (next: boolean) => setConnectorSensitive(projectId, connector.slug, next),
-    onSuccess: (_r, next) => {
-      successToast(next ? 'Marked sensitive — reads now ask' : 'No longer sensitive');
-      onChanged();
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to update sensitivity'),
-  });
-
-  const policiesQuery = useQuery({
-    queryKey: ['connector-policies', projectId, connector.slug],
-    queryFn: () => getConnectorPolicies(projectId, connector.slug),
-    staleTime: 5_000,
-    enabled: canWrite,
-  });
-
-  const [perTool, setPerTool] = useState<Record<string, ConnectorPolicyAction>>({});
-  const [rules, setRules] = useState<
-    { id: string; match: string; action: ConnectorPolicyAction }[]
-  >([]);
-  const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [showRules, setShowRules] = useState(false);
-  const [serverSig, setServerSig] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-
-  useEffect(() => {
-    if (!policiesQuery.data) return;
-    const pt: Record<string, ConnectorPolicyAction> = {};
-    const rl: { id: string; match: string; action: ConnectorPolicyAction }[] = [];
-    for (const p of policiesQuery.data.policies) {
-      if (!isPatternMatch(p.match) && toolPaths.has(p.match)) pt[p.match] = p.action;
-      else rl.push({ id: ruleId(), match: p.match, action: p.action });
-    }
-    setPerTool(pt);
-    setRules(rl);
-    setShowRules(rl.length > 0);
-    setServerSig(policiesSig(pt, rl));
-  }, [policiesQuery.data, toolPaths]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q
-      ? tools.filter((t) => `${t.path} ${t.description ?? ''}`.toLowerCase().includes(q))
-      : tools;
-  }, [tools, search]);
-
-  const dirty = policiesSig(perTool, rules) !== serverSig;
-
-  const save = useMutation({
-    mutationFn: () => {
-      const policies: ConnectorPolicyRule[] = [];
-      for (const t of tools) {
-        const action = perTool[t.path];
-        if (action) policies.push({ match: t.path, action });
-      }
-      for (const r of rules) {
-        const match = r.match.trim();
-        if (match) policies.push({ match, action: r.action });
-      }
-      return setConnectorPolicies(projectId, connector.slug, policies);
-    },
-    onSuccess: () => {
-      successToast('Permissions saved');
-      queryClient.invalidateQueries({
-        queryKey: ['connector-policies', projectId, connector.slug],
-      });
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to save permissions'),
-  });
-
-  const setChoice = (path: string, choice: PolicyChoice) =>
-    setPerTool((m) => {
-      const next = { ...m };
-      if (choice === 'default') delete next[path];
-      else next[path] = choice;
-      return next;
-    });
-  const governingRule = (path: string) =>
-    rules.find((r) => r.match.trim() && clientMatch(r.match.trim(), path));
-
-  // Tools a PROJECT-scope rule already decides. Project rules are evaluated
-  // before connector rules and cannot be overridden here (connector/policy.ts),
-  // so without this the panel would show a connector rule the runtime ignores.
-  // The server resolves this through the same function the call gate uses.
-  const projectDecided = useMemo(() => {
-    const decided = new Map<string, ConnectorPolicyAction>();
-    for (const entry of policiesQuery.data?.effective ?? []) {
-      if (entry.source === 'project') decided.set(entry.path, entry.action);
-    }
-    return decided;
-  }, [policiesQuery.data]);
-
-  // ── Multi-select + bulk apply ──
-  const filteredPaths = useMemo(() => filtered.map((t) => t.path), [filtered]);
-  const allFilteredSelected =
-    filteredPaths.length > 0 && filteredPaths.every((p) => selected.has(p));
-  const someFilteredSelected = filteredPaths.some((p) => selected.has(p));
-  const toggleSel = (path: string) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(path)) n.delete(path);
-      else n.add(path);
-      return n;
-    });
-  const toggleAllFiltered = () =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (allFilteredSelected) filteredPaths.forEach((p) => n.delete(p));
-      else filteredPaths.forEach((p) => n.add(p));
-      return n;
-    });
-  const applyBulk = (choice: PolicyChoice) => {
-    setPerTool((m) => {
-      const next = { ...m };
-      for (const p of selected) {
-        if (choice === 'default') delete next[p];
-        else next[p] = choice;
-      }
-      return next;
-    });
-  };
-
-  const reset = () => {
-    const pt: Record<string, ConnectorPolicyAction> = {};
-    const rl: { id: string; match: string; action: ConnectorPolicyAction }[] = [];
-    for (const p of policiesQuery.data?.policies ?? []) {
-      if (!isPatternMatch(p.match) && toolPaths.has(p.match)) pt[p.match] = p.action;
-      else rl.push({ id: ruleId(), match: p.match, action: p.action });
-    }
-    setPerTool(pt);
-    setRules(rl);
-    setShowRules(rl.length > 0);
-    setSelected(new Set());
-  };
-
-  return (
-    <section className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-medium">Permissions</h3>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionWhat4e375237',
-            )}
-          </p>
-        </div>
-        {tools.length > 6 ? (
-          <div className="relative w-48 shrink-0">
-            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderFiltere5f64efb',
-              )}
-              className="h-8 pl-8 text-sm"
-            />
-          </div>
-        ) : null}
-      </div>
-      {/* Say it once, up front. A project-scope rule beats everything on this
-          page and cannot be lifted here — silently rendering the losing value
-          is the bug this replaces. */}
-      {projectDecided.size > 0 && (
-        <InfoBanner
-          tone="warning"
-          icon={Lock}
-          title={`${projectDecided.size} ${projectDecided.size === 1 ? 'action is' : 'actions are'} set by a project-wide rule`}
-        >
-          Project rules apply across every connector and are evaluated first, so for those actions
-          whatever you set here is ignored. They are marked below.
-        </InfoBanner>
-      )}
-      <div className="bg-popover rounded-md border px-4 py-3">
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Default</Label>
-            <RadioGroup
-              value={connector.sensitive ? 'ask_first' : 'follow_rules'}
-              onValueChange={(v) => canWrite && sensitiveMut.mutate(v === 'ask_first')}
-              className="space-y-2"
-            >
-              <RadioGroupItem
-                value="follow_rules"
-                id={`connector-default-follow-${connector.slug}`}
-                label="Follow global rules & risk"
-                description="Reads run automatically; writes and destructive actions still ask, per the rules below."
-                size="lg"
-                variant="outline"
-                disabled={sensitiveMut.isPending || !canWrite}
-              />
-              <RadioGroupItem
-                value="ask_first"
-                id={`connector-default-ask-${connector.slug}`}
-                label="Ask first"
-                description={
-                  <>
-                    Every action — including{' '}
-                    <span className="text-foreground font-medium">reads</span> — asks before it runs
-                    (approve once, or “allow for session”). For email, files, or secrets, where
-                    reading is itself risky. A per-tool rule below can still override a specific
-                    action.
-                  </>
-                }
-                size="lg"
-                variant="outline"
-                disabled={sensitiveMut.isPending || !canWrite}
-              />
-            </RadioGroup>
-          </div>
-
-          {tools.length === 0 ? (
-            <InfoBanner
-              tone="neutral"
-              title={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNo0e439be9',
-              )}
-            >
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextConnectThec56fd30b',
-              )}
-            </InfoBanner>
-          ) : (
-            <div className="border-border/60 overflow-hidden rounded-2xl border">
-              {/* Select-all + bulk apply */}
-              <div className="border-border/60 bg-muted/30 flex h-9 items-center gap-2 border-b px-3">
-                {canWrite && (
-                  <Checkbox
-                    checked={
-                      allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false
-                    }
-                    onCheckedChange={toggleAllFiltered}
-                    aria-label={tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabel924a321f',
-                    )}
-                    className="size-3.5"
-                  />
-                )}
-                {canWrite && selected.size > 0 ? (
-                  <>
-                    <span className="text-foreground text-xs font-medium">
-                      {selected.size} selected
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetToff934ec7',
-                      )}
-                    </span>
-                    {POLICY_CHOICES.map((c) => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        onClick={() => applyBulk(c.value)}
-                        className={cn(
-                          'hover:bg-muted rounded-full px-2 py-0.5 text-xs font-medium transition-colors',
-                          c.value === 'default'
-                            ? 'text-muted-foreground'
-                            : POLICY_LABEL[c.value].tint,
-                        )}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setSelected(new Set())}
-                      className="text-muted-foreground hover:text-foreground ml-auto text-xs transition-colors"
-                    >
-                      Clear
-                    </button>
-                  </>
-                ) : (
-                  <span className="text-muted-foreground text-xs">
-                    {filtered.length} {filtered.length === 1 ? 'tool' : 'tools'}{' '}
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextTapA9c38f324',
-                    )}
-                  </span>
-                )}
-              </div>
-
-              <div className="max-h-[52vh] overflow-y-auto">
-                {filtered.map((t) => {
-                  const explicit = perTool[t.path];
-                  const ruled = !explicit ? governingRule(t.path) : undefined;
-                  const projectAction = projectDecided.get(t.path);
-                  const isOpen = expanded === t.path;
-                  const isSel = selected.has(t.path);
-                  return (
-                    <div key={t.path} className="border-border/60 border-t first:border-t-0">
-                      <div
-                        className={cn(
-                          'group flex items-center gap-2.5 px-3 py-1.5 transition-colors',
-                          isSel ? 'bg-primary/[0.05]' : 'hover:bg-muted/30',
-                        )}
-                      >
-                        {canWrite && (
-                          <Checkbox
-                            checked={isSel}
-                            onCheckedChange={() => toggleSel(t.path)}
-                            aria-label={`Select ${t.path}`}
-                            className={cn(
-                              'size-3.5 shrink-0 transition-opacity',
-                              isSel
-                                ? ''
-                                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-                            )}
-                          />
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setExpanded(isOpen ? null : t.path)}
-                          className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
-                        >
-                          <span className="text-foreground shrink-0 font-mono text-xs">
-                            {t.path}
-                          </span>
-                          {t.description && (
-                            <span className="text-muted-foreground/70 truncate text-xs">
-                              {t.description}
-                            </span>
-                          )}
-                        </button>
-                        {ruled && (
-                          <span
-                            className={cn(
-                              'shrink-0 text-xs opacity-80',
-                              POLICY_LABEL[ruled.action].tint,
-                            )}
-                            title={`From pattern rule: ${ruled.match}`}
-                          >
-                            {POLICY_LABEL[ruled.action].label}{' '}
-                            {tI18nHardcoded.raw(
-                              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextRulebbcba279',
-                            )}
-                          </span>
-                        )}
-                        {projectAction && (
-                          <Hint
-                            label={`A project-wide rule sets this to "${POLICY_LABEL[projectAction].label}". Project rules are evaluated first and win — anything you set here is ignored for this tool.`}
-                          >
-                            <Badge variant="outline" size="sm" className="shrink-0 gap-1">
-                              <Lock className="size-3 shrink-0" />
-                              <span className={POLICY_LABEL[projectAction].tint}>
-                                {POLICY_LABEL[projectAction].label}
-                              </span>
-                              by project
-                            </Badge>
-                          </Hint>
-                        )}
-                        <ChevronRight
-                          className={cn(
-                            'size-3 shrink-0 transition',
-                            isOpen
-                              ? 'text-muted-foreground/70 rotate-90'
-                              : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100',
-                          )}
-                        />
-                        {/* Still editable — a project rule can be lifted later, and
-                            staging a connector rule for that is legitimate. Dimmed
-                            so it never reads as the thing currently in force. */}
-                        <div className={cn(projectAction && 'opacity-40')}>
-                          <PermissionPicker
-                            value={explicit ?? 'default'}
-                            onChange={(c) => setChoice(t.path, c)}
-                            readOnly={!canWrite}
-                          />
-                        </div>
-                      </div>
-                      {isOpen && (
-                        <div className="bg-muted/20 space-y-3 px-4 pt-1 pb-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={RISK_VARIANT[t.risk]} size="sm">
-                              {t.risk}
-                            </Badge>
-                            {t.description && (
-                              <span className="text-muted-foreground text-xs">{t.description}</span>
-                            )}
-                          </div>
-                          <CodeSnippet
-                            code={tsSignature(connector.slug, t)}
-                            language="typescript"
-                          />
-                          <CodeSnippet
-                            code={JSON.stringify(
-                              t.inputSchema ?? { type: 'object', properties: {} },
-                              null,
-                              2,
-                            )}
-                            language="json"
-                            className="max-h-56 overflow-auto"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {filtered.length === 0 && (
-                  <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoTools69d22076',
-                    )}
-                    {search}”.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Advanced pattern rules */}
-          {tools.length > 0 && (
-            <div className="border-border/60 rounded-2xl border">
-              <button
-                type="button"
-                onClick={() => setShowRules((s) => !s)}
-                className="text-foreground hover:bg-muted/40 flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium"
-              >
-                <ChevronRight
-                  className={cn(
-                    'text-muted-foreground h-4 w-4 transition-transform',
-                    showRules && 'rotate-90',
-                  )}
-                />
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPatternRules6a07e5a7',
-                )}
-                {rules.length > 0 && (
-                  <Badge variant="secondary" size="sm">
-                    {rules.length}
-                  </Badge>
-                )}
-                <span className="text-muted-foreground ml-auto text-xs font-normal">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCoverMany170203ce',
-                  )}
-                </span>
-              </button>
-              {showRules && (
-                <div className="border-border/60 space-y-2 border-t px-3 py-3">
-                  <p className="text-muted-foreground text-xs">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMatchBy60561318',
-                    )}
-                    <code className="bg-muted rounded px-1 font-mono">
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSend0110e0d9',
-                      )}
-                    </code>
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextOrRegexf5a26a27',
-                    )}
-                    <code className="bg-muted rounded px-1 font-mono">
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextDelete37c77402',
-                      )}
-                    </code>
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPerTool4d0d7e9f',
-                    )}
-                  </p>
-                  {rules.map((r) => (
-                    <div key={r.id} className="flex items-center gap-2">
-                      <Input
-                        value={r.match}
-                        onChange={(e) =>
-                          setRules((rs) =>
-                            rs.map((x) => (x.id === r.id ? { ...x, match: e.target.value } : x)),
-                          )
-                        }
-                        placeholder={tI18nHardcoded.raw(
-                          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSend3b0a4ee1',
-                        )}
-                        className="h-8 flex-1 font-mono text-xs"
-                        disabled={!canWrite}
-                      />
-                      <Select
-                        value={r.action}
-                        disabled={!canWrite}
-                        onValueChange={(v) =>
-                          setRules((rs) =>
-                            rs.map((x) =>
-                              x.id === r.id ? { ...x, action: v as ConnectorPolicyAction } : x,
-                            ),
-                          )
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-[100px] shrink-0 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(
-                            ['always_run', 'require_approval', 'block'] as ConnectorPolicyAction[]
-                          ).map((a) => (
-                            <SelectItem key={a} value={a} className="text-xs">
-                              {POLICY_LABEL[a].label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {canWrite && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="hover:text-destructive h-8 w-8 shrink-0"
-                          onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))}
-                          aria-label={tI18nHardcoded.raw(
-                            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabeld2296c34',
-                          )}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                  {canWrite && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 gap-1.5 text-xs"
-                      onClick={() =>
-                        setRules((rs) => [
-                          ...rs,
-                          { id: ruleId(), match: '', action: 'require_approval' },
-                        ])
-                      }
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddRule873a093f',
-                      )}
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {canWrite && (
-          <SaveBar
-            dirty={dirty}
-            saving={save.isPending}
-            onSave={() => save.mutate()}
-            onReset={reset}
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
-            )}
-          />
-        )}
-      </div>
-    </section>
-  );
-}
-
-function GlobalRulesPanel({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-7">
-      <div className="mb-6 flex items-start gap-3.5">
-        <EntityAvatar icon={ShieldCheck} size="lg" />
-        <div>
-          <h2 className="text-foreground text-lg font-semibold">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextGlobalRules436bcada',
-            )}
-          </h2>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPermissionsThat70379f46',
-            )}
-          </p>
-        </div>
-      </div>
-      <PoliciesPanel projectId={projectId} />
-    </div>
   );
 }
 
@@ -3458,8 +2122,8 @@ export function AddAppPanel({
       <div className="mx-auto w-full max-w-2xl space-y-8">
         <EmptyState
           icon={Plug}
-          title="No connectors yet"
-          description="You have read-only access to this project's connectors. Ask a project manager to add one."
+          title={tI18nHardcoded.raw('i18nComplete.text51ae0a7e3783')}
+          description={tI18nHardcoded.raw('i18nComplete.text0bf59aef2b27')}
         />
       </div>
     );
@@ -3473,7 +2137,9 @@ export function AddAppPanel({
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
+        <h2 className="text-foreground text-xl font-medium">
+          {tI18nHardcoded.raw('i18nComplete.text3a06bf051e48')}
+        </h2>
       </header>
       <Tabs defaultValue={defaultTab}>
         <TabsList type="underline">
@@ -3490,9 +2156,17 @@ export function AddAppPanel({
           ) : (
             <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
           )}
-          {discoverEnabled && <TabsTrigger value="discover">Discover</TabsTrigger>}
-          <TabsTrigger value="channels">Channels</TabsTrigger>
-          <TabsTrigger value="custom">Custom</TabsTrigger>
+          {discoverEnabled && (
+            <TabsTrigger value="discover">
+              {tI18nHardcoded.raw('i18nComplete.textd4a33d5b78bc')}
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="channels">
+            {tI18nHardcoded.raw('i18nComplete.text4c8906cf76f5')}
+          </TabsTrigger>
+          <TabsTrigger value="custom">
+            {tI18nHardcoded.raw('i18nComplete.text494ca78f7374')}
+          </TabsTrigger>
         </TabsList>
         {!easyConnectDisabled && (
           <TabsContent value="apps" className="mt-4">
@@ -3548,22 +2222,12 @@ function ChannelCatalogue({
  * The real Slack logo — the single Slack mark used everywhere across the
  * connectors + channels surface (catalogue cards, channel cards, connect flow),
  * so Slack always reads as Slack and never as a generic glyph. Sized by
- * `className`; defaults to `size-4`.
+ * `className`; defaults to `size-4`. It is the built-in four-color `Slack`
+ * icon: this used to fetch Slack's favicon from Google on every view, a blank
+ * tile on an install without internet.
  */
 export function SlackLogo({ className }: { className?: string }) {
-  return (
-    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
-      <Image
-        src={SLACK_ICON_SRC}
-        alt=""
-        referrerPolicy="no-referrer"
-        fill
-        sizes="32px"
-        className="object-contain"
-        unoptimized
-      />
-    </span>
-  );
+  return <Slack className={cn('size-4 shrink-0', className)} />;
 }
 
 function SlackIconTile() {
@@ -3584,6 +2248,7 @@ function AddEmailConnectionCard({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('Email inbox');
   const [username, setUsername] = useState('');
@@ -3608,16 +2273,14 @@ function AddEmailConnectionCard({
     onSuccess: ({ slug, syncError }) => {
       setOpen(false);
       if (syncError) {
-        warningToast(
-          `Added the Email inbox to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
-        );
+        warningToast(tI18nComplete('text4e12058e58c1', { value0: syncError }));
         onAdded();
         return;
       }
-      successToast('Added Email inbox');
+      successToast(tI18nComplete.raw('textd1dcd7a7bbec'));
       onAdded(slug);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add Email inbox'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text3df88e8f7ea6')),
   });
 
   return (
@@ -3626,36 +2289,41 @@ function AddEmailConnectionCard({
         <div className="flex items-center gap-3">
           <EntityAvatar icon={Mail} size="sm" />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">Email inbox</div>
-            <div className="text-muted-foreground truncate text-xs">Channel connection</div>
+            <div className="text-foreground truncate text-sm font-medium">
+              {tI18nComplete.raw('textf00606184e4d')}
+            </div>
+            <div className="text-muted-foreground truncate text-xs">
+              {tI18nComplete.raw('text2283269ca150')}
+            </div>
           </div>
         </div>
         <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          Add a separate AgentMail inbox connection for support, sales, founders, or any mailbox the
-          agent should run.
+          {tI18nComplete.raw('text3b61c181f516')}
         </p>
       </button>
       <Modal open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
-            <ModalTitle>Add Email inbox</ModalTitle>
-            <ModalDescription>
-              Create a separate connection. You choose the AgentMail address when connecting it.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('text2b47dcc33a2a')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text630694bd2dec')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <Field>
-              <FieldLabel htmlFor="email-connection-name">Display name</FieldLabel>
+              <FieldLabel htmlFor="email-connection-name">
+                {tI18nComplete.raw('text2b7f6a84de91')}
+              </FieldLabel>
               <Input
                 id="email-connection-name"
                 name="email-connection-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Support inbox"
+                placeholder={tI18nComplete.raw('text945ce03ec79f')}
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="email-connection-prefix">Address prefix</FieldLabel>
+              <FieldLabel htmlFor="email-connection-prefix">
+                {tI18nComplete.raw('text4e6946711ca8')}
+              </FieldLabel>
               <Input
                 id="email-connection-prefix"
                 name="email-connection-prefix"
@@ -3663,22 +2331,22 @@ function AddEmailConnectionCard({
                 onChange={(e) =>
                   setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))
                 }
-                placeholder="support"
+                placeholder={tI18nComplete.raw('texta18603086e5b')}
                 autoComplete="off"
                 spellCheck={false}
               />
               <p className="text-muted-foreground text-xs">
-                Used as the first choice for the AgentMail address, for example support@agentmail.
+                {tI18nComplete.raw('text2549e14d07c9')}
               </p>
             </Field>
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button onClick={() => add.mutate()} disabled={add.isPending} className="gap-1.5">
               {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Add inbox
+              {tI18nComplete.raw('text8dff8c0800fd')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -3694,9 +2362,10 @@ function AddSlackConnectionCard({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const handleConnected = () => {
-    successToast('Slack connected');
+    successToast(tI18nComplete.raw('text1bfa15228ca8'));
     setOpen(false);
     onAdded('kortix_slack');
   };
@@ -3707,22 +2376,23 @@ function AddSlackConnectionCard({
         <div className="flex items-center gap-3">
           <SlackIconTile />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">Slack</div>
-            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
+            <div className="text-foreground truncate text-sm font-medium">
+              {tI18nComplete.raw('textb27fb38ba323')}
+            </div>
+            <div className="text-muted-foreground truncate text-xs">
+              {tI18nComplete.raw('textbbbf43b8819c')}
+            </div>
           </div>
         </div>
         <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          Add Kortix to Slack so mentions and threaded replies route into Kortix agent sessions.
+          {tI18nComplete.raw('text43b4b568012f')}
         </p>
       </button>
       <Modal open={open} onOpenChange={setOpen}>
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
-            <ModalTitle>Add Kortix to Slack</ModalTitle>
-            <ModalDescription>
-              Connect the built-in Slack channel. The connection appears automatically after
-              installation.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('text62da6a2b1758')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text8b5b9b72f2ec')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] overflow-y-auto">
             <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
@@ -3759,11 +2429,7 @@ function AppCatalogue({
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
   const addApp = useMutation({
-    mutationFn: async (connector: {
-      name: string;
-      slug: string;
-      authorizationStrategy: ConnectorAuthorizationStrategy;
-    }) => {
+    mutationFn: async (connector: EasyConnectConnectionInput) => {
       if (!selectedApp) throw new Error('Select an app');
       const draft = buildEasyConnectConnectorDraft(selectedApp, connector);
       const result = await createConnector(projectId, draft);
@@ -3777,15 +2443,19 @@ function AppCatalogue({
       setSelectedApp(null);
       if (connector.syncError) {
         warningToast(
-          `Added ${connector.name} to the manifest, but synchronization failed: ${connector.syncError}. Use Sync to retry.`,
+          tI18nHardcoded('i18nComplete.textd6a135de3872', {
+            value0: connector.name,
+            value1: connector.syncError,
+          }),
         );
         onAdded();
         return;
       }
-      successToast(`Added ${connector.name} — click Connect to authorize`);
+      successToast(tI18nHardcoded('i18nComplete.text590d36262e11', { value0: connector.name }));
       onAdded(connector.slug);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.texta34a2714da91')),
   });
 
   return (
@@ -3826,7 +2496,11 @@ function AppCatalogue({
             title={tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNof8067eda',
             )}
-            description={q ? `Nothing matches "${q}".` : 'Try a search.'}
+            description={
+              q
+                ? tI18nHardcoded('i18nComplete.text3e71adfa7d54', { value0: q })
+                : tI18nHardcoded.raw('i18nComplete.textecbd276ebec2')
+            }
           />
         ) : (
           <>
@@ -3886,7 +2560,7 @@ function AppCatalogue({
                       )}
                     </>
                   ) : (
-                    'Load more'
+                    tI18nHardcoded.raw('i18nComplete.textac8991ef0101')
                   )}
                 </Button>
               </div>
@@ -3898,7 +2572,7 @@ function AppCatalogue({
         open={selectedApp !== null}
         idPrefix="easy-connect-connector"
         title={`Add ${selectedApp?.name ?? 'app'}`}
-        description="Create a connector for this app. The name and slug identify it in sessions and project configuration."
+        description={tI18nHardcoded.raw('i18nComplete.text6acbef3d00c7')}
         initialName={selectedApp?.name ?? ''}
         initialSlug={
           selectedApp ? proposeConnectorConnectionSlug(selectedApp.name, existingSlugs) : ''
@@ -3945,6 +2619,7 @@ function HeadersEditor({
   readOnly?: boolean;
   authHeaderName?: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [rows, setRows] = useState<Array<[string, string]>>(() => Object.entries(value));
   // Re-seed only when the saved value genuinely differs from what we're showing,
   // so a refetch can't wipe a row the user is mid-way through typing.
@@ -3985,7 +2660,7 @@ function HeadersEditor({
 
   return (
     <Field>
-      <FieldLabel>Headers</FieldLabel>
+      <FieldLabel>{tI18nComplete.raw('text194e9fe656a1')}</FieldLabel>
       <div className="space-y-2">
         {rows.map(([name, val], i) => {
           const err = nameError(name, i);
@@ -3999,7 +2674,7 @@ function HeadersEditor({
                   onChange={(e) =>
                     commit(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))
                   }
-                  placeholder="X-Tenant-Id"
+                  placeholder={tI18nComplete.raw('text1447557b9c1e')}
                   className="font-mono text-xs"
                   variant="popover"
                   disabled={readOnly}
@@ -4010,7 +2685,7 @@ function HeadersEditor({
                   onChange={(e) =>
                     commit(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))
                   }
-                  placeholder="acme"
+                  placeholder={tI18nComplete.raw('text822b33ad87c1')}
                   className="font-mono text-xs"
                   variant="popover"
                   disabled={readOnly}
@@ -4021,7 +2696,7 @@ function HeadersEditor({
                     size="icon"
                     variant="ghost"
                     className="shrink-0"
-                    aria-label="Remove header"
+                    aria-label={tI18nComplete.raw('texte42db5eb1789')}
                     onClick={() => commit(rows.filter((_, j) => j !== i))}
                   >
                     <X className="size-4" />
@@ -4040,14 +2715,11 @@ function HeadersEditor({
             className="gap-1.5"
             onClick={() => setRows([...rows, ['', '']])}
           >
-            <Plus className="size-3.5" /> Add header
+            <Plus className="size-3.5" /> {tI18nComplete.raw('text1192c90dd497')}
           </Button>
         )}
       </div>
-      <FieldDescription>
-        Sent on every call this connector makes. Stored in the manifest in plain text — put
-        credentials in Auth, not here.
-      </FieldDescription>
+      <FieldDescription>{tI18nComplete.raw('text3ca228539c82')}</FieldDescription>
     </Field>
   );
 }
@@ -4097,7 +2769,9 @@ function ConnectorConfigFields({
     <FieldGroup className="gap-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field>
-          <FieldLabel htmlFor="connector-slug">Slug</FieldLabel>
+          <FieldLabel htmlFor="connector-slug">
+            {tI18nHardcoded.raw('i18nComplete.textd15387ecc6c5')}
+          </FieldLabel>
           <Input
             id="connector-slug"
             value={draft.slug}
@@ -4105,7 +2779,7 @@ function ConnectorConfigFields({
               slugTouched.current = true;
               set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') });
             }}
-            placeholder="my-api"
+            placeholder={tI18nHardcoded.raw('i18nComplete.text9696f2b4e020')}
             className="font-mono text-xs"
             variant="popover"
             disabled={!slugEditable || readOnly}
@@ -4113,7 +2787,9 @@ function ConnectorConfigFields({
           />
         </Field>
         <Field>
-          <FieldLabel htmlFor="connector-provider">Provider</FieldLabel>
+          <FieldLabel htmlFor="connector-provider">
+            {tI18nHardcoded.raw('i18nComplete.text472590ae974d')}
+          </FieldLabel>
           <Select
             value={p}
             disabled={readOnly}
@@ -4121,10 +2797,6 @@ function ConnectorConfigFields({
               const provider = v as ConnectorDraftInput['provider'];
               set({
                 provider,
-                authorization_strategy: connectorAuthorizationStrategyForProvider(
-                  provider,
-                  draft.authorization_strategy ?? 'project',
-                ),
                 platform:
                   provider === 'channel'
                     ? draft.platform === 'email' && !emailChannelEnabled
@@ -4144,19 +2816,27 @@ function ConnectorConfigFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="openapi">OpenAPI</SelectItem>
-              <SelectItem value="postman">Postman</SelectItem>
-              <SelectItem value="graphql">GraphQL</SelectItem>
+              <SelectItem value="openapi">
+                {tI18nHardcoded.raw('i18nComplete.textcf2c9e218033')}
+              </SelectItem>
+              <SelectItem value="postman">
+                {tI18nHardcoded.raw('i18nComplete.text213985e12832')}
+              </SelectItem>
+              <SelectItem value="graphql">
+                {tI18nHardcoded.raw('i18nComplete.textee27322554e4')}
+              </SelectItem>
               <SelectItem value="mcp">MCP</SelectItem>
               <SelectItem value="http">HTTP</SelectItem>
-              <SelectItem value="channel">Channel</SelectItem>
+              <SelectItem value="channel">
+                {tI18nHardcoded.raw('i18nComplete.textce4683e7013a')}
+              </SelectItem>
             </SelectContent>
           </Select>
         </Field>
       </div>
       {p === 'channel' && (
         <div className="space-y-1.5">
-          <Label>Channel</Label>
+          <Label>{tI18nHardcoded.raw('i18nComplete.textce4683e7013a')}</Label>
           <Select
             value={
               draft.platform === 'email' && !emailChannelEnabled
@@ -4170,8 +2850,14 @@ function ConnectorConfigFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {emailChannelEnabled && <SelectItem value="email">Email</SelectItem>}
-              <SelectItem value="slack">Slack</SelectItem>
+              {emailChannelEnabled && (
+                <SelectItem value="email">
+                  {tI18nHardcoded.raw('i18nComplete.text969ccbd3cf63')}
+                </SelectItem>
+              )}
+              <SelectItem value="slack">
+                {tI18nHardcoded.raw('i18nComplete.textb27fb38ba323')}
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -4180,7 +2866,7 @@ function ConnectorConfigFields({
         <Field>
           <FieldLabel htmlFor="connector-spec">
             {p === 'postman'
-              ? 'Collection, repository, or workspace'
+              ? tI18nHardcoded.raw('i18nComplete.textcd8dd219cc48')
               : tI18nHardcoded.raw(
                   'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
                 )}
@@ -4198,8 +2884,7 @@ function ConnectorConfigFields({
           />
           {p === 'postman' ? (
             <FieldDescription>
-              Supports Collection v2 JSON, Postman-managed Git repositories, and configured public
-              workspaces.
+              {tI18nHardcoded.raw('i18nComplete.textc26ca4369200')}
             </FieldDescription>
           ) : null}
         </Field>
@@ -4207,7 +2892,9 @@ function ConnectorConfigFields({
       {p === 'graphql' && (
         <>
           <Field>
-            <FieldLabel htmlFor="connector-endpoint">Endpoint</FieldLabel>
+            <FieldLabel htmlFor="connector-endpoint">
+              {tI18nHardcoded.raw('i18nComplete.text3df9726c68ba')}
+            </FieldLabel>
             <Input
               id="connector-endpoint"
               value={draft.endpoint ?? ''}
@@ -4228,7 +2915,7 @@ function ConnectorConfigFields({
               id="connector-sdl"
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
-              placeholder=".kortix/connectors/schema.graphql"
+              placeholder={tI18nHardcoded.raw('i18nComplete.textecccd43d1878')}
               variant="popover"
               disabled={readOnly}
             />
@@ -4250,7 +2937,9 @@ function ConnectorConfigFields({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="connector-transport">Transport</FieldLabel>
+            <FieldLabel htmlFor="connector-transport">
+              {tI18nHardcoded.raw('i18nComplete.textaaead4abf5d0')}
+            </FieldLabel>
             <Select
               value={draft.transport ?? 'http'}
               disabled={readOnly}
@@ -4260,8 +2949,12 @@ function ConnectorConfigFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="http">http</SelectItem>
-                <SelectItem value="sse">sse</SelectItem>
+                <SelectItem value="http">
+                  {tI18nHardcoded.raw('i18nComplete.texte0603c499aae')}
+                </SelectItem>
+                <SelectItem value="sse">
+                  {tI18nHardcoded.raw('i18nComplete.textfe3811fe21af')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -4295,7 +2988,7 @@ function ConnectorConfigFields({
               id="connector-routes"
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
-              placeholder=".kortix/connectors/routes.toml"
+              placeholder={tI18nHardcoded.raw('i18nComplete.textb2c293b68745')}
               variant="popover"
               disabled={readOnly}
             />
@@ -4305,7 +2998,9 @@ function ConnectorConfigFields({
       {needsAuth && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field>
-            <FieldLabel htmlFor="connector-auth">Auth</FieldLabel>
+            <FieldLabel htmlFor="connector-auth">
+              {tI18nHardcoded.raw('i18nComplete.text8eb3ea9bbde6')}
+            </FieldLabel>
             <Select
               value={oauth2Selected ? 'oauth2_client_credentials' : (draft.auth?.type ?? 'auto')}
               disabled={readOnly}
@@ -4324,18 +3019,38 @@ function ConnectorConfigFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto-detect</SelectItem>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="bearer">Bearer</SelectItem>
-                <SelectItem value="basic">Basic</SelectItem>
-                <SelectItem value="api_key">API key</SelectItem>
+                <SelectItem value="auto">
+                  {tI18nHardcoded.raw('i18nComplete.text89ebfb7a88ca')}
+                </SelectItem>
+                <SelectItem value="none">
+                  {tI18nHardcoded.raw('i18nComplete.textdc937b598926')}
+                </SelectItem>
+                <SelectItem value="bearer">
+                  {tI18nHardcoded.raw('i18nComplete.text710e0dbdd422')}
+                </SelectItem>
+                <SelectItem value="basic">
+                  {tI18nHardcoded.raw('i18nComplete.text0e35f6e9742e')}
+                </SelectItem>
+                <SelectItem value="api_key">
+                  {tI18nHardcoded.raw('i18nComplete.text16f0ee47f993')}
+                </SelectItem>
                 {onOAuth2SelectedChange && (
-                  <SelectItem value="oauth2_client_credentials">OAuth 2.0</SelectItem>
+                  <SelectItem value="oauth2_client_credentials">
+                    {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
+                  </SelectItem>
                 )}
-                <SelectItem value="oauth1">OAuth 1.0</SelectItem>
-                <SelectItem value="hmac">HMAC-SHA256</SelectItem>
-                <SelectItem value="aws_sigv4">AWS Signature Version 4</SelectItem>
-                <SelectItem value="mtls">Mutual TLS</SelectItem>
+                <SelectItem value="oauth1">
+                  {tI18nHardcoded.raw('i18nComplete.textf461c90d16f6')}
+                </SelectItem>
+                <SelectItem value="hmac">
+                  {tI18nHardcoded.raw('i18nComplete.textf9a4ecea0836')}
+                </SelectItem>
+                <SelectItem value="aws_sigv4">
+                  {tI18nHardcoded.raw('i18nComplete.text1746a52157af')}
+                </SelectItem>
+                <SelectItem value="mtls">
+                  {tI18nHardcoded.raw('i18nComplete.textd0dd76e23558')}
+                </SelectItem>
                 <SelectItem value="custom">
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCustomHeader1e0e82ed',
@@ -4345,23 +3060,24 @@ function ConnectorConfigFields({
             </Select>
             <FieldDescription>
               {oauth2Selected ? (
-                'Kortix obtains, refreshes, and injects a bearer token for this connector.'
+                tI18nHardcoded.raw('i18nComplete.text80770d26537b')
               ) : draft.auth === undefined && detectedAuth ? (
                 <>
-                  Detected <span className="font-medium">{detectedAuth.type}</span>
+                  {tI18nHardcoded.raw('i18nComplete.text756a8ba97dce')}{' '}
+                  <span className="font-medium">{detectedAuth.type}</span>
                   {detectedAuth.parameterName ? (
                     <>
                       {' '}
-                      via{' '}
-                      <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
+                      {tI18nHardcoded.raw('i18nComplete.text4d327af41f96')}{' '}
+                      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
                         {detectedAuth.parameterName}
                       </code>
                     </>
                   ) : null}
-                  . Add the credential after saving — you can override this anytime.
+                  {tI18nHardcoded.raw('i18nComplete.text5c48a6568d59')}
                 </>
               ) : (
-                'Auto-detect reads authentication metadata from the source. Choose None to opt out.'
+                tI18nHardcoded.raw('i18nComplete.text566a18d73a39')
               )}
             </FieldDescription>
           </Field>
@@ -4370,7 +3086,9 @@ function ConnectorConfigFields({
               source is the authority until the user picks an explicit override. */}
           {draft.auth === undefined && detectedAuth?.parameterName && (
             <Field>
-              <FieldLabel htmlFor="connector-auth-detected">Header name</FieldLabel>
+              <FieldLabel htmlFor="connector-auth-detected">
+                {tI18nHardcoded.raw('i18nComplete.textc1dcc8fb31f6')}
+              </FieldLabel>
               <Input
                 id="connector-auth-detected"
                 value={detectedAuth.parameterName}
@@ -4379,26 +3097,30 @@ function ConnectorConfigFields({
                 className="font-mono text-xs"
               />
               <FieldDescription>
-                From the source. Choose Custom header to change it.
+                {tI18nHardcoded.raw('i18nComplete.text46c6aec94116')}
               </FieldDescription>
             </Field>
           )}
           {(draft.auth?.type === 'custom' || draft.auth?.type === 'api_key') && (
             <>
               <Field>
-                <FieldLabel htmlFor="connector-auth-name">Parameter name</FieldLabel>
+                <FieldLabel htmlFor="connector-auth-name">
+                  {tI18nHardcoded.raw('i18nComplete.textd7cb455aa690')}
+                </FieldLabel>
                 <Input
                   id="connector-auth-name"
                   value={draft.auth?.name ?? ''}
                   onChange={(e) => setAuth({ name: e.target.value })}
-                  placeholder="X-API-Key"
+                  placeholder={tI18nHardcoded.raw('i18nComplete.text6f9f03f95e78')}
                   variant="popover"
                   disabled={readOnly}
                   required
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="connector-auth-placement">Placement</FieldLabel>
+                <FieldLabel htmlFor="connector-auth-placement">
+                  {tI18nHardcoded.raw('i18nComplete.text4df9939944a7')}
+                </FieldLabel>
                 <Select
                   value={draft.auth?.in ?? 'header'}
                   disabled={readOnly}
@@ -4410,9 +3132,15 @@ function ConnectorConfigFields({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="header">Header</SelectItem>
-                    <SelectItem value="query">Query</SelectItem>
-                    <SelectItem value="cookie">Cookie</SelectItem>
+                    <SelectItem value="header">
+                      {tI18nHardcoded.raw('i18nComplete.textba5caa4285a8')}
+                    </SelectItem>
+                    <SelectItem value="query">
+                      {tI18nHardcoded.raw('i18nComplete.textb80a37564fbb')}
+                    </SelectItem>
+                    <SelectItem value="cookie">
+                      {tI18nHardcoded.raw('i18nComplete.text45823eaac0c8')}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -4462,16 +3190,10 @@ export function CustomConnectorForm({
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
     provider: 'openapi',
-    authorization_strategy: 'project',
   });
   const [oauth2Selected, setOauth2Selected] = useState(false);
   const [oauth2, setOauth2] = useState<OAuth2CredentialForm>(EMPTY_OAUTH2_CREDENTIAL_FORM);
   const [discoveryDraft, setDiscoveryDraft] = useState(draft);
-  const effectiveAuthorizationStrategy = connectorAuthorizationStrategyForProvider(
-    draft.provider,
-    draft.authorization_strategy ?? 'project',
-  );
-  const sharedOAuth2Selected = oauth2Selected && effectiveAuthorizationStrategy === 'project';
   useEffect(() => {
     const timer = window.setTimeout(() => setDiscoveryDraft(draft), 400);
     return () => window.clearTimeout(timer);
@@ -4482,17 +3204,15 @@ export function CustomConnectorForm({
     }
   }, [draft.platform, draft.provider, emailChannelEnabled]);
   useEffect(() => {
-    if (
-      (draft.provider === 'channel' || effectiveAuthorizationStrategy === 'user') &&
-      oauth2Selected
-    ) {
+    // Channel connectors have no OAuth2-at-creation offer.
+    if (draft.provider === 'channel' && oauth2Selected) {
       setOauth2Selected(false);
     }
-  }, [draft.provider, effectiveAuthorizationStrategy, oauth2Selected]);
+  }, [draft.provider, oauth2Selected]);
 
   const save = useMutation({
     mutationFn: () =>
-      createConnectorWithOptionalOAuth2(projectId, draft, sharedOAuth2Selected ? oauth2 : null, {
+      createConnectorWithOptionalOAuth2(projectId, draft, oauth2Selected ? oauth2 : null, {
         createConnector,
         deleteConnector,
         setConnectorCredential,
@@ -4500,17 +3220,23 @@ export function CustomConnectorForm({
     onSuccess: (result) => {
       if (result.syncError) {
         warningToast(
-          `Added ${draft.slug} to the manifest, but synchronization failed: ${result.syncError}. Use Sync to retry.`,
+          tI18nHardcoded('i18nComplete.textd6a135de3872', {
+            value0: draft.slug,
+            value1: result.syncError,
+          }),
         );
         onAdded();
         return;
       }
       successToast(
-        result.credentialStored ? `Added and connected ${draft.slug}` : `Added ${draft.slug}`,
+        result.credentialStored
+          ? tI18nHardcoded('i18nComplete.text5120ee26cbf5', { value0: draft.slug })
+          : tI18nHardcoded('i18nComplete.text29f396e2d238', { value0: draft.slug }),
       );
       onAdded(draft.slug);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add connector'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.textbdc7d54433e6')),
   });
   const discovery = useQuery<ConnectorAuthDiscovery>({
     queryKey: ['connector-auth-discovery', projectId, discoveryDraft],
@@ -4530,7 +3256,7 @@ export function CustomConnectorForm({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (sharedOAuth2Selected && !oauth2CredentialFormValid(oauth2)) return;
+          if (oauth2Selected && !oauth2CredentialFormValid(oauth2)) return;
           save.mutate();
         }}
       >
@@ -4549,27 +3275,13 @@ export function CustomConnectorForm({
                 : null
             }
             detectedTitle={discovery.data?.title ?? null}
-            oauth2Selected={sharedOAuth2Selected}
-            onOAuth2SelectedChange={
-              effectiveAuthorizationStrategy === 'project' ? setOauth2Selected : undefined
-            }
+            oauth2Selected={oauth2Selected}
+            onOAuth2SelectedChange={setOauth2Selected}
           />
-          <AuthorizationStrategyField
-            idPrefix="custom-connector"
-            value={connectorAuthorizationStrategyForProvider(
-              draft.provider,
-              draft.authorization_strategy ?? 'project',
-            )}
-            onChange={(authorizationStrategy) =>
-              setDraft({ ...draft, authorization_strategy: authorizationStrategy })
-            }
-            disabled={!connectorAuthorizationStrategyIsEditable(draft.provider)}
-          />
-          {sharedOAuth2Selected && (
+          {oauth2Selected && (
             <div className="space-y-4">
-              <InfoBanner tone="info" title="OAuth 2.0 client credentials">
-                Kortix requests a token before saving. It encrypts the configuration and refreshes
-                the access token before expiry.
+              <InfoBanner tone="info" title={tI18nHardcoded.raw('i18nComplete.textc2a08c85f9d8')}>
+                {tI18nHardcoded.raw('i18nComplete.text9dedee588b5e')}
               </InfoBanner>
               <OAuth2CredentialFields
                 value={oauth2}
@@ -4578,30 +3290,28 @@ export function CustomConnectorForm({
               />
             </div>
           )}
-          {effectiveAuthorizationStrategy === 'user' && authActive && (
+          {draft.auth === undefined && discovery.isFetching && (
             <InfoBanner tone="info">
-              Add the connector first. Each user then stores their own private credential from the
-              connector page.
+              {tI18nHardcoded.raw('i18nComplete.text0fc5f970755c')}
             </InfoBanner>
           )}
-          {draft.auth === undefined && discovery.isFetching && (
-            <InfoBanner tone="info">Checking the source for authentication settings…</InfoBanner>
-          )}
           {draft.auth === undefined && discovery.data?.status === 'none' && (
-            <InfoBanner tone="neutral">The source does not advertise authentication.</InfoBanner>
+            <InfoBanner tone="neutral">
+              {tI18nHardcoded.raw('i18nComplete.textcec52b040075')}
+            </InfoBanner>
           )}
           {draft.auth === undefined && discovery.data?.status === 'unsupported' && (
             <InfoBanner tone="warning">
-              The source advertises authentication Kortix cannot inject yet. Choose a manual
-              override or None.
+              {tI18nHardcoded.raw('i18nComplete.text028f0773776c')}
             </InfoBanner>
           )}
           {draft.auth === undefined && discovery.error && (
             <InfoBanner tone="warning">
-              Could not inspect authentication: {(discovery.error as Error).message}
+              {tI18nHardcoded.raw('i18nComplete.textf26a5845c994')}{' '}
+              {(discovery.error as Error).message}
             </InfoBanner>
           )}
-          {authActive && !sharedOAuth2Selected && effectiveAuthorizationStrategy === 'project' && (
+          {authActive && !oauth2Selected && (
             <InfoBanner tone="info">
               {tI18nHardcoded.raw(
                 'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626',
@@ -4616,7 +3326,7 @@ export function CustomConnectorForm({
                 !draft.slug ||
                 save.isPending ||
                 !connectionValid(draft, emailChannelEnabled) ||
-                (sharedOAuth2Selected && !oauth2CredentialFormValid(oauth2))
+                (oauth2Selected && !oauth2CredentialFormValid(oauth2))
               }
               className="gap-1.5"
             >
@@ -4636,7 +3346,7 @@ export function SetCredentialModal({
   projectId,
   connector,
   connectionId,
-  authorizationStrategy,
+  owner,
   open,
   onOpenChange,
   onSaved,
@@ -4644,7 +3354,8 @@ export function SetCredentialModal({
   projectId: string;
   connector: AdminConnector | null;
   connectionId: string | null;
-  authorizationStrategy: ConnectorAuthorizationStrategy;
+  /** Which owner this credential is being set for. */
+  owner: 'project' | 'me';
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
@@ -4666,11 +3377,10 @@ export function SetCredentialModal({
   const configQuery = useQuery({
     queryKey: qk.project.connectorConfig(projectId, connector?.slug ?? ''),
     queryFn: () => getConnectorConfig(projectId, connector!.slug),
-    enabled: open && Boolean(connector) && authorizationStrategy === 'project',
+    enabled: open && Boolean(connector) && owner === 'project',
     ...contract('config'),
   });
-  const requestAuth =
-    authorizationStrategy === 'user' ? connector?.requestAuthType : configQuery.data?.auth.type;
+  const requestAuth = owner === 'me' ? connector?.requestAuthType : configQuery.data?.auth.type;
   const objectCredential = ['oauth1', 'hmac', 'aws_sigv4', 'mtls'].includes(requestAuth ?? '');
   const credentialExample =
     requestAuth === 'oauth1'
@@ -4719,14 +3429,19 @@ export function SetCredentialModal({
         if (stopped || status.status === 'pending') return;
         stopped = true;
         if (status.status === 'active') {
-          successToast('OAuth 2.0 device connection completed');
+          successToast(tI18nHardcoded.raw('i18nComplete.textc2a5f8398f12'));
           onSaved();
           onOpenChange(false);
         } else {
-          errorToast(status.error_code || 'OAuth 2.0 device connection failed');
+          errorToast(status.error_code || tI18nHardcoded.raw('i18nComplete.text911a1cde90bc'));
         }
       } catch (error) {
-        if (!stopped) errorToast(error instanceof Error ? error.message : 'Device polling failed');
+        if (!stopped)
+          errorToast(
+            error instanceof Error
+              ? error.message
+              : tI18nHardcoded.raw('i18nComplete.textfa23c868781d'),
+          );
       }
     };
     void poll();
@@ -4734,7 +3449,7 @@ export function SetCredentialModal({
     const expiryTimer = window.setTimeout(
       () => {
         stopped = true;
-        errorToast('The device authorization code expired');
+        errorToast(tI18nHardcoded.raw('i18nComplete.text02c1d7b545ea'));
       },
       Math.max(0, new Date(device.expires_at).getTime() - Date.now()),
     );
@@ -4743,10 +3458,10 @@ export function SetCredentialModal({
       window.clearInterval(timer);
       window.clearTimeout(expiryTimer);
     };
-  }, [device, deviceConnectionId, onOpenChange, onSaved, projectId]);
+  }, [device, deviceConnectionId, onOpenChange, onSaved, projectId, tI18nHardcoded]);
   const resolveConnectionId = async (): Promise<string> => {
     if (connectionId) return connectionId;
-    if (authorizationStrategy === 'user') {
+    if (owner === 'me') {
       const connection = await reconcileMemberConnection(projectId, {
         connector_alias: connector!.slug,
         label: connector!.name.trim() || connector!.slug,
@@ -4763,7 +3478,11 @@ export function SetCredentialModal({
    * resolves (or creates) the connection first.
    */
   const discoveryQuery = useQuery({
-    queryKey: qk.project.connectorOAuth2Discovery(projectId, connector?.slug ?? ''),
+    queryKey: qk.project.connectorOAuth2Discovery(
+      projectId,
+      connector?.slug ?? '',
+      oauth2DiscoveryConnectionKey(owner, connectionId),
+    ),
     queryFn: async () => {
       const activeConnectionId = await resolveConnectionId();
       const result = await discoverConnectionOAuth2Resource(projectId, activeConnectionId);
@@ -4838,25 +3557,28 @@ export function SetCredentialModal({
       window.location.assign(result.authorization_url);
       return result;
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to connect'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text46c9f3b7520f')),
   });
+
+  /** Write a static or `client_credentials` credential to the selected account. */
+  const writeCredential = async (input: ConnectionCredentialInput) => {
+    const target = credentialWriteTarget(owner, connectionId);
+    if (target.kind === 'connector-default') {
+      return setConnectorCredential(projectId, connector!.slug, input);
+    }
+    const targetConnectionId =
+      target.kind === 'connection' ? target.connectionId : await resolveConnectionId();
+    return updateConnectionCredential(projectId, targetConnectionId, input);
+  };
 
   const save = useMutation({
     mutationFn: async () => {
       if (credentialType === 'static') {
-        if (authorizationStrategy === 'user') {
-          return updateConnectionCredential(projectId, await resolveConnectionId(), {
-            value,
-          });
-        }
-        return setConnectorCredential(projectId, connector!.slug, value);
+        return writeCredential({ value });
       }
       if (application.grant === 'client_credentials') {
-        const oauth2Input = buildOAuth2CredentialInput(oauth2);
-        if (authorizationStrategy === 'user') {
-          return updateConnectionCredential(projectId, await resolveConnectionId(), oauth2Input);
-        }
-        return setConnectorCredential(projectId, connector!.slug, oauth2Input);
+        return writeCredential(buildOAuth2CredentialInput(oauth2));
       }
       const activeConnectionId = await resolveConnectionId();
       const resolvedApplication = effectiveApplication.discoveryUrl
@@ -4896,14 +3618,19 @@ export function SetCredentialModal({
     },
     onSuccess: () => {
       if (credentialType === 'oauth2' && application.grant !== 'client_credentials') return;
-      successToast(credentialType === 'oauth2' ? 'OAuth 2.0 connection saved' : 'Credential saved');
+      successToast(
+        credentialType === tI18nHardcoded.raw('i18nComplete.textd8ad572d2fb1')
+          ? tI18nHardcoded.raw('i18nComplete.text6984a3c945fa')
+          : tI18nHardcoded.raw('i18nComplete.textf0341f8dbcc5'),
+      );
       setValue('');
       setOauth2(EMPTY_OAUTH2_CREDENTIAL_FORM);
       setApplication(EMPTY_OAUTH2_APPLICATION_FORM);
       onSaved();
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to save'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text2c07997249ab')),
   });
   return (
     <Modal
@@ -4922,13 +3649,10 @@ export function SetCredentialModal({
           <ModalTitle>
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetCredential5e9704a8',
-            )}
-            {connector?.slug}
+            )}{' '}
+            {connector ? connectorDisplayName(connector) : ''}
           </ModalTitle>
-          <ModalDescription>
-            Kortix encrypts credentials and applies the selected authentication strategy to upstream
-            requests.
-          </ModalDescription>
+          <ModalDescription>{tI18nHardcoded.raw('i18nComplete.text8e5a984b8a84')}</ModalDescription>
         </ModalHeader>
         <form
           onSubmit={(e) => {
@@ -4948,13 +3672,19 @@ export function SetCredentialModal({
               className="gap-4"
             >
               <TabsList>
-                <TabsTrigger value="static">Static credential</TabsTrigger>
-                <TabsTrigger value="oauth2">OAuth 2.0</TabsTrigger>
+                <TabsTrigger value="static">
+                  {tI18nHardcoded.raw('i18nComplete.text8f0b0d462a16')}
+                </TabsTrigger>
+                <TabsTrigger value="oauth2">
+                  {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="static">
                 <Field>
                   <FieldLabel htmlFor="connector-static-credential">
-                    {objectCredential ? 'Credential JSON' : 'Value'}
+                    {objectCredential
+                      ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1')
+                      : 'Value'}
                   </FieldLabel>
                   {objectCredential ? (
                     <Textarea
@@ -4978,26 +3708,39 @@ export function SetCredentialModal({
                   )}
                   {objectCredential && (
                     <FieldDescription>
-                      The selected {requestAuth} strategy requires one encrypted JSON object.
+                      {tI18nHardcoded.raw('i18nComplete.textfdf7bc860f55')} {requestAuth}{' '}
+                      {tI18nHardcoded.raw('i18nComplete.text41a01f64505d')}
                     </FieldDescription>
                   )}
                 </Field>
               </TabsContent>
               <TabsContent value="oauth2" className="space-y-4">
                 {discoveryPending ? (
-                  <InfoBanner tone="neutral" title="Checking how this server authorizes">
-                    Kortix is reading the server's OAuth 2.0 metadata.
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.text1ead5326bbb8')}
+                  >
+                    {tI18nHardcoded.raw('i18nComplete.textc9b1c409642d')}
                   </InfoBanner>
                 ) : plan.kind === 'no_authorization' ? (
-                  <InfoBanner tone="neutral" title="No authorization needed">
-                    This server answered without credentials. It does not need an OAuth connection.
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.text24f46f717cfa')}
+                  >
+                    {tI18nHardcoded.raw('i18nComplete.text93bc06df8dd8')}
                   </InfoBanner>
                 ) : plan.kind === 'register' && !manualSetup ? (
                   <div className="space-y-3">
-                    <InfoBanner tone="neutral" title="One-click OAuth 2.1 available">
-                      This server publishes its authorization metadata. Kortix registers itself as
-                      an OAuth client, so there is no client ID or secret to create.
-                      {plan.scopes.length ? ` Scopes: ${plan.scopes.join(', ')}.` : ''}
+                    <InfoBanner
+                      tone="neutral"
+                      title={tI18nHardcoded.raw('i18nComplete.text477d50f7ddbf')}
+                    >
+                      {tI18nHardcoded.raw('i18nComplete.text07fdd059f8a1')}
+                      {plan.scopes.length
+                        ? tI18nHardcoded('i18nComplete.text1d42883b00c1', {
+                            value0: plan.scopes.join(', '),
+                          })
+                        : ''}
                     </InfoBanner>
                     <div className="flex items-center gap-2">
                       <Button
@@ -5016,19 +3759,21 @@ export function SetCredentialModal({
                         variant="outline-ghost"
                         onClick={() => setManualSetup(true)}
                       >
-                        Use my own OAuth app
+                        {tI18nHardcoded.raw('i18nComplete.texte67a6ef2363e')}
                       </Button>
                     </div>
                   </div>
                 ) : plan.kind === 'client_id_required' ? (
-                  <InfoBanner tone="neutral" title="This server needs a pre-registered OAuth app">
-                    Kortix discovered its endpoints and scopes, but the server does not support
-                    dynamic client registration. Create an app there and paste its client ID below.
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.textcb7c06207756')}
+                  >
+                    {tI18nHardcoded.raw('i18nComplete.text0dbb23e7febb')}
                   </InfoBanner>
                 ) : plan.kind === 'manual' && !manualSetup ? (
                   <InfoBanner
                     tone="neutral"
-                    title="Automatic setup unavailable"
+                    title={tI18nHardcoded.raw('i18nComplete.texteb99bb9a22f3')}
                     action={
                       <Button
                         type="button"
@@ -5036,7 +3781,7 @@ export function SetCredentialModal({
                         variant="outline"
                         onClick={() => setManualSetup(true)}
                       >
-                        Configure manually
+                        {tI18nHardcoded.raw('i18nComplete.textb1d877ab2f51')}
                       </Button>
                     }
                   >
@@ -5044,19 +3789,23 @@ export function SetCredentialModal({
                   </InfoBanner>
                 ) : (
                   <InfoBanner tone="info">
-                    Kortix stores the application configuration, rotates refresh tokens, and revokes
-                    the connection when you disconnect it.
+                    {tI18nHardcoded.raw('i18nComplete.text67dc9c4395f1')}
                   </InfoBanner>
                 )}
                 {discoveryError && (
-                  <InfoBanner tone="neutral" title="Could not read the server's metadata">
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.textdc258e9a953b')}
+                  >
                     {discoveryError}
                   </InfoBanner>
                 )}
                 {showManualOAuth2Fields && (
                   <>
                     <Field>
-                      <FieldLabel htmlFor="connector-oauth2-grant">Grant</FieldLabel>
+                      <FieldLabel htmlFor="connector-oauth2-grant">
+                        {tI18nHardcoded.raw('i18nComplete.text78b7d0379d5e')}
+                      </FieldLabel>
                       <Select
                         value={application.grant}
                         onValueChange={(grant) => {
@@ -5071,11 +3820,15 @@ export function SetCredentialModal({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="client_credentials">Client Credentials</SelectItem>
-                          <SelectItem value="authorization_code">
-                            Authorization Code with PKCE
+                          <SelectItem value="client_credentials">
+                            {tI18nHardcoded.raw('i18nComplete.text23c446ef2187')}
                           </SelectItem>
-                          <SelectItem value="device_authorization">Device Authorization</SelectItem>
+                          <SelectItem value="authorization_code">
+                            {tI18nHardcoded.raw('i18nComplete.textac806359529b')}
+                          </SelectItem>
+                          <SelectItem value="device_authorization">
+                            {tI18nHardcoded.raw('i18nComplete.text197da3e17a78')}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </Field>
@@ -5097,7 +3850,9 @@ export function SetCredentialModal({
                 {device && (
                   <InfoBanner
                     tone="neutral"
-                    title={`Enter code ${device.user_code}`}
+                    title={tI18nHardcoded('i18nComplete.textbfd271fe6ead', {
+                      value0: device.user_code,
+                    })}
                     action={
                       <Button
                         type="button"
@@ -5112,11 +3867,12 @@ export function SetCredentialModal({
                         }
                       >
                         <ExternalLink className="size-4" />
-                        Open verification page
+                        {tI18nHardcoded.raw('i18nComplete.text97fc3d60fab5')}
                       </Button>
                     }
                   >
-                    Kortix checks the connection every {device.interval_seconds} seconds until{' '}
+                    {tI18nHardcoded.raw('i18nComplete.text9c67cc26222a')} {device.interval_seconds}{' '}
+                    {tI18nHardcoded.raw('i18nComplete.text4616b90a6d94')}{' '}
                     {new Date(device.expires_at).toLocaleTimeString()}.
                   </InfoBanner>
                 )}
@@ -5131,7 +3887,7 @@ export function SetCredentialModal({
               onClick={() => onOpenChange(false)}
               disabled={save.isPending}
             >
-              Cancel
+              {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
             </Button>
             <Button
               type="submit"
@@ -5143,32 +3899,14 @@ export function SetCredentialModal({
             >
               {save.isPending && <Loading className="size-4 shrink-0" />}
               {credentialType === 'oauth2' && application.grant === 'authorization_code'
-                ? 'Continue to provider'
+                ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
                 : credentialType === 'oauth2' && application.grant === 'device_authorization'
-                  ? 'Get device code'
+                  ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
                   : 'Save'}
             </Button>
           </ModalFooter>
         </form>
       </ModalContent>
     </Modal>
-  );
-}
-
-function MasterDetailSkeleton() {
-  return (
-    <div className="flex min-h-0 flex-1">
-      <div className="border-border/60 bg-muted/20 w-72 shrink-0 space-y-2 border-r p-3">
-        <Skeleton className="h-8 w-full" />
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full rounded-lg" />
-        ))}
-      </div>
-      <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-7">
-        <Skeleton className="h-12 w-2/3" />
-        <Skeleton className="h-28 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
-      </div>
-    </div>
   );
 }

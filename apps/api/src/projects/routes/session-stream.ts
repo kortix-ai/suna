@@ -60,7 +60,7 @@ import {
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,
@@ -153,7 +153,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/events',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/events',
+    summary: 'Stream live events of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -177,7 +177,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // The SAME gate `open-bundle` applies, for the same reason: this stream
     // carries strictly the facts that route already serves, so it must not be
@@ -251,7 +251,7 @@ projectsApp.openapi(
       start(controller) {
         controllerRef = controller;
 
-        const reconciler = acquireControlReconciler(sessionId);
+        const reconciler = acquireControlReconciler(sessionId, projectId);
         let heartbeat: ReturnType<typeof setInterval> | null = null;
 
         // Replay + live listener in the SAME synchronous tick — the handoff
@@ -452,7 +452,7 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     }
 
     const opened = await openRuntimeEventStream(
-      { externalId: sandbox.externalId, userId: args.userId, sessionId: args.sessionId },
+      { externalId: sandbox.externalId, userId: args.userId },
       { since: args.runtime.seq, epoch: args.runtime.epoch, signal: args.abort.signal },
     );
     if (!opened.ok) {

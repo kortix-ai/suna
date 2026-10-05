@@ -1,8 +1,11 @@
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
 
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import { useTranslations } from '@/i18n/use-translations';
 import { formatPostDate, type Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
 import { USE_CASE_COVERS } from './covers';
@@ -68,6 +71,7 @@ export function UseCaseCover({
  * about who wrote it up. The byline belongs on the article itself.
  */
 export function UseCaseCard({ post }: { post: Post }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const archetype = post.data.tags[0];
 
   return (
@@ -104,7 +108,7 @@ export function UseCaseCard({ post }: { post: Post }) {
 
         <InlineMeta className="mt-4">
           <time dateTime={post.data.date}>{formatPostDate(post.data.date)}</time>
-          {`${post.readingTime} min read`}
+          {tI18nComplete('text7def269b78b1', { value0: post.readingTime })}
         </InlineMeta>
       </div>
     </Link>

@@ -1,11 +1,16 @@
-import { expect, test } from 'bun:test';
+import { expect, setSystemTime, test } from 'bun:test';
+import type { HTTPException } from 'hono/http-exception';
+import type { ComposioCatalogClient } from './composio-catalog-search';
 import {
   composioCatalogPage,
+  composioCatalogTools,
   composioConnectUrl,
   composioSessionTools,
   composioUserId,
   executeComposio,
   finalizeComposioConnection,
+  invalidToolkitSlugsFromError,
+  probeComposioIdentity,
   type ComposioRuntime,
   type ComposioSessionLike,
 } from './composio';
@@ -282,6 +287,60 @@ test('composioConnectUrl surfaces any other Composio refusal as a 502, not an op
   });
 });
 
+test('invalidToolkitSlugsFromError names the slugs Composio rejected', () => {
+  expect(
+    invalidToolkitSlugsFromError(
+      new Error(
+        '400 {"error":{"message":"Invalid toolkit slugs: anthropic, openai. Please provide valid toolkit slugs.","code":4305,"slug":"ToolRouterV2_InvalidToolkitSlugs","status":400}}',
+      ),
+    ),
+  ).toEqual(['anthropic', 'openai']);
+  expect(invalidToolkitSlugsFromError(new Error('boom'))).toBeNull();
+});
+
+test('composioConnectUrl answers 422, not an unhandled 500, when the toolkit slug is invalid', async () => {
+  // A connector can hold an app slug Composio does not know (typed by hand
+  // through the CLI, or left behind when the catalogue dropped it). The
+  // connector sync already rejects it; the connect attempt must too, as a
+  // controlled 4xx. Before this it threw the raw @composio/client error, which
+  // reached Sentry as a handled 500 (Better Stack pattern b9632119).
+  const runtime = fakeRuntime();
+  runtime.sessions.create = async () => {
+    throw new Error(
+      '400 {"error":{"message":"Invalid toolkit slugs: anthropic. Please provide valid toolkit slugs.",' +
+        '"code":4305,"slug":"ToolRouterV2_InvalidToolkitSlugs","status":400,"request_id":"req-1"}}',
+    );
+  };
+
+  const attempt = composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'anthropic',
+    app: 'anthropic',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime,
+  });
+  await expect(attempt).rejects.toMatchObject({
+    status: 422,
+    message: expect.stringContaining('anthropic'),
+  });
+});
+
+test('composioConnectUrl answers 422 for an app Composio no longer lists', async () => {
+  const attempt = composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'anthropic',
+    app: 'anthropic',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime: fakeRuntime({ created: session({ toolkit: undefined }) }),
+  });
+  await expect(attempt).rejects.toMatchObject({
+    status: 422,
+    message: expect.stringContaining('anthropic'),
+  });
+});
+
 test('composioConnectUrl uses Composio managed Gmail defaults without selecting stale auth configs', async () => {
   const calls: Array<Record<string, unknown>> = [];
   const created = session({
@@ -456,6 +515,27 @@ test('executeComposio resumes the selected connection session and returns real d
   ]);
 });
 
+test('executeComposio treats invalid Linear GraphQL as caller error, not provider failure', async () => {
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'linear', name: 'Linear', isNoAuth: true },
+    execute: async () => ({
+      data: { message: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED' },
+      error: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED',
+      logId: 'log-invalid',
+    }),
+  });
+  const result = await executeComposio({
+    projectId: 'project-1', connectorSlug: 'linear', connectionId: 'connection-1',
+    sessionId: 'persisted-session', toolkit: 'linear', toolSlug: 'LINEAR_RUN_QUERY_OR_MUTATION',
+    args: { query_or_mutation: 'query { badField }' }, connectedAccountId: null,
+    runtime: fakeRuntime({ resumed }),
+  });
+  expect(result.ok).toBe(false);
+  expect(result.status).toBe(400);
+  expect(result.data).toMatchObject({ error: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED' });
+});
+
 test('executeComposio supports no-auth direct tools without an account id', async () => {
   const resumed = session({
     id: 'persisted-session',
@@ -559,7 +639,6 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
 
   const result = await composioCatalogPage({
     projectId: 'project-1',
-    q: 'search',
     cursor: 'cursor-1',
     limit: 20,
     runtime: fakeRuntime({ created, calls }),
@@ -589,9 +668,40 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
     },
     {
       type: 'toolkits',
-      options: { search: 'search', cursor: 'cursor-1', limit: 20 },
+      options: { cursor: 'cursor-1', limit: 20 },
     },
   ]);
+});
+
+// Every search answers from the full catalogue snapshot, whatever its length,
+// so typing a category ("crm", "email") finds that category's apps. The
+// provider's session search matches names only.
+test('composioCatalogPage answers any search from the catalogue, categories included', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const catalogClient = {
+    toolkits: {
+      async list() {
+        return {
+          items: [
+            { slug: 'hubspot', name: 'HubSpot', meta: { categories: [{ id: 'crm', name: 'CRM' }] } },
+            { slug: 'gmail', name: 'Gmail', meta: { categories: [{ id: 'email', name: 'Email' }] } },
+          ],
+        };
+      },
+    },
+  };
+
+  const result = await composioCatalogPage({
+    projectId: 'project-1',
+    q: 'crm',
+    catalogClient,
+    runtime: fakeRuntime({ created: session({}), calls }),
+  });
+
+  // The wire contract is `items`, not `toolkits` — CONN-24 (gate run
+  // 36497729410) asserts this directly over REST.
+  expect('items' in result && result.items.map((t) => t.slug)).toEqual(['hubspot']);
+  expect(calls).toEqual([]);
 });
 
 test('composioCatalogPage applies category filtering to the provider catalogue', async () => {
@@ -647,6 +757,8 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
       session_id: 'persisted-session',
       connected_account_id: 'connected-account-1',
     },
+    connectionLabel: 'Gmail default',
+    connectionOwnerType: 'project',
     slug: 'gmail',
     provider: 'composio',
     platform: 'gmail',
@@ -722,6 +834,9 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
       sessionId: 'persisted-session',
       result: { sent: true },
     },
+    // Which account ran it, so the transcript can answer "whose mailbox sent
+    // that" — carried from the resolved GatewayConnector (gateway.ts).
+    account: { connection_id: 'connection-1', label: 'Gmail default', owner_type: 'project' },
   });
   expect(executions[0]).toEqual({
     composioInput: {
@@ -792,4 +907,615 @@ test('composioCatalogPage enriches the paged catalogue with the metadata that pa
     description: null,
     categories: [],
   });
+});
+
+test('composioCatalogPage searches one and two letters across every provider page', async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    if (options?.search && options.search.length < 3) {
+      throw new Error('Search query must be at least 3 characters long');
+    }
+    return { items: [], totalPages: 1 };
+  };
+  const catalogClient = {
+    toolkits: {
+      async list(query: { cursor?: string }) {
+        requests.push(query);
+        return query.cursor
+          ? {
+              items: [
+                {
+                  slug: 'gmail',
+                  name: 'Gmail',
+                  meta: { description: 'Email', categories: [{ id: 'email', name: 'Email' }] },
+                },
+              ],
+              next_cursor: null,
+            }
+          : {
+              items: [
+                { slug: 'alpha', name: 'Alpha', meta: {} },
+                { slug: 'zoom', name: 'Zoom', meta: {} },
+              ],
+              next_cursor: 'page-2',
+            };
+      },
+    },
+  };
+  const input = {
+    projectId: 'project-1',
+    runtime: fakeRuntime({ created }),
+    catalogClient,
+    limit: 1,
+  };
+  // The wire contract is `items` + `cursor` + `totalPages`, the same shape the
+  // unsearched page answers (CONN-24, gate run 36497729410) — not the
+  // internal `{toolkits, total, hasMore}` snapshot shape.
+  const first = await composioCatalogPage({ ...input, q: ' A ' });
+  expect(first).toMatchObject({
+    totalPages: 2,
+    items: [{ slug: 'alpha' }],
+  });
+  if (!('cursor' in first) || !first.cursor) throw new Error('expected a next cursor');
+  const second = await composioCatalogPage({ ...input, q: 'a', cursor: first.cursor });
+  expect(second).toMatchObject({
+    totalPages: 2,
+    cursor: null,
+    items: [{ slug: 'gmail', description: 'Email', categories: ['email'], connected: false }],
+  });
+  expect(await composioCatalogPage({ ...input, q: 'gm' })).toMatchObject({
+    totalPages: 1,
+    cursor: null,
+    items: [{ slug: 'gmail' }],
+  });
+  expect(await composioCatalogPage({ ...input, q: 'zz' })).toMatchObject({
+    totalPages: 0,
+    cursor: null,
+    items: [],
+  });
+  expect(requests).toEqual([
+    { limit: 1000, sort_by: 'usage' },
+    { limit: 1000, sort_by: 'usage', cursor: 'page-2' },
+  ]);
+});
+
+// `totalPages` is a PAGE count, not an item count — same convention as
+// `apps/api/src/tunnel/routes/audit.ts` (`totalPages: Math.ceil(total /
+// limit)`), and distinct from the `toolkits`-shape's `total`, which IS an
+// item count (`total: toolkits.length` / `total: matches.length` elsewhere in
+// this file). `limit: 1` above makes the two units numerically identical and
+// cannot catch a regression that swaps them; this pins the conversion with a
+// limit that cannot coincide with the item count.
+test('composioCatalogPage converts a search snapshot`s item total into a PAGE count for the wire`s totalPages', async () => {
+  const catalogClient = {
+    toolkits: {
+      async list() {
+        return {
+          items: Array.from({ length: 5 }, (_, i) => ({ slug: `matchx${i}`, name: `Match X ${i}`, meta: {} })),
+        };
+      },
+    },
+  };
+  const result = await composioCatalogPage({
+    projectId: 'project-1',
+    q: 'x',
+    limit: 2,
+    catalogClient,
+    runtime: fakeRuntime({ created: session({}) }),
+  });
+  if (!('items' in result)) throw new Error('expected the items wire shape');
+  expect(result.items).toHaveLength(2); // page SIZE
+  expect(result.totalPages).toBe(3); // ceil(5 matches / limit 2) — a PAGE count, not 5
+});
+
+function identityRuntime(input: {
+  displayName?: unknown;
+  accountError?: Error;
+  execute?: ComposioSessionLike['execute'];
+  calls: Array<Record<string, unknown>>;
+}): ComposioRuntime {
+  const resumed = session({
+    id: 'persisted-session',
+    execute: async (toolSlug, args) => {
+      input.calls.push({ type: 'execute', toolSlug, args });
+      if (!input.execute) throw new Error('no whoami tool expected');
+      return input.execute(toolSlug, args);
+    },
+  });
+  return {
+    ...fakeRuntime({ resumed, calls: input.calls }),
+    connectedAccounts: {
+      async get(id: string) {
+        input.calls.push({ type: 'account', id });
+        if (input.accountError) throw input.accountError;
+        return { id, state: { val: { displayName: input.displayName } } };
+      },
+    },
+  };
+}
+
+test('probeComposioIdentity reads the display name Composio stores on the connected account', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'gmail',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({ displayName: '  Ops@Example.test ', calls }),
+  });
+
+  expect(identity).toBe('ops@example.test');
+  expect(calls).toEqual([{ type: 'account', id: 'connected-account-1' }]);
+});
+
+test('probeComposioIdentity falls back to the toolkit whoami tool when no display name exists', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'googledrive',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      execute: async () => ({
+        data: { user: { displayName: 'Ops Team', emailAddress: 'ops@example.test', me: true } },
+        error: null,
+        logId: 'log-1',
+      }),
+    }),
+  });
+
+  expect(identity).toBe('ops@example.test');
+  expect(calls).toContainEqual({
+    type: 'execute',
+    toolSlug: 'GOOGLEDRIVE_GET_ABOUT',
+    args: { fields: 'user' },
+  });
+});
+
+test('probeComposioIdentity reads the primary calendar id as the Google Calendar identity', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'googlecalendar',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      execute: async () => ({
+        data: { id: 'ops@example.test', summary: 'ops@example.test', timeZone: 'UTC' },
+        error: null,
+        logId: 'log-1',
+      }),
+    }),
+  });
+
+  expect(identity).toBe('ops@example.test');
+  expect(calls).toContainEqual({
+    type: 'execute',
+    toolSlug: 'GOOGLECALENDAR_GET_CALENDAR',
+    args: { calendar_id: 'primary' },
+  });
+});
+
+test('probeComposioIdentity uses a login when the provider exposes no email', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'slack',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      execute: async () => ({
+        data: { ok: true, user: 'ops-bot', team: 'Example', user_id: 'U123' },
+        error: null,
+        logId: 'log-1',
+      }),
+    }),
+  });
+
+  expect(identity).toBe('ops-bot');
+});
+
+test('probeComposioIdentity returns null, never throws, when every source fails', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'linear',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({
+      calls,
+      accountError: new Error('composio 500'),
+      execute: async () => {
+        throw new Error('tool refused');
+      },
+    }),
+  });
+
+  expect(identity).toBeNull();
+});
+
+test('probeComposioIdentity returns null for a toolkit without an identity source', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const identity = await probeComposioIdentity({
+    app: 'googledocs',
+    sessionId: 'persisted-session',
+    connectedAccountId: 'connected-account-1',
+    runtime: identityRuntime({ calls }),
+  });
+
+  expect(identity).toBeNull();
+  expect(calls.some((call) => call.type === 'execute')).toBe(false);
+});
+
+// ── Toolkits with no Composio-managed OAuth app (X, Xero, Spotify, ...) ──────
+// Composio's exact refusal, captured from prod on 2026-09-26 (one request)
+// when a user added X.
+const AUTH_CONFIG_REQUIRED =
+  '400 {"error":{"message":"The following toolkits require auth configs but none exist and cannot be auto-created: twitter. Please specify them in auth_configs.","code":4300,"slug":"ToolRouterV2_BadRequest","status":400,"request_id":"5a1e0c0d-0000-4000-8000-00000000000d","suggested_fix":""}}';
+
+/** Tool Router as it behaves live: a twitter session needs `authConfigs.twitter`. */
+function routerNeedingTwitterConfig(calls: Array<Record<string, unknown>>, created = session()): ComposioRuntime {
+  return {
+    sessions: {
+      async create(userId, config) {
+        calls.push({ type: 'create', userId, config });
+        const toolkits = (config?.toolkits as string[] | undefined) ?? [];
+        const authConfigs = (config as { authConfigs?: Record<string, string> } | undefined)?.authConfigs;
+        if (toolkits.includes('twitter') && !authConfigs?.twitter) throw new Error(AUTH_CONFIG_REQUIRED);
+        return created;
+      },
+      async use(sessionId) {
+        calls.push({ type: 'use', sessionId });
+        return created;
+      },
+    },
+  };
+}
+
+function authConfigClient(
+  items: Array<{ id: string; status: 'ENABLED' | 'DISABLED'; is_composio_managed?: boolean; toolkit: { slug: string }; created_at?: string }>,
+  calls: Array<Record<string, unknown>>,
+  catalog: Array<Record<string, unknown>> = [],
+): ComposioCatalogClient {
+  return {
+    toolkits: {
+      async list() {
+        return { items: catalog as never };
+      },
+    },
+    authConfigs: {
+      async list(query) {
+        calls.push({ type: 'auth-config-list', query });
+        return { items, next_cursor: null };
+      },
+    },
+  };
+}
+
+const TWITTER_CONFIG = {
+  id: 'ac_twitter',
+  status: 'ENABLED' as const,
+  is_composio_managed: false,
+  toolkit: { slug: 'twitter' },
+};
+
+test('composioCatalogTools retries a 4300 refusal with the toolkit’s custom auth config', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const tools = await composioCatalogTools({
+    projectId: 'project-1',
+    connectorSlug: 'x',
+    toolkit: 'twitter',
+    runtime: routerNeedingTwitterConfig(calls, session({ tools: [{ type: 'function', function: { name: 'TWITTER_CREATION_OF_A_POST' } }] as never })),
+    catalogClient: authConfigClient([TWITTER_CONFIG], calls),
+  });
+  expect(tools).toHaveLength(1);
+  expect(calls.map((call) => call.type)).toEqual(['create', 'auth-config-list', 'create']);
+  expect(calls[1]).toMatchObject({ query: { toolkit_slug: 'twitter', is_composio_managed: false } });
+  expect(calls[2]).toMatchObject({
+    userId: 'kortix-catalog:project-1:x',
+    config: {
+      sessionPreset: 'direct_tools',
+      toolkits: ['twitter'],
+      authConfigs: { twitter: 'ac_twitter' },
+    },
+  });
+});
+
+test('composioCatalogTools answers a typed 422 when the toolkit has no auth config', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const attempt = composioCatalogTools({
+    projectId: 'project-1',
+    connectorSlug: 'x',
+    toolkit: 'twitter',
+    runtime: routerNeedingTwitterConfig(calls),
+    catalogClient: authConfigClient([{ ...TWITTER_CONFIG, status: 'DISABLED' }], calls),
+  });
+  const error = await attempt.then(
+    () => {
+      throw new Error('expected a 422');
+    },
+    (caught: HTTPException) => caught,
+  );
+  expect(error.status).toBe(422);
+  expect(error.message).toContain('no enabled "twitter" auth config');
+  // The raw provider JSON never reaches the user.
+  expect(error.message).not.toContain('ToolRouterV2_BadRequest');
+  expect(await error.getResponse().json()).toMatchObject({
+    status: 422,
+    code: 'composio_auth_config_required',
+    toolkit: 'twitter',
+  });
+  expect(calls.filter((call) => call.type === 'create')).toHaveLength(1);
+});
+
+test('composioCatalogTools maps an invalid toolkit refusal to 422', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const runtime = fakeRuntime({ calls });
+  runtime.sessions.create = async () => {
+    throw new Error('400 {"error":{"message":"Invalid toolkit slugs: anthropic.","code":4305}}');
+  };
+  await expect(
+    composioCatalogTools({
+      projectId: 'project-1',
+      connectorSlug: 'claude',
+      toolkit: 'anthropic',
+      runtime,
+      catalogClient: authConfigClient([], calls),
+    }),
+  ).rejects.toMatchObject({ status: 422, message: expect.stringContaining('anthropic') });
+  expect(calls.some((call) => call.type === 'auth-config-list')).toBe(false);
+});
+
+test('composioConnectUrl authorizes X through the operator’s auth config', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'x',
+    app: 'twitter',
+    connectionId: 'connection-x',
+    stableUserId: 'kortix-connection:connection-x',
+    runtime: routerNeedingTwitterConfig(calls, session({ toolkit: { slug: 'twitter', name: 'Twitter', isNoAuth: false } })),
+    catalogClient: authConfigClient([TWITTER_CONFIG], calls),
+  });
+  expect(result).toMatchObject({ connectUrl: 'https://composio.test/connect', connected: false });
+  expect(calls.filter((call) => call.type === 'create').at(-1)).toMatchObject({
+    userId: 'kortix-connection:connection-x',
+    config: { authConfigs: { twitter: 'ac_twitter' } },
+  });
+});
+
+test('executeComposio binds the auth config and the account when no session was stored', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const created = session({
+    toolkit: {
+      slug: 'twitter',
+      name: 'Twitter',
+      isNoAuth: false,
+      connection: { isActive: true, connectedAccount: { id: 'ca_x', status: 'ACTIVE' } },
+    } as ToolkitItem,
+  });
+  const result = await executeComposio({
+    projectId: 'project-1',
+    connectorSlug: 'x',
+    connectionId: 'connection-x',
+    toolkit: 'twitter',
+    toolSlug: 'TWITTER_USER_LOOKUP_ME',
+    args: {},
+    connectedAccountId: 'ca_x',
+    runtime: routerNeedingTwitterConfig(calls, created),
+    catalogClient: authConfigClient([TWITTER_CONFIG], calls),
+  });
+  expect(result.ok).toBe(true);
+  expect(calls.filter((call) => call.type === 'create').at(-1)).toMatchObject({
+    config: {
+      connectedAccounts: { twitter: 'ca_x' },
+      authConfigs: { twitter: 'ac_twitter' },
+    },
+  });
+});
+
+test('composioCatalogPage hides a toolkit Composio cannot connect in browse and category views', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const catalog = [
+    { slug: 'twitter', name: 'Twitter', no_auth: false, auth_schemes: ['OAUTH2'], composio_managed_auth_schemes: [], meta: {} },
+    { slug: 'gmail', name: 'Gmail', no_auth: false, auth_schemes: ['OAUTH2'], composio_managed_auth_schemes: ['OAUTH2'], meta: {} },
+  ];
+  const created = session();
+  created.toolkits = async () => ({
+    items: [
+      { slug: 'twitter', name: 'Twitter', isNoAuth: false },
+      { slug: 'gmail', name: 'Gmail', isNoAuth: false },
+    ],
+    totalPages: 1,
+  });
+  const runtime = fakeRuntime({
+    created,
+    calls,
+    catalogPage: [
+      { slug: 'twitter', name: 'Twitter', noAuth: false, meta: { categories: [{ slug: 'social', name: 'Social' }] } },
+      { slug: 'gmail', name: 'Gmail', noAuth: false, meta: { categories: [{ slug: 'social', name: 'Social' }] } },
+    ],
+  });
+  const catalogClient = authConfigClient([], calls, catalog);
+
+  const browse = await composioCatalogPage({ projectId: 'project-1', runtime, catalogClient });
+  if (!('items' in browse)) throw new Error('expected the paged browse shape');
+  expect(browse.items.map((item) => item.slug)).toEqual(['gmail']);
+
+  const category = await composioCatalogPage({ projectId: 'project-1', category: 'social', runtime, catalogClient });
+  if (!('toolkits' in category)) throw new Error('expected the category shape');
+  expect(category.toolkits.map((item) => item.slug)).toEqual(['gmail']);
+  expect(category.total).toBe(1);
+});
+
+test('composioCatalogPage answers a repeated page from the deployment-wide cache', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    calls.push({ type: 'toolkits', options });
+    return { items: [{ slug: 'slack', name: 'Slack', isNoAuth: false }], cursor: undefined, totalPages: 1 };
+  };
+  const runtime = fakeRuntime({ created, calls });
+
+  const first = await composioCatalogPage({ projectId: 'project-1', runtime });
+  // Another project, other casing and whitespace: the catalogue is the same.
+  const second = await composioCatalogPage({ projectId: 'project-2', runtime });
+  await composioCatalogPage({ projectId: 'project-1', cursor: 'page-2', runtime });
+
+  expect(second).toEqual(first);
+  expect(calls.filter((call) => call.type === 'toolkits')).toHaveLength(2);
+  expect(calls.filter((call) => call.type === 'create')).toHaveLength(2);
+});
+
+test('composioCatalogPage answers a repeated category from the cache and never caches a failure', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  let fail = true;
+  const runtime: ComposioRuntime = {
+    sessions: fakeRuntime().sessions,
+    toolkits: {
+      async get(query) {
+        calls.push({ type: 'catalog', query });
+        if (fail) {
+          fail = false;
+          throw new Error('Composio 503');
+        }
+        return [
+          {
+            slug: 'gmail',
+            name: 'Gmail',
+            meta: { categories: [{ slug: 'productivity', name: 'Productivity' }] },
+          },
+        ];
+      },
+    },
+  };
+
+  await expect(
+    composioCatalogPage({ projectId: 'project-1', category: 'productivity', runtime }),
+  ).rejects.toThrow('Composio 503');
+  const first = await composioCatalogPage({ projectId: 'project-1', category: 'productivity', runtime });
+  const second = await composioCatalogPage({ projectId: 'project-2', category: 'productivity', q: 'gm', runtime });
+
+  const slugs = (page: typeof first) => ('toolkits' in page ? page.toolkits.map((toolkit) => toolkit.slug) : []);
+  expect(calls).toHaveLength(2);
+  expect(slugs(first)).toEqual(['gmail']);
+  expect(slugs(second)).toEqual(['gmail']);
+});
+
+test('composioCatalogPage serves an expired page at once and refreshes it once in the background', async () => {
+  // Measured on dev-api 2026-09-27: after the 10 min TTL the next Customize →
+  // Connectors open waited 450-870 ms on Composio for a page it already held.
+  let version = 1;
+  let refreshes = 0;
+  let release: () => void = () => {};
+  let gate: Promise<void> = Promise.resolve();
+  const created = session();
+  created.toolkits = async () => {
+    refreshes += 1;
+    const answer = `v${version}`;
+    await gate;
+    return { items: [{ slug: answer, name: answer, isNoAuth: false }], cursor: undefined, totalPages: 1 };
+  };
+  const runtime = fakeRuntime({ created });
+  const slugs = (page: Awaited<ReturnType<typeof composioCatalogPage>>) =>
+    'items' in page ? page.items.map((item) => item.slug) : [];
+  const read = () => composioCatalogPage({ projectId: 'project-1', limit: 48, runtime });
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    expect(slugs(await read())).toEqual(['v1']);
+
+    version = 2;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    setSystemTime(new Date(start + 11 * 60_000));
+    // The refresh is held open: a read that waited for it would never return.
+    expect(slugs(await read())).toEqual(['v1']);
+    expect(slugs(await read())).toEqual(['v1']);
+    expect(refreshes).toBe(2);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(slugs(await read())).toEqual(['v2']);
+    expect(refreshes).toBe(2);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test('composioCatalogPage keeps serving the last page when a background refresh fails', async () => {
+  let fail = false;
+  let refreshes = 0;
+  const created = session();
+  created.toolkits = async () => {
+    refreshes += 1;
+    if (fail) throw new Error('Composio 503');
+    return { items: [{ slug: 'gmail', name: 'Gmail', isNoAuth: false }], cursor: undefined, totalPages: 1 };
+  };
+  const runtime = fakeRuntime({ created });
+  const read = () => composioCatalogPage({ projectId: 'project-1', runtime });
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    await read();
+    fail = true;
+    setSystemTime(new Date(start + 11 * 60_000));
+    const stale = await read();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const afterFailure = await read();
+    expect('items' in stale && stale.items.map((item) => item.slug)).toEqual(['gmail']);
+    expect('items' in afterFailure && afterFailure.items.map((item) => item.slug)).toEqual(['gmail']);
+    // The failed refresh is retried by the next read, not remembered.
+    expect(refreshes).toBe(3);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test('composioCatalogPage serves expired toolkit metadata at once and refreshes it in the background', async () => {
+  let metaReads = 0;
+  let description = 'first';
+  let gate: Promise<void> = Promise.resolve();
+  let release: () => void = () => {};
+  const created = session();
+  created.toolkits = async () => ({
+    items: [{ slug: 'gmail', name: 'Gmail', isNoAuth: false }],
+    cursor: undefined,
+    totalPages: 1,
+  });
+  const runtime: ComposioRuntime = {
+    ...fakeRuntime({ created }),
+    toolkits: {
+      async get() {
+        metaReads += 1;
+        const answer = description;
+        await gate;
+        return [{ slug: 'gmail', name: 'Gmail', meta: { description: answer, categories: [] } }];
+      },
+    },
+  };
+  const describe = (page: Awaited<ReturnType<typeof composioCatalogPage>>) =>
+    'items' in page ? page.items.map((item) => item.description) : [];
+  const read = () => composioCatalogPage({ projectId: 'project-1', runtime });
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    expect(describe(await read())).toEqual(['first']);
+
+    description = 'second';
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    setSystemTime(new Date(start + 7 * 60 * 60_000));
+    expect(describe(await read())).toEqual(['first']);
+    expect(metaReads).toBe(2);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    setSystemTime(new Date(start + 7 * 60 * 60_000 + 1));
+    expect(describe(await read())).toEqual(['second']);
+    expect(metaReads).toBe(2);
+  } finally {
+    setSystemTime();
+  }
 });

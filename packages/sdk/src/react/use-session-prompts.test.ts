@@ -7,6 +7,7 @@ import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
   applyInboxObservation,
+  inboxDrained,
   optimisticSessionPrompt,
   reconcileOptimisticPrompts,
   removeOptimisticPrompt,
@@ -15,8 +16,15 @@ import {
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
   readSessionPromptsInbox,
+  releaseHeldPrompts,
+  releaseRemovedPromptTombstone,
+  removeFailureKeepsRow,
+  REMOVED_PROMPT_TOMBSTONE_MS,
   sessionPromptsPollMs,
   startSessionWithPrompt,
+  tombstoneRemovedPrompt,
+  withEditedPromptText,
+  withoutRemovedPrompts,
 } from './use-session-prompts';
 
 /**
@@ -137,7 +145,16 @@ describe('noteInboxObservation', () => {
     applyInboxObservation('sess_1', undefined, [queued], 500);
 
     expect(applyInboxObservation('sess_1', [queued], [], 600)).toEqual([]);
-    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 600 });
+    // The reading also carries WHAT it saw happen: a row this tab had watched
+    // waiting is gone, which is the server handing it to the runtime. Without
+    // that stamp the two honest-but-stale readings below it (an empty list, a
+    // `/turn` read taken before the hand-off) agree on `idle` and the session
+    // goes INACTIVE with the prompt in flight.
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 0,
+      atMs: 600,
+      drainedAtMs: 600,
+    });
   });
 
   /**
@@ -173,6 +190,7 @@ describe('noteInboxObservation', () => {
       pending: 0,
       atMs: 1_500,
       serverAtMs: 62_000 + skew,
+      drainedAtMs: 1_500,
     });
   });
 });
@@ -216,6 +234,32 @@ describe('startSessionWithPrompt', () => {
     // Accepted: the server has the row, and the projection may answer for it.
     const receipt = useSessionWorkingStore.getState().receipts['sess-1'];
     expect(receipt?.acceptedAtMs ?? null).not.toBeNull();
+  });
+
+  test('a held first prompt keeps its Send time as clientSentAtMs, not the POST time', async () => {
+    // The server orders racing rows by `clientSentAtMs`. A first prompt whose
+    // POST waited on its uploads must still sort before a message the user
+    // sent after it; the POST-time clock would put it behind that message.
+    useSessionWorkingStore.getState().reset();
+    const inputs: any[] = [];
+    const create = async (_p: string, _s: string, input: any) => {
+      inputs.push(input);
+      return { prompt_id: 'p1', state: 'queued' as const, message_id: input.messageId, deduped: false };
+    };
+    await startSessionWithPrompt(
+      'proj-1',
+      'sess-4',
+      { parts: [{ type: 'text', text: 'go' }], clientSentAtMs: 1_000 },
+      { create, nowMs: () => 9_000 },
+    );
+    await startSessionWithPrompt(
+      'proj-1',
+      'sess-5',
+      { parts: [{ type: 'text', text: 'go' }] },
+      { create, nowMs: () => 9_000 },
+    );
+
+    expect(inputs.map((input) => input.clientSentAtMs)).toEqual([1_000, 9_000]);
   });
 
   test('a refused row drops the receipt and throws instead of posing as sent', async () => {
@@ -279,6 +323,21 @@ describe('optimistic queue rows', () => {
     expect(row.text).toBe('hello there');
     expect(row.attempts).toBe(0);
     expect(row.created_at).toBe(new Date(1_000).toISOString());
+  });
+
+  test('placement and full content survive optimistic acceptance', () => {
+    const text = 'const result = await run();\n'.repeat(120);
+    const inputWithPlacement = {
+      ...input,
+      placement: 'transcript' as const,
+      parts: [{ type: 'text' as const, text }],
+    };
+    const rows = applyOptimisticPrompt([], inputWithPlacement, 1_000);
+    const settled = settleOptimisticPrompt(rows, 'c1', {
+      prompt_id: 'p-real', state: 'waiting', message_id: input.messageId, deduped: false,
+    });
+    expect(settled[0].placement).toBe('transcript');
+    expect(settled[0].full_text).toBe(text.trim());
   });
 
   test('applyOptimisticPrompt appends once and is idempotent for the same submission', () => {
@@ -393,6 +452,102 @@ describe('readSessionPromptsInbox', () => {
   });
 });
 
+const row = (over: Partial<SessionPrompt> & { prompt_id: string }): SessionPrompt => ({
+  client_message_id: `c-${over.prompt_id}`,
+  message_id: `msg-${over.prompt_id}`,
+  state: 'queued',
+  reason: null,
+  text: 'hi',
+  attempts: 0,
+  last_error: null,
+  created_at: '2026-09-16T00:00:00.000Z',
+  available_at: '2026-09-16T00:00:00.000Z',
+  ...over,
+});
+
+/**
+ * Resume has to answer on the CLICK.
+ *
+ * The queue list's "Queue paused · Resume" line is drawn from `reason: 'held'`
+ * rows. `hold(false)` used to change nothing locally: the line stayed up until
+ * a follow-up GET landed, and `applyInboxObservation` can legitimately discard
+ * that GET — so Resume read as a button that did nothing.
+ */
+describe('releaseHeldPrompts', () => {
+  test('clears the hold reason and nothing else', () => {
+    const held = row({ prompt_id: 'a', state: 'waiting', reason: 'held' });
+    expect(releaseHeldPrompts([held])).toEqual([{ ...held, reason: null }]);
+  });
+
+  test('leaves rows the hold does not own untouched', () => {
+    const waiting = row({ prompt_id: 'a', state: 'waiting', reason: 'turn_active' });
+    const failed = row({ prompt_id: 'b', state: 'failed', last_error: 'boom' });
+    expect(releaseHeldPrompts([waiting, failed])).toEqual([waiting, failed]);
+  });
+});
+
+/**
+ * A removal must stay removed.
+ *
+ * `DELETE .../prompts/:id` returns no server stamp, so a GET issued BEFORE the
+ * delete can land AFTER it with a strictly newer `observed_at` and list the row
+ * again — correctly, by the ordering rule. Only a client tombstone orders a
+ * removal against the 1s poll. With take-back (Up) that is not cosmetic: the
+ * row's text is already back in the composer, and a resurrected row would send
+ * the same message twice.
+ */
+describe('removed-prompt tombstones', () => {
+  test('a tombstoned row is filtered out of every later list for that session', () => {
+    tombstoneRemovedPrompt('sess-t1', 'a', 1_000);
+    const rows = [row({ prompt_id: 'a' }), row({ prompt_id: 'b' })];
+    expect(withoutRemovedPrompts('sess-t1', rows, 1_500).map((r) => r.prompt_id)).toEqual(['b']);
+  });
+
+  test('the tombstone is scoped to its own session', () => {
+    tombstoneRemovedPrompt('sess-t2', 'a', 1_000);
+    const rows = [row({ prompt_id: 'a' })];
+    expect(withoutRemovedPrompts('sess-other', rows, 1_500)).toEqual(rows);
+  });
+
+  test('the tombstone expires — it orders one race, it is not a blocklist', () => {
+    tombstoneRemovedPrompt('sess-t3', 'a', 1_000);
+    const rows = [row({ prompt_id: 'a' })];
+    expect(withoutRemovedPrompts('sess-t3', rows, 1_000 + REMOVED_PROMPT_TOMBSTONE_MS + 1)).toEqual(
+      rows,
+    );
+  });
+
+  test('a released tombstone lets the row back in', () => {
+    tombstoneRemovedPrompt('sess-t4', 'a', 1_000);
+    releaseRemovedPromptTombstone('sess-t4', 'a');
+    const rows = [row({ prompt_id: 'a' })];
+    expect(withoutRemovedPrompts('sess-t4', rows, 1_500)).toEqual(rows);
+  });
+
+  test('only a 404 means the row is gone; every other failure left it in place', () => {
+    // 409: a step is already answering it — it is still listed, as delivering.
+    // A network failure never reached the server at all.
+    expect(removeFailureKeepsRow({ status: 404 })).toBe(false);
+    expect(removeFailureKeepsRow({ status: 409 })).toBe(true);
+    expect(removeFailureKeepsRow(new Error('network'))).toBe(true);
+  });
+
+  test('readSessionPromptsInbox never lists a tombstoned row', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json({ prompts: [row({ prompt_id: 'gone' }), row({ prompt_id: 'kept' })] })) as unknown as typeof fetch;
+    tombstoneRemovedPrompt('sess-t5', 'gone');
+    try {
+      const rows = await readSessionPromptsInbox('proj-1', 'sess-t5', []);
+      expect(rows.map((r) => r.prompt_id)).toEqual(['kept']);
+    } finally {
+      globalThis.fetch = original;
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+});
+
 // ── The session-open bundle seam ────────────────────────────────────────────
 
 describe('readSessionPromptsInbox and the open bundle', () => {
@@ -434,6 +589,30 @@ describe('readSessionPromptsInbox and the open bundle', () => {
     const prompts = await readSessionPromptsInbox('P1', 'S1', undefined);
     expect(urls.filter((u) => u.endsWith('/prompts'))).toHaveLength(0);
     expect(prompts).toEqual([row] as never);
+  });
+
+  test('a read that already holds rows never answers from the bundle — it asks', async () => {
+    // THE STALE-BUNDLE WINDOW (measured 2026-09-08, on video). The bundle is
+    // claimable for OPEN_BUNDLE_SHARE_MS after it lands, and every read inside
+    // that window — the 1s poll AND the repair refetch a new user bubble
+    // fires — re-claimed it and got the same pre-delivery row back. Meanwhile
+    // the drain re-minted the prompt and the runtime echoed it under the new
+    // id: the transcript showed the message under M while the "fresh" list
+    // still named W, and the prompt was on screen twice until the window
+    // expired. The bundle collapses the OPEN burst — reads issued before this
+    // tab holds any rows. A read that already has rows is a poll, and a poll
+    // asks the server.
+    resetSessionOpenBundles();
+    const stale = { prompt_id: 'p1', state: 'queued', text: 'hi', message_id: 'msg_W' };
+    const urls = mockFetch((url) =>
+      url.includes('/snapshot')
+        ? bundle({ known: true, prompts: [stale], held: false })
+        : { prompts: [], observed_at: '2026-08-26T12:00:01.000Z' },
+    );
+    openSessionBundle('P1', 'S1');
+    const prompts = await readSessionPromptsInbox('P1', 'S1', [stale as never]);
+    expect(urls.filter((u) => u.endsWith('/prompts'))).toHaveLength(1);
+    expect(prompts).toEqual([]);
   });
 
   test('the bundled rows still feed the working projection', async () => {
@@ -497,5 +676,134 @@ describe('readSessionPromptsInbox and the open bundle', () => {
     const prompts = await readSessionPromptsInbox('P1', 'S1', undefined);
     expect(urls.some((u) => u.endsWith('/prompts'))).toBe(true);
     expect(prompts[0]?.prompt_id).toBe('p9');
+  });
+});
+
+/**
+ * WHICH readings mean "the server took a prompt off the queue".
+ *
+ * The count alone cannot say. A row that drains and a row the user just put on
+ * hold both take the live count to zero, and they are opposites: one means a
+ * turn is opening, the other means the user asked for nothing to run. So the
+ * signal is the ROW, not the number — and a held or failed row is still listed,
+ * which is what makes them distinguishable at all.
+ */
+describe('inboxDrained', () => {
+  const prompt = (over: Partial<SessionPrompt> = {}): SessionPrompt => ({
+    prompt_id: 'p1',
+    client_message_id: 'q_1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-08-18T10:00:00.000Z',
+    available_at: '2026-08-18T10:00:00.000Z',
+    ...over,
+  });
+
+  test('a queued row that is simply gone is a drain', () => {
+    expect(inboxDrained([prompt()], [])).toBe(true);
+  });
+
+  test('a delivering row that is gone is a drain too', () => {
+    // `delivering` is already at OpenCode, queued behind the turn in front of
+    // it. Its disappearance is the ledger confirming a turn consumed it.
+    expect(inboxDrained([prompt({ state: 'delivering' })], [])).toBe(true);
+  });
+
+  test('a HELD row is still listed, so nothing drained', () => {
+    // Stop parks the row (`waiting`/`held`) rather than removing it. Reading
+    // that as a drain would put the composer back on Stop with nothing
+    // running — exactly what `countLiveInboxPrompts` excludes it to prevent.
+    const held = prompt({ state: 'waiting', reason: 'held' });
+    expect(inboxDrained([prompt()], [held])).toBe(false);
+  });
+
+  test('a row that only FAILED has not drained', () => {
+    expect(inboxDrained([prompt()], [prompt({ state: 'failed' })])).toBe(false);
+  });
+
+  test("this tab's own optimistic row being replaced is not a drain", () => {
+    // The echo arrives under the SERVER's prompt id, so the optimistic row
+    // "disappears" on every successful send. That is a rename, not a hand-off.
+    const optimistic = optimisticSessionPrompt(
+      { clientMessageId: 'q_9', messageId: 'msg_09', parts: [{ type: 'text', text: 'go' }] },
+      1_000,
+    );
+    expect(inboxDrained([optimistic], [prompt({ prompt_id: 'srv_9', client_message_id: 'q_9' })])).toBe(
+      false,
+    );
+  });
+
+  test('nothing to compare against is never a drain', () => {
+    expect(inboxDrained(undefined, [])).toBe(false);
+    expect(inboxDrained([], [])).toBe(false);
+  });
+
+  test('a row that is still there has not drained', () => {
+    expect(inboxDrained([prompt()], [prompt()])).toBe(false);
+  });
+});
+
+describe('the drain stamp survives the readings that follow it', () => {
+  const prompt = (over: Partial<SessionPrompt> = {}): SessionPrompt => ({
+    prompt_id: 'p1',
+    client_message_id: 'q_1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-08-18T10:00:00.000Z',
+    available_at: '2026-08-18T10:00:00.000Z',
+    ...over,
+  });
+
+  test('a later empty reading inherits it — the queue has not changed its mind', () => {
+    // The list polls every second while the projection believes something is
+    // pending. Without carry-forward the stamp would be erased by the very next
+    // poll, one second into a wait for a `/turn` read that takes a round trip.
+    useSessionWorkingStore.getState().reset();
+    applyInboxObservation('sess_1', undefined, [prompt()], 500);
+    applyInboxObservation('sess_1', [prompt()], [], 600);
+    applyInboxObservation('sess_1', [], [], 700);
+
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 0,
+      atMs: 700,
+      drainedAtMs: 600,
+    });
+  });
+
+  test('a new pending row drops it — this is a fact about an empty queue', () => {
+    useSessionWorkingStore.getState().reset();
+    applyInboxObservation('sess_1', undefined, [prompt()], 500);
+    applyInboxObservation('sess_1', [prompt()], [], 600);
+    applyInboxObservation('sess_1', [], [prompt({ prompt_id: 'p2' })], 700);
+
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 1, atMs: 700 });
+  });
+});
+
+describe('withEditedPromptText', () => {
+  const row = (id: string, text: string) =>
+    ({ prompt_id: id, text, state: 'queued', reason: null }) as SessionPrompt;
+
+  test('replaces the text of the edited row only, in place', () => {
+    const before = [row('a', 'one'), row('b', 'two'), row('c', 'three')];
+    const after = withEditedPromptText(before, 'b', 'TWO');
+    expect(after.map((prompt) => [prompt.prompt_id, prompt.text])).toEqual([
+      ['a', 'one'],
+      ['b', 'TWO'],
+      ['c', 'three'],
+    ]);
+    expect(before[1].text).toBe('two');
+  });
+
+  test('a row that is gone stays gone', () => {
+    expect(withEditedPromptText([row('a', 'one')], 'zz', 'x')).toEqual([row('a', 'one')]);
   });
 });

@@ -20,9 +20,12 @@
  *   bogus API key so live suites do not create real inboxes unless a specific
  *   positive flow opts in.
  */
+import { randomUUID } from "node:crypto";
 import { flow } from "../core/flow";
+import { slackSigned, withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 import { CliSandbox } from "../fixtures/cli";
+import { createDatabaseSession } from "../fixtures/database-project";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
 
@@ -824,36 +827,31 @@ flow(
   },
 );
 
-// CHN-T3 — Teams connect (manage ACL). Teams is a per-project feature flag
-// (#5908): disabled projects get the standard 403 feature_disabled before any
-// validation, and once the `teams` flag is on, a bad tenant id is rejected
-// with 400.
+// CHN-T3 — Teams connect (manage ACL). Every project can connect Teams: the
+// `teams` feature flag graduated on 2026-10-01, so a project with no flag set
+// reaches input validation (a bad tenant id is 400), and the old flag key is
+// refused as unknown.
 flow(
   "CHN-T3",
   {
     domain: "channels",
-    routes: ["POST /v1/projects/:projectId/channels/teams/connect"],
+    routes: ["POST /v1/projects/:projectId/channels/teams/connect", "PATCH /v1/projects/:projectId/experimental"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER, teams flag off (default) → 403 feature_disabled", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: p.id } });
-      r.status(403);
-      r.body().has("$.code", "feature_disabled");
-      r.body().has("$.feature", "teams");
-    });
     const own = await ctx.fixtures.project();
-    await ctx.step("OWNER enables the teams experiment, invalid tenant_id → 400", async () => {
-      const enabled = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: own.id } });
-      enabled.status(200);
+    await ctx.step("OWNER, a new project with no flag set, invalid tenant_id → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: own.id } });
       r.status(400);
+    });
+    await ctx.step("the graduated `teams` flag key is refused as unknown → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: false }, { params: { projectId: own.id } });
+      r.status(400);
+      r.body().has("$.error", "Unknown feature flag 'teams'");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -870,12 +868,115 @@ flow(
   },
 );
 
+// CHN-T5 — Teams proactive posting. The Slack twin of `send_message`, and the
+// one Teams route that takes a conversation id from the CALLER while holding a
+// tenant-wide bot credential. Two separate refusals have to stay apart: 403 =
+// this caller may not post at all (the `project.connector.write` floor, as in
+// CHN-20), 404 = this project has no such conversation. Collapsing them would
+// make either assertion pass for the wrong reason.
+flow(
+  "CHN-T5",
+  {
+    domain: "channels",
+    routes: [
+      "GET /v1/projects/:projectId/channels/teams/conversations",
+      "POST /v1/projects/:projectId/channels/teams/message",
+      "POST /v1/projects/:projectId/channels/teams/message/edit",
+      "POST /v1/projects/:projectId/channels/teams/message/delete",
+      "POST /v1/projects/:projectId/channels/teams/file/upload",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const memberOnly = await team.addMember("member");
+    const editor = await team.addMember("member");
+    await team.grantProjectRole(p.id, memberOnly.userId!, "user");
+    await team.grantProjectRole(p.id, editor.userId!, "manager");
+    const body = { conversation_id: "19:not-bound@thread.tacv2", text: "should never arrive" };
+
+    await ctx.step("a project with no Teams conversations lists none, with no flag set", async () => {
+      const r = await ctx.client
+        .as(editor)
+        .get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
+      r.status(200);
+      r.body().has("$.conversations", []);
+    });
+    await ctx.step("MEMBER without connector.write → 403 at the floor", async () => {
+      const r = await ctx.client.as(memberOnly).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      r.status(403);
+    });
+    await ctx.step("EDITOR passes the floor, but the conversation is not this project's → 404", async () => {
+      const r = await ctx.client.as(editor).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    // The file upload sends into a conversation the same way. It used to take
+    // `service_url` from the body, and the allowlist accepted
+    // `*.azurewebsites.net`, a host any Azure customer can register — so the
+    // bot token could be sent to a server of the caller's choosing. The
+    // address is now the server's: the binding and the stored service URL.
+    const upload = {
+      conversation_id: body.conversation_id,
+      service_url: "https://attacker.azurewebsites.net/",
+      filename: "note.png",
+      content_base64: Buffer.from("png-bytes").toString("base64"),
+    };
+    await ctx.step("MEMBER without connector.write cannot upload a file → 403 at the floor", async () => {
+      const r = await ctx.client
+        .as(memberOnly)
+        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
+      r.status(403);
+    });
+    await ctx.step("EDITOR uploading into a conversation that is not this project's → 404, whatever service_url it sends", async () => {
+      const r = await ctx.client
+        .as(editor)
+        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    // Editing or deleting a bot message is the same send primitive: the same
+    // floor, and the same conversation authorization.
+    for (const op of ["edit", "delete"] as const) {
+      const target = { conversation_id: body.conversation_id, message_id: "1789000000000", text: "changed" };
+      await ctx.step(`MEMBER without connector.write cannot ${op} a message → 403 at the floor`, async () => {
+        const r = await ctx.client.as(memberOnly).post(`/v1/projects/:projectId/channels/teams/message/${op}`, target, { params: { projectId: p.id } });
+        r.status(403);
+      });
+      await ctx.step(`EDITOR ${op} in a conversation that is not this project's → 404`, async () => {
+        const r = await ctx.client.as(editor).post(`/v1/projects/:projectId/channels/teams/message/${op}`, target, { params: { projectId: p.id } });
+        r.status(404);
+      });
+      await ctx.step(`EDITOR ${op} without a message id → 400`, async () => {
+        const r = await ctx.client
+          .as(editor)
+          .post(`/v1/projects/:projectId/channels/teams/message/${op}`, { conversation_id: body.conversation_id, text: "changed" }, { params: { projectId: p.id } });
+        r.status(400);
+      });
+    }
+    await ctx.step("EDITOR with nothing to say → 400", async () => {
+      const r = await ctx.client
+        .as(editor)
+        .post("/v1/projects/:projectId/channels/teams/message", { conversation_id: body.conversation_id }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
 // CHN-T4 — Teams inbound webhook (public, JWT-gated). Unconfigured → 503; configured + no/invalid token → 401.
+// The bring-your-own path answers only for a project with its own bot app:
+// anything else is a plain 404, never a 5xx Bot Framework would retry.
 flow(
   "CHN-T4",
   {
     domain: "channels",
-    routes: ["POST /v1/webhooks/teams/messages"],
+    routes: ["POST /v1/webhooks/teams/messages", "POST /v1/webhooks/teams/:projectId/messages"],
   },
   async (ctx) => {
     await ctx.step("ANON unsigned activity → 503 (unconfigured) or 401 (no/invalid token)", async () => {
@@ -883,6 +984,19 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/webhooks/teams/messages", { type: "message", text: "hi" });
       r.status([401, 503]);
+    });
+    const p = await ctx.fixtures.project();
+    await ctx.step("ANON activity to a project that brings no bot of its own → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/teams/:projectId/messages", { type: "message", text: "hi" }, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    await ctx.step("ANON activity to a path that names no project → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/teams/:projectId/messages", { type: "message", text: "hi" }, { params: { projectId: "not-a-project" } });
+      r.status(404);
     });
   },
 );
@@ -1053,5 +1167,671 @@ flow(
         );
       r.status(404);
     });
+  },
+);
+
+// CHN-29 — A per-project (BYO) Slack app is signed with a secret its project
+// admin chose, so a valid signature proves only who sent the request, not what
+// the body names. Every signed callback must stay inside the project in the
+// path and the workspace its bot token proved at connect (`chat_installs`).
+// The install is seeded directly: connect proves the workspace through Slack's
+// auth.test, which the local profile cannot reach.
+flow(
+  "CHN-29",
+  {
+    domain: "channels",
+    requires: ["database"],
+    routes: [
+      "POST /v1/projects/:projectId/secrets",
+      "POST /v1/webhooks/slack/:projectId",
+      "POST /v1/webhooks/slack/:projectId/commands",
+      "POST /v1/webhooks/slack/:projectId/interactivity",
+    ],
+  },
+  async (ctx) => {
+    const byo = await ctx.fixtures.project();
+    const other = await ctx.fixtures.project();
+    const secret = `ke2e-signing-${randomUUID()}`;
+    const ownTeam = `TKE2E${randomUUID().slice(0, 8).toUpperCase()}`;
+    const otherTeam = `TKE2EOTHER${randomUUID().slice(0, 8).toUpperCase()}`;
+    const otherUser = `UKE2E${randomUUID().slice(0, 8).toUpperCase()}`;
+    const ownUser = `UKE2E${randomUUID().slice(0, 8).toUpperCase()}`;
+    const linkedUserId = ctx.P.NONMEMBER.userId!;
+    const requestsFor = (projectId: string) =>
+      withDb(ctx, async (db) =>
+        Number(
+          (
+            await db.query(
+              "SELECT count(*)::int AS n FROM kortix.project_access_requests WHERE project_id = $1 AND requester_user_id = $2",
+              [projectId, linkedUserId],
+            )
+          ).rows[0].n,
+        ),
+      );
+
+    await ctx.step("OWNER stores the BYO app signing secret on the project", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          // Connector-delivered, as the install paths store it.
+          { name: "SLACK_SIGNING_SECRET", value: secret, strategy: "broker", consumer: "connector" },
+          { params: { projectId: byo.id } },
+        );
+      r.status([200, 201]);
+    });
+
+    await withDb(ctx, async (db) => {
+      await db.query(
+        "INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('slack', $1, $2), ('slack', $3, $4) ON CONFLICT DO NOTHING",
+        [ownTeam, byo.id, otherTeam, other.id],
+      );
+      await db.query(
+        `INSERT INTO kortix.chat_user_identities (platform, workspace_id, platform_user_id, user_id)
+         VALUES ('slack', $1, $2, $5), ('slack', $3, $4, $5) ON CONFLICT DO NOTHING`,
+        [otherTeam, otherUser, ownTeam, ownUser, linkedUserId],
+      );
+    });
+
+    try {
+      await ctx.step("interactivity naming another workspace → 403, and no access request is filed there", async () => {
+        const payload = {
+          type: "block_actions",
+          team: { id: otherTeam },
+          user: { id: otherUser },
+          channel: { id: "CKE2E" },
+          response_url: "https://hooks.slack.com/actions/ke2e",
+          actions: [{ action_id: "slack_request_access", value: JSON.stringify({ projectId: other.id }) }],
+        };
+        const body = `payload=${encodeURIComponent(JSON.stringify(payload))}`;
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post("/v1/webhooks/slack/:projectId/interactivity", body, {
+            params: { projectId: byo.id },
+            ...slackSigned(secret, body, "application/x-www-form-urlencoded"),
+          });
+        r.status(403);
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        if ((await requestsFor(other.id)) !== 0) throw new Error("CHN-29: an access request was filed from another workspace");
+      });
+
+      await ctx.step("interactivity from the proven workspace naming another project → 200, and nothing is filed there", async () => {
+        const payload = {
+          type: "block_actions",
+          team: { id: ownTeam },
+          user: { id: ownUser },
+          channel: { id: "CKE2E" },
+          response_url: "https://hooks.slack.com/actions/ke2e",
+          actions: [{ action_id: "slack_request_access", value: JSON.stringify({ projectId: other.id }) }],
+        };
+        const body = `payload=${encodeURIComponent(JSON.stringify(payload))}`;
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post("/v1/webhooks/slack/:projectId/interactivity", body, {
+            params: { projectId: byo.id },
+            ...slackSigned(secret, body, "application/x-www-form-urlencoded"),
+          });
+        r.status(200);
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        if ((await requestsFor(other.id)) !== 0) throw new Error("CHN-29: an access request was filed for another project");
+      });
+
+      await ctx.step("a slash command naming another workspace → 403, and that workspace's identity link stays live", async () => {
+        const body = new URLSearchParams({
+          command: "/kortix",
+          text: "logout",
+          team_id: otherTeam,
+          user_id: otherUser,
+          channel_id: "CKE2E",
+          response_url: "https://hooks.slack.com/commands/ke2e",
+        }).toString();
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post("/v1/webhooks/slack/:projectId/commands", body, {
+            params: { projectId: byo.id },
+            ...slackSigned(secret, body, "application/x-www-form-urlencoded"),
+          });
+        r.status(403);
+        const revoked = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT revoked_at FROM kortix.chat_user_identities WHERE platform = 'slack' AND workspace_id = $1 AND platform_user_id = $2",
+              [otherTeam, otherUser],
+            )
+          ).rows[0]?.revoked_at,
+        );
+        if (revoked) throw new Error("CHN-29: a forged slash command revoked another workspace's identity link");
+      });
+
+      await ctx.step("an event naming another workspace → 403", async () => {
+        const body = JSON.stringify({
+          type: "event_callback",
+          event_id: `EvKE2E${randomUUID()}`,
+          team_id: otherTeam,
+          event: { type: "app_mention", channel: "CKE2E", user: otherUser, ts: "1700000000.000100", text: "hi" },
+        });
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post("/v1/webhooks/slack/:projectId", body, {
+            params: { projectId: byo.id },
+            ...slackSigned(secret, body, "application/json"),
+          });
+        r.status(403);
+      });
+
+      await ctx.step("a slash command from the proven workspace still runs → 200", async () => {
+        const body = new URLSearchParams({
+          command: "/kortix",
+          text: "help",
+          team_id: ownTeam,
+          user_id: ownUser,
+          channel_id: "CKE2E",
+        }).toString();
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post("/v1/webhooks/slack/:projectId/commands", body, {
+            params: { projectId: byo.id },
+            ...slackSigned(secret, body, "application/x-www-form-urlencoded"),
+          });
+        r.status(200);
+      });
+
+      await ctx.step("a bad signature is still 401", async () => {
+        const body = new URLSearchParams({ command: "/kortix", text: "help", team_id: ownTeam, user_id: ownUser }).toString();
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post("/v1/webhooks/slack/:projectId/commands", body, {
+            params: { projectId: byo.id },
+            ...slackSigned("not-the-secret", body, "application/x-www-form-urlencoded"),
+          });
+        r.status(401);
+      });
+    } finally {
+      await withDb(ctx, async (db) => {
+        await db.query("DELETE FROM kortix.project_access_requests WHERE requester_user_id = $1 AND project_id = ANY($2)", [
+          linkedUserId,
+          [byo.id, other.id],
+        ]);
+        await db.query("DELETE FROM kortix.chat_user_identities WHERE platform = 'slack' AND workspace_id = ANY($1)", [
+          [ownTeam, otherTeam],
+        ]);
+        await db.query("DELETE FROM kortix.chat_installs WHERE platform = 'slack' AND workspace_id = ANY($1)", [
+          [ownTeam, otherTeam],
+        ]);
+      }).catch(() => {});
+    }
+  },
+);
+
+// CHN-30 — `slack bind-thread` routes later Slack replies in a thread into a
+// session. A sandbox token acts for exactly one session, so it may bind a
+// thread only to its own session, never to a sibling session in the project.
+// The two sessions and the session-bound token are seeded directly: the local
+// profile runs no sandbox provider.
+flow(
+  "CHN-30",
+  {
+    domain: "channels",
+    requires: ["database"],
+    routes: ["POST /v1/accounts/tokens", "POST /v1/projects/:projectId/channels/slack/bind-thread"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    // Another project with a channel in the same workspace: a thread there is
+    // not this project's to bind.
+    const other = await ctx.fixtures.sharedProject();
+    const own = randomUUID();
+    const sibling = randomUUID();
+    const foreign = randomUUID();
+    const ownerUserId = ctx.P.OWNER.userId!;
+    const team = `TKE2E${randomUUID().slice(0, 8).toUpperCase()}`;
+    let tokenId: string | null = null;
+    let secretKey = "";
+
+    await ctx.step("OWNER mints a token; it is bound to one session of the project", async () => {
+      const minted = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: `ke2e bind-thread ${own.slice(0, 8)}` });
+      minted.status(201);
+      const credential = minted.json<{ token_id: string; secret_key: string }>();
+      tokenId = credential.token_id;
+      secretKey = credential.secret_key;
+      await withDb(ctx, async (db) => {
+        const accountId = (await db.query("SELECT account_id FROM kortix.projects WHERE project_id = $1", [p.id])).rows[0]
+          .account_id as string;
+        for (const [sessionId, createdBy] of [
+          [own, ownerUserId],
+          [sibling, ownerUserId],
+          [foreign, ctx.P.NONMEMBER.userId!],
+        ]) {
+          await db.query(
+            `INSERT INTO kortix.project_sessions
+               (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata)
+             VALUES ($1, $2, $3, $1, 'kortix', 'running', $4, 'project'::kortix.project_session_visibility, '{}'::jsonb)`,
+            [sessionId, accountId, p.id, createdBy],
+          );
+        }
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [own, accountId, p.id],
+        );
+        await db.query(
+          "UPDATE kortix.account_tokens SET account_id = $2, user_id = $3, project_id = $4, session_id = $5 WHERE token_id = $1",
+          [tokenId, accountId, ownerUserId, p.id, own],
+        );
+        // The workspace the project's Slack install proved (the install paths
+        // write this row), and the other project's channel in it.
+        await db.query(
+          "INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('slack', $1, $2), ('slack', $1, $3) ON CONFLICT DO NOTHING",
+          [team, p.id, other.id],
+        );
+        await db.query(
+          "INSERT INTO kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id) VALUES ('slack', $1, 'CKE2EOTHER', $2)",
+          [team, other.id],
+        );
+      });
+    });
+
+    try {
+      const agent = ctx.client.withBearer(secretKey, "SESSION_TOKEN");
+
+      await ctx.step("the session token binds a thread to a SIBLING session → 403, and no mapping is written", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: sibling, channel: "CKE2E", thread_ts: "1700000000.000200", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(403);
+        const rows = await withDb(ctx, async (db) =>
+          (await db.query("SELECT 1 FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1", [team])).rowCount,
+        );
+        if (rows) throw new Error("CHN-30: a thread was bound to another session");
+      });
+
+      await ctx.step("a workspace the project's install never proved → 400 SLACK_WORKSPACE_NOT_CONNECTED, and no mapping is written", async () => {
+        const foreignTeam = `${team}X`;
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000250", workspace_id: foreignTeam },
+          { params: { projectId: p.id } },
+        );
+        r.status(400).body().has("$.code", "SLACK_WORKSPACE_NOT_CONNECTED");
+        const rows = await withDb(ctx, async (db) =>
+          (await db.query("SELECT 1 FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1", [foreignTeam]))
+            .rowCount,
+        );
+        if (rows) throw new Error("CHN-30: a thread was bound in a workspace the project never installed");
+      });
+
+      await ctx.step("a thread in another project's channel → 403 CONVERSATION_NOT_IN_PROJECT, and no mapping is written", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2EOTHER", thread_ts: "1700000000.000260", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(403).body().has("$.code", "CONVERSATION_NOT_IN_PROJECT");
+        const rows = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT 1 FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000260"],
+            )
+          ).rowCount,
+        );
+        if (rows) throw new Error("CHN-30: a thread in another project's channel was bound");
+      });
+
+      await ctx.step("the session token binds a thread to ITS OWN session → 200, and the mapping names that session", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000300", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has("$.bound", true);
+        const sessionId = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000300"],
+            )
+          ).rows[0]?.session_id,
+        );
+        if (sessionId !== own) throw new Error(`CHN-30: expected the thread bound to the token's session, got ${sessionId}`);
+      });
+
+      await ctx.step("the same session binds a second thread; both replies resolve to its project and session", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000301", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has("$.bound", true).has("$.session_id", own);
+        await withDb(ctx, async (db) => {
+          const rows = (await db.query(
+            "SELECT thread_id, session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id IN ($2, $3) ORDER BY thread_id",
+            [team, "1700000000.000300", "1700000000.000301"],
+          )).rows;
+          if (rows.length !== 2 || rows.some((row) => row.session_id !== own)) {
+            throw new Error("CHN-30: both threads must retain the same session");
+          }
+        });
+      });
+
+      await ctx.step("the session token binds the same thread again → 200, bound to the same session (idempotent)", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000300", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has("$.bound", true).has("$.session_id", own);
+      });
+
+      await ctx.step("a thread already owned by the sibling session → 409 THREAD_BOUND_TO_ANOTHER_SESSION, owner unchanged", async () => {
+        await withDb(ctx, async (db) => {
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'slack', $2, '1700000000.000400', $3)`,
+            [p.id, team, sibling],
+          );
+        });
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000400", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(409).body().has("$.code", "THREAD_BOUND_TO_ANOTHER_SESSION").has("$.bound", false);
+        const owner = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000400"],
+            )
+          ).rows[0]?.session_id,
+        );
+        if (owner !== sibling) throw new Error(`CHN-30: a bound thread changed owner to ${owner}`);
+      });
+
+      await ctx.step("force moves the sibling's thread (same creator) → 200 with rebound_from, and the mapping names this session", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000400", workspace_id: team, force: true },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has("$.bound", true).has("$.session_id", own).has("$.rebound_from", sibling);
+        const owner = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000400"],
+            )
+          ).rows[0]?.session_id,
+        );
+        if (owner !== own) throw new Error(`CHN-30: force did not move the thread, owner is ${owner}`);
+      });
+
+      await ctx.step("force on a thread of another user's session → 403 THREAD_OWNED_BY_ANOTHER_USER, owner unchanged", async () => {
+        await withDb(ctx, async (db) => {
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'slack', $2, '1700000000.000500', $3)`,
+            [p.id, team, foreign],
+          );
+        });
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000500", workspace_id: team, force: true },
+          { params: { projectId: p.id } },
+        );
+        r.status(403).body().has("$.code", "THREAD_OWNED_BY_ANOTHER_USER");
+        const owner = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000500"],
+            )
+          ).rows[0]?.session_id,
+        );
+        if (owner !== foreign) throw new Error(`CHN-30: force moved another user's thread to ${owner}`);
+      });
+    } finally {
+      await withDb(ctx, async (db) => {
+        await db.query("DELETE FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1", [team]);
+        await db.query("DELETE FROM kortix.chat_channel_bindings WHERE platform = 'slack' AND workspace_id = $1", [team]);
+        await db.query("DELETE FROM kortix.chat_installs WHERE platform = 'slack' AND workspace_id = $1", [team]);
+        if (tokenId) await db.query("DELETE FROM kortix.account_tokens WHERE token_id = $1", [tokenId]);
+        await db.query("DELETE FROM kortix.session_sandboxes WHERE session_id = ANY($1)", [[own, sibling, foreign]]);
+        await db.query("DELETE FROM kortix.project_sessions WHERE session_id = ANY($1)", [[own, sibling, foreign]]);
+      }).catch(() => {});
+    }
+  },
+);
+
+// CHN-T6 — A Teams tenant id or domain is public, so connect accepts one only
+// with proof: the managed bot proves it through "Connect with Microsoft" (the
+// OAuth callback reads Microsoft's token), not through the manual form. And
+// the download proxy, which attaches an app-only Graph token for the tenant,
+// reads only the message attachment paths an activity carries.
+flow(
+  "CHN-T6",
+  {
+    domain: "channels",
+    requires: ["database"],
+    routes: [
+      "POST /v1/projects/:projectId/channels/teams/connect",
+      "GET /v1/projects/:projectId/channels/teams/installation",
+      "GET /v1/projects/:projectId/channels/teams/file",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const tenant = randomUUID();
+
+    await ctx.step("manual connect with a tenant id and no bot credentials → 400 TEAMS_TENANT_UNVERIFIED", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: tenant }, { params: { projectId: p.id } });
+      r.status(400).body().has("$.code", "TEAMS_TENANT_UNVERIFIED");
+    });
+
+    await ctx.step("read-back: no Teams install was written for the unproven tenant", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+      r.status([200, 404]);
+      const installed = await withDb(ctx, async (db) =>
+        (await db.query("SELECT 1 FROM kortix.chat_installs WHERE platform = 'teams' AND project_id = $1", [p.id])).rowCount,
+      );
+      if (installed) throw new Error("CHN-T6: an unproven tenant was installed");
+    });
+
+    await withDb(ctx, async (db) => {
+      await db.query(
+        "INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('teams', $1, $2) ON CONFLICT DO NOTHING",
+        [tenant, p.id],
+      );
+    });
+    try {
+      for (const url of [
+        "https://graph.microsoft.com/v1.0/users",
+        "https://graph.microsoft.com/v1.0/sites/root/drive/root/children",
+        "https://graph.microsoft.com/v1.0/drives/d1/items/i1/content",
+      ]) {
+        await ctx.step(`download proxy refuses a non-attachment Graph path → 400 (${new URL(url).pathname})`, async () => {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .get(`/v1/projects/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
+          r.status(400);
+        });
+      }
+      await ctx.step("download proxy refuses another Traffic Manager profile → 400", async () => {
+        const url = "https://ke2e-profile.trafficmanager.net/v3/attachments/1/views/original";
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get(`/v1/projects/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
+        r.status(400);
+      });
+    } finally {
+      await withDb(ctx, async (db) => {
+        await db.query("DELETE FROM kortix.chat_installs WHERE platform = 'teams' AND project_id = $1", [p.id]);
+      }).catch(() => {});
+    }
+  },
+);
+
+
+// CHN-31 — The chat identity consent screen reads which Slack or Teams account
+// a login link would link BEFORE the user presses Connect. The preview is
+// authenticated and read-only, and it applies the same token check as /bind:
+// a token that does not verify never names an account. A correctly signed
+// token needs the deployment's signing secret, so the local profile covers the
+// authentication and refusal paths only.
+flow(
+  "CHN-31",
+  {
+    domain: "channels",
+    routes: [
+      "POST /v1/channels/slack/identity/preview",
+      "POST /v1/channels/teams/identity/preview",
+    ],
+  },
+  async (ctx) => {
+    for (const service of ["slack", "teams"] as const) {
+      const path = `/v1/channels/${service}/identity/preview` as const;
+
+      await ctx.step(`Anonymous callers cannot preview a ${service} login link`, async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post(path, { token: "x.y" });
+        r.status(401);
+      });
+
+      await ctx.step(`A signed-in user with a forged ${service} token is refused and sees no account`, async () => {
+        // An empty JSON payload with a signature that cannot verify.
+        const forgedToken = ["e30", "not-a-signature"].join(".");
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, { token: forgedToken });
+        // 410: the token does not verify. 404/503: the feature is off or
+        // unconfigured on this deployment. Never 200.
+        r.status([404, 410, 503]);
+        if (r.text().includes("chatUserId")) {
+          throw new Error(`CHN-31: ${service} preview named an account for a forged token`);
+        }
+      });
+
+      await ctx.step(`A ${service} preview without a token is a validation error`, async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, {});
+        r.status([400, 404, 503]);
+      });
+
+      await ctx.step(`A ${service} preview whose token is not a string is a validation error`, async () => {
+        // No JSON content-type, so the route schema does not run and the
+        // handler must check the field type itself.
+        const r = await ctx.client.as(ctx.P.OWNER).post(path, '{"token":1}', { raw: true });
+        r.status([400, 404, 503]);
+      });
+    }
+  },
+);
+
+// CHN-T7 — A Teams channel binding is one thread, and every thread of a
+// channel reads `Team › Channel`. The list adds the thread's session title,
+// which tells them apart. Teams is not reachable locally, so the names are
+// seeded; a thread with no name stays unnamed when the project has no stored
+// Teams service URL to ask.
+flow(
+  "CHN-T7",
+  {
+    domain: "channels",
+    requires: ["database"],
+    routes: ["GET /v1/projects/:projectId/channels/bindings"],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const tenant = `ke2e-tenant-${randomUUID()}`;
+    const general = `19:ke2e-general-${randomUUID().slice(0, 8)}@thread.tacv2`;
+    const ids = {
+      review: `${general};messageid=1700000000001`,
+      standup: `${general};messageid=1700000000002`,
+      unnamed: `19:ke2e-design-${randomUUID().slice(0, 8)}@thread.tacv2;messageid=1700000000003`,
+      personal: `a:1ke2e-${randomUUID().slice(0, 8)}`,
+    };
+    type Row = { channelId: string; channelName: string | null; channelType: string | null; threadTitle: string | null };
+    try {
+      await ctx.step("a Teams project has two threads of one channel with sessions, an unnamed thread, and a personal chat", async () => {
+        const accountId = await withDb(
+          ctx,
+          async (db) =>
+            (await db.query("SELECT account_id FROM kortix.projects WHERE project_id = $1", [p.id])).rows[0].account_id as string,
+        );
+        const session = (name: string) =>
+          createDatabaseSession(ctx.env, { projectId: p.id, accountId, userId: ctx.P.OWNER.userId!, metadata: { name } });
+        const reviewSession = await session("<at>Kortix</at> Deploy review");
+        const standupSession = await session("Standup notes");
+        const personalSession = await session("Casual check-in");
+        await withDb(ctx, async (db) => {
+          await db.query("INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('teams', $1, $2)", [
+            tenant,
+            p.id,
+          ]);
+          await db.query(
+            `INSERT INTO kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id, channel_name, channel_type)
+             VALUES ('teams', $1, $2, $5, 'KE2E Team › General', 'channel'),
+                    ('teams', $1, $3, $5, 'KE2E Team › General', 'channel'),
+                    ('teams', $1, $4, $5, NULL, NULL),
+                    ('teams', $1, $6, $5, 'Alex Kim', 'personal')`,
+            [tenant, ids.review, ids.standup, ids.unnamed, p.id, ids.personal],
+          );
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'teams', $2, $3, $4), ($1, 'teams', $2, $5, $6), ($1, 'teams', $2, $7, $8)`,
+            [p.id, tenant, ids.review, reviewSession, ids.standup, standupSession, ids.personal, personalSession],
+          );
+        });
+      });
+
+      await ctx.step("OWNER lists bindings: each channel thread carries its session title, without the bot's mention", async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        r.status(200);
+        const rows = new Map((r.json<{ bindings: Row[] }>().bindings).map((b) => [b.channelId, b]));
+        const expectRow = (id: string, want: Partial<Row>) => {
+          const row = rows.get(id);
+          for (const [key, value] of Object.entries(want)) {
+            if (row?.[key as keyof Row] !== value) {
+              throw new Error(`CHN-T7: ${id} ${key} = ${JSON.stringify(row?.[key as keyof Row])}, want ${JSON.stringify(value)}`);
+            }
+          }
+        };
+        expectRow(ids.review, { channelName: "KE2E Team › General", threadTitle: "Deploy review" });
+        expectRow(ids.standup, { channelName: "KE2E Team › General", threadTitle: "Standup notes" });
+      });
+
+      await ctx.step("a personal chat gets no thread title; an unnamed thread stays unnamed with no Teams service URL to ask", async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        r.status(200);
+        const rows = new Map((r.json<{ bindings: Row[] }>().bindings).map((b) => [b.channelId, b]));
+        const personal = rows.get(ids.personal);
+        const unnamed = rows.get(ids.unnamed);
+        if (personal?.channelName !== "Alex Kim" || personal.threadTitle !== null) {
+          throw new Error(`CHN-T7: the personal chat reads ${JSON.stringify(personal)}`);
+        }
+        if (!unnamed || unnamed.channelName !== null || unnamed.threadTitle !== null) {
+          throw new Error(`CHN-T7: the unnamed thread reads ${JSON.stringify(unnamed)}`);
+        }
+      });
+
+      await ctx.step("NONMEMBER cannot list them → 403/404", async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        r.status([403, 404]);
+      });
+    } finally {
+      await withDb(ctx, async (db) => {
+        for (const table of ["chat_threads", "chat_channel_bindings", "chat_installs"]) {
+          await db.query(`DELETE FROM kortix.${table} WHERE platform = 'teams' AND workspace_id = $1`, [tenant]);
+        }
+      }).catch(() => {});
+    }
   },
 );

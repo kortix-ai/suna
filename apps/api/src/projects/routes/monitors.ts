@@ -4,8 +4,8 @@
  * The ONLY caller is the monitor runner inside the project's own monitor box,
  * authenticating with that box's sandbox token. A monitor box has no
  * `session_sandboxes` row, so the token is scoped against
- * `project_monitor_boxes` (sandbox id ∧ project ∧ account ∧ live status) —
- * see docs/specs/2026-08-12-monitors.md §"Security model". No new authority is
+ * `project_monitor_boxes` (sandbox id ∧ project ∧ account ∧ live status).
+ * No new authority is
  * granted: the box can only append events to its own project's log.
  *
  * Accepted events are appended to `project_monitor_events`, which doubles as
@@ -20,8 +20,9 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseMonitorIngestBody } from '../lib/monitor-events';
+import { MonitorIngestRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { ingestMonitorEvents, loadMonitorBoxForToken } from '../lib/monitor-ingest';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 const MonitorIngestResultSchema = z.object({
   accepted: z.number(),
@@ -38,7 +39,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      // Documents the batch; `parseMonitorIngestBody` owns validation (its own
+      // 400s) and coerces an odd line instead of rejecting the batch.
+      body: { content: { 'application/json': { schema: MonitorIngestRelayBodySchema.or(AnyObject) } } },
     },
     responses: {
       202: json(MonitorIngestResultSchema, 'Events appended'),
@@ -72,7 +75,7 @@ projectsApp.openapi(
     const gate = requireFeatureFlag(c, project.metadata, 'monitors');
     if (gate) return gate;
 
-    const parsed = parseMonitorIngestBody(await readBody(c));
+    const parsed = parseMonitorIngestBody(await readJsonObject(c));
     if ('error' in parsed) return c.json({ error: parsed.error }, 400);
 
     // Events from a superseded boot must not fire: `seq` restarts per epoch, so

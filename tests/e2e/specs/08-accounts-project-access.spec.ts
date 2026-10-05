@@ -233,8 +233,13 @@ async function openMembersSection(page: Page, projectId: string) {
     waitUntil: "domcontentloaded",
   });
   await dismissOnboarding(page);
+  // The account hub is a MODAL over the current page since 2026-09-08 —
+  // `/accounts/**` is deleted — so the redirect keeps you on the project and
+  // opens the hub on Access > Projects, scoped to it.
   await expect(page).toHaveURL(
-    new RegExp(`/accounts/[0-9a-f-]+\\?tab=access-projects&project=${projectId}`),
+    new RegExp(
+      `/projects/${projectId}\\?accountId=[0-9a-f-]+&accountTab=access-projects&accountProject=${projectId}`,
+    ),
     { timeout: 30_000 },
   );
   await expect(page.getByText(/^Access · \d+$/).first()).toBeVisible({
@@ -615,7 +620,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     );
     await dismissOnboarding(page);
     await expect(
-      page.getByRole("button", { name: "Switch workspace" }),
+      page.getByRole("button", { name: "Switch project" }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "New session" }).first(),
@@ -661,10 +666,12 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       page.getByText(`${initialProjectName} Admin`).first(),
     ).toBeVisible();
 
+    // The hub opens over a real page (`?accountId=`), because it has no route
+    // of its own any more.
     await installBrowserSessionDirect(
       page,
       ownerSession,
-      `/accounts/${account.account_id}`,
+      `/projects/${project.project_id}?accountId=${account.account_id}`,
       authOptions,
     );
     await expect(
@@ -792,14 +799,15 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     await installBrowserSessionDirect(
       page,
       memberSession,
-      `/accounts/${account.account_id}`,
+      `/projects/${project.project_id}?accountId=${account.account_id}`,
       authOptions,
     );
     await expect(
       page.getByRole("heading", { name: "Members", exact: true }),
     ).toBeVisible();
     await selectAccountForUi(page, account.account_id);
-    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    // The landing door opens the project this browser last had open.
+    await page.goto("/projects/start", { waitUntil: "domcontentloaded" });
     await dismissOnboarding(page);
     await expect(page).toHaveURL(
       new RegExp(`/projects/${project.project_id}$`),
@@ -820,13 +828,15 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     await expect
       .poll(
         async () => {
-          await page.goto("/projects", { waitUntil: "domcontentloaded" });
+          await page.goto("/projects/start", { waitUntil: "domcontentloaded" });
+          await page.waitForURL(/\/projects(\/[0-9a-f-]{36})?$/);
           return page.url();
         },
         { timeout: IAM_PROPAGATION_MS },
       )
-      .toMatch(/\/projects\/start/);
-    await expect(page.getByText("No workspace yet")).toBeVisible();
+      .toMatch(/\/projects$/);
+    // The selector keeps the account and says why it is empty.
+    await expect(page.getByTestId("selector-empty-member")).toBeVisible();
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);
@@ -878,9 +888,10 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
               { timeout: 5_000 },
             )
             .catch(() => null);
-          await page.goto(`/accounts/${account.account_id}`, {
-            waitUntil: "domcontentloaded",
-          });
+          await page.goto(
+            `/projects/${project.project_id}?accountId=${account.account_id}`,
+            { waitUntil: "domcontentloaded" },
+          );
           if ((await accountResponse)?.status() !== 200) return false;
           return invitedMembersHeading
             .waitFor({ state: "visible", timeout: 5_000 })

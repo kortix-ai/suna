@@ -1,8 +1,13 @@
+import { readFileSync } from '@/i18n/test-source';
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
+
+// Structural assertions follow the owning modules after extraction.
+const appsSource = () => ['apps-view', 'app-detail', 'app-shared', 'app-preview', 'app-density', 'app-access']
+  .map((name) => readFileSync(resolve(root, `features/apps/${name}.tsx`), 'utf8'))
+  .join('\n');
 
 test('every Apps discovery surface hides until the apps feature flag is on', () => {
   const nav = readFileSync(
@@ -10,7 +15,7 @@ test('every Apps discovery surface hides until the apps feature flag is on', () 
     'utf8',
   );
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   // ONE gating primitive everywhere — the SDK's `useFeatureFlag`, never a
   // per-feature hook and never a hand-rolled `experimental?.apps` read.
@@ -31,7 +36,7 @@ test('Apps is an ordinary feature flag — nothing calls it experimental', () =>
     resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
     'utf8',
   );
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   expect(nav).not.toContain('Experimental');
   expect(view).not.toContain('Experimental');
@@ -55,7 +60,7 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
 });
 
 test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
   const gate = readFileSync(resolve(root, 'features/workspace/feature-gate-screen.tsx'), 'utf8');
 
   // A disabled feature never offers its own switch. The gate screen POINTS at
@@ -79,7 +84,7 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
 });
 
 test('Apps UI is operational only and has no creation action or modal', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   expect(view).not.toContain('CreateAppModal');
   expect(view).not.toContain('New App');
@@ -90,7 +95,7 @@ test('Apps UI is operational only and has no creation action or modal', () => {
 });
 
 test('the Apps header is the capability tab bar, not a settings masthead', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
   const tabs = readFileSync(
     resolve(root, 'features/workspace/capabilities/shared/capability-tabs.tsx'),
     'utf8',
@@ -99,9 +104,16 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
   // The exact bar contract, read off the file that owns it — if the tab row is
   // ever restyled this fails rather than letting Apps drift into a second
   // dialect of page chrome.
-  const BAR = 'kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2';
-  expect(tabs).toContain(BAR);
-  expect(view).toContain(BAR);
+  // Apps draws it through `ProjectPageHeader`, the one header the standalone
+  // project pages (Review, Files, Reminders, Apps) share.
+  const header = readFileSync(
+    resolve(root, 'features/workspace/project-layout/project-page-header.tsx'),
+    'utf8',
+  );
+  const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
+  expect(tabs).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
+  expect(header).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
+  expect(view).toContain('<ProjectPageHeader');
 
   // `CustomizeSectionWrapper` is the settings-section shell: an 80px centred
   // masthead that scrolls away with the content. Apps is an operational grid
@@ -113,7 +125,7 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
   // never a second copy absolutely positioned at top-2 left-2 over the macOS
   // traffic lights. The rule and the control are both pinned in
   // workspace/project-layout/sidebar-toggle.test.ts.
-  expect(view).toContain('<SidebarToggle />');
+  expect(header).toContain('<SidebarToggle />');
   expect(view).not.toContain('sidebarOpenerLabel');
   expect(view).not.toContain('placement="floating"');
   expect(view).not.toContain('absolute top-2 left-2');
@@ -125,7 +137,7 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
 });
 
 test('an App card shows the App, not a stock glyph standing in for it', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   // The card led with a size-9 tinted globe tile directly under a live
   // thumbnail of the App itself. Same glyph on every card, zero information,
@@ -141,10 +153,10 @@ test('an App card shows the App, not a stock glyph standing in for it', () => {
 });
 
 test("a card caption is the App's name and its state — not its hostname", () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
   const card = view.slice(
     view.indexOf('function AppCard('),
-    view.indexOf('function AppDetailModal('),
+    view.indexOf("\n'use client';", view.indexOf('function AppCard(')),
   );
 
   // Every App's URL is the same `<key>.apps.<domain>` shape, so a column of
@@ -203,7 +215,7 @@ test('an App with no deployment never claims to be Running', () => {
   // `desired_state` defaults to 'running' when the App row is created, so
   // reading the badge off it alone painted a green "Running" pill on an App
   // that had never been deployed and had no runtime at all.
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   expect(view).toContain('const deployed = Boolean(app.active_deployment_id);');
   expect(view).toContain("const live = deployed && app.desired_state === 'running';");
@@ -214,7 +226,7 @@ test('an App with no deployment never claims to be Running', () => {
 });
 
 test('a suspended App preview issues the request that wakes its active deployment', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   expect(view).toContain('if (!app.active_deployment_id)');
   expect(view).toContain('if (!url)');
@@ -225,18 +237,18 @@ test('a suspended App preview issues the request that wakes its active deploymen
 });
 
 test('an active App never looks undeployed while its signed preview URL loads', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   expect(view).toContain('if (!app.active_deployment_id)');
   expect(view).toContain(
     "data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}",
   );
-  expect(view).toContain('Preparing preview');
+  expect(view).toContain("raw('text2158038765cc')");
   expect(view).not.toContain('if (!app.active_deployment_id || !url)');
 });
 
 test('the App detail header is a title bar, not a debug readout', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
   // It carried five competing things. What must NOT be back:
@@ -259,26 +271,26 @@ test('the App detail header is a title bar, not a debug readout', () => {
 });
 
 test("the header separates the App's actions from the window's Close", () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
   // Close used to be the fifth button INSIDE the group, which made "stop this
   // App" and "shut this panel" read as peers. It sits outside now, and it is
   // ghost rather than outline because it is chrome, not an action.
   const groupEndsAt = header.indexOf('</ButtonGroup>');
-  const closeAt = header.indexOf('aria-label="Close"');
+  const closeAt = header.indexOf('text7d9eb7acb13e');
   expect(groupEndsAt).toBeGreaterThan(-1);
   expect(closeAt).toBeGreaterThan(groupEndsAt);
   expect(header.slice(groupEndsAt)).toContain('variant="ghost"');
 });
 
 test('Delete lives in the header menu, never buried in the version drawer', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
   // A destructive action reachable only by first opening a history panel is an
   // action you find by looking for something else.
-  expect(header).toContain('Delete App');
+  expect(header).toContain("raw('textd1b0a6e3985a')");
   expect(header).toContain('variant="destructive"');
   // …and it still goes through the confirm step.
   expect(view).toContain('<ConfirmDialog');
@@ -290,7 +302,7 @@ test('Delete lives in the header menu, never buried in the version drawer', () =
 });
 
 test('internal infrastructure names are not shown to App owners', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
 
   // `hosting_provider` is the sandbox fleet a build landed on ("daytona",
   // "platinum") — something the reader neither chose nor can change. It was
@@ -300,10 +312,10 @@ test('internal infrastructure names are not shown to App owners', () => {
 });
 
 test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', () => {
-  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const view = appsSource();
   const card = view.slice(
     view.indexOf('function AppCard('),
-    view.indexOf('function AppDetailModal('),
+    view.indexOf("\n'use client';", view.indexOf('function AppCard(')),
   );
 
   // The grid and the skeleton read the SAME chosen ladder, so nothing reflows
@@ -334,7 +346,7 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // VIEWPORT rather than the container: it is this element's own padding, and
   // this element IS `@container/apps`, so it cannot query itself. The column
   // ladder inside it stays container-based.
-  expect(view).toContain('max-w-7xl flex-col px-4 md:px-8 py-6 pb-20');
+  expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20 md:px-8');
   expect(view).not.toContain('max-w-5xl flex-col');
   expect(view).toContain('APP_GRID_CONTAINER,');
   expect(view).toContain("export const APP_GRID_CONTAINER = '@container/apps';");

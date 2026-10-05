@@ -1,4 +1,3 @@
-import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
 /**
  * Binding a session's credential to the sandbox it was issued for.
  *
@@ -26,8 +25,8 @@ import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
  *
  * Measured instead (two Daytona sandboxes, personal account, 2026-08-14):
  *
- *     sandbox c6009f9d → 67.213.121.131 , 67.213.121.131
- *     sandbox 004f74dc → 67.213.113.135 , 67.213.113.135
+ *     sandbox A → <egress_ip_a> , <egress_ip_a>
+ *     sandbox B → <egress_ip_b> , <egress_ip_b>
  *
  * Each sandbox has its OWN egress address, stable across calls. So "is this
  * request coming from the sandbox the token was issued to" is answerable.
@@ -48,9 +47,9 @@ import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
  * diagnose. The mismatch case — a pin exists and does not match — is the one
  * that blocks, and it is the one that means what it says.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
-import type { SessionRuntimeCredential } from '../../middleware/session-sandbox-credential';
+import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 
 /** Where the pin lives on `session_sandboxes.metadata`. Stable storage detail. */
@@ -80,32 +79,30 @@ export function requestEgressIp(c: Context): string | null {
  *
  * First write wins: re-pinning on every daemon callback would let a later call
  * move the pin, which is exactly the property the boot-time pin exists to deny.
+ *
+ * ONE statement, merged in SQL. This used to read `metadata`, then write the
+ * whole object back. A restart claims the row by writing `runtimeRestartId`
+ * into the same column ~0.2 s after the boot-timeline POST that calls this.
+ * The stale write-back erased the claim, `ownsRestart()` returned false, and
+ * the restart abandoned the row in `provisioning` (SESS-9 on every preview,
+ * 2026-09). `||` merges into the row version the UPDATE finally locks, so a
+ * concurrent writer's keys survive. The "first write wins" check is in the
+ * WHERE clause for the same reason: Postgres re-evaluates it against that
+ * row version after a lock wait.
  */
-export async function pinRuntimeEgressIp(
-  runtime: SessionRuntimeCredential,
-  ip: string | null,
-): Promise<void> {
-  if (!ip) return;
-  const table = runtime.kind === 'environment' ? sessionEnvironments : sessionSandboxes;
-  const idColumn =
-    runtime.kind === 'environment' ? sessionEnvironments.environmentId : sessionSandboxes.sandboxId;
-  const [row] = await db
-    .select({ metadata: table.metadata })
-    .from(table)
-    .where(eq(idColumn, runtime.runtimeId))
-    .limit(1);
-  if (!row) return;
-  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-  if (typeof metadata[EGRESS_IP_KEY] === 'string' && metadata[EGRESS_IP_KEY]) return;
-  await db
-    .update(table)
-    .set({ metadata: { ...metadata, [EGRESS_IP_KEY]: ip } })
-    .where(eq(idColumn, runtime.runtimeId));
-}
-
-/** Legacy worker-only entry point. */
 export async function pinSandboxEgressIp(sandboxId: string, ip: string | null): Promise<void> {
-  return pinRuntimeEgressIp({ kind: 'worker', runtimeId: sandboxId, sessionId: sandboxId }, ip);
+  if (!ip) return;
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || jsonb_build_object(${sql.raw(`'${EGRESS_IP_KEY}'`)}, ${ip}::text)`,
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        sql`coalesce(${sessionSandboxes.metadata}->>${sql.raw(`'${EGRESS_IP_KEY}'`)}, '') = ''`,
+      ),
+    );
 }
 
 export type EgressPinVerdict =
@@ -122,34 +119,17 @@ export type EgressPinVerdict =
  * needs this (the secret-broker route) authenticates a session token and has no
  * sandbox id of its own — and resolving it here keeps the two from drifting.
  */
-export async function verifyRuntimeEgressIp(
-  runtime: SessionRuntimeCredential,
-  seen: string | null,
-): Promise<EgressPinVerdict> {
-  const table = runtime.kind === 'environment' ? sessionEnvironments : sessionSandboxes;
-  const idColumn =
-    runtime.kind === 'environment' ? sessionEnvironments.environmentId : sessionSandboxes.sandboxId;
-  const [row] = await db
-    .select({ metadata: table.metadata })
-    .from(table)
-    .where(and(eq(idColumn, runtime.runtimeId)))
-    .limit(1);
-  const pinned = ((row?.metadata ?? {}) as Record<string, unknown>)[EGRESS_IP_KEY];
-  if (typeof pinned !== 'string' || !pinned) return { ok: true, reason: 'unpinned' };
-  if (seen && seen === pinned) return { ok: true, reason: 'match', ip: pinned };
-  return { ok: false, reason: 'mismatch', pinned, seen };
-}
-
-/** Legacy lookup for callers that have not adopted explicit runtime identity. */
 export async function verifySandboxEgressIp(
   sessionId: string,
   seen: string | null,
 ): Promise<EgressPinVerdict> {
   const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId })
+    .select({ metadata: sessionSandboxes.metadata })
     .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .where(and(eq(sessionSandboxes.sessionId, sessionId)))
     .limit(1);
-  if (!row) return { ok: true, reason: 'unpinned' };
-  return verifyRuntimeEgressIp({ kind: 'worker', runtimeId: row.sandboxId, sessionId }, seen);
+  const pinned = ((row?.metadata ?? {}) as Record<string, unknown>)[EGRESS_IP_KEY];
+  if (typeof pinned !== 'string' || !pinned) return { ok: true, reason: 'unpinned' };
+  if (seen && seen === pinned) return { ok: true, reason: 'match', ip: pinned };
+  return { ok: false, reason: 'mismatch', pinned, seen };
 }

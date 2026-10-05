@@ -1,35 +1,40 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
 
+import { useAuth } from '@/features/providers/auth-provider';
 import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-workspace-key';
 import {
   buildCreateRepoPayload,
   buildLinkRepositoryPayload,
+  buildManagedImportPayload,
+  isManagedImport,
 } from '@/features/workspace/new/github-source';
 import {
   buildProvisionPayload,
-  filterCreatableAccounts,
   isForeignAccountList,
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
-import { onboardingPath } from '@/features/workspace/new/onboarding-param';
-import { useAuth } from '@/features/providers/auth-provider';
+import { createRepoWithGitHubAuthorization } from '@/features/workspace/new/github-user-authorization';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
-} from '@/lib/onboarding/ensure-first-project';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+} from '@/lib/onboarding/provision-errors';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
+  storeGitHubUserToken,
   linkRepository,
+  PROVISION_IN_FLIGHT_CODE,
   provisionProject,
   provisionProjectStream,
-  PROVISION_IN_FLIGHT_CODE,
+  setProjectOnboardingComplete,
   type CreateProjectRepoInput,
   type KortixAccount,
   type KortixProject,
@@ -61,13 +66,16 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
- * the first project (the exact failure mode `r1.ts`'s `idempotency_key` doc
+ * the first project (the exact failure mode `projects.ts`'s `idempotency_key` doc
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
-  return [state.accountId ?? 'default', state.name.trim(), state.templateId ?? '', state.source].join(
-    ':',
-  );
+  return [
+    state.accountId ?? 'default',
+    state.name.trim(),
+    state.templateId ?? '',
+    state.source,
+  ].join(':');
 }
 
 /**
@@ -136,14 +144,18 @@ export function resolveTargetAccountId(
   userId: string | null,
 ): string | undefined {
   if (isForeignAccountList(creatableAccounts, userId)) {
-    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
   }
   const resolved =
     state.accountId ?? resolveDefaultCreatableAccountId(creatableAccounts, userId) ?? undefined;
   if (resolved === undefined) return undefined;
   const isCreatable = creatableAccounts.some((account) => account.account_id === resolved);
   if (!isCreatable) {
-    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
   }
   return resolved;
 }
@@ -187,7 +199,23 @@ export function buildGitHubImportPayload(
   creatableAccounts: KortixAccount[],
   userId: string | null,
 ): LinkRepositoryInput {
-  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
+  return buildLinkRepositoryPayload(
+    state,
+    resolveTargetAccountId(state, creatableAccounts, userId),
+  );
+}
+
+/**
+ * The `POST /projects/link-repository` body for an existing MANAGED repository
+ * — the operator-only import path. Same account resolution; the installation
+ * is the managed-git backend rather than an account's GitHub App installation.
+ */
+export function buildManagedImportRequest(
+  state: NewWorkspaceFormState,
+  creatableAccounts: KortixAccount[],
+  userId: string | null,
+): LinkRepositoryInput {
+  return buildManagedImportPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
 
 /**
@@ -200,13 +228,15 @@ export function buildGitHubImportPayload(
  * `provisionProjectStream`) throw an `ApiError` carrying the same fields, so
  * every branch below reads identically regardless of which one ran.
  *
- * 502 and 503 are NOT the same failure and must not share a message. This
- * route's only 503 is `isManagedGitUnavailableError`
- * (`ensure-first-project.ts:254`) — managed git is not configured on this
- * server, a server-config state no client-side retry can fix. Telling the
+ * Managed git being unconfigured is NOT an upstream failure and must not share
+ * its message. `isManagedGitUnavailableError`
+ * (`lib/onboarding/provision-errors.ts`) names it by its message: on the wire
+ * it is a 503, but so is every 502, which the API's edge middleware rewrites to
+ * 503 (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Managed git
+ * unconfigured is a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
- * until an operator configures it. 502 (an upstream/gateway fault) keeps the
- * retryable generic message, matching every OTHER call site that reuses
+ * until an operator configures it. Any other 502 or 503 (an upstream/gateway
+ * fault) keeps the retryable generic message, matching every OTHER call site that reuses
  * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
  * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
  * between the toast those use and the inline message here.
@@ -215,14 +245,13 @@ export function buildGitHubImportPayload(
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
  * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
  * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
- * plus `ensureFirstProject` auto-provisioning every account's first project
- * means EVERY free-tier user who clicks "Create a workspace…" hits this —
- * not an edge case. The generic 403 message ("You need owner or admin
+ * means every free-tier user who already has one project and clicks
+ * "Create a workspace…" hits this — not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply
  * out of quota. The server's own message is reused verbatim rather than
  * inventing new copy — it already states the exact limit and the upgrade
  * path, matching what the deleted create modal's `isProjectLimitError`
- * handling reused for the same code (`ensure-first-project.ts`).
+ * handling reused for the same code (`provision-errors.ts`).
  *
  * `provision_in_flight` (409, final-review FIX 1) also gets its own branch,
  * never the raw server text: `PROVISION_IN_FLIGHT_CODE`'s own doc comment
@@ -237,21 +266,23 @@ export function messageFor(error: unknown): string {
   const status = (error as { status?: number } | null | undefined)?.status;
   const message = error instanceof Error ? error.message : undefined;
   if (isProjectLimitError(error)) {
-    return message || "This account has reached its plan's workspace limit. Upgrade to create another.";
+    return (
+      message || "This account has reached its plan's workspace limit. Upgrade to create another."
+    );
   }
   if (status === 403) {
     return 'You need owner or admin access in this account to create a workspace.';
   }
   if (status === 400) return message || 'Check the workspace name and try again.';
   if (isManagedGitUnavailableError(error)) {
-    return "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.";
+    return "Managed git isn't set up on this server. A platform admin connects GitHub in the admin console before workspaces can be created.";
   }
   if (status === 409) {
     // Two different 409s reach here now, and they must not share a message.
     // `provision_in_flight` carries a typed `code`
     // (`PROVISION_IN_FLIGHT_CODE`); the GitHub sources' 409s do not — they are
     // "install the Kortix GitHub App first" (`create-repo` and
-    // `link-repository`, `apps/api/src/projects/routes/r2.ts`) and "no
+    // `link-repository`, `apps/api/src/projects/routes/project-from-repository.ts`) and "no
     // available repository name near X". Both of those already say exactly
     // what to do, so the server's own message is reused verbatim rather than
     // being overwritten with a wait-and-retry line that is simply false for
@@ -262,9 +293,21 @@ export function messageFor(error: unknown): string {
     }
     return message || 'Could not create the workspace. Try again.';
   }
-  if (status === 502) return 'Could not create the workspace. Try again.';
+  // A 503 that is not managed git is an edge-rewritten 502 (`apps/api/src/index.ts`,
+  // EDGE_REWRITTEN_STATUSES): an upstream failure, with the upstream's raw text.
+  if (status === 502 || status === 503) return 'Could not create the workspace. Try again.';
   return message || 'Could not create the workspace. Try again.';
 }
+
+/**
+ * `POST /projects/create-repo`'s 409 for a personal GitHub account: GitHub does
+ * not accept the App installation token on `POST /user/repos`, so `createRepo`
+ * refuses before the request (`apps/api/src/projects/github.ts`'s
+ * `GitHubPersonalAccountCreateUnsupportedError`). The owner does not change
+ * between attempts, so a retry fails the same way. `POST /projects/provision`
+ * answers the same code when the INSTANCE backend sits on a personal account.
+ */
+const GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED = 'github_personal_account_create_unsupported';
 
 /**
  * Whether a failed create should offer a retry.
@@ -290,9 +333,10 @@ export function messageFor(error: unknown): string {
  *   so a role grant made in the meantime can turn this into a success.
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
- * - `503` (this route's only 503 is `isManagedGitUnavailableError`,
- *   `ensure-first-project.ts:254`) — NOT retryable. A server configuration
- *   state; see `messageFor` above. Reuses that detector rather than
+ * - `503` that `isManagedGitUnavailableError`
+ *   (`lib/onboarding/provision-errors.ts`) matches — NOT retryable. A server
+ *   configuration state; see `messageFor` above. Any other `503` is an
+ *   edge-rewritten `502` and falls through to the retryable default. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
  * - `409` (`provision_in_flight`, final-review FIX 1) — retryable. Named
@@ -302,6 +346,9 @@ export function messageFor(error: unknown): string {
  *   in-band backoff before ever reaching here (see that function's doc
  *   comment) — this branch only fires once that backoff is exhausted, and
  *   the underlying condition can still clear before the user's next click.
+ * - `409` (`github_personal_account_create_unsupported`) — NOT retryable.
+ *   The chosen owner is a personal GitHub account; the same owner fails the
+ *   same way on every attempt.
  * - Anything else (a plain network `Error`, an unrecognized status) —
  *   retryable. There is no signal here that rules out transience, so the
  *   safer default is to offer the retry rather than silently block a case
@@ -314,9 +361,16 @@ export function messageFor(error: unknown): string {
  */
 export function isRetryableError(error: unknown): boolean {
   const status = (error as { status?: number } | null | undefined)?.status;
+  const code = (error as { code?: string } | null | undefined)?.code;
 
   if (status === 400) return false;
+  // The plan cap is a 403 too, but nothing about a retry changes it — only a
+  // plan change does, and the page offers that instead (`limitReached`).
+  // Before the generic 403 fallthrough, which IS retryable (wrong account,
+  // role granted meanwhile).
+  if (isProjectLimitError(error)) return false;
   if (isManagedGitUnavailableError(error)) return false;
+  if (code === GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED) return false;
   if (status === 409) return true;
 
   return true;
@@ -326,8 +380,7 @@ export function isRetryableError(error: unknown): boolean {
  * The network calls `runCreateAttempt` and `runProvisionAttempt` need,
  * injectable so their logic is unit-tested with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
- * hazard for sibling test suites (see `ensure-first-project.ts`'s own
- * `EnsureFirstProjectClient` for the same pattern). `wait` is injected too, so
+ * hazard for sibling test suites. `wait` is injected too, so
  * a test exercises the FULL retry budget without sleeping the real
  * 400ms/1200ms.
  */
@@ -388,7 +441,7 @@ export function isTransportFailure(error: unknown): boolean {
  *
  * POSTs once. On a `409` `provision_in_flight` — another call carrying this
  * SAME `idempotency_key` is still mid-provision, per
- * `apps/api/src/projects/routes/r1.ts` — retries up to `RETRY_DELAY_MS.length`
+ * `apps/api/src/projects/routes/projects.ts` — retries up to `RETRY_DELAY_MS.length`
  * more times with the IDENTICAL payload. Never a re-minted key: the key
  * identifies the ATTEMPT, and the whole point of retrying is to land on that
  * same attempt's result. Any other error, or exhausting the retry budget,
@@ -489,14 +542,14 @@ export async function runProvisionAttempt(
  * `mock.module('@kortix/sdk', ...)`, which is process-wide in this monorepo.
  *
  * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
- * React and could be given real module-level defaults (as
- * `EnsureFirstProjectClient` does in `ensure-first-project.ts`); the other
- * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
- * inherently render-scoped — they close over the live `queryClient`/`router`
- * a hook only has inside a component — so there is no single "no-args"
- * default here. `useCreateWorkspace` below always supplies the whole object
- * explicitly; tests supply their own fakes for the render-scoped three and
- * the REAL functions (with a fake `localStorage`) for the rest.
+ * React and could be given real module-level defaults ; the other
+ * four (`primeProjectCache`, `invalidateProjects`, `completeOnboarding`,
+ * `enterProject`) are inherently render-scoped — they close over the live
+ * `queryClient`/`router` a hook only has inside a component — so there is no
+ * single "no-args" default here. `useCreateWorkspace` below always supplies
+ * the whole object explicitly; tests supply their own fakes for the
+ * render-scoped four and the REAL functions (with a fake `localStorage`) for
+ * the rest.
  */
 export type CreateOrchestrationClient = {
   attemptKeyFor: (fingerprint: string, now: number) => string;
@@ -515,20 +568,29 @@ export type CreateOrchestrationClient = {
   invalidateProjects: () => void;
   writeLastProjectId: (userId: string | null | undefined, projectId: string) => void;
   /**
-   * Hand off to the guided onboarding, which runs on `/new` itself rather
-   * than on the new workspace's page.
+   * Stamp the created project onboarded — the same `PATCH /projects/:id/onboarding`
+   * the wizard's own exits run. A create that lands the user directly on the
+   * project page (see `enterProject`) is an implicit skip: the wizard must not
+   * mount full-screen over the workspace they just asked for, and the project
+   * shell's copy has no skip control, so an unstamped project would trap them
+   * there. This is why the stamp lives in the flow and not on the server's
+   * provision route: it reuses an existing endpoint instead of growing the
+   * create contract.
+   */
+  completeOnboarding: (projectId: string) => Promise<unknown>;
+  /**
+   * Hand off to the created workspace's page (`/projects/:id`), the one
+   * destination the journey and the user both expect right after Create.
    *
-   * This replaced a `navigate('/projects/:id')`. Onboarding cannot run there:
-   * the wizard is mounted on the project shell but self-gates on
-   * `metadata.onboarding_completed_at`, and this function used to stamp that
-   * field before navigating — so the wizard rendered `null` every time. The
-   * stamp now comes from the wizard's own `complete()` instead, which means
-   * the project shell's copy correctly renders nothing once the user arrives.
+   * This replaced the `/new?onboarding=<id>` redirect: the wizard held the
+   * page full-screen from the moment the create succeeded until the user
+   * completed three steps or clicked "Skip for now", so the app never landed
+   * on the project by itself (KRTX-1419).
    *
    * Implemented as `router.replace`, never `push`: the form state this
    * replaces is not somewhere the user may navigate back into.
    */
-  enterOnboarding: (projectId: string) => void;
+  enterProject: (projectId: string) => void;
   now: () => number;
 };
 
@@ -567,11 +629,25 @@ async function runSourceAttempt(
       buildGitHubImportPayload(state, creatableAccounts, userId),
     );
   }
+  // `managed` + a chosen repository is an IMPORT of a repository the managed
+  // owner already holds, not a provision of a new one. `/projects/provision`
+  // cannot adopt an existing repository, so it would create a second, empty
+  // one and ignore the choice.
+  if (isManagedImport(state)) {
+    return client.importGitHubRepoProject(
+      buildManagedImportRequest(state, creatableAccounts, userId),
+    );
+  }
   if (!idempotencyKey) {
     throw new Error('runCreate: the managed source requires an idempotency key');
   }
   return client.runCreateAttempt(
-    buildCreatePayload(state, creatableAccounts, idempotencyKey, userId) as unknown as ProvisionProjectInput,
+    buildCreatePayload(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId,
+    ) as unknown as ProvisionProjectInput,
   );
 }
 
@@ -581,25 +657,28 @@ async function runSourceAttempt(
  * ```
  * mint/reuse key -> provision (with retry) ->
  *   [on success only] clear key -> prime cache -> invalidate -> write cookie
- *   -> enter onboarding on /new
+ *   -> stamp onboarded -> hand off to /projects/:id
  * ```
  *
- * **No onboarding gate.** An earlier version read the account's project count
- * here and pre-stamped the new project onboarded unless it was the account's
- * first. That gate could never fire: the account's first project is
- * auto-provisioned (`ensure-first-project.ts`), never created through `/new`,
- * so the count was always >= 1 by the time anyone reached this code — and the
- * pre-stamp made the wizard render `null` on arrival, every single time.
- * Every `/new` create now runs onboarding, and the only thing that stamps the
- * project is the wizard finishing.
+ * **No onboarding wizard in the create flow.** The redirect used to go to
+ * `/new?onboarding=<id>`, which mounted the full-screen three-step wizard over
+ * the page; the app never landed on the project by itself (KRTX-1419). The
+ * stamp (below) is what keeps the project shell's own copy of that wizard from
+ * mounting over the landing page instead.
+ *
+ * The stamp is best-effort and precedes the handoff: a failed PATCH must not
+ * keep the user off the project that already exists (the same policy as the
+ * wizard's own exits, `completeThenNotify`), but it must be attempted BEFORE
+ * the navigation so the shell's project-detail read cannot race it and mount
+ * the wizard over the landing.
  *
  * The key is cleared FIRST among the success-path steps, before any of the
- * other four. The API's own contract (`r1.ts`) is that the key identifies the
+ * others. The API's own contract (`projects.ts`) is that the key identifies the
  * ATTEMPT, not the payload — once the server has confirmed this attempt
  * succeeded, the key must never be replayed, or a LATER, genuinely different
  * create with the same name would silently return THIS project instead of
  * making a new one. Clearing it first, rather than last, also means that if
- * cache priming or entering onboarding ever throws, the key is already gone
+ * cache priming or the handoff ever throws, the key is already gone
  * and cannot be resurrected by a subsequent retry.
  *
  * On any failure — including exhausting `runCreateAttempt`'s retry budget —
@@ -619,18 +698,29 @@ export async function runCreate(
   // for a GitHub source would persist a key that is never sent and never
   // cleared, so `usesIdempotencyKey` gates BOTH the mint and the clear rather
   // than only the field in the payload.
-  const usesIdempotencyKey = state.source === 'managed';
+  const usesIdempotencyKey = state.source === 'managed' && !isManagedImport(state);
   const idempotencyKey = usesIdempotencyKey
     ? client.attemptKeyFor(fingerprint, client.now())
     : null;
 
   try {
-    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, userId ?? null, client);
+    const project = await runSourceAttempt(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId ?? null,
+      client,
+    );
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();
     client.writeLastProjectId(userId, project.project_id);
-    client.enterOnboarding(project.project_id);
+    // Best-effort: a failed stamp must not keep the user off the project that
+    // already exists. The accepted failure mode is the wizard running the next
+    // time they open the workspace — the same one `completeThenNotify` accepts
+    // for the wizard's own exits.
+    await client.completeOnboarding(project.project_id).catch(() => {});
+    client.enterProject(project.project_id);
     return { ok: true, project };
   } catch (error) {
     return { ok: false, error };
@@ -640,10 +730,10 @@ export async function runCreate(
 /**
  * Drives the `/new` submit button: mints/reuses the idempotency key, POSTs
  * the create (with retry-on-in-flight via `runCreateAttempt`), primes the
- * workspace caches, and enters the guided onboarding for the new project on
- * success. All of that sequencing lives in `runCreate`, above — this hook
- * only wires it to the live `queryClient`/`router`/`user` and to component
- * state.
+ * workspace caches, stamps the project onboarded, and lands the user on the
+ * new project's page on success. All of that sequencing lives in `runCreate`,
+ * above — this hook only wires it to the live `queryClient`/`router`/`user`
+ * and to component state.
  *
  * Reads the account list itself — the same user-scoped cache entry
  * `new-workspace-page.tsx`,
@@ -659,6 +749,12 @@ export function useCreateWorkspace(): {
   retry: () => void;
   /** Whether `retry` can plausibly succeed for the CURRENT error; see `isRetryableError`. */
   canRetry: boolean;
+  /**
+   * The account is at its plan's project cap (403 `project_limit_reached`,
+   * `enforceProjectQuota` in `apps/api/src/projects/lib/access.ts`). Retrying
+   * cannot fix it; the page offers the upgrade dialog instead.
+   */
+  limitReached: boolean;
 } {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -672,7 +768,7 @@ export function useCreateWorkspace(): {
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
 
   const accountsQuery = useAccountsList();
-  const creatableAccounts = filterCreatableAccounts(accountsQuery.data ?? []);
+  const creatableAccounts = useCreatableAccounts(accountsQuery.data ?? []);
 
   const create = useCallback(
     async (state: NewWorkspaceFormState) => {
@@ -696,7 +792,15 @@ export function useCreateWorkspace(): {
         // so there is nothing for `runProvisionAttempt`'s machinery to do. A
         // failed attempt surfaces through `messageFor` and the user presses
         // Try again, which is the whole retry story for these two.
-        createGitHubRepoProject: createProjectRepo,
+        // A personal GitHub owner needs the user's own authorization before
+        // GitHub will create the repository (`github-user-authorization.ts`).
+        // One popup, one retry; an organization never reaches it.
+        createGitHubRepoProject: (payload) =>
+          createRepoWithGitHubAuthorization(payload, {
+            create: createProjectRepo,
+            requestProof: requestGitHubUserProof,
+            storeToken: storeGitHubUserToken,
+          }),
         // `linkRepository` answers `{ project, git_connection }`; the
         // orchestration only ever needs the project, and unwrapping HERE (not
         // inside `runCreate`) keeps every source's success path identical.
@@ -724,7 +828,11 @@ export function useCreateWorkspace(): {
         invalidateProjects: () =>
           void queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
         writeLastProjectId,
-        enterOnboarding: (projectId) => router.replace(onboardingPath(projectId)),
+        // The same PATCH the wizard's own exits run — the create landing
+        // directly on the project page is an implicit skip, and the shell's
+        // copy of the wizard has no skip control to fall back on.
+        completeOnboarding: (projectId) => setProjectOnboardingComplete(projectId, true),
+        enterProject: (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}`),
         now: Date.now,
       });
 
@@ -749,5 +857,6 @@ export function useCreateWorkspace(): {
   // create is `'creating'` or has already succeeded.
   const canRetry = status === 'error' && isRetryableError(lastError);
 
-  return { create, status, error, retry, canRetry };
+  const limitReached = status === 'error' && isProjectLimitError(lastError);
+  return { create, status, error, retry, canRetry, limitReached };
 }

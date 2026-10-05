@@ -1,6 +1,6 @@
 import type { GatewayCatalogModel } from '@kortix/sdk';
-import { normalizeProviderList } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@kortix/sdk/react';
+import { normalizeProviderList } from '@kortix/sdk/react';
 
 // ============================================================================
 // Flat model list helper
@@ -67,13 +67,13 @@ export interface FlatModel {
 }
 
 /**
- * The subset of opencode's canonical `Model` this flattener reads. Declared
- * structurally rather than imported from `@opencode-ai/sdk` because apps/web
- * consumes the provider list through its own re-exported types; only these
- * fields are ever touched here, and the `capabilities` object is what
- * distinguishes an opencode model from a gateway one.
+ * The subset of the runtime's catalog `Model` this flattener reads. Declared
+ * structurally because apps/web consumes the provider list through its own
+ * re-exported types; only these fields are ever touched here, and the
+ * `capabilities` object is what distinguishes a runtime model from a gateway
+ * one.
  */
-interface OpencodeCatalogModel {
+interface RuntimeCatalogModel {
   name?: string;
   family?: string;
   variants?: Record<string, Record<string, unknown>>;
@@ -100,15 +100,14 @@ interface OpencodeCatalogModel {
  * recover all of them with `(model as any)` casts because
  * `ProjectLlmCatalogResponse` never declared them.
  */
-type LooseModel = OpencodeCatalogModel & Partial<GatewayCatalogModel>;
+type LooseModel = RuntimeCatalogModel & Partial<GatewayCatalogModel>;
 
 /** Opencode's canonical shape nests capabilities; the gateway's is flat. */
 function hasCapabilities(
   model: LooseModel,
-): model is LooseModel & { capabilities: NonNullable<OpencodeCatalogModel['capabilities']> } {
+): model is LooseModel & { capabilities: NonNullable<RuntimeCatalogModel['capabilities']> } {
   return model.capabilities != null;
 }
-
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
@@ -137,7 +136,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
       }
       result.push({
         providerID: p.id,
-        providerName: p.name,
+        providerName: model.provider_name ?? p.name,
         modelID,
         modelName: (model.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,

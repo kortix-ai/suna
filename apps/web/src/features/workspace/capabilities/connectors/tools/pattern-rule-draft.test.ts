@@ -52,7 +52,9 @@ class AdvancedEditor {
   }
 
   dirtyAgainst(policies: readonly ConnectorPolicyRule[]): boolean {
-    return signPatternRules(draftToRules(this.draft)) !== signPatternRules(advancedRulesOf(policies));
+    return (
+      signPatternRules(draftToRules(this.draft)) !== signPatternRules(advancedRulesOf(policies))
+    );
   }
 }
 
@@ -79,10 +81,7 @@ describe('the Advanced editor survives a per-tool click', () => {
       'retired_tool',
       'delete_*',
     ]);
-    expect(advancedRulesOf(SERVED).map((rule) => rule.match)).toEqual([
-      'delete_*',
-      'retired_tool',
-    ]);
+    expect(advancedRulesOf(SERVED).map((rule) => rule.match)).toEqual(['delete_*', 'retired_tool']);
   });
 
   test('a half-typed pattern rule is NOT wiped by setting one tool’s policy', () => {

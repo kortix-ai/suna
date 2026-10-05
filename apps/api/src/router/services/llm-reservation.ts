@@ -1,11 +1,12 @@
 import { HTTPException } from 'hono/http-exception';
-import { grantCredits } from '../../billing/services/credits';
+import { wallet } from '../../billing/wallet';
 import { recordUsageEvent } from '../../shared/usage-events';
 import type { ActorContext } from '../../shared/actor-context';
 import { requireModelPricing, type ModelConfig } from '../config/models';
 import { calculateCost } from './llm';
 import { deductLLMCredits } from './billing';
 import { dollarsToCents, refundActorSpend, reserveActorSpend } from './member-spend';
+import { refundReservation, reserveActorCost } from './reservation';
 import {
   reconcileBillingHold,
   roundBillingAmount,
@@ -38,27 +39,6 @@ function extractText(value: unknown): string {
   if (object.output) return extractText(object.output);
   if (object.input) return extractText(object.input);
   return '';
-}
-
-async function reserveActorCost(
-  actor: ActorContext | null,
-  cost: number,
-  refundCredits: () => Promise<unknown>,
-): Promise<number> {
-  const cents = dollarsToCents(cost);
-  if (!actor || cents <= 0) return 0;
-
-  const reserved = await reserveActorSpend(actor.sandboxId, actor.userId, cents);
-  if (reserved.success) return reserved.reservedCents;
-
-  await refundCredits().catch((error) => {
-    console.error('[LLM] Credit refund after member cap failure failed:', error);
-  });
-  const cap =
-    reserved.capCents === null ? 'configured' : `$${(reserved.capCents / 100).toFixed(2)} / cycle`;
-  throw new HTTPException(402, {
-    message: `Spending cap reached (${cap}). Ask the instance owner to raise or remove the cap.`,
-  });
 }
 
 export async function reserveEstimatedLlmCredits(
@@ -128,14 +108,15 @@ export async function reserveEstimatedLlmCredits(
   }
 
   const actorReservedCents = await reserveActorCost(actor, creditReservation.cost, () =>
-    grantCredits(
+    wallet.grant({
       accountId,
-      creditReservation.cost,
-      'llm_reservation_refund',
-      `LLM reservation refund after member cap: ${modelId}`,
-      false,
-    ),
-  );
+      amount: creditReservation.cost,
+      kind: 'llm_reservation_refund',
+      description: `LLM reservation refund after member cap: ${modelId}`,
+      expiring: false,
+      key: null,
+    }),
+  'LLM');
 
   return {
     accountId,
@@ -210,13 +191,14 @@ export async function settleLlmReservation(input: {
         console.error(`[LLM] ${input.logPrefix} delta deduction failed:`, error);
       }
     } else if (toRefund > 0) {
-      await grantCredits(
-        input.accountId,
-        toRefund,
-        'llm_reservation_refund',
-        `LLM reservation refund: ${input.modelId}`,
-        false,
-      ).catch((error) => {
+      await wallet.grant({
+        accountId: input.accountId,
+        amount: toRefund,
+        kind: 'llm_reservation_refund',
+        description: `LLM reservation refund: ${input.modelId}`,
+        expiring: false,
+        key: null,
+      }).catch((error) => {
         console.error(`[LLM] ${input.logPrefix} refund failed:`, error);
       });
     }
@@ -267,21 +249,5 @@ export async function refundLlmReservation(
   reservation: LlmCreditReservation | null,
   description: string,
 ): Promise<void> {
-  if (!reservation) return;
-  if (reservation.cost > 0) {
-    await grantCredits(
-      reservation.accountId,
-      reservation.cost,
-      'llm_reservation_refund',
-      description,
-      false,
-    );
-  }
-  if (reservation.actor && (reservation.actorReservedCents ?? 0) > 0) {
-    await refundActorSpend(
-      reservation.actor.sandboxId,
-      reservation.actor.userId,
-      reservation.actorReservedCents ?? 0,
-    );
-  }
+  await refundReservation(reservation, 'llm_reservation_refund', description);
 }

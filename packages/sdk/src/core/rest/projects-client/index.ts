@@ -5,12 +5,15 @@
 export * from './accounts';
 export * from './projects';
 export * from './github';
+export * from './git-backend';
 export * from './access';
 export * from './secrets';
+export * from './account-secret-resources';
 export * from './connectors';
 export * from './policies';
 export * from './sandbox';
 export * from './files';
+export * from './prompt-attachments';
 export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
@@ -32,15 +35,16 @@ export * from './account-lifecycle';
 export * from './admin-providers';
 export * from './presentations';
 export * from './review';
+export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
+export * from './session-reminders';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';
 export * from './marketplace-catalog';
 export * from './templates';
 export * from './apps';
-export * from './filesystems';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.
@@ -51,3 +55,7 @@ export type {
   ProjectGitConnection,
   ProjectFileEntry,
 } from './shared';
+
+export * from './model-access';
+export * from './session-attachments';
+export * from './project-agents';

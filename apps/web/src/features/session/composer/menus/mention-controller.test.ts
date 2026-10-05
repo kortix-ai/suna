@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
+import { describe, expect, test } from 'bun:test';
 
 import { createMentionSuggestion } from './mention-controller';
 import type { MenuRow } from './menu-items';
@@ -192,4 +192,26 @@ describe('createMentionSuggestion — Enter declines with zero rows, consumes wi
     expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(false);
     expect(selected).toHaveLength(0);
   });
+});
+
+
+test('mention controller navigates, selects with Tab and releases rows on exit', () => {
+  const selected: MenuRow[] = [];
+  const owns: boolean[] = [];
+  const { onStart, onKeyDown, onExit } = createMentionSuggestion({
+    getAgents: () => [], getSessions: () => [], getCurrentSessionId: () => undefined,
+    onOwnsEnterChange: (value) => owns.push(value),
+  }).render!();
+  const rows = [sampleRow, { ...sampleRow, index: 1, label: 'b.ts', value: 'b.ts' }];
+  const captured = startAndCapture(onStart!, 'a', (row) => selected.push(row));
+  captured.props.onRowsChange(rows);
+  expect(onKeyDown!(fakeKeyDown('ArrowDown'))).toBe(true);
+  expect(onKeyDown!(fakeKeyDown('Tab'))).toBe(true);
+  expect(selected).toEqual([rows[1]]);
+  expect(onKeyDown!(fakeKeyDown('ArrowUp'))).toBe(true);
+  expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(true);
+  expect(selected).toEqual([rows[1], rows[0]]);
+  onExit!({} as Parameters<NonNullable<typeof onExit>>[0]);
+  expect(owns.at(-1)).toBe(false);
+  expect(onKeyDown!(fakeKeyDown('Tab'))).toBe(false);
 });

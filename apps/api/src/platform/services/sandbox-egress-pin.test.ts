@@ -5,9 +5,32 @@
  * things that matter are pure: which x-forwarded-for hop is the client, and
  * which verdicts allow versus block. The DB paths are exercised on dev.
  */
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Context } from 'hono';
-import { requestEgressIp } from './sandbox-egress-pin';
+
+// Records every statement the pin issues. The real-PostgreSQL interleaving
+// proof is `src/__tests__/integration-sandbox-metadata-race.test.ts` (the
+// `db-suites` lane); this hermetic guard keeps the SHAPE in the unit run.
+const statements: Array<{ kind: 'select' | 'update'; set?: unknown; where?: unknown }> = [];
+mock.module('../../shared/db', () => ({
+  db: {
+    select: () => {
+      statements.push({ kind: 'select' });
+      return { from: () => ({ where: () => ({ limit: async () => [] }) }) };
+    },
+    update: () => ({
+      set: (set: unknown) => ({
+        where: async (where: unknown) => {
+          statements.push({ kind: 'update', set, where });
+        },
+      }),
+    }),
+  },
+}));
+
+const { pinSandboxEgressIp, requestEgressIp } = await import('./sandbox-egress-pin');
 
 const ctx = (headers: Record<string, string>) =>
   ({ req: { header: (n: string) => headers[n.toLowerCase()] } }) as unknown as Context;
@@ -21,7 +44,7 @@ describe('which address counts as the caller', () => {
     expect(
       requestEgressIp(
         ctx({
-          'x-forwarded-for': '67.213.121.131, 172.68.1.1',
+          'x-forwarded-for': '198.51.100.21, 172.68.1.1',
           'cf-connecting-ip': '203.0.113.9',
         }),
       ),
@@ -30,7 +53,7 @@ describe('which address counts as the caller', () => {
 
   test('cf-connecting-ip wins over a spoofed x-real-ip too', () => {
     expect(
-      requestEgressIp(ctx({ 'x-real-ip': '67.213.121.131', 'cf-connecting-ip': '203.0.113.9' })),
+      requestEgressIp(ctx({ 'x-real-ip': '198.51.100.21', 'cf-connecting-ip': '203.0.113.9' })),
     ).toBe('203.0.113.9');
   });
 
@@ -38,27 +61,27 @@ describe('which address counts as the caller', () => {
     // Deployments that do not sit behind Cloudflare send no edge header. They
     // must keep the forwarded-for behaviour, not lose the address entirely.
     expect(
-      requestEgressIp(ctx({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '67.213.121.131' })),
-    ).toBe('67.213.121.131');
+      requestEgressIp(ctx({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '198.51.100.21' })),
+    ).toBe('198.51.100.21');
   });
 
   test('the FIRST x-forwarded-for hop is the client, not the last', () => {
     // Cloudflare fronts this API and appends. Taking the last hop would pin
     // Cloudflare's own address — identical for every sandbox on earth, which
     // would make the check pass for everyone and protect no one.
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '67.213.121.131, 172.68.1.1' }))).toBe(
-      '67.213.121.131',
+    expect(requestEgressIp(ctx({ 'x-forwarded-for': '198.51.100.21, 172.68.1.1' }))).toBe(
+      '198.51.100.21',
     );
   });
 
   test('whitespace around a hop is tolerated', () => {
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '  67.213.121.131 , 172.68.1.1' }))).toBe(
-      '67.213.121.131',
+    expect(requestEgressIp(ctx({ 'x-forwarded-for': '  198.51.100.21 , 172.68.1.1' }))).toBe(
+      '198.51.100.21',
     );
   });
 
   test('x-real-ip is the fallback', () => {
-    expect(requestEgressIp(ctx({ 'x-real-ip': '67.213.113.135' }))).toBe('67.213.113.135');
+    expect(requestEgressIp(ctx({ 'x-real-ip': '198.51.100.35' }))).toBe('198.51.100.35');
   });
 
   test('an empty forwarded-for does not become an empty-string pin', () => {
@@ -67,5 +90,37 @@ describe('which address counts as the caller', () => {
     expect(requestEgressIp(ctx({ 'x-forwarded-for': '' }))).toBeNull();
     expect(requestEgressIp(ctx({ 'x-forwarded-for': '   ' }))).toBeNull();
     expect(requestEgressIp(ctx({}))).toBeNull();
+  });
+});
+
+describe('the pin write is one atomic merge (SESS-9, 2026-09)', () => {
+  const dialect = new PgDialect();
+  const render = (value: unknown) => dialect.sqlToQuery(value as SQL);
+
+  test('it never reads metadata first and never writes a whole object back', async () => {
+    // A read-then-overwrite erased a restart claim written between the read and
+    // the write; the restart then abandoned the session in `provisioning`.
+    statements.length = 0;
+    await pinSandboxEgressIp('00000000-0000-4000-a000-000000000001', '203.0.113.7');
+    expect(statements.map((s) => s.kind)).toEqual(['update']);
+
+    const set = statements[0]!.set as { metadata: unknown };
+    const metadata = render(set.metadata);
+    expect(metadata.sql).toContain(`coalesce("kortix"."session_sandboxes"."metadata", '{}'::jsonb) ||`);
+    expect(metadata.sql).toContain(`jsonb_build_object('egress_ip',`);
+    expect(metadata.params).toEqual(['203.0.113.7']);
+  });
+
+  test('"first pin wins" is decided by the row the UPDATE locks, not by an earlier read', async () => {
+    statements.length = 0;
+    await pinSandboxEgressIp('00000000-0000-4000-a000-000000000001', '203.0.113.7');
+    const where = render(statements[0]!.where);
+    expect(where.sql).toContain(`coalesce("kortix"."session_sandboxes"."metadata"->>'egress_ip', '') = ''`);
+  });
+
+  test('no address means no statement at all', async () => {
+    statements.length = 0;
+    await pinSandboxEgressIp('00000000-0000-4000-a000-000000000001', null);
+    expect(statements).toEqual([]);
   });
 });

@@ -53,10 +53,19 @@ interface PreviewSessionBase {
   exp: number;
 }
 
+/** What a preview principal id refers to. */
+export type PreviewPrincipalKind = 'user' | 'service_account' | 'account';
+
 export type PreviewSession =
   | (PreviewSessionBase & {
       kind: 'principal';
       userId: string;
+      /**
+       * What `userId` is: a user, a service account, or an account (a Kortix
+       * API key). Recorded so an audit row never writes an account id as a
+       * user. Absent on cookies minted before it existed (4 h TTL).
+       */
+      principalKind?: PreviewPrincipalKind;
       callerSessionId: string | null;
       sandboxAuthored: boolean;
     })

@@ -50,10 +50,7 @@ const REMOVED_ATTRIBUTION_PATTERN = new RegExp(
 );
 
 /** The snippet builder and its renderer quote calls; see the header. */
-const NOT_APP_BEHAVIOUR = [
-  'src/lib/call-snippets.ts',
-  'src/components/dev/call-snippet.tsx',
-];
+const NOT_APP_BEHAVIOUR = ['src/lib/call-snippets.ts', 'src/components/dev/call-snippet.tsx'];
 
 // ── Reading the app's own source ─────────────────────────────────────────────
 
@@ -95,11 +92,7 @@ function skipCall(src: string, i: number): number {
 }
 
 /** Walk one `.a.b(…).c(…)` chain, collapsing every argument list to `()`. */
-function chainFrom(
-  src: string,
-  start: number,
-  base: string,
-): { sig: string; end: number } {
+function chainFrom(src: string, start: number, base: string): { sig: string; end: number } {
   let i = start;
   let sig = base;
   for (;;) {
@@ -148,11 +141,7 @@ export function callSignatures(source: string): string[] {
   const anchor = /(?<![\w$.])kortix(?![\w$])/g;
   let match: RegExpExecArray | null;
   while ((match = anchor.exec(src))) {
-    const { sig, end } = chainFrom(
-      src,
-      match.index + 'kortix'.length,
-      'kortix',
-    );
+    const { sig, end } = chainFrom(src, match.index + 'kortix'.length, 'kortix');
     signatures.push(sig);
     const assignment = HANDLE_ASSIGNMENT.exec(
       src.slice(Math.max(0, match.index - 120), match.index),
@@ -214,9 +203,7 @@ const REASONS = {
 type Reason = keyof typeof REASONS;
 
 /** The snippet ids a verdict names — none, when the verdict is a reason. */
-function snippetIds(
-  verdict: CallSnippetId | CallSnippetId[] | Reason,
-): CallSnippetId[] {
+function snippetIds(verdict: CallSnippetId | CallSnippetId[] | Reason): CallSnippetId[] {
   if (Array.isArray(verdict)) return verdict;
   return verdict in REASONS ? [] : [verdict as CallSnippetId];
 }
@@ -245,7 +232,6 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   'kortix.project().approvals.resolve()': 'approval.resolve',
   'kortix.project().secrets.upsert()': 'secret.upsert',
   'kortix.project().secrets.remove()': 'secret.delete',
-  'kortix.project().setupLinks.requestConnector()': 'connector.connect-link',
 
   // ── Account administration ────────────────────────────────────────────────
   'kortix.accounts.create()': 'account-admin',
@@ -364,7 +350,6 @@ describe('every snippet builds', () => {
       projectName: 'Acme workspace',
       executionId: 'exec_1',
       agent: 'support',
-      model: 'anthropic/claude-sonnet-4-5',
       secret: { identifier: 'STRIPE_KEY', name: 'STRIPE_SECRET_KEY' },
     };
     for (const id of CALL_SNIPPET_IDS) {
@@ -469,10 +454,7 @@ describe('the new coverage does not weaken the two rules', () => {
 
   test('no snippet renders upstream customer attribution fields', () => {
     const text = callSnippets({ projectId: 'p1' })
-      .map(
-        (snippet) =>
-          `${snippet.sdk}\n${renderHttp(snippet.http)}\n${snippet.notes.join('\n')}`,
-      )
+      .map((snippet) => `${snippet.sdk}\n${renderHttp(snippet.http)}\n${snippet.notes.join('\n')}`)
       .join('\n');
     expect(text).not.toMatch(REMOVED_ATTRIBUTION_PATTERN);
   });

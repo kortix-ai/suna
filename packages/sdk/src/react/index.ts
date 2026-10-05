@@ -1,9 +1,26 @@
 'use client';
 
+export * from './use-prompt-attachments';
+
+// The connector setup-link flow: one phase machine, one link-info cache. The
+// host injects the popup opener and browser storage (see ConnectorSetupOptions).
+export {
+  useConnectorSetup,
+  useConnectorLinkInfo,
+  type ConnectorSetupOptions,
+  type ConnectorSetupPhase,
+  type ConnectorPopupOpener,
+} from './connector-setup';
+
+// The one call a host makes on every identity change (sign-out, a different
+// user signing in) to drop the SDK's per-user in-memory session state.
+export { resetIdentityState } from './reset-identity-state';
+
 // @kortix/sdk/react — the complete OpenCode React hook surface, relocated
 // verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
+export { useRuntimeSupports } from './use-runtime-supports';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.
@@ -30,7 +47,7 @@ export {
   type BillingErrorUI,
 } from '../core/http/api/errors';
 
-// The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
+// The framework-free SSE event-stream primitive that `useRuntimeEventStream`
 // (exported above via `./opencode`) wraps. Re-exported here too so a host
 // already importing from `@kortix/sdk/react` can build its own binding
 // (e.g. a non-QueryClient consumer) without a second import from
@@ -38,9 +55,11 @@ export {
 export {
   openEventStream,
   type EventStreamClient,
+  type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
   type OpenCodeEvent,
+  type RuntimeEvent,
   type OpenEventStreamOptions,
 } from '../core/stream/event-stream';
 
@@ -69,6 +88,7 @@ export {
   applyOptimisticAbort,
   replayStartStash,
   type OpenCodeMessagesClient,
+  type RuntimeMessagesClient,
   type SendWithReceiptArgs,
   type StopWithReceiptOptions,
   type SendRecoveryOptions,
@@ -97,8 +117,24 @@ export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './
 // SDK-owned hook (only the client fn). Each owns its own query key + the
 // mutations a settings/workbench screen actually needs, with invalidation
 // wired so writes reflect without a manual refetch.
+// The two lists every host opens on. Both had a client fn and a `qk` key and
+// no hook, so each host rewrote the useQuery wiring — including a TUI key
+// (`['tui','accounts',…]`) that shared nothing with the rest of the cache.
+export {
+  useAccounts,
+  useProjects,
+  accountsQueryOptions,
+  projectsQueryOptions,
+  type AccountsKey,
+  type ProjectsKey,
+  type UseAccountsOptions,
+  type UseProjectsOptions,
+} from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
+export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
@@ -110,7 +146,7 @@ export {
 } from './use-project-apps';
 
 // The expected "no compaction model configured" configuration state thrown by
-// `useSummarizeOpenCodeSession`'s mutation when every model-resolution fallback
+// `useSummarizeRuntimeSession`'s mutation when every model-resolution fallback
 // tier fails. Re-exported here so hosts + the telemetry noise gate can
 // `instanceof`-match it without reaching into the hook's internal path.
 export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
@@ -154,9 +190,16 @@ export {
 } from './use-can';
 
 export * from './query-keys';
+// Workspace file/git cache keys. The event stream invalidates these on
+// `file.edited` and at turn end, so a host's file hooks must key on them.
+export { fileContentKeys, binaryBlobKeys, fileListKeys, gitStatusKeys } from './file-keys';
 export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';
+export * from './use-session-participants';
+export * from './use-project-sessions';
+export * from './use-sessions-needing-input';
+export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
 
@@ -181,6 +224,31 @@ export {
   type KortixAppViewerState,
 } from './use-kortix-app-viewer';
 
-// The query-key families the live event stream invalidates on `file.edited`;
-// a host's own file hooks must key on these, or a change never reaches them.
-export { fileContentKeys, fileListKeys, gitStatusKeys } from './file-keys';
+export { useModelAccess } from './use-model-access';
+
+// The sandbox-image load state: the SDK owns the raw-file URL, the HEAD probe,
+// the auth headers, the size gate, the probe cache and the one fresh-token
+// retry; the host binds the sandbox origin and the native image events.
+// The size-gate helpers stay module-local: no host consumes them (the tests
+// import the module directly), so the public surface carries only the hook
+// and the formatter the hosts render sizes with.
+export { formatMegabytes, useSandboxImage } from './use-sandbox-image';
+
+export {
+  GATEWAY_LOGS_PAGE_SIZE,
+  useGatewayOverview,
+  useGatewaySeries,
+  useGatewayBreakdown,
+  useGatewaySessions,
+  useGatewayErrors,
+  useGatewayLogs,
+  useGatewayLog,
+  useGatewayBudgets,
+  useSetGatewayBudget,
+  useDeleteGatewayBudget,
+  useGatewayKeys,
+  useCreateGatewayKey,
+  useRevokeGatewayKey,
+} from './use-project-gateway';
+
+export * from './use-admin-providers';

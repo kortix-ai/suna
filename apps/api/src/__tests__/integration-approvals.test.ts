@@ -21,13 +21,13 @@ import {
 import { eq, sql } from 'drizzle-orm';
 import { getCreditAccount } from '../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../billing/services/account-write-owner';
+import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 /** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
 const setDemoEnterprise = (accountId: string, enabled: boolean) =>
   applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
 import { config } from '../config';
 import { app } from '../index';
-import { metadataClearSubtreeKey, metadataMergeSubtree } from '../projects/lib/metadata-merge';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -44,7 +44,6 @@ let humanUserId = '';
 let readOnlyToken = '';
 let readOnlyUserId = '';
 let priorDemoEnterprise = false;
-let priorReviewCenterOverride: unknown = null;
 
 beforeAll(async () => {
   await db.execute(
@@ -88,7 +87,7 @@ beforeAll(async () => {
   const createdBody = (await created.json()) as { id?: string; user?: { id?: string } };
   humanUserId = createdBody.user?.id ?? createdBody.id ?? '';
   expect(humanUserId).not.toBe('');
-  await db.insert(accountMembers).values({
+  await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
     userId: humanUserId,
     accountRole: 'owner',
@@ -134,12 +133,12 @@ beforeAll(async () => {
   };
   readOnlyUserId = readOnlyCreatedBody.user?.id ?? readOnlyCreatedBody.id ?? '';
   expect(readOnlyUserId).not.toBe('');
-  await db.insert(accountMembers).values({
+  await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
     userId: readOnlyUserId,
     accountRole: 'member',
   });
-  await db.insert(projectMembers).values({
+  await insertIntoView(db, projectMembers, {
     accountId: ctx.accountId,
     projectId: ctx.projectId,
     userId: readOnlyUserId,
@@ -161,35 +160,9 @@ beforeAll(async () => {
   // contract has its own dedicated test that toggles it off.
   priorDemoEnterprise = (await getCreditAccount(ctx.accountId))?.demoEnterprise ?? false;
   await setDemoEnterprise(ctx.accountId, true);
-  // The Review Center routes are gated on the per-project `review_center`
-  // feature flag (403 `feature_disabled` when off). Turn it on for the borrowed
-  // project and restore the prior override in afterAll.
-  const [projectRow] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, ctx.projectId))
-    .limit(1);
-  priorReviewCenterOverride =
-    (projectRow?.metadata as { experimental?: Record<string, unknown> } | null)?.experimental
-      ?.review_center ?? null;
-  await db
-    .update(projects)
-    .set({ metadata: metadataMergeSubtree('experimental', { review_center: true }) })
-    .where(eq(projects.projectId, ctx.projectId));
 }, 30_000);
 
 afterAll(async () => {
-  if (ctx) {
-    await db
-      .update(projects)
-      .set({
-        metadata:
-          typeof priorReviewCenterOverride === 'boolean'
-            ? metadataMergeSubtree('experimental', { review_center: priorReviewCenterOverride })
-            : metadataClearSubtreeKey('experimental', 'review_center'),
-      })
-      .where(eq(projects.projectId, ctx.projectId));
-  }
   for (const id of execIds)
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));
@@ -205,11 +178,11 @@ afterAll(async () => {
   for (const id of minted)
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
   if (ctx && humanUserId) {
-    await db
-      .delete(accountMembers)
-      .where(
-        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${humanUserId}`,
-      );
+    await deleteFromView(
+      db,
+      accountMembers,
+      sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${humanUserId}`,
+    );
     await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${humanUserId}`, {
       method: 'DELETE',
       headers: {
@@ -219,16 +192,16 @@ afterAll(async () => {
     });
   }
   if (ctx && readOnlyUserId) {
-    await db
-      .delete(projectMembers)
-      .where(
-        sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
-      );
-    await db
-      .delete(accountMembers)
-      .where(
-        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
-      );
+    await deleteFromView(
+      db,
+      projectMembers,
+      sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
+    );
+    await deleteFromView(
+      db,
+      accountMembers,
+      sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
+    );
     await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${readOnlyUserId}`, {
       method: 'DELETE',
       headers: {
@@ -286,7 +259,7 @@ const patPost = (path: string, body: unknown) =>
   });
 
 describe('approvals inbox + resolution', () => {
-  test('session reconstruction includes integrity-linked events with partial request context', async () => {
+  test('session reconstruction returns rows without account or project context, in insertion order', async () => {
     if (!ctx) return;
     await db.insert(projects).values({
       projectId: CHAIN_PROJECT,
@@ -367,9 +340,10 @@ describe('approvals inbox + resolution', () => {
     expect(projected.map((event) => event.event_id)).toEqual(
       inserted.map((event) => event.eventId),
     );
-    expect(projected[1]?.integrity_previous_hash).toBe(projected[0]?.integrity_hash);
-    expect(projected[2]?.integrity_previous_hash).toBe(projected[1]?.integrity_hash);
-    expect(projected[3]?.integrity_previous_hash).toBe(projected[2]?.integrity_hash);
+    // No chain any more: new rows carry no sequence and no hashes, and the log order is
+    // the (time-ordered) event_id.
+    expect(projected.every((event) => event.integrity_hash === null)).toBe(true);
+    expect(projected.every((event) => event.integrity_previous_hash === null)).toBe(true);
   });
 
   test('pending → inbox → approve → resolved (leaves inbox) → re-approve 409 → audit shows approver', async () => {
@@ -480,6 +454,32 @@ describe('approvals inbox + resolution', () => {
     expect(after.approvedBy).toBe(humanUserId);
   });
 
+  test("a deny with a note hands the approver's message to the agent", async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const dn = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+      decision: 'deny',
+      note: '  Not yet. Move the meeting to Thursday first.  ',
+    });
+    expect(dn.status).toBe(200);
+    const [after] = await db
+      .select()
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
+    expect(after.resultSummary).toMatchObject({
+      decision: 'deny',
+      decision_note: 'Not yet. Move the meeting to Thursday first.',
+    });
+    const [callback] = await db
+      .select()
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, `approval-resume:${execId}`));
+    const text = (callback?.payload as { text?: string }).text ?? '';
+    expect(text).toContain('was denied');
+    expect(text).toContain('Not yet. Move the meeting to Thursday first.');
+    expect(text).not.toContain('continue without it');
+  });
+
   test('a PAT cannot approve even when it belongs to an account owner', async () => {
     if (!ctx) return;
     const execId = await seedPending();
@@ -515,6 +515,22 @@ describe('approvals inbox + resolution', () => {
       pending: true,
       review_complete: true,
       args_preview: { repo: 'kortix-ai/suna' },
+      approval_context: null,
+    });
+
+    await db
+      .update(connectorCalls)
+      .set({
+        resultSummary: {
+          args_preview: { repo: 'kortix-ai/suna' },
+          args_preview_complete: true,
+          approval_context: 'Deletes the scratch repo created in this session',
+        },
+      })
+      .where(eq(connectorCalls.executionId, execId));
+    const described = await authGet(`/v1/approval-links/${token}`);
+    expect(await described.json()).toMatchObject({
+      approval_context: 'Deletes the scratch repo created in this session',
     });
   });
 

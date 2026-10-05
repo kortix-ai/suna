@@ -2,7 +2,7 @@
  * Flow registration. Each test declares its stable spec ID up front — this is
  * the 1:1 mapping that makes end-to-end.md enforceable as the source of truth.
  */
-import type { FlowFn, FlowMeta } from "./types";
+import type { FlowContext, FlowFn, FlowMeta, Harness } from "./types";
 
 export interface RegisteredFlow {
   id: string;
@@ -122,6 +122,45 @@ export function resolveFlowTimeoutMs(
 }
 
 /**
+ * Race a flow attempt against its wall-clock budget.
+ *
+ * On timeout the attempt's `controller` is aborted with the timeout error, so
+ * fixtures the attempt started stop instead of running on in the background.
+ * Before this, a flow that timed out while its project provision was queued
+ * or sleeping out a GitHub rate limit kept that provision alive for up to its
+ * full 15-minute budget, holding a semaphore slot the next flows needed.
+ */
+export function withFlowDeadline<T>(
+  p: Promise<T>,
+  ms: number,
+  id: string,
+  controller?: AbortController,
+): Promise<T> {
+  return new Promise<T>((res, rej) => {
+    const t = setTimeout(() => {
+      // NOT ke2eRetryable. A flow that burned its whole declared timeout is
+      // hung, not blipping; retrying it spends the same timeout again on the
+      // most expensive flows in the suite. Tagged as its own class so
+      // KE2E_TIMEOUT_ATTEMPTS can re-enable retries deliberately.
+      const e = new Error(`flow ${id} exceeded ${ms}ms`);
+      (e as any)[KE2E_FLOW_TIMEOUT] = true;
+      controller?.abort(e);
+      rej(e);
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        res(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        rej(e);
+      },
+    );
+  });
+}
+
+/**
  * Classify a flow error into its retry class.
  *
  * `isAssertion` is passed in so this module stays free of the assertion layer.
@@ -168,6 +207,26 @@ export function flow(id: string, meta: FlowMeta, fn: FlowFn): void {
     throw new Error(`Duplicate flow id "${id}" — every flow maps 1:1 to a spec ID.`);
   }
   registry.set(id, { id, meta, fn });
+}
+
+/**
+ * Register one flow per session harness. `<id>` runs on OpenCode (today's
+ * default) and `<id>-pi` runs the same body on pi, so a harness difference
+ * fails one named flow instead of hiding behind the default. Both implement
+ * spec `<id>`; the pi variant carries the `harness-pi` tag
+ * (`ke2e run --tag harness-pi`).
+ */
+export function harnessFlow(
+  id: string,
+  meta: FlowMeta,
+  fn: (ctx: FlowContext, harness: Harness) => Promise<void>,
+): void {
+  flow(id, meta, (ctx) => fn(ctx, "opencode"));
+  flow(
+    `${id}-pi`,
+    { ...meta, specId: id, tags: [...(meta.tags ?? []), "harness-pi"] },
+    (ctx) => fn(ctx, "pi"),
+  );
 }
 
 export function allFlows(): RegisteredFlow[] {

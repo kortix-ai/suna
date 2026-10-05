@@ -6,6 +6,7 @@ import {
   SANDBOX_PROVIDER_CAPACITY_MESSAGE,
   SANDBOX_PROVIDER_FAILURE_MESSAGE,
   classifySandboxProvisioningFailure,
+  SNAPSHOT_TOO_LARGE_MESSAGE,
 } from './sandbox-provisioning-error';
 
 describe('classifySandboxProvisioningFailure', () => {
@@ -118,5 +119,27 @@ describe('classifySandboxProvisioningFailure', () => {
         'invalid-secret-boundary-policy',
       );
     }
+  });
+
+  // Prod 2026-09-16: a project's custom template measured 10.04 GB against
+  // Daytona's 10 GB ceiling. It classified as `sandbox-provider`, so the user
+  // was told the provider failed and to "Try again" — for a build that can
+  // never succeed, with the 40 MB overage nowhere in the message.
+  test.each([
+    'Snapshot build failed: Failed to create snapshot. Name: kortix-tpl-53930bb6b8b7 Reason: Snapshot size (10.04GB) exceeds maximum allowed size of 10GB',
+    'Snapshot size (12.1GB) exceeds maximum allowed size of 10GB',
+    'image too large',
+  ])('an over-ceiling sandbox image is permanent and user-fixable, not a provider fault: %s', (message) => {
+    expect(classifySandboxProvisioningFailure(new Error(message))).toEqual({
+      category: 'snapshot-too-large',
+      userMessage: SNAPSHOT_TOO_LARGE_MESSAGE,
+      isCapacity: false,
+      isGitAuth: false,
+    });
+  });
+
+  test('the copy does not tell the user to retry something that can never succeed', () => {
+    expect(SNAPSHOT_TOO_LARGE_MESSAGE).toMatch(/retrying will not help/i);
+    expect(SNAPSHOT_TOO_LARGE_MESSAGE).not.toMatch(/try again/i);
   });
 });

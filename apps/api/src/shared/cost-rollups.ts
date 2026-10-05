@@ -1,9 +1,10 @@
+import { numberValue, isoValue } from './cost-values';
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
-import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from './llm-spend';
+import { kortixBilledSpendSql, providerBilledSpendSql } from './llm-spend';
 import { billedComputeSecondsExpression } from './session-costs';
 
 export interface ProjectCostRow {
@@ -11,9 +12,9 @@ export interface ProjectCostRow {
   project_name: string;
   session_count: number;
   llm_cost: number;
-  /** The `llm_cost` slice debited from the Kortix wallet. */
+  /** Alias of `llm_cost`, retained for the additive payee breakdown. */
   llm_kortix_cost: number;
-  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
@@ -42,17 +43,6 @@ interface ComputeProjectAggregateRow {
   computeCost: number | string;
   sessionCount: number | string;
   lastAt: Date | string | null;
-}
-
-function numberValue(value: number | string | null | undefined): number {
-  const result = Number(value ?? 0);
-  return Number.isFinite(result) ? result : 0;
-}
-
-function isoValue(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function laterIso(left: string | null, right: string | null): string | null {
@@ -153,6 +143,7 @@ export function sortProjectRows(rows: ProjectCostRow[], sort: CostSort): Project
 // session_id is the primary key — a PK join, not a scan.
 export async function listCostByProject(input: {
   accountId: string;
+  projectId?: string;
   window: CostWindow;
   sort: CostSort;
   limit: number;
@@ -164,7 +155,7 @@ export async function listCostByProject(input: {
     db
       .select({
         projectId: gatewayRequestLogs.projectId,
-        llmCost: totalSpendSql,
+        llmCost: kortixBilledSpendSql,
         llmKortixCost: kortixBilledSpendSql,
         llmProviderCost: providerBilledSpendSql,
         sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
@@ -174,6 +165,7 @@ export async function listCostByProject(input: {
       .where(
         and(
           eq(gatewayRequestLogs.accountId, accountId),
+          input.projectId ? eq(gatewayRequestLogs.projectId, input.projectId) : undefined,
           // createdAt is a Date-mode timestamp, so the bounds are Date objects.
           gte(gatewayRequestLogs.createdAt, window.from),
           lt(gatewayRequestLogs.createdAt, window.to),
@@ -193,6 +185,7 @@ export async function listCostByProject(input: {
       .where(
         and(
           eq(sandboxComputeSessions.accountId, accountId),
+          input.projectId ? eq(projectSessions.projectId, input.projectId) : undefined,
           // startedAt is declared mode:'string', so the bounds are ISO strings.
           // Never last_billed_at — its only index is partial (WHERE state =
           // 'active'), built for the biller, not for windowed reporting.
@@ -204,7 +197,10 @@ export async function listCostByProject(input: {
     db
       .select({ projectId: projects.projectId, name: projects.name })
       .from(projects)
-      .where(eq(projects.accountId, accountId)),
+      .where(and(
+        eq(projects.accountId, accountId),
+        input.projectId ? eq(projects.projectId, input.projectId) : undefined,
+      )),
   ]);
 
   const projectNames = new Map(projectRows.map((row) => [row.projectId, row.name]));
@@ -286,9 +282,9 @@ export function buildCostSeries(
 
 export interface CostSummaryTotals {
   llm_cost: number;
-  /** The `llm_cost` slice debited from the Kortix wallet. */
+  /** Alias of `llm_cost`, retained for the additive payee breakdown. */
   llm_kortix_cost: number;
-  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
@@ -474,7 +470,7 @@ export async function getCostSummary(input: {
   ] = await Promise.all([
     db
       .select({
-        llmCost: totalSpendSql,
+        llmCost: kortixBilledSpendSql,
         llmKortixCost: kortixBilledSpendSql,
         llmProviderCost: providerBilledSpendSql,
         requestCount: sql<number>`count(*)::int`,
@@ -485,7 +481,7 @@ export async function getCostSummary(input: {
     db
       .select({
         day: LLM_DAY_EXPRESSION,
-        cost: totalSpendSql,
+        cost: kortixBilledSpendSql,
       })
       .from(gatewayRequestLogs)
       .where(llmScope(window))
@@ -494,7 +490,7 @@ export async function getCostSummary(input: {
       .select({
         provider: gatewayRequestLogs.provider,
         model: gatewayRequestLogs.resolvedModel,
-        cost: totalSpendSql,
+        cost: kortixBilledSpendSql,
         requestCount: sql<number>`count(*)::int`,
       })
       .from(gatewayRequestLogs)
@@ -504,13 +500,13 @@ export async function getCostSummary(input: {
       // tie-break — without it, which model lands on the 10th row of a tie
       // is unspecified and can flip between refreshes.
       .orderBy(
-        desc(totalSpendSql),
+        desc(kortixBilledSpendSql),
         desc(gatewayRequestLogs.provider),
         desc(gatewayRequestLogs.resolvedModel),
       )
       .limit(10),
     db
-      .select({ cost: totalSpendSql })
+      .select({ cost: kortixBilledSpendSql })
       .from(gatewayRequestLogs)
       .where(llmScope(previous)),
     llmProjectIdsQuery,

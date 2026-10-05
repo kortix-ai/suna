@@ -2,13 +2,13 @@
 
 import type {
 	Message,
-	Event as OpenCodeEvent,
+	Event as RuntimeEvent,
 	Part,
 	ReasoningPart,
 	SessionStatus,
 	TextPart,
 	Todo,
-} from "@opencode-ai/sdk/v2/client";
+} from "../../core/runtime/runtime-types";
 import { create } from "zustand";
 
 import {
@@ -19,6 +19,8 @@ import {
 import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
+import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
+import { reconcileHydratedParts } from "./sync-store/reconcile-parts";
 import { writeStreamCache } from "./sync-store/stream-cache";
 import type {
 	FileDiff,
@@ -110,6 +112,34 @@ function isTextLikePart(part: Part): part is TextLikePart {
  */
 const ACTIVITY_STAMP_RESOLUTION_MS = 1_000;
 
+/**
+ * Is this frame the runtime still PRODUCING output, or the record of output
+ * that has finished? Only the first is activity.
+ *
+ * `projectWorking` lets `sessionActivityAt` outrank a wire idle frame it
+ * postdates, and the runtime keeps writing closing frames after that frame:
+ * the user message's `summary` update (1–16ms later, every turn), and on Stop
+ * the aborted tool part and the assistant message's `completed` + `error`
+ * stamp (0–41ms later) — measured on the local stack, 2026-09-30. Stamping
+ * them put the busy row and Stop back on a finished turn for up to
+ * `STREAM_OBSERVATION_MAX_MS`, whenever the 1s quantizer let one through.
+ * `hydrate` applies the same rule to a pulled transcript (`tailOpen`).
+ */
+function isOpenMessage(info: Message | undefined): boolean {
+	if (info?.role !== "assistant") return false;
+	const { time, error } = info as { time?: { completed?: number }; error?: unknown };
+	return !time?.completed && !error;
+}
+
+function isOpenPart(part: Part): boolean {
+	if (part.type === "step-finish" || part.type === "patch") return false;
+	if (part.type === "tool") {
+		const status = (part as { state?: { status?: string } }).state?.status;
+		return status !== "completed" && status !== "error";
+	}
+	return !(part as { time?: { end?: number } }).time?.end;
+}
+
 /** The index of `id` in `list`, or `-1`. Binary first, linear on a miss. */
 function indexOfId<T>(list: readonly T[], id: string, idOf: (item: T) => string): number {
 	const result = Binary.search(list as T[], id, idOf);
@@ -193,7 +223,8 @@ interface SyncState {
 	/**
 	 * When the RUNTIME'S OWN OUTPUT last reached this tab, per session.
 	 *
-	 * Not a status, not a poll — the instant a streamed part or message landed.
+	 * Not a status, not a poll — the instant an OPEN streamed part or message
+	 * landed (output still being produced; see `isOpenMessage`).
 	 * `projectWorking` reads it as the one input that is not an observer of the
 	 * runtime but the runtime itself (see `WorkingActivityInput`): a composer
 	 * showing its send arrow over a transcript that is visibly streaming is what
@@ -237,7 +268,7 @@ interface SyncState {
 	sessionRevertNeedsTailReconcile: Record<string, boolean>;
 
 	// ---- Actions ----
-	applyEvent: (event: OpenCodeEvent) => void;
+	applyEvent: (event: RuntimeEvent) => void;
 	upsertMessage: (sessionID: string, message: Message) => void;
 	removeMessage: (sessionID: string, messageID: string) => void;
 	/**
@@ -289,20 +320,7 @@ interface SyncState {
 		delta: string,
 		eventID?: string,
 	) => void;
-	/**
-	 * `emittedAt` is when the RUNTIME produced the frame. A REPLAYED status —
-	 * the `since=` backlog every connect and page load asks for — carries an
-	 * old one, and stamping it with `Date.now()` made a stale `running` from a
-	 * finished turn read as a FRESH observation for `STREAM_OBSERVATION_MAX_MS`.
-	 * Omitted (a local fabrication) still stamps now, which is correct: the tab
-	 * really did decide that just then.
-	 */
-	setStatus: (
-		sessionID: string,
-		status: SessionStatus,
-		origin?: "wire" | "local",
-		emittedAt?: number,
-	) => void;
+	setStatus: (sessionID: string, status: SessionStatus, origin?: "wire" | "local") => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
 	/**
@@ -494,7 +512,7 @@ interface SyncState {
 	 * the arrays it read.
 	 *
 	 * Every consumer selects through here — `useSessionSync` and
-	 * `useOpenCodeMessages` alike. It has to be one shared memo rather than one
+	 * `useRuntimeMessages` alike. It has to be one shared memo rather than one
 	 * per hook: `getMessages` rebuilds via `.map()` on every call, so a raw
 	 * selector returns a new array each time, fails `useSyncExternalStore`'s
 	 * `Object.is` check and re-renders forever. The memo previously existed
@@ -579,6 +597,20 @@ const cancelledMessageIds = new Map<string, Set<string>>();
 // never existed there (an optimistic stub mirrored to disk before its echo)
 // and must not outlive the first authoritative read.
 const cacheSourcedIds = new Map<string, Set<string>>();
+
+/**
+ * Does this session hold messages, every one of them painted from a saved copy
+ * and none yet confirmed by a runtime read or a live event? Only then may a
+ * newer saved copy paint over it: once the runtime or the stream has spoken,
+ * a snapshot is older than what the store holds.
+ */
+export function hasOnlyCacheSourcedMessages(sessionID: string): boolean {
+	const messages = useSyncStore.getState().messages[sessionID];
+	if (!messages || messages.length === 0) return false;
+	const cached = cacheSourcedIds.get(sessionID);
+	if (!cached) return false;
+	return messages.every((message) => cached.has(message.id));
+}
 
 function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
 	if (optimisticID === echoID) return;
@@ -668,6 +700,42 @@ const isOptimistic = (sessionID: string, messageID: string) =>
 	hasTrackedId(optimisticIds, sessionID, messageID);
 const isDispatched = (sessionID: string, messageID: string) =>
 	hasTrackedId(dispatchedOptimisticIds, sessionID, messageID);
+
+/**
+ * Could a part for `messageID` belong to the ECHO of a prompt this tab has
+ * sent and not yet seen come back?
+ *
+ * Asked in one place: the safety net in `message.part.updated` that invents a
+ * message when a part outruns its own `message.updated`. That net has to guess
+ * a role, and it guesses `assistant` — right for an assistant's reply, and
+ * wrong for a user echo in a way the user can see. The control plane re-mints a
+ * queued prompt's wire id when it delivers it, so the echo arrives under an id
+ * this tab has never seen, and its first part carries the USER's own text: the
+ * net painted the prompt a second time, in the agent's voice, beside the bubble
+ * it was already in (reported 2026-09-08 — "the same prompt duplicated, then it
+ * goes back to single and starts").
+ *
+ * Two ways to know, both already recorded here:
+ *  - the pairing is known (`registerOptimisticEcho` ran, from the inbox row's
+ *    two ids), so the id IS a user message;
+ *  - a send is outstanding whose echo this could be — the same test
+ *    `message.updated` calls `eligible`: dispatched, and with no other echo
+ *    already claimed.
+ *
+ * Answering yes only suppresses the GUESS. The part is still stored, and the
+ * `message.updated` that follows creates the message and picks it up.
+ */
+const awaitsUserEcho = (sessionID: string, messageID: string): boolean => {
+	if (optimisticOrigins.get(sessionID)?.has(messageID)) return true;
+	const pending = optimisticIds.get(sessionID);
+	if (!pending) return false;
+	for (const id of pending) {
+		if (!isDispatched(sessionID, id)) continue;
+		if (optimisticEchoes.get(sessionID)?.get(id)) continue;
+		return true;
+	}
+	return false;
+};
 // Track message IDs where optimistic parts were bridged to the real message,
 // keyed by session — same shape and same reason as optimisticIds above. When
 // the first real part arrives for a bridged message, the bridged parts are
@@ -735,9 +803,8 @@ const deltaActiveParts = new Map<string, Set<string>>();
 // function's behavior before this change — rather than risk a content-based
 // false positive (see the module comment above for why content isn't used).
 //
-// Cleared per-session on `session.idle`/`session.error` (a new turn's deltas
-// use brand-new part ids anyway, so nothing realistic is lost) and released
-// wholesale by `forgetSessionIds`/`reset()`, matching `deltaActiveParts`.
+// Kept across `session.idle` to reject a reconnect's replay of final deltas.
+// New turns use new part ids. Released by `forgetSessionIds`/`reset()`.
 const deltaEventTails = new Map<string, Map<string, Set<string>>>();
 
 /** Session-scoped tracking for `session.error`'s stub assistant message (see
@@ -900,10 +967,16 @@ function rekeyStubParent(
  *     when unauthenticated, and then nothing was ever written to disk to
  *     return to.
  *
- * Small, because memory must be TIGHTER than disk: `idb-sync-cache.ts` bounds
- * the on-disk cache at 50 sessions / 7 days.
+ * Eight, measured: a resident transcript costs about 1.1x its wire JSON in
+ * heap (bun heapStats, synthetic transcript with 6 KB tool outputs: 467 KB for
+ * a 40-message tail, 2.2 MB for 200 messages). Eight detached sessions is
+ * therefore ~4-18 MB at those sizes. The disk mirror this used to lean on is
+ * gone (5a7a43517f), so a session pushed out of this window costs a snapshot
+ * read plus a runtime tail read on the way back — seconds, on a staging
+ * session switch. Three made that the common case for anyone moving between
+ * more than three sessions.
  */
-const DETACHED_SESSION_LIMIT = 3;
+const DETACHED_SESSION_LIMIT = 8;
 
 /**
  * The joined `MessageWithParts[]` rows, per session — see
@@ -1058,7 +1131,7 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * that every retain in a commit lands first would buy nothing, because the
  * ordering it would buy is already guaranteed. The case that motivates
  * deferral is a parent's spawn-tool preview of a child session, and the
- * preview's `useOpenCodeMessages(childId)` is always a React DESCENDANT of the
+ * preview's `useRuntimeMessages(childId)` is always a React DESCENDANT of the
  * component that retains the parent (`SessionLayout` → the transcript → the
  * tool part). React runs passive effects bottom-up, so in any commit that
  * mounts both, the child's retain lands before the parent's — and therefore
@@ -1079,7 +1152,7 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * A preview showing a transcript has no repaint path of its own, so closing
  * the rest needs the reference declared before the data is read — either the
  * host retaining child ids when it parses the parent's transcript, or
- * `useOpenCodeMessages` reading the disk cache the way `useSessionSync` does.
+ * `useRuntimeMessages` reading the disk cache the way `useSessionSync` does.
  * The second needs the child's `kortixSessionScope` plumbed through from the
  * host: entries written for an opened session are keyed
  * `…:kortix-session:<scope>`, so a scopeless read looks up a different key and
@@ -1104,6 +1177,79 @@ function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
 }
 
 // ============================================================================
+
+/**
+ * Append wire deltas to one part field in ONE store update. `applyPartDelta`
+ * passes one; a coalesced `message.part.delta` passes the run it stands for.
+ * Each piece keeps its own duplicate-delivery check (`deltaEventTails`).
+ */
+function appendPartDeltas(
+	sessionID: string,
+	messageID: string,
+	partID: string,
+	field: string,
+	pieces: readonly { id?: string; delta: string }[],
+) {
+	trackId(deltaActiveParts, sessionID, partID);
+	let applied = false;
+	useSyncStore.setState((s) => {
+		const list = s.parts[messageID];
+		if (!list) return s;
+		const result = Binary.search(list, partID, (p) => p.id);
+		if (!result.found) return s;
+		let delta = "";
+		for (const piece of pieces) {
+			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
+			// when the caller supplied an event id (every real wire delta does);
+			// a delta with no id gets no protection here, same as before this
+			// change. Checked and RECORDED here, inside the actual-apply
+			// branch (after the list/found checks above), not before `setState()`
+			// runs at all: recording it earlier marked an event id "applied"
+			// even on the not-found path — a delta whose target part doesn't
+			// exist yet (or was dropped) — which then permanently blocked a
+			// later LEGITIMATE redelivery of that same event once the part
+			// did exist. See "a delta that finds no target part does not
+			// consume the event id" in the test file.
+			if (piece.id) {
+				const tailKey = `${messageID}:${partID}:${field}`;
+				let sessionTails = deltaEventTails.get(sessionID);
+				if (!sessionTails) {
+					sessionTails = new Map();
+					deltaEventTails.set(sessionID, sessionTails);
+				}
+				let appliedIds = sessionTails.get(tailKey);
+				if (appliedIds?.has(piece.id)) continue;
+				if (!appliedIds) {
+					appliedIds = new Set();
+					sessionTails.set(tailKey, appliedIds);
+				}
+				appliedIds.add(piece.id);
+				// Bounded window: a Set iterates in insertion order, so the
+				// first key is the oldest applied id.
+				if (appliedIds.size > DELTA_EVENT_TAIL_LIMIT) {
+					const oldest = appliedIds.values().next().value;
+					if (oldest !== undefined) appliedIds.delete(oldest);
+				}
+			}
+			delta += piece.delta;
+			applied = true;
+		}
+		if (!applied) return s;
+		const next = [...list];
+		const part = { ...next[result.index] };
+		const existing = (part as Record<string, unknown>)[field] as
+			| string
+			| undefined;
+		(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
+		next[result.index] = part as Part;
+		return { parts: { ...s.parts, [messageID]: next } };
+	});
+	// The delta changed the visible transcript. This is the runtime itself
+	// producing output, so it refreshes the activity evidence used by
+	// `projectWorking`. Stamp only after a real apply: reconnect replays with
+	// an already-consumed event id are history, not current activity.
+	if (applied) useSyncStore.getState().noteSessionActivity(sessionID);
+}
 
 export const useSyncStore = create<SyncState>()((set, get) => ({
 	messages: {},
@@ -1277,53 +1423,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
-		trackId(deltaActiveParts, sessionID, partID);
-		set((s) => {
-			const list = s.parts[messageID];
-			if (!list) return s;
-			const result = Binary.search(list, partID, (p) => p.id);
-			if (!result.found) return s;
-			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
-			// when the caller supplied an event id (every real wire delta does);
-			// a delta with no id gets no protection here, same as before this
-			// change. Checked and RECORDED here, inside the actual-apply
-			// branch (after the list/found checks above), not before `set()`
-			// runs at all: recording it earlier marked an event id "applied"
-			// even on the not-found path — a delta whose target part doesn't
-			// exist yet (or was dropped) — which then permanently blocked a
-			// later LEGITIMATE redelivery of that same event once the part
-			// did exist. See "a delta that finds no target part does not
-			// consume the event id" in the test file.
-			if (eventID) {
-				const tailKey = `${messageID}:${partID}:${field}`;
-				let sessionTails = deltaEventTails.get(sessionID);
-				if (!sessionTails) {
-					sessionTails = new Map();
-					deltaEventTails.set(sessionID, sessionTails);
-				}
-				let appliedIds = sessionTails.get(tailKey);
-				if (appliedIds?.has(eventID)) return s;
-				if (!appliedIds) {
-					appliedIds = new Set();
-					sessionTails.set(tailKey, appliedIds);
-				}
-				appliedIds.add(eventID);
-			}
-			const next = [...list];
-			const part = { ...next[result.index] };
-			const existing = (part as Record<string, unknown>)[field] as
-				| string
-				| undefined;
-			(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
-			next[result.index] = part as Part;
-			return { parts: { ...s.parts, [messageID]: next } };
-		});
-	},
+	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) =>
+		appendPartDeltas(sessionID, messageID, partID, field, [{ id: eventID, delta }]),
 
-	setStatus: (sessionID, status, origin = "wire", emittedAt) =>
+	setStatus: (sessionID, status, origin = "wire") =>
 		set((s) => {
-			const observedAt = emittedAt ?? Date.now();
 			// A value that did not change is not news. `useSessionWorking` stamps
 			// its stream observation from this object's IDENTITY, so an
 			// equal-valued rewrite that minted a new object re-started
@@ -1340,13 +1444,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				if ((s.sessionStatusOrigin[sessionID] ?? "wire") === origin) return s;
 				return {
 					sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
-					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: observedAt },
+					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
 				};
 			}
 			return {
 				sessionStatus: { ...s.sessionStatus, [sessionID]: status },
 				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
-				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: observedAt },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
 			};
 		}),
 
@@ -1737,12 +1841,40 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			}
 		}
 
+		// Reuse the previous row object for every message whose `info` and
+		// part array are unchanged, so per-message consumers (a memoized row,
+		// a selector) keep a stable identity while another message streams.
+		// Index alignment answers the common case (a delta changed one row) in
+		// one pointer compare per row; a by-id index is built only once the
+		// alignment breaks (a message inserted or removed mid-transcript).
+		let previousById: Map<string, { row: MessageWithParts; partRef: Part[] | undefined }> | null =
+			null;
 		const partRefs: (Part[] | undefined)[] = [];
 		const result: MessageWithParts[] = [];
-		for (const info of msgs) {
+		for (let i = 0; i < msgs.length; i++) {
+			const info = msgs[i];
 			const messageParts = parts[info.id];
 			partRefs.push(messageParts);
-			result.push({ info, parts: messageParts ?? [] });
+			let reuse: MessageWithParts | undefined;
+			const aligned = cached?.result[i];
+			if (aligned && aligned.info === info) {
+				if (cached.partRefs[i] === messageParts) reuse = aligned;
+			} else if (cached) {
+				if (!previousById) {
+					previousById = new Map();
+					for (let j = 0; j < cached.result.length; j++) {
+						previousById.set(cached.result[j].info.id, {
+							row: cached.result[j],
+							partRef: cached.partRefs[j],
+						});
+					}
+				}
+				const previous = previousById.get(info.id);
+				if (previous && previous.row.info === info && previous.partRef === messageParts) {
+					reuse = previous.row;
+				}
+			}
+			result.push(reuse ?? { info, parts: messageParts ?? [] });
 		}
 		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
 		return result;
@@ -1784,6 +1916,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
+			if (provisional && incoming.length === 0) {
+				for (const id of [...provisional]) {
+					if (isOptimistic(sessionID, id)) continue;
+					untrackId(cacheSourcedIds, sessionID, id);
+					(droppedPhantoms ??= new Set()).add(id);
+				}
+			}
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
 				let oldestIncoming = incoming[0].id;
 				for (const m of incoming) if (m.id < oldestIncoming) oldestIncoming = m.id;
@@ -1978,12 +2117,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 			}
 
-			// Pass 2 — ordinal fallback, for an echo the server accepted but whose
-			// parts have not landed yet (no part ids to match on). Restricted to
-			// DISPATCHED messages: one that has not been POSTed cannot be a
-			// duplicate of anything the server holds, so it is never eligible.
-			// That restriction is what keeps a message sent from another tab from
-			// consuming this tab's in-flight bubble.
+			// Pass 2 — use the inbox's exact alias first. For sends without an
+			// inbox row, a dispatched message may use the ordinal fallback when
+			// the echo's parts have not landed yet. Inbox-backed prompts wait for
+			// their row's identity; position alone cannot identify their echo.
 			const claimed = new Set<string>();
 			for (const m of unmatchedOptimisticUsers) {
 				// Alias first: the inbox row announced this message's echo id.
@@ -2002,6 +2139,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				if (supersededBy.has(m.id)) continue;
 				const echo =
 					isDispatched(sessionID, m.id) &&
+					// Inbox rows identify their own echo. An unrelated new user
+					// message must never take a prompt still waiting in that inbox.
+					!hasTrackedId(inboxBackedOptimisticIds, sessionID, m.id) &&
 					// Known-different echo → never consume someone else's.
 					!optimisticEchoes.get(sessionID)?.get(m.id)
 						? claimable[next]
@@ -2113,90 +2253,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				newParts[echoId] = bridge;
 				trackId(bridgedPartIds, sessionID, echoId);
 			}
-			for (const m of msgs) {
-				if (!m?.info?.id) continue;
-				const mid = m.info.id;
-				if (isOptimistic(sessionID, mid)) continue; // Don't touch optimistic parts
-
-				// Parts, not messages: this sort is untouched by the message-order
-				// work and keeps its own byte-order comparison.
-				const inParts = m.parts
-					.filter((p) => !!p?.id)
-					.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-				// If this message still carries bridged optimistic parts, a hydrate
-				// snapshot with real parts should replace them immediately. Otherwise
-				// reconcile-by-extras can keep both copies and duplicate user text.
-				if (hasTrackedId(bridgedPartIds, sessionID, mid) && inParts.length > 0) {
-					untrackId(bridgedPartIds, sessionID, mid);
-					newParts[mid] = inParts;
-					continue;
-				}
-				const exParts = newParts[mid];
-				if (!exParts || exParts.length === 0) {
-					newParts[mid] = inParts;
-					continue;
-				}
-				// Reconcile by key: incoming parts are generally authoritative,
-				// but for text/reasoning parts during active streaming, SSE-accumulated
-				// parts may have MORE content than the server snapshot (the
-				// server may return empty/stale text for in-progress parts).
-				// In that case, prefer the existing (SSE) version.
-				const exById = new Map(exParts.map((p) => [p.id, p]));
-				const inIds = new Set(inParts.map((p) => p.id));
-				const extras = exParts.filter((p) => !inIds.has(p.id));
-				const reconciled = inParts.map((inP) => {
-					const exP = exById.get(inP.id);
-					if (!exP) return inP;
-					// For text/reasoning parts: prefer whichever has more text content.
-					// This prevents hydrate from clobbering SSE-streamed content
-					// with an empty/stale server snapshot during active streaming.
-					if (
-						isTextLikePart(inP) &&
-						isTextLikePart(exP) &&
-						exP.text.length > inP.text.length
-					) {
-						return exP;
-					}
-					return inP;
-				});
-				// T16 — dedupe extras by content identity. An "extra" is an
-				// existing part whose id the incoming snapshot no longer has — the
-				// server may simply not have persisted it yet (kept, as before), OR
-				// the server RE-ISSUED the same content under a NEW part id (a real
-				// defect: the old SSE-accumulated twin stayed in `exParts` forever,
-				// duplicating the text inside this one message). Distinguish the two
-				// conservatively: drop an extra only when it is text-like AND its own
-				// accumulated text is a PREFIX of (or equal to) some incoming
-				// text-like part of the SAME type — i.e. the incoming copy confidently
-				// re-issues it, not merely resembles it. Non-text-like extras (tool,
-				// permission, file, step, …) are never dropped by content — they carry
-				// distinct identity per id and a coincidental text match doesn't apply
-				// to them at all.
-				//
-				// F1 review finding: an extra still tracked in `deltaActiveParts` (this
-				// session is actively applying deltas to it right now) is EXEMPT from
-				// this filter regardless of what it prefixes. The heuristic above
-				// assumes a text-prefix match means the server re-issued the SAME
-				// content under a new id and the extra is an abandoned twin — but a
-				// live streaming target is never abandoned, and dropping it here also
-				// permanently blocks its later deltas (their event ids would already
-				// be recorded as applied — see `applyPartDelta`'s not-found path).
-				const survivingExtras = extras.filter((extra) => {
-					if (hasTrackedId(deltaActiveParts, sessionID, extra.id)) return true;
-					if (!isTextLikePart(extra) || extra.text.length === 0) return true;
-					return !inParts.some(
-						(inP) =>
-							inP.type === extra.type &&
-							isTextLikePart(inP) &&
-							inP.text.startsWith(extra.text),
-					);
-				});
-				for (const ep of survivingExtras) {
-					const r = Binary.search(reconciled, ep.id, (p) => p.id);
-					if (!r.found) reconciled.splice(r.index, 0, ep);
-				}
-				newParts[mid] = reconciled;
-			}
+			reconcileHydratedParts(msgs, newParts, {
+				isOptimistic: (id) => isOptimistic(sessionID, id),
+				isBridged: (id) => hasTrackedId(bridgedPartIds, sessionID, id),
+				clearBridge: (id) => untrackId(bridgedPartIds, sessionID, id),
+				isDeltaActive: (id) => hasTrackedId(deltaActiveParts, sessionID, id),
+			});
 			return {
 				messages: { ...s.messages, [sessionID]: merged },
 				parts: newParts,
@@ -2262,28 +2324,19 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	applyEvent: (event) => {
 		const store = get();
-		// When the RUNTIME emitted this frame. A replayed frame (the `since=`
-		// backlog a reconnect or a page load asks for) carries an OLD one, and
-		// activity stamped with `Date.now()` instead made that replay look like
-		// live output: `projectWorking` ranks activity first, so opening a
-		// finished session pinned the composer on Stop for the full
-		// `STREAM_OBSERVATION_MAX_MS` (45s). Absent (a fabricated or legacy
-		// frame) falls back to now, which is what every caller did before.
-		const frameAt = (event as { at?: unknown }).at;
-		const emittedAt = typeof frameAt === 'number' && frameAt > 0 ? frameAt : undefined;
 		switch (event.type) {
 			case "message.updated": {
 				{
 					const info = (event.properties as { info?: { sessionID?: string } })?.info;
 					const sid =
 						info?.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid, emittedAt);
+					if (sid && isOpenMessage(info as Message | undefined)) get().noteSessionActivity(sid);
 				}
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
 				// The user cancelled this message; the runtime's husk stays dead.
 				if (cancelledMessageIds.get(info.sessionID)?.has(info.id)) return;
-					// When a real user message arrives from the server, swap out the
+				// When a real user message arrives from the server, swap out the
 				// optimistic message(s) in a SINGLE atomic set() call.
 				// This prevents the intermediate render where the user bubble
 				// vanishes (optimistic removed) before the real one appears.
@@ -2303,6 +2356,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				if (info.role === "user" && !isOptimistic(info.sessionID, info.id)) {
 					const msgs = get().messages[info.sessionID];
 					if (msgs) {
+						// A later update to an already placed user message is not a
+						// new echo. The sole waiting prompt may be the only optimistic
+						// message left after the running prompt was confirmed.
+						if (msgs.some((message) => message.id === info.id)) {
+							store.upsertMessage(info.sessionID, info);
+							return;
+						}
 						// ONE confirmation retires ONE optimistic message.
 						//
 						// This used to retire every optimistic user message in the
@@ -2313,10 +2373,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						// message and the one still uploading its attachment vanished
 						// too. Same defect `hydrate` had, on the SSE path.
 						//
-						// Correlate the same way `hydrate` does: exact part id first
-						// (hosts send the client-generated id WITH the prompt), then
-						// the oldest dispatched message as a fallback for a
-						// confirmation that carries no parts yet.
+						// Correlate by part id or the inbox row's alias. Only a send
+						// without an inbox row may use the ordinal fallback.
 						const state = get();
 						const optimisticUsers = msgs.filter(
 							(m) => m.role === "user" && isOptimistic(info.sessionID, m.id),
@@ -2356,8 +2414,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						const byAlias = optimisticUsers.find(
 							(m) => optimisticEchoes.get(info.sessionID)?.get(m.id) === info.id,
 						);
-						// The ordinal guess is only safe when there is exactly ONE
-						// in-flight send it could be. With a burst in flight, a
+						// The ordinal guess is only available when there is exactly ONE
+						// eligible send without an inbox row. With a burst in flight, a
 						// part-less echo that matches neither a part id nor a
 						// registered alias consumes NOTHING: taking the oldest
 						// bubble handed one message's echo another message's text
@@ -2379,6 +2437,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						const eligible = optimisticUsers.filter(
 							(m) =>
 								isDispatched(info.sessionID, m.id) &&
+								!hasTrackedId(inboxBackedOptimisticIds, info.sessionID, m.id) &&
 								// An optimistic message whose OWN echo is known to be a
 								// DIFFERENT id must not be consumed by someone else's.
 								!optimisticEchoes.get(info.sessionID)?.get(m.id),
@@ -2456,15 +2515,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.part.updated": {
 				const part = (event.properties as { part: Part }).part;
 				if (!part?.messageID) return;
-				// The runtime just produced output. This is the evidence
-				// `projectWorking` trusts above every observer — see
-				// `sessionActivityAt`.
-				{
-					const sid =
-						part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid, emittedAt);
-				}
-
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
 				let resolvedSessionID: string | undefined =
@@ -2480,6 +2530,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 				}
 
+				// The runtime just produced OPEN output. This is the evidence
+				// `projectWorking` trusts above every observer — see
+				// `sessionActivityAt`. A closing part is not activity (`isOpenPart`).
+				// Stamp AFTER the message-id fallback: some producers omit
+				// sessionID from the part while still updating a known message,
+				// and that visible output is runtime activity too.
+				if (resolvedSessionID && isOpenPart(part)) get().noteSessionActivity(resolvedSessionID);
+
 				const existingMsgs = resolvedSessionID
 					? get().messages[resolvedSessionID]
 					: undefined;
@@ -2487,7 +2545,30 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// to sit beside it as a first disjunct could only agree with it or
 				// miss on a list that is not id-sorted.
 				const exists = existingMsgs?.some((m) => m.id === part.messageID);
-				if (!exists && resolvedSessionID) {
+				// The net for a part that outran its own message frame — but never
+				// over a send still waiting for its echo, and never as the FIRST
+				// message of a session. `role: "assistant"` is a guess, and for the
+				// echo of a re-minted prompt it is a guess that puts the user's own
+				// words on screen twice, the second time in the agent's voice.
+				//
+				// `awaitsUserEcho` catches that when this tab painted the prompt.
+				// It cannot on the project-home route, where the prompt is a
+				// server-created inbox row and there is no optimistic message to
+				// see — so the second condition carries it: an assistant part is a
+				// REPLY, and a session with nothing to reply to yet is not what
+				// this net is for. `message.part.delta` below has guarded on
+				// exactly this since it was written; this is the same rule on the
+				// frame that actually creates the message.
+				//
+				// The part is stored either way; only the invented message waits
+				// for the frame that knows.
+				const sessionHasUserMessage = existingMsgs?.some((m) => m.role === "user") ?? false;
+				if (
+					!exists &&
+					resolvedSessionID &&
+					sessionHasUserMessage &&
+					!awaitsUserEcho(resolvedSessionID, part.messageID)
+				) {
 					store.upsertMessage(resolvedSessionID, {
 						id: part.messageID,
 						sessionID: resolvedSessionID,
@@ -2530,20 +2611,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					delta: string;
 				};
 				if (!props.messageID || !props.partID || !props.field) return;
-
-				// A delta IS runtime output — the same evidence
-				// `message.part.updated` stamps above, and the input
-				// `projectWorking` ranks first ("CONTENT FIRST" in
-				// core/session/working.ts). Only the snapshot path stamped it,
-				// which was harmless while every runtime streamed snapshots.
-				// It stopped being harmless when pi started sending real
-				// deltas: its text then arrived as ~280 deltas and ~6
-				// snapshots per answer, so `sessionActivityAt` went stale
-				// mid-generation and the projection fell back to the `/turn`
-				// ledger — the laggy observer, which on pi leaves rows open —
-				// and the composer showed Stop off a poll instead of off the
-				// stream.
-				if (props.sessionID) get().noteSessionActivity(props.sessionID, emittedAt);
 
 				// Ensure the part exists before applying the delta.
 				// message.part.delta can arrive before message.part.updated
@@ -2590,13 +2657,19 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// `event.id` is a top-level field of every wire event (see
 				// `deltaEventTails` above) — never inside `properties`, so it is
 				// read directly off `event`, not `props`.
-				store.applyPartDelta(
+				// A coalesced event (`core/stream/event-stream.ts`) lists the wire
+				// events it replaced: each is deduped by its own id, and the run
+				// lands in one update.
+				const wire = (event as { coalesced?: RuntimeEvent[] }).coalesced ?? [event];
+				appendPartDeltas(
 					props.sessionID,
 					props.messageID,
 					props.partID,
 					props.field,
-					props.delta,
-					event.id,
+					wire.map((e) => ({
+						id: (e as { id?: string }).id,
+						delta: (e.properties as { delta: string }).delta,
+					})),
 				);
 				if (props.field === "text") {
 					const updated = get().parts[props.messageID]?.find(
@@ -2623,21 +2696,19 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					status: SessionStatus;
 				};
 				if (props.sessionID && props.status)
-					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event), emittedAt);
+					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event));
 				return;
 			}
 		case "session.idle": {
 			const sessionID = (event.properties as { sessionID: string }).sessionID;
-			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
+			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event));
 			// Streaming finished for THIS session — clear only its own delta
 			// tracking so future message.part.updated snapshots for it are
 			// accepted normally. Never the whole map: another session may
 			// still be streaming (see comment above deltaActiveParts).
 			if (sessionID) deltaActiveParts.delete(sessionID);
-			// Same reasoning for the delta event-id tails (T14): a new
-			// turn's deltas use brand-new part ids anyway, so nothing realistic
-			// is lost by dropping this session's tracking here.
-			if (sessionID) deltaEventTails.delete(sessionID);
+			// Keep the bounded event-id tail after completion: reconnects can
+			// replay the final delta after idle. New turns use new part ids.
 			return;
 		}
 		case "session.error": {
@@ -2660,7 +2731,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// would re-stamp its arrival time and restart every freshness window
 			// that depends on it.
 			if (!isRetryableTurnError(error)) {
-				store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
+				store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event));
 			}
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.

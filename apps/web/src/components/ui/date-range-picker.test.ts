@@ -59,7 +59,7 @@ describe('toUtcDayRange', () => {
     expect(range.to).toBe('2026-08-01T00:00:00.000Z');
   });
 
-  test('reads the local calendar day rather than the Date\'s own instant, on every host', () => {
+  test("reads the local calendar day rather than the Date's own instant, on every host", () => {
     // A Date whose real underlying instant is Jan 1, with getFullYear/
     // getMonth/getDate overridden to report Jul 1. toUtcDayRange must call
     // those local getters (as the implementation does) rather than fall

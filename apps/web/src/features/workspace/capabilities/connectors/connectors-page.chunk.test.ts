@@ -16,7 +16,6 @@ import { fileURLToPath } from 'node:url';
  *
  * That has already happened twice. `connector-identity.tsx` was lifted out of
  * `connectors-view.tsx` precisely to avoid it (see its header comment), and
- * `use-pipedream-connect-app.ts` was lifted out for the same reason — and then
  * `connectors-page.tsx`, `connector-modal.tsx` and `connector-accounts.tsx`
  * each added a fresh static edge straight back to it.
  *
@@ -30,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, '../../../..');
-const ROUTE_ENTRY = resolve(SRC, 'app/(app)/projects/[id]/(capabilities)/customize/connectors/page.tsx');
+const ROUTE_ENTRY = resolve(SRC, 'app/[locale]/(app)/projects/[id]/(capabilities)/customize/connectors/page.tsx');
 
 /** Modules that must not be parsed before the connectors grid paints. */
 const FORBIDDEN = [

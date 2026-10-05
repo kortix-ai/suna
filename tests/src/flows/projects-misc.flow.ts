@@ -7,6 +7,8 @@
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
 import { flow } from '../core/flow';
+import { withDb } from '../fixtures/chat';
+import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 
 // PROJ-2 — BYO repo create. A non-GitHub repo_url is rejected at the
 // normalizeRepoUrl boundary (400) before any GitHub round-trip; MEMBER /
@@ -309,6 +311,113 @@ flow(
   },
 );
 
+// PROJ-38 — turn-permission relay. The daemon reports OpenCode
+// `permission.asked`; the route pushes "needs your approval" once per request
+// id and never answers the permission. Only the session's own sandbox
+// credential may call it: a user token would let any member push another
+// member's devices. The sandbox credential is a project PAT bound to a
+// synthetic live session (bindDatabaseSessionCredential).
+flow(
+  'PROJ-38',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/turn-permission'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const base = { projectId: p.id };
+    // The daemon body (TurnPermissionRelayBodySchema): `permission` and `patterns` are required.
+    const ask = (extra: Record<string, unknown>) => ({ permission: 'bash', patterns: ['git push *'], ...extra });
+    const target = '/v1/projects/:projectId/turn-permission';
+    const accountId = await withDb(ctx, async (db) =>
+      (await db.query('SELECT account_id FROM kortix.projects WHERE project_id = $1', [p.id])).rows[0]
+        .account_id as string,
+    );
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: p.id,
+      accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    const otherSessionId = await createDatabaseSession(ctx.env, {
+      projectId: p.id,
+      accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    let tokenId: string | null = null;
+    try {
+      await ctx.step('ANON → 401', async () => {
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post(target, ask({ session_id: sessionId, request_id: 'per_1' }), { params: base });
+        r.status(401);
+      });
+      await ctx.step('OWNER user token on its own session → 403 (sandbox credential only)', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(target, ask({ session_id: sessionId, request_id: 'per_1' }), { params: base });
+        r.status(403);
+      });
+      await ctx.step('NONMEMBER → 403/404', async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .post(target, ask({ session_id: sessionId, request_id: 'per_1' }), { params: base });
+        r.status([403, 404]);
+      });
+
+      const minted = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('proj37') }, { params: base });
+      minted.status(201);
+      const token = minted.json<{ token_id: string; secret_key: string }>();
+      tokenId = token.token_id;
+      await bindDatabaseSessionCredential(ctx.env, {
+        tokenId: token.token_id,
+        commandId: crypto.randomUUID(),
+        sessionId,
+        accountId,
+        projectId: p.id,
+      });
+      const sandbox = () => ctx.client.withBearer(token.secret_key, 'session sandbox credential');
+      const relay = (body: Record<string, unknown>) => sandbox().post(target, body, { params: base });
+
+      await ctx.step('sandbox credential without session_id → 400', async () => {
+        (await relay(ask({ request_id: 'per_1' }))).status(400);
+      });
+      await ctx.step('sandbox credential naming another session of the project → 403', async () => {
+        (await relay(ask({ session_id: otherSessionId, request_id: 'per_1' }))).status(403);
+      });
+      await ctx.step('sandbox credential without request_id → 400', async () => {
+        (await relay(ask({ session_id: sessionId }))).status(400);
+      });
+      await ctx.step('request_id longer than 256 characters → 400', async () => {
+        (await relay(ask({ session_id: sessionId, request_id: 'p'.repeat(257) }))).status(400);
+      });
+      await ctx.step('first relay of a request id with the daemon body → 200 notified:true', async () => {
+        const r = await relay(ask({ session_id: sessionId, request_id: 'per_1', runtime_session_id: 'ses_synthetic' }));
+        r.status(200).body().has('$.ok', true).has('$.notified', true);
+      });
+      await ctx.step('a repeat of the same request id → 200 notified:false (one push per request)', async () => {
+        (await relay(ask({ session_id: sessionId, request_id: 'per_1' })))
+          .status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.notified', false);
+      });
+      await ctx.step('a new request id in the same session → 200 notified:true', async () => {
+        (await relay(ask({ session_id: sessionId, request_id: 'per_2' }))).status(200).body().has('$.notified', true);
+      });
+    } finally {
+      if (tokenId) {
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/projects/:projectId/cli-token/:tokenId', { params: { ...base, tokenId } })
+          .catch(() => {});
+      }
+      await withDb(ctx, async (db) => {
+        await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [sessionId]);
+        await db.query('DELETE FROM kortix.project_sessions WHERE session_id = ANY($1)', [[sessionId, otherSessionId]]);
+      }).catch(() => {});
+    }
+  },
+);
+
 // PROJ-17 — turn-stream relay. Same auth model as turn-question; the body gate
 // requires session_id first, then scopes it to the project before interpreting
 // the event payload. Asserting the negative
@@ -361,8 +470,7 @@ flow(
   },
 );
 
-// PROJ-19 — Full v2 agent-config editor (the "agent builder" surface, spec
-// docs/specs/2026-07-05-agent-first-config-unification.md §2.2). GET reports the
+// PROJ-19 — Full v2 agent-config editor (the "agent builder" surface). GET reports the
 // agent's full block + the manifest schema version (the UI's v1-vs-v2 branch);
 // PUT replaces the whole block, validating it through the manifest-schema
 // validator before the kortix.yaml commit. A bare provisioned project now
@@ -381,10 +489,10 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const project = await team.project();
+    const project = await team.project({ seed: true });
 
     await ctx.step(
-      'GET reports schema_version 2 / editable true for a synthesized blank manifest',
+      'GET reports schema_version 2 / editable true for a seeded manifest',
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
@@ -392,6 +500,71 @@ flow(
             params: { projectId: project.id, agentName: 'kortix' },
           });
         r.status(200).body().has('$.schema_version', 2).has('$.editable', true);
+      },
+    );
+
+    for (const access of [false, true]) {
+      await ctx.step(`set repository_access=${access} and read back the saved policy`, async () => {
+        const params = { projectId: project.id, agentName: 'kortix' };
+        const saved = await ctx.client.as(ctx.P.OWNER).put(
+          '/v1/projects/:projectId/agents/:agentName/config',
+          { repository_access: access }, { params },
+        );
+        saved.status(200).body().has('$.block.repository_access', access);
+        const read = await ctx.client.as(ctx.P.OWNER).get(
+          '/v1/projects/:projectId/agents/:agentName/config', { params },
+        );
+        read.status(200).body().has('$.block.repository_access', access);
+        if ('workspace' in read.json<any>().block) throw new Error('response exposes legacy workspace');
+      });
+    }
+    await ctx.step('legacy runtime saves a disabled repository policy', async () => {
+      const saved = await ctx.client.as(ctx.P.OWNER).put(
+        '/v1/projects/:projectId/agents/:agentName/config', { workspace: 'runtime' },
+        { params: { projectId: project.id, agentName: 'kortix' } },
+      );
+      saved.status(200).body().has('$.block.repository_access', false);
+    });
+    for (const body of [{ repository_access: 'false' }, { repository_access: true, workspace: 'runtime' }]) {
+      await ctx.step('invalid or conflicting repository policy is rejected without widening access', async () => {
+        const params = { projectId: project.id, agentName: 'kortix' };
+        const rejected = await ctx.client.as(ctx.P.OWNER).put(
+          '/v1/projects/:projectId/agents/:agentName/config', body, { params },
+        );
+        rejected.status(400);
+        const read = await ctx.client.as(ctx.P.OWNER).get(
+          '/v1/projects/:projectId/agents/:agentName/config', { params },
+        );
+        read.status(200).body().has('$.block.repository_access', false);
+      });
+    }
+
+    await ctx.step(
+      'the behavior half reads and writes as `behavior`; a round trip that edits only its pre-W4 name `opencode` keeps that edit; two different edits → 400',
+      async () => {
+        const params = { projectId: project.id, agentName: 'kortix' };
+        const path = '/v1/projects/:projectId/agents/:agentName/config';
+        const owner = ctx.client.as(ctx.P.OWNER);
+        const current = (await owner.get(path, { params })).status(200).json<any>().block.behavior;
+        const neutral = { ...current, description: 'Written as behavior' };
+        const saved = await owner.put(path, { behavior: neutral }, { params });
+        saved.status(200).body()
+          .has('$.block.behavior.description', 'Written as behavior')
+          .has('$.block.opencode.description', 'Written as behavior');
+        const served = (await owner.get(path, { params })).status(200).json<any>().block;
+        if (JSON.stringify(served.behavior) !== JSON.stringify(served.opencode)) {
+          throw new Error('GET serves different values under behavior and opencode');
+        }
+        const olderClient = { ...served.opencode, description: 'Edited as opencode' };
+        (await owner.put(path, { behavior: served.behavior, opencode: olderClient }, { params }))
+          .status(200);
+        (await owner.get(path, { params })).status(200).body()
+          .has('$.block.behavior.description', 'Edited as opencode');
+        (await owner.put(
+          path,
+          { behavior: { ...current, description: 'A' }, opencode: { ...current, description: 'B' } },
+          { params },
+        )).status(400);
       },
     );
 
@@ -574,8 +747,83 @@ flow(
   },
 );
 
+// PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
+// project visible (404) → project.model.write (403) → project LLM gateway
+// enabled (404 llm_gateway_disabled). Same caller + same project state → same
+// status on both verbs. Every denial fires before model servability is
+// checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
+// flow proves an authorized writer reaches model validation and deletion.
+flow(
+  'PROJ-37',
+  {
+    domain: 'projects',
+    routes: [
+      'PATCH /v1/projects/:projectId/experimental',
+      'GET /v1/projects/:projectId/model-defaults',
+      'PUT /v1/projects/:projectId/model-defaults',
+      'DELETE /v1/projects/:projectId/model-defaults',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const gatewayOff = await team.project();
+    const gatewayOn = await team.project();
+    const user = await team.addMember('member');
+    const manager = await team.addMember('member');
+    for (const project of [gatewayOff, gatewayOn]) {
+      await team.grantProjectRole(project.id, user.userId!, 'user');
+      await team.grantProjectRole(project.id, manager.userId!, 'manager');
+    }
+    const path = '/v1/projects/:projectId/model-defaults';
+    const put = (actor: typeof user, projectId: string, model = 'guard-probe-model') =>
+      ctx.client.as(actor).put(path, { scope: 'project', model }, { params: { projectId } });
+    const del = (actor: typeof user, projectId: string) =>
+      ctx.client.as(actor).del(path, { params: { projectId }, query: { scope: 'project' } });
+
+    await ctx.step('OWNER turns the LLM gateway off on one project and on for the other', async () => {
+      for (const [project, enabled] of [[gatewayOff, false], [gatewayOn, true]] as const) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/experimental',
+            { feature: 'llm_gateway', enabled },
+            { params: { projectId: project.id } },
+          );
+        r.status(200);
+      }
+    });
+    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is off', async () => {
+      (await put(user, gatewayOff.id)).status(403);
+      (await del(user, gatewayOff.id)).status(403);
+    });
+    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is on', async () => {
+      (await put(user, gatewayOn.id)).status(403);
+      (await del(user, gatewayOn.id)).status(403);
+    });
+    await ctx.step('project manager → PUT and DELETE both 404 llm_gateway_disabled while the gateway is off', async () => {
+      (await put(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+      (await del(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
+    });
+    await ctx.step('NONMEMBER → PUT and DELETE both 403 on either project', async () => {
+      for (const project of [gatewayOff, gatewayOn]) {
+        (await put(ctx.P.NONMEMBER, project.id)).status(403);
+        (await del(ctx.P.NONMEMBER, project.id)).status(403);
+      }
+    });
+    await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
+      (await put(manager, gatewayOn.id)).status(409)
+        .body().has('$.code', 'model_not_servable');
+      const read = () =>
+        ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
+      (await read()).status(200).body().has('$.projectDefault', null);
+      (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
+      (await read()).status(200).body().has('$.projectDefault', null);
+    });
+  },
+);
+
 // PROJ-35 — PUT /v1/projects/:projectId/model-enablement
-// (apps/api/src/projects/routes/r4.ts:2763-2822). Replace the project's
+// (apps/api/src/projects/routes/models.ts). Replace the project's
 // model-override exceptions (which models are enabled/disabled). The full
 // positive path needs a funded account + model-picker data; the BOUNDARIES
 // are assertable without one: an unknown project 404s, ANON 401s, a missing
@@ -787,7 +1035,10 @@ flow(
   {
     domain: 'projects',
     requires: ['managedGit'],
-    routes: ['PATCH /v1/projects/:projectId/sandbox-provider'],
+    routes: [
+      'GET /v1/projects/:projectId',
+      'PATCH /v1/projects/:projectId/sandbox-provider',
+    ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true, seed: true });
@@ -802,27 +1053,54 @@ flow(
       r.status(400);
     });
     if (ctx.env.target !== 'local') {
-      await ctx.step(
-        "pin to the enabled 'daytona' provider → 200 project or preparation",
-        async () => {
+      // The enabled set is deployment config (ALLOWED_SANDBOX_PROVIDERS with an
+      // API key): dev/staging/prod enable Daytona + Platinum, a PR preview
+      // enables Platinum only. Read it from the project instead of assuming a
+      // provider, then prove a concrete pin works and a known-but-disabled
+      // provider is refused.
+      let enabled: string[] = [];
+      await ctx.step('read the enabled providers from the project → non-empty', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+        r.status(200).body().exists('$.available_sandbox_providers');
+        enabled = r.json<{ available_sandbox_providers?: string[] }>()?.available_sandbox_providers ?? [];
+        if (enabled.length === 0) {
+          throw new Error(`no enabled sandbox provider: ${r.text()}`);
+        }
+      });
+      await ctx.step('pin to an enabled provider → 200 project or preparation', async () => {
+        const target = enabled[0]!;
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/sandbox-provider',
+            { provider: target },
+            { params: { projectId: p.id } },
+          );
+        r.status(200).body().exists('$.kind');
+        const body = r.json<any>();
+        if (body?.kind === 'project') {
+          r.body().has('$.default_sandbox_provider', target);
+        } else if (body?.kind === 'preparation') {
+          r.body().has('$.target_provider', target);
+        } else {
+          throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
+        }
+      });
+      const disabled = ['daytona', 'platinum', 'e2b'].find((name) => !enabled.includes(name));
+      if (disabled) {
+        await ctx.step('pin to a known but disabled provider → 400', async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
             .patch(
               '/v1/projects/:projectId/sandbox-provider',
-              { provider: 'daytona' },
+              { provider: disabled },
               { params: { projectId: p.id } },
             );
-          r.status(200).body().exists('$.kind');
-          const body = r.json<any>();
-          if (body?.kind === 'project') {
-            r.body().has('$.default_sandbox_provider', 'daytona');
-          } else if (body?.kind === 'preparation') {
-            r.body().has('$.target_provider', 'daytona');
-          } else {
-            throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
-          }
-        },
-      );
+          r.status(400);
+        });
+      }
     }
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
@@ -859,7 +1137,7 @@ flow(
 
 // PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
 // 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
-// endpoint reads (apps/api/src/projects/routes/r4.ts) — provider-level rows
+// endpoint reads (apps/api/src/projects/routes/models.ts) — provider-level rows
 // (id, name, auth env vars, docs URL), NOT gated by projectLlmGatewayEnabled
 // since it's meaningful for every project including native (non-gateway)
 // ones. Project-read-scoped (403/404 boundary), not actually secret data.

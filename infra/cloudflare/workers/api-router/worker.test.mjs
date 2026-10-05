@@ -24,6 +24,25 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
+  test('deploys the dev router from main and verifies its commit and SCIM boundary', () => {
+    const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
+    expect(workflow.on.push.branches).toEqual(['main']);
+    expect(workflow.on.push.paths).toContain('infra/cloudflare/workers/api-router/**');
+    const job = workflow.jobs.deploy;
+    expect(job.if).toBe("github.ref == 'refs/heads/main'");
+    expect(job['continue-on-error']).toBeUndefined();
+    const commands = job.steps.map((step) => step.run ?? '').join('\n');
+    expect(commands).toContain('deploy --env dev');
+    expect(commands).not.toContain('--env prod');
+    expect(commands).not.toContain('--env staging');
+    expect(commands).toContain('DEPLOYED_COMMIT:${GITHUB_SHA}');
+    expect(commands).toContain('dev-api-kortix-router/settings');
+    expect(commands).toContain('.text == $sha');
+    expect(commands).toContain("-H 'User-Agent:'");
+    expect(commands).toContain('[ "$status" = 401 ]');
+    expect(commands).toContain('urn:ietf:params:scim:api:messages:2.0:Error');
+  });
+
   test('keeps the staging API on EKS in config and deployment metadata', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
@@ -298,8 +317,19 @@ describe('api-router worker', () => {
       'max-age=31536000',
     );
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('api');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
+  });
+
+  test('strips backend-identifying headers supplied by an origin', async () => {
+    globalThis.fetch = async () => new Response('ok', {
+      headers: { 'X-Backend': 'internal', 'X-Backend-Service': 'internal' },
+    });
+    const response = await worker.fetch(new Request('https://api.kortix.com/v1/health'), env);
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
+    expect(response.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
   test.each([
@@ -328,6 +358,61 @@ describe('api-router worker', () => {
       'Kortix-Webhook-Relay/1.0',
     );
     expect(await proxiedRequest.text()).toBe('{"event":"test"}');
+  });
+
+  test.each(['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])(
+    'relays Entra SCIM %s without a User-Agent and preserves authentication',
+    async (method) => {
+      let proxiedRequest;
+      globalThis.fetch = async (request) => {
+        proxiedRequest = request;
+        return Response.json({ schemas: [], detail: 'Invalid SCIM token' }, { status: 401 });
+      };
+      const response = await worker.fetch(
+        new Request('https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Users', {
+          method,
+          headers: { Authorization: 'Bearer invalid-test-token' },
+          ...(method === 'GET' ? {} : { body: '{"Operations":[]}' }),
+        }),
+        env,
+      );
+      expect(proxiedRequest.headers.get('User-Agent')).toBe('Kortix-SCIM-Relay/1.0');
+      expect(proxiedRequest.headers.get('Authorization')).toBe('Bearer invalid-test-token');
+      expect(response.status).toBe(401);
+      if (method !== 'GET') expect(await proxiedRequest.text()).toBe('{"Operations":[]}');
+    },
+  );
+
+  test.each(['Users', 'Groups/test-group', 'ServiceProviderConfig', 'ResourceTypes/User', 'Schemas/urn:ietf:params:scim:schemas:core:2.0:User'])(
+    'normalizes an empty SCIM User-Agent for %s',
+    async (resource) => {
+      let proxiedRequest;
+      globalThis.fetch = async (request) => {
+        proxiedRequest = request;
+        return Response.json({});
+      };
+      await worker.fetch(new Request(`https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/${resource}`, {
+        headers: { 'User-Agent': '' },
+      }), env);
+      expect(proxiedRequest.headers.get('User-Agent')).toBe('Kortix-SCIM-Relay/1.0');
+    },
+  );
+
+  test.each([
+    ['https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Users', 'Entra/1.0', 'Entra/1.0'],
+    ['https://gateway-dev.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Users', null, null],
+    ['https://dev-api.kortix.com/scim/v2/accounts/not-an-account/Users', null, null],
+    ['https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Unknown', null, null],
+  ])('preserves sender headers and SCIM routing boundaries: %s', async (url, userAgent, expected) => {
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({});
+    };
+    await worker.fetch(new Request(url, {
+      headers: userAgent ? { 'User-Agent': userAgent } : {},
+    }), env);
+    expect(proxiedRequest.headers.get('User-Agent')).toBe(expected);
   });
 
   test('preserves a webhook sender User-Agent', async () => {
@@ -381,8 +466,8 @@ describe('api-router worker', () => {
 
     // API is on eks, but the gateway is on ecs-fargate → the gateway origin wins.
     expect(proxiedUrl).toBe('https://gateway-fargate.kortix.com/health/live');
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('gateway');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
   });
 
   test('routes API and gateway requests to the prepared us-east-2 origins', async () => {
@@ -410,8 +495,8 @@ describe('api-router worker', () => {
       'https://api-use2-shadow.kortix.com/v1/health',
       'https://gateway-use2-shadow.kortix.com/health/live',
     ]);
-    expect(apiResponse.headers.get('X-Backend')).toBe('us-east-2');
-    expect(gatewayResponse.headers.get('X-Backend')).toBe('us-east-2');
+    expect(apiResponse.headers.get('X-Backend')).toBeNull();
+    expect(gatewayResponse.headers.get('X-Backend')).toBeNull();
   });
 
   test('serves the independent maintenance state without contacting the API origin', async () => {
@@ -634,10 +719,109 @@ describe('api-router worker', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fetchedUrls).toEqual([
-      'https://kortix.com/api/maintenance',
-      'https://api-fargate.kortix.com/v1/accounts',
-    ]);
+    // Blocking maintenance only ever refuses writes, so a read never waits on
+    // the maintenance state: it goes straight to the origin.
+    expect(fetchedUrls).toEqual(['https://api-fargate.kortix.com/v1/accounts']);
+  });
+
+  // ── Edge preflight cache ─────────────────────────────────────────────────
+  // The browser caches a CORS preflight per URL, so every new project, session
+  // or query string paid a full origin round trip (0.24–1.0 s measured) before
+  // the real request. The API's CORS policy is path-independent, so the edge
+  // keeps the API's own answer per (host, Origin, method, headers).
+  function fakeEdgeCache() {
+    const store = new Map();
+    return {
+      store,
+      default: {
+        async match(key) {
+          const hit = store.get(fetchUrl(key));
+          return hit ? hit.clone() : undefined;
+        },
+        async put(key, response) {
+          store.set(fetchUrl(key), response.clone());
+        },
+      },
+    };
+  }
+
+  function preflight(path, origin = 'https://kortix.com', headers = 'authorization,content-type') {
+    return new Request(`https://api.kortix.com${path}`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': headers,
+      },
+    });
+  }
+
+  function corsOrigin() {
+    const calls = [];
+    globalThis.fetch = async (request) => {
+      calls.push(`${request.method} ${fetchUrl(request)}`);
+      const origin = request.headers.get('Origin');
+      const allowed = origin === 'https://kortix.com';
+      return new Response(null, {
+        status: 204,
+        headers: allowed
+          ? {
+              'Access-Control-Allow-Origin': origin,
+              'Access-Control-Allow-Credentials': 'true',
+              'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+              'Access-Control-Max-Age': '600',
+            }
+          : {},
+      });
+    };
+    return calls;
+  }
+
+  test('answers a repeat preflight for any path from the edge cache', async () => {
+    const edge = fakeEdgeCache();
+    globalThis.caches = edge;
+    const calls = corsOrigin();
+    try {
+      const first = await worker.fetch(preflight('/v1/projects/a/detail'), env);
+      const second = await worker.fetch(preflight('/v1/projects/b/sessions?limit=5'), env);
+      const reordered = await worker.fetch(preflight('/v1/accounts', 'https://kortix.com', 'content-type, Authorization'), env);
+
+      expect(calls).toEqual(['OPTIONS https://api-fargate.kortix.com/v1/projects/a/detail']);
+      for (const response of [first, second, reordered]) {
+        expect(response.status).toBe(204);
+        expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://kortix.com');
+        expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+      }
+      expect(second.headers.get('X-Kortix-Preflight')).toBe('edge');
+    } finally {
+      delete globalThis.caches;
+    }
+  });
+
+  test('never caches a preflight the origin refused, and keys by Origin', async () => {
+    const edge = fakeEdgeCache();
+    globalThis.caches = edge;
+    const calls = corsOrigin();
+    try {
+      await worker.fetch(preflight('/v1/accounts', 'https://evil.example'), env);
+      const again = await worker.fetch(preflight('/v1/accounts', 'https://evil.example'), env);
+      await worker.fetch(preflight('/v1/accounts', 'https://kortix.com'), env);
+
+      expect(calls).toHaveLength(3);
+      expect(again.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    } finally {
+      delete globalThis.caches;
+    }
+  });
+
+  test('passes preflights through untouched where no edge cache exists', async () => {
+    const calls = corsOrigin();
+
+    await worker.fetch(preflight('/v1/accounts'), env);
+    await worker.fetch(preflight('/v1/accounts'), env);
+
+    expect(calls).toHaveLength(2);
   });
 
   test('fails open when the independent maintenance state is unavailable', async () => {
@@ -691,8 +875,8 @@ describe('api-router worker', () => {
     expect(response.headers.get('x-request-id')).toBe('req-abc123');
     expect(response.headers.get('content-type')).toBe('application/json');
     expect(response.headers.get('X-Maintenance-Mode')).toBeNull();
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('api');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
@@ -705,7 +889,7 @@ describe('api-router worker', () => {
       );
       expect(response.status).toBe(status);
       expect(await response.text()).toBe('origin body');
-      expect(response.headers.get('X-Backend-Service')).toBe('gateway');
+      expect(response.headers.get('X-Backend-Service')).toBeNull();
       expect(response.headers.get('X-Maintenance-Mode')).toBeNull();
     }
   });

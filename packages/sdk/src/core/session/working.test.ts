@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { SessionPrompt, SessionTurn } from '../rest/projects-client/sessions';
+import type { WorkingInboxInput } from './working';
 import {
   INBOX_OBSERVATION_MAX_MS,
   OPTIMISTIC_ABORT_MAX_MS,
@@ -66,7 +67,7 @@ describe('projectWorking', () => {
     // producers send none: `postPrompt` omits `messageID` for triggers, Slack /
     // Teams / Telegram, approval-resume and email, and `buildSessionCommandInput`
     // omits it for EVERY `/` command including `/compact`. `GET .../turn` then
-    // answers `message_id: null` (`r8.ts` — the field is `z.string().nullable()`)
+    // answers `message_id: null` (`session-runtime.ts` — the field is `z.string().nullable()`)
     // for a turn that is very much running. Reporting the open turn off that
     // field answered "the control plane holds nothing" for that whole class.
     // `turn_token` is minted for every turn and is never null.
@@ -286,6 +287,7 @@ describe('projectWorking', () => {
     });
 
     expect(projection).toEqual({
+      pendingDelivery: true,
       state: 'working',
       source: 'optimistic',
       turnId: 'msg_42',
@@ -351,6 +353,7 @@ describe('projectWorking', () => {
     });
 
     expect(projection).toEqual({
+      pendingDelivery: true,
       state: 'working',
       source: 'server',
       turnId: null,
@@ -374,6 +377,7 @@ describe('projectWorking', () => {
     });
 
     expect(projection).toEqual({
+      pendingDelivery: true,
       state: 'working',
       source: 'server',
       turnId: 'msg_new',
@@ -413,7 +417,9 @@ describe('projectWorking', () => {
       stream: { type: 'idle' as const, atMs: T0 + 2_000 },
     };
 
-    expect(projectWorking({ ...stale, nowMs: T0 + INBOX_OBSERVATION_MAX_MS }).state).toBe('working');
+    expect(projectWorking({ ...stale, nowMs: T0 + INBOX_OBSERVATION_MAX_MS }).state).toBe(
+      'working',
+    );
     expect(projectWorking({ ...stale, nowMs: T0 + INBOX_OBSERVATION_MAX_MS + 1 }).state).toBe(
       'idle',
     );
@@ -598,7 +604,9 @@ describe('workingExpiryAtMs', () => {
   });
 
   test('is null when nothing is left to expire', () => {
-    expect(workingExpiryAtMs({ optimistic: null, server: null, stream: null, nowMs: T0 })).toBeNull();
+    expect(
+      workingExpiryAtMs({ optimistic: null, server: null, stream: null, nowMs: T0 }),
+    ).toBeNull();
   });
 
   test('covers the send receipt and the stop receipt too', () => {
@@ -643,8 +651,7 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
  * The control-plane ledger is not timely about the END of a turn, and the
  * projection used to believe it was.
  *
- * MEASURED on the local stack, 2026-08-21, one ordinary composer turn
- * (session 08cf8a74, turn token 05e2a176):
+ * MEASURED on the local stack, 2026-08-21, one ordinary composer turn:
  *
  *   00:02:55.804  ledger opens the turn
  *   00:03:59.964  the RUNTIME's `session.idle` frame reaches the tab   → idle
@@ -952,7 +959,49 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     ).toMatchObject({ state: 'working', source: 'server' });
   });
 
-  test('the ledger\'s token survives the frame — only the WORKING answer moves', () => {
+  test('a completed turn cannot silence a different active turn after an idle frame', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: {
+        turns: [turn({ turn_token: 'tt-new', message_id: 'msg_new' })],
+        lastEnded: {
+          turn_token: 'tt-old',
+          end_reason: 'completed',
+          ended_at: new Date(T0 + 60_000).toISOString(),
+        },
+        atMs: T0 + 61_000,
+      },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 61_100,
+    });
+
+    expect(projection).toMatchObject({
+      state: 'working',
+      source: 'server',
+      turnId: 'msg_new',
+      serverOpenTurnToken: 'tt-new',
+    });
+  });
+
+  test('a later completion cannot resurrect an earlier finished turn', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: {
+        turns: [turn({ turn_token: 'tt-old' })],
+        lastEnded: {
+          turn_token: 'tt-later',
+          end_reason: 'completed',
+          ended_at: new Date(T0 + 65_000).toISOString(),
+        },
+        atMs: T0 + 66_000,
+      },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 66_100,
+    });
+    expect(projection.state).toBe('idle');
+  });
+
+  test("the ledger's token survives the frame — only the WORKING answer moves", () => {
     // `serverOpenTurnToken` answers a different question from `state`: whether
     // the control plane still holds authority over the turn. A `/` command goes
     // straight at OpenCode with no admission gate in front of it and must see
@@ -1159,10 +1208,16 @@ describe('inboxObservationSupersedes', () => {
     // One side stamped, the other not: no shared clock exists, so the browser
     // stamps are the only pair drawn from one clock.
     expect(
-      inboxObservationSupersedes({ pending: 0, atMs: 200 }, { pending: 1, atMs: 100, serverAtMs: 9 }),
+      inboxObservationSupersedes(
+        { pending: 0, atMs: 200 },
+        { pending: 1, atMs: 100, serverAtMs: 9 },
+      ),
     ).toBe(true);
     expect(
-      inboxObservationSupersedes({ pending: 0, atMs: 50, serverAtMs: 9 }, { pending: 1, atMs: 100 }),
+      inboxObservationSupersedes(
+        { pending: 0, atMs: 50, serverAtMs: 9 },
+        { pending: 1, atMs: 100 },
+      ),
     ).toBe(false);
   });
 
@@ -1197,5 +1252,375 @@ describe('countLiveInboxPrompts', () => {
 
   test('an empty inbox is zero', () => {
     expect(countLiveInboxPrompts([])).toBe(0);
+  });
+});
+
+/**
+ * THE DRAIN: the one transition every observer is blind to at once.
+ *
+ * A prompt leaves the inbox because the control plane handed it to the runtime
+ * — and the ledger row for the turn that hand-off opens is written by a
+ * request this tab has not read since. So for one round trip the honest
+ * answers are: the list says "nothing of yours is waiting" (true — it is
+ * running), and the last `/turn` read says "no turns" (true when it was
+ * issued, before the turn existed). Believing them together is how the session
+ * goes INACTIVE with the user's prompt in flight (dev, 2026-09-06, on video:
+ * the composer dropped Stop and the waiting row vanished seconds after the
+ * first prompt was accepted).
+ *
+ * The floor is evidence, not a timer: it stands only until a read that COULD
+ * have seen the turn answers, and it dies with the observation that armed it.
+ */
+describe('projectWorking — a row the server took off the queue means a turn is opening', () => {
+  const drained = (over: Partial<WorkingInboxInput> = {}): WorkingInboxInput => ({
+    pending: 0,
+    atMs: T0,
+    drainedAtMs: T0,
+    ...over,
+  });
+
+  test('a vanished row keeps the session working while every read predates it', () => {
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + 500,
+      }),
+    ).toEqual({
+      pendingDelivery: true,
+      state: 'working',
+      source: 'server',
+      turnId: null,
+      since: T0,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('it never names a turn — the row the receipt stood on is gone', () => {
+    // A send made DURING another response names that response's turn
+    // (`SendReceipt.turnId`), and the receipt outlives the row by design. Once
+    // the row drains, that association is stale: naming it would put the
+    // shimmer back on a turn whose answer is already complete, and
+    // `suppressWorkingTurnBusy` would then draw no indicator at all — the same
+    // dimmed-bubble-no-indicator frame this whole floor exists to remove.
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_queued', turnId: 'msg_previous', atMs: T0 - 1_000 },
+      inbox: drained(),
+      server: { turns: [], atMs: T0 - 2_000 },
+      stream: null,
+      nowMs: T0 + 500,
+    });
+    expect(projection.state).toBe('working');
+    expect(projection.turnId).toBeNull();
+  });
+
+  test('a server read taken AFTER the drain retires the floor', () => {
+    // The whole bound: one read that could have seen the turn ends the floor,
+    // in either direction. This one saw no turns, so the turn is over.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 + 200 },
+        stream: null,
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('a WIRE idle frame after the drain does NOT retire it', () => {
+    // The frame is honest about the runtime it left: a box that has just come
+    // up reports idle in its status snapshot, and the turn the drain opened is
+    // not on the wire yet. Only a read of the control plane can answer for a
+    // hand-off the control plane made.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: { type: 'idle', origin: 'wire', atMs: T0 + 300 },
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('working');
+  });
+
+  test('a LOCAL idle frame after the drain does not retire it either', () => {
+    // `reconcileMissingBusySessions` fabricates one of these on every SSE
+    // connect, which on a brand-new session lands moments after the drain. A
+    // fabricated frame may answer when nothing else can; it may never retire a
+    // server-owned fact. See `WorkingStreamInput.origin`.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: { type: 'idle', origin: 'local', atMs: T0 + 300 },
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('working');
+  });
+
+  test('a stop this tab issued never arms the floor', () => {
+    // Stop marks every queued row `held`, which drops the live count to zero —
+    // the same shape as a drain, the opposite meaning. "A HELD row is not work
+    // in flight — Stop must put the composer back."
+    expect(
+      projectWorking({
+        optimistic: null,
+        abort: { atMs: T0 + 100, settledAtMs: null },
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('the floor dies with the observation that armed it', () => {
+    // No separate bound: a reading stops deciding at INBOX_OBSERVATION_MAX_MS,
+    // and a fact carried by that reading cannot outlive it. `workingExpiryAtMs`
+    // already schedules that instant, so nothing new has to be re-armed.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + INBOX_OBSERVATION_MAX_MS + 1,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('an inbox reading that saw no row leave decides exactly as before', () => {
+    // The regression guard for every caller that reports a count and nothing
+    // else: absent `drainedAtMs`, an empty inbox still never claims working.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: { pending: 0, atMs: T0 },
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('an open turn still outranks it, and still names its turn', () => {
+    // The floor is the answer when nothing better exists. A ledger row is
+    // better: it knows WHICH turn, which is what puts the shimmer on the right
+    // bubble.
+    const projection = projectWorking({
+      optimistic: null,
+      inbox: drained(),
+      server: {
+        turns: [turn({ started_at: new Date(T0 + 100).toISOString() })],
+        atMs: T0 + 200,
+      },
+      stream: null,
+      nowMs: T0 + 500,
+    });
+    expect(projection.state).toBe('working');
+    expect(projection.turnId).toBe('msg_01');
+  });
+});
+
+describe('pending delivery is not model execution', () => {
+  test('a polled waiting inbox keeps Stop available without claiming a response', () => {
+    const result = projectWorking({
+      optimistic: null,
+      server: { turns: [], atMs: T0 },
+      stream: { type: 'idle', atMs: T0 },
+      inbox: { pending: 1, atMs: T0 },
+      nowMs: T0,
+    });
+    expect(result.state).toBe('working');
+    expect(result.pendingDelivery).toBe(true);
+  });
+  test('an unacknowledged send is pending delivery', () => {
+    expect(
+      projectWorking({
+        optimistic: { messageId: 'm', atMs: T0 },
+        server: null,
+        stream: null,
+        nowMs: T0,
+      }).pendingDelivery,
+    ).toBe(true);
+  });
+  test('runtime activity remains a response while another prompt waits', () => {
+    const result = projectWorking({
+      optimistic: null,
+      server: { turns: [], atMs: T0 },
+      stream: { type: 'busy', atMs: T0 + 1 },
+      inbox: { pending: 1, atMs: T0 },
+      nowMs: T0 + 1,
+    });
+    expect(result.state).toBe('working');
+    expect(result.pendingDelivery).not.toBe(true);
+  });
+  test('an active turn is a response even with pending inbox rows', () => {
+    const result = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 },
+      stream: null,
+      inbox: { pending: 1, atMs: T0 },
+      nowMs: T0,
+    });
+    expect(result.pendingDelivery).not.toBe(true);
+  });
+});
+
+test('reserved delivery authority is not an active agent turn', () => {
+  expect(
+    projectWorking({
+      optimistic: null,
+      server: { turns: [turn({ state: 'delivering' })], atMs: T0 },
+      stream: null,
+      nowMs: T0,
+    }).pendingDelivery,
+  ).toBe(true);
+});
+
+test('an active turn takes precedence over a reserved queued turn', () => {
+  const result = projectWorking({
+    optimistic: null,
+    server: {
+      turns: [turn({ state: 'delivering', message_id: 'queued' }), turn({ message_id: 'running' })],
+      atMs: T0,
+    },
+    stream: null,
+    nowMs: T0,
+  });
+  expect(result.turnId).toBe('running');
+  expect(result.pendingDelivery).not.toBe(true);
+});
+
+test('a stale busy frame cannot turn a newer empty turn read into Thinking', () => {
+  const result = projectWorking({
+    optimistic: null,
+    server: { turns: [], atMs: T0 + 1000 },
+    stream: { type: 'busy', atMs: T0 },
+    inbox: { pending: 1, atMs: T0 + 1000 },
+    nowMs: T0 + 1000,
+  });
+  expect(result.pendingDelivery).toBe(true);
+});
+
+describe('Stop suppresses observations taken before its acknowledgement', () => {
+  test('old runtime output cannot bring back Thinking while Stop is in flight', () => {
+    expect(
+      projectWorking({
+        optimistic: null,
+        abort: { atMs: T0 + 10, settledAtMs: null },
+        server: { turns: [turn()], atMs: T0 },
+        stream: null,
+        activity: { atMs: T0 },
+        nowMs: T0 + 20,
+      }).state,
+    ).toBe('idle');
+  });
+  test('an old busy frame cannot bring back Thinking while Stop is in flight', () => {
+    expect(
+      projectWorking({
+        optimistic: null,
+        abort: { atMs: T0 + 10, settledAtMs: null },
+        server: null,
+        stream: { type: 'busy', atMs: T0 },
+        nowMs: T0 + 20,
+      }).state,
+    ).toBe('idle');
+  });
+  test('a pre-hold inbox read cannot undo an in-flight Stop', () => {
+    expect(
+      projectWorking({
+        optimistic: null,
+        abort: { atMs: T0 + 10, settledAtMs: null },
+        server: null,
+        stream: null,
+        inbox: { pending: 1, atMs: T0 },
+        nowMs: T0 + 20,
+      }).state,
+    ).toBe('idle');
+  });
+});
+
+test('fresh output after cancellation settles still exposes an agent that is running', () => {
+  expect(
+    projectWorking({
+      optimistic: null,
+      abort: { atMs: T0, settledAtMs: T0 + 100 },
+      server: null,
+      stream: null,
+      activity: { atMs: T0 + 200 },
+      nowMs: T0 + 200,
+    }).state,
+  ).toBe('working');
+});
+
+test('an unanswered Stop cannot hide continued runtime activity forever', () => {
+  const nowMs = T0 + OPTIMISTIC_ABORT_MAX_MS + 1;
+  expect(
+    projectWorking({
+      optimistic: null,
+      abort: { atMs: T0, settledAtMs: null },
+      server: null,
+      stream: null,
+      activity: { atMs: nowMs },
+      nowMs,
+    }).state,
+  ).toBe('working');
+});
+
+test('runtime activity retains the newly active turn while its inbox snapshot still says delivering', () => {
+  const projection = projectWorking({
+    optimistic: null,
+    server: {
+      turns: [turn({ message_id: 'next', started_at: new Date(T0 + 200).toISOString() })],
+      atMs: T0 + 300,
+    },
+    stream: { type: 'idle', atMs: T0 + 100 },
+    activity: { atMs: T0 + 250 },
+    inbox: { pending: 1, atMs: T0 + 150 },
+    nowMs: T0 + 350,
+  });
+  expect(projection).toMatchObject({ state: 'working', source: 'stream', turnId: 'next' });
+  expect(projection.pendingDelivery).not.toBe(true);
+});
+
+test('activity after completion does not reuse the ended turn or a delivery reservation', () => {
+  for (const candidate of [
+    turn(),
+    turn({ state: 'delivering', started_at: new Date(T0 + 200).toISOString() }),
+  ]) {
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: { turns: [candidate], atMs: T0 + 300 },
+        stream: { type: 'idle', atMs: T0 + 100 },
+        activity: { atMs: T0 + 250 },
+        nowMs: T0 + 350,
+      }).turnId,
+    ).toBeNull();
+  }
+});
+
+test('an expired idle frame cannot suppress a fresh later turn, but its ledger token remains visible', () => {
+  const later = T0 + 50_000;
+  const result = projectWorking({
+    optimistic: null,
+    server: {
+      turns: [turn({ turn_token: 'later', started_at: new Date(later).toISOString() })],
+      atMs: later + 1,
+    },
+    stream: { type: 'idle', atMs: T0 },
+    nowMs: later + 2,
+  });
+  expect(result).toEqual({
+    state: 'working',
+    source: 'server',
+    turnId: 'msg_01',
+    since: later,
+    serverOpenTurnToken: 'later',
   });
 });

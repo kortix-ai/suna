@@ -5,8 +5,10 @@ import {
   connectors,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectorSyncFences,
   projectSessionConnectorBindings,
   projects,
+  tunnelConnections,
 } from '@kortix/db';
 /**
  * Connector materialization sweep — read `connectors:` from kortix.yaml,
@@ -15,14 +17,15 @@ import {
  * (manifest = source of truth, like triggers); this populates the runtime view
  * the gateway + dashboard read. Catalog fetch is best-effort per connector:
  * a connector that can't be reached is stored with status='error' + 0 actions,
- * never failing the whole sweep. See docs/specs/connector.md §3, §7.
+ * never failing the whole sweep.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
+import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
-import { safeEgressFetch } from '../shared/ssrf-guard';
+import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
+import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 import { config } from '../config';
 import {
@@ -44,10 +47,15 @@ import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
-import { synthesizeComputerConnectors } from './computer-materialize';
-import { COMPUTER_SLUG, computerCatalog } from './computers';
+import {
+  COMPUTER_CONNECTOR_NAME,
+  COMPUTER_SLUG,
+  attachComputerConnection,
+  computerCatalog,
+} from './computers';
 import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
 import { listMcpTools, type FetchImpl } from './call';
+import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
@@ -63,7 +71,7 @@ import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
-import { parseSpecDocument } from './spec-doc';
+import { isSpecLoadError, parseSpecDocument, SpecLoadError } from './spec-doc';
 import {
   type ConnectorAuthDiscovery,
   discoverHttpAuthChallenge,
@@ -207,7 +215,8 @@ export async function discoverDraftConnectorAuth(
   return discoverConnectorAuthFromSource(await withProjectGitAuth(row), draft);
 }
 
-async function discoverConnectorAuthFromSource(
+/** Exported for contract tests (`unit-connector-spec-load-discovery.test.ts`). */
+export async function discoverConnectorAuthFromSource(
   project: GitBackedProject,
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
@@ -232,6 +241,17 @@ async function discoverConnectorAuthFromSource(
     try {
       return discoverOpenApiAuth(await loadSpecDoc(project, spec), spec);
     } catch (e) {
+      if (isSpecLoadError(e)) {
+        // The spec the user pointed at cannot be loaded: a non-OK HTTP status
+        // (an auth-walled or wrong URL — Better Stack `3e5bd849…`), a landing
+        // page, or an unparseable body. Expected user-input state, not a
+        // server fault — there is no auth to discover from an unreadable spec,
+        // so degrade like the missing-repo case below instead of letting the
+        // throw 500 → Sentry. The real reason surfaces through the sync path's
+        // catalog error (connector status `error` + the create flow's
+        // sync-error toast).
+        return { ...EMPTY_AUTH_DISCOVERY, warnings: [e.message] };
+      }
       if (
         isRepoFileNotFoundError(e) ||
         String((e as Error).message).startsWith('connector spec not found in repository:')
@@ -251,6 +271,12 @@ async function discoverConnectorAuthFromSource(
         resolveWorkspace: resolvePostmanWorkspace,
       });
     } catch (e) {
+      if (isSpecLoadError(e)) {
+        // Same expected user-input state as the openapi branch above: a
+        // remote Postman source the API could not load degrades to the empty
+        // discovery instead of a 500 → Sentry.
+        return { ...EMPTY_AUTH_DISCOVERY, warnings: [e.message] };
+      }
       if (
         isRepoFileNotFoundError(e) ||
         String((e as Error).message).startsWith('connector spec not found in repository:')
@@ -276,7 +302,7 @@ async function discoverConnectorAuthFromSource(
           ? draft.baseUrl
           : null;
   if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
-  assertAllowedSourceAddress(endpoint);
+  assertAllowedEndpointUrl(endpoint);
   const response = await safeEgressFetch(
     endpoint,
     provider === 'mcp' || provider === 'graphql'
@@ -353,31 +379,6 @@ export async function reconcileChannelConnectors(
   }
 }
 
-/**
- * Best-effort re-materialization after a tunnel (computer) changes for an
- * ACCOUNT (machine connected / removed). Tunnels are account-scoped but
- * connectors are project-scoped, so every machine profile must be reconciled
- * across every project of the account. Each profile exists iff its tunnel has
- * completed a handshake, so this is idempotent.
- * Never throws: a sync hiccup must not fail the connect/remove request.
- */
-export async function reconcileComputerConnectors(accountId: string): Promise<void> {
-  try {
-    const rows = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(eq(projects.accountId, accountId));
-    for (const r of rows) {
-      await syncProjectConnectors(r.projectId, accountId);
-    }
-  } catch (e) {
-    console.warn('[connector] computer connector reconcile failed', {
-      accountId,
-      err: (e as Error).message,
-    });
-  }
-}
-
 export interface SyncOptions {
   /**
    * Re-fetch every connector's catalog even when its manifest hash is
@@ -415,7 +416,21 @@ export async function syncProjectConnectors(
       errors: [{ slug: '(project)', error: 'project not found' }],
     };
   const accountId = row.accountId;
+  // Taken BEFORE the manifest read, so every commit made before this point is
+  // in what this sync reads. See `withConnectorSyncWrite`.
+  const fence = await openConnectorSyncFence(projectId);
+  // Each connector and the project policies are written under their own fence
+  // scope: a write that a newer sync already made is skipped, never undone.
+  return syncProjectConnectorsFenced(row, accountId, fence, opts);
+}
 
+async function syncProjectConnectorsFenced(
+  row: typeof projects.$inferSelect,
+  accountId: string,
+  fence: ConnectorSyncFence,
+  opts: SyncOptions,
+): Promise<SyncResult> {
+  const projectId = row.projectId;
   const errors: SyncResult['errors'] = [];
   let gitProject: GitBackedProject = row;
   try {
@@ -464,7 +479,7 @@ export async function syncProjectConnectors(
     for (const e of projectPoliciesParsed.errors) {
       errors.push({ slug: '(policies)', error: e.error });
     }
-    await reconcileProjectPolicies(projectId, projectPoliciesParsed);
+    await reconcileProjectPolicies(projectId, projectPoliciesParsed, fence);
   }
 
   // Channel connectors (e.g. Slack) are INSTALL-driven, not manifest-driven:
@@ -473,10 +488,10 @@ export async function syncProjectConnectors(
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  // Computer connectors are install-driven the same way: one synthetic profile
-  // for each machine that has completed a tunnel handshake.
-  // A regular connector — no experimental opt-in — also manifest-independent.
-  const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
+  // Computer connectors are created by pairing a machine, never by kortix.yaml.
+  // Every existing one stays materialized, which also keeps its native catalog
+  // current after a code change.
+  const computerSpecs = await existingComputerConnectorSpecs(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
 
   // A connector binding is server-side by definition. Convert legacy runtime
@@ -601,7 +616,7 @@ export async function syncProjectConnectors(
           : await resolveCatalog(gitProject, spec, {
               credential: catalogCredential,
             });
-      await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);
+      await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
     } catch (e) {
@@ -616,33 +631,30 @@ export async function syncProjectConnectors(
   // desiredSlugs, so they're kept). When the manifest is UNREADABLE we must not
   // touch manifest-declared connectors (could be a transient git error) — only
   // reconcile CHANNEL rows whose install is gone, so a disconnect still cleans up.
-  for (const e of existing) {
-    if (desiredSlugs.has(e.slug)) continue;
-    if (manifest || e.providerType === 'channel' || e.providerType === 'computer') {
-      const [bound] = await db
+  // Computer connectors are never removed here: pairing creates them outside
+  // any fence, so one created after `computerSpecs` was read is not desired yet.
+  const removed = existing.filter(
+    (e) =>
+      e.providerType !== 'computer' &&
+      !desiredSlugs.has(e.slug) &&
+      (manifest || e.providerType === 'channel'),
+  );
+  for (const e of removed) {
+    await withConnectorSyncWrite(fence, connectorScope(e.slug), async (tx) => {
+      const [bound] = await tx
         .select({ sessionId: projectSessionConnectorBindings.sessionId })
         .from(projectSessionConnectorBindings)
         .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
         .limit(1);
       if (bound) {
-        if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
-          // Existing sessions can remain durably bound to the retired aggregate
-          // connector. DB-backed catalog and call resolution expose this row only
-          // to a session with an exact durable binding.
-          await db
-            .update(connectors)
-            .set({ enabled: true, status: 'active', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
-        } else {
-          await db
-            .update(connectors)
-            .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
-        }
+        await tx
+          .update(connectors)
+          .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+          .where(eq(connectors.connectorId, e.connectorId));
       } else {
-        await db.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
+        await tx.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
       }
-    }
+    });
   }
 
   return { synced, errors };
@@ -652,7 +664,7 @@ export async function reconcileEmailConnections(
   projectId: string,
   accountId: string,
 ): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId).catch(() => []);
+  const installs = await listAgentMailInstalls(projectId);
   const canonicalSlug = channelDefaultSlug('email');
   const [connector] = await db
     .select({ connectorId: connectors.connectorId })
@@ -729,6 +741,83 @@ export async function reconcileEmailConnections(
   }
 }
 
+type SyncTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * The write fence of one manifest sync: the project and the database time the
+ * sync started, taken before it read kortix.yaml. See `connectorSyncFences`.
+ */
+export interface ConnectorSyncFence {
+  projectId: string;
+  /** `clock_timestamp()` as text, so the microseconds survive the round trip. */
+  startedAt: string;
+}
+
+/** Fence scope of the project-level policies and settings. */
+export const PROJECT_POLICY_SCOPE = 'project';
+/** Fence scope of one connector (its row, actions, policies, or removal). */
+export const connectorScope = (slug: string) => `connector:${slug}`;
+
+/** Thrown inside a write transaction to roll it back when a newer sync owns the scope. */
+class SupersededConnectorSyncError extends Error {
+  constructor(projectId: string, scope: string) {
+    super(`connector sync of project ${projectId} skipped ${scope}: a newer sync already wrote it`);
+    this.name = 'SupersededConnectorSyncError';
+  }
+}
+
+/** Open a sync's write fence: the database time the sync starts. */
+export async function openConnectorSyncFence(projectId: string): Promise<ConnectorSyncFence> {
+  const rows = (await db.execute(sql`select clock_timestamp()::text as started_at`)) as unknown as Array<{
+    started_at: string;
+  }>;
+  const startedAt = rows[0]?.started_at;
+  if (!startedAt) throw new Error('connector sync fence: database returned no time');
+  return { projectId, startedAt };
+}
+
+/**
+ * Run one sync write for one scope as a single transaction under the fence.
+ *
+ * The scope's fence row is advanced to this sync's start time, which also
+ * locks it until commit, so concurrent writes to one scope run one at a time.
+ * When a sync that started later has already written the scope, the update
+ * matches nothing: the transaction rolls back and this returns null. The newer
+ * sync read a manifest at least as recent, so its write stands. Either way the
+ * scope is materialized when this returns, so a caller reads its own write.
+ */
+export async function withConnectorSyncWrite<T>(
+  fence: ConnectorSyncFence | null,
+  scope: string,
+  work: (tx: SyncTransaction) => Promise<T>,
+): Promise<T | null> {
+  try {
+    return await db.transaction(async (tx) => {
+      if (fence) {
+        const claimed = await tx
+          .insert(connectorSyncFences)
+          .values({
+            projectId: fence.projectId,
+            scope,
+            startedAt: sql`${fence.startedAt}::timestamptz` as unknown as Date,
+          })
+          .onConflictDoUpdate({
+            target: [connectorSyncFences.projectId, connectorSyncFences.scope],
+            set: { startedAt: sql`excluded.started_at` },
+            setWhere: sql`${connectorSyncFences.startedAt} <= excluded.started_at`,
+          })
+          .returning({ projectId: connectorSyncFences.projectId });
+        if (claimed.length === 0) throw new SupersededConnectorSyncError(fence.projectId, scope);
+      }
+      return work(tx);
+    });
+  } catch (error) {
+    if (!(error instanceof SupersededConnectorSyncError)) throw error;
+    console.info(`[connector] ${error.message}`);
+    return null;
+  }
+}
+
 /**
  * Upsert one connector + reconcile its actions + policies.
  *
@@ -736,6 +825,11 @@ export async function reconcileEmailConnections(
  * leave the stored config + actions untouched and only reconcile the cheap
  * fields (name / enabled / status / policies) so a manifest edit that just
  * toggled `enabled` or tweaked policies still lands without a network round-trip.
+ *
+ * The connector row, its actions, and its policies change in ONE transaction.
+ * The gateway reads actions and policies directly, so a replace split across
+ * statements briefly showed a connector with no `block` rule, and an insert
+ * that failed after the delete left it without rules until the next sync.
  */
 async function upsertConnector(
   projectId: string,
@@ -743,8 +837,8 @@ async function upsertConnector(
   spec: ConnectorSpec,
   catalog: ResolvedCatalog | null,
   existingId: string | null,
+  fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
-  const isNew = !existingId;
   const manifestHash = manifestHashForConnector(spec);
   const { status, lastError } = catalogPersistenceState(spec.enabled, catalog);
   // New connector definitions never carry a secret reference. An existing
@@ -767,120 +861,343 @@ async function upsertConnector(
     updatedAt: new Date(),
   } as const;
 
-  let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
-  // Computer profiles are synthetic. Their sensitive flag is edited in the
-  // database, so preserve it when a lifecycle reconcile refreshes the native
-  // catalog and bound tunnel config.
-  if (resolvedConfig && spec.provider === 'computer' && existingId) {
-    const [stored] = await db
-      .select({ config: connectors.config })
-      .from(connectors)
-      .where(eq(connectors.connectorId, existingId))
-      .limit(1);
-    if ((stored?.config as { sensitive?: unknown } | null)?.sensitive === true) {
-      resolvedConfig = { ...resolvedConfig, sensitive: true };
+  const written = await withConnectorSyncWrite(fence, connectorScope(spec.slug), async (tx) => {
+    // Re-read under the scope lock: another sync may have created or removed
+    // the row since this sync listed the project's connectors.
+    const [current] = existingId
+      ? await tx
+          .select({ connectorId: connectors.connectorId })
+          .from(connectors)
+          .where(eq(connectors.connectorId, existingId))
+          .limit(1)
+      : await tx
+          .select({ connectorId: connectors.connectorId })
+          .from(connectors)
+          .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, spec.slug)))
+          .limit(1);
+    const currentId = current?.connectorId ?? null;
+    const isNew = !currentId;
+    let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
+    // Computer connectors are not in kortix.yaml. A sync refreshes their native
+    // catalog but must keep every stored key: `sensitive` is edited in the
+    // database, and the legacy keys (tunnel_ids, tunnel_account_ids,
+    // computer_profile, computer_accounts_backfilled) keep the previous API
+    // image correct during a rolling deploy or a rollback until the contract
+    // migration drops them.
+    if (resolvedConfig && spec.provider === 'computer') {
+      const [stored] = currentId
+        ? await tx
+            .select({ config: connectors.config })
+            .from(connectors)
+            .where(eq(connectors.connectorId, currentId))
+            .limit(1)
+        : [];
+      resolvedConfig = {
+        // A new connector is an explicit profile with no machines to the
+        // previous API: its gateway denies calls, its sync neither folds it
+        // into the account-wide aggregate nor deletes it.
+        ...(currentId ? {} : LEGACY_EMPTY_COMPUTER_PROFILE),
+        ...((stored?.config as Record<string, unknown> | null) ?? {}),
+        ...resolvedConfig,
+        ...((stored?.config as { sensitive?: unknown } | null)?.sensitive === true ? { sensitive: true } : {}),
+      };
     }
-  }
 
-  let connectorId = existingId;
-  if (connectorId) {
-    // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
-    // manifestHashForConnector (deliberately — flipping it must not force a
-    // catalog re-fetch), so on a hash-match reconcile we still patch that one
-    // key in place. Without this, the Sensitive toggle commits to kortix.yaml
-    // but the DB config (what the gateway + admin UI read) never updates.
-    const sensitivePatch = spec.sensitive
-      ? sql`coalesce(${connectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
-      : sql`coalesce(${connectors.config}, '{}'::jsonb) - 'sensitive'`;
-    await db
-      .update(connectors)
-      .set(
-        catalog
-          ? {
-              ...common,
-              config: resolvedConfig!,
-            }
-          : { ...common, config: sensitivePatch },
-      )
-      .where(eq(connectors.connectorId, connectorId));
-  } else {
-    // A brand-new connector is never "unchanged", so catalog is always present
-    // here; fall back to a server-less config defensively.
-    const [created] = await db
-      .insert(connectors)
-      .values({
-        accountId,
-        projectId,
-        slug: spec.slug,
-        ...common,
-        authSecret,
-        config: resolvedConfig ?? connectorConfig(spec, null, catalog?.iconUrl),
-      })
-      .returning({ connectorId: connectors.connectorId });
-    connectorId = created!.connectorId;
-  }
+    let id = currentId;
+    if (id) {
+      // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
+      // manifestHashForConnector (deliberately — flipping it must not force a
+      // catalog re-fetch), so on a hash-match reconcile we still patch that one
+      // key in place. Without this, the Sensitive toggle commits to kortix.yaml
+      // but the DB config (what the gateway + admin UI read) never updates.
+      const sensitivePatch = spec.sensitive
+        ? sql`coalesce(${connectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
+        : sql`coalesce(${connectors.config}, '{}'::jsonb) - 'sensitive'`;
+      await tx
+        .update(connectors)
+        .set(
+          catalog
+            ? {
+                ...common,
+                config: resolvedConfig!,
+              }
+            : { ...common, config: sensitivePatch },
+        )
+        .where(eq(connectors.connectorId, id));
+    } else {
+      // A brand-new connector is never "unchanged", so catalog is always present
+      // here; fall back to a server-less config defensively.
+      const [created] = await tx
+        .insert(connectors)
+        .values({
+          accountId,
+          projectId,
+          slug: spec.slug,
+          ...common,
+          authSecret,
+          config: resolvedConfig ?? connectorConfig(spec, null, catalog?.iconUrl),
+        })
+        .returning({ connectorId: connectors.connectorId });
+      id = created!.connectorId;
+    }
+    const rowId = id;
 
-  if (spec.authorizationStrategy === 'project') {
-    await ensureDefaultConnection({ projectId, connectorId });
-  }
-
-  // Actions only change when the catalog was re-resolved — leave them in place
-  // on a cheap reconcile.
-  if (catalog) {
-    await db.delete(connectorActions).where(eq(connectorActions.connectorId, connectorId));
-    if (catalog.actions.length > 0) {
-      const rows = catalog.actions.map((a) => ({
-        connectorId: connectorId!,
-        path: a.path,
-        name: a.name,
-        description: a.description,
-        inputSchema: a.inputSchema,
-        outputSchema: a.outputSchema,
-        risk: a.risk,
-        binding: a.binding as unknown as Record<string, unknown>,
-      }));
-      for (let offset = 0; offset < rows.length; offset += 500) {
-        await db.insert(connectorActions).values(rows.slice(offset, offset + 500));
+    // Actions only change when the catalog was re-resolved — leave them in place
+    // on a cheap reconcile.
+    if (catalog) {
+      await tx.delete(connectorActions).where(eq(connectorActions.connectorId, rowId));
+      if (catalog.actions.length > 0) {
+        const rows = catalog.actions.map((a) => ({
+          connectorId: rowId,
+          path: a.path,
+          name: a.name,
+          description: a.description,
+          inputSchema: a.inputSchema,
+          outputSchema: a.outputSchema,
+          risk: a.risk,
+          binding: a.binding as unknown as Record<string, unknown>,
+        }));
+        for (let offset = 0; offset < rows.length; offset += 500) {
+          await tx.insert(connectorActions).values(rows.slice(offset, offset + 500));
+        }
       }
     }
-  }
 
-  // Computer profiles have no manifest entry. Their policies are edited on the
-  // materialized connector and must survive rename/heartbeat reconciliation.
-  if (spec.provider !== 'computer' || isNew) {
-    await db.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, connectorId));
-    const policyRows = toPolicyRows(spec);
-    if (policyRows.length > 0) {
-      await db.insert(connectorPolicies).values(
-        policyRows.map((p) => ({
-          connectorId: connectorId!,
-          match: p.match,
-          action: p.action,
-          position: p.position,
-          conditions: p.conditions ?? null,
-        })),
-      );
+    // Computer connectors have no manifest entry. Their policies are edited on
+    // the materialized connector and must survive every sync.
+    if (spec.provider !== 'computer' || isNew) {
+      await tx.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, rowId));
+      const policyRows = toPolicyRows(spec);
+      if (policyRows.length > 0) {
+        await tx.insert(connectorPolicies).values(
+          policyRows.map((p) => ({
+            connectorId: rowId,
+            match: p.match,
+            action: p.action,
+            position: p.position,
+            conditions: p.conditions ?? null,
+          })),
+        );
+      }
     }
+    return rowId;
+  });
+
+  // A newer sync already wrote this connector: use the row it wrote.
+  const connectorId =
+    written ??
+    (
+      await db
+        .select({ connectorId: connectors.connectorId })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, spec.slug)))
+        .limit(1)
+    )[0]?.connectorId ??
+    null;
+
+  // After commit: the connection row references the connector, and
+  // `ensureDefaultConnection` writes through its own connection. A computer
+  // account is always one paired machine, so a computer connector never gets
+  // a machine-less project default.
+  if (connectorId && spec.authorizationStrategy === 'project' && spec.provider !== 'computer') {
+    await ensureDefaultConnection({ projectId, connectorId });
   }
 }
 
-/** Materialize one platform-managed Computers profile without writing kortix.yaml. */
-export async function materializeComputerConnectorProfile(input: {
-  projectId: string;
-  accountId: string;
-  spec: ConnectorSpec;
-  existingId: string | null;
-}): Promise<void> {
-  if (input.spec.provider !== 'computer') {
-    throw new Error('computer profile materialization requires provider="computer"');
+/**
+ * Config keys the previous API image reads (computer-materialize.ts). Remove
+ * with the contract migration that drops them.
+ */
+const LEGACY_EMPTY_COMPUTER_PROFILE = {
+  computer_profile: true,
+  tunnel_ids: [],
+  computer_accounts_backfilled: true,
+} as const;
+
+function computerConnectorSpec(input: {
+  slug: string;
+  name: string;
+  sensitive: boolean;
+}): ConnectorSpec {
+  return {
+    slug: input.slug,
+    path: `platform: computers#${input.slug}`,
+    name: input.name,
+    enabled: true,
+    provider: 'computer',
+    credentialMode: 'shared',
+    authorizationStrategy: 'project',
+    sensitive: input.sensitive,
+    app: null,
+    account: null,
+    url: null,
+    transport: null,
+    endpoint: null,
+    baseUrl: null,
+    platform: null,
+    spec: null,
+    auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    headers: {},
+    policies: [],
+  };
+}
+
+function storedSensitive(config: unknown): boolean {
+  return (config as { sensitive?: unknown } | null)?.sensitive === true;
+}
+
+async function existingComputerConnectorSpecs(
+  projectId: string,
+  declared: ConnectorSpec[],
+): Promise<ConnectorSpec[]> {
+  const declaredSlugs = new Set(declared.map((spec) => spec.slug));
+  const rows = await db
+    .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  return rows
+    .filter((row) => !declaredSlugs.has(row.slug))
+    .map((row) =>
+      computerConnectorSpec({ slug: row.slug, name: row.name, sensitive: storedSensitive(row.config) }),
+    );
+}
+
+/**
+ * The project's computer connector, created on first use. Pairing a machine
+ * and adding a paired machine to a project both call this; kortix.yaml cannot
+ * declare one (`projects/connectors.ts`). A project that already holds a
+ * computer connector under another slug keeps it. Refreshes the native catalog.
+ */
+export async function ensureComputerConnector(
+  projectId: string,
+  accountId: string,
+  requested: { slug?: string; name?: string } = {},
+): Promise<string> {
+  const find = () =>
+    db
+      .select({
+        connectorId: connectors.connectorId,
+        slug: connectors.slug,
+        name: connectors.name,
+        config: connectors.config,
+      })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.projectId, projectId),
+          eq(connectors.providerType, 'computer'),
+          ...(requested.slug ? [eq(connectors.slug, requested.slug)] : []),
+        ),
+      )
+      .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+      .limit(1);
+  const [existing] = await find();
+  // The catalog is served from code (withComputerCatalog), so an existing
+  // connector needs no rewrite unless the caller renames or re-slugs it.
+  if (existing && !requested.slug && !requested.name) return existing.connectorId;
+  try {
+    await upsertConnector(
+      projectId,
+      accountId,
+      computerConnectorSpec({
+        slug: existing?.slug ?? requested.slug ?? COMPUTER_SLUG,
+        name: requested.name || existing?.name || COMPUTER_CONNECTOR_NAME,
+        sensitive: storedSensitive(existing?.config),
+      }),
+      { actions: computerCatalog(), server: null },
+      existing?.connectorId ?? null,
+    );
+  } catch (error) {
+    // A concurrent first pairing created it; use that row.
+    if (!isUniqueViolation(error)) throw error;
   }
-  await upsertConnector(
-    input.projectId,
-    input.accountId,
-    input.spec,
-    { actions: computerCatalog(), server: null },
-    input.existingId,
-  );
+  const [row] = await find();
+  if (!row) throw new Error('computer connector was not created');
+  return row.connectorId;
+}
+
+/**
+ * v2 F1+F2: every project holds the built-in computer connector, and every
+ * machine a person paired is their private account in it. Runs on connection
+ * and connector listing and when a call or catalog resolves `computer`.
+ *
+ * Idempotent and cheap when nothing is missing (two indexed reads). A missing
+ * account is created through `attachComputerConnection` under the connector
+ * row lock; the unique index (connector, owner, machine) backs it. An account
+ * that exists in any state is left alone, so an account the owner revoked in
+ * this project, or one revoked by unpairing, never comes back by itself.
+ * `userId` null (API keys, service accounts) ensures only the connector.
+ */
+export async function ensureProjectComputer(projectId: string, userId: string | null): Promise<void> {
+  // An operator acting as a customer (impersonation) must never write their
+  // own machines, or anything else, into the customer's project: the grant
+  // allows reads, and the rows would outlive it.
+  if (!config.TUNNEL_ENABLED || getImpersonationContext()) return;
+  const [project] = await db
+    .select({ accountId: projects.accountId, existing: connectors.connectorId })
+    .from(projects)
+    .leftJoin(
+      connectors,
+      and(eq(connectors.projectId, projects.projectId), eq(connectors.providerType, 'computer')),
+    )
+    .where(eq(projects.projectId, projectId))
+    .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+    .limit(1);
+  if (!project) return;
+  const connectorId = project.existing ?? (await ensureComputerConnector(projectId, project.accountId));
+  if (!userId) return;
+
+  type Reader = Pick<typeof db, 'select'>;
+  // Held: the owner's own account in any state (a revoked one stays revoked),
+  // or any active account for the machine, such as the project-shared one. A
+  // second, private account for a shared machine would give the owner two
+  // pinned accounts for one computer, and every unnamed call would answer
+  // account_required.
+  const held = (reader: Reader, tunnelId: typeof tunnelConnections.tunnelId) =>
+    reader
+      .select({ one: sql`1` })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connectorId),
+          eq(connectorConnections.tunnelId, tunnelId),
+          or(
+            and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, userId)),
+            eq(connectorConnections.status, 'active'),
+          ),
+        ),
+      );
+  const missing = (reader: Reader) =>
+    reader
+      .select({ tunnelId: tunnelConnections.tunnelId, name: tunnelConnections.name })
+      .from(tunnelConnections)
+      .where(
+        and(eq(tunnelConnections.ownerUserId, userId), notExists(held(reader, tunnelConnections.tunnelId))),
+      )
+      .orderBy(tunnelConnections.createdAt);
+  if ((await missing(db)).length === 0) return;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ connectorId: connectors.connectorId })
+      .from(connectors)
+      .where(eq(connectors.connectorId, connectorId))
+      .for('update');
+    // Re-read under the lock: a concurrent ensure may have created them. A
+    // machine unpaired meanwhile is skipped by the attach (its key-share lock).
+    for (const machine of await missing(tx)) {
+      await attachComputerConnection(tx, {
+        accountId: project.accountId,
+        projectId,
+        connectorId,
+        ownerType: 'member',
+        ownerId: userId,
+        tunnelId: machine.tunnelId,
+        name: machine.name,
+        createdBy: userId,
+      });
+    }
+  });
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */
@@ -908,6 +1225,12 @@ export async function resolveCatalog(
             /* keep */
           }
         }
+        // The spec document chooses where every call goes. Check that target
+        // like any other connector endpoint; the gateway checks it again, with
+        // DNS resolution, on every call.
+        if (server && /^[a-z][a-z0-9+.-]*:/i.test(server)) {
+          assertConnectorEndpointUrl(server, { what: 'OpenAPI server URL' });
+        }
         return { actions: normalizeOpenApi(doc), server };
       }
       case 'postman': {
@@ -925,9 +1248,11 @@ export async function resolveCatalog(
         if (actions.length > 10_000) {
           throw new Error(`Postman source produced ${actions.length} actions; limit is 10000`);
         }
+        assertPostmanRequestUrls(actions);
         return { actions, server: null };
       }
       case 'http': {
+        if (spec.baseUrl) assertConnectorEndpointUrl(spec.baseUrl, { what: 'base_url' });
         const routes = await loadHttpRoutes(project, spec.spec);
         return { actions: normalizeHttp(routes), server: spec.baseUrl };
       }
@@ -939,20 +1264,13 @@ export async function resolveCatalog(
         };
       }
       case 'mcp': {
-        assertAllowedSourceAddress(spec.url!);
+        assertAllowedEndpointUrl(spec.url!);
         const tools = await listMcpTools({
           url: spec.url!,
           auth: spec.auth,
           headers: spec.headers,
           secret: options.credential ?? null,
-          fetchImpl:
-            options.mcpFetchImpl ??
-            (async (url, init) =>
-              safeEgressFetch(url, {
-                method: init.method,
-                headers: init.headers,
-                body: init.body,
-              })),
+          fetchImpl: options.mcpFetchImpl ?? connectorEgressFetch,
         });
         return { actions: normalizeMcp(tools), server: spec.url };
       }
@@ -1000,6 +1318,21 @@ export async function resolveCatalog(
   }
 }
 
+/**
+ * A Postman request whose URL names a concrete host must target a public
+ * endpoint. A host written as a `{{variable}}` is filled from call arguments,
+ * so only the gateway's per-call check can judge it.
+ */
+function assertPostmanRequestUrls(actions: ReturnType<typeof normalizePostmanDocuments>): void {
+  for (const action of actions) {
+    const binding = action.binding as { kind?: string; url?: unknown };
+    if (binding.kind !== 'postman' || typeof binding.url !== 'string') continue;
+    const origin = binding.url.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i)?.[0];
+    if (!origin || origin.includes('{{')) continue;
+    assertConnectorEndpointUrl(origin, { what: `Postman request "${action.name}" URL` });
+  }
+}
+
 async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any> {
   return parseSpecDocument(await loadSourceText(project, spec), spec);
 }
@@ -1008,17 +1341,27 @@ async function loadSourceText(project: GitBackedProject, spec: string): Promise<
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
     assertAllowedSourceAddress(spec);
-    const res = await safeEgressFetch(spec, {
-      // Signal we accept either form; servers that content-negotiate may hand
-      // back JSON, but we parse whatever comes regardless.
-      headers: {
-        accept: 'application/json, application/yaml, text/yaml, text/plain, */*',
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
+    try {
+      const res = await safeEgressFetch(spec, {
+        // Signal we accept either form; servers that content-negotiate may hand
+        // back JSON, but we parse whatever comes regardless.
+        headers: {
+          accept: 'application/json, application/yaml, text/yaml, text/plain, */*',
+        },
+      });
+      if (!res.ok) {
+        throw new SpecLoadError(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
+      }
+      raw = await res.text();
+    } catch (e) {
+      // Everything after the guards that stops the spec body from being read
+      // is a spec-load failure (Better Stack `3e5bd849…`), not a server fault.
+      // A URL the egress guard refused keeps its typed envelope — the routes
+      // map it to the structured `invalid_source_address` 400
+      // (Better Stack `f5c0ce61…`).
+      if (e instanceof SpecLoadError || e instanceof UnsafeEgressError) throw e;
+      throw new SpecLoadError(`failed to fetch spec at ${spec}: ${(e as Error).message}`);
     }
-    raw = await res.text();
   } else {
     // `readRepoFile` throws a typed `RepoFileNotFoundError` when the path isn't
     // in the repo at the ref (see #3537 / `isGitPathNotFoundError`) instead of
@@ -1169,7 +1512,7 @@ async function loadHttpRoutes(
 }
 
 async function introspectGraphql(endpoint: string): Promise<any> {
-  assertAllowedSourceAddress(endpoint);
+  assertAllowedEndpointUrl(endpoint);
   const query = `query{__schema{queryType{name} mutationType{name} types{name fields{name description args{name type{kind name ofType{name}}} type{name ofType{name}}}}}}`;
   const res = await safeEgressFetch(endpoint, {
     method: 'POST',
@@ -1185,45 +1528,53 @@ async function introspectGraphql(endpoint: string): Promise<any> {
  * source of truth, so we don't preserve DB-only edits). Cheap — runs every
  * sync, no network call.
  */
-async function reconcileProjectPolicies(
+export async function reconcileProjectPolicies(
   projectId: string,
   parsed: {
     policies: ProjectPolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
   },
+  fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
-  await db
-    .delete(connectorProjectPolicies)
-    .where(eq(connectorProjectPolicies.projectId, projectId));
-  const rows = toProjectPolicyRows(parsed.policies);
-  if (rows.length > 0) {
-    await db.insert(connectorProjectPolicies).values(
-      rows.map((p) => ({
-        projectId,
-        match: p.match,
-        action: p.action,
-        position: p.position,
-        // Carried through, NOT dropped: reconcile is delete-then-insert from the
-        // manifest, so a field missing here is silently erased on every sync.
-        conditions: p.conditions ?? null,
-      })),
-    );
-  }
-  // Update before insert so the same code can write through the compatibility
-  // view used during the physical connector-schema rename.
-  const updateExisting = () =>
-    db
-      .update(connectorProjectSettings)
-      .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
-      .where(eq(connectorProjectSettings.projectId, projectId))
-      .returning({ projectId: connectorProjectSettings.projectId });
-  if ((await updateExisting()).length > 0) return;
-  try {
-    await db
-      .insert(connectorProjectSettings)
-      .values({ projectId, defaultMode: parsed.settings.defaultMode });
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    if ((await updateExisting()).length === 0) throw error;
-  }
+  // One transaction: the gateway reads these rows on every call, so a delete
+  // committed ahead of its insert served calls with no project `block` rule.
+  await withConnectorSyncWrite(fence, PROJECT_POLICY_SCOPE, async (tx) => {
+    await tx
+      .delete(connectorProjectPolicies)
+      .where(eq(connectorProjectPolicies.projectId, projectId));
+    const rows = toProjectPolicyRows(parsed.policies);
+    if (rows.length > 0) {
+      await tx.insert(connectorProjectPolicies).values(
+        rows.map((p) => ({
+          projectId,
+          match: p.match,
+          action: p.action,
+          position: p.position,
+          // Carried through, NOT dropped: reconcile is delete-then-insert from the
+          // manifest, so a field missing here is silently erased on every sync.
+          conditions: p.conditions ?? null,
+        })),
+      );
+    }
+    // Update before insert so the same code can write through the compatibility
+    // view used during the physical connector-schema rename.
+    const updateExisting = () =>
+      tx
+        .update(connectorProjectSettings)
+        .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
+        .where(eq(connectorProjectSettings.projectId, projectId))
+        .returning({ projectId: connectorProjectSettings.projectId });
+    if ((await updateExisting()).length > 0) return;
+    try {
+      // A savepoint: a unique violation here must not abort the transaction.
+      await tx.transaction(async (savepoint) => {
+        await savepoint
+          .insert(connectorProjectSettings)
+          .values({ projectId, defaultMode: parsed.settings.defaultMode });
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      if ((await updateExisting()).length === 0) throw error;
+    }
+  });
 }

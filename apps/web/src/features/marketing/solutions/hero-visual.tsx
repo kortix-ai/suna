@@ -2,6 +2,7 @@
 
 import { EASE_OUT, LEAD } from '@/features/marketing/component/hero-motion';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { ROLES } from './registry';
 
@@ -32,13 +33,14 @@ const RETURNS: Record<string, string> = {
 };
 
 export function SolutionsHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label="The eight teams this platform serves, and the object each one gets back."
+      aria-label={tI18nComplete.raw('text30a034c0a1ed')}
     >
       <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[27rem]">
         {/* the hairline the column hangs off, bleeding both ends */}

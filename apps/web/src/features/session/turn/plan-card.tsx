@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The plan — its parts, and the chat's presentation of them.
  *
@@ -228,6 +229,7 @@ export function PlanRing({
   running: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { state } = planRingState(done, total, running);
   const fraction = total === 0 ? 0 : done / total;
   // `useId` emits colons, which are legal in an HTML id but hostile inside a
@@ -239,7 +241,7 @@ export function PlanRing({
       viewBox={`0 0 ${STATUS_RING.BOX} ${STATUS_RING.BOX}`}
       fill="none"
       role="img"
-      aria-label={`${done} of ${total} steps done`}
+      aria-label={tI18nComplete('textd1a087aa7773', { value0: done, value1: total })}
       className={cn(RING_TONE[state], className)}
     >
       <mask
@@ -400,6 +402,7 @@ export function keyTodos(todos: ReadonlyArray<TodoItem>): Array<{ todo: TodoItem
 }
 
 export function PlanCard({ sessionId }: { sessionId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data } = useRuntimeSessionTodo(sessionId);
   const [open, setOpen] = useState(false);
 
@@ -481,7 +484,7 @@ export function PlanCard({ sessionId }: { sessionId: string }) {
                 {label}
               </span>
               <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                {done} of {total}
+                {done} {tI18nComplete.raw('text28391d3bc64e')} {total}
               </span>
             </span>
           </span>

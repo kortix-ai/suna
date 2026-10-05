@@ -2,19 +2,22 @@
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
   DRIVE_ACTION_ROW_CLASS,
   DriveExplorer,
   FileExplorerSourceProvider,
 } from '@/features/project-files';
+import { ProjectFilesProvider, useProjectContext } from '@/features/project-files/context';
 import { useBoundedRuntimeWait } from '@/features/session/use-bounded-runtime-wait';
-import { useRuntimeStore, useSessionWorkspace } from '@kortix/sdk/react';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon as RefreshCw,
   CloudSlashIcon as ServerOff,
+  MoonIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState, type ElementType, type ReactNode } from 'react';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
@@ -30,6 +33,7 @@ export function SandboxFileExplorer({
   shareContext,
   leading,
   listingAs,
+  mirrorRef,
 }: {
   embedded?: boolean;
   shareContext?: { projectId: string; sessionId: string };
@@ -37,10 +41,16 @@ export function SandboxFileExplorer({
   leading?: ReactNode;
   /** Element type for the listing region — see {@link DriveExplorer}. */
   listingAs?: ElementType<{ className?: string; children?: ReactNode }>;
+  /**
+   * Where to read the listing from once the sandbox parks: the project's bare
+   * git mirror at this session's branch. Supplying it is what lets an idle
+   * session show its files instead of only explaining itself.
+   */
+  mirrorRef?: { projectId: string; ref: string };
 } = {}) {
-  return (
+  const explorer = (
     <FileExplorerSourceProvider value={sandboxExplorerSource}>
-      <SandboxServerGate leading={leading} shareContext={shareContext}>
+      <SandboxServerGate leading={leading}>
         <DriveExplorer
           embedded={embedded}
           shareContext={shareContext}
@@ -50,6 +60,8 @@ export function SandboxFileExplorer({
       </SandboxServerGate>
     </FileExplorerSourceProvider>
   );
+  if (!mirrorRef) return explorer;
+  return <ProjectFilesProvider value={mirrorRef}>{explorer}</ProjectFilesProvider>;
 }
 
 /**
@@ -62,34 +74,26 @@ export function SandboxFileExplorer({
 function SandboxServerGate({
   children,
   leading,
-  shareContext,
 }: {
   children: React.ReactNode;
   leading?: ReactNode;
-  shareContext?: { projectId: string; sessionId: string };
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
-  const workspace = useSessionWorkspace(shareContext?.projectId, shareContext?.sessionId, {
-    enabled: !!shareContext,
-  });
-  const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const { data: health, isLoading: isHealthLoading, parked, refetch } = useServerHealth();
+  const mirror = useProjectContext();
   const [retryAttempt, setRetryAttempt] = useState(0);
-  const healthWaitExpired = useBoundedRuntimeWait(
-    workspace.phase === 'resolving' || isHealthLoading,
-    retryAttempt,
-  );
+  const healthWaitExpired = useBoundedRuntimeWait(isHealthLoading, retryAttempt);
 
   const retry = () => {
     setRetryAttempt((attempt) => attempt + 1);
-    void workspace.retry();
     void refetch();
   };
 
   // Hold the gate closed while the first probe is in flight. Rendering the
   // explorer during the probe made it mount, fail its own listing, and paint a
   // second failure UI a moment before this one replaced it.
-  if ((workspace.phase === 'resolving' || isHealthLoading) && !healthWaitExpired) {
+  if (isHealthLoading && !healthWaitExpired) {
     return (
       <GateShell leading={leading}>
         <div className="flex flex-col gap-2 p-4">
@@ -101,7 +105,28 @@ function SandboxServerGate({
     );
   }
 
-  if (workspace.phase === 'error' || !health?.healthy || healthWaitExpired) {
+  // A parked box is not an unreachable one. The server answered: the sandbox
+  // is asleep. "Could not connect to <url>" would be a false report of a
+  // network failure, and its Retry cannot wake the box — a read is refused for
+  // exactly that purpose, so only a SEND resumes it.
+  //
+  // So open the gate: the explorer reads this session's branch from the git
+  // mirror and the files are simply there. Only a mount with no project/ref to
+  // read them from (the debug page) has nothing to show, and says so once.
+  if (parked) {
+    if (mirror?.projectId && mirror.ref) return <>{children}</>;
+    return (
+      <GateShell leading={leading}>
+        <EmptyState
+          icon={MoonIcon}
+          className="min-h-0 flex-1"
+          title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')}
+        />
+      </GateShell>
+    );
+  }
+
+  if (!health?.healthy || healthWaitExpired) {
     return (
       <GateShell leading={leading}>
         <ErrorState
@@ -121,7 +146,7 @@ function SandboxServerGate({
           action={
             <Button variant="outline" size="sm" className="gap-1.5" onClick={retry}>
               <RefreshCw className="size-3.5 shrink-0" />
-              Retry
+              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
             </Button>
           }
         />

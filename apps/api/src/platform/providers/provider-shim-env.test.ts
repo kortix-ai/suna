@@ -9,13 +9,15 @@
  * the credential: the upstream answers 401 and the secret looks broken rather
  * than undelivered.
  *
- * The contract is asserted against the daemon's own resolver rather than a
- * copied list of variable names, so renaming one on either side fails here
- * instead of silently disarming the shim in production.
+ * The contract is asserted against the resolver the daemon bundles
+ * (`@kortix/api-contract/egress-shim-rules`) rather than a copied list of
+ * variable names, so renaming one on either side fails here instead of
+ * silently disarming the shim in production.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
-import { resolveShimConfig } from '../../../../kortix-sandbox-agent-server/src/egress-shim/rules';
+import { resolveShimConfig } from '@kortix/api-contract/egress-shim-rules';
 
 // Each provider is constructed directly rather than through the registry, so
 // nothing here needs an admission list or a real credential. Assigned with

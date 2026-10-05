@@ -15,7 +15,7 @@ import {
   CaretRightIcon as ChevronRight,
   WarningCircleIcon as CircleAlert,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 
 export function ToolError({ error, toolName }: { error: string; toolName?: string }) {

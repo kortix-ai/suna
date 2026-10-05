@@ -1,47 +1,8 @@
+import { useBillingAccountId } from '@/stores/billing-account-context';
+import { listBillingTransactions, type BillingTransactionsPage } from '@kortix/sdk';
+import { dollarsToCredits } from '@kortix/shared';
 import { useQuery } from '@tanstack/react-query';
 import { accountStateKeys } from './use-account-state';
-import { useBillingAccountId } from '@/stores/billing-account-context';
-import { dollarsToCredits } from '@kortix/shared';
-import { getBillingTransactionsSummary, listBillingTransactions } from '@kortix/sdk';
-
-export interface CreditTransaction {
-  id: string;
-  created_at: string;
-  amount: number;
-  balance_after: number;
-  type:
-    | 'tier_grant'
-    | 'purchase'
-    | 'admin_grant'
-    | 'promotional'
-    | 'usage'
-    | 'refund'
-    | 'adjustment'
-    | 'expired'
-    | 'auto_topup'
-    | 'machine_bonus'
-    | 'daily_refresh';
-  description: string;
-  is_expiring?: boolean;
-  expires_at?: string;
-  metadata?: Record<string, any>;
-}
-
-export interface TransactionsResponse {
-  transactions: CreditTransaction[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    has_more: boolean;
-  };
-}
-
-export interface TransactionsSummary {
-  totalCredits: number;
-  totalDebits: number;
-  count: number;
-}
 
 export function useTransactions(
   limit: number = 50,
@@ -50,11 +11,9 @@ export function useTransactions(
   options?: { enabled?: boolean },
 ) {
   const accountId = useBillingAccountId();
-  const normalizedTypeFilter = Array.isArray(typeFilter)
-    ? typeFilter.join(',')
-    : typeFilter;
+  const normalizedTypeFilter = Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter;
 
-  return useQuery<TransactionsResponse>({
+  return useQuery<BillingTransactionsPage>({
     // Scope the cache slot by account so the BillingTab's history block
     // doesn't leak entries across accounts on a multi-account user.
     queryKey: [
@@ -68,12 +27,12 @@ export function useTransactions(
     // skip the request entirely rather than surfacing that raw error.
     enabled: options?.enabled ?? true,
     queryFn: async () => {
-      const data = (await listBillingTransactions({
+      const data = await listBillingTransactions({
         accountId: accountId ?? undefined,
         limit,
         offset,
         typeFilter: normalizedTypeFilter,
-      })) as TransactionsResponse;
+      });
       return {
         ...data,
         transactions: data.transactions.map((tx) => ({
@@ -84,24 +43,5 @@ export function useTransactions(
       };
     },
     staleTime: 30000,
-  });
-}
-
-export function useTransactionsSummary(days: number = 30) {
-  const accountId = useBillingAccountId();
-  return useQuery<TransactionsSummary>({
-    queryKey: [...accountStateKeys.transactions(), 'summary', days, { accountId: accountId ?? null }],
-    queryFn: async () => {
-      const data = await getBillingTransactionsSummary({
-        days,
-        accountId: accountId ?? undefined,
-      });
-      return {
-        totalCredits: dollarsToCredits(data.totalCredits),
-        totalDebits: dollarsToCredits(data.totalDebits),
-        count: data.count,
-      };
-    },
-    staleTime: 60000,
   });
 }

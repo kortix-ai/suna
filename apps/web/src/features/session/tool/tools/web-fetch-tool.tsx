@@ -10,14 +10,14 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { extractReadableHtml } from '@/features/session/tool/tool-renderers-sanitization';
-import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
+import { extractReadableHtml, safeHttpUrl } from '@kortix/shared';
+import { openSafeExternalUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import {
   CaretRightIcon as ChevronRight,
   ArrowSquareOutIcon as ExternalLink,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useMemo, useState } from 'react';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -50,10 +50,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
     () => (isHtml && output ? extractReadableHtml(output) : null),
     [isHtml, output],
   );
-  const isError = useMemo(
-    () => status !== 'running' && looksLikeError(output),
-    [status, output],
-  );
+  const isError = useMemo(() => status !== 'running' && looksLikeError(output), [status, output]);
   const errorSummary = useMemo(
     () => (isError ? output.replace(/^Error:\s*/i, '').trim() : ''),
     [isError, output],
@@ -131,7 +128,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
           </a>
 
           <p className="text-foreground/80 px-3 py-2 text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
-            {readableText || 'No readable text content.'}
+            {readableText || tI18nHardcoded.raw('i18nComplete.texta94794d69ea1')}
           </p>
 
           <Disclosure open={rawOpen} onOpenChange={setRawOpen}>

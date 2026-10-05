@@ -100,8 +100,7 @@ describe('CostSortHeader indicator', () => {
   // not shift the header label sideways by the width of an icon.
   test('the indicator box is reserved whether or not the column is active', () => {
     for (const direction of [undefined, 'ascending', 'descending'] as (
-      | CostSortDirection
-      | undefined
+      CostSortDirection | undefined
     )[]) {
       const html = render({ direction });
       expect((html.match(/<svg/g) ?? []).length, `direction ${direction}`).toBe(1);
@@ -110,8 +109,7 @@ describe('CostSortHeader indicator', () => {
 
   test('the glyph is hidden from assistive technology — aria-sort already says it', () => {
     for (const direction of [undefined, 'ascending', 'descending'] as (
-      | CostSortDirection
-      | undefined
+      CostSortDirection | undefined
     )[]) {
       expect(render({ direction })).toMatch(/<svg[^>]*aria-hidden="true"/);
     }

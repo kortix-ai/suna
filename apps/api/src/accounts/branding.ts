@@ -31,7 +31,8 @@ import { config } from '../config';
 import { db } from '../shared/db';
 import { rewriteStorageOrigin } from '../shared/storage-url';
 import { getSupabase } from '../shared/supabase';
-import { AccountIdParam, accountsRouter, getMembership, readBody } from './core/app';
+import { AccountIdParam, accountsRouter, getMembership } from './core/app';
+import { readJsonObject } from '../shared/http-body';
 import { auditIam, requireEntitlement } from './iam/helpers';
 
 export const BRANDING_BUCKET = 'branding';
@@ -390,7 +391,7 @@ export function registerBrandingRoutes(): void {
       const denied = await requireEntitlement(c, accountId, 'branding');
       if (denied) return denied;
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       if (!('app_name' in body)) return c.json({ error: 'app_name is required' }, 400);
       const parsed = normalizeAppName(body.app_name);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);

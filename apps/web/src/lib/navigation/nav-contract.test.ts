@@ -76,29 +76,25 @@ function lintNavRules(files: string[]): string[] {
 }
 
 describe('nav contract — no full page reload on an in-app navigation', () => {
-  test(
-    'no nav control reaches a static internal href through router.push or window.location',
-    () => {
-      let violations: string[];
-      try {
-        violations = lintNavRules(candidateFiles());
-      } catch (error) {
-        // eslint exits 1 when it reports problems. execFileSync throws, but the
-        // JSON is still on stdout.
-        const stdout = (error as { stdout?: string }).stdout;
-        if (!stdout) throw error;
-        const results = JSON.parse(stdout) as LintResult[];
-        violations = results.flatMap((r) =>
-          r.messages
-            .filter((m) => m.ruleId !== null && NAV_RULES.includes(m.ruleId))
-            .map((m) => `${r.filePath.replace(`${WEB_ROOT}/`, '')}:${m.line}  [${m.ruleId}]`),
-        );
-      }
+  test('no nav control reaches a static internal href through router.push or window.location', () => {
+    let violations: string[];
+    try {
+      violations = lintNavRules(candidateFiles());
+    } catch (error) {
+      // eslint exits 1 when it reports problems. execFileSync throws, but the
+      // JSON is still on stdout.
+      const stdout = (error as { stdout?: string }).stdout;
+      if (!stdout) throw error;
+      const results = JSON.parse(stdout) as LintResult[];
+      violations = results.flatMap((r) =>
+        r.messages
+          .filter((m) => m.ruleId !== null && NAV_RULES.includes(m.ruleId))
+          .map((m) => `${r.filePath.replace(`${WEB_ROOT}/`, '')}:${m.line}  [${m.ruleId}]`),
+      );
+    }
 
-      expect(violations).toEqual([]);
-    },
-    120_000,
-  );
+    expect(violations).toEqual([]);
+  }, 120_000);
 
   test('both rules are wired at error level, not warn', () => {
     // As warnings they sat under ~400 react-hooks messages and nobody saw them.
@@ -136,9 +132,21 @@ describe('nav contract — the router bridge', () => {
   test('the bridge is mounted in the root layout', () => {
     // An unmounted bridge silently falls back to window.location — the exact
     // behavior it exists to remove — so the mount is part of the contract.
-    const layout = readFileSync(resolve(WEB_ROOT, 'src/app/layout.tsx'), 'utf8');
+    const layout = readFileSync(resolve(WEB_ROOT, 'src/app/[locale]/layout.tsx'), 'utf8');
     expect(layout).toContain('<RouterBridge />');
     expect(layout).toContain("from '@/lib/navigation/router-bridge-mount'");
+  });
+});
+
+describe('nav contract — session switching', () => {
+  test('sidebar session links prefetch the full destination on intent', () => {
+    const source = readFileSync(
+      resolve(WEB_ROOT, 'src/features/workspace/project-sidebar/project-session-list.tsx'),
+      'utf8',
+    );
+    expect(source).toMatch(
+      /const sessionLink = \(\s*<HoverPrefetchLink\s+href=\{href\}\s+prefetch\s+onClick=\{onNavigate\}/,
+    );
   });
 });
 
@@ -169,12 +177,9 @@ describe('nav contract — every URL written to history is a real route', () => 
   // Back. Live code must build `/projects/<id>/sessions/<id>` instead.
   //
   // The allow-list is exactly the paths proven unreachable: the palette's
-  // no-projectId branch, and the terminal rail that both AppProviders call
-  // sites mount with showRightSidebar={false}.
-  const LEGACY_UNREACHABLE = [
-    'src/features/workspace/command-palette.tsx',
-    'src/components/sidebar/sidebar-right.tsx',
-  ];
+  // no-projectId terminal action. The legacy right rail that also wrote these
+  // hrefs is deleted (KRTX-1012); its allow-list entry went with it.
+  const LEGACY_UNREACHABLE = ['src/features/workspace/command-palette.tsx'];
 
   test('no live code writes a /sessions/<id> or /terminal/<id> tab href', () => {
     const hits = execFileSync(

@@ -15,6 +15,7 @@ const {
   clearTeamsTokenCache,
   graphToken,
   mintTeamsToken,
+  prewarmTeamsBotToken,
   teamsConfigured,
 } = await import('../channels/teams-auth');
 
@@ -99,5 +100,22 @@ describe('scoped helpers', () => {
     await graphToken('contoso.onmicrosoft.com');
     expect(calls[0]!.url).toContain('/contoso.onmicrosoft.com/');
     expect(calls[0]!.body).toContain(encodeURIComponent(GRAPH_SCOPE));
+  });
+});
+
+describe('prewarmTeamsBotToken', () => {
+  test('mints the bot-connector token so the first inbound message finds it cached', async () => {
+    expect(await prewarmTeamsBotToken()).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body).toContain(encodeURIComponent(BOT_CONNECTOR_SCOPE));
+    // The warm token is served from cache — no second round trip.
+    await botConnectorToken();
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a failed mint is reported, not thrown — boot must never depend on Microsoft', async () => {
+    nextStatus = 500;
+    nextBody = 'AADSTS down';
+    expect(await prewarmTeamsBotToken()).toBe(false);
   });
 });

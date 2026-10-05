@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The first two sections of the agent editor: what the agent IS (Basics) and
  * how it thinks (Model).
@@ -68,12 +69,19 @@ export function BasicsSection({
    *  instructions — pass `false` there so the field is not offered twice. */
   showDescription?: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
-    <EditorSection title="Basics" description="What this agent is, and whether it can run.">
-      <SettingRow label="Enabled" help="Turn off to stop this agent starting any new session.">
+    <EditorSection
+      title={tI18nComplete.raw('text8fdd2ee8475e')}
+      description={tI18nComplete.raw('text4e420a5186f0')}
+    >
+      <SettingRow
+        label={tI18nComplete.raw('text92c1cdfdf4cb')}
+        help={tI18nComplete.raw('textbe90a56d29da')}
+      >
         <div className="flex sm:justify-end">
           <Switch
-            aria-label="Enabled"
+            aria-label={tI18nComplete.raw('text92c1cdfdf4cb')}
             checked={draft.enabled !== false}
             onCheckedChange={(v) => set('enabled', v ? undefined : false)}
           />
@@ -82,17 +90,17 @@ export function BasicsSection({
 
       {showDescription ? (
         <SettingBlock
-          label="Description"
+          label={tI18nComplete.raw('text526e0087cc3f')}
           help={
             oc.mode === 'subagent'
-              ? 'Required. This is how other agents decide to call it.'
-              : 'One line on what this agent is for. Other agents read it when picking a subagent.'
+              ? tI18nComplete.raw('text77e2bc11f6ab')
+              : tI18nComplete.raw('text9965df7c3221')
           }
         >
           <Textarea
-            aria-label="Description"
+            aria-label={tI18nComplete.raw('text526e0087cc3f')}
             value={oc.description ?? ''}
-            placeholder="What this agent is for"
+            placeholder={tI18nComplete.raw('text446f4eabf99f')}
             minHeight={44}
             className="text-sm"
             onChange={(e) => setOc('description', e.target.value)}
@@ -101,8 +109,8 @@ export function BasicsSection({
       ) : null}
 
       <SettingRow
-        label="Availability"
-        help={oc.mode ? AGENT_MODE_HELP[oc.mode] : 'Follows the project default.'}
+        label={tI18nComplete.raw('text12f67f8539c4')}
+        help={oc.mode ? AGENT_MODE_HELP[oc.mode] : tI18nComplete.raw('text64f405e80a8d')}
       >
         <Select
           value={oc.mode ?? INHERIT}
@@ -110,11 +118,11 @@ export function BasicsSection({
             setOc('mode', value === INHERIT ? undefined : (value as typeof oc.mode))
           }
         >
-          <SelectTrigger aria-label="Availability" className="h-9 w-full">
+          <SelectTrigger aria-label={tI18nComplete.raw('text12f67f8539c4')} className="h-9 w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT}>Project default</SelectItem>
+            <SelectItem value={INHERIT}>{tI18nComplete.raw('texte8cb80e5c5cb')}</SelectItem>
             {AGENT_MODES.map((mode) => (
               <SelectItem key={mode} value={mode}>
                 {AGENT_MODE_LABEL[mode]}
@@ -128,12 +136,12 @@ export function BasicsSection({
           to make something disappear is a double negative, and it sat two rows
           under "Enabled" — two toggles whose ON states meant opposite things. */}
       <SettingRow
-        label="Show in pickers"
-        help="Off keeps it out of the session picker. Other agents can still call it."
+        label={tI18nComplete.raw('textc7bcb471c03d')}
+        help={tI18nComplete.raw('textdd4971af3f91')}
       >
         <div className="flex sm:justify-end">
           <Switch
-            aria-label="Show in pickers"
+            aria-label={tI18nComplete.raw('textc7bcb471c03d')}
             checked={!oc.hidden}
             onCheckedChange={(v) => setOc('hidden', v ? undefined : true)}
           />
@@ -154,6 +162,7 @@ export function ModelSection({
    *  `false` there so the collapsed copy of it does not sit in this section. */
   showPrompt?: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const { data: providers } = useRuntimeProviders();
   const models = flattenModels(providers);
   // Mode-aware read-back: a native (gateway-off) agent model is
@@ -186,18 +195,21 @@ export function ModelSection({
 
   return (
     <>
-      <EditorSection title="Model" description="How this agent thinks.">
+      <EditorSection
+        title={tI18nComplete.raw('text5e2c614c23f0')}
+        description={tI18nComplete.raw('text32398dbb68e2')}
+      >
         {/* "Provider model", not "Model": the section is already titled Model,
           and a row that repeats its section's name reads as a typo. */}
         <SettingRow
-          label="Provider model"
+          label={tI18nComplete.raw('text34455bf1d857')}
           help={
             oc.model ? (
               <InlineAction onClick={() => setOc('model', undefined)}>
-                Reset to project default
+                {tI18nComplete.raw('text9db60344e984')}
               </InlineAction>
             ) : (
-              'Follows the project default.'
+              tI18nComplete.raw('text64f405e80a8d')
             )
           }
         >
@@ -206,7 +218,7 @@ export function ModelSection({
               models={models}
               providers={providers}
               selectedModel={selectedModelKey}
-              unsetLabel="Project default"
+              unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
               onSelect={(m) => setOc('model', m ? modelKeyToWire(m) : undefined)}
             />
           </div>
@@ -214,8 +226,12 @@ export function ModelSection({
 
         {variantChoices.length > 0 ? (
           <SettingRow
-            label="Thinking effort"
-            help={oc.variant ? 'Pinned for this agent.' : 'Auto — the model decides per turn.'}
+            label={tI18nComplete.raw('text264c28cbf01c')}
+            help={
+              oc.variant
+                ? tI18nComplete.raw('text4dd21464c579')
+                : tI18nComplete.raw('textf39c806f5724')
+            }
           >
             <div className="flex sm:justify-end">
               <ReasoningEffortSelector
@@ -227,17 +243,17 @@ export function ModelSection({
           </SettingRow>
         ) : (
           <SettingRow
-            label="Variant"
+            label={tI18nComplete.raw('text3f19fe84a2de')}
             help={
               selectedModelKey
-                ? 'This model publishes no variants. A raw variant id still applies.'
-                : 'Pin a model above to pick from its variants, or type a variant id.'
+                ? tI18nComplete.raw('text0443f619cb33')
+                : tI18nComplete.raw('text6376d74077c0')
             }
           >
             <Input
-              aria-label="Variant"
+              aria-label={tI18nComplete.raw('text3f19fe84a2de')}
               value={oc.variant ?? ''}
-              placeholder="Provider default"
+              placeholder={tI18nComplete.raw('text352a25678fb9')}
               variant="popover"
               className="h-9 w-full text-sm"
               onChange={(e) => setOc('variant', e.target.value)}
@@ -249,8 +265,8 @@ export function ModelSection({
           permissions at the foot of the editor. */}
         {showPrompt ? (
           <SettingBlock
-            label="System prompt"
-            help="Replaces the default instructions for this agent."
+            label={tI18nComplete.raw('text561257c019e5')}
+            help={tI18nComplete.raw('textad63817393a7')}
           >
             <Disclosure variant="outline" className="overflow-hidden rounded-md">
               <DisclosureTrigger variant="outline">
@@ -259,18 +275,18 @@ export function ModelSection({
                   className="flex w-full items-center justify-between gap-3 rounded-none text-sm font-normal"
                 >
                   <span className="min-w-0 truncate">
-                    {oc.prompt ? firstLine(oc.prompt) : 'Not set — using the default instructions'}
+                    {oc.prompt ? firstLine(oc.prompt) : tI18nComplete.raw('textdaaf5ab03267')}
                   </span>
                   <span className="text-muted-foreground shrink-0 text-xs">
-                    {oc.prompt ? 'Edit' : 'Write one'}
+                    {oc.prompt ? 'Edit' : tI18nComplete.raw('text47f3fe537320')}
                   </span>
                 </Button>
               </DisclosureTrigger>
               <DisclosureContent variant="outline" contentClassName="border-border border-t">
                 <Textarea
-                  aria-label="System prompt"
+                  aria-label={tI18nComplete.raw('text561257c019e5')}
                   value={oc.prompt ?? ''}
-                  placeholder="You are…"
+                  placeholder={tI18nComplete.raw('text94a18ea1d428')}
                   minHeight={160}
                   className="rounded-none border-0 font-mono text-xs focus-visible:border-0 focus-visible:ring-0"
                   onChange={(e) => setOc('prompt', e.target.value)}
@@ -285,8 +301,8 @@ export function ModelSection({
           nothing needs hiding behind a disclosure. `advancedSet` still feeds
           the header chip so an untouched agent reads "Defaults" at a glance. */}
       <EditorSection
-        title="Sampling and limits"
-        description="How the model samples, and how many tool calls one run may make."
+        title={tI18nComplete.raw('text6d06116595a9')}
+        description={tI18nComplete.raw('text33439eb47c9a')}
         trailing={
           <Badge variant={advancedSet ? 'outline' : 'muted'} size="sm">
             {advancedSet ? 'Customized' : 'Defaults'}
@@ -294,8 +310,8 @@ export function ModelSection({
         }
       >
         <SliderRow
-          label="Temperature"
-          help="0 gives the same answer every time. 2 is the most random."
+          label={tI18nComplete.raw('textb958ce8b871a')}
+          help={tI18nComplete.raw('textd380d30f3d60')}
           value={oc.temperature}
           fallback={0}
           min={0}
@@ -305,8 +321,8 @@ export function ModelSection({
         />
 
         <SliderRow
-          label="Top-p"
-          help="Nucleus sampling. Leave it alone unless you are tuning the model."
+          label={tI18nComplete.raw('text714db3dbb0b7')}
+          help={tI18nComplete.raw('text4f370db531ba')}
           value={oc.top_p}
           fallback={1}
           min={0}
@@ -315,13 +331,16 @@ export function ModelSection({
           onChange={(v) => setOc('top_p', v)}
         />
 
-        <SettingRow label="Step limit" help="Most tool calls this agent may make in one run.">
+        <SettingRow
+          label={tI18nComplete.raw('textfdc639c47624')}
+          help={tI18nComplete.raw('textbf7ff92baea3')}
+        >
           <Input
-            aria-label="Step limit"
+            aria-label={tI18nComplete.raw('textfdc639c47624')}
             type="number"
             min={1}
             value={oc.steps ?? ''}
-            placeholder="No limit"
+            placeholder={tI18nComplete.raw('textf7fcff0d8fea')}
             variant="popover"
             className="h-9 w-full text-sm tabular-nums"
             onChange={(e) =>
@@ -380,6 +399,7 @@ function SliderRow({
   step: number;
   onChange: (v: number | undefined) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <SettingRow
       label={label}
@@ -388,7 +408,10 @@ function SliderRow({
           help
         ) : (
           <>
-            {help} · <InlineAction onClick={() => onChange(undefined)}>Reset</InlineAction>
+            {help} ·{' '}
+            <InlineAction onClick={() => onChange(undefined)}>
+              {tI18nComplete.raw('textdaee7606b339')}
+            </InlineAction>
           </>
         )
       }

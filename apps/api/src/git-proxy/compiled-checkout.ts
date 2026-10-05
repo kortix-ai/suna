@@ -165,6 +165,8 @@ async function compileArtifact(
     if (checkoutSha !== sourceSha) {
       throw new Error(`compiled checkout mismatch: expected ${sourceSha}, got ${checkoutSha}`);
     }
+    // Keep the source checkout writable: session branches commit kortix.yaml and skills
+    // here for CR diffs. Compiled harness config is served outside this Git tree.
     await runGit(['remote', 'set-url', 'origin', runtimeRepoUrl], checkout, false);
     await rm(join(checkout, '.git', 'logs'), { recursive: true, force: true });
     await rm(join(checkout, '.git', 'index'), { force: true });

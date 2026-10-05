@@ -1,752 +1,43 @@
 'use client';
 
-import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
-import { RadioGroup } from '@/components/ui/radio-group';
-import { useOptionalSidebar } from '@/components/ui/sidebar';
+
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast } from '@/components/ui/toast';
+
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
-import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
+import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
+import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { relativeTime } from '@/lib/relative-time';
-import {
-  CLIPBOARD_IFRAME_ALLOW,
-  INTERACTIVE_PREVIEW_IFRAME_SANDBOX,
-} from '@/lib/security/iframe-sandbox';
+
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import {
-  createAppAccessSession,
-  type App,
-  type AppAccessConfig,
-  type AppAccessMode,
-  type AppDeployment,
-  type AppViewerTokenScope,
-} from '@kortix/sdk';
-import { useAppAccess, useAppDeployments, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
-import {
-  ArrowSquareOutIcon,
-  ArrowUpRightIcon,
-  ClockCounterClockwiseIcon,
-  DotsThreeIcon,
-  GlobeIcon,
-  GridNineIcon,
-  LockKeyIcon,
-  PauseIcon,
-  PlayIcon,
-  SquaresFourIcon,
-  TrashIcon,
-  XIcon,
-  type Icon as PhosphorIcon,
-} from '@phosphor-icons/react';
-import Link from 'next/link';
+import { createAppAccessSession, type App } from '@kortix/sdk';
+import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
+import { ArrowUpRightIcon, GlobeIcon } from '@phosphor-icons/react';
+
+import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 
-type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
-
-/**
- * Every deployment status, in words a person who did not build this can read.
- *
- * The raw values are pipeline stages — `validating`, `provisioning`, `checking`
- * — and they were rendered verbatim into a badge. That is the vocabulary of the
- * thing that runs the build, not of the person watching it, and `provisioning`
- * in particular tells a reader nothing they can act on.
- *
- * One table instead of the if-chain this replaces: the chain listed five of the
- * eight statuses by hand to reach one tone, so adding a status to the union got
- * `muted` and silence rather than a type error. A `Record` over the union does
- * not compile until every new status is given a label and a tone.
- */
-export const DEPLOYMENT_COPY: Record<
-  AppDeployment['status'],
-  { label: string; tone: DeploymentTone }
-> = {
-  queued: { label: 'Waiting', tone: 'warning' },
-  validating: { label: 'Checking files', tone: 'warning' },
-  building: { label: 'Building', tone: 'warning' },
-  provisioning: { label: 'Starting up', tone: 'warning' },
-  checking: { label: 'Final checks', tone: 'warning' },
-  ready: { label: 'Live', tone: 'success' },
-  failed: { label: 'Failed', tone: 'destructive' },
-  cancelled: { label: 'Cancelled', tone: 'muted' },
-};
-
-/**
- * What the HEADER says about the newest deployment — or nothing at all.
- *
- * Deliberately coarser than the table above. A header badge is read at a glance
- * while you are using the App, and at that moment the difference between
- * `validating` and `provisioning` is not a difference the reader can do
- * anything with: both mean "a new version is on its way". The version list is
- * where the stage-by-stage detail belongs, and it has it.
- *
- * `null` is the common case, and it is the point. A finished deployment is what
- * every App looks like almost all of the time, so saying "Live" there would put
- * a permanent badge in the header restating the green dot beside it. Cancelled
- * is silent for the same reason: nothing is happening and nothing is broken.
- */
-export function deployNotice(
-  latest: AppDeployment | undefined,
-): { label: string; tone: DeploymentTone } | null {
-  if (!latest || latest.status === 'ready' || latest.status === 'cancelled') return null;
-  if (latest.status === 'failed') return { label: 'Update failed', tone: 'destructive' };
-  return { label: 'Updating', tone: 'warning' };
-}
-
-function appCommand(app: App): string {
-  return `kortix apps deploy . --app ${app.app_id}`;
-}
-
-/** The command that puts a first App on this page. Shown in the empty state. */
-const FIRST_DEPLOY_COMMAND = 'kortix apps deploy .';
-
-/**
- * The hostname a person reads an App by.
- *
- * `app.url` is a full origin (`https://seed.apps.kortix.com`). The scheme is
- * the same on every App and the trailing slash is noise, so both are dropped —
- * a card's second line is 300px wide and every character it spends on `https://`
- * is a character the actual subdomain loses to truncation.
- *
- * Exported for its own test: this is pure string work with a live input shape,
- * which is exactly what `apps/web` can assert without a DOM.
- */
-export function appHost(url: string): string {
-  return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-}
-
-/**
- * Everything the UI says about an App's state, derived in ONE place.
- *
- * `desired_state` defaults to `'running'` the moment an App row is created, so
- * it is intent, not fact — an App that has never been deployed reports
- * `running` and has no runtime at all. Every surface must therefore read
- * `active_deployment_id` first, and it does so here rather than in each of the
- * three places that used to re-derive it.
- */
-function appStatus(app: App): { deployed: boolean; live: boolean; label: string; dot: string } {
-  const deployed = Boolean(app.active_deployment_id);
-  const live = deployed && app.desired_state === 'running';
-  return {
-    deployed,
-    live,
-    label: !deployed ? 'Not deployed' : live ? 'Running' : 'Suspended',
-    // Three states, three weights of the same neutral-vs-green pair: running is
-    // the only one that earns colour.
-    dot: live ? 'bg-kortix-green' : deployed ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
-  };
-}
-
-/**
- * Who can open an App, in the words the picker shows.
- *
- * Module scope, above every consumer. It used to be declared BELOW
- * `AppDetailModal`, the component that reads it — legal, because the read
- * happens at render rather than at module evaluation, and confusing for exactly
- * as long as it takes to check whether it is.
- */
-const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
-  private: { label: 'Only you', desc: 'Only the App creator can open it' },
-  project: { label: 'Whole team', desc: 'Every member of this project' },
-  restricted: { label: 'Select members', desc: 'Chosen members and groups' },
-  public: { label: 'Public', desc: 'Anyone with the URL' },
-  password: { label: 'Password', desc: 'Anyone with the App password' },
-};
-
-/**
- * What a Kortix-hosted App learns about the person looking at it.
- *
- * Ordered the same way `ACCESS_COPY` is — least shared first — so the two
- * pickers in the same modal read as one ladder rather than two dialects. The
- * default is `identity`, which sits in the middle on purpose: an App that
- * greets you by name needs no login of its own, and one that acts as you on the
- * Kortix API is a deliberate step further.
- */
-const VIEWER_SCOPE_COPY: Record<AppViewerTokenScope, { label: string; desc: string }> = {
-  off: { label: 'Shares nothing', desc: 'The App never learns who opened it' },
-  identity: {
-    label: 'Knows who is signed in',
-    desc: "The App sees the viewer's Kortix id, email and groups",
-  },
-  api: {
-    label: 'Acts as them in Kortix',
-    desc: 'Also calls the Kortix API, limited by their own role',
-  },
-};
-
-/**
- * Access modes that have no signed-in Kortix viewer to describe.
- *
- * A public App is opened by strangers and a password App by whoever holds the
- * password — neither carries a Kortix identity, so there is nothing to share
- * and the field is left untouched on save.
- */
-const ANONYMOUS_MODES: readonly AppAccessMode[] = ['public', 'password'];
-
-/**
- * A shell command, shown as the thing you would actually type.
- *
- * Radius is concentric: `rounded-md` (6px) outer, `py-1` (4px) padding, so the
- * copy button inside takes `rounded-sm` (2px) — which is what `CopyButton`'s
- * `size="sm"` already carries.
- */
-function DeployCommand({ code, className }: { code: string; className?: string }) {
-  return (
-    <span
-      className={cn(
-        'bg-popover inline-flex max-w-full items-center gap-2 rounded-md border py-1 pr-1 pl-2.5',
-        className,
-      )}
-    >
-      <span aria-hidden className="text-muted-foreground/50 shrink-0 font-mono text-xs select-none">
-        $
-      </span>
-      <code className="text-foreground truncate font-mono text-xs">{code}</code>
-      <CopyButton code={code} size="sm" className="shrink-0" />
-    </span>
-  );
-}
-
-/**
- * How long a frame may take before we admit out loud that it is loading.
- *
- * A warm App paints far inside this — the card thumbnail already fetched the
- * signed URL, so the modal's frame is the second request for a document the
- * browser has cached. Painting the overlay from mount made every one of those
- * flash a spinner for a single frame on the way in, which reads as SLOWER than
- * showing nothing. Below the threshold the frame area stays on its calm
- * `bg-muted/20` surface and the App simply appears.
- */
-export const PREVIEW_SPINNER_DELAY_MS = 280;
-
-/**
- * The delay timer, extracted from the effect so the threshold is testable.
- * `apps/web` has no DOM test harness, so a hook's effect cannot be driven from
- * a test — this seam can, with fake timers.
- */
-export function scheduleSlowPreview(
-  onSlow: () => void,
-  delayMs: number = PREVIEW_SPINNER_DELAY_MS,
-): () => void {
-  const timer = setTimeout(onSlow, delayMs);
-  return () => clearTimeout(timer);
-}
-
-/**
- * True once a still-pending frame has passed the threshold above.
- *
- * There is no reset branch because there is nothing to reset: `pending` only
- * ever goes true → false (the frame loads, or it errors), and a frame that has
- * settled is covered by `loaded` / `failed`. A remount — a new deployment — gets
- * a fresh `key` from the caller and therefore fresh state.
- */
-function useSlowPreview(pending: boolean): boolean {
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!pending) return;
-    return scheduleSlowPreview(() => setSlow(true));
-  }, [pending]);
-  return slow;
-}
-
-/**
- * What covers the frame while it is not showing the App.
- *
- * Exported for its own test: the whole point of this component is the state it
- * DOESN'T render (no spinner before the threshold), which is only assertable
- * against markup.
- */
-export function AppPreviewOverlay({
-  loaded,
-  failed,
-  slow,
-}: {
-  loaded: boolean;
-  failed: boolean;
-  slow: boolean;
-}) {
-  // A failure is never worth waiting to report — `onError` means the frame is
-  // done and it is not going to paint.
-  if (!failed && (loaded || !slow)) return null;
-  return (
-    <div className="bg-background/95 absolute inset-0 flex items-center justify-center px-6 text-center backdrop-blur-sm">
-      <div className="text-muted-foreground flex items-center gap-2 text-xs">
-        {failed ? null : <Loading className="size-4 shrink-0" />}
-        <span>{failed ? 'Preview unavailable. Open the App to retry.' : 'Loading preview'}</span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The logical viewport a CARD thumbnail renders the App into, and the shape of
- * the tile it lands in. These three constants are ONE decision — see the ratio
- * note below — so they live together.
- *
- * A card tile is narrower than a laptop, and an iframe that wide is a viewport
- * that wide — so a small tile makes the App answer with its mobile layout.
- * Every thumbnail on the page was a hamburger over a single stacked column: the
- * one view of the App nobody deploys an App for, and nothing like what opening
- * it actually shows.
- *
- * Render at a desktop width instead and scale the result down. The App lays
- * out at 1080px — still a desktop breakpoint, so no App answers with its
- * hamburger — and the tile shows that layout in miniature.
- *
- * **The ratio is load-bearing.** The frame is scaled to the tile's WIDTH, so
- * any mismatch between the viewport's aspect and the tile's shows up as dead
- * space at the bottom of every tile (viewport shorter) or a crop (taller).
- * 1280x720 is 16:9 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
- * fills the tile edge to edge. Change one, change the other — the parity is
- * asserted in `app-preview.test.tsx`.
- *
- * The width and the height answer two different questions, and only the second
- * is about the ratio. The viewport WIDTH decides which layout the App renders,
- * and 1280px is a desktop breakpoint — no App answers the thumbnail with its
- * hamburger. The viewport HEIGHT decides how far down that page the thumbnail
- * reaches: 720px of a 1280px-wide page is roughly the header and the top of the
- * hero.
- *
- * The ratio is a row-height decision: every candidate trades how much page a
- * tile shows against how many rows fit a screen, at a fixed tile width.
- *
- *   | ratio      | height/width | tile at cap | four-across row              |
- *   | ---        | ---          | ---         | ---                          |
- *   | **`16/9`** | **0.56x**    | **300x169** | **three rows and change**    |
- *   | `1/1`      | 1.00x        | 300x300     | two rows and part of a third |
- *   | `4/5`      | 1.25x        | 300x375     | two rows on a laptop         |
- *   | `3/4`      | 1.33x        | 300x400     | a row and a half             |
- *   | `2/3`      | 1.50x        | 300x450     | a row and a third            |
- *   | `9/16`     | 1.78x        | 300x533     | about one row                |
- *
- * **This ratio has moved twice, so read the history before moving it again.**
- * 16:9 shipped, was replaced by 4:5 (`e56c580271`), reverted back to 16:9
- * (`e6c4ba0b62`), then set to 4:5 a second time — and is now 16:9 again by
- * Jay's call on 2026-08-31. The recorded objection to 16:9 is that a tile is a
- * letterbox: at the cap it is 300x169, and the App inside it is a 1280px page
- * at 23% scale, so a thumbnail shows about the header and the top of the hero
- * rather than a hero plus the section under it. The counter-argument, and the
- * reason it keeps coming back, is that 16:9 is the shape a web page is actually
- * screenshotted in and three rows fit a laptop instead of two.
- *
- * The thing that genuinely broke a previous attempt was never the ratio: 4:5
- * paired with a `max-w-5xl` cap and a fixed four-column grid gave a 230px tile,
- * the App at 18% scale, every card the same grey rectangle. The cap is
- * `max-w-7xl` now and the columns come from a container ladder floored at
- * ~232px. Keep that floor whatever the ratio is.
- *
- * At the three columns a docked desktop lands on by default
- * (`APP_GRID_COLUMN_OPTIONS`), a tile is ~320x180 — the App at ~25% scale. At
- * the cap it is ~405x228, or ~32%.
- *
- * Note what does NOT solve the mobile-layout problem — `showAspectRatioToCSS`
- * in `show-content-renderer.tsx` reshapes the BOX and leaves the guest laying
- * out at the host's width, which is the thing that produced it here.
- */
-export const PREVIEW_VIEWPORT_WIDTH = 1280;
-export const PREVIEW_VIEWPORT_HEIGHT = 720;
-/** The tile's shape, written once so the class and the viewport cannot drift. */
-export const PREVIEW_TILE_ASPECT = 'aspect-[16/9]';
-
-/**
- * How many tiles the gallery puts in a row.
- *
- * **Container queries, not viewport breakpoints.** This page sits beside a
- * sidebar that docks and collapses, so the grid's real width swings by ~256px
- * while the viewport never moves. `xl:grid-cols-4` on a 1280px viewport with
- * the sidebar docked fires on a container that is actually ~1024px wide — four
- * 236px tiles from a class chosen for 300px ones. `@5xl/apps:` asks the only
- * question that decides whether a column fits: how wide is the box the grid is
- * in. The named container is declared on the padded column in `AppsView`.
- *
- * The steps are chosen so the TILE never drops below ~232px at any of them —
- * the width where a 1080px page scaled into it stops reading as a page and
- * starts reading as a grey rectangle. Container width -> tile width:
- *
- *   | step            | container | cols | tile    |
- *   | ---             | ---       | ---  | ---     |
- *   | (base)          | < 512px   | 1    | full    |
- *   | `@lg`  (32rem)  | 512px     | 2    | 232x131 |
- *   | `@3xl` (48rem)  | 768px     | 3    | 235x132 |
- *   | `@5xl` (64rem)  | 1024px    | 4    | 236x133 |
- *   | (cap)           | 1280px    | 4    | 300x169 |
- *
- * Four across is therefore what a docked desktop lands on, and a phone still
- * gets one column — a 170px tile is the grey rectangle again.
- *
- * Written out as one literal. Tailwind scans source text, so a class assembled
- * at runtime (`grid-cols-${n}`) never reaches the compiled stylesheet and
- * silently does nothing.
- */
-export const APP_GRID_CONTAINER = '@container/apps';
-
-/**
- * How many columns the gallery is ALLOWED to reach, as a reader's choice.
- *
- * There is a default and there is a choice, in that order. Three across is the
- * default: at the `max-w-7xl` cap that is a ~405px tile, where four is ~300px,
- * and the tile width is the only thing that decides whether the scaled-down
- * desktop page inside it reads as a page or as a swatch. Someone with twenty
- * Apps wants to see twenty Apps, so the control trades size for count — but
- * nobody has to touch it to get a sane page.
- *
- * Both ladders share every step below their cap, so switching only ever changes
- * what happens in a WIDE container. Neither drops below the ~232px tile floor
- * that turns a card into a grey rectangle.
- *
- * Written out as full literals, one per option. Tailwind scans source text, so
- * a class assembled at runtime (`grid-cols-${n}`) never reaches the compiled
- * stylesheet and silently does nothing.
- */
-export type AppGridColumns = 3 | 4;
-
-export const APP_GRID_DEFAULT_COLUMNS: AppGridColumns = 3;
-
-export const APP_GRID_COLUMN_OPTIONS: Record<
-  AppGridColumns,
-  { label: string; grid: string; icon: PhosphorIcon }
-> = {
-  3: {
-    label: 'Comfortable — up to 3 per row',
-    grid: 'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3',
-    icon: SquaresFourIcon,
-  },
-  4: {
-    label: 'Compact — up to 4 per row',
-    grid: 'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3 @5xl/apps:grid-cols-4',
-    icon: GridNineIcon,
-  },
-};
-
-/** Left to right in the control: biggest tile first, densest last. */
-export const APP_GRID_COLUMN_ORDER = [3, 4] as const;
-
-export const APP_GRID_COLUMNS_STORAGE_KEY = 'kortix.apps.grid-columns';
-
-/**
- * The stored preference, or `null` for anything that is not one of ours.
- *
- * `localStorage` is a string bucket shared with every other tab and every past
- * version of this page, so the value read back is untrusted input: a count this
- * build removed, a key someone else wrote, `undefined` stringified by a bug.
- * Any of those would land in `APP_GRID_COLUMN_OPTIONS[n]` as `undefined` and
- * render a grid with no column class at all.
- */
-export function parseAppGridColumns(value: string | null): AppGridColumns | null {
-  if (!value) return null;
-  return Object.hasOwn(APP_GRID_COLUMN_OPTIONS, value) ? (Number(value) as AppGridColumns) : null;
-}
-
-/**
- * Where the choice lives when `localStorage` will not take it.
- *
- * A browser set to block site data throws on `setItem`, and the reader who
- * clicked a density button is owed the density they clicked whether or not it
- * can outlive the tab. Module scope, so it survives a remount the way the real
- * store would.
- */
-let blockedStorageColumns: AppGridColumns | null = null;
-
-/** Same-tab subscribers. The `storage` event covers every OTHER tab, not this one. */
-const columnListeners = new Set<() => void>();
-
-function subscribeAppGridColumns(onChange: () => void) {
-  columnListeners.add(onChange);
-  window.addEventListener('storage', onChange);
-  return () => {
-    columnListeners.delete(onChange);
-    window.removeEventListener('storage', onChange);
-  };
-}
-
-function readAppGridColumns(): AppGridColumns {
-  if (blockedStorageColumns) return blockedStorageColumns;
-  try {
-    return parseAppGridColumns(window.localStorage.getItem(APP_GRID_COLUMNS_STORAGE_KEY)) ??
-      APP_GRID_DEFAULT_COLUMNS;
-  } catch {
-    return APP_GRID_DEFAULT_COLUMNS;
-  }
-}
-
-function writeAppGridColumns(next: AppGridColumns) {
-  blockedStorageColumns = next;
-  try {
-    window.localStorage.setItem(APP_GRID_COLUMNS_STORAGE_KEY, String(next));
-  } catch {
-    // Site data blocked. `blockedStorageColumns` already holds the choice for
-    // this tab's lifetime, which is the whole guarantee we can make.
-  }
-  for (const listener of columnListeners) listener();
-}
-
-/**
- * The reader's column choice.
- *
- * `useSyncExternalStore` rather than `useState` + an effect: the server has no
- * `localStorage`, so the server snapshot is the DEFAULT and the client reads
- * the real value during hydration. An effect would paint the default first and
- * then jump, which on this page is every tile resizing one frame after load.
- */
-function useAppGridColumns(): [AppGridColumns, (next: AppGridColumns) => void] {
-  const value = useSyncExternalStore(
-    subscribeAppGridColumns,
-    readAppGridColumns,
-    () => APP_GRID_DEFAULT_COLUMNS,
-  );
-  const setValue = useCallback((next: AppGridColumns) => writeAppGridColumns(next), []);
-  return [value, setValue];
-}
-
-/**
- * How far to shrink the desktop frame so it fits the tile. `null` for a width
- * nothing can be concluded from — a detached node, a display:none ancestor, a
- * server render with no layout at all — which the caller paints as "not yet
- * measured" rather than scaling by a garbage factor.
- */
-export function previewScale(
-  containerWidth: number,
-  viewportWidth: number = PREVIEW_VIEWPORT_WIDTH,
-): number | null {
-  if (!Number.isFinite(containerWidth) || containerWidth <= 0) return null;
-  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return null;
-  return containerWidth / viewportWidth;
-}
-
-/**
- * Measures the tile and keeps the scale honest as it changes.
- *
- * A layout effect, not an effect: it runs after DOM mutation and BEFORE paint,
- * so the browser never shows the unscaled 1080px frame cropped to the tile's
- * top-left corner. The `ResizeObserver` then covers every later change — the
- * responsive grid going one-column, a sidebar opening, a window drag — none of
- * which fire anything else this component would hear.
- */
-function useDesktopViewportScale(enabled: boolean) {
-  // A callback ref held in state, not a `useRef`: the node is an INPUT to the
-  // measurement, so the effect has to re-run when it arrives. A ref object
-  // would also have to be read during render to be handed to `<div ref>`,
-  // which is the thing `react-hooks/refs` correctly refuses.
-  const [node, setNode] = useState<HTMLDivElement | null>(null);
-  const [scale, setScale] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    if (!enabled || !node) return;
-
-    const measure = () => setScale(previewScale(node.getBoundingClientRect().width));
-    measure();
-
-    // Guarded for a runtime without it (jsdom-less unit renders, older Safari):
-    // the one synchronous measurement above still lands, so the frame is scaled
-    // correctly at its mounted size and simply stops tracking resizes.
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [enabled, node]);
-
-  // A tuple, not an object. `react-hooks/refs` treats every property read on an
-  // object whose member lands in a `ref=` prop as a ref access during render —
-  // true for a `useRef` container, wrong for a callback ref. Destructuring to
-  // plain locals says what this is and keeps the rule meaningful where it does
-  // apply.
-  return [setNode, scale] as const;
-}
-
-export function AppPreview({
-  app,
-  url,
-  accessError,
-  /**
-   * `false` on a CARD: the card is one big button, and a live iframe would
-   * swallow every click meant for it (and let someone interact with a page
-   * inside a 300px tile). The card renders the frame purely as a thumbnail and
-   * the card takes the click. `true` in the detail modal, where the frame IS
-   * the App.
-   */
-  interactive,
-  className,
-}: {
-  app: App;
-  url: string | null;
-  accessError: boolean;
-  interactive: boolean;
-  className?: string;
-}) {
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const slow = useSlowPreview(!loaded && !failed);
-  // Cards only. In the modal the frame IS the App at the size you are using it,
-  // so a fixed desktop viewport there would scale the thing you came to click.
-  const [attachViewport, viewportScale] = useDesktopViewportScale(!interactive);
-  const frame = cn(
-    'bg-muted/20 relative overflow-hidden',
-    !interactive && PREVIEW_TILE_ASPECT,
-    className,
-  );
-
-  if (!app.active_deployment_id) {
-    return (
-      <div
-        className={cn(
-          frame,
-          'text-muted-foreground flex items-center justify-center px-6 text-center text-xs text-pretty',
-        )}
-        data-testid="app-preview-empty"
-      >
-        Deploy to see a live preview.
-      </div>
-    );
-  }
-
-  if (!url) {
-    return (
-      <div
-        className={cn(
-          frame,
-          'text-muted-foreground flex items-center justify-center px-6 text-center text-xs text-pretty',
-        )}
-        data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}
-      >
-        {accessError ? (
-          'You do not have access to preview this App.'
-        ) : (
-          <span className="flex items-center gap-2">
-            <Loading className="size-4 shrink-0" />
-            Preparing preview
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className={frame} ref={attachViewport}>
-      <iframe
-        key={app.active_deployment_id}
-        src={url}
-        title={`${app.name} live preview`}
-        style={
-          interactive
-            ? undefined
-            : {
-                width: PREVIEW_VIEWPORT_WIDTH,
-                height: PREVIEW_VIEWPORT_HEIGHT,
-                // Hidden, not unmounted, until the tile has been measured: an
-                // unmounted frame would restart the document load on every
-                // resize, and a visible unscaled one would flash the App's
-                // top-left 1080px corner. It still loads while hidden.
-                ...(viewportScale === null
-                  ? { visibility: 'hidden' as const }
-                  : { transform: `scale(${viewportScale})` }),
-              }
-        }
-        // The card thumbnail is one of many below the fold, so defer it. In the
-        // modal the frame IS the content and it is already on screen — `lazy`
-        // there makes the browser wait for layout before it even starts the
-        // fetch, which is pure added latency on the one open that must feel
-        // instant.
-        loading={interactive ? 'eager' : 'lazy'}
-        allow={CLIPBOARD_IFRAME_ALLOW}
-        sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
-        className={cn(
-          'bg-background absolute border-0',
-          interactive
-            ? 'inset-0 size-full'
-            : // Anchored top-left because that is the scale's origin: the frame
-              // shrinks toward the corner it starts in, so the miniature lands
-              // flush in the tile instead of drifting toward the middle.
-              'pointer-events-none top-0 left-0 origin-top-left',
-        )}
-        {...(interactive ? {} : { tabIndex: -1, 'aria-hidden': true })}
-        data-testid="app-live-preview"
-        onLoad={() => {
-          setLoaded(true);
-          setFailed(false);
-        }}
-        onError={() => {
-          setLoaded(false);
-          setFailed(true);
-        }}
-      />
-      <AppPreviewOverlay loaded={loaded} failed={failed} slow={slow} />
-    </div>
-  );
-}
-
-/**
- * Column count, as two states of one control rather than a menu.
- *
- * A segmented `ButtonGroup` of icon buttons is the pattern this product already
- * uses for a small closed set of view choices. Two options is few enough that
- * both are visible without opening anything, and the glyphs read as the thing
- * they do: four squares, then nine, the second denser than the first.
- */
-function AppGridColumnsControl({
-  value,
-  onChange,
-}: {
-  value: AppGridColumns;
-  onChange: (next: AppGridColumns) => void;
-}) {
-  return (
-    <ButtonGroup aria-label="Tiles per row">
-      {APP_GRID_COLUMN_ORDER.map((key) => {
-        const option = APP_GRID_COLUMN_OPTIONS[key];
-        const Glyph = option.icon;
-        const active = value === key;
-        return (
-          <Hint key={key} side="bottom" label={option.label}>
-            <Button
-              type="button"
-              variant={active ? 'secondary' : 'outline'}
-              size="icon-sm"
-              aria-pressed={active}
-              aria-label={option.label}
-              onClick={() => onChange(key)}
-            >
-              <Glyph className="size-4" />
-            </Button>
-          </Hint>
-        );
-      })}
-    </ButtonGroup>
-  );
-}
+import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
+import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
+import { AppDetailModal } from './app-detail';
+import { appStatus, DeployCommand, FIRST_DEPLOY_COMMAND } from './app-shared';
+export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
+export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
+export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
 
 function AppsHeader({
+  projectId,
   columns,
   onColumnsChange,
   showColumns,
 }: {
+  projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
   /**
@@ -758,17 +49,10 @@ function AppsHeader({
    */
   showColumns: boolean;
 }) {
-  const sidebar = useOptionalSidebar();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return (
-    <div
-      className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
-      data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
-    >
-      <SidebarToggle />
-      <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
-        <h1 className="text-foreground shrink-0 text-sm font-medium">Apps</h1>
-      </div>
+    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')} href={`/projects/${projectId}/apps`}>
       {showColumns ? (
         <div className="flex shrink-0 items-center pr-1">
           <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
@@ -779,16 +63,17 @@ function AppsHeader({
         target="_blank"
         rel="noopener noreferrer"
         prefetch={false}
-        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors"
+        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors"
       >
-        Docs
+        {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
       </Link>
-    </div>
+    </ProjectPageHeader>
   );
 }
 
 export function AppsView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // One gating primitive, fail-closed. Apps NEVER enables itself from here:
   // activation lives only in Customize → Feature flags, so this page has no
   // mutation and no self-enable button.
@@ -797,7 +82,7 @@ export function AppsView({ projectId }: { projectId: string }) {
   const searchParams = useSearchParams();
   // Apps own their leaves — the routes assert project.app.write for policy and
   // shape changes and project.app.deploy for anything that changes what the
-  // public hostname serves. Gating on project.customize.write let a custom role
+  // public hostname serves. Gating on a broader settings leaf let a custom role
   // that granted Apps still render read-only, and one that revoked Apps still
   // render the controls.
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;
@@ -816,8 +101,10 @@ export function AppsView({ projectId }: { projectId: string }) {
     if (!app) return;
     void createAppAccessSession(projectId, app.app_id)
       .then((session) => window.location.replace(session.url))
-      .catch((error) => errorToast(error instanceof Error ? error.message : 'App access denied'));
-  }, [apps.data, projectId, searchParams]);
+      .catch((error) =>
+        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta68c25790cbe')),
+      );
+  }, [apps.data, projectId, searchParams, tI18nComplete]);
 
   return (
     // `h-svh`, for the same reason the `(capabilities)` layout carries it:
@@ -831,9 +118,12 @@ export function AppsView({ projectId }: { projectId: string }) {
     // under a toolbar that reappears.
     <div className="flex h-svh flex-col overflow-hidden">
       <AppsHeader
+        projectId={projectId}
         columns={gridColumns}
         onColumnsChange={setGridColumns}
-        showColumns={appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))}
+        showColumns={
+          appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
+        }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -853,7 +143,7 @@ export function AppsView({ projectId }: { projectId: string }) {
             take their natural height and stay at the top, unaffected. */}
         <div
           className={cn(
-            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 md:px-8 py-6 pb-20',
+            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20 md:px-8',
             APP_GRID_CONTAINER,
           )}
         >
@@ -862,18 +152,18 @@ export function AppsView({ projectId }: { projectId: string }) {
           ) : !appsGate.enabled ? (
             <FeatureGateScreen
               featureName="Apps"
-              description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
+              description={tI18nComplete.raw('text3387c31a18b3')}
             />
           ) : apps.isLoading ? (
             <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
             <ErrorState
               size="sm"
-              title="Failed to load Apps"
+              title={tI18nComplete.raw('text17168ad2af4a')}
               description={(apps.error as Error).message}
               action={
                 <Button size="sm" variant="outline" onClick={() => apps.refetch()}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
@@ -952,17 +242,19 @@ function AppGridSkeleton({ columns }: { columns: AppGridColumns }) {
  * this screen to a card.
  */
 function AppsEmptyState() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <EmptyState
       icon={GlobeIcon}
-      title="No Apps yet"
-      description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image from your project directory. It shows up here the moment it goes live."
+      title={tI18nComplete.raw('text7aaec6fe02f0')}
+      description={tI18nComplete.raw('text4b2e1a2b9cbc')}
       action={<DeployCommand code={FIRST_DEPLOY_COMMAND} />}
     />
   );
 }
 
 function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // SESSION only, and only when the viewer may actually open this App. The
   // access POLICY is an administrative read that 403s for an ordinary member,
   // and the card never renders it — the detail modal asks. The SESSION 403s for
@@ -970,7 +262,7 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
   // reports up front instead of leaving the card to discover it by failing.
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess });
-  const status = appStatus(app);
+  const status = appStatus(app, tI18nComplete);
 
   return (
     <li>
@@ -990,7 +282,7 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             caption under a picture, and the picture is the object. */}
         <div
           className={cn(
-            'relative overflow-hidden rounded-lg border transition-transform duration-150 ease-out group-hover:-translate-y-1',
+            'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
           <AppPreview
@@ -1023,530 +315,5 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
         </div>
       </button>
     </li>
-  );
-}
-
-/**
- * The App, full screen, with its controls above it.
- *
- * Opening an App used to mean a new browser tab, which left Kortix behind and
- * lost every control the moment you arrived. The App now runs in place and the
- * actions that used to crowd the card sit in one bar over the top of it.
- */
-function AppDetailModal({
-  projectId,
-  app,
-  canWrite,
-  canDeploy,
-  open,
-  onOpenChange,
-}: {
-  projectId: string;
-  app: App;
-  canWrite: boolean;
-  canDeploy: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const apps = useProjectApps(projectId);
-  const deployments = useAppDeployments(projectId, app.app_id);
-  const canAccess = app.viewer_can_access !== false;
-  const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess });
-  const [versionsOpen, setVersionsOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [accessOpen, setAccessOpen] = useState(false);
-  const latest = deployments.data?.[0];
-  const status = appStatus(app);
-  const notice = deployNotice(latest);
-  const running = app.desired_state === 'running';
-  const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
-  const liveUrl = access.session.data?.url ?? app.url;
-
-  const lifecycle = async (action: 'start' | 'stop') => {
-    try {
-      await (action === 'start'
-        ? apps.start.mutateAsync(app.app_id)
-        : apps.stop.mutateAsync(app.app_id));
-      successToast(`${app.name} ${action === 'start' ? 'is ready' : 'suspended'}`);
-    } catch (error) {
-      errorToast(error instanceof Error ? error.message : `Failed to ${action} App`);
-    }
-  };
-
-  return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent
-        side="fullscreen"
-        showCloseButton={false}
-        // Radix focuses the first focusable descendant on open, which is an
-        // action in the bar — and a focused icon button shows its Hint, so the
-        // modal opened with a black tooltip sitting over its own controls.
-        // Focus the dialog instead: the focus trap still holds, Tab still walks
-        // into the bar, and nothing pops unbidden.
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.currentTarget as HTMLElement | null)?.focus?.();
-        }}
-        className="border-border bg-background! inset-0! h-dvh! max-h-none! min-h-dvh! w-auto! max-w-none! translate-x-0! translate-y-0! gap-0! space-y-0! overflow-hidden! rounded-none! border-0! focus:outline-none focus-visible:outline-none md:inset-4! md:h-auto! md:min-h-0! md:rounded-md! md:border!"
-        aria-label={`${app.name} App`}
-      >
-        <div className="flex h-full min-h-0 flex-col">
-          {/* Name, and what the name needs qualifying with — nothing else.
-              This row carried five things: a dot, the name, the status word, a
-              raw pipeline-stage badge, an access-mode badge, and the hostname
-              in monospace underneath. Four of those are answers to questions
-              nobody asked while looking at their own App, and together they
-              read as a debug readout rather than a title bar.
-
-              What each one became:
-               - the status WORD now appears only when it is not "Running" —
-                 the green dot already says the happy path, and a permanent
-                 label restating it is the noisiest kind of quiet;
-               - the pipeline stage became one plain badge, and only while
-                 something is actually happening (`deployNotice`);
-               - the access mode moved onto the control that changes it, where
-                 it reads as a current value instead of a floating label;
-               - the hostname moved into the Open button's tooltip. It is a
-                 thing you act on, not a thing you read. */}
-          <header className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', status.dot)} />
-              <h2 className="text-foreground truncate text-sm font-medium">{app.name}</h2>
-              {/* One announcement, either way. The dot is `aria-hidden`, so the
-                  running case needs a screen-reader-only label — but rendering
-                  it unconditionally alongside the visible one made every
-                  non-running state read its status out twice. */}
-              {status.live ? (
-                <span className="sr-only">{status.label}</span>
-              ) : (
-                <span className="text-muted-foreground shrink-0 text-xs">{status.label}</span>
-              )}
-              {notice ? (
-                <Badge size="xs" variant={notice.tone} className="shrink-0">
-                  {notice.label}
-                </Badge>
-              ) : null}
-            </div>
-
-            {/* Two registers, and the gap is what separates them: the App's own
-                actions on the left, the window's Close on the right. Close was
-                the fifth button inside the group, which made "stop this App"
-                and "shut this panel" look like peers of each other. It is
-                `ghost` for the same reason — chrome, not an action. */}
-            <div className="flex shrink-0 items-center gap-2">
-              <ButtonGroup>
-                {canDeploy ? (
-                  <Hint
-                    label={running ? 'Put this App to sleep' : 'Wake this App up'}
-                    side="bottom"
-                  >
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      disabled={busy || !status.deployed}
-                      aria-label={running ? 'Put this App to sleep' : 'Wake this App up'}
-                      onClick={() => lifecycle(running ? 'stop' : 'start')}
-                    >
-                      {busy ? (
-                        <Loading className="size-4 shrink-0" />
-                      ) : running ? (
-                        <PauseIcon weight="fill" className="size-4 shrink-0" />
-                      ) : (
-                        <PlayIcon className="size-4 shrink-0" />
-                      )}
-                    </Button>
-                  </Hint>
-                ) : null}
-                <Hint label={`Open ${appHost(app.url)} in a new tab`} side="bottom">
-                  <Button asChild size="icon" variant="outline">
-                    <a
-                      href={liveUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label="Open in a new tab"
-                    >
-                      <ArrowSquareOutIcon className="size-4 shrink-0" />
-                    </a>
-                  </Button>
-                </Hint>
-                {/* Everything rare or configural, behind one control. Three
-                    icon buttons became one, and Delete came UP out of the
-                    version drawer — a destructive action does not belong
-                    hidden behind a history toggle, where you find it by
-                    looking for something else. */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="outline" aria-label="More actions">
-                      <DotsThreeIcon className="size-4 shrink-0" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-60">
-                    {canWrite ? (
-                      <DropdownMenuItem onClick={() => setAccessOpen(true)}>
-                        <LockKeyIcon className="size-3.5 shrink-0" />
-                        Who can open this
-                        {/* The current value, on the row that changes it. */}
-                        <span className="text-muted-foreground ml-auto pl-3 text-xs">
-                          {ACCESS_COPY[app.access_mode].label}
-                        </span>
-                      </DropdownMenuItem>
-                    ) : null}
-                    <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
-                      <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
-                      {versionsOpen ? 'Hide earlier versions' : 'Earlier versions'}
-                    </DropdownMenuItem>
-                    {canWrite ? (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
-                          <TrashIcon className="size-3.5 shrink-0" />
-                          Delete App
-                        </DropdownMenuItem>
-                      </>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </ButtonGroup>
-
-              <Hint label="Close" side="bottom">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Close"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <XIcon className="size-4 shrink-0" />
-                </Button>
-              </Hint>
-            </div>
-          </header>
-
-          <div className="relative min-h-0 flex-1">
-            <AppPreview
-              key={app.active_deployment_id ?? app.app_id}
-              app={app}
-              url={access.session.data?.url ?? null}
-              accessError={!canAccess || access.session.isError}
-              interactive
-              className="absolute inset-0 size-full"
-            />
-          </div>
-
-          {versionsOpen ? (
-            <div className="bg-muted/20 max-h-[40vh] shrink-0 overflow-y-auto border-t px-4 py-3">
-              {/* One thing, so no `justify-between` row to hold it. Delete used
-                  to sit on the right of this line: a destructive action parked
-                  inside a history panel, reachable only by opening something
-                  else. It lives in the header's overflow menu now.
-
-                  The command is spelled out rather than hidden behind a copy
-                  glyph — it is the only way a new version gets here, and a bare
-                  icon made the reader guess what it would put on their
-                  clipboard. */}
-              <div className="mb-2 flex items-center gap-3">
-                <DeployCommand code={appCommand(app)} className="min-w-0" />
-              </div>
-              {deployments.isLoading ? (
-                <Loading className="text-muted-foreground" />
-              ) : deployments.data?.length ? (
-                <div className="space-y-1">
-                  {deployments.data.map((deployment) => (
-                    <DeploymentRow
-                      key={deployment.deployment_id}
-                      deployment={deployment}
-                      active={deployment.deployment_id === app.active_deployment_id}
-                      canDeploy={canDeploy}
-                      rollbackPending={deployments.rollback.isPending}
-                      onRollback={async () => {
-                        try {
-                          await deployments.rollback.mutateAsync(deployment.deployment_id);
-                          successToast(`Rolled back to version ${deployment.version}`);
-                        } catch (error) {
-                          errorToast(error instanceof Error ? error.message : 'Rollback failed');
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-xs">No deployments yet.</p>
-              )}
-            </div>
-          ) : null}
-        </div>
-      </ModalContent>
-
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete App"
-        description={`Delete ${app.name} and every runtime? This action cannot be undone.`}
-        confirmLabel="Delete"
-        confirmVariant="destructive"
-        isPending={apps.remove.isPending}
-        onConfirm={async () => {
-          try {
-            await apps.remove.mutateAsync(app.app_id);
-            setDeleteOpen(false);
-            // The App this modal is about no longer exists — close it, or the
-            // frame keeps rendering a deleted App behind a dead action bar.
-            onOpenChange(false);
-            successToast(`${app.name} deleted`);
-          } catch (error) {
-            errorToast(error instanceof Error ? error.message : 'Failed to delete App');
-          }
-        }}
-      />
-      {accessOpen ? (
-        <AppAccessModal
-          projectId={projectId}
-          app={app}
-          access={access}
-          open={accessOpen}
-          onOpenChange={setAccessOpen}
-        />
-      ) : null}
-    </Modal>
-  );
-}
-
-function AppAccessModal({
-  projectId,
-  app,
-  access,
-  open,
-  onOpenChange,
-}: {
-  projectId: string;
-  app: App;
-  access: ReturnType<typeof useAppAccess>;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Modal open={open} onOpenChange={(value) => !access.update.isPending && onOpenChange(value)}>
-      <ModalContent className="lg:max-w-md">
-        <ModalHeader>
-          <ModalTitle>App access</ModalTitle>
-          <ModalDescription>
-            Choose who can open {app.name}. Apps are private by default.
-          </ModalDescription>
-        </ModalHeader>
-        {access.policy.isLoading ? (
-          <ModalBody>
-            <Skeleton className="h-48 w-full rounded-md" />
-          </ModalBody>
-        ) : access.policy.isError ? (
-          <>
-            <ModalBody>
-              <ErrorState
-                size="sm"
-                title="Failed to load App access"
-                description={(access.policy.error as Error).message}
-                action={
-                  <Button size="sm" variant="outline" onClick={() => access.policy.refetch()}>
-                    Retry
-                  </Button>
-                }
-              />
-            </ModalBody>
-            <ModalFooter>
-              <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
-                Close
-              </Button>
-            </ModalFooter>
-          </>
-        ) : access.policy.data ? (
-          <AppAccessForm
-            key={access.policy.data.revision}
-            projectId={projectId}
-            policy={access.policy.data}
-            update={access.update}
-            onSaved={() => onOpenChange(false)}
-          />
-        ) : null}
-      </ModalContent>
-    </Modal>
-  );
-}
-
-function AppAccessForm({
-  projectId,
-  policy,
-  update,
-  onSaved,
-}: {
-  projectId: string;
-  policy: AppAccessConfig;
-  update: ReturnType<typeof useAppAccess>['update'];
-  onSaved: () => void;
-}) {
-  const [mode, setMode] = useState<AppAccessMode>(policy.mode);
-  const [memberIds, setMemberIds] = useState<string[]>(policy.member_ids);
-  const [groupIds, setGroupIds] = useState<string[]>(policy.group_ids);
-  const [password, setPassword] = useState('');
-  const [viewerScope, setViewerScope] = useState<AppViewerTokenScope>(policy.viewer_token_scope);
-  const incomplete = mode === 'restricted' && memberIds.length + groupIds.length === 0;
-  const passwordMissing = mode === 'password' && !password && !policy.password_configured;
-  // Public and password Apps are opened without signing in to Kortix, so there
-  // is no viewer identity to share — the control goes away and the field stays
-  // as it is on the server rather than being written to a meaningless value.
-  const hasSignedInViewer = !ANONYMOUS_MODES.includes(mode);
-
-  const save = async () => {
-    try {
-      await update.mutateAsync({
-        mode,
-        ...(mode === 'restricted' ? { member_ids: memberIds, group_ids: groupIds } : {}),
-        ...(mode === 'password' && password ? { password } : {}),
-        ...(hasSignedInViewer ? { viewer_token_scope: viewerScope } : {}),
-      });
-      successToast('App access updated');
-      onSaved();
-    } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Failed to update App access');
-    }
-  };
-
-  return (
-    <>
-      <ModalBody className="max-h-[65vh] space-y-4 overflow-y-auto">
-        <RadioGroup
-          value={mode}
-          onValueChange={(value) => setMode(value as AppAccessMode)}
-          className="space-y-2"
-        >
-          {(Object.keys(ACCESS_COPY) as AppAccessMode[]).map((value) => (
-            <ShareOption
-              key={value}
-              value={value}
-              label={ACCESS_COPY[value].label}
-              desc={ACCESS_COPY[value].desc}
-            />
-          ))}
-        </RadioGroup>
-        {mode === 'restricted' ? (
-          <SubjectPicker
-            projectId={projectId}
-            memberIds={memberIds}
-            groupIds={groupIds}
-            onChange={(members, groups) => {
-              setMemberIds(members);
-              setGroupIds(groups);
-            }}
-          />
-        ) : null}
-        {mode === 'password' ? (
-          <div className="space-y-2">
-            <Label htmlFor="app-access-password">
-              {policy.password_configured ? 'Replace password' : 'Password'}
-            </Label>
-            <Input
-              id="app-access-password"
-              type="password"
-              minLength={8}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="new-password"
-              placeholder={
-                policy.password_configured
-                  ? 'Leave blank to keep the current password'
-                  : 'At least 8 characters'
-              }
-            />
-          </div>
-        ) : null}
-        <div className="space-y-2">
-          <Label id="app-viewer-identity-label">Viewer identity</Label>
-          {hasSignedInViewer ? (
-            <RadioGroup
-              aria-labelledby="app-viewer-identity-label"
-              value={viewerScope}
-              onValueChange={(value) => setViewerScope(value as AppViewerTokenScope)}
-              className="space-y-2"
-            >
-              {(Object.keys(VIEWER_SCOPE_COPY) as AppViewerTokenScope[]).map((value) => (
-                <ShareOption
-                  key={value}
-                  value={value}
-                  label={VIEWER_SCOPE_COPY[value].label}
-                  desc={VIEWER_SCOPE_COPY[value].desc}
-                />
-              ))}
-            </RadioGroup>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              {mode === 'public'
-                ? 'A public App has no signed-in Kortix viewer.'
-                : 'A password-protected App has no signed-in Kortix viewer.'}
-            </p>
-          )}
-        </div>
-      </ModalBody>
-      <ModalFooter className="sm:justify-between">
-        <Button variant="outline-ghost" size="sm" onClick={onSaved} disabled={update.isPending}>
-          Cancel
-        </Button>
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={update.isPending || incomplete || passwordMissing}
-        >
-          {update.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Save
-        </Button>
-      </ModalFooter>
-    </>
-  );
-}
-
-function DeploymentRow({
-  deployment,
-  active,
-  canDeploy,
-  rollbackPending,
-  onRollback,
-}: {
-  deployment: AppDeployment;
-  active: boolean;
-  canDeploy: boolean;
-  rollbackPending: boolean;
-  onRollback: () => void;
-}) {
-  return (
-    <div className="hover:bg-muted/40 flex items-center gap-3 rounded-md px-2 py-1.5">
-      <span className="text-foreground w-8 shrink-0 font-mono text-xs tabular-nums">
-        v{deployment.version}
-      </span>
-      {/* "Live" is the state of THIS version, so the active one says so and the
-          rest report their own build outcome. Showing both — a `ready` badge
-          and a separate "Live" word on the same row — said one thing twice. */}
-      <Badge size="xs" variant={active ? 'success' : DEPLOYMENT_COPY[deployment.status].tone}>
-        {active ? 'Live' : DEPLOYMENT_COPY[deployment.status].label}
-      </Badge>
-      {/* Age, not `hosting_provider`. That field is the name of the sandbox
-          fleet the build landed on ("daytona", "platinum") — infrastructure
-          this reader neither chose nor can change, printed where the one fact
-          they actually want ("when was this?") was missing. */}
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-        {relativeTime(deployment.created_at)}
-      </span>
-      {canDeploy && deployment.status === 'ready' && !active ? (
-        <Button
-          size="xs"
-          variant="ghost"
-          className="shrink-0"
-          disabled={rollbackPending}
-          onClick={onRollback}
-        >
-          {rollbackPending ? (
-            <Loading className="size-3.5 shrink-0" />
-          ) : (
-            <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
-          )}
-          Restore
-        </Button>
-      ) : null}
-    </div>
   );
 }

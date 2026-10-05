@@ -7,24 +7,25 @@
  *
  * Scope (v1): the safe accounts console — list accounts (filterable by tier,
  * payment status, paid-only, and subscription presence), account members,
- * credit ledger, and grant/debit credits (reusing the billing grantCredits
- * service). Stripe customer id/email are still returned as null (no join yet);
+ * credit ledger, and grant/debit credits (through the billing wallet). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
+import { requestClientIp } from '../shared/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
-import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
 import { analyticsApp } from './analytics';
+import { isUuid } from '../shared/validate';
+import { readJsonObject } from '../shared/http-body';
+import { errorSqlstate } from '../shared/error-cause';
+
+/** SQLSTATE Postgres raises when `statement_timeout` cancels a query. */
+const STATEMENT_TIMEOUT_SQLSTATE = '57014';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
-
-// `account_id` reaches Postgres as a `uuid`, where a malformed value is a
-// 22P02 cast error long before any guard runs — a 500 on input the caller
-// controls. Shape-check first so a typo is a clean 400.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Drizzle wraps the Postgres error: `e.message` is "Failed query: <sql> …" and
 // the real reason (undefined column, statement timeout, constraint) hides in
@@ -36,6 +37,41 @@ export function adminErrorMessage(e: unknown): string {
   const message = err?.message || String(e);
   const cause = err?.cause?.message;
   return cause && !message.includes(cause) ? `${message} — cause: ${cause}` : message;
+}
+
+/**
+ * Stable code the API returns (HTTP 503) when the admin accounts-list query
+ * (`accounts LEFT JOIN credit_accounts`, ordered/paginated) cannot complete
+ * inside the database statement budget — in practice a `statement_timeout`
+ * (SQLSTATE 57014). Before `idx_accounts_created_at` existed, `accounts` had
+ * only its primary key, so the planner could not drive the `ORDER BY
+ * created_at` from an index and instead Hash-Joined full sequential scans of
+ * `accounts` and `credit_accounts` (234.5k rows, prod 2026-09-27) and sorted
+ * the whole result before applying `LIMIT` — measured on prod at
+ * 25013/25019/25056 ms against the 25s budget (2026-09-27T01:21-01:22Z). The
+ * unguarded catch below echoed `adminErrorMessage(e)` — which deliberately
+ * includes the raw `Failed query: select …` text for OTHER admin errors — into
+ * the 500 body, leaking the query (including
+ * `"kortix"."credit_accounts"."balance_precise"`) to the browser. This is an
+ * EXPECTED capacity state, not a defect, so `makeRequest` in
+ * `packages/sdk/src/core/http/api-client.ts` classifies a 503 carrying this
+ * code as SILENT to `onError` (Sentry). Must stay in sync with
+ * `ACCOUNTS_LIST_UNAVAILABLE_CODE` there. Mirrors `ANALYTICS_UNAVAILABLE_CODE`
+ * in `apps/api/src/admin/analytics.ts` (#7770 / KRTX-423).
+ */
+export const ACCOUNTS_LIST_UNAVAILABLE_CODE = 'accounts_list_unavailable';
+
+/** User-facing sentence for the typed 503 above. Never contains SQL or a table name. */
+const ACCOUNTS_LIST_UNAVAILABLE_MESSAGE =
+  'The accounts list is temporarily unavailable. Try again in a moment.';
+
+function accountsListUnavailableBody(): Record<string, unknown> {
+  return {
+    error: true,
+    code: ACCOUNTS_LIST_UNAVAILABLE_CODE,
+    message: ACCOUNTS_LIST_UNAVAILABLE_MESSAGE,
+    status: 503,
+  };
 }
 
 // Every admin route requires a logged-in platform admin.
@@ -75,6 +111,7 @@ adminApp.openapi(
     responses: {
       200: json(z.record(z.string(), z.any()), 'Accounts page'),
       500: json(z.record(z.string(), z.any()), 'Server error'),
+      503: json(z.record(z.string(), z.any()), 'Accounts list temporarily unavailable'),
       ...errors(401, 403),
     },
   }),
@@ -82,7 +119,7 @@ adminApp.openapi(
   try {
     const { db } = await import('../shared/db');
     const { accounts, creditAccounts } = await import('@kortix/db');
-    const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
+    const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
       await import('drizzle-orm');
     const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
     const { accountDisplayName } = await import('../accounts/core/app');
@@ -118,25 +155,22 @@ adminApp.openapi(
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${accounts.accountId}
-      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
+      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
                CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const memberCount = sql<number>`(
-      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
+      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${qualifiedColumn(accounts.accountId)})`;
 
     const conds: any[] = [];
     // Exact-id lookup — the sheet's live row, immune to the list's filters.
     if (accountIdFilter) conds.push(eq(accounts.accountId, accountIdFilter));
     if (search) {
-      conds.push(
-        or(
-          ilike(accounts.name, `%${search}%`),
-          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
-        ),
-      );
+      // The search predicate is shared by the list and count queries; see
+      // accounts-search.ts for why the email branch must stay users-first.
+      const { adminAccountsSearchCondition } = await import('./accounts-search');
+      conds.push(adminAccountsSearchCondition(search));
     }
     if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
     // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
@@ -161,58 +195,75 @@ adminApp.openapi(
     const sortCol =
       sortBy === 'balance' ? creditAccounts.balance : sortBy === 'name' ? accounts.name : accounts.createdAt;
 
-    const rows = await db
-      .select({
-        accountId: accounts.accountId,
-        name: accounts.name,
-        createdAt: accounts.createdAt,
-        balance: creditAccounts.balance,
-        expiringCredits: creditAccounts.expiringCredits,
-        nonExpiringCredits: creditAccounts.nonExpiringCredits,
-        dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
-        tier: creditAccounts.tier,
-        paymentStatus: creditAccounts.paymentStatus,
-        provider: creditAccounts.provider,
-        planType: creditAccounts.planType,
-        stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-        // Read by resolveBillingFromRow's per-seat self-heal (a live seat
-        // subscription outranks a stale non-paid `tier`). Not rendered.
-        stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-        // Read by resolveBillingFromRow's session-limit override. Not rendered
-        // either, but the resolver takes ONE row and answers the WHOLE billing
-        // question from it — handing it a partial row silently mis-answers the
-        // parts this projection does not happen to render today.
-        maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
-        billingModel: creditAccounts.billingModel,
-        seatCount: creditAccounts.seatCount,
-        trialStatus: creditAccounts.trialStatus,
-        trialTier: creditAccounts.trialTier,
-        trialSeats: creditAccounts.trialSeats,
-        trialStartedAt: creditAccounts.trialStartedAt,
-        trialEndsAt: creditAccounts.trialEndsAt,
-        trialNote: creditAccounts.trialNote,
-        managedModelsOverride: creditAccounts.managedModelsOverride,
-        demoEnterprise: creditAccounts.demoEnterprise,
-        enterpriseEntitled: creditAccounts.enterpriseEntitled,
-        // Same reason as maxConcurrentSessions above: the resolver reads the
-        // JSONB overrides FIRST, so a projection without them reports the
-        // legacy columns' answer for an account whose real answer expired.
-        entitlementOverrides: creditAccounts.entitlementOverrides,
-        ownerEmail,
-        memberCount,
-      })
-      .from(accounts)
-      .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-      .where(where)
-      .orderBy(dir(sortCol))
-      .limit(limit)
-      .offset(offset);
+    // Both reads run inside their own guard: `accounts LEFT JOIN
+    // credit_accounts` ordered/paginated (or counted) is the query that hit
+    // the 25s request-path statement_timeout on prod (57014) — see
+    // `ACCOUNTS_LIST_UNAVAILABLE_CODE` above for the full incident. That is an
+    // EXPECTED capacity state, not a defect, so it gets a typed 503 instead of
+    // falling into the outer catch's `adminErrorMessage(e)`, which
+    // deliberately includes the raw `Failed query: select …` text for other
+    // (genuine) admin errors.
+    const queryResult = await (async () => {
+      try {
+        const rows = await db
+          .select({
+            accountId: accounts.accountId,
+            name: accounts.name,
+            createdAt: accounts.createdAt,
+            balance: creditAccounts.balance,
+            expiringCredits: creditAccounts.expiringCredits,
+            nonExpiringCredits: creditAccounts.nonExpiringCredits,
+            dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
+            tier: creditAccounts.tier,
+            paymentStatus: creditAccounts.paymentStatus,
+            provider: creditAccounts.provider,
+            planType: creditAccounts.planType,
+            stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
+            // Read by resolveBillingFromRow's per-seat self-heal (a live seat
+            // subscription outranks a stale non-paid `tier`). Not rendered.
+            stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
+            billingModel: creditAccounts.billingModel,
+            seatCount: creditAccounts.seatCount,
+            trialStatus: creditAccounts.trialStatus,
+            trialTier: creditAccounts.trialTier,
+            trialSeats: creditAccounts.trialSeats,
+            trialStartedAt: creditAccounts.trialStartedAt,
+            trialEndsAt: creditAccounts.trialEndsAt,
+            trialNote: creditAccounts.trialNote,
+            managedModelsOverride: creditAccounts.managedModelsOverride,
+            demoEnterprise: creditAccounts.demoEnterprise,
+            enterpriseEntitled: creditAccounts.enterpriseEntitled,
+            // The resolver takes ONE row and reads the JSONB overrides FIRST,
+            // so a projection without them reports the legacy columns' answer
+            // for an account whose real answer expired.
+            entitlementOverrides: creditAccounts.entitlementOverrides,
+            ownerEmail,
+            memberCount,
+          })
+          .from(accounts)
+          .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+          .where(where)
+          .orderBy(dir(sortCol))
+          .limit(limit)
+          .offset(offset);
 
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(accounts)
-      .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-      .where(where);
+        const [{ total }] = await db
+          .select({ total: sql<number>`count(*)::int` })
+          .from(accounts)
+          .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+          .where(where);
+
+        return { ok: true as const, rows, total };
+      } catch (error) {
+        if (errorSqlstate(error) === STATEMENT_TIMEOUT_SQLSTATE) {
+          console.error('[admin/accounts] list query failed — returning typed unavailability:', error);
+          return { ok: false as const };
+        }
+        throw error;
+      }
+    })();
+    if (!queryResult.ok) return c.json(accountsListUnavailableBody(), 503);
+    const { rows, total } = queryResult;
 
     const now = Date.now();
     const list = rows.map((r) => {
@@ -226,8 +277,8 @@ adminApp.openapi(
         name: r.name,
         // The name the PRODUCT shows for this account. `name` above is the raw
         // stored column, which for old rows is a migration placeholder
-        // ('Personal' / 'User') that every customer-facing surface maps to
-        // "<owner email>'s Account" — the console must render the same thing,
+        // ('Personal' / 'User') that every customer-facing surface maps to a
+        // suggested name (`defaultAccountName`) — the console must render the same thing,
         // or an operator searching for what the customer sees finds "Personal".
         displayName: accountDisplayName(r.name, r.ownerEmail ?? null),
         ownerEmail: r.ownerEmail ?? null,
@@ -364,7 +415,7 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const userId = c.req.param('userId');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const roleRaw = String(body.role || '').trim();
 
     if (roleRaw !== 'owner' && roleRaw !== 'admin' && roleRaw !== 'member') {
@@ -419,7 +470,7 @@ adminApp.openapi(
         resourceId: userId,
         before: { account_role: target.accountRole },
         after: { account_role: role },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
     } catch {
@@ -461,13 +512,13 @@ adminApp.openapi(
     const { eq, desc, sql } = await import('drizzle-orm');
 
     const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
     const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${projects.projectId}
+      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
         AND ps.status IN ('queued', 'branching', 'provisioning', 'running'))`;
     const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
     const rows = await db
       .select({
@@ -557,13 +608,13 @@ adminApp.openapi(
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${accounts.accountId}
-      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
+      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
                CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
     // Bound one-parameter-per-status: a bare `IN ${array}` binds the whole array
     // as a single value and matches nothing.
     const activeStatuses = sql.join(
@@ -572,10 +623,10 @@ adminApp.openapi(
     );
     const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${projects.projectId}
+      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
         AND ps.status::text IN (${activeStatuses}))`;
     const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
     const conds: any[] = [];
     if (search) {
@@ -584,7 +635,7 @@ adminApp.openapi(
           ilike(projects.name, `%${search}%`),
           ilike(accounts.name, `%${search}%`),
           sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${projects.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
+                      WHERE am.account_id = ${qualifiedColumn(projects.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
     }
@@ -704,7 +755,7 @@ adminApp.openapi(
   async (c: any) => {
   try {
     const accountId = c.req.param('id');
-    if (!UUID_RE.test(accountId)) return c.json({ subscription: null });
+    if (!isUuid(accountId)) return c.json({ subscription: null });
     const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
     const account = await getCreditAccount(accountId);
     const subscriptionId = account?.stripeSubscriptionId ?? null;
@@ -743,6 +794,12 @@ adminApp.openapi(
   },
 );
 
+/** The buckets an admin credit route echoes back; no credit row reads as empty. */
+async function adminBalance(accountId: string) {
+  const { wallet } = await import('../billing/wallet');
+  return (await wallet.balance(accountId)) ?? { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
+}
+
 // ── Grant credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
@@ -776,16 +833,22 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit grant');
     const isExpiring = body.isExpiring !== false;
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, amount, 'admin_grant', `${description} (by admin ${actorUserId ?? 'unknown'})`, isExpiring);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    await wallet.grant({
+      accountId,
+      amount,
+      kind: 'admin_grant',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: isExpiring,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }
@@ -824,15 +887,23 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const amount = Number(body.amount);
     const description = String(body.description || 'Admin credit debit');
     if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, -Math.abs(amount), 'admin_debit', `${description} (by admin ${actorUserId ?? 'unknown'})`, false);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
+    const { wallet } = await import('../billing/wallet');
+    // A negative grant of its own kind: an operator correction is not
+    // customer usage, and it is not refused by the admission floor.
+    await wallet.grant({
+      accountId,
+      amount: -Math.abs(amount),
+      kind: 'admin_debit',
+      description: `${description} (by admin ${actorUserId ?? 'unknown'})`,
+      expiring: false,
+      key: null,
+    });
+    return c.json({ ok: true, balance: await adminBalance(accountId) });
   } catch (e: any) {
     return c.json({ error: adminErrorMessage(e) }, 500);
   }
@@ -872,7 +943,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const tier = String(body.tier || '').trim();
 
     const { isValidTier } = await import('../billing/services/tiers');
@@ -915,7 +986,7 @@ adminApp.openapi(
         resourceId: accountId,
         before: { tier: before?.tier ?? null },
         after: { tier },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
     } catch {
@@ -968,7 +1039,7 @@ adminApp.openapi(
     try {
       const accountId = c.req.param('id');
       const actorUserId = c.get('userId') as string | undefined;
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
       const enabled = body.enabled;
       if (typeof enabled !== 'boolean') {
         return c.json({ error: 'enabled must be a boolean' }, 400);
@@ -996,7 +1067,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { enterprise_entitled: before },
           after: { enterprise_entitled: enabled },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1010,88 +1081,6 @@ adminApp.openapi(
   },
 );
 
-// ── Set account concurrent-session override ─────────────────────────────────
-// `null` restores the tier-derived limit. Operators use this route for account
-// policy changes and for bounded end-to-end limit verification.
-adminApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/session-limit',
-    tags: ['admin'],
-    summary: "Set an account's concurrent-session override",
-    ...auth,
-    request: {
-      params: z.object({ id: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              max_concurrent_sessions: z.number().int().min(1).max(MAX_ACCOUNT_SESSION_LIMIT).nullable(),
-            }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(
-        z.object({
-          ok: z.boolean(),
-          previous: z.number().int().nullable(),
-          current: z.number().int().nullable(),
-        }),
-        'Updated concurrent-session override',
-      ),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-  try {
-    const accountId = c.req.param('id');
-    const actorUserId = (c.get('userId') as string | undefined) ?? null;
-    const body = c.req.valid('json') as { max_concurrent_sessions: number | null };
-    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
-    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
-    const { clearAccountLimitCache } = await import('../shared/account-limits');
-    const { recordAuditEvent } = await import('../shared/audit');
-
-    const result = await setAccountSessionLimit(
-      {
-        accountId,
-        actorUserId,
-        maxConcurrentSessions: body.max_concurrent_sessions,
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
-        userAgent: c.req.header('user-agent') || null,
-      },
-      {
-        getCurrent: async () => (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ?? null,
-        persist: async (id, value) => {
-          await applyAdminOverride(
-            id,
-            { maxConcurrentSessions: value },
-            { userId: actorUserId, action: 'admin.account.session_limit.set' },
-          );
-        },
-        clearCache: clearAccountLimitCache,
-        recordAudit: recordAuditEvent,
-      },
-    );
-
-    return c.json({ ok: true, ...result });
-  } catch (e: any) {
-    return c.json({ error: adminErrorMessage(e) }, 500);
-  }
-  },
-);
-
-// ── Grant / replace an account trial ─────────────────────────────────────────
-// An admin-issued trial makes the account BEHAVE as `tier_key` (entitlements,
-// project/session limits, managed-models gate) until `duration_days` elapse —
-// without touching `credit_accounts.tier`, which belongs to the Stripe webhook.
-// Re-granting overwrites the window (extend/adjust = re-grant). `credit_grant`
-// (USD credits) funds sandbox compute: even a BYOK trial needs wallet balance
-// to run sessions.
 adminApp.openapi(
   createRoute({
     method: 'post',
@@ -1160,7 +1149,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { trial: result.before },
           after: { trial: result.current, credit_granted: result.creditGranted },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1212,7 +1201,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { trial: result.before },
           after: { trial: result.current },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1283,7 +1272,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { managed_models_override: before },
           after: { managed_models_override: body.override },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1350,7 +1339,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { demo_enterprise: before },
           after: { demo_enterprise: body.enabled },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1358,6 +1347,74 @@ adminApp.openapi(
       }
 
       return c.json({ ok: true, enabled: body.enabled });
+    } catch (e: any) {
+      return c.json({ error: adminErrorMessage(e) }, 500);
+    }
+  },
+);
+
+// ── Mark an account's SSO domain verified (operator) ────────────────────────
+// The self-serve path is DNS (`POST /accounts/:id/iam/sso/provider/verify-domain`).
+// An operator can record the same fact after proving domain control another way
+// (a support ticket from the domain's mail, a signed order form), or withdraw it.
+// A verified domain makes the IdP's asserted emails trusted outside the account
+// and turns on `enforce_sso`, so the change is audited on the account.
+adminApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/api/accounts/{id}/sso-domain-verification',
+    tags: ['admin'],
+    summary: "Mark the account's SSO primary domain verified or unverified",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({ verified: z.boolean() }) } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), primary_domain: z.string(), domain_verified: z.boolean() }),
+        'Updated domain verification',
+      ),
+      404: json(z.record(z.string(), z.any()), 'No SSO provider'),
+      409: json(z.record(z.string(), z.any()), 'Domain verified by another account'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { verified: boolean };
+      const { domainVerifiedByOtherAccount, getSsoProvider, isSsoDomainVerified, setSsoDomainVerified } =
+        await import('../repositories/sso');
+      const before = await getSsoProvider(accountId);
+      if (!before) return c.json({ error: 'no SSO provider configured' }, 404);
+      if (body.verified && (await domainVerifiedByOtherAccount(accountId, before.primaryDomain))) {
+        return c.json(
+          { error: `${before.primaryDomain} is already verified by another account`, code: 'sso_domain_claimed' },
+          409,
+        );
+      }
+      const after = await setSsoDomainVerified(accountId, body.verified);
+      if (!after) return c.json({ error: 'no SSO provider configured' }, 404);
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.sso_domain.set',
+          resourceType: 'sso_provider',
+          resourceId: after.ssoProviderId,
+          before: { primary_domain: before.primaryDomain, domain_verified: isSsoDomainVerified(before) },
+          after: { primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after), method: 'operator' },
+          ip: requestClientIp(c),
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the change */
+      }
+      return c.json({ ok: true, primary_domain: after.primaryDomain, domain_verified: isSsoDomainVerified(after) });
     } catch (e: any) {
       return c.json({ error: adminErrorMessage(e) }, 500);
     }
@@ -1462,7 +1519,7 @@ adminApp.openapi(
           resourceId: accountId,
           before: { entitlement_overrides: before },
           after: { entitlement_overrides: stored },
-          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ip: requestClientIp(c),
           userAgent: c.req.header('user-agent') || null,
         });
       } catch {
@@ -1506,12 +1563,14 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const src = (body && typeof body.weights === 'object') ? body.weights : body;
+    const body = await readJsonObject(c);
+    const src = (
+      typeof body.weights === 'object' && body.weights !== null ? body.weights : body
+    ) as Record<string, unknown>;
     const { config } = await import('../config');
     const weights: Record<string, number> = {};
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
-      const w = Number(src?.[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
+      const w = Number(src[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
     }
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
@@ -1547,8 +1606,8 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const value = { enabled: body?.enabled === true };
+    const body = await readJsonObject(c);
+    const value = { enabled: body.enabled === true };
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
     const { PROVIDER_FALLBACK_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
@@ -1601,7 +1660,7 @@ adminApp.openapi(
   }),
   async (c: any) => {
     const sessionId = c.req.param('sessionId');
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const target = String(body.targetProvider || '');
     const { config } = await import('../config');
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);
@@ -1816,7 +1875,7 @@ adminApp.openapi(
       const accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
       const reasonRaw = typeof body?.reason === 'string' ? body.reason.trim() : '';
       const reason = reasonRaw ? reasonRaw.slice(0, 500) : null;
-      if (!UUID_RE.test(accountId)) {
+      if (!isUuid(accountId)) {
         return c.json({ error: 'account_id must be a uuid' }, 400);
       }
 
@@ -1860,7 +1919,7 @@ adminApp.openapi(
           reason,
           expires_at: expiresAt.toISOString(),
         },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
 
@@ -1919,7 +1978,7 @@ adminApp.openapi(
           impersonator_user_id: adminUserId,
           target_account_id: grant.targetAccountId,
         },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ip: requestClientIp(c),
         userAgent: c.req.header('user-agent') || null,
       });
 

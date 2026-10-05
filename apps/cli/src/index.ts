@@ -4,15 +4,16 @@ import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
+import { runAudit } from './commands/audit.ts';
 import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
+import { runDoctor } from './commands/doctor.ts';
 import { runEnv } from './commands/env.ts';
 import { runFiles } from './commands/files.ts';
-import { runFs } from './commands/fs.ts';
-import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
+import { runGitCredential } from './commands/git-credential.ts';
 import { runGrants } from './commands/grants.ts';
 import { runGroups } from './commands/groups.ts';
 import { runHosts } from './commands/hosts.ts';
@@ -22,12 +23,11 @@ import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runMembers } from './commands/members.ts';
 import { runModels } from './commands/models.ts';
+import { runPermissions } from './commands/permissions.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReview } from './commands/review.ts';
-import { runAudit } from './commands/audit.ts';
-import { runPermissions } from './commands/permissions.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
@@ -37,18 +37,20 @@ import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
-import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
+import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
+import { runReminders } from './commands/reminders.ts';
+import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
-import { runDoctor } from './commands/doctor.ts';
+import { type Command, TIERS } from './command-table.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
-import { printPermissionDenialIdentity } from './token-denial.ts';
-import { C, header, pad, rule, visibleWidth } from './style.ts';
 import { confirm } from './prompts.ts';
+import { C, header, pad, rule, visibleWidth } from './style.ts';
+import { printPermissionDenialIdentity } from './token-denial.ts';
 import {
   getUpdateNotice,
   isUpdateSnoozed,
@@ -62,289 +64,6 @@ import {
 // to a bare `bun run src/index.ts` during local dev.
 const VERSION = process.env.KORTIX_CLI_VERSION ?? 'dev';
 
-interface Command {
-  name: string;
-  args?: string;
-  blurb: string;
-}
-
-interface CommandSection {
-  title: string;
-  commands: readonly Command[];
-}
-
-interface CommandTier {
-  /** Band label above the tier's sections — the mental bucket, not a command. */
-  label: string;
-  sections: readonly CommandSection[];
-}
-
-// The help layout leads with the navigable hierarchy — Host › Account ›
-// Project › Session, top-down, each with its `use` selection verb — then the
-// feature bands that operate ON the linked project, then the CLI tool itself.
-// You sign into a HOST, pick an ACCOUNT within it, pick a PROJECT within that,
-// and open SESSIONS in the project. Order + membership here IS the layout.
-const TIERS: readonly CommandTier[] = [
-  // Deliberately the first band on the screen. An agent in any harness that
-  // holds only this binary and a token has to be able to find, unprompted, the
-  // one command that teaches it the platform — so it leads, and its blurb says
-  // what it is for in plain words rather than naming a noun ("skills") the
-  // reader does not have a definition for yet.
-  {
-    label: 'Start here',
-    sections: [
-      {
-        title: '',
-        commands: [
-          {
-            name: 'system-skills',
-            args: '[get <name>]',
-            blurb: 'Learn how to drive Kortix — the platform docs, served live by your host',
-          },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Where you are  (host › account › project › session)',
-    sections: [
-      {
-        title: 'Sign in — per host',
-        commands: [
-          {
-            name: 'hosts',
-            args: '<subcommand>',
-            blurb: 'Sign in + switch Kortix instances (login/logout/use/ls)',
-          },
-          { name: 'login', blurb: 'Sign in to the active host (shortcut for `hosts login`)' },
-          { name: 'logout', blurb: 'Sign out of the active host (shortcut for `hosts logout`)' },
-          { name: 'whoami', blurb: 'Inspect the active host — signed-in user + account' },
-          { name: 'token', blurb: 'Inspect the active token context (project/session/agent grants)' },
-          {
-            name: 'self-host',
-            args: '<subcommand>',
-            blurb: 'Run your own Kortix instance from Docker images',
-          },
-        ],
-      },
-      {
-        title: 'Account — within the host',
-        commands: [
-          {
-            name: 'accounts',
-            args: '<subcommand>',
-            blurb: 'Switch the active account (use / ls / current)',
-          },
-          {
-            name: 'members',
-            args: '<subcommand>',
-            blurb: 'Invite, remove and re-role the people in the account',
-          },
-          {
-            name: 'groups',
-            args: '<subcommand>',
-            blurb: 'Group people so a role follows a team, not a person',
-          },
-          {
-            name: 'tokens',
-            args: '<subcommand>',
-            blurb: 'Mint and revoke API keys + service accounts for this account',
-          },
-          {
-            name: 'billing',
-            args: '<subcommand>',
-            blurb: 'Read plan, credits, transactions and per-project/session costs',
-          },
-        ],
-      },
-      {
-        title: 'Project — within the account',
-        commands: [
-          {
-            name: 'init',
-            args: '[project-name]',
-            blurb: 'Start a new Kortix project (a fresh standalone directory)',
-          },
-          {
-            name: 'projects',
-            args: '<subcommand>',
-            blurb: 'List, link, use, open, rename and configure projects (features, cli-tokens, upgrade)',
-          },
-        ],
-      },
-      {
-        title: 'Session — within the project',
-        commands: [
-          {
-            name: 'sessions',
-            args: '<subcommand>',
-            blurb: 'Run, share, queue, inspect, stop and delete project sessions',
-          },
-          {
-            name: 'connect',
-            args: '[session-id]',
-            blurb: 'Attach the full OpenCode TUI to a session (picker when no id given)',
-          },
-          {
-            name: 'chat',
-            args: '[session-id]',
-            blurb: "Talk to a session's agent (REPL or --prompt)",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'The linked project',
-    sections: [
-      {
-        title: 'Author & ship',
-        commands: [
-          { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
-          { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
-          {
-            name: 'doctor',
-            args: '[--no-session]',
-            blurb: 'End-to-end health check: auth, project, session, agent reply',
-          },
-          {
-            name: 'schema',
-            args: '[--version 1|2]',
-            blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
-          },
-        ],
-      },
-      {
-        title: 'Agents & connectors',
-        commands: [
-          {
-            name: 'agents',
-            args: '<subcommand>',
-            blurb: 'Default agent, per-agent model pin, scope and full configuration',
-          },
-          {
-            name: 'models',
-            args: '<subcommand>',
-            blurb: 'Choose which models this project offers, and its default model',
-          },
-          {
-            name: 'gateway',
-            args: '<subcommand>',
-            blurb: 'Configure the LLM gateway: routing, budgets, keys, usage, logs, test',
-          },
-          {
-            name: 'connectors',
-            args: '<subcommand>',
-            blurb: 'Manage connectors agents call as tools (Pipedream/MCP/HTTP)',
-          },
-          {
-            name: 'secrets',
-            args: '<subcommand>',
-            blurb: 'Manage project secrets (project-scoped)',
-          },
-          {
-            name: 'providers',
-            args: '<subcommand>',
-            blurb: 'Connect LLM providers (API key or OAuth) for this project',
-          },
-          {
-            name: 'env',
-            args: '<subcommand>',
-            blurb: 'Pull/push project secrets as a dotenv file',
-          },
-          {
-            name: 'channels',
-            args: '<subcommand>',
-            blurb: 'Slack, Teams and Email channels, per-channel bindings, voice bot name',
-          },
-          {
-            name: 'sandboxes',
-            args: '<subcommand>',
-            blurb: 'Manage sandbox images: templates, builds, health, provider pin',
-          },
-          {
-            name: 'apps',
-            args: '<subcommand>',
-            blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
-          },
-          {
-            name: 'marketplace',
-            args: '<subcommand>',
-            blurb: 'Search, show, install, and inspect marketplace items',
-          },
-        ],
-      },
-      {
-        title: 'Files, changes & triggers',
-        commands: [
-          {
-            name: 'files',
-            args: '<subcommand>',
-            blurb: 'Browse repo files, commits, branches, diffs; download a zip',
-          },
-          {
-            name: 'fs',
-            args: '<subcommand>',
-            blurb: 'Shared filesystems — state agents hand to each other (not the repo)',
-          },
-          { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
-          {
-            name: 'review',
-            args: '<subcommand>',
-            blurb: "The project's review inbox: approve, reject, request changes",
-          },
-          { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
-        ],
-      },
-      {
-        title: 'Access & permissions',
-        commands: [
-          {
-            name: 'access',
-            args: '<subcommand>',
-            blurb: 'Grant, list and revoke role assignments (people, groups, agents)',
-          },
-          {
-            name: 'roles',
-            args: '<subcommand>',
-            blurb: 'List system + custom roles and what each one permits',
-          },
-          {
-            name: 'permissions',
-            args: '<subcommand>',
-            blurb: 'Browse the permission catalog roles are built from',
-          },
-          {
-            name: 'audit',
-            args: '<subcommand>',
-            blurb: 'Read the account audit trail (who did what, when)',
-          },
-          {
-            name: 'grants',
-            args: '<subcommand>',
-            blurb:
-              "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'CLI',
-    sections: [
-      {
-        title: '',
-        commands: [
-          { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
-          { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
-          { name: 'help', blurb: 'Show this help' },
-          { name: 'version', blurb: 'Print the CLI version' },
-        ],
-      },
-    ],
-  },
-];
-
 /** A faded, labeled divider that bands a tier above its (bold) section titles. */
 function tierBand(label: string): string {
   const dashes = Math.max(0, 56 - visibleWidth(label) - 1);
@@ -353,9 +72,7 @@ function tierBand(label: string): string {
 
 function renderHelp(): string {
   const visibleCommands = (commands: readonly Command[]) => commands;
-  const allCommands = TIERS.flatMap((t) =>
-    t.sections.flatMap((s) => visibleCommands(s.commands)),
-  );
+  const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => visibleCommands(s.commands)));
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
   );
@@ -456,9 +173,88 @@ async function offerInteractiveUpdate(): Promise<boolean> {
 
   process.stdout.write('\n');
   if ((await runUpdate([])) !== 0) return false;
-  process.stdout.write(`  ${C.dim}Run ${C.reset}${C.cyan}kortix${C.reset}${C.dim} again to pick it up.${C.reset}\n\n`);
+  process.stdout.write(
+    `  ${C.dim}Run ${C.reset}${C.cyan}kortix${C.reset}${C.dim} again to pick it up.${C.reset}\n\n`,
+  );
   return true;
 }
+
+/**
+ * argv[0] → handler for every routed command. Aliases point at the same
+ * handler (`deploy`→ship, `attach`→sessions connect, `t`→tui,
+ * `perms`→permissions, `session`→sessions); the token-only, remind and
+ * skills adapters keep their extra arguments; `registry` keeps its stderr
+ * warning. `help`, `version`, `git-credential` and bare `kortix` stay
+ * special-cased in main() — they are landing-screen or protocol verbs, not
+ * subcommand dispatch.
+ *
+ * The record's KEY ORDER is load-bearing: the did-you-mean suggestion keeps
+ * the first best match on an edit-distance tie, and this order is the
+ * pre-1341 KNOWN_COMMANDS candidate order, with `perms` (dispatched before
+ * but never listed as a suggestion candidate) added after `permissions`.
+ */
+type RootCommandHandler = (argv: string[], invoked: string) => number | Promise<number>;
+
+const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
+  init: (rest) => runInit(rest),
+  ship: (rest) => runShip(rest),
+  deploy: (rest) => runShip(rest),
+  validate: (rest) => runValidate(rest),
+  schema: (rest) => runSchema(rest),
+  'self-host': (rest) => runSelfHost(rest),
+  login: (rest) => runLogin(rest),
+  logout: (rest) => runLogout(rest),
+  whoami: (rest) => runWhoami(rest),
+  doctor: (rest) => runDoctor(rest),
+  token: (rest) => runWhoami(['--token-only', ...rest]),
+  hosts: (rest) => runHosts(rest),
+  accounts: (rest) => runAccounts(rest),
+  members: (rest) => runMembers(rest),
+  groups: (rest) => runGroups(rest),
+  tokens: (rest) => runTokens(rest),
+  billing: (rest) => runBilling(rest),
+  projects: (rest) => runProjects(rest),
+  sessions: (rest) => runSessions(rest),
+  session: (rest) => runSessions(rest),
+  chat: (rest) => runSessionsChat(rest),
+  connect: (rest) => runSessionsConnect(rest),
+  attach: (rest) => runSessionsConnect(rest),
+  tui: (rest) => runTui(rest),
+  t: (rest) => runTui(rest),
+  files: (rest) => runFiles(rest),
+  cr: (rest) => runCr(rest),
+  review: (rest) => runReview(rest),
+  triggers: (rest) => runTriggers(rest),
+  reminders: (rest) => runReminders(rest),
+  remind: (rest) => runReminders(rest, true),
+  connectors: (rest) => runConnectors(rest),
+  secrets: (rest) => runSecrets(rest),
+  providers: (rest) => runProviders(rest),
+  env: (rest) => runEnv(rest),
+  gateway: (rest) => runGateway(rest),
+  apps: (rest) => runApps(rest),
+  channels: (rest) => runChannels(rest),
+  sandboxes: (rest) => runSandboxes(rest),
+  marketplace: (rest) => runMarketplace(rest),
+  'system-skills': (rest, invoked) => runSystemSkills(rest, invoked),
+  skills: (rest, invoked) => runSystemSkills(rest, invoked),
+  registry: (rest) => {
+    process.stderr.write(
+      `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
+    );
+    return runRegistry(rest);
+  },
+  agents: (rest) => runAgents(rest),
+  models: (rest) => runModels(rest),
+  access: (rest) => runAccess(rest),
+  roles: (rest) => runRoles(rest),
+  permissions: (rest) => runPermissions(rest),
+  perms: (rest) => runPermissions(rest),
+  audit: (rest) => runAudit(rest),
+  grants: (rest) => runGrants(rest),
+  update: (rest) => runUpdate(rest),
+  uninstall: (rest) => runUninstall(rest),
+};
 
 async function main(argv: string[]): Promise<number> {
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
@@ -491,160 +287,25 @@ async function main(argv: string[]): Promise<number> {
   }
   const connectorMachineCommand =
     argv[0] === 'connectors' &&
-    (['call', 'discover', 'mcp'].includes(argv[1] ?? '') ||
+    (['call', 'discover', 'upload', 'mcp'].includes(argv[1] ?? '') ||
       (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
-      ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
-  if (!connectorMachineCommand) {
+      ((argv[1] === 'ls' || argv[1] === 'list') &&
+        argv.some((arg) => arg === '--session' || arg.startsWith('--session='))));
+  if (!connectorMachineCommand && !isMachineOutput(argv)) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
-  if (argv[0] === 'init') {
-    return runInit(argv.slice(1));
-  }
-  // `deploy` is kept as a familiar alias for `ship`.
-  if (argv[0] === 'ship' || argv[0] === 'deploy') {
-    return runShip(argv.slice(1));
-  }
-  if (argv[0] === 'validate') {
-    return runValidate(argv.slice(1));
-  }
-  if (argv[0] === 'schema') {
-    return runSchema(argv.slice(1));
-  }
-  if (argv[0] === 'login') {
-    return runLogin(argv.slice(1));
-  }
-  if (argv[0] === 'logout') {
-    return runLogout(argv.slice(1));
-  }
-  if (argv[0] === 'whoami') {
-    return runWhoami(argv.slice(1));
-  }
-  if (argv[0] === 'doctor') {
-    return runDoctor(argv.slice(1));
-  }
-  if (argv[0] === 'token') {
-    return runWhoami(['--token-only', ...argv.slice(1)]);
-  }
-  if (argv[0] === 'projects') {
-    return runProjects(argv.slice(1));
-  }
-  if (argv[0] === 'hosts') {
-    return runHosts(argv.slice(1));
-  }
-  if (argv[0] === 'accounts') {
-    return runAccounts(argv.slice(1));
-  }
-  if (argv[0] === 'members') {
-    return runMembers(argv.slice(1));
-  }
-  if (argv[0] === 'groups') {
-    return runGroups(argv.slice(1));
-  }
-  // Exact match only — the singular `token` (whoami --token-only) stays.
-  if (argv[0] === 'tokens') {
-    return runTokens(argv.slice(1));
-  }
-  if (argv[0] === 'billing') {
-    return runBilling(argv.slice(1));
-  }
-  if (argv[0] === 'secrets') {
-    return runSecrets(argv.slice(1));
-  }
-  if (argv[0] === 'providers') {
-    return runProviders(argv.slice(1));
-  }
-  if (argv[0] === 'agents') {
-    return runAgents(argv.slice(1));
-  }
-  if (argv[0] === 'models') {
-    return runModels(argv.slice(1));
-  }
-  if (argv[0] === 'gateway') {
-    return runGateway(argv.slice(1));
-  }
-  if (argv[0] === 'apps') {
-    return runApps(argv.slice(1));
-  }
-  if (argv[0] === 'self-host') {
-    return runSelfHost(argv.slice(1));
-  }
-  if (argv[0] === 'env') {
-    return runEnv(argv.slice(1));
-  }
-  // Singular `session` is a permanent alias — `kortix session new` is typed
-  // often enough that a "did you mean" round-trip is pure friction.
-  if (argv[0] === 'sessions' || argv[0] === 'session') {
-    return runSessions(argv.slice(1));
-  }
-  if (argv[0] === 'chat') {
-    return runSessionsChat(argv.slice(1));
-  }
-  // Top-level aliases for `sessions connect` — the flagship "land me in the
-  // TUI" verb deserves a first-class name.
-  if (argv[0] === 'connect' || argv[0] === 'attach') {
-    return runSessionsConnect(argv.slice(1));
-  }
-  if (argv[0] === 'files') {
-    return runFiles(argv.slice(1));
-  }
-  if (argv[0] === 'fs') {
-    return runFs(argv.slice(1));
-  }
-  if (argv[0] === 'triggers') {
-    return runTriggers(argv.slice(1));
-  }
-  if (argv[0] === 'channels') {
-    return runChannels(argv.slice(1));
-  }
-  if (argv[0] === 'connectors') {
-    return runConnectors(argv.slice(1));
-  }
-  if (argv[0] === 'marketplace') {
-    return runMarketplace(argv.slice(1));
-  }
-  // `system-skills` is the canonical name; `skills` stays a permanent alias
-  // because every already-baked sandbox image seeds a kortix-system skill whose
-  // live pointer says `kortix skills get <name>`. Both hand the invoked name
-  // down so every hint the command prints matches how it was called.
-  if (argv[0] === SYSTEM_SKILLS_COMMAND || argv[0] === 'skills') {
-    return runSystemSkills(argv.slice(1), argv[0]);
-  }
-  if (argv[0] === 'registry') {
-    process.stderr.write(
-      `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
-    );
-    return runRegistry(argv.slice(1));
-  }
-  if (argv[0] === 'sandboxes') {
-    return runSandboxes(argv.slice(1));
-  }
-  if (argv[0] === 'cr') {
-    return runCr(argv.slice(1));
-  }
-  if (argv[0] === 'review') {
-    return runReview(argv.slice(1));
-  }
-  if (argv[0] === 'access') {
-    return runAccess(argv.slice(1));
-  }
-  if (argv[0] === 'roles') {
-    return runRoles(argv.slice(1));
-  }
-  if (argv[0] === 'permissions' || argv[0] === 'perms') {
-    return runPermissions(argv.slice(1));
-  }
-  if (argv[0] === 'audit') {
-    return runAudit(argv.slice(1));
-  }
-  if (argv[0] === 'grants') {
-    return runGrants(argv.slice(1));
-  }
-  if (argv[0] === 'update') {
-    return runUpdate(argv.slice(1));
-  }
-  if (argv[0] === 'uninstall') {
-    return runUninstall(argv.slice(1));
+  // argv[0] → handler. One exact-match dispatch replaces the old 47-branch
+  // if-chain. Aliases point at the same handler (`deploy`→ship, `attach`→
+  // sessions connect, `t`→tui, `perms`→permissions, `session`→sessions);
+  // the token-only, remind and skills adapters keep their extra arguments.
+  //
+  // The record's KEY ORDER is load-bearing for behavior, not cosmetics: the
+  // did-you-mean suggestion keeps the first best match on an edit-distance
+  // tie, so this order must match the old KNOWN_COMMANDS list exactly.
+  const handler = COMMAND_HANDLERS[argv[0]];
+  if (handler) {
+    return handler(argv.slice(1), argv[0]);
   }
   // Anything else is an unknown command. This must NEVER fall through to a
   // project scaffold — `kortix <new-project-name>` used to, which turned
@@ -660,58 +321,15 @@ async function main(argv: string[]): Promise<number> {
   return 2;
 }
 
-const KNOWN_COMMANDS = [
-  'init',
-  'ship',
-  'deploy',
-  'validate',
-  'schema',
-  'self-host',
-  'login',
-  'logout',
-  'whoami',
-  'doctor',
-  'token',
-  'hosts',
-  'accounts',
-  'members',
-  'groups',
-  'tokens',
-  'billing',
-  'projects',
-  'sessions',
-  'session',
-  'chat',
-  'connect',
-  'attach',
-  'files',
-  'cr',
-  'review',
-  'triggers',
-  'connectors',
-  'secrets',
-  'providers',
-  'env',
-  'gateway',
-  'apps',
-  'channels',
-  'sandboxes',
-  'marketplace',
-  'system-skills',
-  'skills',
-  'registry',
-  'agents',
-  'models',
-  'access',
-  'roles',
-  'permissions',
-  'audit',
-  'grants',
-  'update',
-  'uninstall',
+/** Suggestion candidates for an unknown argv[0]: every dispatch key, plus the
+ *  two landing-screen verbs. Kept in the handler record's order, so a tie in
+ *  edit distance still resolves to the first candidate — the exact behavior
+ *  of the pre-1341 KNOWN_COMMANDS list. */
+const SUGGESTION_CANDIDATES: readonly string[] = [
+  ...Object.keys(COMMAND_HANDLERS),
   'help',
   'version',
-] as const;
+];
 
 function editDistance(a: string, b: string): number {
   const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -734,7 +352,7 @@ function editDistance(a: string, b: string): number {
 function closestCommand(input: string): string | undefined {
   const needle = input.toLowerCase();
   let best: { name: string; distance: number } | undefined;
-  for (const name of KNOWN_COMMANDS) {
+  for (const name of SUGGESTION_CANDIDATES) {
     const distance = editDistance(needle, name);
     // The distance cap alone lets tiny inputs match anything short ("us" →
     // "cr"), so also require most of the input to survive the edit.
@@ -752,6 +370,15 @@ function closestCommand(input: string): string | undefined {
 function printActiveHostNotice(argv: readonly string[]): void {
   const notice = renderHostNotice(argv);
   if (notice) process.stderr.write(notice);
+}
+
+/** A `--json` invocation asked for machine-readable output. The human host +
+ *  update notices stay off entirely — even on stderr — so every capture style
+ *  pipes cleanly: `kortix whoami --json | jq` and a merged
+ *  `kortix whoami --json 2>&1 | jq` both parse. The command's own
+ *  diagnostics (auth errors, API failures) always keep their stream. */
+function isMachineOutput(argv: readonly string[]): boolean {
+  return argv.includes('--json');
 }
 
 // Passive, cache-only nudge for subcommands (never touches the network, so it
@@ -780,7 +407,9 @@ function finish(code: number): void {
   }
 }
 
-main(process.argv.slice(2))
+import { argvForInvocation } from './invocation.ts';
+
+main(argvForInvocation(process.argv0 ?? '', process.argv.slice(2)))
   // A refused call names the action, never the identity. Answer that here —
   // once, after the command's own output, and only when something was refused.
   .then(async (code) => {

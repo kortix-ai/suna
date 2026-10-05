@@ -20,11 +20,11 @@
 // hooks (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and the
 // primitives (`useSessionPicks` / `useRuntimePhase` / start-stash). The golden
 // reference (apps/whitelabel-demo) imports ONLY that surface — no `server-store`,
-// no `OpenCodeEventStreamProvider`, no `useCanonicalOpenCodeSession`, no raw
+// no `RuntimeEventStreamProvider`, no `useCanonicalRuntimeSession`, no raw
 // stores, no `getClient`.
 //
-// The lower-level exports below (`OpenCodeEventStreamProvider`,
-// `useCanonicalOpenCodeSession`, the sandbox-connection / sync / pending stores,
+// The lower-level exports below (`RuntimeEventStreamProvider`,
+// `useCanonicalRuntimeSession`, the sandbox-connection / sync / pending stores,
 // the per-sandbox session hooks) are now INTERNAL plumbing that `useSession`
 // composes. They remain exported ONLY because apps/web still consumes them
 // directly through its not-yet-migrated file/terminal/git hooks; once that
@@ -33,7 +33,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Router-agnostic route scope: the host injects "the project the user is
 // looking at" here (Next hosts derive it from useParams once, near the root);
-// `useOpenCodeProviders`/`useOpenCodeLocal` resolve it via this context.
+// `useRuntimeProviders`/`useRuntimeLocal` resolve it via this context.
 export { KortixProjectProvider, useKortixRouteProjectId } from './route-project';
 export * from './use-opencode-sessions';
 export * from './use-opencode-events';
@@ -46,48 +46,8 @@ export * from './use-opencode-pty';
 export * from './use-opencode-config';
 export * from './use-model-store';
 export * from './use-session-sync';
-export { useOpenCodeAgents as useRuntimeAgents } from './use-opencode-sessions/agents';
-export { useOpenCodeCommands as useRuntimeCommands } from './use-opencode-sessions/commands';
-export {
-  useOpenCodeCurrentProject as useRuntimeCurrentProject,
-  useOpenCodePathInfo as useRuntimePathInfo,
-} from './use-opencode-sessions/projects';
-export { useOpenCodeProviders as useRuntimeProviders } from './use-opencode-sessions/providers';
-export {
-  mintSessionWireMessageId,
-  promptOpenCodeMessage as promptRuntimeMessage,
-  useOpenCodeMessages as useRuntimeMessages,
-} from './use-opencode-sessions/messages';
-export {
-  useOpenCodeSession as useRuntimeSession,
-  useOpenCodeSessionDiff as useRuntimeSessionDiff,
-  useOpenCodeSessionTodo as useRuntimeSessionTodo,
-  useOpenCodeSessions as useRuntimeSessions,
-} from './use-opencode-sessions/sessions';
-// The session's file changes — branch commits + working tree, ONE query key.
-// Every Changes surface reads this; see `use-opencode-sessions/vcs.ts`.
-export {
-  useOpenCodeVcsDiff as useRuntimeVcsDiff,
-  type VcsDiffMode,
-  type VcsFileDiff,
-} from './use-opencode-sessions/vcs';
-export { useOpenCodeRuntimeReady as useRuntimeReady } from './use-opencode-sessions/keys';
-export { useOpenCodeEventStream as useRuntimeEventStream } from './use-opencode-events';
-export { useOpenCodeLocal as useRuntimeLocal } from './use-opencode-local';
-export { useOpenCodePtyList as useRuntimePtyList } from './use-opencode-pty';
-export { useOpenCodeConfig as useRuntimeConfig } from './use-opencode-config';
-export { useUpdateOpenCodeConfig as useUpdateRuntimeConfig } from './use-opencode-config';
-export {
-  clearOpencodeEnsureGuard as clearRuntimeEnsureGuard,
-  useCanonicalOpenCodeSession as useCanonicalRuntimeSession,
-} from './use-canonical-opencode-session';
-export { opencodeKeys as runtimeKeys } from './use-opencode-sessions/keys';
-export { useExecuteOpenCodeCommand as useExecuteRuntimeCommand } from './use-opencode-sessions/commands';
-export { useAbortOpenCodeSession as useAbortRuntimeSession } from './use-opencode-sessions/messages';
-export {
-  useCreateOpenCodeSession as useCreateRuntimeSession,
-  useSummarizeOpenCodeSession as useSummarizeRuntimeSession,
-} from './use-opencode-sessions/sessions';
+// Every hook above is exported under its neutral `Runtime` name; each
+// pre-W4 `OpenCode` name stays beside it, `@deprecated`, until the next major.
 // Runtime health has three independent layers, each covering a failure mode
 // the others can't see — do not collapse them:
 //   1. Boot readiness is server-truth: `useSession`'s /start resolves
@@ -114,8 +74,10 @@ export * from './use-runtime-reconnect';
 // and PERMISSION requests here (keyed by request id, each carrying sessionID);
 // `useSessionSync` does NOT surface them, so a host that renders interactive
 // prompts must read them from this store.
-export { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
-export { useOpenCodePendingStore as useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+export {
+  useOpenCodePendingStore,
+  useRuntimePendingStore,
+} from '../browser/stores/opencode-pending-store';
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
@@ -130,6 +92,7 @@ export * from './use-session-prefetch';
 // Relocated from `platform/projects-client/session-sandbox` — it types against
 // react-query's QueryClient, which the framework-free REST layer must not.
 export { prefetchSessionStart } from './prefetch-session-start';
+export { prefetchSessionOpen } from './prefetch-session-open';
 export * from './use-canonical-opencode-session';
 export * from './use-gateway-catalog-sync';
 export * from './use-visible-agents';
@@ -170,12 +133,10 @@ export {
   type UseSessionOptions,
 } from './use-session';
 export {
-  useSessionWorkspace,
-  deriveSessionWorkspacePhase,
-  sessionWorkspaceKey,
-  type SessionWorkspacePhase,
-  type UseSessionWorkspaceResult,
-} from './use-session-workspace';
+  useSessionMessages,
+  type SessionMessagesOptions,
+  type SessionMessagesSource,
+} from './use-session-messages';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,
@@ -193,8 +154,10 @@ export {
   type StartSessionWithPromptAdapters,
   type UseSessionPromptsResult,
 } from './use-session-prompts';
+export { readSessionAudit } from './use-session-audit';
 export { useSessionWorkingStore } from '../browser/stores/session-working-store';
 export {
+  useSessionTurnOutcome,
   useSessionWorking,
   workingPollMs,
   buildWorkingInputs,

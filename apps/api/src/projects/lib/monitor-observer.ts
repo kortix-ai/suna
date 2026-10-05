@@ -13,7 +13,7 @@
  * exactly one winner.
  */
 import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, asc, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, lt } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { GitTriggerSpec } from '../triggers';
@@ -24,7 +24,8 @@ import {
   renderMonitorLifecyclePrompt,
 } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
-import { fireGitTrigger, triggersPausedForProject } from './triggers';
+import { fireGitTrigger } from './trigger-fire';
+import { triggersPausedForProject } from './trigger-scheduler-state';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
  *  execution queue's ceiling so both queues fail the same way. */
@@ -47,7 +48,6 @@ let monitorDrainRunning = false;
  * mutual exclusion: the loser's UPDATE matches zero rows and returns nothing.
  */
 export async function claimMonitorEvents(input: {
-  now: Date;
   limit: number;
 }): Promise<MonitorEventRow[]> {
   const candidates = await db
@@ -109,32 +109,27 @@ export async function processMonitorEvent(
   row: MonitorEventRow,
   now: Date,
 ): Promise<'fired' | 'skipped' | 'failed'> {
+  /** Mark the event `skipped` for `reason` and answer the drain's tally. */
+  const skip = (reason: string): Promise<'skipped'> =>
+    markMonitorEvent(row.eventId, 'skipped', now, { lastError: reason }).then(() => 'skipped' as const);
+
   const [project] = await db
     .select()
     .from(projects)
     .where(eq(projects.projectId, row.projectId))
     .limit(1);
   if (!project || project.status !== 'active') {
-    await markMonitorEvent(row.eventId, 'skipped', now, {
-      lastError: project ? 'project is not active' : 'project not found',
-    });
-    return 'skipped';
+    return skip(project ? 'project is not active' : 'project not found');
   }
   // A monitor fire is project automation, so the project-wide pause switch
   // stops it exactly like it stops a cron fire.
   if (triggersPausedForProject(project.metadata)) {
-    await markMonitorEvent(row.eventId, 'skipped', now, {
-      lastError: 'project triggers are paused',
-    });
-    return 'skipped';
+    return skip('project triggers are paused');
   }
   // Behavioral half of the flag (spec §"Feature flag"): turning `monitors` off
   // stops firing even if the ingest route were somehow bypassed.
   if (!resolveFeatureFlag(project.metadata, 'monitors')) {
-    await markMonitorEvent(row.eventId, 'skipped', now, {
-      lastError: 'monitors is not enabled for this project',
-    });
-    return 'skipped';
+    return skip('monitors is not enabled for this project');
   }
 
   const [runtime] = await db
@@ -152,14 +147,10 @@ export async function processMonitorEvent(
     )
     .limit(1);
   if (!runtime?.scheduleSpec || runtime.triggerType !== 'monitor') {
-    await markMonitorEvent(row.eventId, 'skipped', now, {
-      lastError: 'monitor is not declared in the project manifest',
-    });
-    return 'skipped';
+    return skip('monitor is not declared in the project manifest');
   }
   if (runtime.enabled === false) {
-    await markMonitorEvent(row.eventId, 'skipped', now, { lastError: 'monitor is disabled' });
-    return 'skipped';
+    return skip('monitor is disabled');
   }
 
   const spec = runtime.scheduleSpec as unknown as GitTriggerSpec;
@@ -177,7 +168,7 @@ export async function processMonitorEvent(
     body = renderMonitorLifecyclePrompt(spec, row.line);
   } else {
     if (!triggerFilterMatches(spec, payload)) {
-      await markMonitorEvent(row.eventId, 'skipped', now, { lastError: 'filter did not match' });
+      await skip('filter did not match');
       await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
       return 'skipped';
     }
@@ -248,7 +239,7 @@ export async function drainMonitorEvents(now = new Date()): Promise<MonitorDrain
   if (monitorDrainRunning) return result;
   monitorDrainRunning = true;
   try {
-    const rows = await claimMonitorEvents({ now, limit: MONITOR_DRAIN_LIMIT });
+    const rows = await claimMonitorEvents({ limit: MONITOR_DRAIN_LIMIT });
     for (const row of rows) {
       result[await processMonitorEvent(row, now)] += 1;
     }
@@ -256,13 +247,4 @@ export async function drainMonitorEvents(now = new Date()): Promise<MonitorDrain
   } finally {
     monitorDrainRunning = false;
   }
-}
-
-/** Count of pending monitor events — health/observability only. */
-export async function pendingMonitorEventCount(): Promise<number> {
-  const [row] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(projectMonitorEvents)
-    .where(eq(projectMonitorEvents.status, 'pending'));
-  return Number(row?.count ?? 0);
 }

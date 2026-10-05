@@ -1,20 +1,20 @@
 'use client';
 
+import type { FileNode } from '@/features/file-browser/types';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  uploadFile,
+  copyFile,
+  createFile,
   deleteFile,
   mkdirFile,
   renameFile,
-  createFile,
-  copyFile,
+  uploadFile,
   type UploadResult,
 } from '../api/runtime-files';
-import { fileListKeys } from './use-file-list';
 import { fileContentKeys } from './use-file-content';
+import { fileListKeys } from './use-file-list';
 import { gitStatusKeys } from './use-git-status';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import type { FileNode } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
 // Upload
@@ -71,7 +71,7 @@ export function useFileMkdir() {
 
 export function useFileRename() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return useMutation<boolean, Error, { from: string; to: string }>({
     mutationFn: ({ from, to }) => renameFile(from, to),

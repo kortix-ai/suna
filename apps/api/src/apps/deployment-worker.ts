@@ -14,6 +14,8 @@ import { pauseComputeSession, startComputeSession } from '../billing/services/co
 import { config, SANDBOX_VERSION, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { runWorkerTick } from '../shared/audit-scope';
+import { auditDeploymentOutcome, type DeploymentAuditRef } from './deployment-audit';
 import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
@@ -24,6 +26,7 @@ import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
+import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
 
 export const APP_RUNTIME_VERSION =
   process.env.KORTIX_APP_RUNTIME_VERSION
@@ -287,6 +290,27 @@ async function stopPreviousRuntime(
   await pauseComputeSession(runtime.runtimeId, now);
 }
 
+/** The audit reference for a deployment whose context never loaded. */
+async function deploymentAuditRefFor(claimed: ClaimedDeployment): Promise<DeploymentAuditRef | null> {
+  try {
+    const [app] = await db
+      .select({ accountId: apps.accountId, projectId: apps.projectId })
+      .from(apps)
+      .where(eq(apps.appId, claimed.appId))
+      .limit(1);
+    if (!app) return null;
+    return {
+      appId: claimed.appId,
+      deploymentId: claimed.deploymentId,
+      accountId: app.accountId,
+      projectId: app.projectId,
+      createdBy: claimed.createdBy,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function driveAppDeployment(
   claimed: ClaimedDeployment,
   owner: string,
@@ -304,8 +328,16 @@ export async function driveAppDeployment(
   let runtimeExternalId: string | null = null;
   let runtimeProvider: SandboxProviderName | null = null;
   let temporaryRoot: string | null = null;
+  let auditRef: DeploymentAuditRef | null = null;
   try {
     const context = await deploymentContext(claimed.deploymentId);
+    auditRef = {
+      appId: context.app.appId,
+      deploymentId: claimed.deploymentId,
+      accountId: context.app.accountId,
+      projectId: context.app.projectId,
+      createdBy: claimed.createdBy,
+    };
     const provider = selectedProvider(context.deployment.hostingProvider);
     runtimeProvider = provider;
     await setDeploymentStatus(claimed.deploymentId, owner, 'validating', {
@@ -403,7 +435,7 @@ export async function driveAppDeployment(
       throw error;
     }
 
-    const snapshotName = `kortix-app-${claimed.deploymentId.replaceAll('-', '')}`;
+    const snapshotName = appDeploymentSnapshotName(claimed.deploymentId);
     await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
       sourceKind: normalized.sourceKind,
       runtimeSpec: normalized.runtimeSpec,
@@ -433,6 +465,14 @@ export async function driveAppDeployment(
       },
     });
     await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
+
+    // A build takes minutes; the App can be deleted meanwhile. Never start a
+    // runtime (and its compute meter) for a deleted App. Its image is
+    // reclaimed by project maintenance (`reclaimAppDeploymentImages`).
+    const [stillLive] = await db.select({ appId: apps.appId }).from(apps)
+      .where(and(eq(apps.appId, context.app.appId), isNull(apps.deletedAt)))
+      .limit(1);
+    if (!stillLive) throw new PermanentAppDeploymentError('App was deleted during the build', 'not_found');
 
     await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning');
     const [existingRuntime] = await db
@@ -536,6 +576,7 @@ export async function driveAppDeployment(
       runtimeId,
       data: { previousDeploymentId: previous },
     });
+    await auditDeploymentOutcome(auditRef, { outcome: 'activated', previousDeploymentId: previous });
     await stopPreviousRuntime(hosting, previous).catch((error) => {
       logger.error('[apps] previous runtime stop failed', {
         deploymentId: previous,
@@ -550,16 +591,27 @@ export async function driveAppDeployment(
       ? error.code
       : disposition.code;
     const attempt = claimed.attemptCount;
+    // Each cleanup step is independent; a failed one must not hide the next,
+    // but it must be visible: an open compute window keeps billing, and a row
+    // left 'starting' hides the runtime from the compute-invariant sweep.
+    const cleanupFailed = (step: string) => (cleanupError: unknown) => {
+      logger.error('[apps] failed-deploy cleanup step failed', {
+        step,
+        deploymentId: claimed.deploymentId,
+        runtimeId,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    };
     if (runtimeId) {
       await db
         .update(appRuntimes)
         .set({ status: 'error', stoppedAt: new Date(), updatedAt: new Date() })
         .where(eq(appRuntimes.runtimeId, runtimeId))
-        .catch(() => {});
-      await pauseComputeSession(runtimeId).catch(() => {});
+        .catch(cleanupFailed('mark_runtime_error'));
+      await pauseComputeSession(runtimeId).catch(cleanupFailed('close_compute_window'));
     }
     if (runtimeProvider && runtimeExternalId) {
-      await hosting.remove(runtimeProvider, runtimeExternalId).catch(() => {});
+      await hosting.remove(runtimeProvider, runtimeExternalId).catch(cleanupFailed('remove_runtime'));
     }
     const terminal = permanent || attempt >= MAX_ATTEMPTS;
     await db
@@ -584,8 +636,13 @@ export async function driveAppDeployment(
       level: 'error',
       runtimeId: runtimeId ?? undefined,
       data: { attempt, terminal },
-    }).catch(() => {});
-    if (terminal) return;
+    }).catch(cleanupFailed('record_event'));
+    if (terminal) {
+      // A retry is not an outcome; only the terminal failure is audited.
+      const ref = auditRef ?? (await deploymentAuditRefFor(claimed));
+      if (ref) await auditDeploymentOutcome(ref, { outcome: 'failed', errorCode, attempt });
+      return;
+    }
   } finally {
     clearInterval(heartbeat);
     if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true }).catch(() => {});
@@ -611,7 +668,9 @@ function scheduleTriggeredTick(): void {
   queueMicrotask(() => {
     workerKickScheduled = false;
     workerRerunRequested = false;
-    void runAppDeploymentTick().catch(reportWorkerError);
+    // A fresh worker context: the kick usually comes from a deploy request,
+    // and the deployments this tick drives were queued by other principals.
+    void runWorkerTick('app-deployments', runAppDeploymentTick).catch(reportWorkerError);
   });
 }
 

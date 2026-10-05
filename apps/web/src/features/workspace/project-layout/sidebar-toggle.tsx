@@ -1,6 +1,5 @@
 'use client';
 
-import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
@@ -10,6 +9,7 @@ import {
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
 import { cn } from '@/lib/utils';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 /**
  * THE sidebar opener. One control, one file, every surface.

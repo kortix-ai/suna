@@ -4,6 +4,8 @@ import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
+import { insertIntoView } from './helpers/compat-views';
+import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
 // GET /:projectId/detail must stay loadable by a plain `member` even though
 // member lacks project.file.read: the fix filters the file list OUT of the
@@ -16,8 +18,10 @@ const MEMBER = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
+let upstream: LocalGitUpstream;
 
 beforeAll(async () => {
+  upstream = createLocalGitUpstream('detail-capability');
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
@@ -27,13 +31,13 @@ beforeAll(async () => {
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'detail-cap-test-project',
-    repoUrl: 'https://example.com/detail-cap-test.git',
+    repoUrl: upstream.repoUrl,
   });
-  await db.insert(accountMembers).values([
+  await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
-  await db.insert(projectMembers).values([
+  await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
@@ -45,6 +49,7 @@ afterAll(async () => {
   }
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  upstream.remove();
 });
 
 async function mint(userId: string): Promise<string> {
@@ -78,18 +83,22 @@ describe('HTTP — GET /detail stays loadable for a member (file list filtered, 
   test('plain MEMBER → the file list is blanked (no file paths leak via /detail)', async () => {
     const secret = await mint(MEMBER);
     const res = await getDetail(secret);
-    if (res.status === 200) {
-      const body = await res.json();
-      expect(body.files).toEqual([]);
-      expect(body.file_count).toBe(0);
-      // The config bundle is still present (member holds the config read leaves).
-      expect(body.config).toBeDefined();
-    }
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.files).toEqual([]);
+    expect(body.file_count).toBe(0);
+    // The config bundle is still present (member holds the config read leaves).
+    expect(body.config).toBeDefined();
   });
 
   test('MANAGER (has file.read) → NOT 403', async () => {
     const secret = await mint(MANAGER);
     const res = await getDetail(secret);
     expect(res.status).not.toBe(403);
+    // The upstream holds README.md: the member's empty list above is the filter,
+    // not an empty repository.
+    const body = await res.json();
+    expect(body.files.map((file: { path: string }) => file.path)).toEqual(['README.md']);
+    expect(body.file_count).toBe(1);
   });
 });

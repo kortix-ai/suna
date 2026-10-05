@@ -34,6 +34,13 @@ PNPM_PINNED='__PNPM_VERSION__'
 # only PATs). Empty when the box is already on the current token model.
 NEW_KORTIX_TOKEN='__KORTIX_TOKEN__'
 TOKEN_ROTATED=false
+# Credential the CONTROL PLANE vouches for, minted for this repair and revoked
+# when it returns. The box's own session token is refused whenever its sandbox
+# row is not `provisioning`/`active` (apps/api/src/repositories/account-tokens.ts),
+# so a repair that authenticates with it cannot run on the boxes that need it
+# most — a wrong row kills the token, the dead token stops convergence, and the
+# cure needs the same dead token. Empty = fall back to the box's own token.
+REPAIR_TOKEN='__KORTIX_REPAIR_TOKEN__'
 LOG=/var/log/kortix-legacy-bootstrap.log
 log() { printf '[legacy-bootstrap] %s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$LOG" >&2; }
 emit() { printf '%s\n' "$1"; }
@@ -67,11 +74,14 @@ done
 mkdir -p "$STATE_DIR" 2>/dev/null || fail preflight "cannot create $STATE_DIR"
 API=$(readenv KORTIX_API_URL); API="${API%/}"; API="${API%/v1}"
 TOKEN=$(readenv KORTIX_SANDBOX_TOKEN); [ -n "$TOKEN" ] || TOKEN=$(readenv KORTIX_TOKEN)
+# What this run authenticates its own downloads with. Never the box's token
+# when the control plane issued one.
+FETCH_TOKEN="$REPAIR_TOKEN"; [ -n "$FETCH_TOKEN" ] || FETCH_TOKEN="$TOKEN"
 [ -n "$API" ] || fail preflight "KORTIX_API_URL is not set on this box"
-[ -n "$TOKEN" ] || fail preflight "no sandbox token on this box"
+[ -n "$FETCH_TOKEN" ] || fail preflight "no credential for the manifest fetch"
 free_mb=$(df -Pm "$STATE_DIR" 2>/dev/null | awk 'NR==2{print $4}')
 [ "${free_mb:-0}" -ge 400 ] || fail preflight "only ${free_mb:-0} MB free under $STATE_DIR"
-MAN=$(curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" "$API/v1/runtime-assets/manifest") \
+MAN=$(curl -fsS --max-time 30 -H "Authorization: Bearer $FETCH_TOKEN" "$API/v1/runtime-assets/manifest") \
   || fail manifest "manifest fetch from $API failed"
 field() {
   if command -v python3 >/dev/null 2>&1; then
@@ -93,7 +103,7 @@ if [ -z "$EP_SHA" ] || [ -z "$EP_PATH" ]; then
 fi
 download() {
   local tmp="$3.tmp.$$"; rm -f "$tmp"
-  curl -fsSL --max-time 240 --retry 2 -H "Authorization: Bearer $TOKEN" -o "$tmp" "$API$1" \
+  curl -fsSL --max-time 240 --retry 2 -H "Authorization: Bearer $FETCH_TOKEN" -o "$tmp" "$API$1" \
     || { rm -f "$tmp"; log "download of $1 failed"; return 1; }
   local got; got=$(sha256sum "$tmp" | cut -d' ' -f1)
   if [ "$got" != "$2" ]; then rm -f "$tmp"; log "digest mismatch for $1: want $2 got $got"; return 1; fi
@@ -177,6 +187,20 @@ if id kortix >/dev/null 2>&1; then
   # The daemon replaces the CLI in place at /usr/local/bin/kortix; as `kortix`
   # it needs to own that file (the image only chowns /opt/kortix).
   [ -f /usr/local/bin/kortix ] && chown kortix:kortix /usr/local/bin/kortix 2>/dev/null || true
+fi
+# Never relaunch under a live turn. The control plane checked OpenCode idle
+# before this exec, but the agent download above takes 10-20 s, and a prompt
+# that lands in that window was killed with "no reason reported" (dev
+# 2026-09-29: every first message on a box one build behind). Re-read the same
+# authority here, before the token swap and the kill. Unreachable proceeds:
+# the control plane already decided, and a dead daemon is what this repairs.
+if [ "$RELAUNCH" = "pt-app" ]; then
+  oc_status=$(curl -fsS --max-time 3 http://127.0.0.1:4096/session/status 2>/dev/null | tr -d ' \n\r' || true)
+  if [ -n "$oc_status" ] && [ "$oc_status" != "{}" ]; then
+    log "a turn is running; relaunch deferred to the next idle pass"
+    emit "{\"ok\":true,\"stage\":\"deferred_busy\",\"token_rotated\":false}"
+    exit 0
+  fi
 fi
 # 5. Token model. Current boxes carry one session PAT as KORTIX_TOKEN. Rewrite
 #    the persisted value (pt-init re-exports /etc/environment on a cold boot)

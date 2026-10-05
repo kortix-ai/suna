@@ -22,7 +22,7 @@ import {
   writeKortixRuntimeAssets,
   writeSupabaseVendorAssets,
 } from '../self-host/compose-assets.ts';
-import { SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
+import { SHARED_AUTH_DEFAULTS, SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
 import { applyEmailWiring } from '../self-host/email-wiring.ts';
 import { parseEmailTargets, redactUrl } from '@kortix/shared/email-url';
 import {
@@ -1217,6 +1217,17 @@ function selfHostStatus(flags: GlobalFlags): number {
   compose(flags.instance, ['ps']);
   process.stdout.write('\n');
 
+  // Preview origins do not depend on the updater. Render their configured
+  // state even when the stack is stopped and no updater report is available.
+  if (reachabilityMode(env) === 'domain') {
+    const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
+    process.stdout.write(
+      previewDomain
+        ? `  ${status.ok('preview origins')}${C.dim} — *.${previewDomain}${C.reset}\n`
+        : `  ${status.err('preview origins NOT configured')}${C.dim} — browsers get /v1/p/ path previews, which break root-absolute links. Run \`kortix self-host doctor\`${C.reset}\n`,
+    );
+  }
+
   if (!report) {
     process.stdout.write(`  ${status.err('update status unavailable')}${C.dim} (kortix-updater not reachable — is the stack running?)${C.reset}\n\n`);
     return 0;
@@ -1248,18 +1259,6 @@ function selfHostStatus(flags: GlobalFlags): number {
     process.stdout.write(`\n  ${status.ok('no drift')}${C.dim} — running images match the rendered config${C.reset}\n`);
   }
 
-  // Preview origins, on the same screen as drift and the update outcome. An
-  // unset preview domain never makes anything fail — the path proxy answers 200
-  // — so the only way an operator learns about it is if a status screen they
-  // already read says so. `doctor` is the non-zero gate; this is the glance.
-  if (reachabilityMode(env) === 'domain') {
-    const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
-    process.stdout.write(
-      previewDomain
-        ? `  ${status.ok('preview origins')}${C.dim} — *.${previewDomain}${C.reset}\n`
-        : `  ${status.err('preview origins NOT configured')}${C.dim} — browsers get /v1/p/ path previews, which break root-absolute links. Run \`kortix self-host doctor\`${C.reset}\n`,
-    );
-  }
   process.stdout.write('\n');
   return 0;
 }
@@ -2350,7 +2349,6 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     JWT_EXPIRY: '3600',
     API_EXTERNAL_URL: 'http://localhost:13740/auth/v1',
     SITE_URL: DEFAULT_PUBLIC_URL,
-    ADDITIONAL_REDIRECT_URLS: '',
     // Auth + agent sandbox defaults shared with every self-host flavor — see
     // shared-runtime-defaults.ts for why these must not be duplicated here.
     ...SHARED_SELF_HOST_DEFAULTS,
@@ -2581,6 +2579,9 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
+  // Instances created before the mobile default have this empty: fill it.
+  // A non-empty list is the operator's and is kept as written.
+  env.ADDITIONAL_REDIRECT_URLS ||= SHARED_AUTH_DEFAULTS.ADDITIONAL_REDIRECT_URLS;
 
   // Reconcile the email-derived keys on every write. Passing the CURRENT
   // EMAIL_URL as the previous value makes this a no-transition reconcile: the

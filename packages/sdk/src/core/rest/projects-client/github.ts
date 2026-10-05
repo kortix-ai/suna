@@ -42,6 +42,10 @@ export interface LinkRepositoryInput {
   repo_url?: string;
   repo_full_name?: string;
   installation_id?: string;
+  /** Import through the instance git backend ("Kortix managed") instead of an
+   *  account connection. Self-host operator only, and mutually exclusive with
+   *  `installation_id`. */
+  source?: 'managed';
   name?: string;
   default_branch?: string;
   manifest_path?: string;
@@ -57,6 +61,23 @@ export interface LinkRepositoryResponse {
   project: KortixProject;
   git_connection: ProjectGitConnection | null;
 }
+
+export interface ReplaceProjectRepositoryInput {
+  project_id: string;
+  repo_url: string;
+  expected_repo_url: string;
+  /** Stored encrypted per project when using a repository-scoped PAT. */
+  github_token?: string;
+  /** App installation id. The grant is persisted for this repository only. */
+  installation_id?: string;
+  /** Temporary GitHub user token used to verify organization admin rights. Never stored. */
+  github_user_token?: string;
+  /** Copy selected shared runtime secrets atomically during the cutover. */
+  copy_shared_secrets_from_project_id?: string;
+  copy_shared_secret_identifiers?: string[];
+}
+
+export type ReplaceProjectRepositoryResponse = LinkRepositoryResponse;
 
 export interface GitHubInstallationStatus {
   account_id: string;
@@ -86,6 +107,12 @@ export interface LinkableGitHubInstallation {
   permissions: Record<string, unknown>;
   installation_url: string | null;
   linked: boolean;
+  /**
+   * How many OTHER Kortix accounts already hold this installation. A count
+   * only — the API never names them, so one tenant can never read another's
+   * name out of this picker.
+   */
+  linked_to_other_accounts: number;
 }
 
 export interface LinkableGitHubInstallationsResponse {
@@ -104,6 +131,18 @@ export async function linkRepository(input: LinkRepositoryInput) {
       {
         showErrors: false,
       },
+    ),
+  );
+}
+
+/** Change the Git repository for an existing project after validating access. */
+export async function replaceProjectRepository(input: ReplaceProjectRepositoryInput) {
+  const { project_id, ...body } = input;
+  return unwrap(
+    await backendApi.put<ReplaceProjectRepositoryResponse>(
+      `/projects/${encodeURIComponent(project_id)}/git/repository`,
+      body,
+      { showErrors: false },
     ),
   );
 }
@@ -197,6 +236,37 @@ export async function linkGitHubInstallation(input: {
   return unwrap(
     await backendApi.post<GitHubInstallationStatus>(
       '/projects/github/installations/link',
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * Store the caller's GitHub App USER access token for one account.
+ *
+ * GitHub refuses `POST /user/repos` for an App installation token and accepts a
+ * user access token, so creating a repository inside a PERSONAL GitHub account
+ * needs the user's own authorization. The browser obtains that token through
+ * the GitHub authorization popup; this hands it to the server, which verifies
+ * it against GitHub, encrypts it, and never returns it to any caller.
+ *
+ * `expires_in` is GitHub's own value in seconds, present only when the App is
+ * configured to expire user tokens.
+ *
+ * `showErrors: false`: the caller decides what a failure means — the create
+ * flow retries or explains it inline, and a global toast would say the same
+ * thing twice.
+ */
+export async function storeGitHubUserToken(input: {
+  account_id: string;
+  github_user_token: string;
+  expires_in?: number;
+  refresh_token?: string;
+}) {
+  return unwrap(
+    await backendApi.post<{ ok: true; github_login: string }>(
+      '/projects/github/user-token',
       input,
       { showErrors: false },
     ),

@@ -27,25 +27,33 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
-  CLAUDE_CODE_SHA256_AMD64,
-  CLAUDE_CODE_SHA256_ARM64,
-  CLAUDE_CODE_VERSION,
-  CODEX_CLI_SHA256_AMD64,
-  CODEX_CLI_SHA256_ARM64,
-  CODEX_CLI_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
+  PI_SUPPLIED_PACKAGES,
+  PI_SYSTEM_PACKAGES,
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
   PYTHON_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
   UV_VERSION,
+  assertPiSystemPackage,
 } from '../runtime-versions';
+import {
+  SANDBOX_SHELL_TOOL_APT_LIST,
+  SANDBOX_SHELL_TOOL_LINK_COMMAND,
+} from './shell-tools';
+import {
+  SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_MANAGED_SKILLS_DIR,
+  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_PATH,
+} from './platform-binaries';
 
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
@@ -80,6 +88,89 @@ import {
  */
 export const KORTIX_USER_PATH_DIRS =
   '/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin';
+
+/**
+ * Live project secrets on tmpfs. The kortix-agent daemon writes this file
+ * (apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts `AGENT_ENV_SH`).
+ */
+export const KORTIX_AGENT_ENV_FILE = '/dev/shm/kortix/agent-env.sh';
+
+/**
+ * Login-shell hook baked into every image that runs the web terminal. The
+ * `zz-` prefix sorts it last in /etc/profile.d, so no other profile script can
+ * undo it.
+ */
+export const KORTIX_SHELL_PROFILE_PATH = '/etc/profile.d/zz-kortix.sh';
+
+/**
+ * The login-shell hook: restore the Kortix tool directories on PATH, then load
+ * the live project secrets.
+ *
+ * Why it exists. The web terminal spawns `/bin/bash -l`
+ * (kortix-sandbox-agent-server routes/pty.ts). A login shell sources
+ * /etc/profile. Debian's /etc/profile resets PATH for every login shell
+ * (non-root: `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games`), so
+ * `opencode`, `pnpm`, `python`, and `bun` were `command not found` in the
+ * terminal of every Debian-based custom template. Ubuntu's /etc/profile does
+ * not touch PATH. The agent's own shells are non-login `bash -c` and were never
+ * affected.
+ *
+ * Contract:
+ * - Prepends only the Kortix dirs that are missing, in `KORTIX_USER_PATH_DIRS`
+ *   order. Every other entry keeps its position, including root's sbin dirs.
+ *   Sourcing it again changes nothing.
+ * - Never adds an empty PATH entry (the current directory).
+ * - Loads project secrets only when the file is readable. The daemon writes it
+ *   0600 as `kortix`, so other users skip it.
+ * - POSIX sh (dash sources /etc/profile.d too). No single quotes and no
+ *   backslashes, so `kortixShellProfileRun` can emit each line as one
+ *   single-quoted `echo` argument that every provider's Dockerfile parser
+ *   keeps intact (E2B strips the backslash from a quoted `\n`, buildah rejects
+ *   heredocs).
+ */
+export function kortixShellProfileScript(): string {
+  const dirs = KORTIX_USER_PATH_DIRS.split(':').join(' ');
+  return [
+    '# Kortix sandbox shell hook. Written by the Kortix runtime layer. Do not edit.',
+    '# Debian resets PATH in /etc/profile for login shells: restore the Kortix tool dirs.',
+    'kortix_path_prefix=',
+    `for kortix_path_dir in ${dirs}; do`,
+    '  case ":${PATH-}:" in',
+    '    *":${kortix_path_dir}:"*) ;;',
+    '    *) kortix_path_prefix="${kortix_path_prefix}${kortix_path_dir}:" ;;',
+    '  esac',
+    'done',
+    'if [ -n "${PATH-}" ]; then PATH="${kortix_path_prefix}${PATH}"; else PATH="${kortix_path_prefix%:}"; fi',
+    'export PATH',
+    'unset kortix_path_prefix kortix_path_dir',
+    '# Live project secrets, written by the kortix-agent daemon on tmpfs.',
+    `if [ -r ${KORTIX_AGENT_ENV_FILE} ]; then . ${KORTIX_AGENT_ENV_FILE}; fi`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * The Dockerfile RUN step that installs `kortixShellProfileScript` at
+ * `KORTIX_SHELL_PROFILE_PATH` and sources it from /etc/bash.bashrc, so login
+ * shells (the web terminal) and non-login interactive shells both get it.
+ * Must run as root. The bashrc line is appended once, even when the step runs
+ * on an image that already has it.
+ */
+export function kortixShellProfileRun(): string {
+  const bashrcLine = `if [ -r ${KORTIX_SHELL_PROFILE_PATH} ]; then . ${KORTIX_SHELL_PROFILE_PATH}; fi`;
+  const echoLines = kortixShellProfileScript()
+    .replace(/\n$/, '')
+    .split('\n')
+    .map((line) => `      echo '${line}'; \\`);
+  return [
+    'RUN { \\',
+    ...echoLines,
+    `    } > ${KORTIX_SHELL_PROFILE_PATH} \\`,
+    `    && chmod 0644 ${KORTIX_SHELL_PROFILE_PATH} \\`,
+    `    && { grep -qxF '${bashrcLine}' /etc/bash.bashrc 2>/dev/null \\`,
+    `         || echo '${bashrcLine}' >> /etc/bash.bashrc; }`,
+  ].join('\n');
+}
 
 export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '# syntax=docker/dockerfile:1.7',
@@ -149,6 +240,14 @@ export interface KortixToolchainLayerOpts {
    * alters boot semantics for the warm-seed paths too and wants its own rollout.
    */
   isSharedDefault?: boolean;
+  /**
+   * kortix.yaml `container_runtime: true`. The provider bakes the guest
+   * kernel's full module tree (Platinum `kernel_modules: container`); the guest
+   * kernel loads bridge/overlay/netfilter on demand through /sbin/modprobe, so
+   * the image needs kmod. The marker env makes the entrypoint start dockerd at
+   * boot. Unset renders the layer byte-identical to before.
+   */
+  containerRuntime?: boolean;
 }
 
 
@@ -195,6 +294,17 @@ export interface KortixArtifactLayerOpts {
    * instead of the daemon's minimal fallback. Optional; omit to skip.
    */
   catalogPath?: string;
+  /**
+   * Build-context path to the staged managed `kortix-*` skill overlay, baked
+   * at {@link SANDBOX_MANAGED_SKILLS_DIR}.
+   *
+   * REQUIRED, unlike `catalogPath`. Optional is how this diverged in the first
+   * place: the meta image passed a path, the standard layer had no field at
+   * all, and every ordinary session sandbox — dev, prod and preview alike —
+   * booted with nothing to overlay and downloaded the whole overlay on its
+   * first reconcile.
+   */
+  managedSkillsPath: string;
 }
 
 export interface BuildLayeredDockerfileOpts
@@ -282,6 +392,45 @@ function buildOpencodeInstanceWarmupLines(opts: {
   ];
 }
 
+/** pi's global agent dir in the image; the daemon's KORTIX_PI_AGENT_DIR default. */
+export const PI_AGENT_DIR = '/opt/kortix/pi-agent';
+
+/**
+ * Install the pi system packages the way `pi install` installs a global one:
+ * the packages under `<agentDir>/npm`, the sources in `<agentDir>/settings.json`.
+ * npm installs required peers, as pi's own install does; the packages pi
+ * supplies itself resolve to an empty stub. Install scripts do not run. An
+ * empty list adds no layer.
+ */
+export function piSystemPackageLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  for (const source of packages) assertPiSystemPackage(source);
+  const dependencies: Record<string, string> = Object.fromEntries(PI_SUPPLIED_PACKAGES.map((name) => [name, 'file:./pi-supplied']));
+  for (const source of packages) {
+    const spec = source.slice('npm:'.length);
+    const at = spec.lastIndexOf('@');
+    dependencies[spec.slice(0, at)] = spec.slice(at + 1);
+  }
+  return [
+    `RUN mkdir -p ${PI_AGENT_DIR}/npm/pi-supplied \\`,
+    `    && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > ${PI_AGENT_DIR}/npm/pi-supplied/package.json \\`,
+    `    && printf '%s' '${JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies })}' > ${PI_AGENT_DIR}/npm/package.json \\`,
+    `    && npm install --prefix ${PI_AGENT_DIR}/npm --omit=dev --ignore-scripts --no-audit --no-fund \\`,
+    `    && printf '%s' '${JSON.stringify({ packages })}' > ${PI_AGENT_DIR}/settings.json`,
+    '',
+  ];
+}
+
+/**
+ * Warm jiti's cache for the system packages with the daemon itself (it lands in
+ * `<agentDir>/cache/jiti`; each boot copies it in). A package that fails to
+ * load fails the image build here, not in a session.
+ */
+export function piSystemPackageWarmLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  return ['RUN /usr/local/bin/kortix-agent warm-pi-packages', ''];
+}
+
 export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
   const {
     opencodeVersion,
@@ -289,6 +438,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     opencodeWarmupScriptPath,
     opencodeConfigPath,
     isSharedDefault,
+    containerRuntime,
   } = opts;
 
   return [
@@ -319,12 +469,16 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'ENV DEBIAN_FRONTEND=noninteractive',
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\',
+    '        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
-    '    && rm -rf /var/lib/apt/lists/*',
+    // The shell tool floor (rg, fd, bat, jq, fzf, …) — shared with the fast
+    // and meta images. See shell-tools.ts for the base-portability rule.
+    `        ${SANDBOX_SHELL_TOOL_APT_LIST} \\`,
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    `    && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}`,
     '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
     // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.
@@ -334,6 +488,15 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
     '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',
+    ...(containerRuntime
+      ? [
+          'RUN apt-get update && apt-get install -y --no-install-recommends kmod \\',
+          '    && rm -rf /var/lib/apt/lists/* \\',
+          '    && (getent group docker >/dev/null || groupadd --system docker) \\',
+          '    && usermod -aG docker kortix',
+          'ENV KORTIX_CONTAINER_RUNTIME=1',
+        ]
+      : []),
     'ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\',
     `    PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
     'USER kortix',
@@ -389,9 +552,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // repository-controlled checksum. pnpm then owns the JavaScript runtime
     // floor: Node comes from `pnpm runtime`, while npm and global CLIs live in
     // pnpm's isolated global package store.
-    'ENV SHELL=/bin/bash \\',
-    '    DISABLE_AUTOUPDATER=1 \\',
-    '    DISABLE_UPDATES=1',
+    'ENV SHELL=/bin/bash',
     'RUN case "$(uname -m)" in \\',
     `      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\`,
     `      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\`,
@@ -487,35 +648,6 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // detection line, not the launch verdict, so the gate is emulation-safe.
     "    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
     '',
-    // Codex and Claude Code are tools inside the full environment, never
-    // alternate server-side harnesses. Pull exact, architecture-specific
-    // artifacts from their publishers' npm packages and verify repository-owned
-    // SHA-256 pins. Preserve Codex's complete vendor tree because bwrap, rg, and
-    // code-mode resources sit beside its main executable. The image-wide Claude
-    // update guards keep this pin stable after startup.
-    'RUN case "$(uname -m)" in \\',
-    `      x86_64) cli_arch=x64; codex_target=x86_64-unknown-linux-musl; codex_sha=${CODEX_CLI_SHA256_AMD64}; claude_sha=${CLAUDE_CODE_SHA256_AMD64} ;; \\`,
-    `      aarch64|arm64) cli_arch=arm64; codex_target=aarch64-unknown-linux-musl; codex_sha=${CODEX_CLI_SHA256_ARM64}; claude_sha=${CLAUDE_CODE_SHA256_ARM64} ;; \\`,
-    '      *) echo "unsupported agent CLI architecture: $(uname -m)" >&2; exit 1 ;; \\',
-    '    esac \\',
-    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz \\',
-    `         "https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_CLI_VERSION}-linux-\${cli_arch}.tgz" \\`,
-    '    && echo "${codex_sha}  /tmp/codex.tgz" | sha256sum -c - \\',
-    '    && rm -rf /opt/kortix/codex \\',
-    '    && mkdir -p /opt/kortix/codex \\',
-    '    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/kortix/codex \\',
-    '    && ln -sfn "/opt/kortix/codex/vendor/${codex_target}/bin/codex" /home/kortix/.local/bin/codex \\',
-    '    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-resources/bwrap" \\',
-    '    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-path/rg" \\',
-    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/claude-code.tgz \\',
-    `         "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-\${cli_arch}/-/claude-code-linux-\${cli_arch}-${CLAUDE_CODE_VERSION}.tgz" \\`,
-    '    && echo "${claude_sha}  /tmp/claude-code.tgz" | sha256sum -c - \\',
-    '    && tar -xzf /tmp/claude-code.tgz -O package/claude > /home/kortix/.local/bin/claude \\',
-    '    && chmod 0755 /home/kortix/.local/bin/claude \\',
-    '    && rm /tmp/codex.tgz /tmp/claude-code.tgz \\',
-    `    && test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}" \\`,
-    `    && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"`,
-    '',
     `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
     '    && opencode --version \\',
@@ -538,7 +670,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // run opencode here once to complete the migration and bake the migrated db
     // into the image layer. Every boot afterwards — cold or warm-snapshot restore —
     // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
-    // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). The
+    // daemon's spawn (apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts). The
     // build fails if OpenCode cannot serve. A platform image without this state
     // moves the database migration onto every session's startup path.
     ...(opencodeWarmupScriptPath ? [
@@ -596,7 +728,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json.
+    // below) is duplicated in packages/starter/templates/base/harnesses/opencode/package.json.
     // Keep both in sync —
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the
@@ -621,6 +753,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
+    ...piSystemPackageLines(PI_SYSTEM_PACKAGES),
     // Placed AFTER the agent-browser/Chromium layer above — see that block's
     // comment for why the order matters (this step's RUN text is never
     // cache-stable, so nothing cache-sensitive may sit downstream of it).
@@ -648,6 +781,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     machineDocPath,
     slackCliPath,
     catalogPath,
+    managedSkillsPath,
   } = opts;
 
   return [
@@ -674,13 +808,36 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
     '    && kortix --version \\',
+    // The daemon converges this file in place and runs as `kortix`, so it needs
+    // the DIRECTORY; and opencode must not autoupdate itself for ANY caller in
+    // the box. See platform-binaries.ts — both are asserted on every image.
+    `    && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\`,
+    `    && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\`,
     '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
+    '',
+    // The overlay arrives ALREADY kortix-owned, below the `chown -R` above: a
+    // recursive chown in a later layer rewrites every inode it touches and
+    // forces overlayfs to copy the whole tree up again (see platform-binaries.ts).
+    `COPY --chown=kortix:kortix ${managedSkillsPath} ${SANDBOX_MANAGED_SKILLS_DIR}`,
+    // Then state what this image carries, with the daemon that is now on disk.
+    // Only the ~500 B bookkeeping file is chowned here, and the daemon must be
+    // able to REWRITE it in place: `writeState` writes the path, it does not
+    // rename into the directory.
+    `RUN ${SANDBOX_RUNTIME_ASSETS_STATE_COMMAND} \\`,
+    `    && chown kortix:kortix ${SANDBOX_RUNTIME_ASSETS_STATE_PATH}`,
+    '',
+    // Web-terminal login shells: keep the Kortix tool dirs on PATH on Debian
+    // bases and load project secrets. Written here, still as root, and in the
+    // artifact tail so it sits below the Chromium layer and never moves that
+    // layer's build-cache key. See kortixShellProfileScript.
+    kortixShellProfileRun(),
     '',
     // The daemon clones the project workspace at boot using KORTIX_PROJECT_AUTO_CLONE
     // — nothing project-specific is baked into the image. /workspace is created
     // empty here; the daemon's materializeRepo path fills it.
     'ENV KORTIX_WORKSPACE=/workspace',
     'USER kortix',
+    ...piSystemPackageWarmLines(PI_SYSTEM_PACKAGES),
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',
@@ -738,6 +895,8 @@ export interface SandboxTemplate {
   image?: string;
   /** Hardware spec (cpu/memory/disk). GPUs are intentionally not supported. */
   spec: SandboxSpec;
+  /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
+  containerRuntime?: boolean;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -901,6 +1060,7 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     dockerfile: sanitizedDockerfile || undefined,
     image: !sanitizedDockerfile && image ? image : undefined,
     spec,
+    ...(row.container_runtime === true ? { containerRuntime: true } : {}),
   };
 }
 

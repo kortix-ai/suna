@@ -69,6 +69,20 @@ export interface AALResponse {
 }
 
 /**
+ * True when this session must pass a TOTP challenge before the app grants it
+ * access: a verified TOTP factor is enrolled but the session itself is still
+ * below aal2 — a fresh first-factor sign-in (KRTX-1386). A session that is
+ * already aal2 verified the factor this sign-in; a session whose next level is
+ * aal1 has no verified factor to challenge; a verified phone factor does not
+ * enforce here, because its challenge needs an SMS round trip this flow does
+ * not drive.
+ */
+export function mfaChallengeRequired(aal?: AALResponse | null): boolean {
+  if (!aal || aal.current_level === 'aal2' || aal.next_level !== 'aal2') return false;
+  return (aal.factors ?? []).some((f) => f.status === 'verified' && f.factor_type === 'totp');
+}
+
+/**
  * Extract a human-readable message from an unknown thrown value. Preserves the
  * previous `error.message` behaviour for Error instances and Supabase error
  * objects (plain objects carrying a `message`), without using `any`.
@@ -148,7 +162,9 @@ export const supabaseMFAService = {
 
       return {
         id: response.data.id,
-        expires_at: response.data.expires_at ? new Date(response.data.expires_at * 1000).toISOString() : undefined,
+        expires_at: response.data.expires_at
+          ? new Date(response.data.expires_at * 1000).toISOString()
+          : undefined,
       };
     } catch (error: unknown) {
       console.error('❌ Create SMS challenge failed:', error);
@@ -175,7 +191,6 @@ export const supabaseMFAService = {
 
       return {
         success: true,
-        message: 'SMS code verified successfully',
       };
     } catch (error: unknown) {
       console.error('❌ Verify challenge failed:', error);
@@ -186,7 +201,9 @@ export const supabaseMFAService = {
   /**
    * Create challenge and verify in one step
    */
-  async challengeAndVerify(data: PhoneVerificationChallengeAndVerify): Promise<PhoneVerificationResponse> {
+  async challengeAndVerify(
+    data: PhoneVerificationChallengeAndVerify,
+  ): Promise<PhoneVerificationResponse> {
     const supabase = createClient();
 
     try {
@@ -201,7 +218,6 @@ export const supabaseMFAService = {
 
       return {
         success: true,
-        message: 'SMS challenge created and verified successfully',
       };
     } catch (error: unknown) {
       console.error('❌ Challenge and verify SMS failed:', error);
@@ -230,7 +246,9 @@ export const supabaseMFAService = {
 
       return {
         id: response.data.id,
-        expires_at: response.data.expires_at ? new Date(response.data.expires_at * 1000).toISOString() : undefined,
+        expires_at: response.data.expires_at
+          ? new Date(response.data.expires_at * 1000).toISOString()
+          : undefined,
       };
     } catch (error: unknown) {
       console.error('❌ Resend SMS failed:', error);
@@ -245,7 +263,10 @@ export const supabaseMFAService = {
     const supabase = createClient();
 
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
 
       if (error) {
         throw new Error(error.message);
@@ -295,7 +316,6 @@ export const supabaseMFAService = {
 
       return {
         success: true,
-        message: 'Phone factor unenrolled successfully',
       };
     } catch (error: unknown) {
       console.error('❌ Unenroll factor failed:', error);
@@ -310,14 +330,15 @@ export const supabaseMFAService = {
     const supabase = createClient();
 
     // If no active Supabase session (e.g. pre-login), return safe defaults.
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     if (!session) {
       return {
         current_level: 'aal1',
         next_level: 'aal1',
         current_authentication_methods: [],
         action_required: 'none',
-        message: 'No active session — MFA not applicable',
         phone_verification_required: false,
         user_created_at: undefined,
         cutoff_date: PHONE_VERIFICATION_CUTOFF_DATE.toISOString(),
@@ -334,7 +355,10 @@ export const supabaseMFAService = {
         throw new Error(aalResponse.error.message);
       }
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
       if (userError) {
         throw new Error(userError.message);
@@ -357,7 +381,6 @@ export const supabaseMFAService = {
       const isNewUser = userCreatedAt && userCreatedAt >= PHONE_VERIFICATION_CUTOFF_DATE;
 
       const factors: FactorInfo[] = [];
-      const phoneFactors: FactorInfo[] = [];
       let hasVerifiedPhone = false;
 
       if (user.factors) {
@@ -374,7 +397,6 @@ export const supabaseMFAService = {
           factors.push(factorInfo);
 
           if (factor.factor_type === 'phone') {
-            phoneFactors.push(factorInfo);
             if (factor.status === 'verified') {
               hasVerifiedPhone = true;
             }
@@ -417,14 +439,19 @@ export const supabaseMFAService = {
       }
 
       const phoneVerificationRequired = isNewUser && isPhoneVerificationMandatory();
-      verificationRequired = !!(isNewUser && verificationRequired && isPhoneVerificationMandatory());
+      verificationRequired = !!(
+        isNewUser &&
+        verificationRequired &&
+        isPhoneVerificationMandatory()
+      );
 
       return {
         current_level: current ?? undefined,
         next_level: nextLevel ?? undefined,
         // Supabase types currentAuthenticationMethods as string[] | AMREntry[];
         // `any` keeps the `.method` access valid across both arms of the union.
-        current_authentication_methods: aalResponse.data?.currentAuthenticationMethods?.map((m: any) => m.method) || [],
+        current_authentication_methods:
+          aalResponse.data?.currentAuthenticationMethods?.map((m: any) => m.method) || [],
         action_required: actionRequired,
         message: message,
         phone_verification_required: phoneVerificationRequired ?? false,

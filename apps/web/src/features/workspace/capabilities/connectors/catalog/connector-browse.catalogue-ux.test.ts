@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import { CURATED_SECTIONS } from './connector-categories';
@@ -27,6 +27,7 @@ const capabilities = join(here, '..', '..');
 const browse = code(readFileSync(join(here, 'connector-browse.tsx'), 'utf8'));
 const page = code(readFileSync(join(here, '..', 'connectors-page.tsx'), 'utf8'));
 const catalog = code(readFileSync(join(here, 'use-catalog.ts'), 'utf8'));
+const browseSectionsSource = code(readFileSync(join(here, 'browse-sections.ts'), 'utf8'));
 const autoload = code(readFileSync(join(here, 'use-catalog-autoload.ts'), 'utf8'));
 const paging = code(readFileSync(join(here, 'catalog-paging.ts'), 'utf8'));
 const icons = readFileSync(join(here, 'category-icon.tsx'), 'utf8');
@@ -224,7 +225,7 @@ describe('the catalogue browses in place', () => {
     // swaps every section for one grid and gives no account of itself. One
     // heading row with a Back control is that account.
     expect(browse).toContain('function CategoryViewHeader');
-    expect(browse).toContain('aria-label="Back to all connectors"');
+    expect(browse).toContain("raw('text74fc2cf3bb54')");
     expect(browse).toContain('onBack={() => openCategory(ALL_CATEGORIES)}');
   });
 
@@ -250,7 +251,7 @@ describe('the catalogue browses in place', () => {
 
     // The heading that DOES exist is scoped to an open category. If it ever
     // renders while browsing everything, it has become the strip this forbids.
-    expect(browse).toContain("activeCategory !== ALL_CATEGORIES ? (\n        <CategoryViewHeader");
+    expect(browse).toContain('activeCategory !== ALL_CATEGORIES ? (\n        <CategoryViewHeader');
   });
 
   test('the page still says how much of the catalogue is on screen', () => {
@@ -261,13 +262,14 @@ describe('the catalogue browses in place', () => {
   });
 
   test('a section heading states the category label the source published', () => {
-    // The grid renders `section.label` verbatim. Both sources normalise to
-    // `CatalogSection` in `use-catalog.ts` — Easy Connect from the server's
-    // facet, Discover through `sectionTitle` over the curated keys — so the
-    // grid has exactly one label to draw and cannot pick a second vocabulary.
+    // The grid renders `section.label` verbatim. Every catalogue normalises to
+    // `CatalogSection` through `browseSections` — Composio and Discover titled
+    // by key, Pipedream by its own label, all through `localizedSectionTitle` —
+    // so the grid has exactly one label to draw and cannot pick a second
+    // vocabulary.
     expect(browse).toContain('{section.label}');
-    expect(catalog).toContain('label: sectionTitle(section.category)');
-    expect(catalog).toContain('label: section.label');
+    expect(catalog).toContain('title: (label) => localizedSectionTitle(label, tI18nComplete)');
+    expect(browseSectionsSource).toContain('label: opts.title(section.label)');
     // Bucketing does not happen in the grid any more.
     expect(browse).not.toContain('groupIntoSections');
     expect(browse).not.toContain('groupByCategory');

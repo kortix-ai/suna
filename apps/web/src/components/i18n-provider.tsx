@@ -1,111 +1,132 @@
 'use client';
 
 import { useAuth } from '@/features/providers/auth-provider';
+import { catalogHref } from '@/i18n/catalog-href';
+import { loadClientCatalog, type MessageTree } from '@/i18n/client-catalog';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { getExplicitLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
-import { NextIntlClientProvider } from 'next-intl';
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getUserLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
+import { serverMessagesRegistry } from '@/i18n/server-registry';
+import { NextIntlClientProvider, type AbstractIntlMessages } from 'next-intl';
+import { ReactNode, Suspense, use, useCallback, useEffect, useRef, useState } from 'react';
+import { preload } from 'react-dom';
 
-// Preload default translations synchronously for immediate render
-// This prevents the loading spinner from blocking FCP
-import defaultTranslations from '../../translations/en.json';
+/**
+ * Message delivery. No string ever renders from a partial catalog.
+ *
+ * - SSR renders against the full catalog that the RSC layer loaded
+ *   (`i18n/messages.ts`). The HTML carries no messages.
+ * - The page head preloads `/i18n/<locale>.<hash>.json`, so the catalog
+ *   downloads in parallel with the app JavaScript and is cached across pages,
+ *   visits, and deploys that do not change it.
+ * - On the client, the tree below this provider hydrates only once that catalog
+ *   has resolved. Until then React keeps the server HTML (a dehydrated Suspense
+ *   boundary), which already shows every string of the first paint. Content
+ *   that appears after mount (dialogs, auth-dependent controls) therefore
+ *   always renders with the full catalog.
+ */
 
-async function getTranslations(locale: Locale) {
-  try {
-    // Return cached default translations immediately for English
-    if (locale === 'en') {
-      return defaultTranslations;
-    }
-    return (await import(`../../translations/${locale}.json`)).default;
-  } catch (error) {
-    console.error(`Failed to load translations for locale ${locale}:`, error);
-    // Fallback to English if locale file doesn't exist
-    return defaultTranslations;
+const hydrationCatalogs = new Map<Locale, Promise<MessageTree>>();
+
+/** The catalog hydration waits for. Never rejects: a total load failure
+ *  hydrates with no messages (keys render) instead of an error screen. */
+function hydrationCatalog(locale: Locale): Promise<MessageTree> {
+  let promise = hydrationCatalogs.get(locale);
+  if (!promise) {
+    promise = loadClientCatalog(locale).catch((error: unknown) => {
+      console.error(`[i18n] could not load the ${locale} catalog:`, error);
+      return {};
+    });
+    hydrationCatalogs.set(locale, promise);
   }
+  return promise;
 }
 
-export function I18nProvider({ children }: { children: ReactNode }) {
+function serverCatalog(locale: Locale): MessageTree {
+  const catalog = serverMessagesRegistry()[locale];
+  if (!catalog) {
+    // The root layout loads the catalog before it renders this provider.
+    throw new Error(`I18nProvider: no server catalog loaded for locale "${locale}"`);
+  }
+  return catalog;
+}
+
+export function I18nProvider({
+  children,
+  initialLocale = defaultLocale,
+}: {
+  children: ReactNode;
+  initialLocale?: Locale;
+}) {
+  // Emitted into <head> during SSR, ahead of the app scripts.
+  preload(catalogHref(initialLocale), { as: 'fetch', crossOrigin: 'anonymous' });
+  return (
+    <Suspense fallback={null}>
+      <CatalogProvider initialLocale={initialLocale}>{children}</CatalogProvider>
+    </Suspense>
+  );
+}
+
+function CatalogProvider({
+  children,
+  initialLocale,
+}: {
+  children: ReactNode;
+  initialLocale: Locale;
+}) {
+  // Always call `use` on the client. Never short-circuit it with a direct
+  // cache read of an already-loaded catalog.
+  //
+  // React suspends this component on the first client render, then replays it
+  // with the rerender dispatcher (ReactFiberHooks `useThenable`). `use` switches
+  // the dispatcher back to mount/update when no hooks remain from the suspended
+  // attempt. A skipped `use` leaves the rerender dispatcher in place, so the
+  // first `useState` throws minified React error #467 ("Update hook called on
+  // initial render") during hydration. When the catalog is already loaded,
+  // `loadClientCatalog` resolves synchronously, so `use` returns without
+  // suspending and the fast path is preserved.
+  const initialCatalog =
+    typeof window === 'undefined'
+      ? serverCatalog(initialLocale)
+      : use(hydrationCatalog(initialLocale));
+
   const { user } = useAuth();
-  const [locale, setLocale] = useState<Locale>(defaultLocale);
-  // Initialize with preloaded English translations to prevent blocking FCP
-  const [messages, setMessages] = useState<any>(defaultTranslations);
+  const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [messages, setMessages] = useState<MessageTree>(initialCatalog);
   const localeRef = useRef(locale);
 
-  // Update ref and <html lang> when locale changes.
-  // Keeping <html lang> in sync with the active locale prevents browsers
-  // (especially Chrome) from offering auto-translate on pages that are
-  // already rendered in the user's language. When Chrome's translator
-  // mutates the DOM, React's reconciler crashes with "insertBefore on Node".
+  // Keep <html lang> in sync with the active locale. Chrome offers
+  // auto-translate on a page whose lang does not match its text, and its DOM
+  // mutations crash React's reconciler ("insertBefore on Node").
   useEffect(() => {
     localeRef.current = locale;
-    if (typeof document !== 'undefined') {
-      document.documentElement.lang = locale;
-    }
+    document.documentElement.lang = locale;
   }, [locale]);
 
-  // Load translations for a given locale - memoized to avoid stale closures
   const loadTranslations = useCallback(async (targetLocale: Locale) => {
     try {
-      const translations = await getTranslations(targetLocale);
-      // Verify critical sections exist
-      if (!translations || typeof translations !== 'object') {
-        throw new Error(`Invalid translations object for locale ${targetLocale}`);
-      }
-      if (!translations.common || !translations.modes) {
-        console.warn(`Missing sections in ${targetLocale}:`, {
-          hasCommon: !!translations.common,
-          hasModes: !!translations.modes,
-          keys: Object.keys(translations).slice(0, 10),
-        });
-      }
+      const translations = await loadClientCatalog(targetLocale);
       setMessages(translations);
       setLocale(targetLocale);
       localeRef.current = targetLocale;
     } catch (error) {
+      // Keep the current catalog: every string stays rendered.
       console.error(`Failed to load translations for ${targetLocale}:`, error);
-      // Fallback to default locale
-      try {
-        const defaultTranslations = await getTranslations(defaultLocale);
-        setMessages(defaultTranslations);
-        setLocale(defaultLocale);
-        localeRef.current = defaultLocale;
-      } catch (fallbackError) {
-        console.error('Failed to load default locale translations:', fallbackError);
-        // Last resort: empty translations object
-        setMessages({});
-        setLocale(defaultLocale);
-        localeRef.current = defaultLocale;
-      }
     }
   }, []);
 
-  // Initial load - only user metadata can move the app away from English.
+  // Only the profile locale can move the app away from the rendered locale.
+  // Signing out returns to the locale the page rendered in.
   useEffect(() => {
-    let mounted = true;
+    const target = getUserLocale(user) ?? initialLocale;
+    if (target !== localeRef.current) void loadTranslations(target);
+  }, [initialLocale, loadTranslations, user]);
 
-    function initializeLocale() {
-      const currentLocale = getExplicitLocale(user);
-
-      if (mounted) {
-        setLocale(currentLocale);
-        loadTranslations(currentLocale);
-      }
-    }
-
-    initializeLocale();
-
-    return () => {
-      mounted = false;
-    };
-  }, [loadTranslations, user]);
-
-  // Listen for locale change events from useLanguage hook
+  // Locale change events from the useLanguage hook.
   useEffect(() => {
     const handleLocaleChange = (e: CustomEvent<Locale>) => {
       const newLocale = e.detail;
-      // Use ref to check current locale to avoid stale closure
       if (newLocale !== localeRef.current && locales.includes(newLocale)) {
-        loadTranslations(newLocale);
+        void loadTranslations(newLocale);
       }
     };
 
@@ -116,13 +137,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     };
   }, [loadTranslations]);
 
-  // Memoize messages to prevent unnecessary re-renders
-  const safeMessages = useMemo(() => messages || defaultTranslations, [messages]);
-
-  // Always render children immediately with available translations
-  // This prevents blocking FCP - we start with English and swap if needed
   return (
-    <NextIntlClientProvider locale={locale} messages={safeMessages} timeZone="UTC">
+    <NextIntlClientProvider
+      locale={locale}
+      messages={messages as AbstractIntlMessages}
+      timeZone="UTC"
+    >
       {children}
     </NextIntlClientProvider>
   );

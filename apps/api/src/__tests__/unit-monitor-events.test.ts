@@ -1,7 +1,6 @@
 // The monitor event contract, bounds, and prompt rendering — the pure half.
 //
-// Every bound below is platform-enforced, not user discipline
-// (docs/specs/2026-08-12-monitors.md §"Bounds"): the runner is repo code, so
+// Every bound below is platform-enforced, not user discipline: the runner is repo code, so
 // a monitor that emits a million lines a minute must cost the platform a
 // suppression row, not a million agent turns.
 import { describe, expect, test } from 'bun:test';

@@ -148,8 +148,9 @@ export const SESSION_DOT_MATRIX_FAMILIES: ReadonlySet<DotMatrixFamily> = new Set
   'square',
 ]);
 
-export const SESSION_DOT_MATRIX_POOL: readonly DotMatrixCatalogEntry[] =
-  DOT_MATRIX_CATALOG.filter((entry) => SESSION_DOT_MATRIX_FAMILIES.has(entry.family));
+export const SESSION_DOT_MATRIX_POOL: readonly DotMatrixCatalogEntry[] = DOT_MATRIX_CATALOG.filter(
+  (entry) => SESSION_DOT_MATRIX_FAMILIES.has(entry.family),
+);
 
 export const SESSION_DOT_MATRIX_VARIANTS: readonly ComponentType<DotMatrixCommonProps>[] =
   SESSION_DOT_MATRIX_POOL.map((entry) => entry.Component);

@@ -28,11 +28,13 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
 import { useWorkspaceSearch } from '@/features/files';
 import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import { useAuth } from '@/features/providers/auth-provider';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
 import { DiffDialog } from '@/features/session/diff-dialog';
@@ -73,55 +75,57 @@ import {
   workspacePaletteValue,
 } from '@/features/workspace/workspace-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useDebounce } from '@/hooks/use-debounced-value';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
+import { copyToClipboard } from '@/lib/utils/clipboard';
+import { isDesktop } from '@/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
-import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import {
+  type MenuItemDef,
+  type SettingsTabId,
+  getItemsForSurface,
+  translateMenuItem,
+} from '@/lib/menu-registry';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { track } from '@/lib/track';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import {
-  buildWebProxyUrl,
-  normalizeExternalInput,
-  parseLocalhostUrl,
-  toInternalUrl,
-} from '@/lib/utils/sandbox-url';
-import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useProjectSwitchStore } from '@/stores/project-switch-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import {
   type FeatureFlagKey,
   type KortixAccount,
   type KortixProject,
   type ProjectDetail,
   type ProjectSession,
-  featureFlags,
+  type ProjectSessionPage,
   getProject,
   getProjectDetail,
   listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
   normalizeAppPathname,
+  runtimeSupports,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
 import {
   agentScopedModelSelectionKey,
   contract,
+  flattenProjectSessionPages,
   invalidateProject,
   modelProviderMode,
   qk,
@@ -129,9 +133,10 @@ import {
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
-  useRuntimeAgents,
-  useRuntimeMessages,
+  useProjectSessions,
+  useRuntimeConnectionStore,
   useRuntimeProviders,
+  useVisibleAgents,
 } from '@kortix/sdk/react';
 import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
 import {
@@ -139,34 +144,34 @@ import {
   ArrowUpIcon as ArrowUp,
   RobotIcon as Bot,
   CheckIcon as Check,
+  CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   ArrowElbowDownLeftIcon as CornerDownLeft,
   CpuIcon as Cpu,
-  GitDiffIcon as FileDiff,
   FileTextIcon as FileText,
   FlaskIcon as Flask,
-  GitBranchIcon as FolderGit2,
-  GlobeIcon as Globe,
   HashIcon as Hash,
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
-  SidebarSimpleIcon as PanelLeftClose,
-  SidebarSimpleIcon as PanelLeftIcon,
   MagnifyingGlassIcon as Search,
   TextAlignLeftIcon as TextAlignLeft,
   UsersIcon as UsersSolid,
+  XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Copy } from '@/features/icon/icons/copy';
+import {
+  SidebarToggle as PanelLeftClose,
+  SidebarToggle as PanelLeftIcon,
+} from '@/features/icon/icons/sidebar-toggle';
 
 type PalettePage =
   | 'root'
   | 'agents'
   | 'models'
-  | 'messages'
   | 'workspaces'
   | 'accounts'
   | 'sessions'
@@ -174,6 +179,24 @@ type PalettePage =
   | 'density'
   | 'changes'
   | 'flags';
+
+/**
+ * The palette's one empty state: a line of muted text, and an optional smaller
+ * hint under it. No glyph, no tile — the query the person just typed is the
+ * context, and the row they were looking for is the only thing worth drawing.
+ * Every page renders this, so "nothing here" reads the same everywhere.
+ */
+function PaletteEmpty({ children, hint }: { children: React.ReactNode; hint?: React.ReactNode }) {
+  return (
+    <div cmdk-empty="" className="flex flex-col items-center gap-1 px-4 py-8 text-center">
+      <p className="text-muted-foreground text-sm">{children}</p>
+      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
+    </div>
+  );
+}
+
+/** A value ⌘K search can copy: shown as "Copy <label>", matched on `keywords`. */
+type CopyItem = { id: string; label: string; value: string; keywords: string };
 
 function sanitizeCmdkValue(value: string): string {
   return value
@@ -232,9 +255,8 @@ export function buildPaletteSearchText(item: { label: string; keywords?: string 
  * `openSettingsTab`, not through a raw `openSettings` call.
  *
  * `referrals` is deliberately absent: there is no `referrals` member of
- * `SettingsTab`, and the only live referral surface (`ReferralModal`) mounts
- * inside `UserMenu` -> `AppHeader`, i.e. only on `/accounts/**`. Its registry
- * entry was removed rather than mapped — see `menu-registry.ts`.
+ * `SettingsTab`, and the API has no referral routes. Its registry entry was
+ * removed rather than mapped — see `menu-registry.ts`.
  */
 export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
   // `billing`, `tokens` and `transactions` are gone. They mapped onto the
@@ -263,6 +285,37 @@ export const ROOT_SUGGESTION_LIMIT = 8;
 export const WORKSPACE_SWITCHER_ITEM_ID = 'nav-projects';
 
 /**
+ * Registry rows kept out of the no-query Suggestions. They stay in the
+ * registry and in search ("new session", "audit"); they only stop spending a
+ * suggestion slot. New session has its own button and shortcut, and the
+ * session audit is a deep link, not a first move.
+ */
+export const SEARCH_ONLY_ITEM_IDS: ReadonlySet<string> = new Set([
+  'new-session',
+  'open-session-audit',
+  // Home and the session list are one click away in the sidebar already.
+  'proj-home',
+  'proj-sessions',
+]);
+
+/**
+ * The no-query Suggestions order: the everyday moves first — where am I
+ * working, which session, then the session's own surfaces, then review — and
+ * the registry's order only after them. Registry order put "Compact Session"
+ * second and the session's Files/Browser last, behind rarer actions. An id
+ * missing from the palette (no session, a flag off) is skipped, not a hole.
+ */
+export const SUGGESTION_PRIORITY: readonly string[] = [
+  WORKSPACE_SWITCHER_ITEM_ID,
+  'open-session-files',
+  'open-session-browser',
+  'open-session-terminal',
+  'view-changes',
+  'review-changes',
+  'nav-accounts',
+];
+
+/**
  * How many rows of one page the palette warms (see the prefetch effects in
  * `CommandPalette`). The sessions page renders up to 50 rows; firing 50 RSC
  * requests because a project has 50 sessions costs more than the cold fetch it
@@ -273,8 +326,8 @@ const PALETTE_PREFETCH_LIMIT = 8;
 /**
  * The rows the palette offers before anything is typed.
  *
- * "Switch workspace" is PINNED to the front, then the registry's own order,
- * then the cap. Unpinned it sits at index 11 of the actions+navigation list
+ * `SUGGESTION_PRIORITY` first — "Switch workspace" leads it — then the
+ * registry's own order, then the cap. Unpinned it sits at index 11 of the actions+navigation list
  * and the cap is {@link ROOT_SUGGESTION_LIMIT} — so opening ⌘K and typing
  * nothing showed eight session and terminal actions and no way to change
  * workspace at all. Every other top-level move in this product has a control
@@ -294,11 +347,16 @@ export function buildRootSuggestions(
   limit: number = ROOT_SUGGESTION_LIMIT,
 ): MenuItemDef[] {
   const candidates = items.filter(
-    (item) => item.group === 'actions' || item.group === 'navigation',
+    (item) =>
+      (item.group === 'actions' || item.group === 'navigation') &&
+      !SEARCH_ONLY_ITEM_IDS.has(item.id),
   );
-  const switcher = candidates.find((item) => item.id === WORKSPACE_SWITCHER_ITEM_ID);
-  const rest = candidates.filter((item) => item.id !== WORKSPACE_SWITCHER_ITEM_ID);
-  return (switcher ? [switcher, ...rest] : rest).slice(0, limit);
+  const rank = (item: MenuItemDef) => {
+    const index = SUGGESTION_PRIORITY.indexOf(item.id);
+    return index === -1 ? SUGGESTION_PRIORITY.length : index;
+  };
+  // A stable sort: unranked rows keep the registry's relative order.
+  return [...candidates].sort((a, b) => rank(a) - rank(b)).slice(0, limit);
 }
 
 export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
@@ -417,30 +475,27 @@ function FileSearchPage({
 
   if (!effectiveQuery) {
     return (
-      <div className="flex flex-col items-center gap-3 py-12">
-        <div className="space-y-1 text-center">
-          <p className="text-muted-foreground/60 text-sm">
-            {tHardcodedUi.raw(
-              'componentsCommandPalette.line183JsxTextSearchFilesInThisProjectSRepo',
-            )}
-          </p>
-          <p className="text-muted-foreground/30 text-xs">
+      <PaletteEmpty
+        hint={
+          <>
             {tHardcodedUi.raw('componentsCommandPalette.line185JsxTextPrefixWith')}{' '}
-            <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
-              {tHardcodedUi.raw('componentsCommandPalette.line186JsxTextText')}
-            </kbd>{' '}
+            <Kbd>{tHardcodedUi.raw('componentsCommandPalette.line186JsxTextText')}</Kbd>{' '}
             {tHardcodedUi.raw('componentsCommandPalette.line186JsxTextToSearchFileContents')}
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      >
+        {tHardcodedUi.raw('componentsCommandPalette.line183JsxTextSearchFilesInThisProjectSRepo')}
+      </PaletteEmpty>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-10">
+      <div className="flex items-center justify-center gap-2 py-8">
         <TextShimmer>
-          {isContentSearch ? 'Searching file contents…' : 'Searching files…'}
+          {isContentSearch
+            ? tHardcodedUi.raw('i18nComplete.textde0825bcf9bc')
+            : tHardcodedUi.raw('i18nComplete.text0d9498215681')}
         </TextShimmer>
       </div>
     );
@@ -448,17 +503,13 @@ function FileSearchPage({
 
   if (!hasResults) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-          <Search className="text-muted-foreground size-4" />
-        </div>
-        <span className="text-muted-foreground text-sm">
-          No {isContentSearch ? 'content matches' : 'files'}{' '}
-          {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}
-          {effectiveQuery}
-          {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}
-        </span>
-      </div>
+      <PaletteEmpty>
+        {tHardcodedUi.raw('i18nComplete.text1ea442a134b2')}{' '}
+        {isContentSearch ? tHardcodedUi.raw('i18nComplete.text7aea792d4556') : 'files'}{' '}
+        {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}
+        {effectiveQuery}
+        {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}
+      </PaletteEmpty>
     );
   }
 
@@ -524,83 +575,6 @@ function FileSearchPage({
   );
 }
 
-function MessagesPage({
-  sessionId,
-  query,
-  onSelect,
-}: {
-  sessionId: string;
-  query: string;
-  onSelect: (messageId: string) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: messages, isLoading } = useRuntimeMessages(sessionId);
-
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
-
-  const items = useMemo(() => {
-    const result: { id: string; text: string }[] = [];
-    for (const turn of turns) {
-      const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-      const raw = textParts.map((p) => p.text).join(' ');
-      const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
-      if (stripped.length > 0) {
-        result.push({ id: turn.userMessage.info.id, text: stripped });
-      }
-    }
-    return result;
-  }, [turns]);
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return items;
-    const q = query.trim().toLowerCase();
-    return items.filter((item) => (item.text || '').toLowerCase().includes(q));
-  }, [items, query]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>
-          {tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}
-        </TextShimmer>
-      </div>
-    );
-  }
-
-  if (filtered.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12">
-        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <MessageCircle className="text-muted-foreground/30 size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query ? `No messages matching "${query}"` : 'No messages in this session'}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <CommandGroup heading={`Messages (${filtered.length})`} forceMount>
-      {filtered.map((item, index) => (
-        <CommandItem
-          key={item.id}
-          value={sanitizeCmdkValue(`message ${index} ${item.text.slice(0, 80)}`)}
-          onSelect={() => onSelect(item.id)}
-        >
-          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 shrink-0" />
-          <span className="text-muted-foreground/50 w-6 shrink-0 text-right text-xs tabular-nums">
-            #{index + 1}
-          </span>
-          <span className="flex-1 truncate text-sm">
-            {item.text.length > 80 ? `${item.text.slice(0, 80)}...` : item.text}
-          </span>
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  );
-}
-
 /**
  * The 'changes' page — this workspace's OPEN change requests, listed by number
  * and title, each opening its own detail dialog.
@@ -628,6 +602,7 @@ function ChangeRequestsPage({
   query: string;
   onSelect: (crId: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading } = useQuery({
     queryKey: changeRequestKeys.list(projectId, 'open'),
     queryFn: () => fetchChangeRequests(projectId, 'open'),
@@ -645,27 +620,24 @@ function ChangeRequestsPage({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>Loading change requests…</TextShimmer>
+      <div className="flex items-center justify-center gap-2 py-8">
+        <TextShimmer>{tI18nComplete.raw('text73d66adbfd39')}</TextShimmer>
       </div>
     );
   }
 
   if (changeRequests.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-          <FileDiff className="text-muted-foreground size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query.trim() ? `No change requests matching "${query.trim()}"` : 'Nothing to review'}
-        </span>
-      </div>
+      <PaletteEmpty>
+        {query.trim()
+          ? tI18nComplete('textd717d6d02f4f', { value0: query.trim() })
+          : tI18nComplete.raw('text1a60b0977a4f')}
+      </PaletteEmpty>
     );
   }
 
   return (
-    <CommandGroup heading={`Open change requests`} forceMount>
+    <CommandGroup heading={tI18nComplete.raw('text7190acb3b105')} forceMount>
       {changeRequests.map((cr) => (
         <CommandItem
           key={cr.cr_id}
@@ -692,7 +664,7 @@ function ChangeRequestsPage({
  * Same data, same route, same permission gate as the Feature flags section of
  * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
  * summary's `experimental_features`, `PATCH /projects/:id/features` through
- * `updateFeatureFlag`, and `PROJECT_CUSTOMIZE_WRITE`. Two doors onto one
+ * `updateFeatureFlag`, and `PROJECT_SETTINGS_WRITE`. Two doors onto one
  * behaviour, not a second implementation of it — the cache writes below are
  * the same set that tab performs, so the flag-gated rail, sidebar and palette
  * rows all re-resolve together either way.
@@ -714,6 +686,7 @@ function FeatureFlagsPage({
   query: string;
   onNavigate: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const projectQuery = useQuery({
     queryKey: qk.project.summary(projectId),
@@ -721,7 +694,7 @@ function FeatureFlagsPage({
     ...contract('config'),
   });
 
-  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   // Fail-closed while the probe is in flight — the same rule `ExperimentalTab`
   // applies, so a slow probe never offers a toggle the server would reject.
   const canEdit = !writeCap.isLoading && writeCap.allowed === true;
@@ -750,10 +723,12 @@ function FeatureFlagsPage({
       if (variables.key === 'llm_gateway') {
         refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
       }
-      successToast(`${variables.key} ${variables.next ? 'enabled' : 'disabled'}`);
+      successToast(
+        `${variables.key} ${variables.next ? tI18nComplete.raw('textfb9cf75606b4') : tI18nComplete.raw('text17eb3c0168d0')}`,
+      );
     },
     onError: (error: Error, variables) => {
-      errorToast(error.message || `Failed to update ${variables.key}`);
+      errorToast(error.message || tI18nComplete('text6926cad8145a', { value0: variables.key }));
     },
   });
 
@@ -778,29 +753,24 @@ function FeatureFlagsPage({
 
   if (projectQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>Loading feature flags…</TextShimmer>
+      <div className="flex items-center justify-center gap-2 py-8">
+        <TextShimmer>{tI18nComplete.raw('text38839cc3827c')}</TextShimmer>
       </div>
     );
   }
 
   if (features.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-          <Flask className="text-muted-foreground size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query.trim()
-            ? `No feature matching "${query.trim()}"`
-            : 'This deployment exposes no feature flags'}
-        </span>
-      </div>
+      <PaletteEmpty>
+        {query.trim()
+          ? tI18nComplete('textdb41b06d8460', { value0: query.trim() })
+          : tI18nComplete.raw('textcc5de74822b5')}
+      </PaletteEmpty>
     );
   }
 
   return (
-    <CommandGroup heading="Feature flags" forceMount>
+    <CommandGroup heading={tI18nComplete.raw('text20a2e59ba129')} forceMount>
       {features.map((feature) => {
         const pending = feature.key in pendingValues;
         return (
@@ -845,8 +815,26 @@ function FeatureFlagsPage({
   );
 }
 
+const sessionName = (s: ProjectSession) =>
+  s.name ||
+  (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
+  s.branch_name ||
+  s.session_id.slice(0, 8);
+
+export function sessionMatchesPaletteQuery(session: ProjectSession, query: string): boolean {
+  return (
+    sessionName(session).toLowerCase().includes(query) ||
+    session.session_id.toLowerCase().startsWith(query)
+  );
+}
+
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPalette = useTranslations('commandPalette');
+  const { user } = useAuth();
+  const tSettingsRail = useTranslations('settings.rail');
+  const densityPageOptions = useLocalizedUiCatalog(DENSITY_PAGE_OPTIONS);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState<PalettePage>('root');
@@ -859,8 +847,6 @@ export function CommandPalette() {
   // Never cleared: `performSignOut` ends on a document load, so this component
   // is discarded rather than re-rendered.
   const [loggingOut, setLoggingOut] = useState(false);
-  const [backScale, setBackScale] = useState(false);
-  const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reopenPaletteRef = useRef(false);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -879,7 +865,6 @@ export function CommandPalette() {
   }, [params?.sessionId, pathname]);
   const sidebarCtx = useContext(SidebarContext);
   const sidebarOpen = sidebarCtx?.open ?? false;
-  const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
   const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
@@ -891,8 +876,13 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
+  // What the active session's runtime serves (E1): a control shows only with its capability.
+  const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
-  const { data: agents } = useRuntimeAgents();
+  // The project's own agents from the Kortix project config, filtered by the
+  // SDK's one selectable-agent rule: the same list the composer offers. Never
+  // the sandbox runtime's list, which adds its built-ins (`build`, `plan`, …).
+  const agents = useVisibleAgents({ projectId });
   const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
@@ -936,11 +926,32 @@ export function CommandPalette() {
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
   const workspacesLoading =
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
-  const { data: projectSessionsList } = useQuery({
+  const { data: paletteSessions, isPending: projectSessionsPending } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
+    queryFn: () => listProjectSessions(projectId!, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: open && !!projectId,
     ...contract('inventory'),
+  });
+  // The sidebar's pages are usually cached already. Their rows stand in until
+  // this lookup-sized list answers, and when it fails, so recent sessions show
+  // the moment the palette opens instead of "No sessions yet". Not
+  // `placeholderData`: TanStack drops a placeholder when the fetch errors.
+  const sidebarPages = queryClient.getQueryData<{
+    pages: ProjectSessionPage[];
+    pageParams: unknown[];
+  }>(qk.project.sessionsPaged(projectId ?? ''));
+  const sidebarSessions = useMemo(
+    () => (sidebarPages ? flattenProjectSessionPages(sidebarPages) : undefined),
+    [sidebarPages],
+  );
+  const projectSessionsList = paletteSessions ?? sidebarSessions;
+  // Search is the server's: `q` reaches every session the viewer may open, not
+  // only the newest `PROJECT_SESSION_NAME_LOOKUP_LIMIT` the lookup above holds.
+  const serverSessionQuery = useDebounce(query.trim(), 250);
+  const { sessions: serverSessionMatches } = useProjectSessions(projectId ?? '', {
+    q: serverSessionQuery,
+    limit: 20,
+    enabled: open && !!projectId && serverSessionQuery.length > 0,
   });
   // Same query key every other project surface fetches (page.tsx,
   // project-shell.tsx) — dedupes against that cache entry. Resolves the
@@ -981,9 +992,9 @@ export function CommandPalette() {
   // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
   // panel rendered nothing unless it was ENABLED — a palette entry that opened
   // a blank pane. It now follows enablement like every other flag.
-  // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
-  // above is the DEPLOYMENT flag set (`featureFlags` from `@kortix/sdk`, build-time
-  // capabilities like `enableProjects`), a different concept from the
+  // `projectFlags`, not `featureFlags` — the SDK's `featureFlags` is the
+  // DEPLOYMENT flag set (build-time capabilities like `enableProjects`), a
+  // different concept from the
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
@@ -999,7 +1010,7 @@ export function CommandPalette() {
   }, [currentSessionId, modelStore]);
 
   const currentAgent = useMemo(() => {
-    if (!currentAgentName || !agents) return agents?.[0];
+    if (!currentAgentName) return agents[0];
     return agents.find((a) => a.name === currentAgentName) ?? agents[0];
   }, [currentAgentName, agents]);
 
@@ -1010,31 +1021,14 @@ export function CommandPalette() {
 
   const close = useCallback(() => setOpen(false), []);
 
-  const triggerBackScale = useCallback(() => {
-    setBackScale(true);
-    if (backScaleTimeout.current) clearTimeout(backScaleTimeout.current);
-    backScaleTimeout.current = setTimeout(() => setBackScale(false), 130);
+  const goToPage = useCallback((p: PalettePage, preserveQuery?: boolean) => {
+    setPage(p);
+    if (!preserveQuery) setQuery('');
   }, []);
-
-  const goToPage = useCallback(
-    (p: PalettePage, preserveQuery?: boolean) => {
-      setPage(p);
-      if (!preserveQuery) setQuery('');
-      triggerBackScale();
-    },
-    [triggerBackScale],
-  );
 
   const goBack = useCallback(() => {
     setPage('root');
     setQuery('');
-    triggerBackScale();
-  }, [triggerBackScale]);
-
-  useEffect(() => {
-    return () => {
-      if (backScaleTimeout.current) clearTimeout(backScaleTimeout.current);
-    };
   }, []);
 
   const handleOpenTerminal = useCallback(async () => {
@@ -1046,16 +1040,14 @@ export function CommandPalette() {
         id: `terminal:${pty.id}`,
         title: pty.title || pty.command || 'Terminal',
         type: 'terminal',
-        // LEGACY: terminal tabs only surface through <SidebarRight />, which
-        // both AppProviders call sites mount with showRightSidebar={false}.
         // `/terminal/<id>` is not a route.
         href: `/terminal/${pty.id}`,
       });
     } catch {
-      errorToast('Failed to open terminal');
+      errorToast(tHardcodedUi.raw('i18nComplete.text6300be841ac6'));
     }
     close();
-  }, [createPty, close]);
+  }, [createPty, close, tHardcodedUi]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -1143,11 +1135,13 @@ export function CommandPalette() {
   const queryLongEnough = query.trim().length >= 2;
   const allPaletteItems = useMemo(() => {
     const result: MenuItemDef[] = [];
-    for (const item of getItemsForSurface('commandPalette')) {
+    for (const sourceItem of getItemsForSurface('commandPalette')) {
+      const item = translateMenuItem(sourceItem, tI18nComplete);
       if (LEGACY_PALETTE_HIDDEN.has(item.id)) continue;
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
+      if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
@@ -1157,6 +1151,10 @@ export function CommandPalette() {
       // already declare `requiresProject: true` and are filtered above;
       // `{accountId}` rows are filtered here, off the token itself, so a new
       // account-scoped row can never ship without the guard.
+      // An account row cannot resolve without a selected account, exactly as
+      // an `{accountId}` href could not. Same guard, off the kind instead of
+      // off a token, so a new account row can never ship without it.
+      if (item.kind === 'account' && !selectedAccountId) continue;
       let href = item.href;
       if (href?.includes('{projectId}')) {
         if (!projectId) continue;
@@ -1169,7 +1167,16 @@ export function CommandPalette() {
       result.push(href === item.href ? item : { ...item, href });
     }
     return result;
-  }, [billingEnabled, currentSessionId, projectId, selectedAccountId, sidebarCtx, projectFlags]);
+  }, [
+    billingEnabled,
+    currentSessionId,
+    runtimeCapabilities,
+    projectId,
+    selectedAccountId,
+    sidebarCtx,
+    projectFlags,
+    tI18nComplete,
+  ]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
@@ -1203,8 +1210,8 @@ export function CommandPalette() {
   // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
   // own sub-nav composes them. Nothing left in the rail varies by flag.
   const allSettingsGroups = useMemo(
-    () => settingsPaletteGroups({ hasProject: !!projectId }),
-    [projectId],
+    () => settingsPaletteGroups({ hasProject: !!projectId }, (key) => tSettingsRail(key as never)),
+    [projectId, tSettingsRail],
   );
 
   const filteredSettingsGroups = useMemo(
@@ -1217,31 +1224,13 @@ export function CommandPalette() {
     [filteredSettingsGroups],
   );
 
-  const visibleAgents = useMemo(() => {
-    if (!agents) return [];
-    const projectOnlyAgents = new Set(['project-manager']);
-    return agents.filter(
-      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
-    );
-  }, [agents]);
-
   const filteredAgents = useMemo(() => {
-    if (!visibleAgents.length) return [];
     const q = query.trim().toLowerCase();
-    return visibleAgents.filter(
+    return agents.filter(
       (a) =>
         (a.name || '').toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
     );
-  }, [visibleAgents, query]);
-
-  const primaryAgents = useMemo(
-    () => filteredAgents.filter((a) => a.mode !== 'subagent'),
-    [filteredAgents],
-  );
-  const subAgents = useMemo(
-    () => filteredAgents.filter((a) => a.mode === 'subagent'),
-    [filteredAgents],
-  );
+  }, [agents, query]);
 
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1305,28 +1294,22 @@ export function CommandPalette() {
     if (currentSessionId) {
       items.push({
         id: 'change-agent',
-        label: 'Change Agent',
+        label: tHardcodedUi.raw('i18nComplete.text6fb2caa0ee1c'),
         keywords: 'change agent worker switch select bot assistant',
         targetPage: 'agents',
       });
       items.push({
         id: 'change-model',
-        label: 'Change Model',
+        label: tHardcodedUi.raw('i18nComplete.text9cb6d01d8b29'),
         keywords: 'change model llm switch select provider anthropic openai claude gpt',
         targetPage: 'models',
-      });
-      items.push({
-        id: 'jump-to-message',
-        label: 'Jump to Message',
-        keywords: 'jump message go scroll navigate find conversation chat',
-        targetPage: 'messages',
       });
     }
     return items.filter((item) => {
       const haystack = [item.label, item.keywords].join(' ').toLowerCase();
       return words.every((w) => haystack.includes(w));
     });
-  }, [hasQuery, query, currentSessionId]);
+  }, [hasQuery, query, currentSessionId, tHardcodedUi]);
 
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
@@ -1349,7 +1332,7 @@ export function CommandPalette() {
         // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
-          title: 'New session',
+          title: tHardcodedUi.raw('i18nComplete.textcffdba22adf2'),
           type: 'session',
           href: `/sessions/${session.id}`,
         });
@@ -1358,9 +1341,9 @@ export function CommandPalette() {
         });
         close();
       })
-      .catch(() => errorToast('Failed to create session'))
+      .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.textb6f7df17e0a2')))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close]);
+  }, [isCreating, projectId, newSession, createSession, openProjectTab, close, tHardcodedUi]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
@@ -1383,9 +1366,8 @@ export function CommandPalette() {
    *    keep answering for the account you just left.
    * 3. Navigate.
    *
-   * The already-active workspace never reaches here: `rootWorkspaceResults`
-   * drops it, and the dedicated page renders it as a checked, non-selectable
-   * row.
+   * Selecting the active workspace also opens its home page, including when
+   * the user is currently viewing a session or settings inside it.
    */
   const handleSelectWorkspace = useCallback(
     (workspace: KortixProject) => {
@@ -1427,12 +1409,6 @@ export function CommandPalette() {
     },
     [projectId, openProjectTab, router, close],
   );
-
-  const sessionName = (s: ProjectSession) =>
-    s.name ||
-    (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
-    s.branch_name ||
-    s.session_id.slice(0, 8);
 
   /**
    * Every workspace the user can switch to, in the sidebar's order — active
@@ -1491,20 +1467,22 @@ export function CommandPalette() {
 
   const filteredDensityOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return DENSITY_PAGE_OPTIONS;
-    return DENSITY_PAGE_OPTIONS.filter((option) =>
+    if (!q) return densityPageOptions;
+    return densityPageOptions.filter((option) =>
       `${option.label} ${option.description}`.toLowerCase().includes(q),
     );
-  }, [query]);
+  }, [densityPageOptions, query]);
 
   const filteredProjectSessionsList = useMemo(() => {
     const q = query.trim().toLowerCase();
     const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
-    return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(
-      0,
-      50,
-    );
-  }, [projectSessionsList, query]);
+    if (!q) return sorted.slice(0, 50);
+    // Instant local matches first, then the server's answer for the rest.
+    const local = sorted.filter((s) => sessionMatchesPaletteQuery(s, q));
+    const seen = new Set(local.map((s) => s.session_id));
+    const remote = serverSessionMatches.filter((s) => !seen.has(s.session_id));
+    return [...local, ...remote].slice(0, 50);
+  }, [projectSessionsList, query, serverSessionMatches]);
 
   const rootSessionResults = useMemo(() => {
     if (!hasQuery || !projectId) return [];
@@ -1521,10 +1499,8 @@ export function CommandPalette() {
    * selecting a row buried in Navigation. Removing the `projectId` clause is
    * the single change that makes ⌘K → name → Enter work.
    *
-   * `rootWorkspaceResults` drops the active workspace (it matches its own name
-   * best and selecting it re-navigates to the page you are on) and caps the
-   * rest, so workspaces take a slice of the mixed root page rather than owning
-   * it.
+   * `rootWorkspaceResults` includes the active workspace and caps matches,
+   * so workspaces take a slice of the mixed root page rather than owning it.
    */
   const rootWorkspaceRows = useMemo(
     () => (hasQuery ? rootWorkspaceResults(workspaceRows, query) : []),
@@ -1555,8 +1531,14 @@ export function CommandPalette() {
     const rows = hasQuery ? filteredNavItems : rootSuggestionItems;
     for (const item of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
       const href = item.href;
+      // An account row opens a modal, so what it needs warmed is the hub's JS
+      // chunk, not an RSC payload.
+      if (item.kind === 'account') {
+        preloadAccountHub();
+        continue;
+      }
       if (item.kind !== 'navigate' || !href) continue;
-      if (href.startsWith('/projects') || href.startsWith('/accounts')) router.prefetch(href);
+      if (href.startsWith('/projects')) router.prefetch(href);
     }
   }, [open, page, hasQuery, filteredNavItems, rootSuggestionItems, router]);
 
@@ -1606,13 +1588,117 @@ export function CommandPalette() {
   // fallback stays cold on purpose: it exists only for the window before that.
   useEffect(() => {
     if (!open || !projectId || !inviteMembersAccountId) return;
-    router.prefetch(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
-  }, [open, projectId, inviteMembersAccountId, router]);
+    // The destination is the account hub, which is a modal: what needs warming
+    // is its chunk, not an RSC payload.
+    preloadAccountHub();
+  }, [open, projectId, inviteMembersAccountId]);
+
+  /**
+   * The identifiers people paste into support threads, CLI flags, and bug
+   * reports. Each row exists only when its value does: off a session there
+   * is no session id to offer, and a row that copies nothing is worse than
+   * no row. The session link is read from the address bar at copy time, not
+   * here, so a query string or tab change since render is kept.
+   */
+  const copyItems = useMemo(() => {
+    const items: CopyItem[] = [
+      {
+        id: 'email',
+        label: tPalette('copyEmail'),
+        value: user?.email ?? '',
+        keywords: 'email mail address me',
+      },
+      { id: 'user-id', label: tPalette('copyUserId'), value: user?.id ?? '', keywords: 'user id me' },
+      {
+        id: 'account-id',
+        label: tPalette('copyAccountId'),
+        value: activeAccountId ?? '',
+        keywords: 'account id team organization org',
+      },
+      {
+        id: 'project-id',
+        label: tPalette('copyProjectId'),
+        value: projectId ?? '',
+        keywords: 'project id',
+      },
+      {
+        id: 'session-id',
+        label: tPalette('copySessionId'),
+        value: currentSessionId ?? '',
+        keywords: 'session id sandbox',
+      },
+      {
+        id: 'session-link',
+        label: tPalette('copySessionLink'),
+        value: currentSessionId ? pathname : '',
+        keywords: 'session link url share',
+      },
+      {
+        id: 'session-title',
+        label: tPalette('copySessionTitle'),
+        value: currentSessionId ? (currentProjectSession?.name ?? '') : '',
+        keywords: 'session title name',
+      },
+    ];
+    return items.filter((item) => item.value);
+  }, [
+    tPalette,
+    user?.email,
+    user?.id,
+    activeAccountId,
+    projectId,
+    currentSessionId,
+    currentProjectSession?.name,
+    pathname,
+  ]);
+
+  /**
+   * "Copy session ID" in the no-query Suggestions, fourth row: it is what a
+   * user in a session reaches for most (support threads, CLI flags), so it
+   * should not need a search. Off a session there is none, and no row.
+   */
+  const suggestedSessionIdCopy = copyItems.find((item) => item.id === 'session-id') ?? null;
+  /**
+   * Desktop only, right under it: the Electron shell has no address bar, so
+   * there is no other way to take a session's link out of the app. The copy
+   * is `window.location.href` — the shell loads the real web origin, so the
+   * link opens in any browser. The web keeps its address bar and one row.
+   */
+  const suggestedSessionLinkCopy = isDesktop()
+    ? (copyItems.find((item) => item.id === 'session-link') ?? null)
+    : null;
+
+  // Copy rows ride along with ordinary root search: "email" offers the email,
+  // "project" offers the project id under the projects it finds, "session" the
+  // session id and link. Every typed word must START a keyword (or a word of
+  // the label), so one stray letter does not light up six rows. They render
+  // after the other groups — the thing searched for stays the first pick, and
+  // the copy is one arrow away.
+  const rootCopyResults = useMemo(() => {
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+    return copyItems.filter((item) => {
+      const vocabulary = `copy ${item.keywords} ${item.label}`.toLowerCase().split(/\s+/);
+      return words.every((word) => vocabulary.some((candidate) => candidate.startsWith(word)));
+    });
+  }, [copyItems, query]);
+
+  const handleCopyValue = useCallback(
+    async (item: CopyItem) => {
+      const text = item.id === 'session-link' ? window.location.href : item.value;
+      const ok = await copyToClipboard(text);
+      if (ok) successToast(tPalette('copied', { label: item.label }));
+      else errorToast(tPalette('copyFailed'));
+      close();
+    },
+    [tPalette, close],
+  );
 
   const hasSessionResults = rootSessionResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
+    rootCopyResults.length > 0 ||
     hasNavResults ||
     hasSessionResults ||
     hasWorkspaceResults ||
@@ -1649,156 +1735,6 @@ export function CommandPalette() {
     [projectId, router, close],
   );
 
-  const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
-
-  const handleJumpToMessage = useCallback(
-    (messageId: string) => {
-      jumpToMessage(messageId);
-      close();
-    },
-    [jumpToMessage, close],
-  );
-
-  const detectedUrl = useMemo(() => {
-    const q = query.trim();
-    if (!q) return null;
-
-    const localhostParsed = parseLocalhostUrl(q.startsWith('http') ? q : `http://${q}`);
-    if (localhostParsed) {
-      return { kind: 'localhost' as const, ...localhostParsed };
-    }
-
-    if (/^\d{2,5}$/.test(q)) {
-      const port = Number.parseInt(q, 10);
-      if (port >= 1 && port <= 65535) {
-        return {
-          kind: 'localhost' as const,
-          originalUrl: `http://localhost:${port}/`,
-          port,
-          path: '/',
-        };
-      }
-    }
-
-    const normalized = normalizeExternalInput(q);
-    if (normalized) {
-      if (!q.includes('/')) {
-        const ext = q.split('.').pop()?.toLowerCase() || '';
-        const FILE_EXTS = new Set([
-          'ts',
-          'tsx',
-          'js',
-          'jsx',
-          'json',
-          'md',
-          'mdx',
-          'css',
-          'scss',
-          'less',
-          'html',
-          'xml',
-          'yaml',
-          'yml',
-          'toml',
-          'txt',
-          'log',
-          'env',
-          'lock',
-          'sql',
-          'db',
-          'py',
-          'rb',
-          'rs',
-          'go',
-          'java',
-          'sh',
-          'bash',
-          'zsh',
-          'conf',
-          'cfg',
-          'ini',
-          'svg',
-          'png',
-          'jpg',
-          'jpeg',
-          'gif',
-          'ico',
-          'woff',
-          'woff2',
-          'ttf',
-          'eot',
-          'map',
-          'd',
-          'mjs',
-          'cjs',
-          'mts',
-          'cts',
-          'vue',
-          'svelte',
-          'astro',
-          'wasm',
-          'zip',
-          'tar',
-          'gz',
-          'pdf',
-          'docx',
-          'pptx',
-          'xlsx',
-        ]);
-        if (FILE_EXTS.has(ext)) return null;
-      }
-      return { kind: 'external' as const, url: normalized };
-    }
-
-    return null;
-  }, [query]);
-
-  const handleOpenUrl = useCallback(() => {
-    if (!detectedUrl) return;
-
-    if (detectedUrl.kind === 'localhost') {
-      const { port, path } = detectedUrl;
-      const internalUrl = toInternalUrl(port, path);
-      const proxied = buildProxyUrl(internalUrl) || internalUrl;
-      const tabId = `preview:${port}`;
-      openTabAndNavigate({
-        id: tabId,
-        title: `localhost:${port}`,
-        type: 'preview',
-        href: `/p/${port}`,
-        metadata: enrichPreviewMetadata({
-          url: proxied,
-          port,
-          originalUrl: internalUrl,
-          path,
-        }),
-      });
-    } else {
-      const extUrl = detectedUrl.url;
-      const proxyUrl = buildWebProxyUrl(extUrl, subdomainOpts) || extUrl;
-      let displayHost: string;
-      try {
-        displayHost = new URL(extUrl).hostname;
-      } catch {
-        displayHost = extUrl;
-      }
-
-      openTabAndNavigate({
-        id: `preview:web`,
-        title: displayHost,
-        type: 'preview',
-        href: '/p/web',
-        metadata: enrichPreviewMetadata({
-          url: proxyUrl,
-          port: 0,
-          originalUrl: extUrl,
-          path: '/',
-        }),
-      });
-    }
-    close();
-  }, [detectedUrl, buildProxyUrl, subdomainOpts, close]);
-
   const handleToggleSidebar = useCallback(() => {
     // Reached by keyboard, from a palette the user is already typing in — the
     // panel must be there the moment the palette closes, not 240ms later.
@@ -1825,9 +1761,16 @@ export function CommandPalette() {
       if (next === conversationDensity) return;
       track('conversation_density_switched', { to: next });
       useUserPreferencesStore.getState().setConversationDensity(next);
-      successToast(`Conversation density set to ${next === 'minimal' ? 'Minimal' : 'Normal'}`);
+      successToast(
+        tHardcodedUi('i18nComplete.textca094a828cb9', {
+          value0:
+            next === tHardcodedUi.raw('i18nComplete.texta703788f8320')
+              ? tHardcodedUi.raw('i18nComplete.text057b5de48d7b')
+              : tHardcodedUi.raw('i18nComplete.texta7248eeb45eb'),
+        }),
+      );
     },
-    [close, conversationDensity],
+    [close, conversationDensity, tHardcodedUi],
   );
 
   /**
@@ -1980,13 +1923,18 @@ export function CommandPalette() {
     // redirect to exactly this destination (it resolves the account id itself
     // and appends the same `&project=` scoping), so the unresolved case costs
     // one extra hop instead of the click doing nothing.
-    // nav-contract: prefetch-only — the destination depends on whether
-    // `inviteMembersAccountId` has resolved, so it is not known at render.
-    router.push(
-      inviteMembersAccountId
-        ? `/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`
-        : `/projects/${projectId}/members`,
-    );
+    if (inviteMembersAccountId) {
+      // The hub over the page you are on — no navigation at all.
+      openAccountPanel(
+        hubTarget(inviteMembersAccountId, { tab: 'access-projects', project: projectId }),
+      );
+      close();
+      return;
+    }
+    // nav-contract: prefetch-only — the fallback only runs in the window
+    // before `inviteMembersAccountId` resolves; that route redirects to the
+    // same hub destination, resolving the account id itself.
+    router.push(`/projects/${projectId}/members`);
     close();
   }, [close, projectId, inviteMembersAccountId, router]);
 
@@ -2033,8 +1981,7 @@ export function CommandPalette() {
     // After `setOpen(true)`, because the close already ran the effect that
     // resets `page` to 'root'.
     setPage('changes');
-    triggerBackScale();
-  }, [triggerBackScale]);
+  }, []);
 
   /** The 'flags' page's fallback when the caller may not write feature flags:
    *  the Settings overlay's Feature flags tab, the pane the picker mirrors. */
@@ -2049,23 +1996,15 @@ export function CommandPalette() {
       if (!overlayOpen && reopenPaletteRef.current) {
         reopenPaletteRef.current = false;
         setOpen(true);
-        triggerBackScale();
       }
     },
-    [triggerBackScale],
+    [],
   );
 
   const handleOpenProviderModal = useCallback(() => {
     close();
     import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
       useProviderModalStore.getState().openProviderModal('connected');
-    });
-  }, [close]);
-
-  const handleGenerateSSHKey = useCallback(() => {
-    close();
-    import('@/stores/ssh-dialog-store').then(({ useSSHDialogStore }) => {
-      useSSHDialogStore.getState().openSSHDialog();
     });
   }, [close]);
 
@@ -2079,11 +2018,11 @@ export function CommandPalette() {
     systemReload('dispose-only')
       .then((r) =>
         r.success
-          ? successToast('Config reloaded')
-          : errorToast(r.errors[0] ?? 'The sandbox did not confirm the reload'),
+          ? successToast(tHardcodedUi.raw('i18nComplete.textd46e628bda3a'))
+          : errorToast(r.errors[0] ?? tHardcodedUi.raw('i18nComplete.text42b8d7c5357a')),
       )
       .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
-  }, [close]);
+  }, [close, tHardcodedUi]);
 
   const handleReconcileSession = useCallback(() => {
     if (!currentSessionId) return;
@@ -2094,15 +2033,17 @@ export function CommandPalette() {
     )
       .then((disposition) =>
         successToast(
-          disposition === 'queued'
-            ? 'Branch sync queued after the current turn'
-            : 'Asked the agent to sync the branch',
+          disposition === tHardcodedUi.raw('i18nComplete.textd36be6494248')
+            ? tHardcodedUi.raw('i18nComplete.textb11e0f2cb028')
+            : tHardcodedUi.raw('i18nComplete.texta56be319eda4'),
         ),
       )
       .catch((err: unknown) =>
-        errorToast(err instanceof Error ? err.message : 'Could not reach the agent'),
+        errorToast(
+          err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text29490fc13cfc'),
+        ),
       );
-  }, [close, currentProjectSession?.base_ref, currentSessionId, sendToSession]);
+  }, [close, currentProjectSession?.base_ref, currentSessionId, sendToSession, tHardcodedUi]);
 
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
@@ -2128,7 +2069,6 @@ export function CommandPalette() {
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
-      generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
       reconcileSession: handleReconcileSession,
     }),
@@ -2150,7 +2090,6 @@ export function CommandPalette() {
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
-      handleGenerateSSHKey,
       handleRestartConfig,
       handleReconcileSession,
     ],
@@ -2159,6 +2098,16 @@ export function CommandPalette() {
   const handleRegistryItem = useCallback(
     (item: MenuItemDef) => {
       switch (item.kind) {
+        // The account hub has no route: it is `?accountId=` over the page you
+        // are on, so this row opens a modal rather than navigating. `close()`
+        // then leaves the palette, and the hub is already there — no fetch, no
+        // transition, and Escape puts you back on this same page.
+        case 'account': {
+          if (!selectedAccountId) break;
+          openAccountPanel(hubTarget(selectedAccountId, { tab: item.accountTab }));
+          close();
+          break;
+        }
         case 'navigate': {
           const href = item.href || '';
 
@@ -2180,7 +2129,7 @@ export function CommandPalette() {
             break;
           }
 
-          if (href.startsWith('/projects') || href.startsWith('/accounts')) {
+          if (href.startsWith('/projects')) {
             // nav-contract: prefetch-only — a cmdk row activated by keyboard,
             // and `href` is resolved from the registry item at click time. The
             // root-navigation effect warms the rendered rows.
@@ -2232,6 +2181,7 @@ export function CommandPalette() {
       handleSetTheme,
       handleSetWallpaper,
       actionHandlers,
+      selectedAccountId,
     ],
   );
 
@@ -2239,10 +2189,10 @@ export function CommandPalette() {
     (agentName: string) => {
       if (!currentSessionId) return;
       modelStore.setSessionAgentName(currentSessionId, agentName);
-      successToast(`Agent switched to ${agentName}`);
+      successToast(tHardcodedUi('i18nComplete.text8a85cfbe71eb', { value0: agentName }));
       close();
     },
-    [currentSessionId, modelStore, close],
+    [currentSessionId, modelStore, tHardcodedUi, close],
   );
 
   const handleSelectModel = useCallback(
@@ -2258,10 +2208,12 @@ export function CommandPalette() {
       );
       modelStore.pushRecent({ providerID, modelID });
       const model = allModels.find((m) => m.providerID === providerID && m.modelID === modelID);
-      successToast(`Model switched to ${model?.modelName || modelID}`);
+      successToast(
+        tHardcodedUi('i18nComplete.text8d5ee8fe6a2e', { value0: model?.modelName || modelID }),
+      );
       close();
     },
-    [currentAgent, modelStore, providers, allModels, close],
+    [currentAgent, modelStore, providers, allModels, tHardcodedUi, close],
   );
 
   const totalSearchResults = useMemo(() => {
@@ -2271,17 +2223,18 @@ export function CommandPalette() {
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'density') return filteredDensityOptions.length;
-    // 0, like 'messages': these pages fetch and filter their own rows, so the
-    // count lives inside them (the 'changes' group heading carries it) rather
-    // than being lifted here only to be recomputed.
-    if (page === 'messages' || page === 'changes' || page === 'flags') return 0;
+    // 0: these pages fetch and filter their own rows, so the count lives
+    // inside them (the 'changes' group heading carries it) rather than being
+    // lifted here only to be recomputed.
+    if (page === 'changes' || page === 'flags') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
       rootSessionResults.length +
       rootWorkspaceRows.length +
       sessionActionItems.length +
-      settingsResultCount
+      settingsResultCount +
+      rootCopyResults.length
     );
   }, [
     page,
@@ -2297,55 +2250,88 @@ export function CommandPalette() {
     filteredAccountsList,
     filteredProjectSessionsList,
     filteredDensityOptions,
+    rootCopyResults,
   ]);
 
   const placeholder = useMemo(() => {
-    if (page === 'agents') return 'Search agents...';
-    if (page === 'models') return 'Search models...';
-    if (page === 'files') return 'Search files in this project...';
-    if (page === 'messages') return 'Search messages...';
-    if (page === 'workspaces') return 'Search workspaces...';
-    if (page === 'accounts') return 'Search accounts...';
-    if (page === 'sessions') return 'Search sessions...';
-    if (page === 'density') return 'Choose conversation density...';
-    if (page === 'changes') return 'Search change requests...';
-    if (page === 'flags') return 'Search feature flags...';
-    return 'Search commands, sessions...';
-  }, [page]);
+    if (page === 'agents') return tI18nComplete.raw('text32f4468b0b6f');
+    if (page === 'models') return tI18nComplete.raw('text37b90680b842');
+    if (page === 'files') return tI18nComplete.raw('text19608ade89b8');
+    if (page === 'workspaces') return tI18nComplete.raw('text5c192a3e6f23');
+    if (page === 'accounts') return tI18nComplete.raw('text72eb3689cab9');
+    if (page === 'sessions') return tI18nComplete.raw('textf41875714fdc');
+    if (page === 'density') return tI18nComplete.raw('textf0f41388d721');
+    if (page === 'changes') return tI18nComplete.raw('text3db1f0d55a5b');
+    if (page === 'flags') return tI18nComplete.raw('textfd20bd366efb');
+    return tI18nComplete.raw('text7b355872be1c');
+  }, [page, tI18nComplete]);
 
   const pageTitle = useMemo(() => {
-    if (page === 'agents') return 'Change Agent';
-    if (page === 'models') return 'Change Model';
-    if (page === 'files') return 'Search Files';
-    if (page === 'messages') return 'Jump to Message';
-    if (page === 'workspaces') return 'Switch Workspace';
-    if (page === 'accounts') return 'Switch Account';
-    if (page === 'sessions') return 'Open Session';
-    if (page === 'density') return 'Conversation Density';
-    if (page === 'changes') return 'Review changes';
-    if (page === 'flags') return 'Feature flags';
+    if (page === 'agents') return tI18nComplete.raw('text6fb2caa0ee1c');
+    if (page === 'models') return tI18nComplete.raw('text9cb6d01d8b29');
+    if (page === 'files') return tI18nComplete.raw('text5a5bc0c4ce6e');
+    if (page === 'workspaces') return tI18nComplete.raw('text9ad6baffd025');
+    if (page === 'accounts') return tI18nComplete.raw('text4ecda5e7a644');
+    if (page === 'sessions') return tI18nComplete.raw('text113463edeb06');
+    if (page === 'density') return tI18nComplete.raw('textd0fffb7fa940');
+    if (page === 'changes') return tI18nComplete.raw('text6a47708f4e14');
+    if (page === 'flags') return tI18nComplete.raw('text20a2e59ba129');
     return null;
-  }, [page]);
+  }, [page, tI18nComplete]);
 
   return (
     <>
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
-        className={cn(
-          'origin-center transition-transform duration-150 ease-in-out sm:max-w-[680px]',
-          backScale && 'scale-[0.99]',
-        )}
+        // Pinned at 17vh, not centred: the input stays put while the list
+        // under it grows or shrinks between pages, so the eye never has to
+        // re-find the field after a page change.
+        className="top-[17vh] translate-y-0 sm:max-w-[600px]"
         showCloseButton={false}
       >
         <CommandInput
           ref={inputRef}
+          leftElement={
+            page === 'root' || !pageTitle ? (
+              <Search className="text-muted-foreground size-4 shrink-0" />
+            ) : (
+              <button
+                type="button"
+                aria-label={tI18nComplete.raw('text76900f1bfd16')}
+                title={tI18nComplete.raw('text76900f1bfd16')}
+                onClick={() => {
+                  goBack();
+                  inputRef.current?.focus();
+                }}
+                className="text-muted-foreground hover:bg-hover hover:text-foreground -ml-1 flex size-6 shrink-0 items-center justify-center rounded-md"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+            )
+          }
+          rightElement={
+            query ? (
+              <button
+                type="button"
+                aria-label={tI18nComplete.raw('text3b7ea51793e9')}
+                title={tI18nComplete.raw('text3b7ea51793e9')}
+                onClick={() => {
+                  setQuery('');
+                  inputRef.current?.focus();
+                }}
+                className="text-muted-foreground hover:bg-hover hover:text-foreground -mr-1 flex size-6 shrink-0 items-center justify-center rounded-md"
+              >
+                <X className="size-4" />
+              </button>
+            ) : null
+          }
           placeholder={placeholder}
           value={query}
           onValueChange={setQuery}
         />
 
-        <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)] min-h-[400px]">
+        <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)]">
           <CommandList className="max-h-none overflow-visible">
             {page === 'root' && (
               <>
@@ -2353,7 +2339,7 @@ export function CommandPalette() {
                   <>
                     <CommandGroup heading="Suggestions" forceMount>
                       <div className="space-y-0.5">
-                        {rootSuggestionItems.map((item) => {
+                        {rootSuggestionItems.map((item, index) => {
                           const Icon = item.icon;
                           const isToggleSidebar = item.id === 'toggle-sidebar';
                           const DisplayIcon = isToggleSidebar
@@ -2363,38 +2349,77 @@ export function CommandPalette() {
                             : Icon;
                           const displayLabel = isToggleSidebar
                             ? sidebarOpen
-                              ? 'Collapse Sidebar'
-                              : 'Expand Sidebar'
+                              ? tHardcodedUi.raw('i18nComplete.text9da0bf42ad07')
+                              : tHardcodedUi.raw('i18nComplete.text2060803eeb71')
                             : item.label;
 
                           const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
                           return (
-                            <CommandItem
-                              key={item.id}
-                              value={sanitizeCmdkValue(
-                                `suggestion ${buildPaletteSearchText(item)}`,
-                              )}
-                              onSelect={() =>
-                                submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
-                              }
-                              disabled={item.id === 'new-session' && isCreating}
-                            >
-                              {item.id === 'new-session' && isCreating ? (
-                                <Loading className="text-muted-foreground size-4 shrink-0" />
-                              ) : (
-                                <DisplayIcon className="size-4" />
-                              )}
-                              <span className="flex-1">{displayLabel}</span>
-                              {item.id === 'review-changes' && openChangeRequestCount > 0 && (
-                                <span className="text-muted-foreground/40 text-xs tabular-nums">
-                                  {openChangeRequestCount}
-                                </span>
-                              )}
-                              {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
-                              {submenuPage && (
-                                <ChevronRight className="text-muted-foreground/30 size-3" />
-                              )}
-                            </CommandItem>
+                            <Fragment key={item.id}>
+                              <CommandItem
+                                value={sanitizeCmdkValue(
+                                  `suggestion ${buildPaletteSearchText(item)}`,
+                                )}
+                                onSelect={() =>
+                                  submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
+                                }
+                                disabled={item.id === 'new-session' && isCreating}
+                              >
+                                {item.id === 'new-session' && isCreating ? (
+                                  <Loading className="text-muted-foreground size-4 shrink-0" />
+                                ) : (
+                                  <DisplayIcon className="size-4" />
+                                )}
+                                <span className="flex-1">{displayLabel}</span>
+                                {item.id === 'review-changes' && openChangeRequestCount > 0 && (
+                                  <span className="text-muted-foreground/40 text-xs tabular-nums">
+                                    {openChangeRequestCount}
+                                  </span>
+                                )}
+                                {submenuPage === 'density' && (
+                                  <span className="text-muted-foreground/40 text-xs">
+                                    {
+                                      densityPageOptions.find(
+                                        (option) => option.id === conversationDensity,
+                                      )?.label
+                                    }
+                                  </span>
+                                )}
+                                {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+                                {submenuPage && (
+                                  <ChevronRight className="text-muted-foreground/30 size-3" />
+                                )}
+                              </CommandItem>
+                              {index === 2 && suggestedSessionIdCopy ? (
+                                <CommandItem
+                                  value={sanitizeCmdkValue(
+                                    `suggestion copy-session-id ${suggestedSessionIdCopy.keywords}`,
+                                  )}
+                                  onSelect={() => void handleCopyValue(suggestedSessionIdCopy)}
+                                >
+                                  <Copy className="size-4" />
+                                  <span className="flex-1">
+                                    {tPalette('copyAction', { label: suggestedSessionIdCopy.label })}
+                                  </span>
+                                  <span className="text-muted-foreground max-w-40 truncate font-mono text-xs">
+                                    {suggestedSessionIdCopy.value}
+                                  </span>
+                                </CommandItem>
+                              ) : null}
+                              {index === 2 && suggestedSessionLinkCopy ? (
+                                <CommandItem
+                                  value={sanitizeCmdkValue(
+                                    `suggestion copy-session-link ${suggestedSessionLinkCopy.keywords}`,
+                                  )}
+                                  onSelect={() => void handleCopyValue(suggestedSessionLinkCopy)}
+                                >
+                                  <Copy className="size-4" />
+                                  <span className="flex-1">
+                                    {tPalette('copyAction', { label: suggestedSessionLinkCopy.label })}
+                                  </span>
+                                </CommandItem>
+                              ) : null}
+                            </Fragment>
                           );
                         })}
                       </div>
@@ -2439,22 +2464,18 @@ export function CommandPalette() {
                             )}
                             <ChevronRight className="text-muted-foreground/30 size-3" />
                           </CommandItem>
-                          <CommandItem
-                            value="suggestion jump to message go scroll navigate"
-                            onSelect={() => goToPage('messages')}
-                          >
-                            <MessageCircle className="size-4" />
-                            <span className="flex-1">
-                              {tHardcodedUi.raw(
-                                'componentsCommandPalette.line1235JsxTextJumpToMessage',
-                              )}
-                            </span>
-                            <ChevronRight className="text-muted-foreground/30 size-3" />
-                          </CommandItem>
                         </>
                       )}
 
-                      {projectId && (
+                      {/* `currentSessionId`, not `projectId`. File search runs
+                          against the SESSION's sandbox daemon
+                          (`useWorkspaceSearch` -> `getActiveServerUrl()` ->
+                          `findFiles`/`findText`), so with no session mounted
+                          every query resolved to a swallowed fetch error and
+                          rendered "No files for …" — indistinguishable from a
+                          real zero-result search. A project id is not enough
+                          to make this row work; a session is. */}
+                      {currentSessionId && (
                         <CommandItem
                           value="suggestion search files find file grep repo content"
                           onSelect={() => goToPage('files')}
@@ -2466,7 +2487,7 @@ export function CommandPalette() {
                             )}
                           </span>
                           <Badge variant="kortix" size="sm">
-                            repo
+                            {tHardcodedUi.raw('i18nComplete.text071ca2227754')}
                           </Badge>
                           <ChevronRight className="text-muted-foreground/40 size-3" />
                         </CommandItem>
@@ -2549,8 +2570,6 @@ export function CommandPalette() {
                           >
                             {item.id === 'change-agent' ? (
                               <Bot className="size-4" />
-                            ) : item.id === 'jump-to-message' ? (
-                              <MessageCircle className="size-4" />
                             ) : (
                               <Cpu className="size-4" />
                             )}
@@ -2574,12 +2593,12 @@ export function CommandPalette() {
                             : Icon;
                           const displayLabel = isToggleSidebar
                             ? sidebarOpen
-                              ? 'Collapse Sidebar'
-                              : 'Expand Sidebar'
+                              ? tHardcodedUi.raw('i18nComplete.text9da0bf42ad07')
+                              : tHardcodedUi.raw('i18nComplete.text2060803eeb71')
                             : isTogglePanelMode
                               ? panelMode === 'easy'
-                                ? 'Switch to Advanced View'
-                                : 'Switch to Easy View'
+                                ? tHardcodedUi.raw('i18nComplete.text5f7c8d97889a')
+                                : tHardcodedUi.raw('i18nComplete.text9b21dbb9a947')
                               : item.label;
                           const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
                           const isActiveWallpaper =
@@ -2608,7 +2627,9 @@ export function CommandPalette() {
                               )}
                               {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
                               {(isActiveTheme || isActiveWallpaper) && (
-                                <span className="text-primary/60 text-xs font-medium">Active</span>
+                                <span className="text-primary/60 text-xs font-medium">
+                                  {tHardcodedUi.raw('i18nComplete.text92340695899b')}
+                                </span>
                               )}
                               {submenuPage && (
                                 <ChevronRight className="text-muted-foreground/30 size-3" />
@@ -2660,7 +2681,7 @@ export function CommandPalette() {
                           <CommandItem
                             key={session.session_id}
                             value={sanitizeCmdkValue(
-                              `session ${sessionName(session)} ${session.session_id}`,
+                              `session ${sessionName(session)} ${session.initiator?.label ?? ''} ${session.session_id}`,
                             )}
                             onSelect={() => handleSelectProjectSession(session)}
                           >
@@ -2707,33 +2728,7 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {detectedUrl && (
-                      <CommandGroup
-                        heading={tHardcodedUi.raw(
-                          'componentsCommandPalette.line1419JsxAttrHeadingOpenURL',
-                        )}
-                        forceMount
-                      >
-                        <CommandItem
-                          value={sanitizeCmdkValue(
-                            `open url browser preview ${query.trim()} localhost port`,
-                          )}
-                          onSelect={handleOpenUrl}
-                        >
-                          <Globe className="text-kortix-blue size-4" />
-                          <span className="flex-1 truncate">
-                            {detectedUrl.kind === 'localhost'
-                              ? `Open localhost:${detectedUrl.port}${detectedUrl.path !== '/' ? detectedUrl.path : ''}`
-                              : `Open ${new URL(detectedUrl.url).hostname}`}
-                          </span>
-                          <Badge variant="kortix" size="sm">
-                            browser
-                          </Badge>
-                        </CommandItem>
-                      </CommandGroup>
-                    )}
-
-                    {queryLongEnough && !detectedUrl && projectId && (
+                    {queryLongEnough && currentSessionId && (
                       <CommandGroup
                         heading={tHardcodedUi.raw(
                           'componentsCommandPalette.line1437JsxAttrHeadingFileSearch',
@@ -2754,33 +2749,52 @@ export function CommandPalette() {
                             {tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextText')}
                           </span>
                           <Badge variant="kortix" size="sm">
-                            repo
+                            {tHardcodedUi.raw('i18nComplete.text071ca2227754')}
                           </Badge>
                           <ChevronRight className="text-muted-foreground/40 size-3" />
                         </CommandItem>
                       </CommandGroup>
                     )}
 
+                    {rootCopyResults.length > 0 && (
+                      <CommandGroup heading={tPalette('copyTitle')} forceMount>
+                        {rootCopyResults.map((item) => (
+                          <CommandItem
+                            key={item.id}
+                            value={sanitizeCmdkValue(`copy-${item.id} ${item.keywords}`)}
+                            onSelect={() => void handleCopyValue(item)}
+                          >
+                            <Copy className="text-muted-foreground shrink-0" />
+                            <span className="shrink-0">
+                              {tPalette('copyAction', { label: item.label })}
+                            </span>
+                            <span className="text-muted-foreground min-w-0 flex-1 truncate text-right font-mono text-xs">
+                              {item.value}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
                     {showNoResults && (
-                      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-                          <Search className="text-muted-foreground size-4" />
-                        </div>
-                        <div className="text-center">
-                          <span className="text-muted-foreground/60 text-sm">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1462JsxTextNoResultsFor',
-                            )}
-                            {query.trim()}
-                            {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
-                          </span>
-                          <p className="text-muted-foreground/30 mt-1 text-xs">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
-                            )}
-                          </p>
-                        </div>
-                      </div>
+                      // The "Search files" half of the hint points at a row
+                      // that only exists on a session — see the
+                      // `currentSessionId` guards above. Off a session it
+                      // named a control that was not on screen, so the
+                      // generic half is all that is offered there.
+                      <PaletteEmpty
+                        hint={
+                          currentSessionId
+                            ? tHardcodedUi.raw(
+                                'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
+                              )
+                            : tHardcodedUi.raw('i18nComplete.textce18e358bf01')
+                        }
+                      >
+                        {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextNoResultsFor')}
+                        {query.trim()}
+                        {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
+                      </PaletteEmpty>
                     )}
                   </>
                 )}
@@ -2789,9 +2803,9 @@ export function CommandPalette() {
 
             {page === 'agents' && (
               <>
-                {primaryAgents.length > 0 && (
+                {filteredAgents.length > 0 && (
                   <CommandGroup heading="Agents" forceMount>
-                    {primaryAgents.map((agent) => {
+                    {filteredAgents.map((agent) => {
                       const isActive = currentAgent?.name === agent.name;
                       const chalk = chalkColors(agent.name);
                       return (
@@ -2829,58 +2843,12 @@ export function CommandPalette() {
                   </CommandGroup>
                 )}
 
-                {subAgents.length > 0 && (
-                  <CommandGroup heading="Sub-agents" forceMount>
-                    {subAgents.map((agent) => {
-                      const isActive = currentAgent?.name === agent.name;
-                      const isKortixAgent = agent.name.toLowerCase().includes('kortix');
-                      const chalk = chalkColors(agent.name);
-                      return (
-                        <CommandItem
-                          key={agent.name}
-                          value={sanitizeCmdkValue(
-                            `subagent ${agent.name} ${agent.description || ''}`,
-                          )}
-                          onSelect={() => handleSelectAgent(agent.name)}
-                        >
-                          <div
-                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold"
-                            style={{
-                              backgroundColor: chalk.background,
-                              color: chalk.foreground,
-                              borderColor: chalk.border,
-                            }}
-                          >
-                            {isKortixAgent ? (
-                              <Bot className="size-5 shrink-0" />
-                            ) : (
-                              <span>{agent.name.charAt(0).toUpperCase()}</span>
-                            )}
-                          </div>
-                          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm">{capitalizeWords(agent.name)}</span>
-                            {agent.description && (
-                              <span className="text-muted-foreground/50 truncate text-xs">
-                                {agent.description}
-                              </span>
-                            )}
-                          </div>
-                          {isActive && <Check className="text-primary h-3.5 w-3.5 shrink-0" />}
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                )}
-
                 {filteredAgents.length === 0 && (
-                  <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                    <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-                      <Bot className="text-muted-foreground size-4" />
-                    </div>
-                    <span className="text-muted-foreground/60 text-sm">
-                      {query ? `No agents matching "${query}"` : 'No agents available'}
-                    </span>
-                  </div>
+                  <PaletteEmpty>
+                    {query
+                      ? tI18nComplete('text20caf3bcf39b', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.textda9108359944')}
+                  </PaletteEmpty>
                 )}
               </>
             )}
@@ -2948,17 +2916,16 @@ export function CommandPalette() {
                 ))}
 
                 {visibleModels.length === 0 && (
-                  <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                    <Cpu className="text-muted-foreground/30 size-5" />
-                    <span className="text-muted-foreground/60 text-sm">
-                      {query ? `No models matching "${query}"` : 'No models available'}
-                    </span>
-                  </div>
+                  <PaletteEmpty>
+                    {query
+                      ? tI18nComplete('textfc89d36d845d', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.texta5a9895b0241')}
+                  </PaletteEmpty>
                 )}
               </>
             )}
 
-            {page === 'files' && projectId && (
+            {page === 'files' && currentSessionId && (
               <FileSearchPage query={query} onSelect={handleSelectFile} />
             )}
 
@@ -2968,9 +2935,8 @@ export function CommandPalette() {
                 One account gets a single "Workspaces" heading instead — a lone
                 account heading over the only list is noise, not structure.
 
-                Unlike the root results this KEEPS the workspace you are in, as
-                a checked row. A directory that omits where you are makes you
-                doubt the directory. */}
+                Like the root results this includes the workspace you are in,
+                marked here with a check. */}
             {page === 'workspaces' &&
               (workspacePageRows.length > 0 ? (
                 workspacePageGroups.map((group) => (
@@ -2998,22 +2964,19 @@ export function CommandPalette() {
                   </CommandGroup>
                 ))
               ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  {workspacesLoading ? (
-                    <Loading className="text-muted-foreground/60 size-5" />
-                  ) : (
-                    <>
-                      <FolderGit2 className="text-muted-foreground/30 size-5" />
-                      <span className="text-muted-foreground/60 text-sm">
-                        {/* Same two strings the sidebar's empty state uses.
-                            "No workspaces yet" over a list that simply has not
-                            arrived is a lie the sidebar already learned not to
-                            tell — hence the loading branch above. */}
-                        {query ? `No workspaces match "${query}"` : 'No workspaces yet'}
-                      </span>
-                    </>
-                  )}
-                </div>
+                workspacesLoading ? (
+                  // "No workspaces yet" over a list that has not arrived is a
+                  // lie the sidebar already learned not to tell.
+                  <div className="flex justify-center py-8">
+                    <Loading className="text-muted-foreground size-4" />
+                  </div>
+                ) : (
+                  <PaletteEmpty>
+                    {query
+                      ? tI18nComplete('textbe27a86a69e5', { value0: query })
+                      : tHardcodedUi.raw('i18nComplete.text97d0b1171f3e')}
+                  </PaletteEmpty>
+                )
               ))}
 
             {page === 'accounts' &&
@@ -3040,17 +3003,19 @@ export function CommandPalette() {
                   })}
                 </CommandGroup>
               ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <UsersSolid weight="fill" className="text-muted-foreground size-5" />
-                  <span className="text-muted-foreground/60 text-sm">
-                    {query ? `No accounts matching "${query}"` : 'No accounts'}
-                  </span>
-                </div>
+                <PaletteEmpty>
+                  {query
+                    ? tI18nComplete('text7433280153b9', { value0: query })
+                    : tHardcodedUi.raw('i18nComplete.text177116ee5177')}
+                </PaletteEmpty>
               ))}
 
             {page === 'density' &&
               (filteredDensityOptions.length > 0 ? (
-                <CommandGroup heading="Conversation Density" forceMount>
+                <CommandGroup
+                  heading={tHardcodedUi.raw('i18nComplete.textd0fffb7fa940')}
+                  forceMount
+                >
                   {filteredDensityOptions.map((option) => {
                     // Minimal is one line, Normal is many — let the glyphs say so.
                     const OptionIcon = option.id === 'minimal' ? Minus : TextAlignLeft;
@@ -3073,12 +3038,7 @@ export function CommandPalette() {
                   })}
                 </CommandGroup>
               ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <TextAlignLeft className="text-muted-foreground/30 size-5" />
-                  <span className="text-muted-foreground/60 text-sm">
-                    {`No density option matching "${query}"`}
-                  </span>
-                </div>
+                <PaletteEmpty>{tI18nComplete('textec0ea7563cde', { value0: query })}</PaletteEmpty>
               ))}
 
             {page === 'sessions' &&
@@ -3088,7 +3048,7 @@ export function CommandPalette() {
                     <CommandItem
                       key={session.session_id}
                       value={sanitizeCmdkValue(
-                        `session ${sessionName(session)} ${session.session_id}`,
+                        `session ${sessionName(session)} ${session.initiator?.label ?? ''} ${session.session_id}`,
                       )}
                       onSelect={() => handleSelectProjectSession(session)}
                     >
@@ -3104,24 +3064,19 @@ export function CommandPalette() {
                     </CommandItem>
                   ))}
                 </CommandGroup>
-              ) : (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
-                    <MessageCircle className="text-muted-foreground size-5" />
-                  </div>
-                  <span className="text-muted-foreground text-sm">
-                    {query ? `No sessions matching "${query}"` : 'No sessions yet'}
-                  </span>
+              ) : projectSessionsPending ? (
+                // No list and no sidebar pages to stand in: loading, not
+                // "No sessions yet". Same frame as the workspaces page.
+                <div className="flex justify-center py-8">
+                  <Loading className="text-muted-foreground size-4" />
                 </div>
+              ) : (
+                <PaletteEmpty>
+                  {query
+                    ? tI18nComplete('text6e51f320662f', { value0: query })
+                    : tHardcodedUi.raw('i18nComplete.textf502267deff4')}
+                </PaletteEmpty>
               ))}
-
-            {page === 'messages' && currentSessionId && (
-              <MessagesPage
-                sessionId={currentSessionId}
-                query={query}
-                onSelect={handleJumpToMessage}
-              />
-            )}
 
             {page === 'changes' && projectId && (
               <ChangeRequestsPage
@@ -3145,11 +3100,11 @@ export function CommandPalette() {
           <div className="flex items-center gap-1">
             <ArrowUp className="size-3" />
             <ArrowDown className="size-3" />
-            <span>navigate</span>
+            <span>{tHardcodedUi.raw('i18nComplete.textd0cda6559bb3')}</span>
           </div>
           <div className="flex items-center gap-1">
             <CornerDownLeft className="size-3" />
-            <span>select</span>
+            <span>{tHardcodedUi.raw('i18nComplete.textb1a36d25d963')}</span>
           </div>
           {page === 'files' && (
             <div className="flex items-center justify-center gap-1">
@@ -3159,11 +3114,20 @@ export function CommandPalette() {
               </span>
             </div>
           )}
-          {totalSearchResults > 0 && (
-            <span className="ml-auto tabular-nums">
-              {totalSearchResults} result{totalSearchResults !== 1 ? 's' : ''}
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-4">
+            {totalSearchResults > 0 && (
+              <span className="tabular-nums">
+                {totalSearchResults} {tHardcodedUi.raw('i18nComplete.textf6a214f7a5fc')}
+                {totalSearchResults !== 1 ? 's' : ''}
+              </span>
+            )}
+            {page !== 'root' && (
+              <div className="flex items-center gap-1">
+                <Kbd>{tI18nComplete.raw('text177b7cb06867')}</Kbd>
+                <span>{tI18nComplete.raw('text3c482346f375')}</span>
+              </div>
+            )}
+          </div>
         </CommandFooter>
       </CommandDialog>
 
@@ -3205,7 +3169,9 @@ export function CommandPalette() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={loggingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={loggingOut}>
+              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
+            </AlertDialogCancel>
             <AlertDialogAction variant="destructive" disabled={loggingOut} onClick={performLogout}>
               {loggingOut ? <Loading className="size-4 shrink-0" /> : null}
               {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}

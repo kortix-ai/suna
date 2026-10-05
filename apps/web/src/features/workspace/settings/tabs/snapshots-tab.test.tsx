@@ -11,6 +11,7 @@ import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-
 import {
   BuildDetails,
   BuildRow,
+  DEFAULT_SNAPSHOTS_COPY,
   SnapshotsTabView,
   describeBuildOutcome,
 } from './snapshots-tab';
@@ -29,8 +30,8 @@ import {
  */
 const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild => ({
   build_id: 'build-1',
-  slug: 'essentia',
-  template_slug: 'essentia',
+  slug: 'sampleco',
+  template_slug: 'sampleco',
   snapshot_name: 'kortix-tpl-abc123',
   content_hash: 'abc123',
   status: 'failed',
@@ -60,7 +61,7 @@ const runtimeStatus = (overrides: Partial<SandboxRuntimeStatus> = {}): SandboxRu
 describe('describeBuildOutcome', () => {
   test('says what each state means in a plain sentence', () => {
     expect(describeBuildOutcome(build({ status: 'ready' }))).toMatchObject({
-      title: 'essentia',
+      title: 'sampleco',
       summary: 'Ready for new sessions',
       stale: null,
     });
@@ -178,6 +179,27 @@ describe('every build row can be opened', () => {
 });
 
 describe('BuildDetails', () => {
+  test('renders injected Serbian facts and locale-aware dates', () => {
+    const copy = {
+      ...DEFAULT_SNAPSHOTS_COPY,
+      locale: 'sr',
+      facts: {
+        ...DEFAULT_SNAPSHOTS_COPY.facts,
+        triggeredBy: 'Покренуто од',
+        started: 'Почетак',
+        took: 'Трајање',
+        imageId: 'ID слике',
+      },
+      sourceLabels: { ...DEFAULT_SNAPSHOTS_COPY.sourceLabels, manual: 'Ручна изградња' },
+    };
+    const html = renderToStaticMarkup(
+      <BuildDetails build={build()} providerMode="automatic" copy={copy} />,
+    );
+    expect(html).toContain('Покренуто од');
+    expect(html).toContain('Ручна изградња');
+    expect(html).toContain('13. јул');
+    expect(html).not.toContain('Manual rebuild');
+  });
   test('never names the resolved provider when the project is on Automatic', () => {
     const html = renderBuildDetails('automatic');
 
@@ -238,7 +260,7 @@ describe('SnapshotsTabView', () => {
         <SnapshotsTabView templateBuilds={[build()]} />
       </TooltipProvider>,
     );
-    expect(out).toContain('essentia');
+    expect(out).toContain('sampleco');
     expect(out).toContain('Build log');
   });
 
@@ -357,7 +379,7 @@ describe('SnapshotsTabView', () => {
 
   test('loading state shows a skeleton, not the build log', () => {
     const out = renderToStaticMarkup(<SnapshotsTabView isLoading templateBuilds={[build()]} />);
-    expect(out).not.toContain('essentia');
+    expect(out).not.toContain('sampleco');
   });
 
   test('error state shows a retry action', () => {

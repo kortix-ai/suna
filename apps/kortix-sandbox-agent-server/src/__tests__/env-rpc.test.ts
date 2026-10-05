@@ -4,9 +4,9 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { Config } from '../config'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { createEnvRpcRouter, environmentRpcSecret } from '../routes/env-rpc'
+import type { Config } from '@/lib/config/config'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { createEnvRpcRouter, environmentRpcSecret } from '@/routes/kortix/env-rpc'
 
 const TOKEN = 'test-session-token'
 const RPC_SECRET = 'test-environment-rpc-secret'
@@ -81,10 +81,10 @@ describe('env-rpc route', () => {
 
   test('file ops round-trip on the real filesystem, failures are Results not 500s', async () => {
     const { call, workspace } = await makeApp()
-    const write = await call('writeFile', { path: 'notes/hello.txt', content: 'hi worker' })
+    const write = await call('writeFile', { path: 'notes/hello.txt', content: 'hi worker\nsecond line' })
     expect(write.body.ok).toBe(true)
     const read = await call('readTextFile', { path: 'notes/hello.txt' })
-    expect(read.body).toEqual({ ok: true, value: 'hi worker' })
+    expect(read.body).toEqual({ ok: true, value: 'hi worker\nsecond line' })
     const lines = await call('readTextLines', { path: 'notes/hello.txt', maxLines: 1 })
     expect(lines.body.value).toEqual(['hi worker'])
     const info = await call('fileInfo', { path: 'notes/hello.txt' })
@@ -92,7 +92,7 @@ describe('env-rpc route', () => {
       name: 'hello.txt',
       path: path.join(workspace, 'notes/hello.txt'),
       kind: 'file',
-      size: 9,
+      size: 21,
     })
     expect(info.body.value.mtimeMs).toBeNumber()
     const list = await call('listDir', { path: 'notes' })
@@ -101,7 +101,7 @@ describe('env-rpc route', () => {
       name: 'hello.txt',
       path: path.join(workspace, 'notes/hello.txt'),
       kind: 'file',
-      size: 9,
+      size: 21,
     })
     expect(list.body.value[0].mtimeMs).toBeNumber()
     const abs = await call('absolutePath', { path: 'notes/hello.txt' })
@@ -120,6 +120,8 @@ describe('env-rpc route', () => {
     expect(rename.body.ok).toBe(true)
     const gone = await call('exists', { path: 'notes/hello.txt' })
     expect(gone.body.value).toBe(false)
+    const landed = await call('exists', { path: 'notes/renamed.txt' })
+    expect(landed.body.value).toBe(true)
   })
 
   test('preserves symlinks, dangling entries, and line semantics from the Pi filesystem contract', async () => {

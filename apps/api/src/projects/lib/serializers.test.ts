@@ -156,7 +156,7 @@ function declarative(env: Array<string[] | 'all' | undefined>): SecretAgentGrant
       enabled: true,
       ...(scopeEnv === undefined
         ? {}
-        : { scope: { env: scopeEnv, connectors: 'all' as const, kortix_cli: 'all' as const } }),
+        : { scope: { env: scopeEnv, connectors: 'all' as const, kortix_permissions: 'all' as const, kortix_cli: 'all' as const } }),
     })),
   };
 }
@@ -297,8 +297,7 @@ describe('secretDeliveryBlockedReason', () => {
  *
  * They used to be computed from a per-project in-guest-shim opt-in flag and
  * `config.isPlatinumEnabled()`. Both are gone: one mechanism serves every
- * provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so the
- * answer is unconditional — no project, no deployment and no operator env can
+ * provider, so the answer is unconditional — no project, no deployment and no operator env can
  * make an egress-enforced secret undeliverable.
  */
 describe('buildSecretView — egress-enforced delivery is unconditionally available', () => {
@@ -404,4 +403,48 @@ describe('buildSecretView — delivery_blocked_reason', () => {
     expect(view.delivery_blocked_reason).toBeNull();
     expect(view.delivery_status).toBe('available');
   });
+});
+
+describe('buildSecretView — consumer and availability characterization', () => {
+  const strategies = ['runtime', 'egress', 'broker', 'denied'] as const;
+  const scopes = ['runtime', 'connector'] as const;
+  const backends = [undefined, 'llm_gateway', 'connector', 'git_proxy', 'kortix_fetch'] as const;
+  const consumers = [undefined, null, 'sandbox', 'network', 'connector', 'llm_gateway', 'git_proxy', 'http_broker'] as const;
+  const legacyBroker = {
+    llm_gateway: 'llm_gateway',
+    connector: 'connector',
+    git_proxy: 'git_proxy',
+    kortix_fetch: 'http_broker',
+  } as const;
+
+  for (const strategy of strategies) {
+    for (const scope of scopes) {
+      for (const backend of backends) {
+        for (const stored of consumers) {
+          test(`${strategy}/${scope}/${backend ?? 'none'}/${stored === undefined ? 'undefined' : stored ?? 'null'}`, () => {
+            const legacy = strategy === 'runtime' ? 'sandbox'
+              : strategy === 'denied' ? null
+                : strategy === 'egress' ? 'network'
+                  : backend ? legacyBroker[backend] : null;
+            const expected = strategy === 'denied' ? null
+              : scope === 'connector' ? 'connector' : stored ?? legacy;
+            const available = (strategy === 'runtime' && expected === 'sandbox') ||
+              (strategy === 'egress' && expected === 'network') ||
+              (strategy === 'broker' && (expected === 'llm_gateway' || expected === 'git_proxy' ||
+                (expected === 'http_broker' && backend === 'kortix_fetch'))) ||
+              expected === 'connector';
+            const view = buildSecretView({
+              identifier: 'BOUNDARY_TEST',
+              name: 'BOUNDARY_TEST',
+              shared: secretRow({ strategy, scope, consumer: stored, egressPolicy: backend ? { backend, rules: [] } : null }),
+              canManageShared: true,
+            });
+            expect([view.consumer, view.delivery_status]).toEqual([
+              expected, available ? 'available' : strategy === 'denied' ? 'disabled' : 'unavailable',
+            ]);
+          });
+        }
+      }
+    }
+  }
 });

@@ -1,3 +1,7 @@
+import { CONNECTORS_TRANSLATION_KEYS } from '@/i18n/connectors-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * /connectors page copy.
  *
@@ -5,7 +9,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. The canonical product noun is CONNECTOR.
+ * Voice rules: the `kortix-brand` skill. The canonical product noun is CONNECTOR.
  *
  * ACCURACY GATE — every claim below traces to shipped code. Do not soften or
  * inflate these without re-reading the source:
@@ -347,3 +351,11 @@ export const close = {
     'Allow, Ask, or Block on every action, with a human in the loop where it matters.',
   ],
 } as const;
+
+export function getLocalizedConnectorsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, connect, broker, scope, policy, audit, close },
+    tI18nComplete,
+    CONNECTORS_TRANSLATION_KEYS,
+  );
+}

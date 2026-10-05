@@ -1,13 +1,19 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 import { useProjectCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { ProjectSetupChecklist } from './setup-checklist';
-import { PROJECT_SETUP_TILES, PROJECT_SETUP_TILE_ACTIONS, setupTileHref } from './setup-tiles';
+import {
+  PROJECT_SETUP_TILES,
+  PROJECT_SETUP_TILE_ACTIONS,
+  setupTileHref,
+  setupTileTo,
+} from './setup-tiles';
 
 /**
  * The IAM gate in front of the setup checklist. It answers one question —
@@ -26,6 +32,7 @@ export function ProjectHomeSections({
   fallback?: ReactNode;
   className?: string;
 }) {
+  const t = useTranslations('projectHome');
   // One batched probe for every leaf the tiles name — not one hook per tile,
   // which would fan out six `/effective` GETs on a page that already fires
   // several.
@@ -71,8 +78,9 @@ export function ProjectHomeSections({
       className={className}
       steps={tiles.map((tile) => ({
         key: tile.key,
-        title: tile.title,
+        title: t(`setup.steps.${tile.key}`),
         href: setupTileHref(tile, projectId, accountId),
+        to: setupTileTo(tile, projectId, accountId),
       }))}
     />
   );

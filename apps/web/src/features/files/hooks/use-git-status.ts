@@ -1,12 +1,12 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useRuntimeStore, gitStatusKeys } from '@kortix/sdk/react';
-import { getFileStatus } from '../api/runtime-files';
 import type { GitFileStatus } from '@/features/file-browser/types';
+import { gitStatusKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { getFileStatus } from '../api/runtime-files';
 import { useCurrentProject, useServerHealth } from './use-server-health';
 
-// The SDK's key family — the one `file.edited` invalidates (see use-file-list.ts).
+// Keyed by the SDK factory, which the live event stream invalidates.
 export { gitStatusKeys };
 
 /**
@@ -14,7 +14,7 @@ export { gitStatusKeys };
  * Returns an array of files with uncommitted changes (added, modified, deleted).
  */
 export function useGitStatus(options?: { enabled?: boolean }) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const { data: health } = useServerHealth();
   const { data: project } = useCurrentProject({
     enabled: options?.enabled !== false,

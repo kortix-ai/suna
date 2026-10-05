@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The controls the create flow and the detail panel both use, so the two can
  * never drift. Everything here is presentational — the caller decides whether
@@ -152,12 +153,13 @@ export function CopyBlock({
   multiline?: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
     const ok = await copyToClipboard(value);
     if (!ok) {
-      errorToast('Copy failed — select the text and copy it manually');
+      errorToast(tI18nComplete.raw('text9eb5ba7f83b0'));
       return;
     }
     successToast(copiedLabel);
@@ -254,6 +256,7 @@ export function RunLocationFields({
   sessionKeyAction?: ReactNode;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-3">
       <Select
@@ -279,7 +282,7 @@ export function RunLocationFields({
 
       {mode === 'pinned' && (
         <div className="space-y-1.5">
-          <Label className="text-xs">Session</Label>
+          <Label className="text-xs">{tI18nComplete.raw('text6959b4159575')}</Label>
           <Select
             value={pinnedSessionId ?? ''}
             onValueChange={onPinnedSessionChange}
@@ -287,7 +290,11 @@ export function RunLocationFields({
           >
             <SelectTrigger className="w-full cursor-pointer text-sm">
               <SelectValue
-                placeholder={sessionsLoading ? 'Loading sessions…' : 'Choose a session'}
+                placeholder={
+                  sessionsLoading
+                    ? tI18nComplete.raw('textc4141f554a0c')
+                    : tI18nComplete.raw('textb40f3be54b3e')
+                }
               />
             </SelectTrigger>
             <SelectContent>
@@ -298,7 +305,7 @@ export function RunLocationFields({
               ))}
               {!sessionsLoading && sessions.length === 0 && (
                 <div className="text-muted-foreground px-2 py-1.5 text-xs">
-                  This project has no sessions yet.
+                  {tI18nComplete.raw('texte6bfacea252e')}
                 </div>
               )}
             </SelectContent>
@@ -308,21 +315,19 @@ export function RunLocationFields({
 
       {mode === 'keyed' && (
         <div className="space-y-1.5">
-          <Label className="text-xs">Group runs by</Label>
+          <Label className="text-xs">{tI18nComplete.raw('text7dc864ffbdfe')}</Label>
           <div className="flex gap-2">
             <Input
               value={sessionKey}
               onChange={(e) => onSessionKeyChange(e.target.value)}
-              placeholder="{{ body.data.chat_id }}"
+              placeholder={tI18nComplete.raw('text56c6c5117e48')}
               className="font-mono text-sm"
               disabled={disabled}
             />
             {sessionKeyAction}
           </div>
           <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-            Point this at whatever identifies a conversation in the incoming message — a chat id, a
-            customer id, an email address. Each distinct value gets its own session. Leave it
-            unmatched and that run starts fresh.
+            {tI18nComplete.raw('textd9bed5da95cc')}
           </p>
         </div>
       )}
@@ -379,15 +384,14 @@ export function ConditionsEditor({
   onChange: (next: ConditionRow[]) => void;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const patch = (index: number, next: Partial<ConditionRow>) =>
     onChange(rows.map((row, i) => (i === index ? { ...row, ...next } : row)));
 
   return (
     <div className="space-y-3">
       {rows.length === 0 ? (
-        <p className="text-muted-foreground text-xs">
-          No conditions yet — every request starts a run.
-        </p>
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text04dba7c76354')}</p>
       ) : (
         <div className="space-y-2">
           {rows.map((row, index) => (
@@ -398,17 +402,19 @@ export function ConditionsEditor({
               <Input
                 value={row.path}
                 onChange={(e) => patch(index, { path: e.target.value })}
-                placeholder="body.data.direction"
-                aria-label={`Condition ${index + 1} — field`}
+                placeholder={tI18nComplete.raw('textf26d53b6b546')}
+                aria-label={tI18nComplete('text74eb6d987ed6', { value0: index + 1 })}
                 className="font-mono text-xs"
                 disabled={disabled}
               />
-              <span className="text-muted-foreground shrink-0 text-xs">is</span>
+              <span className="text-muted-foreground shrink-0 text-xs">
+                {tI18nComplete.raw('textfa51fd49abf6')}
+              </span>
               <Input
                 value={row.value}
                 onChange={(e) => patch(index, { value: e.target.value })}
-                placeholder="inbound"
-                aria-label={`Condition ${index + 1} — value`}
+                placeholder={tI18nComplete.raw('textd62c9039203e')}
+                aria-label={tI18nComplete('text54dcdc410e46', { value0: index + 1 })}
                 className="font-mono text-xs"
                 disabled={disabled}
               />
@@ -416,7 +422,7 @@ export function ConditionsEditor({
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label={`Remove condition ${index + 1}`}
+                aria-label={tI18nComplete('textee6d71904b1b', { value0: index + 1 })}
                 disabled={disabled}
                 onClick={() => onChange(rows.filter((_, i) => i !== index))}
               >
@@ -435,14 +441,13 @@ export function ConditionsEditor({
         onClick={() => onChange([...rows, { path: '', value: '' }])}
       >
         <PlusIcon className="size-3.5 shrink-0" />
-        Add condition
+        {tI18nComplete.raw('text60a0d83510ea')}
       </Button>
       <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-        Every condition has to match, or the request is accepted and recorded but starts no run. The
-        usual reason to add one is to stop a reply loop: set{' '}
-        <code className="font-mono">body.data.direction</code> to{' '}
-        <code className="font-mono">inbound</code> so the agent&apos;s own outgoing messages
-        can&apos;t set it off again.
+        {tI18nComplete.raw('text0ba9223946de')}{' '}
+        <code className="font-mono">body.data.direction</code>{' '}
+        {tI18nComplete.raw('text663ea1bfffe5')} <code className="font-mono">inbound</code>{' '}
+        {tI18nComplete.raw('text9df96b5f7d02')}
       </p>
     </div>
   );
@@ -476,9 +481,10 @@ export function TimezoneField({
   onChange: (next: string) => void;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs">Timezone</Label>
+      <Label className="text-xs">{tI18nComplete.raw('text4ceca1d52ced')}</Label>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger className="w-full cursor-pointer text-sm">
           <SelectValue />
@@ -491,9 +497,7 @@ export function TimezoneField({
           ))}
         </SelectContent>
       </Select>
-      <p className="text-muted-foreground text-xs">
-        Times above are read in this timezone. Daylight saving is handled for you.
-      </p>
+      <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textbd2b129daf78')}</p>
     </div>
   );
 }

@@ -1,6 +1,6 @@
+import { PROJECT_GLYPH_NAMES } from '@kortix/shared';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PROJECT_GLYPH_NAMES } from '@kortix/shared';
 import { GLYPH_COMPONENTS, GLYPH_SEARCH, glyphComponent } from './glyph-registry';
 
 describe('the glyph registry', () => {

@@ -1,5 +1,6 @@
 'use client';
 
+import { filePhase, fileVerb } from '@/features/session/tool/shared/file-verb';
 import {
   BasicTool,
   DiagnosticsDisplay,
@@ -7,7 +8,6 @@ import {
   InlineDiffView,
   isErrorOutput,
   partInput,
-  partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
@@ -16,27 +16,31 @@ import {
   ToolRunningContext,
   useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
-import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
+import { RawPatchDiffView } from '@/features/session/tool/shared/patch-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
+import { inputPath, toToolView } from '@kortix/sdk';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { diffLines } from 'diff';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const running = useContext(ToolRunningContext);
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
   const status = partStatus(part);
-  const filediff = metadata.filediff as Record<string, unknown> | undefined;
+  // The harness-neutral file: OpenCode's before/after (or the replaced block),
+  // or pi's unified patch.
+  const file = useMemo(() => toToolView(part).files?.[0], [part]);
   const filePath =
-    (input.filePath as string) ||
-    (streamingInput.filePath as string) ||
+    file?.path ||
+    inputPath(streamingInput) ||
     (streamingInput.target_filepath as string) ||
     undefined;
   const { filename, ext } = useMemo(() => {
@@ -52,15 +56,10 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
   const before =
-    (filediff?.before as string) ??
-    (input.oldString as string) ??
-    (streamingInput.oldString as string) ??
-    '';
+    file?.before ?? (input.oldString as string) ?? (streamingInput.oldString as string) ?? '';
   const after =
-    (filediff?.after as string) ??
-    (input.newString as string) ??
-    (streamingInput.newString as string) ??
-    '';
+    file?.after ?? (input.newString as string) ?? (streamingInput.newString as string) ?? '';
+  const patch = file?.patch ?? '';
   const codeEdit = (input.code_edit as string) || (streamingInput.code_edit as string) || '';
   const morphInstructions =
     (input.instructions as string) || (streamingInput.instructions as string) || '';
@@ -88,7 +87,13 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   // 10k-line files) — no stat beats a stalled frame; the expanded DiffView
   // still shows everything.
   const diffCounts = useMemo(() => {
-    if (status !== 'completed' || !hasDiff) return undefined;
+    if (status !== 'completed') return undefined;
+    if (!hasDiff) {
+      // pi: the SDK counted the unified patch.
+      return patch && file?.additions !== undefined
+        ? { additions: file.additions, deletions: file.deletions ?? 0 }
+        : undefined;
+    }
     const changes = diffLines(before, after, { maxEditLength: 1000 });
     if (!changes) return undefined;
     let additions = 0;
@@ -98,7 +103,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       else if (change.removed) deletions += change.count;
     }
     return { additions, deletions };
-  }, [status, hasDiff, before, after]);
+  }, [status, hasDiff, before, after, patch, file]);
   // Selector, not the whole store: an unselected `useFilePreviewStore()` makes
   // every edit row a subscriber of `isOpen` / `filePath` / `lineNumber`, so
   // opening ONE preview re-rendered every edit row in the session.
@@ -129,6 +134,10 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         <ToolResultCard>
           <InlineDiffView oldValue={before} newValue={after} filename={filename} />
         </ToolResultCard>
+      ) : patch ? (
+        <ToolResultCard>
+          <RawPatchDiffView patch={patch} filename={filename} />
+        </ToolResultCard>
       ) : codeEdit ? (
         <>
           {/* Morph's instructions describe the edit the card below carries, so
@@ -158,7 +167,9 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         // that was never going to arrive. `write-tool.tsx` dropped that shimmer;
         // `edit` kept it, so one situation had two answers.
         <ToolResultCard bodyClassName="px-2 py-1.5">
-          <span className="text-muted-foreground/60 text-xs">No content received</span>
+          <span className="text-muted-foreground/60 text-xs">
+            {tI18nComplete.raw('text93168435f3ae')}
+          </span>
         </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />

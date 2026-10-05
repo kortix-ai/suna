@@ -7,29 +7,18 @@ import {
 } from './parse-upstream-error';
 
 describe('extractUpstreamErrorDetail', () => {
-  test('OpenAI-compatible {error:{message,code}} → real message + code', () => {
-    expect(
-      extractUpstreamErrorDetail({
-        error: { message: 'context length exceeded from messages', code: 'context_length_exceeded' },
-      }),
-    ).toEqual({ message: 'context length exceeded from messages', code: 'context_length_exceeded' });
+  test.each([
+    [{ message: 'context length exceeded from messages', code: 'context_length_exceeded' }],
+    [{ message: 'nope', code: 400 }],
+  ])('OpenAI-compatible {error:{message,code}} → real message + string or numeric code', (error) => {
+    expect(extractUpstreamErrorDetail({ error })).toEqual(error);
   });
 
-  test('OpenAI-compatible with type but no code → code falls back to type', () => {
-    expect(
-      extractUpstreamErrorDetail({
-        error: { message: 'Overloaded', type: 'overloaded_error' },
-      }),
-    ).toEqual({ message: 'Overloaded', code: 'overloaded_error' });
-  });
-
-  test('Anthropic shape {type:"error",error:{type,message}} → real message + type as code', () => {
-    expect(
-      extractUpstreamErrorDetail({
-        type: 'error',
-        error: { type: 'overloaded_error', message: 'Overloaded' },
-      }),
-    ).toEqual({ message: 'Overloaded', code: 'overloaded_error' });
+  test.each([
+    ['OpenAI-compatible', { error: { message: 'Overloaded', type: 'overloaded_error' } }],
+    ['Anthropic', { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }],
+  ])('%s error with a type but no code → code falls back to type', (_shape, body) => {
+    expect(extractUpstreamErrorDetail(body)).toEqual({ message: 'Overloaded', code: 'overloaded_error' });
   });
 
   test('top-level {message, code} → real message + code', () => {
@@ -37,12 +26,6 @@ describe('extractUpstreamErrorDetail', () => {
       message: 'rate limited',
       code: 429,
     });
-  });
-
-  test('numeric code is preserved', () => {
-    expect(
-      extractUpstreamErrorDetail({ error: { message: 'nope', code: 400 } }),
-    ).toEqual({ message: 'nope', code: 400 });
   });
 
   test('normalizes a numeric OpenRouter context overflow code from its message', () => {

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let existingEmails = new Set<string>();
 let signupsOpen = true;
 let allowlisted = new Set<string>();
-let ssoProvidersByDomain = new Map<string, { enforceSso: boolean }>();
+let ssoProvidersByDomain = new Map<string, { enforceSso: boolean; domainVerifiedAt: Date | null }>();
 
 mock.module('../config', () => ({
   config: {
@@ -12,21 +12,15 @@ mock.module('../config', () => ({
   },
 }));
 
-mock.module('postgres', () => {
-  const factory = () => {
-    const sql = (_strings: TemplateStringsArray, ...values: unknown[]) => {
-      const email = String(values[0] ?? '').toLowerCase();
-      return Promise.resolve(existingEmails.has(email) ? [{ exists: 1 }] : []);
-    };
-    sql.end = async () => {};
-    return sql;
-  };
-  return { default: factory };
-});
-
+// userExistsInAuth reads auth.users through the shared pool: answer from the
+// email value interpolated into the query.
 mock.module('../shared/db', () => ({
   db: {
     insert: () => ({ values: async () => {} }),
+    execute: async (query: { queryChunks?: unknown[] }) => {
+      const values = (query.queryChunks ?? []).filter((chunk): chunk is string => typeof chunk === 'string');
+      return values.some((value) => existingEmails.has(value.toLowerCase())) ? [{ found: 1 }] : [];
+    },
   },
 }));
 
@@ -37,9 +31,13 @@ mock.module('../shared/access-control-cache', () => ({
   stopAccessControlCache: () => {},
 }));
 
+// The same rule as the real `ssoEnforcedForEmail`: enforcement needs a
+// verified domain. The DB-backed rule is exercised end to end by flow SSO-1.
 mock.module('../repositories/sso', () => ({
-  getSsoProviderByDomain: async (domain: string) =>
-    ssoProvidersByDomain.get(domain.toLowerCase()) ?? null,
+  ssoEnforcedForEmail: async (email: string) => {
+    const provider = ssoProvidersByDomain.get(email.trim().toLowerCase().split('@')[1] ?? '');
+    return provider?.enforceSso && provider.domainVerifiedAt ? provider : null;
+  },
 }));
 
 const { accessControlApp } = await import('../access-control/index');
@@ -89,15 +87,22 @@ describe('POST /access/check-email unified auth-flow modes', () => {
     expect(body).toEqual({ allowed: true, mode: 'signup' });
   });
 
-  test('enforced SSO domain wins over everything, including existing accounts', async () => {
-    ssoProvidersByDomain.set('acme.com', { enforceSso: true });
+  test('enforced SSO on a verified domain wins over everything, including existing accounts', async () => {
+    ssoProvidersByDomain.set('acme.com', { enforceSso: true, domainVerifiedAt: new Date() });
     existingEmails.add('known@acme.com');
     const { body } = await checkEmail('known@acme.com');
     expect(body).toEqual({ allowed: true, mode: 'sso' });
   });
 
+  test('enforced SSO on an unverified domain falls through to the normal modes', async () => {
+    ssoProvidersByDomain.set('acme.com', { enforceSso: true, domainVerifiedAt: null });
+    existingEmails.add('known@acme.com');
+    const { body } = await checkEmail('known@acme.com');
+    expect(body).toEqual({ allowed: true, mode: 'signin' });
+  });
+
   test('non-enforced SSO domain falls through to the normal modes', async () => {
-    ssoProvidersByDomain.set('acme.com', { enforceSso: false });
+    ssoProvidersByDomain.set('acme.com', { enforceSso: false, domainVerifiedAt: new Date() });
     existingEmails.add('known@acme.com');
     const { body } = await checkEmail('known@acme.com');
     expect(body).toEqual({ allowed: true, mode: 'signin' });
@@ -124,5 +129,31 @@ describe('POST /access/check-email unified auth-flow modes', () => {
       message: 'Validation failed',
       status: 400,
     });
+  });
+});
+
+describe('POST /access/request-access input validation', () => {
+  test.each([
+    ['application/xml', '<root><email>x@example.com</email></root>'],
+    ['application/x-www-form-urlencoded', 'email=x@example.com'],
+    ['text/plain', 'not-json'],
+  ])('unsupported %s input is rejected with 400, never a 500', async (contentType, body) => {
+    const response = await accessControlApp.request('/request-access', {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: true, message: 'Validation failed', status: 400 });
+  });
+
+  test('a valid request is stored and answered 200', async () => {
+    const response = await accessControlApp.request('/request-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'someone@example.com' }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, message: 'Access request submitted' });
   });
 });

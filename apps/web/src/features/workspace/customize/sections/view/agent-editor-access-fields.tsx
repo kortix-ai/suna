@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The last two open sections of the agent editor: what the agent may reach
  * (Access) and where it runs (Workspace).
@@ -12,13 +13,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
   SandboxTemplateMenu,
@@ -29,13 +24,9 @@ import type { AgentConfigBlock, AgentGrantSetV2, SandboxTemplate } from '@kortix
 import { useKortixRouteProjectId } from '@kortix/sdk/react';
 import { ArrowRightIcon, CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { WORKSPACE_MODES, WORKSPACE_MODE_HELP, WORKSPACE_MODE_LABEL } from './agent-editor-catalog';
 import { EditorSection, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
-import { type GrantOption, GrantSetField, KortixCliField, grantSummary } from './grant-mode-field';
-
-/** Every inherit-capable Select shares one sentinel — Radix forbids `""`. */
-const INHERIT = '__inherit__';
+import { type GrantOption, GrantSetField, KortixPermissionsField, grantSummary } from './grant-mode-field';
 
 type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
 
@@ -53,18 +44,17 @@ export function RequiredConnectorToggle({
   active: boolean;
   onToggle: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <Hint
-      label={
-        active
-          ? 'Required before session start. The connector authorization strategy selects the valid connection.'
-          : 'Optional at session start. Click to require this connector.'
-      }
+      label={active ? tI18nComplete.raw('text49c8975f345b') : tI18nComplete.raw('texta54220c82b33')}
     >
       <button
         type="button"
         aria-pressed={active}
-        aria-label={active ? 'Required before session start' : 'Optional at session start'}
+        aria-label={
+          active ? tI18nComplete.raw('textd16c94c19673') : tI18nComplete.raw('text63336c8a8e83')
+        }
         onClick={onToggle}
         className={cn(
           'shrink-0 rounded px-1.5 py-1 text-xs transition-[color,background-color,transform] active:scale-[0.96]',
@@ -73,7 +63,7 @@ export function RequiredConnectorToggle({
             : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50',
         )}
       >
-        Required
+        {tI18nComplete.raw('text4850b174b713')}
       </button>
     </Hint>
   );
@@ -81,7 +71,8 @@ export function RequiredConnectorToggle({
 
 /** The summary chip at a grant card's right edge — "All", "3 picked", "None". */
 export function GrantChip({ value }: { value: AgentGrantSetV2 | undefined }) {
-  const summary = grantSummary(value);
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const summary = grantSummary(value, tI18nComplete);
   return (
     <Badge
       variant={summary.tone === 'muted' ? 'muted' : 'outline'}
@@ -103,19 +94,24 @@ export function GrantChip({ value }: { value: AgentGrantSetV2 | undefined }) {
 export function GrantHeaderTrailing({
   value,
   tab,
+  href,
   label,
 }: {
   value: AgentGrantSetV2 | undefined;
-  tab: 'skills' | 'connectors' | 'secrets';
+  tab?: 'skills' | 'connectors' | 'secrets';
+  /** A project page that is NOT a Customize tab — Apps lives at
+   *  `/projects/<id>/apps`, so it cannot be named by `tab`. */
+  href?: (projectId: string) => string;
   label: string;
 }) {
   const projectId = useKortixRouteProjectId();
+  const target = projectId ? (href ? href(projectId) : tab ? capabilityTabHref(projectId, tab) : null) : null;
   return (
     <div className="flex items-center gap-2">
       <GrantChip value={value} />
-      {projectId ? (
+      {target ? (
         <Button asChild variant="ghost" size="sm" className="gap-1 px-2">
-          <Link href={capabilityTabHref(projectId, tab)} prefetch>
+          <Link href={target} prefetch>
             {label}
             <ArrowRightIcon className="size-3.5 shrink-0" />
           </Link>
@@ -138,19 +134,26 @@ interface GrantSectionProps {
  */
 
 export function SkillsSection({ draft, set, options }: GrantSectionProps) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <EditorSection
-      title="Skills"
-      description="Instructions and scripts this agent can load into a session."
-      trailing={<GrantHeaderTrailing value={draft.skills} tab="skills" label="All skills" />}
+      title={tI18nComplete.raw('text66d0f523a379')}
+      description={tI18nComplete.raw('textb27e54100c96')}
+      trailing={
+        <GrantHeaderTrailing
+          value={draft.skills}
+          tab="skills"
+          label={tI18nComplete.raw('text78abcbbfb830')}
+        />
+      }
     >
       <div className="py-4">
         <GrantSetField
           value={draft.skills}
           onChange={(v: AgentGrantSetV2) => set('skills', v)}
           options={options}
-          allLabel="Every skill in this project, including ones added later."
-          emptyLabel="No skills declared in this project yet."
+          allLabel={tI18nComplete.raw('textf059c2dbe260')}
+          emptyLabel={tI18nComplete.raw('text66e36043ff7c')}
         />
       </div>
     </EditorSection>
@@ -158,12 +161,17 @@ export function SkillsSection({ draft, set, options }: GrantSectionProps) {
 }
 
 export function ConnectorsSection({ draft, set, options }: GrantSectionProps) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <EditorSection
-      title="Connectors"
-      description="Outside services this agent can call. Mark one Required and a session will not start until it resolves."
+      title={tI18nComplete.raw('textc3d2e79ebdd0')}
+      description={tI18nComplete.raw('text00f5aae9f9d3')}
       trailing={
-        <GrantHeaderTrailing value={draft.connectors} tab="connectors" label="All connectors" />
+        <GrantHeaderTrailing
+          value={draft.connectors}
+          tab="connectors"
+          label={tI18nComplete.raw('textd83250185d41')}
+        />
       }
     >
       <div className="space-y-2 py-4">
@@ -177,8 +185,8 @@ export function ConnectorsSection({ draft, set, options }: GrantSectionProps) {
             }
           }}
           options={options}
-          allLabel="Every connector in this project, including ones added later."
-          emptyLabel="No connectors in this project yet."
+          allLabel={tI18nComplete.raw('text35e54cea7f41')}
+          emptyLabel={tI18nComplete.raw('text389fb5217392')}
           rowAccessory={(id, isSelected) =>
             isSelected ? (
               <RequiredConnectorToggle
@@ -196,9 +204,9 @@ export function ConnectorsSection({ draft, set, options }: GrantSectionProps) {
         />
         {draft.connectors === 'all' && draft.connectors_required?.length ? (
           <p className="text-muted-foreground text-xs">
-            Required before session start:{' '}
-            <span className="font-mono">{draft.connectors_required.join(', ')}</span>. Switch to
-            Pick to change it.
+            {tI18nComplete.raw('textf39fe0fefce2')}{' '}
+            <span className="font-mono">{draft.connectors_required.join(', ')}</span>
+            {tI18nComplete.raw('text954401fb96d1')}
           </p>
         ) : null}
       </div>
@@ -207,39 +215,52 @@ export function ConnectorsSection({ draft, set, options }: GrantSectionProps) {
 }
 
 export function SecretsSection({ draft, set, options }: GrantSectionProps) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <EditorSection
-      title="Secrets"
-      description="Project secrets handed to this agent's sessions as environment variables."
-      trailing={<GrantHeaderTrailing value={draft.secrets} tab="secrets" label="All secrets" />}
+      title={tI18nComplete.raw('textd8707d411d99')}
+      description={tI18nComplete.raw('text7f619d9e30a8')}
+      trailing={
+        <GrantHeaderTrailing
+          value={draft.secrets}
+          tab="secrets"
+          label={tI18nComplete.raw('text0b38e3daeb93')}
+        />
+      }
     >
       <div className="py-4">
         <GrantSetField
           value={draft.secrets}
           onChange={(v: AgentGrantSetV2) => set('secrets', v)}
           options={options}
-          allLabel="Every secret in this project, including ones added later."
-          emptyLabel="No secrets in this project yet."
+          allLabel={tI18nComplete.raw('text86fdc0c950d5')}
+          emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
         />
       </div>
     </EditorSection>
   );
 }
 
-/** Was "Kortix CLI" — the name of the tool, not of what it grants. What the
- *  user is choosing is which project operations the agent may perform; the
- *  CLI is only how it performs them. */
+/** Kortix permissions (`kortix_permissions` in kortix.yaml): which project
+ *  operations the agent may perform, through any surface. A block read from a
+ *  pre-rename server may still carry `kortix_cli`; an edit writes the canonical
+ *  key and drops the alias so the two can never disagree. */
 export function ProjectActionsSection({ draft, set }: Omit<GrantSectionProps, 'options'>) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const permissions = draft.kortix_permissions ?? draft.kortix_cli;
   return (
     <EditorSection
-      title="Project actions"
-      description="What this agent may do to the project itself — sessions, triggers, secrets, members — through the Kortix CLI inside a session."
-      trailing={<GrantChip value={draft.kortix_cli} />}
+      title={tI18nComplete.raw('text8f12a6e05e6d')}
+      description={tI18nComplete.raw('text15365eb45e29')}
+      trailing={<GrantChip value={permissions} />}
     >
       <div className="py-4">
-        <KortixCliField
-          value={draft.kortix_cli}
-          onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)}
+        <KortixPermissionsField
+          value={permissions}
+          onChange={(v: AgentGrantSetV2) => {
+            set('kortix_cli', undefined);
+            set('kortix_permissions', v);
+          }}
         />
       </div>
     </EditorSection>
@@ -258,6 +279,8 @@ export function WorkspaceSection({
   /** The project's default template slug — what an unset agent resolves to. */
   defaultSandboxSlug: string | null;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tRepository = useI18nTranslations('repositoryAccess');
   const pinned = draft.sandbox ? sandboxTemplates.find((t) => t.slug === draft.sandbox) : undefined;
   const projectDefault = defaultSandboxSlug
     ? sandboxTemplates.find((t) => t.slug === defaultSandboxSlug)
@@ -268,17 +291,20 @@ export function WorkspaceSection({
   const stalePin = draft.sandbox && !pinned ? draft.sandbox : null;
   const PinnedIcon = pinned ? describeSandboxTemplate(pinned).Icon : CubeIcon;
   return (
-    <EditorSection title="Workspace" description="Where this agent runs, and what it can change.">
+    <EditorSection
+      title={tI18nComplete.raw('text87bb59ba2f92')}
+      description={tI18nComplete.raw('text76a5e5a39b4a')}
+    >
       <SettingRow
-        label="Environment"
+        label={tI18nComplete.raw('text9e471951a1b4')}
         help={
           draft.sandbox
             ? stalePin
-              ? 'Pinned to a template this project no longer declares.'
-              : 'Pinned for this agent. New sessions and automations use it.'
+              ? tI18nComplete.raw('textb1a5c13d215e')
+              : tI18nComplete.raw('text0703d9121fd7')
             : projectDefault
-              ? `Follows the project default — currently ${projectDefault.name}.`
-              : 'Follows the project default.'
+              ? tI18nComplete('textfccaa4c0a0be', { value0: projectDefault.name })
+              : tI18nComplete.raw('text64f405e80a8d')
         }
       >
         <SandboxTemplateMenu
@@ -286,8 +312,8 @@ export function WorkspaceSection({
           selectedSlug={draft.sandbox ?? null}
           resolvedSlug={defaultSandboxSlug}
           inherit={{
-            label: 'Project default',
-            description: 'Whatever the project default is, now and after it changes.',
+            label: tI18nComplete.raw('texte8cb80e5c5cb'),
+            description: tI18nComplete.raw('textb23625948eee'),
           }}
           onSelect={(slug) => set('sandbox', slug ?? undefined)}
           align="end"
@@ -296,13 +322,13 @@ export function WorkspaceSection({
               type="button"
               variant="outline"
               size="sm"
-              aria-label="Environment"
+              aria-label={tI18nComplete.raw('text9e471951a1b4')}
               className="w-full justify-between gap-2 font-normal"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <PinnedIcon className="text-muted-foreground size-3.5 shrink-0" />
                 <span className={cn('truncate', stalePin && 'text-kortix-orange font-mono')}>
-                  {pinned ? pinned.name : (stalePin ?? 'Project default')}
+                  {pinned ? pinned.name : (stalePin ?? tI18nComplete.raw('texte8cb80e5c5cb'))}
                 </span>
               </span>
               <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" />
@@ -312,29 +338,14 @@ export function WorkspaceSection({
       </SettingRow>
 
       <SettingRow
-        label="File access"
-        help={
-          draft.workspace ? WORKSPACE_MODE_HELP[draft.workspace] : 'Follows the project default.'
-        }
+        label={tRepository('label')}
+        help={tRepository(draft.repository_access === false ? 'disabled' : 'enabled')}
       >
-        <Select
-          value={draft.workspace ?? INHERIT}
-          onValueChange={(value) =>
-            set('workspace', value === INHERIT ? undefined : (value as typeof draft.workspace))
-          }
-        >
-          <SelectTrigger aria-label="File access" className="w-full" size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={INHERIT}>Project default</SelectItem>
-            {WORKSPACE_MODES.map((mode) => (
-              <SelectItem key={mode} value={mode}>
-                {WORKSPACE_MODE_LABEL[mode]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Switch
+          aria-label={tRepository('label')}
+          checked={draft.repository_access ?? true}
+          onCheckedChange={(enabled) => set('repository_access', enabled)}
+        />
       </SettingRow>
     </EditorSection>
   );

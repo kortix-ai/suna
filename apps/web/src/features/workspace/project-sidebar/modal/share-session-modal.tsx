@@ -1,8 +1,7 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
+import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -22,16 +21,16 @@ import {
   type SharingCopy,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
-import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
-import {
-  GlobeIcon as Globe,
-  LockIcon as LockSolid,
-  UsersIcon as UsersSolid,
-} from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
+import { getSessionOversight, setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
+import { sessionOversightQueryKey } from '@/components/iam/session-oversight-card';
+import { ShieldCheckIcon } from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { SessionPublicLinkSection } from './session-public-link-section';
 import { sessionAccessSummary, sessionAccessView } from './share-session-access';
+import { refreshAfterShare } from './share-session-cache';
 
 /**
  * The three options, worded from the EDITOR's seat.
@@ -49,52 +48,14 @@ const SESSION_SHARING_COPY: SharingCopy = {
   members: { label: 'Specific people', desc: 'Only the members and groups you choose.' },
 };
 
-function delegateCopy(ownerLabel: string): SharingCopy {
+function delegateCopy(ownerLabel: string, tI18nComplete: UiTranslator): SharingCopy {
   return {
     ...SESSION_SHARING_COPY,
     private: {
-      label: `Only ${ownerLabel}`,
-      desc: 'Unavailable — saving this would remove your own access.',
+      label: tI18nComplete('text0df9df285277', { value0: ownerLabel }),
+      desc: tI18nComplete.raw('text38b08d83da73'),
     },
   };
-}
-
-/** The visibility badge is a status indicator (team/shared/private) — the
- *  shared and private states render their solid glyph, matching the app's
- *  status/solid-surface convention. */
-function UsersSolidFilled({ className }: { className?: string }) {
-  return <UsersSolid className={className} weight="fill" />;
-}
-function LockSolidFilled({ className }: { className?: string }) {
-  return <LockSolid className={className} weight="fill" />;
-}
-
-export function sessionVisibilityMeta(session: Pick<ProjectSession, 'visibility'>) {
-  switch (session.visibility) {
-    case 'project':
-      return { icon: Globe, label: 'Team', tone: 'shared' as const };
-    case 'restricted':
-      return { icon: UsersSolidFilled, label: 'Shared', tone: 'shared' as const };
-    default:
-      return { icon: LockSolidFilled, label: 'Private', tone: 'private' as const };
-  }
-}
-
-export function SessionVisibilityBadge({ session }: { session: ProjectSession }) {
-  const meta = sessionVisibilityMeta(session);
-  const Icon = meta.icon;
-
-  if (session.visibility === 'private' && session.is_owner !== false) return null;
-  const sharedBy =
-    !session.is_owner && session.owner_email ? `Shared by ${session.owner_email}` : null;
-  return (
-    <Hint side="bottom" label={sharedBy ?? `${meta.label} · who can access this session`}>
-      <Badge variant="kortix" size="sm" className="gap-2">
-        <Icon className="size-3" />
-        {meta.label}
-      </Badge>
-    </Hint>
-  );
 }
 
 export function ShareSessionModal({
@@ -110,7 +71,9 @@ export function ShareSessionModal({
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tOversight = useTranslations('sessionOversight');
   const [sharing, setSharing] = useState<SharingSelection>({
     mode: 'private',
     memberIds: [],
@@ -122,6 +85,21 @@ export function ShareSessionModal({
     setSharing(intentToSelection(session.sharing ?? { mode: 'private', ownerId: '' }));
   }, [open, session]);
 
+  // Disclose the account's session-oversight policy: while it is on, account
+  // owners and admins can open this session whatever is picked below. Read only
+  // while the dialog is open (a user action), and silently absent on any error
+  // — the IAM read never toasts (`showErrors: false`).
+  const accountId = session?.account_id ?? null;
+  const oversightQuery = useQuery({
+    queryKey: sessionOversightQueryKey(accountId ?? ''),
+    queryFn: () => getSessionOversight(accountId!),
+    enabled: open && !!accountId,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const oversightOn = oversightQuery.data?.enabled === true;
+
+  const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: () => {
       if (!isSharingComplete(sharing)) {
@@ -130,11 +108,14 @@ export function ShareSessionModal({
       return setProjectSessionSharing(projectId, session!.session_id, selectionToIntent(sharing));
     },
     onSuccess: () => {
-      successToast('Session access updated');
+      successToast(tI18nHardcoded.raw('i18nComplete.textd8b630796604'));
+      // A share can switch the session's provider keys (share-session-cache.ts).
+      void refreshAfterShare(queryClient, projectId, session!.session_id);
       onSaved?.();
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not update session access'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text68d66e06fd0f')),
   });
 
   const view = session
@@ -173,13 +154,17 @@ export function ShareSessionModal({
                   )}
           </ModalDescription>
         </ModalHeader>
-        <ModalBody className="max-h-[60vh] overflow-y-auto">
+        <ModalBody className="max-h-[60vh] space-y-5 overflow-y-auto">
           {view.canEdit ? (
             <SharingPicker
               projectId={projectId}
               value={sharing}
               onChange={setSharing}
-              copy={view.role === 'owner' ? SESSION_SHARING_COPY : delegateCopy(view.ownerLabel)}
+              copy={
+                view.role === 'owner'
+                  ? SESSION_SHARING_COPY
+                  : delegateCopy(view.ownerLabel, tI18nComplete)
+              }
               disabledModes={view.disabledModes}
             />
           ) : (
@@ -190,6 +175,21 @@ export function ShareSessionModal({
               {session ? sessionAccessSummary(session) : null}
             </p>
           )}
+          {oversightOn ? (
+            <InfoBanner
+              tone="neutral"
+              icon={ShieldCheckIcon}
+              data-testid="session-oversight-disclosure"
+            >
+              {tOversight.raw('shareDisclosure')}
+            </InfoBanner>
+          ) : null}
+          {/* Next to the in-team picker: who in the project can open the
+              session, and a read-only link for anyone outside it. Same
+              server verdict as the picker (`can_manage_sharing`). */}
+          {view.canEdit && session ? (
+            <SessionPublicLinkSection projectId={projectId} sessionId={session.session_id} />
+          ) : null}
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <Button
@@ -209,7 +209,7 @@ export function ShareSessionModal({
               className="w-full sm:w-auto"
             >
               {save.isPending && <Loading />}
-              Save
+              {tI18nHardcoded.raw('i18nComplete.text1509f561f241')}
             </Button>
           )}
         </ModalFooter>

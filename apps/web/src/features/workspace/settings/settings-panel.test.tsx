@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Modal } from '@/components/ui/modal';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { railGroups } from './rail';
+import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from './rail-copy-context';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   buildSettingsPanelSettingsNav,
@@ -14,7 +15,7 @@ import {
   SettingsPanelShell,
   type SettingsPanelShellProps,
   type SettingsTabAllowedParams,
-} from './settings-panel';
+} from './settings-panel-body';
 import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from './settings-tabs';
 import type { RailItem } from './type';
 
@@ -67,6 +68,7 @@ function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPa
     accountId: undefined,
     groups: allGroups,
     allItems,
+    chrome: DEFAULT_SETTINGS_RAIL_CHROME_COPY,
     ...overrides,
   };
 }
@@ -141,7 +143,12 @@ describe('SettingsPanelShell — desktop rail', () => {
       expect(html).toContain(`>${allGroups[0].label}<`);
       expect(html).toContain('>Organizations<');
       expect(html).toContain('Mirkos Org');
-      expect(html).toContain('href="/accounts/acc-1"');
+      // `?accountId=acc-1`, not `/accounts/acc-1`: the account hub has no
+      // route — it is a modal addressed by a query param on whatever page it
+      // opens over (`stores/account-panel-store.ts`). Rendered with no router
+      // context, as this shell deliberately is, `HubLink` emits the
+      // query-only relative form, which resolves against the current page.
+      expect(html).toContain('href="?accountId=acc-1"');
     });
   });
 
@@ -174,6 +181,17 @@ describe('SettingsPanelShell — desktop rail', () => {
     expect(html).not.toContain('Back to workspace');
   });
 
+  test('Back to app starts at the left edge of the web sidebar row', () => {
+    const html = render();
+    expect(html).toMatch(/<aside[^>]*>[\s\S]*?<div class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*justify-start[^"]*"/);
+    expect(html).toMatch(/kx-titlebar-row[\s\S]*?Back to app/);
+  });
+
+  test('Settings breadcrumb shares the native titlebar row', () => {
+    const html = render();
+    expect(html).toMatch(/<header class="[^"]*kx-titlebar-row[^"]*kx-titlebar-band-height[^"]*"/);
+  });
+
   test('the desktop content column carries a Settings breadcrumb bar', () => {
     expect(render()).toContain('aria-label="breadcrumb"');
     expect(render({ isMobile: true })).not.toContain('aria-label="breadcrumb"');
@@ -196,12 +214,16 @@ describe('SettingsPanelShell — desktop rail', () => {
  * plain `rounded-none` or `max-w-none` loses to both.
  */
 describe('SettingsPanelView — the dialog frame', () => {
-  const SOURCE = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8')
+  const SOURCE = readFileSync(join(import.meta.dir, 'settings-panel-body.tsx'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
   test('takes the fullscreen side', () => {
     expect(SOURCE).toContain('side="fullscreen"');
+  });
+
+  test('does not add a blank strip above the titlebar row', () => {
+    expect(SOURCE).not.toContain('className="kx-titlebar-spacer"');
   });
 
   test('fills the viewport with important-marked overrides, not plain classes the modal chrome outranks', () => {
@@ -220,6 +242,19 @@ describe('SettingsPanelView — the dialog frame', () => {
     expect(SOURCE).toContain('SETTINGS_SIDEBAR_WIDTH_PX');
     expect(SOURCE).not.toContain('grid-cols-[250px_1fr]');
   });
+});
+
+test('mobile Settings navigation has a zoom-safe first row on macOS', () => {
+  const source = readFileSync(join(import.meta.dir, 'settings-panel-body.tsx'), 'utf8');
+  const css = readFileSync(join(import.meta.dir, '../../../app/globals.css'), 'utf8');
+  expect(source).toContain('kx-settings-mobile-titlebar');
+  expect(source).toContain('kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2');
+  expect(source).toContain('kx-settings-mobile-tabs');
+  expect(css).toMatch(/\.kx-settings-mobile-titlebar \.kx-settings-mobile-tabs\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
+  // The tabs are a segmented track: the outer box takes the control size and
+  // the inner list and triggers fill it, so nothing exceeds the band.
+  expect(css).toMatch(/\[data-slot='tabs-list'\]\.kx-settings-mobile-tabs\s*\{[^}]*height:\s*100%/);
+  expect(css).toMatch(/\.kx-settings-mobile-titlebar \[data-slot='tabs-trigger'\]\s*\{[^}]*height:\s*100%/);
 });
 
 /**
@@ -478,7 +513,7 @@ describe('buildSettingsPanelSettingsNav', () => {
  * The scope gate.
  *
  * `SettingsPanel` has two mounts: `ProjectShell` (with a `projectId`) and
- * `app/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
+ * `app/[locale]/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
  * rows the rail may show on each, and — for the two Workspace rows that
  * mount config-page panes — whether the caller's project capabilities admit
  * the row, over the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves

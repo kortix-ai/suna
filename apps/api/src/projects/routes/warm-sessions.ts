@@ -1,22 +1,27 @@
+import type { Context } from 'hono';
 /**
- * Warm sessions — pre-create the session a present user is about to start, and
- * the deprecated claim that predates it. See ../lib/warm-sessions.ts.
+ * Pre-create warm sessions and adopt them with a durable first prompt.
+ * See ../lib/warm-sessions.ts.
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser } from '../lib/access';
 import { canUseAnyAgent } from '../lib/agent-access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
+import { normalizeString, requestAuditContext, serializeSession } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { createProjectSession } from '../lib/sessions';
-import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
+import { currentInstanceId } from '../instance-scope';
+import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
@@ -25,13 +30,14 @@ import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { GitOperationError } from '../git/mirror';
+import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
 
 /**
  * Warming is SPECULATIVE. The browser fires it on every project view and
  * ignores every failure, falling through to the ordinary create path, which
  * re-evaluates every gate and surfaces the real error to the user. So there is
- * exactly one failure response here, whatever went wrong: billing, the
- * concurrent-session cap, a missing connector connection, an unreadable repo.
+ * exactly one failure response here, whatever went wrong: billing, a missing
+ * connector connection, an unreadable repo.
  *
  * 409 rather than 5xx because none of those are server faults, and a 5xx on
  * every page view of a repo-less project is both wrong and noisy enough to fail
@@ -47,28 +53,72 @@ import { GitOperationError } from '../git/mirror';
 const NO_REFRESH = { status: 'skipped' as const };
 
 const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'`;
+// Platinum's default/home compute placement; unrelated to Kortix deployment geography.
+const PLATINUM_HOME_REGION = 'eu-west';
+const WARM_PROVISIONING_STATUSES = ['queued', 'branching', 'provisioning'] as const;
+
+/**
+ * Actual provider placement, never a requested location or a readiness cache.
+ * Unknown placement while provisioning is pending, not proof of a US box.
+ */
+export async function warmSessionPlacement(
+  sessionId: string,
+  projectMetadata: unknown,
+): Promise<'compatible' | 'pending' | 'mismatch'> {
+  const region = resolveSessionSandboxRegion(projectMetadata);
+  const [row] = await db
+    .select({
+      sessionStatus: projectSessions.status,
+      sessionMetadata: projectSessions.metadata,
+      provider: sessionSandboxes.provider,
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+    })
+    .from(projectSessions)
+    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessions.sessionId))
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!row) return 'mismatch';
+  const actualRegion = row.metadata?.platinumRegion;
+  if (row.provider === 'platinum' && actualRegion === (region ?? PLATINUM_HOME_REGION)) return 'compatible';
+  if (!region && row.provider && row.provider !== 'platinum') return 'compatible';
+  const intent = (row.sessionMetadata as Record<string, unknown> | null)?.[WARM_SESSION_LOCATION_KEY];
+  if (!actualRegion && (!row.provider || row.provider === 'platinum') &&
+      WARM_PROVISIONING_STATUSES.includes(row.sessionStatus as typeof WARM_PROVISIONING_STATUSES[number]) &&
+      (!row.status || row.status === 'provisioning') &&
+      intent === (region ?? 'home')) return 'pending';
+  return 'mismatch';
+}
 
 /**
  * The caller's live, still-unused warm session for this project, or null.
  *
  * ACTIVE statuses only, so a box the idle reaper already stopped is never handed
- * back as "ready". Deliberately does NOT match on agent or sandbox slug: the
- * client compares what comes back against what the user actually selected and
- * falls back to an ordinary create when they differ, which is why the server
- * needs no notion of compatibility at all.
+ * back as "ready". Agent and sandbox slug remain client-side checks. Compute
+ * placement is server-owned: adoption requires actual provider placement,
+ * including the home region when the US flag is off. `includeProvisioning`
+ * deduplicates warming via server-owned intent, but does NOT prove placement.
  *
- * `excludeSessionId` skips one session id — the one the caller just took. The
- * warm marker only drops when the FIRST PROMPT reaches the preview proxy
- * (`recordSessionActivity`), seconds after the client already consumed the
- * session client-side, so without this exclusion a replenish racing that gap
- * finds the just-taken row and hands it straight back as `reused: true`.
+ * `excludeSessionId` skips the session the caller just consumed locally. Until
+ * server-side adoption drops its warm marker, a racing replenish could otherwise
+ * find that same row and hand it straight back as `reused: true`.
+ *
+ * Skips a session whose sandbox ANOTHER API instance provisioned (shared local
+ * DB, projects/instance-scope.ts). The first prompt becomes a lifecycle command,
+ * and `claimDueLifecycleCommands` refuses that sandbox with the same predicate,
+ * so the prompt would stay queued for ever. No-op when no instance id is set.
  */
 export async function findWarmProjectSession(scope: {
   accountId: string;
   projectId: string;
   userId: string;
+  projectMetadata: unknown;
   excludeSessionId?: string | null;
+  /** Only /warm may reuse in-flight intent; claims require actual placement. */
+  includeProvisioning?: boolean;
 }) {
+  const instanceId = currentInstanceId();
+  const region = resolveSessionSandboxRegion(scope.projectMetadata);
   const [row] = await db
     .select()
     .from(projectSessions)
@@ -80,6 +130,36 @@ export async function findWarmProjectSession(scope: {
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         WARM_SESSION_MARKER,
         sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+        or(
+          sql`EXISTS (
+            SELECT 1 FROM ${sessionSandboxes} AS box
+            WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
+              AND (
+                (box.provider = 'platinum' AND box.metadata->>'platinumRegion' = ${region ?? PLATINUM_HOME_REGION})
+                ${region ? sql`` : sql`OR box.provider <> 'platinum'`}
+              )
+          )`,
+          scope.includeProvisioning
+            ? and(
+                inArray(projectSessions.status, [...WARM_PROVISIONING_STATUSES]),
+                sql`${projectSessions.metadata}->>${WARM_SESSION_LOCATION_KEY}::text = ${region ?? 'home'}`,
+                sql`NOT EXISTS (
+                  SELECT 1 FROM ${sessionSandboxes} AS box
+                  WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
+                    AND (box.provider <> 'platinum'
+                      OR box.status <> 'provisioning'
+                      OR coalesce(box.metadata->>'platinumRegion', '') <> '')
+                )`,
+              )
+            : undefined,
+        ),
+        instanceId
+          ? sql`NOT EXISTS (
+              SELECT 1 FROM ${sessionSandboxes} AS box
+              WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
+                AND COALESCE(box.metadata->>'instanceId', '') NOT IN ('', ${instanceId})
+            )`
+          : undefined,
         ...(scope.excludeSessionId ? [ne(projectSessions.sessionId, scope.excludeSessionId)] : []),
       ),
     )
@@ -89,10 +169,10 @@ export async function findWarmProjectSession(scope: {
 }
 
 /**
- * Drop `metadata.warm` and stamp `last_activity_at` for one session — one
- * UPDATE, one moment.
+ * Drop `metadata.warm` and stamp `last_activity_at`, `updated_at`, and
+ * `created_at` for one session — one UPDATE, one moment.
  *
- * Called from POST /start (routes/r8.ts), the earliest server signal a user
+ * Called from POST /start (routes/session-runtime.ts), the earliest server signal a user
  * actually entered this session. Verified for JAY-599/T21: the ONLY caller of
  * the session-lifecycle engine's `startSession` (which this route drives) is
  * this route itself — nothing pool-side, no server warmer, no automation ever
@@ -112,6 +192,11 @@ export async function findWarmProjectSession(scope: {
  * every API-order consumer (CLI, mobile, external SDK) report a stale
  * "latest session" for the adoption-to-first-prompt window. Both stamps
  * mirror `recordSessionActivity` exactly.
+ *
+ * `created_at` moves to adoption too. The warm row is inserted while the user
+ * dwells on the project home, possibly hours before the send, so its insert
+ * time is pool bookkeeping. The web session list's hover card and mobile row
+ * read `created_at` and showed "4h" for a session started minutes ago.
  *
  * A no-op (0 rows touched) when the session was never warm: `WARM_SESSION_MARKER`
  * in the WHERE clause makes this safe to call unconditionally and concurrently
@@ -134,6 +219,7 @@ export async function dropWarmSessionMarkerOnAdopt(
           [SESSION_LAST_ACTIVITY_KEY]: adoptedAt.toISOString(),
         })}) - ${WARM_SESSION_METADATA_KEY}::text`,
         updatedAt: adoptedAt,
+        createdAt: adoptedAt,
       })
       .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER));
   } catch (err) {
@@ -144,7 +230,7 @@ export async function dropWarmSessionMarkerOnAdopt(
   }
 }
 
-function warmSessionUnavailable(c: any) {
+function warmSessionUnavailable(c: Context) {
   return c.json(
     {
       error: 'This project cannot prepare a warm session right now.',
@@ -178,11 +264,9 @@ projectsApp.openapi(
           'application/json': {
             schema: z
               .object({
-                // The id of the warm session the caller just took for a send.
-                // Excluded from the reuse lookup below, so a replenish racing
-                // the window before the first prompt drops `metadata.warm`
-                // (`recordSessionActivity`) creates a FRESH session instead of
-                // handing the just-taken one straight back as `reused: true`.
+                // The warm session the caller just consumed locally. Exclude it
+                // while server-side adoption has not yet dropped its warm marker,
+                // so replenishment creates a fresh session instead of reusing it.
                 exclude_session_id: z.string().optional(),
               })
               .strict(),
@@ -195,7 +279,7 @@ projectsApp.openapi(
       ...errors(400, 402, 403, 404, 409, 429, 500, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -216,7 +300,7 @@ projectsApp.openapi(
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
     if (gate) return gate;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const excludeSessionId = normalizeString(body.exclude_session_id);
 
     const view = {
@@ -227,7 +311,9 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
       userId: loaded.userId,
+      projectMetadata: loaded.row.metadata,
       excludeSessionId,
+      includeProvisioning: true,
     });
     if (existing) {
       return c.json(
@@ -247,9 +333,6 @@ projectsApp.openapi(
         // session" click with no overrides. Nothing to keep in sync.
         body: {},
         metadata: { source: 'ui', [WARM_SESSION_METADATA_KEY]: true },
-        // A warm box is real, billed compute holding a concurrent-session slot.
-        // It must never take the LAST one and 429 the next genuine start.
-        reserveConcurrentSlots: 1,
         authType: c.get('authType') as string | undefined,
         apiKeyType: c.get('apiKeyType') as string | undefined,
         inSession: isProjectSessionPrincipal(c),
@@ -279,14 +362,10 @@ projectsApp.openapi(
 
 // POST /v1/projects/:projectId/sessions/warm/claim
 //
-// DEPRECATED. Kept because `claimWarmProjectSession` has shipped in every
-// published `@kortix/sdk` since v0.11.0 and removing it would 404 an external
-// consumer at runtime. The browser no longer calls it: a warm session is an
-// ordinary session, so the send path navigates to it and prompts it, and the
-// first prompt drops the marker on its own (projects/session-activity.ts).
-//
-// It now does exactly what that prompt does — drop `metadata.warm` — plus the
-// two things its published input can carry.
+// The published SDK claim is deprecated, but the browser still uses it to
+// durably deliver a warm session's first prompt. Adoption requires actual
+// placement matching the current project flag, never speculative warm intent.
+// The claim drops `metadata.warm` in the same transaction as prompt delivery.
 
 projectsApp.openapi(
   createRoute({
@@ -309,11 +388,11 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const sessionId = normalizeString(body.session_id);
-    if (!sessionId || !UUID_V4_REGEX.test(sessionId)) {
+    if (!sessionId || !isUuid(sessionId)) {
       return c.json({ error: 'Invalid session id', code: 'INVALID_SESSION_ID' }, 400);
     }
 
@@ -331,6 +410,7 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
       userId: loaded.userId,
+      projectMetadata: loaded.row.metadata,
     });
     if (!candidate || candidate.sessionId !== sessionId) {
       return c.json(
@@ -393,11 +473,27 @@ projectsApp.openapi(
         // CAS above already refused (marker gone), so this insert runs at most
         // once per session. The idempotency key still guards the create path's
         // row for a session that somehow saw both.
-        await tx
+        const insertPrompt = tx
           .insert(sessionLifecycleCommands)
           .values(conversion.rowValues)
-          .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
-          .returning({ commandId: sessionLifecycleCommands.commandId });
+          .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+        // Only a handle prompt reads its payload back, for binding. A legacy
+        // prompt can carry up to 12 MiB of data-URL parts it never needs again.
+        if ((conversion.rowValues.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+          const [promptCommand] = await insertPrompt.returning({
+            commandId: sessionLifecycleCommands.commandId,
+            accountId: sessionLifecycleCommands.accountId,
+            projectId: sessionLifecycleCommands.projectId,
+            actorUserId: sessionLifecycleCommands.actorUserId,
+            payload: sessionLifecycleCommands.payload,
+          });
+          if (promptCommand) {
+            const { bindPromptAttachments } = await import('../prompt-attachments');
+            await bindPromptAttachments(tx, promptCommand);
+          }
+        } else {
+          await insertPrompt.returning({ commandId: sessionLifecycleCommands.commandId });
+        }
       }
       return row;
     });

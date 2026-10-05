@@ -26,6 +26,7 @@
  */
 import type { Context } from 'hono';
 
+import { holdsEveryGrant } from '../iam/agent-grant-ceiling';
 import { getAgentGrant } from '../iam/agent-scope';
 import { actorForToken } from '../iam/actor';
 import { authorize } from '../iam/authorize';
@@ -35,7 +36,7 @@ import type { GitPrincipal, GitRefScope } from './ref-policy';
 /**
  * True when the principal holds `scope`.
  *
- * A SESSION reads its agent grant; a PERSON is asked of the IAM engine, the
+ * A SESSION intersects its agent grant with IAM; a PERSON uses IAM, the
  * same way every other project route asks. `project.gitops.push` authorizes
  * *a* push, not every destructive shape of one: deleting a ref is not
  * recoverable from the client that issued it, and a branch is frequently
@@ -75,10 +76,51 @@ export async function principalHoldsRefScope(
     case 'session': {
       const grant = getAgentGrant(c);
       if (!grant) return false; // Default-deny — see the header note.
-      if (grant.kortixCli === 'all') return true;
-      return grant.kortixCli.includes(scope);
+      if (grant.permissions !== 'all' && !grant.permissions.includes(scope)) return false;
+      if (!principal.userId || !principal.tokenId) return false;
+      // actorForToken selects the agent's service account (a governed grant)
+      // or the launcher (a null grant). The manifest can
+      // narrow that identity's role; it cannot widen it.
+      const verdict = await authorize(
+        await actorForToken(principal.userId, project.accountId, principal.tokenId, {
+          ctx: deriveRequestContext(c),
+        }),
+        scope,
+        { type: 'project', id: project.projectId },
+      );
+      return verdict.allowed;
     }
   }
+}
+
+/**
+ * May this principal land a manifest on the default branch without the
+ * change-request grant diff (iam/agent-grant-ceiling.ts)?
+ *
+ * The pack is not readable before git accepts it, so the grant it writes
+ * cannot be compared with the pusher's. A governed agent session therefore
+ * pushes the default branch only when it holds every grant: nothing it writes
+ * can exceed it. Any other governed agent opens a change request. People and
+ * sessions that borrow a person's authority are unaffected.
+ */
+export async function sessionMayBypassGrantReview(
+  c: Context,
+  principal: GitPrincipal,
+  project: { projectId: string; accountId: string },
+): Promise<boolean> {
+  if (principal.kind !== 'session') return true;
+  const grant = getAgentGrant(c);
+  // A null grant or a session without a token is default-denied by the scope check already.
+  if (!grant || !principal.userId || !principal.tokenId) return true;
+  const actor = await actorForToken(principal.userId, project.accountId, principal.tokenId, {
+    ctx: deriveRequestContext(c),
+  });
+  const credential = actor.credential as { kind?: string; agentPrincipal?: boolean };
+  if (!(credential.kind === 'agent_session' && credential.agentPrincipal === true)) return true;
+  return holdsEveryGrant(
+    grant,
+    async (action) => (await authorize(actor, action, { type: 'project', id: project.projectId })).allowed,
+  );
 }
 
 /**

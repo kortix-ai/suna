@@ -88,7 +88,9 @@ describe('serializeDocument', () => {
     const doc = docWith(textJSON('check '), mentionJSON('session', 'Fix the parser', 'ses_abc'));
     const result = serializeDocument(doc);
     expect(result.text).toBe('check @Fix the parser');
-    expect(result.mentions).toEqual([{ kind: 'session', label: 'Fix the parser', value: 'ses_abc' }]);
+    expect(result.mentions).toEqual([
+      { kind: 'session', label: 'Fix the parser', value: 'ses_abc' },
+    ]);
   });
 
   test('a mention with an empty label still renders the @ sigil, not undefined/null', () => {
@@ -142,7 +144,11 @@ describe('serializeDocument — command chips', () => {
   test('a command chip is NOT a tracked mention', () => {
     // If it leaked into `mentions` it would reach `buildFileRefsBlock` and the
     // agent would be handed a `<file_ref>` for a path that does not exist.
-    const doc = docWith(mentionJSON('command', 'deep-research'), textJSON(' about '), mentionJSON('file', 'README.md'));
+    const doc = docWith(
+      mentionJSON('command', 'deep-research'),
+      textJSON(' about '),
+      mentionJSON('file', 'README.md'),
+    );
     const result = serializeDocument(doc);
 
     expect(result.mentions).toEqual([{ kind: 'file', label: 'README.md' }]);
@@ -184,11 +190,7 @@ describe('serializeDocument — command chips', () => {
 // and had nothing to say otherwise.
 describe('serializeDocument — command chip position', () => {
   test('a chip between words reports the text on each side', () => {
-    const doc = docWith(
-      textJSON('explain '),
-      mentionJSON('command', 'webapp'),
-      textJSON(' to me'),
-    );
+    const doc = docWith(textJSON('explain '), mentionJSON('command', 'webapp'), textJSON(' to me'));
     const result = serializeDocument(doc);
     expect(result.commandName).toBe('webapp');
     // The wire value is unchanged — the server still gets the whole prose.
@@ -207,11 +209,7 @@ describe('serializeDocument — command chip position', () => {
   });
 
   test('re-joining the halves reconstructs the args', () => {
-    const doc = docWith(
-      textJSON('explain '),
-      mentionJSON('command', 'webapp'),
-      textJSON(' to me'),
-    );
+    const doc = docWith(textJSON('explain '), mentionJSON('command', 'webapp'), textJSON(' to me'));
     const { text, commandSplit } = serializeDocument(doc);
     expect([commandSplit!.before, commandSplit!.after].filter(Boolean).join(' ')).toBe(text);
   });
@@ -261,7 +259,10 @@ describe('serializeDocument — command split across blocks', () => {
   });
 
   test('a chip that OPENS the second paragraph still splits cleanly', () => {
-    const doc = multi([[textJSON('first para')], [mentionJSON('command', 'webapp'), textJSON(' go')]]);
+    const doc = multi([
+      [textJSON('first para')],
+      [mentionJSON('command', 'webapp'), textJSON(' go')],
+    ]);
     const result = serializeDocument(doc);
     expect(result.commandSplit!.before).toBe('first para');
     expect(result.commandSplit!.after).toBe('go');

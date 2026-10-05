@@ -48,7 +48,7 @@ describe('parse/serialize round-trip', () => {
     kortix_version: 1,
     project: { name: 'demo' },
     triggers: [{ slug: 'nightly', type: 'cron', cron: '0 9 * * *', prompt: 'line one\nline two' }],
-    agents: [{ name: 'pr-bot', connectors: ['github'], kortix_cli: ['project.gitops.push'] }],
+    agents: [{ name: 'pr-bot', connectors: ['github'], kortix_permissions: ['project.gitops.push'] }],
   };
 
   for (const format of ['toml', 'yaml'] as const) {

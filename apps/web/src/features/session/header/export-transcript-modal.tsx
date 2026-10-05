@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -22,11 +22,6 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useRuntimeSession } from '@kortix/sdk/react';
-import {
-  loadSessionTranscriptMessages,
-  useSessionSync,
-} from '@kortix/sdk/react';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -34,11 +29,16 @@ import {
   type TranscriptOptions,
 } from '@kortix/sdk';
 import {
+  loadSessionTranscriptMessages,
+  useRuntimeSession,
+  useSessionSync,
+} from '@kortix/sdk/react';
+import {
   CheckIcon as Check,
   CopyIcon as Copy,
-  DownloadIcon as Download,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 // ============================================================================
 // Export Modal
@@ -49,6 +49,55 @@ interface ExportTranscriptModalProps {
   kortixSessionScope?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+const TRANSCRIPT_OPTIONS = [
+  {
+    key: 'assistantMetadata',
+    id: 'opt-metadata',
+    titleKey: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadata',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadataDescription',
+  },
+  {
+    key: 'toolDetails',
+    id: 'opt-tools',
+    titleKey: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetails',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetailsDescription',
+  },
+  {
+    key: 'thinking',
+    id: 'opt-thinking',
+    titleKey: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoning',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoningDescription',
+  },
+] as const;
+
+function TranscriptOptionToggle({
+  id,
+  label,
+  description,
+  checked,
+  onToggle,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Field orientation="horizontal" variant="outline">
+      <FieldContent>
+        <FieldTitle>
+          <label htmlFor={id} className="cursor-pointer">
+            {label}
+          </label>
+        </FieldTitle>
+        <FieldDescription>{description}</FieldDescription>
+      </FieldContent>
+      <Switch id={id} checked={checked} onCheckedChange={onToggle} />
+    </Field>
+  );
 }
 
 export function ExportTranscriptModal({
@@ -81,7 +130,7 @@ export function ExportTranscriptModal({
       .catch(() => {
         if (!cancelled) {
           setMessages(visibleMessagesRef.current);
-          errorToast('Failed to load complete transcript');
+          errorToast(tHardcodedUi.raw('i18nComplete.texta867cd732dd7'));
         }
       })
       .finally(() => {
@@ -90,7 +139,7 @@ export function ExportTranscriptModal({
     return () => {
       cancelled = true;
     };
-  }, [open, sessionId]);
+  }, [open, sessionId, tHardcodedUi]);
 
   const transcript = useMemo(() => {
     if (!session || messages.length === 0) return '';
@@ -115,12 +164,12 @@ export function ExportTranscriptModal({
     try {
       await navigator.clipboard.writeText(transcript);
       setCopied(true);
-      successToast('Transcript copied to clipboard');
+      successToast(tHardcodedUi.raw('i18nComplete.text738211823996'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      errorToast('Failed to copy to clipboard');
+      errorToast(tHardcodedUi.raw('i18nComplete.textb5b83b18d54b'));
     }
-  }, [transcript]);
+  }, [tHardcodedUi, transcript]);
 
   const handleDownload = useCallback(() => {
     if (!transcript) return;
@@ -133,9 +182,9 @@ export function ExportTranscriptModal({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    successToast(`Downloaded ${filename}`);
+    successToast(tHardcodedUi('i18nComplete.text7eca5e05f915', { value0: filename }));
     onOpenChange(false);
-  }, [transcript, filename, onOpenChange]);
+  }, [transcript, filename, tHardcodedUi, onOpenChange]);
 
   const toggleOption = useCallback((key: keyof TranscriptOptions) => {
     setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -166,76 +215,21 @@ export function ExportTranscriptModal({
 
         <ModalBody>
           <FieldGroup className="gap-4">
-            <Field orientation="horizontal" variant="outline">
-              <FieldContent>
-                <FieldTitle>
-                  <label htmlFor="opt-metadata" className="cursor-pointer">
-                    {tHardcodedUi.raw(
-                      'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadata',
-                    )}
-                  </label>
-                </FieldTitle>
-                <FieldDescription>
-                  {tHardcodedUi.raw(
-                    'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadataDescription',
-                  )}
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="opt-metadata"
-                checked={options.assistantMetadata}
-                onCheckedChange={() => toggleOption('assistantMetadata')}
+            {TRANSCRIPT_OPTIONS.map(({ key, id, titleKey, descriptionKey }) => (
+              <TranscriptOptionToggle
+                key={key}
+                id={id}
+                label={tHardcodedUi.raw(titleKey)}
+                description={tHardcodedUi.raw(descriptionKey)}
+                checked={options[key]}
+                onToggle={() => toggleOption(key)}
               />
-            </Field>
-
-            <Field orientation="horizontal" variant="outline">
-              <FieldContent>
-                <FieldTitle>
-                  <label htmlFor="opt-tools" className="cursor-pointer">
-                    {tHardcodedUi.raw(
-                      'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetails',
-                    )}
-                  </label>
-                </FieldTitle>
-                <FieldDescription>
-                  {tHardcodedUi.raw(
-                    'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetailsDescription',
-                  )}
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="opt-tools"
-                checked={options.toolDetails}
-                onCheckedChange={() => toggleOption('toolDetails')}
-              />
-            </Field>
-
-            <Field orientation="horizontal" variant="outline">
-              <FieldContent>
-                <FieldTitle>
-                  <label htmlFor="opt-thinking" className="cursor-pointer">
-                    {tHardcodedUi.raw(
-                      'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoning',
-                    )}
-                  </label>
-                </FieldTitle>
-                <FieldDescription>
-                  {tHardcodedUi.raw(
-                    'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoningDescription',
-                  )}
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="opt-thinking"
-                checked={options.thinking}
-                onCheckedChange={() => toggleOption('thinking')}
-              />
-            </Field>
+            ))}
           </FieldGroup>
 
           <Field>
             <FieldContent className="flex flex-col items-start justify-start gap-2">
-              <FieldTitle>Summary</FieldTitle>
+              <FieldTitle>{tHardcodedUi.raw('i18nComplete.text8e76a94ac832')}</FieldTitle>
               {isLoadingMessages ? (
                 <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
                   <Loading />
@@ -246,9 +240,13 @@ export function ExportTranscriptModal({
               ) : (
                 <ul className="text-muted-foreground list-inside list-disc text-xs">
                   <li>
-                    {messageCount} message{messageCount !== 1 ? 's' : ''}
+                    {messageCount} {tHardcodedUi.raw('i18nComplete.textab530a13e459')}
+                    {messageCount !== 1 ? 's' : ''}
                   </li>
-                  <li>~{wordCount.toLocaleString()} words</li>
+                  <li>
+                    ~{wordCount.toLocaleString()}{' '}
+                    {tHardcodedUi.raw('i18nComplete.textdba36bffa5ca')}
+                  </li>
                 </ul>
               )}
             </FieldContent>
@@ -266,12 +264,12 @@ export function ExportTranscriptModal({
             {copied ? (
               <>
                 <Check />
-                Copied
+                {tHardcodedUi.raw('i18nComplete.text8d525e5f158b')}
               </>
             ) : (
               <>
                 <Copy />
-                Copy
+                {tHardcodedUi.raw('i18nComplete.texte21f935f11d7')}
               </>
             )}
           </Button>
@@ -284,7 +282,7 @@ export function ExportTranscriptModal({
             {isLoadingMessages ? (
               <>
                 <Loading />
-                Loading...
+                {tHardcodedUi.raw('i18nComplete.text47d2a515ef2f')}
               </>
             ) : (
               <>

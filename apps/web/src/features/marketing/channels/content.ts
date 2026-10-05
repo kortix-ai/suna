@@ -1,3 +1,7 @@
+import { CHANNELS_COMPANY_TRANSLATION_KEYS } from '@/i18n/channels-company-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/channels` copy.
  *
@@ -5,12 +9,12 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * ==========================================================================
  * ACCURACY GATE — read this before editing one word of the surface list.
  * ==========================================================================
- * The `comms` glossary calls a channel "Slack, Teams, Telegram, WhatsApp, SMS,
+ * The pre-kit glossary calls a channel "Slack, Teams, Telegram, WhatsApp, SMS,
  * email". THE PRODUCT DOES NOT. Verified against the code, not the pitch:
  *
  *  - `packages/manifest-schema/src/constants.ts`:
@@ -18,20 +22,19 @@
  *    Four values. It is a closed enum — `json-schema.ts` emits it as
  *    `enum: [...CHANNEL_PLATFORMS]`, so an unknown platform fails validation.
  *
- *  - SLACK is the only channel live with no gate. `channels-view.tsx` always
- *    renders the row. One-click install needs SLACK_CLIENT_ID/SECRET/
+ *  - SLACK and MICROSOFT TEAMS are live with no gate. `channels-view.tsx`
+ *    always renders both rows. One-click install needs SLACK_CLIENT_ID/SECRET/
  *    SIGNING_SECRET on the server (`slack-oauth-mode.ts`); without them the UI
  *    falls back to a paste-your-own-app-manifest flow. Either way the bot still
  *    has to be invited to a channel and @-mentioned. Do NOT write bare
  *    "one click" — write what actually happens.
  *
- *  - MICROSOFT TEAMS is code-complete but OFF BY DEFAULT.
- *    `apps/api/src/config.ts`: `TEAMS_CHANNEL_ENABLED: optBoolFalse`, and the
- *    key is absent from `apps/api/.env` and `.env.dev` (checked with
- *    `dotenvx get` → MISSING_KEY). `channels-view.tsx:591`: `if (mode &&
- *    !mode.enabled) return null` — the row does not render at all. The connect
- *    route 404s. The CLI cannot disconnect it. It is NOT "live". Label it as
- *    what it is: shipped, and switched on by the operator.
+ *  - MICROSOFT TEAMS is on for every project. The `teams` feature flag
+ *    graduated on 2026-10-01: `apps/api/src/feature-flags/registry.ts` no
+ *    longer has it, and no route checks it. The managed one-click install
+ *    needs MICROSOFT_APP_ID/PASSWORD on the server (`teams-mode.ts`); a
+ *    project can always bring its own bot app instead. A tenant admin
+ *    consents once either way.
  *
  *  - EMAIL and VOICE are `stability: 'experimental'` with
  *    `platformDefault: () => false` (`apps/api/src/experimental/features.ts`).
@@ -65,10 +68,10 @@ export const hero = {
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
   ctaSecondaryHref: '/docs/connect/slack',
-  microline: 'Slack today · Teams and email behind a switch',
+  microline: 'Slack and Teams today · email experimental, per project',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
-    { k: 'Live today', v: 'Slack', visual: 'presence' },
+    { k: 'Live today', v: 'Slack, Microsoft Teams', visual: 'presence' },
     { k: 'A thread is', v: 'Exactly one session', visual: 'thread' },
     { k: 'The reply lands', v: 'In the same thread', visual: 'reply' },
     { k: 'Approve or deny', v: 'On a card, in the thread', visual: 'approve' },
@@ -77,8 +80,8 @@ export const hero = {
 
 export const surfaces = {
   eyebrow: 'The surfaces',
-  title: 'One is live. Three are behind a switch. We will say which.',
-  sub: 'A channel is a chat platform bound to a project — a closed set of four, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.',
+  title: 'Two are live. One is experimental. We will say which.',
+  sub: 'A channel is a chat platform bound to a project — a closed set of three, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.',
   columns: ['Surface', 'State', 'What that means'] as const,
   /** `icon` keys map to `features/icon`. `state` is the honest one. */
   rows: [
@@ -93,8 +96,8 @@ export const surfaces = {
       id: 'teams',
       icon: 'MicrosoftTeams',
       name: 'Microsoft Teams',
-      state: 'Operator switch',
-      body: 'Code complete and off by default. Your deployment turns it on and supplies Microsoft app credentials; a tenant admin then consents once. Same sessions, same identity rules as Slack.',
+      state: 'Live',
+      body: 'On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack.',
     },
     {
       id: 'email',
@@ -237,7 +240,7 @@ export const back = {
 
 export const commands = {
   eyebrow: 'From the thread',
-  title: 'Run the project without leaving the conversation.',
+  title: 'Run the project without leaving the thread.',
   sub: 'Type these as /kortix <command> in Slack, or as plain text in a direct message. Most of what you would otherwise open the dashboard for is one line in the channel.',
   columns: ['Command', 'What it does'] as const,
   rows: [
@@ -348,3 +351,11 @@ export const closing = {
   ctaSecondary: 'Read the channel docs',
   ctaSecondaryHref: '/docs/connect/slack',
 } as const;
+
+export function getLocalizedChannelsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, surfaces, thread, connect, back, commands, rules, custom, closing },
+    tI18nComplete,
+    CHANNELS_COMPANY_TRANSLATION_KEYS,
+  );
+}

@@ -1,21 +1,13 @@
 /**
  * One pure function that answers "what is this account's billing situation?"
- * from a single credit_accounts row.
- *
- * Today that answer is assembled by three separate layers that each re-derive
- * part of it: `resolveEffectiveTier` (trial overlay + per-seat self-heal),
- * `getAccountEntitlements` (enterprise_entitled / demo_enterprise /
- * managed_models_override), and `resolveAccountSessionLimit`
- * (max_concurrent_sessions override). Every surface picks a different subset,
- * which is how they skew. This module states the whole thing once.
+ * from a single credit_accounts row: the plan it behaves as (trial overlay,
+ * per-seat self-heal), its entitlements after the account-level overrides, and
+ * its compute price. Entitlements, limits, and account state
+ * all read it through the cache in `billing-cache.ts`, so no surface
+ * re-derives part of the answer and skews from the others.
  *
  * PURE, and deliberately so — it takes the row, not an accountId, and returns a
- * value with no I/O, no clock of its own, and no cache. NOTHING CONSUMES IT
- * YET: it lands with the parity tests first so the equivalence is proven before
- * any caller is switched. The cache wrapper lands with that flip.
- *
- * ZERO BEHAVIOR CHANGE is the whole contract. Every branch below reproduces a
- * cited branch of today's code.
+ * value with no I/O, no clock of its own, and no cache.
  */
 
 import {
@@ -41,13 +33,14 @@ export interface BillingRow {
   trialStatus?: string | null;
   trialTier?: string | null;
   trialEndsAt?: string | null;
+  /** Seat allowance of an admin-issued trial; null is uncapped. */
+  trialSeats?: number | null;
   billingModel?: string | null;
   stripeSubscriptionId?: string | null;
   stripeSubscriptionStatus?: string | null;
   enterpriseEntitled?: boolean | null;
   demoEnterprise?: boolean | null;
   managedModelsOverride?: boolean | null;
-  maxConcurrentSessions?: number | null;
   /**
    * `credit_accounts.entitlement_overrides` — the JSONB override map, each
    * entry optionally expiring. `unknown` because it is operator-written data
@@ -67,7 +60,6 @@ export interface ResolvedBilling {
   source: BillingPlanSource;
   /** Plan entitlements with the account-level overrides applied. */
   entitlements: PlanRecord['entitlements'];
-  limits: { concurrentSessions: { value: number; source: BillingLimitSource } };
   /**
    * Compute pricing for this account. `rateMultiplier` scales the provider
    * rate card in `compute-metering.ts`: 1.0 is list price (every account
@@ -82,11 +74,12 @@ export interface ResolvedBilling {
 const TRIAL_STATUS_ACTIVE = 'active';
 
 /**
- * `trialIsActive` from `effective-tier.ts`, replicated rather than imported:
- * that module imports `isValidTier` from `tiers.ts`, which boots env validation
- * at module scope, and this module must stay pure. Membership in the catalog is
- * the same predicate as `isValidTier` — both cover exactly the same 16 tier
- * keys, which the parity test asserts.
+ * Whether the row carries a currently-granting admin-issued trial. Expiry is
+ * LAZY: an expired trial stops granting the instant `trial_ends_at` passes,
+ * whether or not the cron has flipped `trial_status` yet. Membership in the
+ * catalog is the same predicate as `isValidTier` (which this pure module cannot
+ * import: `tiers.ts` boots env validation) — both cover the same 16 tier keys,
+ * which the parity test asserts.
  */
 function trialIsActive(row: BillingRow, nowMs: number): boolean {
   if (row.trialStatus !== TRIAL_STATUS_ACTIVE) return false;
@@ -97,9 +90,9 @@ function trialIsActive(row: BillingRow, nowMs: number): boolean {
 }
 
 /**
- * `coercePerSeatTier` from `effective-tier.ts`, replicated for the same reason.
- * A paying seat subscription overrides a stored non-paid tier so stale rows
- * cannot gate a paying team as free.
+ * Per-seat self-heal. A paying seat subscription overrides a stored non-paid
+ * tier (the seat-billing migration set billing_model without backfilling tier)
+ * so stale rows cannot gate a paying team as free.
  */
 function coercePerSeatTier(rawTier: string, row: BillingRow): string {
   if (
@@ -114,7 +107,19 @@ function coercePerSeatTier(rawTier: string, row: BillingRow): string {
   return rawTier;
 }
 
-/** Positive-integer override, or null. Mirrors `resolveAccountLimitInfo`. */
+/**
+ * Seat allowance while an admin-issued trial is active; null when no trial is
+ * active or the trial is uncapped. Gates member add and invite.
+ */
+export function activeTrialSeatLimit(
+  row: BillingRow | null | undefined,
+  nowMs: number = Date.now(),
+): number | null {
+  if (!row || !trialIsActive(row, nowMs)) return null;
+  return positiveOverride(row.trialSeats);
+}
+
+/** Positive-integer override, or null. */
 function positiveOverride(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? Math.floor(value)
@@ -132,7 +137,7 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  * Resolve the plan an account BEHAVES as, plus its effective entitlements and
  * limits, from one row.
  *
- * Plan precedence (`resolveEffectiveTier`, effective-tier.ts:93-100):
+ * Plan precedence:
  *   1. no row                 → `none`     (fail-closed)
  *   2. active admin trial     → trial tier (overlay, never a tier write)
  *   3. per-seat self-heal     → `per_seat`
@@ -145,8 +150,7 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  *
  * `managed_models_override` is tri-state (`loadTierSnapshot`,
  * entitlements.ts:31-42): a boolean wins in both directions, NULL defers to the
- * plan. `max_concurrent_sessions` overrides the plan cap in both directions
- * (`resolveAccountSessionLimit`, shared/account-limits.ts:151-160).
+ * plan.
  *
  * Source precedence for every override (see `entitlement-overrides.ts`):
  *   1. `entitlement_overrides.<key>` — if present AND unexpired at `nowMs`
@@ -168,9 +172,6 @@ export function resolveBillingFromRow(
       plan,
       source: 'no_account',
       entitlements: { ...plan.entitlements },
-      limits: {
-        concurrentSessions: { value: plan.limits.concurrentSessions, source: 'plan' },
-      },
       compute: { rateMultiplier: plan.compute.rateMultiplier, source: 'plan' },
       display: displayFor(plan),
     };
@@ -182,8 +183,7 @@ export function resolveBillingFromRow(
     source = 'trial';
     key = row.trialTier as string;
   } else {
-    // resolveEffectiveTier passes `acct.tier ?? 'none'` — a row with no tier
-    // reads as 'none', not 'free'.
+    // A row with no tier reads as 'none', not 'free'.
     const stored = row.tier ?? 'none';
     key = coercePerSeatTier(stored, row);
     source = key === stored ? 'stored' : 'per_seat_selfheal';
@@ -195,7 +195,7 @@ export function resolveBillingFromRow(
   // OVERRIDE PRECEDENCE, per key: the JSONB entry (when present and unexpired)
   // wins over the legacy column of the same name; an absent key falls back to
   // the column. Per KEY, not per row — an account can carry an expiring
-  // `maxConcurrentSessions` in the JSONB and a permanent `enterprise_entitled`
+  // `managedModelsOverride` in the JSONB and a permanent `enterprise_entitled`
   // in its column at the same time, and each resolves from its own source.
   const enterpriseEntitled =
     readOverride(ov, 'enterpriseEntitled', nowMs) ?? row.enterpriseEntitled === true;
@@ -230,10 +230,6 @@ export function resolveBillingFromRow(
     if (value !== undefined) entitlements[entKey] = value;
   }
 
-  const sessionOverride =
-    positiveOverride(readOverride(ov, 'maxConcurrentSessions', nowMs)) ??
-    positiveOverride(row.maxConcurrentSessions);
-
   // Custom compute pricing. No legacy column to fall back to — this override
   // has only ever existed in the JSONB — so the plan record's own multiplier
   // (1.0 everywhere today) is the floor.
@@ -243,12 +239,6 @@ export function resolveBillingFromRow(
     plan,
     source,
     entitlements,
-    limits: {
-      concurrentSessions:
-        sessionOverride !== null
-          ? { value: sessionOverride, source: 'account_override' }
-          : { value: plan.limits.concurrentSessions, source: 'plan' },
-    },
     compute:
       rateOverride !== undefined
         ? { rateMultiplier: clampComputeRateMultiplier(rateOverride), source: 'account_override' }

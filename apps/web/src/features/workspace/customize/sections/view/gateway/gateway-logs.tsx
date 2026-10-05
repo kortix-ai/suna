@@ -7,7 +7,9 @@ import {
   CaretUpIcon as ChevronUp,
   ScrollIcon as ScrollText,
 } from '@phosphor-icons/react';
-import { Fragment, forwardRef, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { Fragment, forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code/code-block';
 import { Badge } from '@/components/ui/badge';
@@ -209,20 +211,21 @@ const LOG_GRID =
  * cells go back to being numbers.
  */
 function LogListHeader() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div
       className={cn(
         LOG_GRID,
-        'text-muted-foreground/70 border-border/40 sticky top-0 z-10 border-b py-1.5 text-[11px]',
+        'text-muted-foreground/70 border-border/40 sticky top-0 z-10 border-b py-1.5 text-xs',
         'bg-background/95 backdrop-blur',
       )}
     >
       <span />
-      <span>Request</span>
-      <span className="text-right">Time</span>
-      <span className="hidden text-right sm:block">Latency</span>
-      <span className="hidden text-right md:block">Tokens</span>
-      <span className="text-right">Cost</span>
+      <span>{tI18nComplete.raw('text59f03d642b41')}</span>
+      <span className="text-right">{tI18nComplete.raw('text33b93476cf59')}</span>
+      <span className="hidden text-right sm:block">{tI18nComplete.raw('texte0e7d293043c')}</span>
+      <span className="hidden text-right md:block">{tI18nComplete.raw('texta039dfb9628b')}</span>
+      <span className="text-right">{tI18nComplete.raw('text204a5eb2cd28')}</span>
       <span />
     </div>
   );
@@ -233,7 +236,7 @@ function LogListHeader() {
  */
 function DayDivider({ iso }: { iso: string }) {
   return (
-    <div className="text-muted-foreground/60 bg-muted/20 border-border/40 border-b px-4 py-1 text-[11px] font-medium">
+    <div className="text-muted-foreground/60 bg-muted/20 border-border/40 border-b px-4 py-1 text-xs font-medium">
       {fmtDay(iso)}
     </div>
   );
@@ -255,7 +258,7 @@ const LogRow = forwardRef<
         // was the same on every row, and it doubled the height of a list whose
         // job is to show many rows at once.
         LOG_GRID,
-        'group border-border/40 scroll-mt-2 border-b py-2 text-left transition-colors duration-150',
+        'group border-border/40 duration-normal scroll-mt-2 border-b py-2 text-left transition-colors',
         focused ? 'bg-primary/[0.06]' : 'hover:bg-muted/50',
       )}
     >
@@ -293,7 +296,7 @@ const LogRow = forwardRef<
       </span>
       <ChevronRight
         className={cn(
-          'text-muted-foreground/40 size-4 transition-transform duration-150',
+          'text-muted-foreground/40 duration-normal size-4 transition-transform',
           focused ? 'text-muted-foreground translate-x-0.5' : 'group-hover:translate-x-0.5',
         )}
       />
@@ -387,7 +390,7 @@ function PayloadBlock({ title, value }: { title: string; value: unknown }) {
         {/* Header is the trigger and nothing else — the copy control lives over
             the body, so no interactive element is nested inside a role=button. */}
         <div className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors">
-          <ChevronRight className="text-muted-foreground size-4 transition-transform duration-150 group-data-[state=open]:rotate-90" />
+          <ChevronRight className="text-muted-foreground duration-normal size-4 transition-transform group-data-[state=open]:rotate-90" />
           <span className="text-foreground">{title}</span>
           <span className="text-muted-foreground text-xs font-normal tabular-nums">
             {lines.toLocaleString()} {lines === 1 ? 'line' : 'lines'}
@@ -454,6 +457,7 @@ function GatewayLogDetail({
   onPrev: () => void;
   onNext: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading } = useGatewayLog(projectId, logId);
 
   return (
@@ -464,16 +468,21 @@ function GatewayLogDetail({
           onClick={onBack}
           className="text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2 py-1 text-sm transition-colors"
         >
-          <ArrowLeft className="size-4" /> Logs
+          <ArrowLeft className="size-4" /> {tI18nComplete.raw('textea2100dc89ae')}
         </button>
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground/70 text-xs tabular-nums">
             {index + 1} / {total}
           </span>
-          <NavButton icon={ChevronUp} label="Previous (↑)" disabled={index <= 0} onClick={onPrev} />
+          <NavButton
+            icon={ChevronUp}
+            label={tI18nComplete.raw('text7de83ebed3ea')}
+            disabled={index <= 0}
+            onClick={onPrev}
+          />
           <NavButton
             icon={ChevronDown}
-            label="Next (↓)"
+            label={tI18nComplete.raw('text14a2f02e188f')}
             disabled={index >= total - 1}
             onClick={onNext}
           />
@@ -511,14 +520,23 @@ function GatewayLogDetail({
               data.kortix_cost > 0 && data.provider_cost > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3',
             )}
           >
-            <StatTile label="Latency" value={`${data.latency_ms}ms`} />
             <StatTile
-              label="Tokens"
+              label={tI18nComplete.raw('texte0e7d293043c')}
+              value={`${data.latency_ms}ms`}
+            />
+            <StatTile
+              label={tI18nComplete.raw('texta039dfb9628b')}
               value={(data.input_tokens + data.output_tokens).toLocaleString()}
             />
-            <StatTile label="Cost" value={`$${data.total_cost.toFixed(4)}`} />
+            <StatTile
+              label={tI18nComplete.raw('text204a5eb2cd28')}
+              value={`$${data.total_cost.toFixed(4)}`}
+            />
             {data.kortix_cost > 0 && data.provider_cost > 0 && (
-              <StatTile label="Kortix fee" value={`$${data.kortix_cost.toFixed(4)}`} />
+              <StatTile
+                label={tI18nComplete.raw('text27343e44b3f1')}
+                value={`$${data.kortix_cost.toFixed(4)}`}
+              />
             )}
           </div>
 
@@ -526,36 +544,50 @@ function GatewayLogDetail({
             {/* An em dash beats an empty cell — the field exists, the value does
                 not, and the reader should be able to tell those apart. */}
             <DetailField
-              label="Requested model"
+              label={tI18nComplete.raw('textb36591f91a8c')}
               value={<span className="font-mono text-xs">{data.requested_model || '—'}</span>}
             />
             <DetailField
-              label="Resolved model"
+              label={tI18nComplete.raw('textac811767e2f7')}
               value={<span className="font-mono text-xs">{data.resolved_model || '—'}</span>}
             />
-            <DetailField label="Provider" value={data.provider || '—'} />
-            <DetailField label="Received" value={fmtTime(data.created_at)} />
             <DetailField
-              label="Tokens"
+              label={tI18nComplete.raw('text472590ae974d')}
+              value={data.provider || '—'}
+            />
+            <DetailField
+              label={tI18nComplete.raw('text49f19beeecf4')}
+              value={fmtTime(data.created_at)}
+            />
+            <DetailField
+              label={tI18nComplete.raw('texta039dfb9628b')}
               value={`${data.input_tokens.toLocaleString()} in · ${data.output_tokens.toLocaleString()} out`}
             />
             {(data.cached_tokens > 0 || data.cache_write_tokens > 0) && (
               <DetailField
-                label="Cache"
+                label={tI18nComplete.raw('texta76ce82a9749')}
                 value={`${data.cached_tokens.toLocaleString()} read · ${data.cache_write_tokens.toLocaleString()} write`}
               />
             )}
-            <DetailField label="Streaming" value={data.streaming ? 'yes' : 'no'} />
+            <DetailField
+              label={tI18nComplete.raw('texta951c5945635')}
+              value={data.streaming ? 'yes' : 'no'}
+            />
             {/* Was "Billing mode: none", which reads as "this call was free"
                 and is the reason a $0.00 next to a real provider charge looked
                 like a bug rather than a BYOK route. Name the payee instead. */}
-            <DetailField label="Billed by" value={billedByLabel(data.billing_mode, data.provider)} />
-            {data.attempts > 1 && <DetailField label="Attempts" value={data.attempts} />}
+            <DetailField
+              label={tI18nComplete.raw('text88b1dfafbd5f')}
+              value={billedByLabel(data.billing_mode, data.provider)}
+            />
+            {data.attempts > 1 && (
+              <DetailField label={tI18nComplete.raw('text06e70139fcf5')} value={data.attempts} />
+            )}
             {/* Fetched by the route since day one and never rendered — it is the
                 only place the fallback chain that actually ran is visible. */}
             {data.candidates_tried.length > 0 && (
               <DetailField
-                label="Models tried"
+                label={tI18nComplete.raw('text8281b9f426fd')}
                 value={
                   <span className="font-mono text-xs">{data.candidates_tried.join(' → ')}</span>
                 }
@@ -574,10 +606,10 @@ function GatewayLogDetail({
             </div>
           )}
 
-          <PayloadBlock title="Request" value={data.request} />
-          <PayloadBlock title="Response" value={data.response} />
+          <PayloadBlock title={tI18nComplete.raw('text59f03d642b41')} value={data.request} />
+          <PayloadBlock title={tI18nComplete.raw('text9061383b8e22')} value={data.response} />
           {Object.keys(data.metadata).length > 0 && (
-            <PayloadBlock title="Metadata" value={data.metadata} />
+            <PayloadBlock title={tI18nComplete.raw('text9eddf573cb50')} value={data.metadata} />
           )}
         </div>
       )}
@@ -586,6 +618,8 @@ function GatewayLogDetail({
 }
 
 export function GatewayLogs({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const filters = useLocalizedUiCatalog(FILTERS);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [filter, setFilter] = useState<LogFilter>('all');
   const [focused, setFocused] = useState(0);
@@ -708,8 +742,8 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
               setFocused(0);
             }}
           >
-            <TabsListCompact aria-label="Filter requests by outcome">
-              {FILTERS.map((f) => (
+            <TabsListCompact aria-label={tI18nComplete.raw('text2dda16fbd512')}>
+              {filters.map((f) => (
                 <TabsTriggerCompact key={f.key} value={f.key}>
                   {f.label}
                 </TabsTriggerCompact>
@@ -722,11 +756,15 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
             is exactly how `All` and `Success` both came to read "100" next to an
             `Errors` tab reading the true "6". */}
         <span className="text-muted-foreground flex items-center gap-1.5 text-xs tabular-nums">
-          {!isLoading && <>{logs.length.toLocaleString()} shown</>}
+          {!isLoading && (
+            <>
+              {logs.length.toLocaleString()} {tI18nComplete.raw('textbaaf53622a51')}
+            </>
+          )}
           {isLive && (
             <>
               <span className="bg-kortix-green size-1.5 animate-pulse rounded-full" />
-              Live
+              {tI18nComplete.raw('textb64ac05f17e6')}
             </>
           )}
         </span>
@@ -750,7 +788,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
             icon={ScrollText}
             size="sm"
             title={EMPTY_COPY[filter]}
-            description="Every LLM call routed through the gateway shows up here — model, status, latency, tokens, and cost."
+            description={tI18nComplete.raw('text2aa9d672c950')}
           />
         ) : (
           <>
@@ -780,7 +818,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
                   onClick={() => void fetchNextPage()}
                 >
                   {isFetchingNextPage ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Load older requests
+                  {tI18nComplete.raw('textac318011a661')}
                 </Button>
               </div>
             )}
@@ -791,13 +829,14 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
       {logs.length > 0 && (
         <div className="border-border/50 text-muted-foreground/60 flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs">
           <span>
-            <kbd className="font-sans">↑↓</kbd> navigate
+            <kbd className="font-sans">↑↓</kbd> {tI18nComplete.raw('textd0cda6559bb3')}
           </span>
           <span>
-            <kbd className="font-sans">↵</kbd> open
+            <kbd className="font-sans">↵</kbd> {tI18nComplete.raw('text2348f9987442')}
           </span>
           <span>
-            <kbd className="font-sans">esc</kbd> back
+            <kbd className="font-sans">{tI18nComplete.raw('text177b7cb06867')}</kbd>{' '}
+            {tI18nComplete.raw('text3c482346f375')}
           </span>
         </div>
       )}

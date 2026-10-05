@@ -17,6 +17,9 @@ export interface MeResponse {
     session_id: string | null;
     agent: string | null;
     connectors: string[] | 'all' | null;
+    /** The agent's Kortix permissions. Absent on APIs released before 2026-09-22. */
+    kortix_permissions?: string[] | 'all' | null;
+    /** @deprecated Same value as `kortix_permissions`. */
     kortix_cli: string[] | 'all' | null;
     env?: string[] | 'all' | null;
   };
@@ -74,6 +77,16 @@ export interface ProjectSecret {
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   /** True when an earlier sandbox may retain the previous value. */
   requires_rotation?: boolean;
+  /** Who can use the shared value; empty = everyone in the project. */
+  shared_with?: Array<{
+    grant_id: string;
+    principal_type: 'member' | 'group' | 'project';
+    principal_id: string;
+    label: string;
+    expires_at: string | null;
+  }>;
+  /** False when the value is shared with specific people and the caller is not one of them. */
+  usable?: boolean;
 }
 
 export interface ProjectSecretsResponse {
@@ -83,6 +96,9 @@ export interface ProjectSecretsResponse {
   manifest_status: 'loaded' | 'missing' | 'error';
   manifest_path: string | null;
   manifest_error?: string;
+  /** The calling agent's own secrets grant; null for a non-agent caller,
+   *  absent on older servers. `items` is filtered by it. */
+  agent_scope?: { agent: string; secrets: 'all' | string[] } | null;
 }
 
 // ── Provider OAuth ───────────────────────────────────────────────────────
@@ -133,22 +149,43 @@ export interface ProjectSession {
   sandbox_provider: string;
   sandbox_id: string;
   sandbox_url: string | null;
+  /** Served by a W4 API; read it before `opencode_session_id`. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. */
   opencode_session_id: string | null;
-  /** Resolved display name: user-set custom_name, else the auto opencode title. */
+  /** The runtime's conversation tree (a W4 API); older APIs only have `metadata.opencode_sessions`. */
+  runtime_sessions?: unknown[];
+  /** Resolved display name: user-set custom_name, else the auto runtime title. */
   name: string | null;
   /** User-set name override (authoritative); null when unset. */
   custom_name: string | null;
+  /** Free-form labels. Absent on a server older than labels. */
+  labels?: string[];
   agent_name: string;
   status: 'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
   error: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** The session that spawned this one; null for a top-level session. */
+  parent_session_id?: string | null;
+  /** Who started the run. null on rows the server could not classify. */
+  initiator?: ProjectSessionInitiator | null;
+  /** Visible children. Present only with `parent=root`. */
+  child_count?: number;
+  /** Present only with `q` + `parent=root`. */
+  search_match?: 'self' | 'child';
+}
+
+export interface ProjectSessionInitiator {
+  type: 'member' | 'trigger' | 'channel' | 'api' | 'system';
+  id: string | null;
+  label: string | null;
 }
 
 // ── Triggers ──────────────────────────────────────────────────────────────
 
-/** A `type: monitor` trigger's shape — see docs/specs/2026-08-12-monitors.md. */
+/** A `type: monitor` trigger's shape. */
 export type MonitorMode = 'poll' | 'stream';
 
 export interface ProjectTrigger {
@@ -175,6 +212,10 @@ export interface ProjectTrigger {
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
   last_fired_at: string | null;
+  /** `queued`, `fired`, or `failed` (the prompt was not delivered, or its run ended with an error). */
+  last_status?: string | null;
+  /** Why the last fire or run failed. */
+  last_error?: string | null;
   webhook_url: string | null;
 }
 

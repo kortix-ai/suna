@@ -154,10 +154,19 @@ fi
 # ── Apply rewrites ────────────────────────────────────────────────────────────
 if [ "$needs_rewrite" = "true" ] && [ -s "$SED_SCRIPT" ]; then
   echo "[entrypoint] Rewriting baked values in Next.js bundle..."
-  find "$BUNDLE_DIR" -name '*.js' -o -name '*.html' | while read -r file; do
-    sed -i -f "$SED_SCRIPT" "$file"
-  done
-  echo "[entrypoint] Rewrite complete"
+  rewrite_started_at=$(date +%s)
+  # The bundle holds ~2100 .js/.html files. One sed process per file cost 45s of
+  # every container start (measured in kortix/kortix-frontend:dev-ec6cbdb7 under
+  # linux/amd64 emulation); xargs batches the same work into a handful of sed
+  # processes and cost 1s. xargs still splits on ARG_MAX, which is bounded and
+  # correct.
+  #
+  # The \( ... \) grouping is load-bearing: without it, -print0 binds only to
+  # the -name '*.html' branch, so find would emit 2 paths instead of 2141 and
+  # the .js chunks would silently keep their build-time placeholders.
+  find "$BUNDLE_DIR" \( -name '*.js' -o -name '*.html' \) -print0 |
+    xargs -0 -r sed -i -f "$SED_SCRIPT"
+  echo "[entrypoint] Rewrite complete in $(($(date +%s) - rewrite_started_at))s"
 elif [ "$needs_rewrite" != "true" ]; then
   echo "[entrypoint] No URL rewrites needed"
 fi

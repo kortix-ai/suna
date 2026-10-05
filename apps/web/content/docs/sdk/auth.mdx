@@ -18,9 +18,14 @@ const kortix = createKortix({
 `backendUrl` and `getToken` are required. The SDK caches nothing: it calls
 `getToken` on every request, so your app owns token storage and refresh.
 
-Set `clientSource` to `api`, `cli`, `mobile`, or `web` when your host needs a
-separate source in the centralized audit log. This value identifies the client
-surface. It does not change the authenticated actor or their permissions.
+The audit log records the credential your `getToken` returns (a browser
+session, a personal access token, a connected app), not a label your host
+reports. `clientSource` is deprecated and does nothing.
+
+Set `clientVersion` to your app's name and release version, for example
+`my-app/1.4.0`. The SDK sends it as `X-Kortix-Client-Version` on every request.
+Kortix writes it to request logs only, to see which client versions still call
+an API route before that route is retired. It never reaches the audit log.
 
 ## Personal access tokens
 
@@ -54,13 +59,13 @@ directly. An agent's identity is a service account, which is how you assign a
 role to an agent. See
 [Accounts & access](/docs/accounts#one-access-model).
 
-<Callout type="warn">
+:::warning
   A new service account has no assignments and therefore no project access. If
   you point `getToken` at one before you assign it a role, every call returns
   `403 "You do not have access to this project"`. Assign it a project role
   first, or use a personal access token for the SDK, the CLI, and demos
   instead.
-</Callout>
+:::
 
 ## OAuth access tokens (Sign in with Kortix)
 

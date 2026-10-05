@@ -5,13 +5,14 @@ import { create as createStore } from 'zustand';
 
 import {
   claimWarmProjectSession,
-  type PendingSessionPrompt,
   ensureWarmProjectSession,
   getProjectSession,
+  type PendingSessionPrompt,
   type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
 
+import { confirmCommitted, errorCode, isAmbiguousCreateFailure } from './new-session-failure';
 import {
   subscribeToExternalWarmTakes,
   warmTakenRegistry,
@@ -45,12 +46,11 @@ import {
  * every line of compatibility matching the alternative needs.
  *
  * `metadata.warm` hides the row from the `visible` session list until its first
- * prompt lands (`apps/api/src/projects/lib/session-inventory.ts`).
+ * prompt lands — unless the box is live, in which case it bills and stays
+ * listed (`apps/api/src/projects/lib/session-inventory.ts`).
  *
  * COST. Gated by the `warm_sessions` project flag; the server enforces it (403
- * `feature_disabled`) and `enabled` is only the client short-circuit. The server
- * also refuses to warm into an account's LAST free concurrent-session slot, so
- * speculation can never 429 real work.
+ * `feature_disabled`) and `enabled` is only the client short-circuit.
  *
  * ARCHITECTURE RULE — enforced by `warm-session-boundary.test.ts`: the browser
  * must never hand-roll speculative session creation. `ensureWarmProjectSession`
@@ -66,8 +66,8 @@ export interface WarmSendCreateInput {
   sandbox_slug?: string;
   agent_name?: string;
   connector_bindings?: SessionConnectorBindingsInput;
+  provider_secret_pools?: Record<string, string[]>;
   inherit_unbound?: boolean;
-  require_connectors?: string[];
 }
 
 /** What was actually created, so a send can tell whether it fits. */
@@ -82,7 +82,7 @@ export interface WarmSession {
    * session.ts`) can seed the sessions-list cache with it at adoption time,
    * without a second fetch — see `warm-session-seed.ts`. Still shows
    * `metadata.warm: true` at this point; the server only drops that once
-   * THIS take's own `/start` call lands (`apps/api/.../routes/r8.ts`).
+   * THIS take's own `/start` call lands (`apps/api/.../routes/session-runtime.ts`).
    */
   session: ProjectSession;
 }
@@ -105,8 +105,8 @@ export function warmSessionFitsSend(
 ): boolean {
   if (!create) return true;
   if (create.connector_bindings !== undefined) return false;
+  if (create.provider_secret_pools !== undefined) return false;
   if (create.inherit_unbound !== undefined) return false;
-  if (create.require_connectors !== undefined) return false;
   if (create.agent_name !== undefined && create.agent_name !== warm.agentName) return false;
   if (create.sandbox_slug !== undefined && create.sandbox_slug !== warm.sandboxSlug) return false;
   return true;
@@ -540,6 +540,10 @@ export async function primeTakenWarmSession(
   },
   /** Injected in tests; the SDK's claim otherwise. */
   claim: typeof claimWarmProjectSession = claimWarmProjectSession,
+  /** Injected in tests; the SDK's session read otherwise. */
+  read: typeof getProjectSession = getProjectSession,
+  /** Injected in tests; a real timer otherwise. */
+  sleep?: (ms: number) => Promise<void>,
 ): Promise<boolean> {
   try {
     await claim(projectId, {
@@ -549,7 +553,18 @@ export async function primeTakenWarmSession(
       pending_prompt: input.pending_prompt,
     });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (!isAmbiguousCreateFailure(errorCode(error))) return false;
+    // A timed-out claim can still commit. The claim's CAS drops the `warm`
+    // marker in the same transaction that inserts the prompt row, so a session
+    // without the marker already holds this prompt. Answering false here sent
+    // the same prompt through a second create — two sessions, two turns.
+    return confirmCommitted(
+      async () => {
+        const row = await read(projectId, warm.sessionId, { showErrors: false });
+        return !(row?.metadata as { warm?: unknown } | null | undefined)?.warm;
+      },
+      sleep ? { sleep } : {},
+    );
   }
 }

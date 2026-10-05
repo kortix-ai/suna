@@ -18,7 +18,11 @@ import {
   setGlobalDefaultModel,
   wireToModelKey,
 } from './use-model-store';
+import { resolveModelDefault } from '../core/models/composer-model';
 import { qk } from './query-keys';
+
+// Framework-free since it moved to core; re-exported so `./react` keeps it.
+export { resolveModelDefault };
 import { useProjectLlmGatewayEnabled } from './use-project-llm-gateway';
 
 export interface UseModelDefaults {
@@ -44,18 +48,6 @@ export interface UseModelDefaults {
   clearAccountDefault: () => Promise<void>;
   clearAgentDefault: (agentName: string) => Promise<void>;
   clearProjectDefault: () => Promise<void>;
-}
-
-export function resolveModelDefault(
-  data: ModelDefaultsResponse | undefined,
-  agentName: string | undefined,
-): ModelKey | undefined {
-  const wire =
-    (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
-    data?.projectDefault ??
-    data?.accountDefault ??
-    (data?.freeTier ? undefined : data?.platformDefault);
-  return wire ? wireToModelKey(wire) : undefined;
 }
 
 export function useModelDefaults(
@@ -88,6 +80,7 @@ export function useModelDefaults(
       queryClient.invalidateQueries({ queryKey: ['gateway-routing-policy', projectId] }),
       // Same entry `useProjectModels`/`useModelEnablement` read.
       queryClient.invalidateQueries({ queryKey: qk.project.modelPicker(projectId ?? '') }),
+      queryClient.invalidateQueries({ queryKey: qk.project.modelAccess(projectId ?? '') }),
       queryClient.invalidateQueries({ queryKey: ['project-providers', projectId] }),
     ]);
   }, [projectId, queryClient, queryKey]);

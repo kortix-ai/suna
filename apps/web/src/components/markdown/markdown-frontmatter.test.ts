@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'bun:test';
 
+import { within } from '@kortix/shared/tool-output/testing';
+
 import { parseFrontmatter } from './markdown-frontmatter';
 
 // Frontmatter is not decoration — if it is not lifted out BEFORE the markdown
@@ -40,9 +42,7 @@ describe('parseFrontmatter', () => {
     const { frontmatter } = parseFrontmatter(AGENT_FILE);
 
     expect(frontmatter?.mode).toBe('primary');
-    expect(frontmatter?.description).toBe(
-      'Veyris internal admin & build agent. Full access.',
-    );
+    expect(frontmatter?.description).toBe('Veyris internal admin & build agent. Full access.');
   });
 
   test('keeps a QUOTED nested key — `"*": allow` is the opencode permission idiom', () => {
@@ -96,4 +96,21 @@ describe('markdown FILE renderers all strip frontmatter', () => {
       expect(source).toMatch(/parseFrontmatter|MarkdownWithFrontmatter/);
     });
   }
+});
+
+// A front-matter line used to lose its trailing whitespace through `/\s+$/`,
+// which retried a whitespace run inside the line from every position in it:
+// 60k spaces took 1.4 s on V8 (Bun's JSC runs it in linear time, so only the
+// parity half of these tests can fail under Bun). `trimEnd` replaces it.
+describe('parseFrontmatter trims each line in linear time', () => {
+  test('trimEnd drops exactly what /\\s+$/ dropped, for every UTF-16 code unit', () => {
+    for (let code = 0; code < 0x10000; code++) {
+      const c = String.fromCharCode(code);
+      const line = `a${c}${c}b${c}${c}`;
+      expect(line.trimEnd()).toBe(line.replace(/\s+$/, ''));
+    }
+  });
+
+  within('a front-matter line holding 240k spaces', () =>
+    parseFrontmatter(`---\ntitle: a${' '.repeat(240_000)}b\n---\nbody`));
 });

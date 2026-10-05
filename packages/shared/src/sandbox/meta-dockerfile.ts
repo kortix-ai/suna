@@ -1,4 +1,22 @@
-import { NODE_VERSION, OPENCODE_VERSION, PNPM_VERSION } from '../runtime-versions';
+import {
+  NODE_VERSION,
+  OPENCODE_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  PNPM_VERSION,
+} from '../runtime-versions';
+import { kortixShellProfileRun } from './dockerfile-layer';
+import {
+  SANDBOX_SHELL_TOOL_APT_LIST,
+  SANDBOX_SHELL_TOOL_LINK_COMMAND,
+} from './shell-tools';
+import {
+  SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_MANAGED_SKILLS_DIR,
+  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_PATH,
+} from './platform-binaries';
 
 export interface MetaSandboxDockerfileOptions {
   agentBinaryPath: string;
@@ -11,18 +29,27 @@ export interface MetaSandboxDockerfileOptions {
 }
 
 export const META_AGENT_GUIDE = [
-  '# Kortix Meta Agent',
+  '# Meta',
   '',
-  'You coordinate work. You do not perform project work in this sandbox.',
+  'You are Meta: the single agent the user talks to, and a pure',
+  'multi-agent ORCHESTRATOR. You never do the work yourself. You understand the',
+  'user, break the goal into tasks, offload EVERY task to a specialized session,',
+  'monitor those sessions, and relay what comes back — in your own words. You are',
+  'the back-and-forth with the user; the sessions are the hands.',
   '',
-  '- This sandbox is minimal on purpose: the `kortix` CLI, git, and nothing else.',
+  'NEVER do project work in this sandbox. You have no project toolchain here on',
+  'purpose. The moment you catch yourself writing code, editing a file, running a',
+  'build, researching, or producing a deliverable: STOP, and spawn a session for',
+  'it instead. Your value is delegation and communication, not doing.',
+  '',
+  '- This sandbox is minimal on purpose: the `kortix` CLI, git, and shell tools (rg, fd, jq). Nothing else.',
   '- Specialized sessions run full sandboxes with Python (via `uv` — tell them to use `uv run`/`uvx`/`uv pip`,',
   '  never bare `pip`), Node, browsers, and document tooling preinstalled. Never plan around what a',
   '  session might be missing — just give it the task.',
   '- Read the `kortix-cli` skill before coordinating; `kortix skills get kortix-system` serves the full,',
   '  always-current CLI reference.',
   '- Use the `kortix` CLI to inspect the current project and its sessions.',
-  '- Start a specialized session when the task needs a project runtime or toolchain.',
+  '- Offload EVERY task to a specialized session — never decide a task is "small enough" to do here. If there is work, there is a session for it.',
   '- Give each specialized session one bounded task.',
   '- You are the only coordinator. Specialized sessions do their task themselves and never spawn sessions.',
   '  Always pass the task via `--prompt`; the CLI appends a session contract that tells the worker to do the',
@@ -55,8 +82,8 @@ export const META_AGENT_GUIDE = [
  * Render the platform meta-agent image.
  *
  * This runtime contains the daemon, Kortix CLI, Git, and OpenCode. It excludes
- * project toolchains, including Codex CLI and Claude Code, because the meta
- * agent delegates project work to a full environment session.
+ * project toolchains because the meta agent delegates project work to another
+ * session.
  */
 export function buildMetaSandboxDockerfile(options: MetaSandboxDockerfileOptions): string {
   return `# syntax=docker/dockerfile:1.7
@@ -65,16 +92,30 @@ FROM debian:bookworm-slim
 RUN apt-get update \\
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
       ca-certificates curl git gzip libatomic1 sudo util-linux \\
- && rm -rf /var/lib/apt/lists/*
+      ${SANDBOX_SHELL_TOOL_APT_LIST} \\
+ && rm -rf /var/lib/apt/lists/* \\
+ && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}
 
 RUN useradd --create-home --shell /bin/bash kortix \\
  && mkdir -p /workspace /opt/kortix /ephemeral/kortix-master/opencode \\
  && chown -R kortix:kortix /workspace /opt/kortix /ephemeral
 
 ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
-    PATH="/home/kortix/.local/share/pnpm/bin:\${PATH}"
-RUN curl -fsSL https://get.pnpm.io/install.sh \\
-      | env HOME=/home/kortix SHELL=/bin/bash PNPM_VERSION=${PNPM_VERSION} sh - \\
+    PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:\${PATH}"
+# pnpm comes from its checksum-verified standalone release artifact; the
+# public installer script is not part of the trust path.
+RUN case "$(uname -m)" in \\
+      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\
+      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\
+      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+ && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\
+      "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz" \\
+ && echo "\${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\
+ && mkdir -p /home/kortix/.local/bin \\
+ && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\
+ && rm /tmp/pnpm.tar.gz \\
+ && test "$(HOME=/home/kortix pnpm --version)" = "${PNPM_VERSION}" \\
  && HOME=/home/kortix pnpm runtime set node ${NODE_VERSION} --global \\
  && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \\
  && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
@@ -92,6 +133,8 @@ COPY ${options.cliBinaryPath} /tmp/kortix.gz
 RUN gzip -dc /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
  && gzip -dc /tmp/kortix.gz > /usr/local/bin/kortix \\
  && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix \\
+ && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\
+ && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\
  && rm /tmp/kortix-agent.gz /tmp/kortix.gz
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint
 RUN chmod 0755 /usr/local/bin/kortix-entrypoint
@@ -99,7 +142,10 @@ COPY --chown=kortix:kortix <<'KORTIX_META_AGENT_GUIDE' /workspace/AGENTS.md
 ${META_AGENT_GUIDE}
 KORTIX_META_AGENT_GUIDE
 COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
-COPY --chown=kortix:kortix ${options.managedSkillsPath} /opt/kortix/managed-skills
+COPY --chown=kortix:kortix ${options.managedSkillsPath} ${SANDBOX_MANAGED_SKILLS_DIR}
+RUN ${SANDBOX_RUNTIME_ASSETS_STATE_COMMAND} \\
+ && chown kortix:kortix ${SANDBOX_RUNTIME_ASSETS_STATE_PATH}
+${kortixShellProfileRun()}
 
 ENV KORTIX_WORKSPACE=/workspace \\
     KORTIX_PROJECT_AUTO_CLONE=0 \\

@@ -36,7 +36,7 @@
  *   (2026-08-12):
  *   - `archiveProject()` is `DELETE /v1/projects/:id`
  *     (`packages/sdk/src/core/rest/projects-client/projects.ts`), which sets
- *     `status: 'archived'` (`apps/api/src/projects/routes/r6.ts`).
+ *     `status: 'archived'` (`apps/api/src/projects/routes/project-settings.ts`).
  *   - `loadProjectForUser` — the gate in front of EVERY project-scoped route —
  *     returns `null` for an archived row
  *     (`apps/api/src/projects/lib/access.ts:575`). So every session, secret,
@@ -53,7 +53,7 @@
  *   says that. What it does NOT say is that the data is erased, because it is
  *   not — and it explicitly reassures that the Git repository survives, which
  *   is true: `deleteManagedProjectRepo` runs only under `?purge=true`
- *   (`r6.ts`), a query param `archiveProject()` never sends. Claiming the repo
+ *   (`project-settings.ts`), a query param `archiveProject()` never sends. Claiming the repo
  *   was destroyed would be the one genuinely false thing this dialog could
  *   say, and it is the thing users would panic about first.
  *
@@ -96,15 +96,6 @@
  * (`components/projects/schedule-view.tsx`, the Schedules tab). See each
  * file's own header comment for the move.
  *
- * **Ported from `main` at the settings-panel merge: archive suppression.**
- * `main` moved the deleted `/projects` list page's archive handler into
- * `settings-view.tsx` as `runProjectArchive` +
- * `accountProjectCountForArchive`. That file is deleted here, so both
- * functions live below and this tab's archive mutation drives them. Without
- * the port, `suppressAutoProjectAfterDelete()` would have had ZERO callers and
- * `/projects/start` would silently re-provision a workspace the user just
- * deleted. `general-tab.archive.test.ts` carries `main`'s tests for them.
- *
  * `GeneralTabView` is the pure, props-only half — the one stateful piece
  * (`GeneralWorkspaceCard`'s name+icon mutations) owns its own hooks and can't
  * render under `renderToStaticMarkup` with no `QueryClientProvider`, so it is
@@ -136,22 +127,35 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { TypeToConfirmDialog } from '@/components/ui/type-to-confirm-dialog';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { buildProjectEditPatch } from '@/features/projects/modal/project-edit-patch';
-import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import {
   ProjectIconField,
   type ProjectIconValue,
 } from '@/features/projects/modal/project-icon-field';
+import { useAuth } from '@/features/providers/auth-provider';
+import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import {
   renameOnError,
   renameOnMutate,
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
 import { useDebounce } from '@/hooks/use-debounce';
-import { useAuth } from '@/features/providers/auth-provider';
-import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import {
+  archiveProject,
+  getProject,
+  updateProject,
+  type KortixProject,
+  type ProjectInput,
+} from '@kortix/sdk';
+import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from '@/i18n/use-translations';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 /** Asked for in ONE batched probe. `project.delete` and `project.write` are
  *  separate permissions — see `ProjectSettingsGeneralProps.canDelete`. */
@@ -159,17 +163,6 @@ const GENERAL_TAB_ACTIONS = [
   PROJECT_ACTIONS.PROJECT_WRITE,
   PROJECT_ACTIONS.PROJECT_DELETE,
 ] as const;
-import {
-  archiveProject,
-  getProject,
-  listProjectsForAccount,
-  updateProject,
-  type KortixProject,
-  type ProjectInput,
-} from '@kortix/sdk';
-import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { SettingsTabHeader } from '../settings-tab-header';
 
 /**
  * What the user actually loses, in the order they will care about it.
@@ -200,7 +193,7 @@ export const DELETE_WORKSPACE_CONSEQUENCES = [
 
 /** Stated because it is true and because its absence would be read as a
  *  denial. `archiveProject()` sends no `?purge=true`, which is the only thing
- *  that deletes a Kortix-managed repository (`apps/api/.../routes/r6.ts`);
+ *  that deletes a Kortix-managed repository (`apps/api/.../routes/project-settings.ts`);
  *  user-connected repositories are never touched at all. */
 export const DELETE_WORKSPACE_REASSURANCE =
   'Your connected Git repository is not deleted. Any code already pushed to it stays where it is.';
@@ -217,6 +210,7 @@ export const DELETE_WORKSPACE_REASSURANCE =
  * pane needs it.
  */
 export interface GeneralTabViewProps {
+  copy?: GeneralTabCopy;
   isLoading?: boolean;
   isError?: boolean;
   errorMessage?: string;
@@ -246,6 +240,36 @@ export interface GeneralTabViewProps {
   isArchivePending?: boolean;
 }
 
+export interface GeneralTabCopy {
+  loadFailed: string;
+  retry: string;
+  dangerZone: string;
+  deleteWorkspace: string;
+  deleteDescription: string;
+  deleteTitle: string;
+  deleteDialog: (name: string) => ReactNode;
+  consequencesTitle: string;
+  consequences: readonly string[];
+  reassurance: string;
+  keepWorkspace: string;
+}
+
+const DEFAULT_GENERAL_COPY: GeneralTabCopy = {
+  loadFailed: 'Failed to load project',
+  retry: 'Retry',
+  dangerZone: 'Danger zone',
+  deleteWorkspace: 'Delete workspace',
+  deleteDescription:
+    'Removes this workspace and everything inside it, for every member. This cannot be undone.',
+  deleteTitle: 'Delete workspace?',
+  deleteDialog: (name) =>
+    `This deletes ${name} for everyone with access to it. It cannot be undone.`,
+  consequencesTitle: 'You immediately lose:',
+  consequences: DELETE_WORKSPACE_CONSEQUENCES,
+  reassurance: DELETE_WORKSPACE_REASSURANCE,
+  keepWorkspace: 'Keep workspace',
+};
+
 /** Presentational only — no hooks, no data fetching, no store or Supabase
  *  read. Kept separate from `GeneralTab` so this renders under
  *  `renderToStaticMarkup` without a `QueryClientProvider` — see
@@ -253,6 +277,7 @@ export interface GeneralTabViewProps {
  *  prop is optional with a safe default so the bare `<GeneralTabView />`
  *  the test file renders shows the Delete-workspace section fully formed. */
 export function GeneralTabView({
+  copy = DEFAULT_GENERAL_COPY,
   isLoading = false,
   isError = false,
   errorMessage = '',
@@ -279,11 +304,11 @@ export function GeneralTabView({
       ) : isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load project"
+          title={copy.loadFailed}
           description={errorMessage}
           action={
             <Button variant="outline" size="sm" onClick={onRetry}>
-              Retry
+              {copy.retry}
             </Button>
           }
         />
@@ -293,12 +318,9 @@ export function GeneralTabView({
           {gitRepoSlot}
           {canDelete ? (
             <section className="space-y-3">
-              <SettingsSubsectionHeader title="Danger zone" />
+              <SettingsSubsectionHeader title={copy.dangerZone} />
               <SettingsRowGroup>
-                <SettingsRow
-                  label="Delete workspace"
-                  description="Removes this workspace and everything inside it, for every member. This cannot be undone."
-                >
+                <SettingsRow label={copy.deleteWorkspace} description={copy.deleteDescription}>
                   {/* Red text, not a filled button: the weight belongs to the
                       confirmation, not to the affordance that opens it. */}
                   <Button
@@ -307,7 +329,7 @@ export function GeneralTabView({
                     className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={onOpenArchiveDialog}
                   >
-                    Delete workspace
+                    {copy.deleteWorkspace}
                   </Button>
                 </SettingsRow>
               </SettingsRowGroup>
@@ -321,23 +343,18 @@ export function GeneralTabView({
         onOpenChange={(open) => {
           if (!open) onCloseArchiveDialog();
         }}
-        title="Delete workspace?"
-        description={
-          <>
-            This deletes <span className="text-foreground font-medium">{workspaceName}</span> for
-            everyone with access to it. It cannot be undone.
-          </>
-        }
-        consequencesTitle="You immediately lose:"
-        consequences={DELETE_WORKSPACE_CONSEQUENCES}
-        reassurance={DELETE_WORKSPACE_REASSURANCE}
+        title={copy.deleteTitle}
+        description={copy.deleteDialog(workspaceName)}
+        consequencesTitle={copy.consequencesTitle}
+        consequences={copy.consequences}
+        reassurance={copy.reassurance}
         // The workspace's own name, so confirming proves the user knows WHICH
         // workspace this is — the mistake that actually costs data. While the
         // project query is still in flight this is `''`, and
         // `confirmationPhraseMatches` refuses to arm on a blank phrase.
         confirmPhrase={workspaceName}
-        confirmLabel="Delete workspace"
-        cancelLabel="Keep workspace"
+        confirmLabel={copy.deleteWorkspace}
+        cancelLabel={copy.keepWorkspace}
         onConfirm={onConfirmArchive}
         isPending={isArchivePending}
       />
@@ -356,8 +373,8 @@ function toIconValue(icon?: string | null, glyph?: GlyphSelection | null): Proje
   return null;
 }
 
-function SaveStatus() {
-  return <span className="text-muted-foreground shrink-0 text-xs tabular-nums">Saving…</span>;
+function SaveStatus({ label }: { label: string }) {
+  return <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{label}</span>;
 }
 
 export interface RunProjectArchiveClient {
@@ -370,64 +387,24 @@ export interface RunProjectArchiveClient {
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
  * hazard for sibling suites.
  *
- * Ported from `main` at the settings-panel merge (`settings-view.tsx`'s
- * `runProjectArchive`), which itself carried it over from the deleted
- * `/projects` list page's archive handler: "Archiving the LAST project must
- * leave the account empty. Without this the auto-provision door would see zero
- * active projects and immediately recreate one, undoing the delete the user
- * just confirmed." Same condition (`<= 1`, against the count from BEFORE this
- * archive lands), same tab-scoped `sessionStorage` guard
- * (`suppressAutoProjectAfterDelete`) — deliberately NOT `localStorage`: a
- * later sign-in or a fresh tab must still auto-provision for an empty account
- * like any other.
- *
- * Without this, `main`'s `/projects/start` landing door is the only consumer of
- * `isAutoProjectSuppressed()` and NOTHING would ever set the flag — deleting
- * `settings-view.tsx` alone would have orphaned the whole mechanism silently.
- *
- * `onSuppress` only runs after `client.archiveProject` resolves — a failed
- * archive must not suppress auto-provision for a project that still exists.
- *
- * `remainingProjectCountBeforeArchive` is `number | null`, NOT the deleted
- * page's plain number: that page's count and its Archive button read the SAME
- * query, so the button could not render before the count existed. Here the
- * count is a separate, dependent query that can still be loading or errored
- * when Delete is confirmed. `null` means "count unknown" and deliberately does
- * NOT suppress — failing closed, because the cost of skipping a suppression is
- * one unwanted auto-create, while the cost of a FALSE suppression is
- * `/projects/start` refusing to auto-create for the next empty account this
- * tab visits.
+ * Archiving the account's last project needs no guard: the landing door
+ * never auto-creates a project, so an empty account lands on the chooser.
  */
 export async function runProjectArchive(
   projectId: string,
-  remainingProjectCountBeforeArchive: number | null,
   client: RunProjectArchiveClient,
-  onSuppress: () => void,
   /** Forget this project as the remembered landing target (JAY-729). Runs
    *  only after the archive lands — a failed archive leaves a project that
-   *  still renders, so its cookie must survive. Unlike `onSuppress` it does
-   *  not depend on the remaining count: forgetting is about THIS project. */
+   *  still renders, so its cookie must survive. */
   onForget?: () => void,
+  /** Leave the deleted project for the id-free landing door. Runs LAST, after
+   *  the cookie is forgotten, so the door opens the next project — or, after
+   *  the account's last one, the create form. */
+  onLeave?: (path: string) => void,
 ): Promise<void> {
   await client.archiveProject(projectId);
   onForget?.();
-  if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
-    onSuppress();
-  }
-}
-
-/**
- * `accountProjectsQuery.data` -> the count `runProjectArchive` needs, kept as
- * its own exported step so the exact mapping is pinned independently of
- * TanStack Query. The bug this guards against lived in a bare
- * `accountProjectsQuery.data?.length ?? 0` at the call site: `undefined`
- * (still loading, OR the query errored — react-query leaves `data` `undefined`
- * in both) silently became `0`, which reads as "zero projects remain" and
- * fires a false suppression. `undefined` must map to `null` ("unknown"), never
- * to `0` ("confirmed empty"). Ported from `main`.
- */
-export function accountProjectCountForArchive(data: unknown[] | undefined): number | null {
-  return data ? data.length : null;
+  onLeave?.(PROJECT_LANDING_PATH);
 }
 
 /** Workspace name + icon. Moved from `settings-view.tsx`'s
@@ -441,6 +418,8 @@ function GeneralWorkspaceCard({
   project: KortixProject;
   canManage: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
   const [name, setName] = useState(project.name);
   const { debouncedValue: debouncedName, isLoading: isDebouncing } = useDebounce(name, 500);
@@ -457,7 +436,7 @@ function GeneralWorkspaceCard({
     },
     onError: (error: Error, _nextName, context) => {
       renameOnError(queryClient, project.project_id, context);
-      errorToast(error.message || 'Failed to update project');
+      errorToast(error.message || t('updateFailed'));
     },
     onSettled: () => renameOnSettled(queryClient, project.project_id),
   });
@@ -478,7 +457,8 @@ function GeneralWorkspaceCard({
     onSuccess: (updated) => {
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update workspace icon'),
+    onError: (error: Error) =>
+      errorToast(error.message || t('iconUpdateFailed')),
     // The icon is read from THREE caches and this mutation used to write back
     // to one. `setQueryData` above repaints the sidebar switcher, which reads
     // `qk.project.summary`; the projects grid and ⌘K read a
@@ -521,7 +501,7 @@ function GeneralWorkspaceCard({
     // under it would repeat the same word. See `settings-tab-header.tsx`.
     // Both fields share ONE bordered group, Linear-style.
     <SettingsRowGroup>
-      <SettingsRow label="Icon" description="Shown next to the workspace name.">
+      <SettingsRow label={t('icon')} description={t('iconDescription')}>
         <ProjectIconField
           value={toIconValue(project.icon, project.icon_glyph)}
           onChange={(emoji) => applyIcon({ emoji })}
@@ -536,16 +516,13 @@ function GeneralWorkspaceCard({
           `items-center` `SettingsRow` applies when there is no description
           (specificity 0,2,0 vs 0,1,0), so a description-less row top-aligns
           its control against a single-line label. See this task's report. */}
-      <SettingsRow
-        label="Workspace name"
-        description="Shown in the workspace switcher and anywhere this workspace is listed."
-      >
-        {saving ? <SaveStatus /> : null}
+      <SettingsRow label={t('name')} description={t('nameDescription')}>
+        {saving ? <SaveStatus label={t('saving')} /> : null}
         <Input
           id="workspace-name"
           // The row label is a heading, not a `<label htmlFor>` — the control
           // carries its own accessible name.
-          aria-label="Workspace name"
+          aria-label={t('name')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           disabled={!canManage || isRenamePending}
@@ -565,7 +542,10 @@ function GeneralWorkspaceCard({
  *  while this tab is active (`SettingsTabPane` in `settings-panel.tsx`
  *  returns `null` otherwise), so nothing here fetches on panel open. */
 export function GeneralTab({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { user } = useAuth();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
@@ -584,32 +564,24 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
   const canEdit = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
 
-  // Same `qk.projects.list(accountId)` cache entry the workspace switcher and
-  // `/new` already fetch with, so this is warm (no extra request) for the
-  // common case. Read, not re-derived from `project`: this is the account's
-  // PROJECT COUNT before the archive commits, which `runProjectArchive` needs
-  // to decide whether this was the last one. Ported from `main`.
-  const accountId = project?.account_id;
-  const accountProjectsQuery = useQuery({
-    queryKey: qk.projects.list(accountId),
-    queryFn: () => listProjectsForAccount(accountId as string),
-    enabled: !!accountId,
-    ...contract('inventory'),
-  });
-
   const archiveMutation = useMutation({
     mutationFn: () =>
       runProjectArchive(
         projectId,
-        accountProjectCountForArchive(accountProjectsQuery.data),
         { archiveProject },
-        suppressAutoProjectAfterDelete,
         // The archived project must stop being where `/` and the settings
         // exit land (JAY-729) — otherwise they redirect into a 404 gate.
         () => forgetLastProjectId(user?.id, projectId),
+        // The overlay's open state is global, so close it first or it would
+        // reopen over the next project. `replace`: Back must not return to
+        // the deleted project.
+        (path) => {
+          useSettingsPanelStore.getState().close();
+          router.replace(path);
+        },
       ),
     onSuccess: () => {
-      successToast('Workspace archived');
+      successToast(tI18nComplete('textdd9e881230eb'));
       // qk.projects.scope(): for a single-account user the archived
       // project's account IS the primary account qk.projects.list() (no
       // args) resolves to, so a precise invalidation would leave the
@@ -618,11 +590,30 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       setArchiveOpen(false);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
+    onError: (error: Error) =>
+      errorToast(error.message || t('archiveFailed')),
   });
 
   return (
     <GeneralTabView
+      copy={{
+        loadFailed: t('loadFailed'),
+        retry: t('retry'),
+        dangerZone: t('dangerZone'),
+        deleteWorkspace: t('deleteWorkspace'),
+        deleteDescription: t('deleteDescription'),
+        deleteTitle: t('deleteTitle'),
+        deleteDialog: (name) => t('deleteDialog', { name }),
+        consequencesTitle: t('consequencesTitle'),
+        consequences: [
+          t('consequences.sessions'),
+          t('consequences.automation'),
+          t('consequences.integrations'),
+          t('consequences.access'),
+        ],
+        reassurance: t('reassurance'),
+        keepWorkspace: t('keepWorkspace'),
+      }}
       isLoading={projectQuery.isLoading}
       isError={projectQuery.isError}
       errorMessage={(projectQuery.error as Error)?.message ?? ''}

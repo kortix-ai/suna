@@ -29,6 +29,7 @@
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { getRequestContext } from '../lib/request-context';
 import { db } from './db';
+import { isUuid } from './validate';
 
 // The table is imported LAZILY inside each query below, never at module scope.
 // This module is reached from `resolve-account`, `projects/lib/git`,
@@ -184,6 +185,9 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // needs. Live invocation (`/call`) stays open too: it acts now, inside the
   // audited hour, and creates nothing durable.
   { re: /^\/v1\/projects\/[^/]+\/connections(\/|$)/ },
+  // A paired computer added to a project is a computer ACCOUNT: the same
+  // durable access to a real machine as a connection.
+  { re: /^\/v1\/projects\/[^/]+\/computers(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/connectors\/[^/]+\/oauth2\/connection(\/|$)/ },
   { re: /^\/v1\/connectors\/projects\/[^/]+\/connectors(\/|$)/ },
   { re: /^\/v1\/connectors\/projects\/[^/]+\/policies(\/|$)/ },
@@ -378,7 +382,7 @@ export async function loadImpersonationGrant(
   if (!(await hasDatabase())) return null;
   // A malformed id is a `uuid` cast error (SQLSTATE 22P02) before any guard
   // runs, which would surface as a 500 on a header the caller controls.
-  if (!UUID_RE.test(grantId)) return null;
+  if (!isUuid(grantId)) return null;
   const impersonationGrants = await grantsTable();
   const [row] = await db
     .select({
@@ -392,12 +396,6 @@ export async function loadImpersonationGrant(
     .where(eq(impersonationGrants.id, grantId))
     .limit(1);
   return row ?? null;
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isUuid(value: string): boolean {
-  return UUID_RE.test(value);
 }
 
 export async function createImpersonationGrant(input: {

@@ -1,4 +1,4 @@
-import { isRuntimeManagedModelId } from '../models/managed-models';
+import { canonicalManagedModelId, isRuntimeManagedModelId } from '../models/managed-models';
 
 // One definition of how a default model/agent is chosen across scopes. Keeping
 // the precedence here means Slack, the web picker, and the gateway agree.
@@ -18,17 +18,25 @@ const KORTIX_PREFIX = 'kortix/';
  * This is what `account_model_preferences` stores and what servability checks.
  */
 export function toWireModel(ref: string): string {
-  return ref.startsWith(KORTIX_PREFIX) ? ref.slice(KORTIX_PREFIX.length) : ref;
+  const bare = ref.startsWith(KORTIX_PREFIX) ? ref.slice(KORTIX_PREFIX.length) : ref;
+  return canonicalManagedModelId(bare);
 }
 
 /**
  * The OPENCODE ref form: every gateway model is registered under OpenCode's
  * `kortix` provider. The remaining path is the gateway wire model, including
  * nested provider paths such as `codex/gpt-5.6-sol`.
+ *
+ * Every other stored model is the wire id (`toWireModel`): channel bindings,
+ * triggers, account and agent defaults. Only a session's
+ * `metadata.opencode_model` keeps this form, because released clients (the
+ * CLI, `@kortix/sdk` `send()`) split it on the first `/` into the prompt's
+ * `{providerID, modelID}`; a bare wire id there would send no model, and a
+ * BYOK id the wrong provider. It goes when those clients read the model from
+ * the API instead of parsing the pin.
  */
 export function toOpencodeModelRef(model: string): string {
-  if (model.startsWith(KORTIX_PREFIX)) return model;
-  return `${KORTIX_PREFIX}${model}`;
+  return `${KORTIX_PREFIX}${toWireModel(model)}`;
 }
 
 function isManagedRef(ref: string): boolean {

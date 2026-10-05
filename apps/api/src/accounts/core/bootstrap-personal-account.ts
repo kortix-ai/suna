@@ -6,7 +6,22 @@ import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { db } from '../../shared/db';
+import { getSupabase } from '../../shared/supabase';
+import { profileNameFromMetadata } from './account-name';
 import { defaultAccountName } from './app';
+
+/**
+ * The sign-in profile's name (Google/GitHub OAuth fill `full_name` / `name`).
+ * Best effort: a miss only means the suggestion falls back to the email.
+ */
+async function profileName(userId: string): Promise<string | null> {
+  try {
+    const { data } = await getSupabase().auth.admin.getUserById(userId);
+    return profileNameFromMetadata(data?.user?.user_metadata);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Idempotent personal-account bootstrap for a new auth user.
@@ -18,8 +33,16 @@ import { defaultAccountName } from './app';
 export async function bootstrapPersonalAccount(
   userId: string,
   email?: string | null,
+  /** Pass it when the caller already has the auth user; `undefined` looks it up. */
+  fullName?: string | null,
+  lookupProfileName: (userId: string) => Promise<string | null> = profileName,
 ): Promise<{ accountId: string; created: boolean }> {
-  const name = defaultAccountName(email);
+  // Never `"<email>'s Account"` (KRTX-638): a suggested name the user confirms
+  // or changes on their first project (`/new`).
+  const name = defaultAccountName(
+    email,
+    fullName === undefined ? await lookupProfileName(userId) : fullName,
+  );
 
   const created = await db
     .insert(accounts)

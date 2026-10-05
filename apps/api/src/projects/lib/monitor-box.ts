@@ -23,7 +23,6 @@
  *    the daemon leaves the checkout on default-branch HEAD. A monitor watches
  *    what is shipped, not what some session is working on.
  *
- * Spec: docs/specs/2026-08-12-monitors.md.
  */
 
 import {
@@ -35,12 +34,12 @@ import {
 } from '@kortix/db';
 import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
-  calculateComputeCost,
   endComputeSession,
   markComputeSessionAlive,
 } from '../../billing/services/compute-metering';
+import { monthStartUtc, monthlyComputeColumns, sumMonthlyComputeCost } from '../../billing/services/compute-accrual';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { type ProviderName, getProvider } from '../../platform/providers';
+import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { MONITOR_PROVIDER, monitorProviderConfigured } from './monitor-box-provider';
 import {
@@ -353,54 +352,25 @@ async function observeMonitorBox(
 
 /**
  * This calendar month's monitor compute for one project, including the accrual
- * on the currently-open window. Mirrors apps/budget.ts's
- * `appMonthlyComputeCost`; the join is `sandbox_id = box_id` because a monitor
- * window's sandbox id IS its box id.
+ * on the currently-open window. The select list and the accrual loop are the
+ * shared ones in billing/services/compute-accrual.ts; the join is
+ * `sandbox_id = box_id` because a monitor window's sandbox id IS its box id.
  */
 export async function monitorMonthlyComputeCost(
   projectId: string,
   now = new Date(),
 ): Promise<number> {
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const rows = await db
-    .select({
-      costUsd: sandboxComputeSessions.costUsd,
-      endedAtValue: sandboxComputeSessions.endedAt,
-      lastBilledAt: sandboxComputeSessions.lastBilledAt,
-      provider: sandboxComputeSessions.provider,
-      cpuCores: sandboxComputeSessions.cpuCores,
-      memoryGb: sandboxComputeSessions.memoryGb,
-      diskGb: sandboxComputeSessions.diskGb,
-    })
+    .select(monthlyComputeColumns)
     .from(sandboxComputeSessions)
     .innerJoin(projectMonitorBoxes, eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId))
     .where(
       and(
         eq(projectMonitorBoxes.projectId, projectId),
-        gte(sandboxComputeSessions.startedAt, monthStart.toISOString()),
+        gte(sandboxComputeSessions.startedAt, monthStartUtc(now).toISOString()),
       ),
     );
-  let total = 0;
-  for (const row of rows) {
-    total += Number(row.costUsd || 0);
-    if (!row.endedAtValue) {
-      const unbilledSeconds = Math.max(
-        0,
-        (now.getTime() - new Date(row.lastBilledAt).getTime()) / 1000,
-      );
-      total += calculateComputeCost(
-        {
-          cpuCores: row.cpuCores,
-          memoryGb: row.memoryGb,
-          diskGb: row.diskGb,
-          gpuCount: 0,
-        },
-        unbilledSeconds,
-        row.provider as ProviderName,
-      );
-    }
-  }
-  return total;
+  return sumMonthlyComputeCost(rows, now);
 }
 
 // ─── Retention ──────────────────────────────────────────────────────────────

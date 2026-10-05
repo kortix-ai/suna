@@ -12,11 +12,12 @@
  * table again.
  */
 
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, lte, not, sql } from 'drizzle-orm';
 import type { ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { sandboxStopClaimLeaseMs } from '../sandbox-deadline-policy';
+import { holdsStopClaim, noLiveStopClaim } from '../session-lifecycle/stop-claim';
 import { reapBatchSize } from '../reaper-constants';
 import { mergeMetadata } from './sandbox-state-sync';
 
@@ -47,21 +48,15 @@ export function reapCandidatePredicate(sandboxIds?: readonly string[], activeTur
 
 /** Durable turn authority that must receive provider-native renewal service. */
 export function activeTurnAuthorityPredicate() {
-  return sql`(
-    (
-      coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
-      AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active')
-    )
-    OR EXISTS (
+  return sql`EXISTS (
       SELECT 1
         FROM jsonb_each(CASE
-          WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
-            THEN ${sessionSandboxes.metadata}->'activeTurns'
+          WHEN jsonb_typeof(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns') = 'object'
+            THEN ${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns'
           ELSE '{}'::jsonb
         END) entry
        WHERE entry.key = entry.value->>'token'
-         AND entry.value->>'state' IN ('delivering', 'active'))
-  )`;
+         AND entry.value->>'state' IN ('delivering', 'active'))`;
 }
 
 /**
@@ -176,19 +171,12 @@ export async function claimExpiredSandboxStop(
         eq(sessionSandboxes.sandboxId, sandboxId),
         eq(sessionSandboxes.status, 'active'),
         lte(sessionSandboxes.deadlineAt, now),
-        sql`(
-          ${sessionSandboxes.metadata}->'lifecycleStopClaim' IS NULL
-          OR ${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
-          OR (${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs')::bigint
-            <= ${now.getTime() - sandboxStopClaimLeaseMs()})`,
-        sql`NOT (
-          coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
-          AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active'))`,
+        noLiveStopClaim(now),
         sql`NOT EXISTS (
               SELECT 1
                 FROM jsonb_each(CASE
-                  WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
-                    THEN ${sessionSandboxes.metadata}->'activeTurns'
+                  WHEN jsonb_typeof(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns') = 'object'
+                    THEN ${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns'
                   ELSE '{}'::jsonb
                 END) entry
                WHERE entry.key = entry.value->>'token'
@@ -210,7 +198,7 @@ export async function releaseSandboxStopClaim(sandboxId: string, token: string):
     .where(
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),
-        sql`${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'token' = ${token}`,
+        holdsStopClaim(token),
       ),
     );
 }
@@ -224,34 +212,4 @@ export async function markReaperVisited(sandboxIds: string[], now: Date): Promis
     .catch((err) =>
       console.warn('[reaper] visit stamp failed:', err instanceof Error ? err.message : err),
     );
-}
-
-/**
- * How many OTHER live sessions are running on this same provider box.
- *
- * A cell sandbox can carry many sessions (cell-host-platinum.ts), and stopping
- * it powers off every one of them. Two sessions never share an `external_id`
- * unless a shared host put them there, so for an ordinary box this is always 0
- * and the reaper behaves exactly as before.
- *
- * ACTIVE only, and never the row being reaped: a stopped or failed row is not
- * somebody's runtime, and counting it would strand a shared box forever after
- * its last real user left.
- */
-export async function countOtherActiveSessionsOnBox(
-  externalId: string,
-  exceptSandboxId: string,
-): Promise<number> {
-  if (!externalId) return 0;
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(sessionSandboxes)
-    .where(
-      and(
-        eq(sessionSandboxes.externalId, externalId),
-        eq(sessionSandboxes.status, 'active'),
-        not(eq(sessionSandboxes.sandboxId, exceptSandboxId)),
-      ),
-    );
-  return row?.n ?? 0;
 }

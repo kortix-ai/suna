@@ -5,10 +5,10 @@
  * A plain project MEMBER needs the TEXT — "new sessions can't start until this
  * image builds" is the only explanation for why the composer is refusing them.
  * They cannot use any of the CONTROLS: "Details" routes into Customize →
- * Settings → Sandbox (`project.customize.read`) and "Retry build" / "Fix with
- * agent" rebuild the project's image (`project.write`). Neither leaf is in the
- * member floor role since #6522, so every one of those buttons was a
- * "forbidden" toast waiting to be clicked.
+ * Settings (`project.settings.write`) and "Retry build" / "Fix with agent"
+ * rebuild the project's image (`project.sandbox.write`, what the rebuild routes
+ * assert). Neither leaf is in the member floor role, so every one of those
+ * buttons would be a "forbidden" toast waiting to be clicked.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -20,18 +20,18 @@ const code = source.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g,
 describe('sandbox alert — controls are IAM-gated, the message is not', () => {
   test('reads both leaves from the shared project-page batch', () => {
     expect(code).toContain('useProjectPageCans(projectId)');
-    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]');
-    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_WRITE]');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]');
   });
 
   // "Details" is a Customize destination, not a modal — each control is a
   // `<Link>` to `projectSettingsSectionHref(projectId, 'sandbox')`.
-  test('Details gates on customize.read, the recovery actions on project.write', () => {
+  test('Details gates on settings.write, the recovery actions on sandbox.write', () => {
     expect(code).toContain(
-      'const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;',
+      'const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed !== false;',
     );
     expect(code).toContain(
-      'const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;',
+      'const canRecover = caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]?.allowed !== false;',
     );
     // The one "Details" sits behind the details gate. It is a prefetching
     // anchor, not a button handler: this alert only shows when the project is
@@ -53,7 +53,9 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
     // And it is a Button, not body-coloured text. Styled `text-muted-foreground
     // text-xs p-0` it was character-for-character the copy beside it, and sat
     // above the title row reading as a stranded caption.
-    expect(code).toContain('<Button asChild size="sm" variant="outline" className={ACTION_BUTTON}>');
+    expect(code).toContain(
+      '<Button asChild size="sm" variant="outline" className={ACTION_BUTTON}>',
+    );
     expect(code).not.toContain('DETAILS_LINK');
   });
 
@@ -88,5 +90,31 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
   test('denied controls are removed, not disabled', () => {
     expect(code).not.toContain('disabled={!canRecover}');
     expect(code).not.toContain('disabled={!canOpenDetails}');
+  });
+});
+
+describe('sandbox alert — a viewer with neither leaf gets the member view', () => {
+  // A member saw "Sandbox build failing / Runtime artifact missing · 1m ago /
+  // The build finished, but without the agent it needs to run." in red, with
+  // no control to act on it (dev, 2026-09-22).
+  test('operator vs member is decided from the same two leaves, after the probe settles', () => {
+    expect(code).toContain('if (details?.isLoading || write?.isLoading) return null;');
+    expect(code).toContain(
+      "const isOperator = details?.allowed !== false || write?.allowed !== false;",
+    );
+    expect(code).toContain('if (!isOperator) {');
+  });
+
+  test('the member view carries no build internals', () => {
+    const start = code.indexOf('if (!isOperator) {');
+    const end = code.indexOf('return (', code.indexOf('</SidebarAlert>', start));
+    const member = code.slice(start, end);
+    expect(member).not.toContain('CATEGORY_LABEL');
+    expect(member).not.toContain('CATEGORY_CAUSE');
+    expect(member).not.toContain('failedAt');
+    expect(member).not.toContain('SandboxAlertContent');
+    expect(source).toContain("critical: 'Sessions unavailable',");
+    // A partial outage still routes sessions: members are not shown it.
+    expect(source).not.toContain('warning: \'Sessions');
   });
 });

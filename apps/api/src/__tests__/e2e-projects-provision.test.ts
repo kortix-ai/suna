@@ -194,7 +194,6 @@ mock.module('../projects/git', () => ({
 mock.module("../snapshots/builder", () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
@@ -359,7 +358,7 @@ mock.module('../shared/db', () => ({
           if (table === projects) updatedProjectSets.push(values);
           // Real drizzle's UPDATE builder is thenable at every chain step
           // (a caller may `.catch()` it directly without `.returning()` —
-          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // see projects.ts's best-effort default_agent metadata mirror write, and
           // the several other `.where(...).catch(() => {})` call sites this
           // mirrors), so this stub must be too: a real Promise (which
           // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for
@@ -592,8 +591,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
   });
 
   test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
-    // The deterministic install/lock engine is gone (see
-    // docs/specs/2026-07-13-marketplace-as-projects.md) — provision seeds only
+    // The deterministic install/lock engine is gone — provision seeds only
     // the plain starter scaffold. `marketplace_items` is accepted for API
     // back-compat but no longer installs anything at provision time; adding a
     // marketplace item to a project is now an agent import
@@ -624,16 +622,16 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // The requested marketplace skills are NOT deterministically installed —
     // only the committed kortix-cli skill (part of the base minimal
     // scaffold) is present.
-    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/deep-research/SKILL.md');
-    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
-    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-cli/SKILL.md');
+    expect(seedFilePaths).not.toContain('skills/agent-browser/SKILL.md');
+    expect(seedFilePaths).not.toContain('skills/deep-research/SKILL.md');
+    expect(seedFilePaths).not.toContain('skills/pdf/SKILL.md');
+    expect(seedFilePaths).toContain('skills/kortix-cli/SKILL.md');
     expect(seedFilePaths).toContain('kortix.yaml');
 
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
-    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/show.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/plugins/pty.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/web_search.ts');
+    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
 
     // The bug this route fix closes: the base template's kortix.yaml declares

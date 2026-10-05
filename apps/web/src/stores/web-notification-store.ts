@@ -1,8 +1,8 @@
 'use client';
 
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -67,9 +67,10 @@ const DEFAULT_PREFERENCES: WebNotificationPreferences = {
 export const useWebNotificationStore = create<WebNotificationState>()(
   persist(
     (set, get) => ({
-      permission: (typeof Notification !== 'undefined'
-        ? (Notification.permission as WebNotificationPermission)
-        : 'default'),
+      permission:
+        typeof Notification !== 'undefined'
+          ? (Notification.permission as WebNotificationPermission)
+          : 'default',
       preferences: DEFAULT_PREFERENCES,
       promptDismissed: false,
 

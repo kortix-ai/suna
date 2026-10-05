@@ -19,7 +19,9 @@
  */
 
 import { getAuthToken } from '../http/auth';
+import { platformConfig } from '../http/config';
 import { appendPreviewToken, buildPreviewAuthEndpoint, isSubdomainPreviewUrl } from './preview';
+import { shouldAttachPreviewToken } from './preview-origin-trust';
 
 /**
  * Mint the `__preview_session` cookie for `previewUrl`'s proxy origin.
@@ -34,7 +36,11 @@ export async function ensurePreviewSessionCookie(
   previewUrl: string,
   options: { serverUrl?: string } = {},
 ): Promise<boolean> {
-  const authEndpoint = buildPreviewAuthEndpoint(previewUrl, options.serverUrl);
+  // The configured backend is the trusted origin when the caller names none.
+  const authEndpoint = buildPreviewAuthEndpoint(
+    previewUrl,
+    options.serverUrl || platformConfig().backendUrl || undefined,
+  );
   if (!authEndpoint) return false;
 
   const token = await getAuthToken();
@@ -73,8 +79,9 @@ export async function ensurePreviewSessionCookie(
  *   - Path proxy (`/v1/p/{sandbox}/{port}/…`): same origin as the API, so the
  *     cookie works; mint it and return the URL untouched.
  *
- * Never throws. With no token, or for a URL that is not a preview at all, the
- * input is returned unchanged — the destination then answers for itself, which
+ * Never throws. With no token, for a URL that is not a preview at all, or for
+ * a preview-shaped host this deployment does not serve, the input is returned
+ * unchanged — the destination then answers for itself, which
  * is more honest than fabricating a URL that cannot work.
  */
 export async function authorizePreviewUrl(
@@ -82,6 +89,9 @@ export async function authorizePreviewUrl(
   options: { serverUrl?: string } = {},
 ): Promise<string> {
   if (isSubdomainPreviewUrl(previewUrl)) {
+    // The shape alone proves nothing: only an origin this deployment serves
+    // may receive the credential. Anything else opens bare.
+    if (!(await shouldAttachPreviewToken(previewUrl, options))) return previewUrl;
     const token = await getAuthToken();
     return token ? appendPreviewToken(previewUrl, token) : previewUrl;
   }

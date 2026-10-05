@@ -127,23 +127,26 @@ console.log(userContext.selectedAgents);
 // Update context
 updateUserContext({
   selectedAgents: ['maya', 'sage', 'nova'],
-  userType: 'company'
+  userType: 'company',
 });
 ```
 
 ## 🎮 Navigation & UX
 
 ### Keyboard Navigation
+
 - `←` / `→` Arrow keys for step navigation
 - Visual feedback for current step
 - Smooth transitions between steps
 
 ### Progress Tracking
+
 - Step-by-step progress indicator
 - Completion percentage calculation
 - Skip options for optional steps
 
 ### Validation
+
 - Step-specific validation logic
 - Contextual progression requirements
 - Smart recommendations based on user input
@@ -165,6 +168,7 @@ updateUserContext({
 ### Styling
 
 All components use Tailwind CSS with consistent design tokens:
+
 - Primary colors for actions and highlights
 - Muted colors for secondary information
 - Smooth animations with motion/react

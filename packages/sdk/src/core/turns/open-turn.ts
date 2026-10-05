@@ -4,8 +4,9 @@
  * This existed twice, and the two copies disagreed:
  *
  * - The sandbox daemon
- *   (`apps/kortix-sandbox-agent-server/src/opencode-turn-state.ts:89-93`) keeps a
- *   turn open through a RETRYABLE error:
+ *   (`lastTurnIncomplete` in `inspectOpencodeRoot`,
+ *   `apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-turn-state.ts`)
+ *   keeps a turn open through a RETRYABLE error:
  *   `role === 'assistant' && !time.completed && (!error || error.data?.isRetryable === true)`.
  * - `apps/web`'s copy ended the turn on ANY `info.error`. That was the wrong one.
  *   During a provider 429 backoff OpenCode stamps `info.error` and keeps writing

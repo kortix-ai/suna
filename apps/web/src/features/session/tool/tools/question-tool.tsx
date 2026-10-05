@@ -6,7 +6,6 @@ import {
   BasicTool,
   MD_FLUSH_CLASSES,
   partInput,
-  partMetadata,
   partOutput,
   ToolEmptyState,
 } from '@/features/session/tool/shared/infrastructure';
@@ -16,8 +15,9 @@ import {
 } from '@/features/session/tool/shared/question-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { toToolView } from '@kortix/sdk';
 import { useMemo } from 'react';
 
 // One shared identity for "this question has no answer yet", so the row prop
@@ -66,7 +66,7 @@ function QuestionAnswerBlock({
   return (
     <div className="space-y-1.5">
       <div className={cn('text-foreground/80 text-xs text-pretty', MD_FLUSH_CLASSES)}>
-        <UnifiedMarkdown content={question.question || question.header || fallback} />
+        <UnifiedMarkdown content={question.question || question.header || fallback} trust="agent" />
       </div>
       <AnswerText answers={answers} options={question.options} />
     </div>
@@ -82,7 +82,6 @@ export function QuestionTool({
 }: ToolProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const input = partInput(part);
-  const metadata = partMetadata(part);
   const output = partOutput(part);
 
   const questions = useMemo<ParsedQuestion[]>(() => {
@@ -111,11 +110,10 @@ export function QuestionTool({
   }, [input.questions]);
 
   const answers = useMemo<string[][]>(() => {
-    if (Array.isArray(metadata.answers) && metadata.answers.length > 0) {
-      return metadata.answers as string[][];
-    }
+    const recorded = toToolView(part).answers;
+    if (recorded && recorded.length > 0) return recorded;
     return parseQuestionAnswersFromOutput(output, questions.length) ?? [];
-  }, [metadata.answers, output, questions.length]);
+  }, [part, output, questions.length]);
 
   const total = questions.length;
   const answeredCount = useMemo(() => answers.filter((a) => a && a.length > 0).length, [answers]);
@@ -139,7 +137,7 @@ export function QuestionTool({
         {single ? 'Question' : 'Questions'}
       </span>
       <TextShimmer duration={1} spread={2} className="text-xs italic">
-        Waiting for your answer
+        {tI18nHardcoded.raw('i18nComplete.text8e4b72ca2511')}
       </TextShimmer>
     </div>
   ) : (

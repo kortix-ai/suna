@@ -21,8 +21,16 @@ const MermaidRenderer = lazy(() =>
 export interface MarkdownCodeProps {
   children?: React.ReactNode;
   className?: string;
-  /** Pins the block's scroll to the newest lines while tokens are still arriving. */
+  /**
+   * The message is still streaming: code blocks pin their scroll to the newest
+   * lines, and code blocks and diagrams render once their text holds still.
+   */
   isStreaming?: boolean;
+  /**
+   * Inline code holding a setup link renders the in-app setup card. Only agent
+   * content sets this (see `MarkdownPolicy.setupLinks`).
+   */
+  setupLinks?: boolean;
 }
 
 // Code — Mermaid and KaTeX fences render their own chrome; everything else goes
@@ -31,6 +39,7 @@ export function MarkdownCode({
   children,
   className: codeClassName,
   isStreaming,
+  setupLinks = false,
 }: MarkdownCodeProps) {
   const match = /language-(\w+)/.exec(codeClassName || '');
   const language = match ? match[1] : '';
@@ -41,7 +50,7 @@ export function MarkdownCode({
     if (isMermaidCode(language, code)) {
       return (
         <Suspense fallback={null}>
-          <MermaidRenderer chart={code} className="my-5" />
+          <MermaidRenderer chart={code} className="my-5" isStreaming={isStreaming} />
         </Suspense>
       );
     }
@@ -50,7 +59,7 @@ export function MarkdownCode({
     }
     return (
       <CodeBlock code={code} language={language} isStreaming={isStreaming}>
-        <HighlightedCode code={code} language={language || 'text'}>
+        <HighlightedCode code={code} language={language || 'text'} isStreaming={isStreaming}>
           {children}
         </HighlightedCode>
       </CodeBlock>
@@ -58,9 +67,9 @@ export function MarkdownCode({
   }
 
   // Agents sometimes wrap a setup link in backticks instead of a markdown
-  // link — same interception as `a` above, so the human still gets the
-  // in-chat form chip instead of a wall of token characters.
-  const inlineSetupLink = parseSetupLinkHref(code.trim());
+  // link — same interception as the markdown `a` renderer, so the human still
+  // gets the in-chat form chip instead of a wall of token characters.
+  const inlineSetupLink = setupLinks ? parseSetupLinkHref(code.trim()) : null;
   if (inlineSetupLink) {
     return <SetupLinkButton kind={inlineSetupLink.kind} token={inlineSetupLink.token} />;
   }

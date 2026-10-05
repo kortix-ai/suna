@@ -39,6 +39,11 @@ describe('AgentConfigBlock', () => {
     expect(block.sandbox).toBe('ml');
   });
 
+  test('carries the path of the agent .md (server-owned `file`)', () => {
+    const block: AgentConfigBlock = { file: 'agents/support.md' };
+    expect(block.file).toBe('agents/support.md');
+  });
+
   test('accepts the canonical required connector field', () => {
     const block: AgentConfigBlock = {
       connectors: ['gmail'],
@@ -59,6 +64,14 @@ describe('updateAgentConfig', () => {
       connectors_required: ['gmail'],
     });
     expect(calls[0]?.body).not.toHaveProperty('connectors_personal');
+  });
+
+  test('a GET -> PUT round trip sends the block `file` back unchanged', async () => {
+    nextBody = { agent: 'support', schema_version: 2, editable: true, block: { file: 'agents/support.md', skills: 'all' } };
+    const current = await getAgentConfig('project-1', 'support');
+    nextBody = { ok: true, agent: 'support', schema_version: 2, block: current.block };
+    await updateAgentConfig('project-1', 'support', current.block ?? {});
+    expect(calls[1]?.body).toMatchObject({ file: 'agents/support.md', skills: 'all' });
   });
 
   test('accepts matching normalized aliases', async () => {
@@ -146,5 +159,34 @@ describe('getAgentConfig', () => {
     const response = await getAgentConfig('project-1', 'support');
     expect(response.block?.connectors_required).toEqual(['gmail']);
     expect(response.block).not.toHaveProperty('connectors_personal');
+  });
+});
+
+
+describe('repository access compatibility', () => {
+  test('reads legacy restricted agents as repository access disabled', async () => {
+    for (const workspace of ['runtime', 'read']) {
+      nextBody = { agent: 'support', schema_version: 2, block: { workspace } };
+      const response = await getAgentConfig('project-1', 'support');
+      expect(response.block).toEqual({ repository_access: false });
+    }
+  });
+
+  test('writes the boolean field when an older caller supplies a supported workspace alias', async () => {
+    await updateAgentConfig('project-1', 'support', { workspace: 'runtime' });
+    expect(calls[0]?.body).toEqual({ repository_access: false });
+  });
+
+  test('rejects conflicting aliases before sending a request', async () => {
+    await expect(updateAgentConfig('project-1', 'support', {
+      repository_access: true, workspace: 'runtime',
+    } as AgentConfigBlock)).rejects.toThrow('repository_access conflicts with workspace');
+    expect(calls).toHaveLength(0);
+  });
+
+  test('does not turn an unavailable read request into a working session implicitly', async () => {
+    await expect(updateAgentConfig('project-1', 'support', { workspace: 'read' }))
+      .rejects.toThrow('Set repository_access explicitly');
+    expect(calls).toHaveLength(0);
   });
 });

@@ -1,25 +1,22 @@
 /**
- * Unit tests for the two additions that let self-host configure managed-git
- * WITHOUT the manifest flow (platform/routes/github-app.ts):
+ * Write-time validation for the two setup routes that do not use the manifest
+ * flow (platform/routes/github-app.ts):
  *
- *   - `resolveManagedGitSource` — the pure precedence rule behind
- *     `GET /status`'s `source` field (App-DB > App-env > PAT).
- *   - `verifyPastedGithubAppInstallation` — validates an operator-pasted
- *     GitHub App (app id + private key + installation id) against GitHub
- *     BEFORE it's stored (POST /app), the same "fail loudly here, not at the
- *     first project creation" principle as exchangeManifestCode.
+ *   - `verifyPastedGithubAppInstallation` — proves a pasted App (app id +
+ *     private key + installation id) owns that installation, and resolves the
+ *     owner Kortix will store with it, BEFORE anything is written.
+ *   - `verifyRepoAdminToken` — proves a token can create AND delete a
+ *     repository under the owner, the write managed git actually needs.
  *
- * No DB access in this file (same "no mock.module" style as
- * unit-github-app-manifest.test.ts) — the PAT DB round-trip itself lives in
- * platform/services/managed-github-app.test.ts, and the DB-first/env-fallback
- * accessor flip lives in unit-github-app-isconfigured.test.ts.
+ * Source resolution itself is covered by
+ * platform/services/instance-git-config.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
 import {
   resolveInstallationOwnerType,
-  resolveManagedGitSource,
   verifyPastedGithubAppInstallation,
+  verifyRepoAdminToken,
 } from '../platform/routes/github-app';
 
 describe('resolveInstallationOwnerType', () => {
@@ -35,48 +32,6 @@ describe('resolveInstallationOwnerType', () => {
     expect(resolveInstallationOwnerType(undefined)).toBe('Organization');
     expect(resolveInstallationOwnerType('Bot')).toBe('Organization');
     expect(resolveInstallationOwnerType('')).toBe('Organization');
-  });
-});
-
-describe('resolveManagedGitSource', () => {
-  test('none when nothing is configured', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: false,
-        envAppConfigured: false,
-        patConfigured: false,
-      }),
-    ).toBe('none');
-  });
-
-  test('pat when only a token is configured', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: false,
-        envAppConfigured: false,
-        patConfigured: true,
-      }),
-    ).toBe('pat');
-  });
-
-  test('env App wins over a PAT', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: false,
-        envAppConfigured: true,
-        patConfigured: true,
-      }),
-    ).toBe('env');
-  });
-
-  test('DB App (manifest flow or pasted) wins over both an env App and a PAT', () => {
-    expect(
-      resolveManagedGitSource({
-        dbAppConfigured: true,
-        envAppConfigured: true,
-        patConfigured: true,
-      }),
-    ).toBe('db');
   });
 });
 
@@ -161,5 +116,86 @@ describe('verifyPastedGithubAppInstallation', () => {
     await expect(verifyPastedGithubAppInstallation('12345', pem, '987', fetchImpl)).rejects.toThrow(
       /resolve the installation owner/,
     );
+  });
+});
+
+/**
+ * `POST /pat` used to accept any token `GET /user` liked. That is how a
+ * fine-grained PAT without `Administration: write` reached production on
+ * 2026-08-30 and every project creation died on `POST /orgs/managed-kortix/repos`
+ * → 403 "Resource not accessible by personal access token" for 8 days. The
+ * probe now performs the write itself: create a private probe repo under the
+ * owner, then delete it.
+ */
+describe('verifyRepoAdminToken (a managed-git token is verified by the write it authorises)', () => {
+  type Call = { method: string; path: string };
+  function fakeGitHub(script: {
+    user?: number;
+    owner?: { status: number; type?: string };
+    create?: { status: number; body?: unknown };
+    del?: number;
+  }): { fetchImpl: typeof fetch; calls: Call[] } {
+    const calls: Call[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      calls.push({ method, path: url.pathname });
+      if (url.pathname === '/user') return new Response('{"login":"bot"}', { status: script.user ?? 200 });
+      if (url.pathname.startsWith('/users/')) {
+        const o = script.owner ?? { status: 200, type: 'Organization' };
+        return new Response(JSON.stringify({ type: o.type ?? 'Organization' }), { status: o.status });
+      }
+      if (method === 'POST') {
+        const c = script.create ?? { status: 201 };
+        return new Response(JSON.stringify(c.body ?? { full_name: 'x' }), { status: c.status });
+      }
+      if (method === 'DELETE') return new Response(null, { status: script.del ?? 204 });
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+    return { fetchImpl, calls };
+  }
+
+  test('org owner: creates the probe under /orgs/<owner>/repos and deletes it', async () => {
+    const gh = fakeGitHub({});
+    const verdict = await verifyRepoAdminToken('tok', 'managed-kortix', gh.fetchImpl);
+    expect(verdict).toEqual({ ok: true });
+    const create = gh.calls.find((c) => c.method === 'POST');
+    expect(create?.path).toBe('/orgs/managed-kortix/repos');
+    const del = gh.calls.find((c) => c.method === 'DELETE');
+    expect(del?.path).toMatch(/^\/repos\/managed-kortix\/kortix-credential-probe-[0-9a-f]{12}$/);
+  });
+
+  test('personal owner: creates the probe under /user/repos', async () => {
+    const gh = fakeGitHub({ owner: { status: 200, type: 'User' } });
+    expect(await verifyRepoAdminToken('tok', 'bot-user', gh.fetchImpl)).toEqual({ ok: true });
+    expect(gh.calls.find((c) => c.method === 'POST')?.path).toBe('/user/repos');
+  });
+
+  test('the 2026-08-30 prod token: GET /user 200 but create → 403 is REJECTED with GitHub\'s reason', async () => {
+    const gh = fakeGitHub({
+      create: { status: 403, body: { message: 'Resource not accessible by personal access token' } },
+    });
+    const verdict = await verifyRepoAdminToken('github_pat_x', 'managed-kortix', gh.fetchImpl);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error('unreachable');
+    expect(verdict.message).toContain('cannot create repositories under "managed-kortix"');
+    expect(verdict.message).toContain('Resource not accessible by personal access token');
+    expect(gh.calls.some((c) => c.method === 'DELETE')).toBe(false);
+  });
+
+  test('expired / wrong token: GET /user 401 short-circuits before any write', async () => {
+    const gh = fakeGitHub({ user: 401 });
+    const verdict = await verifyRepoAdminToken('bad', 'managed-kortix', gh.fetchImpl);
+    expect(verdict.ok).toBe(false);
+    expect(gh.calls.map((c) => c.method)).toEqual(['GET']);
+  });
+
+  test('create ok but delete refused: rejected and names the leftover repo', async () => {
+    const gh = fakeGitHub({ del: 403 });
+    const verdict = await verifyRepoAdminToken('tok', 'managed-kortix', gh.fetchImpl);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error('unreachable');
+    expect(verdict.message).toContain('cannot delete it');
+    expect(verdict.message).toMatch(/managed-kortix\/kortix-credential-probe-/);
   });
 });

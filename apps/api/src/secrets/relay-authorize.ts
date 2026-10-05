@@ -35,8 +35,10 @@ import { config } from '../config';
 import { decryptProjectSecret, intersectSecretGrants } from '../projects/secrets';
 import { ACTIVE_SESSION_STATUSES } from '../projects/lib/session-status';
 import { db } from '../shared/db';
+import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
+import { filterSecretRowsByAudience, secretAudienceSubject } from '../projects/lib/secret-audience';
 import type { SessionHandleFacts } from './handle-substitution';
-import { SecretBrokerError, type SecretSubstitution } from './http-broker';
+import type { SecretBrokerError, SecretSubstitution } from './http-broker';
 import { networkBoundaryPolicyError } from './network-boundary';
 import {
   matchRule,
@@ -77,7 +79,8 @@ export interface LiveSessionHandle {
  */
 export async function resolveSpendableHandles(input: {
   projectId: string;
-  userId: string;
+  /** Whose personal override is spendable; null = shared rows only. */
+  userId: string | null;
   sessionId: string;
   handles: readonly LiveSessionHandle[];
   effectiveGrantEnv: string[] | 'all' | undefined;
@@ -107,7 +110,9 @@ export async function resolveSpendableHandles(input: {
         eq(projectSecrets.projectId, input.projectId),
         eq(projectSecrets.scope, 'runtime'),
         inArray(projectSecrets.identifier, identifiers),
-        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, input.userId)),
+        input.userId
+          ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, input.userId))
+          : isNull(projectSecrets.ownerUserId),
       ),
     );
 
@@ -115,9 +120,16 @@ export async function resolveSpendableHandles(input: {
   // policy the handle was minted from, the member's own active row carries the
   // value that was actually delivered to the sandbox. Substituting the shared
   // value for a member who overrides it would send the wrong credential.
-  type SecretRow = (typeof secretRows)[number];
+  // Re-checked per request: a narrowed value stops being spendable the moment
+  // this is no longer its person's private session (secret-audience.ts).
+  const reachableRows = await filterSecretRowsByAudience({
+    projectId: input.projectId,
+    subject: () => secretAudienceSubject({ projectId: input.projectId, sessionId: input.sessionId }),
+    rows: secretRows,
+  });
+  type SecretRow = (typeof reachableRows)[number];
   const byIdentifier = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
-  for (const row of secretRows) {
+  for (const row of reachableRows) {
     const slot = byIdentifier.get(row.identifier) ?? {};
     if (row.ownerUserId === null) slot.shared = row;
     else if (row.active) slot.personal = row;
@@ -256,6 +268,17 @@ export async function authorizeSecretRelay(
       ),
     )
     .limit(1);
+  // Whose personal override this session may spend (spec 2026-09-22 §2.3):
+  // the caller (legacy), or under the agent-principal model the on-behalf-of
+  // human of a private session, else nobody.
+  const personalUserId = session
+    ? await resolveSessionPersonalOwner({
+        projectId: input.projectId,
+        sessionId: input.sessionId,
+        accountId: input.accountId,
+        legacyUserId: input.userId,
+      })
+    : null;
   if (!session) {
     return {
       ok: false,
@@ -281,11 +304,28 @@ export async function authorizeSecretRelay(
         eq(projectSecrets.projectId, input.projectId),
         eq(projectSecrets.identifier, input.identifier),
         eq(projectSecrets.scope, 'runtime'),
-        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, input.userId)),
+        personalUserId
+          ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, personalUserId))
+          : isNull(projectSecrets.ownerUserId),
       ),
     );
-  const shared = rows.find((row) => row.ownerUserId === null);
-  const personal = rows.find((row) => row.ownerUserId === input.userId && row.active);
+  // A narrowed value outside this session's audience answers exactly like a
+  // missing one: the relay never confirms that a value exists for someone else.
+  const reachable = await filterSecretRowsByAudience({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    subject: () =>
+      secretAudienceSubject({
+        projectId: input.projectId,
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+      }),
+    rows,
+  });
+  const shared = reachable.find((row) => row.ownerUserId === null);
+  const personal = personalUserId
+    ? rows.find((row) => row.ownerUserId === personalUserId && row.active)
+    : undefined;
   if (!shared) {
     return { ok: false, code: 'secret_not_found', message: 'Not found', status: 404, audit: null };
   }
@@ -408,7 +448,7 @@ export async function authorizeSecretRelay(
   // is left in the request as the worthless self-describing string it is.
   const spendable = await resolveSpendableHandles({
     projectId: input.projectId,
-    userId: input.userId,
+    userId: personalUserId,
     sessionId: input.sessionId,
     handles: liveHandles,
     effectiveGrantEnv,
@@ -432,15 +472,4 @@ export async function authorizeSecretRelay(
     facts: spendable.facts,
     isBoundarySecret,
   };
-}
-
-/** The single refusal that is NOT expressible as a `SecretBrokerError`, mapped
- *  for callers that want one anyway (the websocket upgrade, which has no JSON
- *  envelope of its own). */
-export function relayAuthzToBrokerError(denied: SecretRelayAuthzDenied): SecretBrokerError {
-  return new SecretBrokerError(
-    denied.code === 'policy_denied' ? 'policy_denied' : 'invalid_request',
-    denied.message,
-    denied.status,
-  );
 }

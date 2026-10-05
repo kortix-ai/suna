@@ -29,6 +29,7 @@ import { authorize } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
+import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -41,11 +42,11 @@ const allow = async (userId: string, action: string, target: { type: 'project'; 
 
 async function seedMember(role: 'owner' | 'admin' | 'member'): Promise<string> {
   const userId = uid();
-  await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole: role });
+  await insertIntoView(db, accountMembers, { userId, accountId: ACCOUNT, accountRole: role });
   return userId;
 }
 async function grantProject(userId: string, role: 'member' | 'manager') {
-  await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId, projectRole: role });
+  await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId, projectRole: role });
 }
 async function seedGroup(name: string): Promise<string> {
   const groupId = uid();
@@ -97,7 +98,7 @@ describe('authorize — deny-by-default + built-in project roles', () => {
   // manager on read, so an assignment written before the removal keeps working.
   test("a stored 'editor' row is read as manager", async () => {
     const u = await seedMember('member');
-    await db.insert(projectMembers).values({
+    await insertIntoView(db, projectMembers, {
       accountId: ACCOUNT, projectId: PROJECT, userId: u, projectRole: 'editor' as never,
     });
     invalidateIamCacheForUser(u);
@@ -129,7 +130,7 @@ describe('authorize — group → project role (the SCIM/SSO bulk channel)', () 
     const u = await seedMember('member');
     const g = await seedGroup(`eng-${uid().slice(0, 6)}`);
     await db.insert(accountGroupMembers).values({ groupId: g, userId: u });
-    await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: g, accountId: ACCOUNT, role: 'member' });
+    await insertIntoView(db, projectGroupGrants, { projectId: PROJECT, groupId: g, accountId: ACCOUNT, role: 'member' });
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).toBe(true);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(false);
   });
@@ -142,7 +143,7 @@ describe('authorize — group → project role (the SCIM/SSO bulk channel)', () 
       { groupId: gLow, userId: u },
       { groupId: gHigh, userId: u },
     ]);
-    await db.insert(projectGroupGrants).values([
+    await insertIntoView(db, projectGroupGrants, [
       { projectId: PROJECT, groupId: gLow, accountId: ACCOUNT, role: 'member' },
       { projectId: PROJECT, groupId: gHigh, accountId: ACCOUNT, role: 'manager' },
     ]);
@@ -160,7 +161,7 @@ describe('authorize — DB custom role → policy binding (allow-only union)', (
     const roleId = uid();
     await db.insert(iamRoles).values({ roleId, accountId: ACCOUNT, key: `scheduler-${uid().slice(0, 6)}`, name: 'Scheduler', scopeType: 'project' });
     await db.insert(iamRoleActions).values({ roleId, action: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE });
-    await db.insert(iamPolicies).values({
+    await insertIntoView(db, iamPolicies, {
       accountId: ACCOUNT, principalType: 'member', principalId: u, roleId, scopeType: 'project', scopeId: PROJECT,
     });
     invalidateIamCacheForUser(u);
@@ -177,9 +178,7 @@ describe('authorize — revoke immediacy (cache invalidation)', () => {
     await grantProject(u, 'manager');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true); // caches the actor+role
 
-    await db
-      .delete(projectMembers)
-      .where(and(eq(projectMembers.projectId, PROJECT), eq(projectMembers.userId, u)));
+    await deleteFromView(db, projectMembers, and(eq(projectMembers.projectId, PROJECT), eq(projectMembers.userId, u)));
     invalidateIamCacheForUser(u); // what the real mutation routes call
 
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(false);

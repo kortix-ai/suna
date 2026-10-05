@@ -1,12 +1,8 @@
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import type { StreamTaskChunk } from '../slack-api';
 
-export interface QuestionInfo {
-  question: string;
-  header?: string;
-  options: Array<{ label: string; description?: string }>;
-  multiple?: boolean;
-  custom?: boolean;
-}
+/** A question the agent asks, as both harnesses send it (`kortix.transcript.v1`). */
+export type QuestionInfo = RuntimeQuestion;
 
 export interface LiveTurn {
   channel: string;
@@ -43,6 +39,27 @@ export type ProjectResolution =
   | { kind: 'none' };
 
 export type SlashResponse = { response_type: 'ephemeral' | 'in_channel'; text?: string; blocks?: unknown[] };
+
+export interface SlashCtx {
+  teamId: string;
+  channelId: string;
+  // The Slack user who invoked the command (slash form `user_id`, or the DM
+  // sender). Drives `/login` / `/logout` / `whoami` identity and the settings
+  // permission check. May be '' on call sites that don't carry a user.
+  slackUserId: string;
+  command: string;
+  // Slack slash response_url — valid ~30 min / 5 uses. Used to post a deferred
+  // reply for subcommands too slow for the synchronous 3s window (agent list
+  // touches git). DB-only subcommands answer synchronously and ignore it.
+  responseUrl?: string;
+  // DM fallback path: the Assistant pane delivers `/kortix …` as a plain message
+  // (no response_url), so deferred subcommands post their result through this
+  // instead of `respondViaUrl`. Set only by the DM command runner.
+  deferredDeliver?: (resp: SlashResponse) => Promise<void>;
+  // Set for per-project/manual Slack apps. These apps do not switch projects:
+  // the webhook URL already scopes every event and command to one Kortix project.
+  projectScopedProjectId?: string;
+}
 
 export type EventClass = 'mention' | 'dm' | 'follow_up' | 'ignore';
 
@@ -99,6 +116,16 @@ export interface SlackEvent {
 
 export interface SlackInteractionPayload {
   type: string;
+  /** Single-use, expires in ~3s. Present on block_actions; required by views.open. */
+  trigger_id?: string;
+  /** Present on `view_submission`: the modal being submitted. */
+  view?: {
+    callback_id?: string;
+    private_metadata?: string;
+    state?: {
+      values?: Record<string, Record<string, { value?: string | null }>>;
+    };
+  };
   // Present on shortcuts / message actions (type === 'message_action').
   callback_id?: string;
   team?: { id: string };

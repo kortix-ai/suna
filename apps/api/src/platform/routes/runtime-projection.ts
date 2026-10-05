@@ -29,26 +29,23 @@
  */
 import { gunzipSync } from 'node:zlib';
 import { createRoute, z } from '@hono/zod-openapi';
-import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
+import { sessionSandboxes } from '@kortix/db';
 
-import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
+import { db } from '../../shared/db';
+import type { AppEnv } from '../../types';
+import { RuntimeProjectionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import {
   PROJECTION_MAX_BYTES,
   saveRuntimeProjection,
 } from '../../projects/lib/session-runtime-projection';
-import { db } from '../../shared/db';
-import type { AppEnv } from '../../types';
 
-const RuntimeProjectionRequestSchema = z.object({
-  session_id: z.string(),
-  /** ISO-8601. The DAEMON's capture clock, not ours — an out-of-order retry
-   *  must lose to a newer capture, and only the daemon knows which is newer. */
-  captured_at: z.string().optional(),
-  projection_etag: z.string().optional(),
-  projection: z.record(z.string(), z.unknown()),
-});
+// The daemon's body: `captured_at` is the DAEMON's capture clock, not ours —
+// an out-of-order retry must lose to a newer capture, and only the daemon
+// knows which is newer.
+const RuntimeProjectionRequestSchema = RuntimeProjectionRelayBodySchema;
 
 export const runtimeProjectionRouter = makeOpenApiApp<AppEnv>();
 
@@ -81,7 +78,7 @@ runtimeProjectionRouter.openapi(
   async (c) => {
     // Sandbox-only: the daemon reporting its OWN runtime. Same posture as
     // boot-timeline, and for the same reason — this is never a user action.
-    if (!isSessionSandboxCredential(c, 'worker')) {
+    if (!isSessionSandboxCredential(c)) {
       return c.json({ error: 'runtime-projection requires a sandbox token' }, 403);
     }
     const accountId = c.get('accountId');
@@ -141,7 +138,9 @@ runtimeProjectionRouter.openapi(
   },
 );
 
-type BodyRead = { ok: true; body: unknown } | { ok: false; error: string; status: 400 | 413 };
+type BodyRead =
+  | { ok: true; body: unknown }
+  | { ok: false; error: string; status: 400 | 413 };
 
 /**
  * Read the request body, decompressing a gzipped one, with a hard ceiling.
@@ -169,11 +168,7 @@ async function readProjectionBody(request: {
       // `maxOutputLength` throws when the body would exceed the cap, so this
       // catch covers both "not gzip" and "too big"; 413 is the honest answer
       // for the case the daemon can act on (it sheds sections and retries).
-      return {
-        ok: false,
-        error: 'Projection body is not valid gzip, or exceeds the size cap',
-        status: 413,
-      };
+      return { ok: false, error: 'Projection body is not valid gzip, or exceeds the size cap', status: 413 };
     }
   } else if (bytes.byteLength > PROJECTION_MAX_BYTES) {
     return { ok: false, error: 'Projection body exceeds the size cap', status: 413 };

@@ -39,18 +39,16 @@ import { sessionLifecycleCommands, sessionTurns } from '@kortix/db';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import {
-  type StoredSandboxTurn,
-  closeSandboxTurnByMessageId,
-} from '../sandbox-turn-lifecycle';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { wireIdTime } from '../wire-message-id';
-import { drainSessionLifecycleQueue, resolveSessionOpencodeEndpoint } from './engine';
-import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
+import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
+import type { StoredSandboxTurn } from '../session-turn-ledger';
+import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
+import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
+import { drainSessionLifecycleQueue } from './drain';
+import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
 
-const WORKSPACE = '/workspace';
 /** The stranded prompt and the assistant that proves it both sit at the tip. */
 const TIP_LIMIT = 12;
 const MAX_STRAND_REDELIVERIES = 3;
@@ -60,15 +58,12 @@ export interface ForwardedTurnReconciliation {
   candidates: number;
   stranded: number;
   /** Newer candidates the loop exited PAST: placed at the tip, never read,
-   *  nothing running. Live incident 2026-08-20 (Essentia session d1b74954):
+   *  nothing running. Live incident 2026-08-20 (a prod session):
    *  a prompt forwarded at 12:59:05Z sat at the tip; the loop completed at
    *  12:59:17Z without reading it and its queued continuation was rejected —
    *  "not stranded" left it in place forever. */
   orphaned: number;
   requeued: number;
-  /** Later, un-stranded siblings pulled back with a stranded row so the
-   *  redelivery batch restores send order. */
-  reordered: number;
 }
 
 export interface StrandReconcileDeps {
@@ -93,7 +88,7 @@ const liveDeps: StrandReconcileDeps = {
       .select({
         token: sessionTurns.turnToken,
         messageId: sessionTurns.messageId,
-        opencodeSessionId: sessionTurns.opencodeSessionId,
+        opencodeSessionId: sessionTurns.runtimeSessionId,
         state: sessionTurns.state,
         startedAt: sessionTurns.startedAt,
       })
@@ -103,7 +98,7 @@ const liveDeps: StrandReconcileDeps = {
       (row): StoredSandboxTurn => ({
         token: row.token,
         messageId: row.messageId ?? null,
-        opencodeSessionId: row.opencodeSessionId ?? '',
+        runtimeSessionId: row.opencodeSessionId ?? '',
         state: row.state === 'active' ? 'active' : 'delivering',
         startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
       }),
@@ -119,26 +114,11 @@ const liveDeps: StrandReconcileDeps = {
   },
   async readTip(sessionId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return null;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) return null;
-    return parsePlacementTip(await res.json().catch(() => null));
+    return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
   async removeMessage(sessionId, messageId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(messageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok || res.status === 404;
+    return resolved ? removeRuntimeMessage(resolved, messageId) : false;
   },
   async requeueStranded(sessionId, messageId) {
     const [row] = await db
@@ -166,7 +146,7 @@ const liveDeps: StrandReconcileDeps = {
     const payload = (row.payload ?? {}) as { redeliveries?: unknown };
     const redeliveries = Number(payload.redeliveries ?? 0) + 1;
     if (redeliveries > MAX_STRAND_REDELIVERIES) return 'exhausted';
-    await db
+    const requeued = await db
       .update(sessionLifecycleCommands)
       .set({
         status: 'queued',
@@ -187,7 +167,14 @@ const liveDeps: StrandReconcileDeps = {
           eq(sessionLifecycleCommands.commandId, row.commandId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
         ),
-      );
+      )
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    // The guard is the whole point of the write: a concurrent cancel (which
+    // deletes a succeeded row) or redelivery sweep (requeue and dead-letter
+    // are both guarded on `succeeded`) can take the row between the read
+    // above and this UPDATE. Then NOTHING was re-queued — say so, so the
+    // reconciler does not count or log a redelivery that never happened.
+    if (requeued.length === 0) return 'not_open';
     return 'requeued';
   },
   kickDrain(sessionId) {
@@ -206,7 +193,7 @@ export async function reconcileForwardedTurnsAtEnd(
   input: { sessionId: string; opencodeSessionId?: string | null; endedMessageId?: string | null },
   deps: StrandReconcileDeps = liveDeps,
 ): Promise<ForwardedTurnReconciliation> {
-  const out: ForwardedTurnReconciliation = { closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0, reordered: 0 };
+  const out: ForwardedTurnReconciliation = { closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0 };
   let open: StoredSandboxTurn[];
   try {
     open = await deps.readOpenTurns(input.sessionId);
@@ -218,7 +205,7 @@ export async function reconcileForwardedTurnsAtEnd(
     return out;
   }
   const sameRoot = (turn: StoredSandboxTurn) =>
-    !input.opencodeSessionId || !turn.opencodeSessionId || turn.opencodeSessionId === input.opencodeSessionId;
+    !input.opencodeSessionId || !turn.runtimeSessionId || turn.runtimeSessionId === input.opencodeSessionId;
   const forwarded = open.filter((turn) => !!turn.messageId && sameRoot(turn));
   if (forwarded.length === 0) return out;
   // ONE tip read for everything below. It also stands in for the relay when
@@ -261,12 +248,12 @@ export async function reconcileForwardedTurnsAtEnd(
   for (const turn of forwarded) {
     const at = wireIdTime(turn.messageId!);
     if (at === null || turn.messageId === endedMessageId) continue;
-    if (at < endedAt) older.push(turn);
+    if (wireIdClockDelta(at, endedAt) < BigInt(0)) older.push(turn);
     else newer.push(turn);
   }
   for (const turn of older) {
     try {
-      await deps.closeOlderTurn(input.sessionId, turn.opencodeSessionId, turn.messageId!);
+      await deps.closeOlderTurn(input.sessionId, turn.runtimeSessionId, turn.messageId!);
       out.closedOlder += 1;
     } catch (err) {
       logger.warn('[forwarded-turns] could not close an older forwarded turn', {
@@ -302,16 +289,28 @@ export async function reconcileForwardedTurnsAtEnd(
   // placed correctly AT THE TIP (no assistant above it, so not "stranded")
   // that the ended loop simply never read. With the tip's newest assistant
   // CLOSED, nothing will ever answer it — OpenCode's queued continuation for
-  // it can be rejected at turn end (observed live 2026-08-20, Essentia
-  // session d1b74954: "Bro no fucking idea whats happening here lol",
-  // delivered 12:59:05Z, loop completed 12:59:17Z past it, queue request
-  // rejected, prompt swallowed). Requeue it exactly like a stranded row.
+  // it can be rejected at turn end (observed live 2026-08-20 on a prod
+  // session: a user message delivered 12:59:05Z, loop completed 12:59:17Z
+  // past it, queue request rejected, prompt swallowed). Requeue it exactly like a stranded row.
   // Guards, in order: the row must be ACCEPTED (`active` — a `delivering`
   // row is a send still on the wire), the message must actually be on the
   // tip, and the tip must not be mid-step (an open newest assistant is a
   // fresh turn that will read it).
+  // AND OLD ENOUGH — the same floor the reaper's own redelivery defers on.
+  // "Accepted, unanswered, tip idle" is also what the seconds between the box
+  // accepting a FRESH prompt and starting its step look like, and the end
+  // relay lands in exactly that window (prod 2026-09-28: a ~20 h spike of
+  // orphan deletions where every deleted prompt was ≤3 s old, 99% of them
+  // non-redeliverable, so each deletion was a lost message the client then
+  // re-sent). Below ORPHANED_PROMPT_MIN_AGE_MS the verdict is not
+  // established: leave the row open — the next turn end re-asks it, and the
+  // reaper's redelivery runs this same gate at ≥ the floor. A row that
+  // proves no age never qualifies, like the reaper's legacy records.
   for (const { turn, verdict } of verdicts) {
+    const orphanAgeMs = turn.startedAtMs === null ? null : Date.now() - turn.startedAtMs;
     const orphanedAtTip =
+      orphanAgeMs !== null &&
+      orphanAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS &&
       !verdict.stranded &&
       !verdict.answered &&
       turn.state === 'active' &&

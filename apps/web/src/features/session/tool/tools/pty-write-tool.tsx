@@ -4,7 +4,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -16,7 +16,10 @@ export function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps
   return (
     <BasicTool
       icon={<Terminal className="size-3.5 shrink-0" />}
-      trigger={{ title: 'Terminal input', subtitle: ptyId || undefined }}
+      trigger={{
+        title: tHardcodedUi.raw('i18nComplete.text32822e8808cc'),
+        subtitle: ptyId || undefined,
+      }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}

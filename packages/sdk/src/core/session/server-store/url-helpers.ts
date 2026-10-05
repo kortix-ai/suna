@@ -34,21 +34,26 @@ export function getDefaultSandboxUrl(): string {
 }
 
 /**
- * Derive the proxy URL for a cloud sandbox by its provider sandbox id.
- * Always computed fresh — never persisted — so route renames can't go stale.
+ * Derive the proxy URL for a cloud sandbox by its provider sandbox id, for a
+ * given sandbox port. Defaults to 8000 (the OpenCode server). Always computed
+ * fresh — never persisted — so route renames can't go stale.
  */
-export function getSandboxServerUrl(sandboxId: string): string {
-  return `${getBackendUrl()}/p/${sandboxId}/8000`;
+export function getSandboxServerUrl(sandboxId: string, port = 8000): string {
+  return `${getBackendUrl()}/p/${sandboxId}/${port}`;
 }
 
 /**
- * Derive the OpenCode proxy URL for a sandbox by its provider sandbox id
- * (a project session's `external_id`). Pure function of the id — no dependency
- * on the active server — so we can connect to several session sandboxes in
- * parallel (e.g. background SSE streams for every open session tab).
+ * Derive the authenticated proxy URL for a sandbox port by its provider
+ * sandbox id (a project session's `external_id`). Defaults to 8000 (the
+ * OpenCode server); pass any other sandbox port (e.g. a dev server the agent
+ * started) to get the same authenticated `/p/{externalId}/{port}` proxy for
+ * it — this is what session-scoped port forwarding (`SessionHandle.sandboxPortUrl`)
+ * builds on. Pure function of the id — no dependency on the active server —
+ * so we can connect to several session sandboxes in parallel (e.g. background
+ * SSE streams for every open session tab).
  */
-export function getSandboxUrlForExternalId(externalId: string): string {
-  return getSandboxServerUrl(externalId);
+export function getSandboxUrlForExternalId(externalId: string, port = 8000): string {
+  return getSandboxServerUrl(externalId, port);
 }
 
 /**
@@ -66,68 +71,4 @@ export function getSandboxUrlForExternalId(externalId: string): string {
  */
 export function getPublicShareUrlForToken(token: string, port: number): string {
   return `${getBackendUrl()}/p/public-share/${token}/${port}`;
-}
-
-/**
- * THE RUNTIME URL FOR A SESSION'S SANDBOX — the backend's per-session base
- * when it gave one, else the box-shaped default.
- *
- * `getSandboxUrlForExternalId(sandbox.external_id)` names the BOX. On a cell
- * runner one box holds many sessions, and every in-box call the app makes
- * (`/global/event`, `/session`, `/agent`, `/command`) is built on this base
- * and names no session in its path — so the proxy could not tell one
- * session's stream from another's, the cell refused, and the app fell back to
- * polling (dev 2026-09-09: every in-box call 503, 57/39/39 polls in 30 min).
- *
- * The backend fixes that by handing such a session a base that names the
- * SESSION in the sandbox segment (`/v1/p/<sessionId>/8080`). It arrives as
- * `sandbox.base_url`, and it is honoured ONLY when it is a proxy URL on this
- * backend's own origin: a provider box's `base_url` can be the box's direct
- * edge address, and sending the bearer there would 401 at best and leak at
- * worst. Anything else falls back to exactly what was built before.
- */
-export function runtimeUrlForSandbox(
-  sandbox: { external_id?: string | null; base_url?: string | null },
-  backendUrl: string = getBackendUrl(),
-): string {
-  const candidate = sandbox.base_url?.trim();
-  if (candidate) {
-    try {
-      const backend = new URL(backendUrl);
-      const url = new URL(candidate);
-      const proxyPrefix = `${stripTrailingSlashes(backend.pathname)}/p/`;
-      if (url.origin === backend.origin && url.pathname.startsWith(proxyPrefix)) {
-        return stripTrailingSlashes(candidate);
-      }
-    } catch {
-      /* not a URL — ignore it */
-    }
-  }
-  return sandbox.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : '';
-}
-
-/**
- * The sandbox segment of a proxy-shaped runtime URL — `<backend>/p/<id>/<port>`
- * → `<id>` — or null for any other URL.
- *
- * `<id>` is what the runtime is ADDRESSED by, which is not always the box: a
- * cell session's base_url names the session (`/v1/p/<sessionId>/8080`) on a
- * runner shared by every session of the project. Preview URLs built from the
- * box's external id land unaddressed on that runner and serve whichever
- * session the box picks — measured in a real browser on the pi-js dev stack
- * 2026-09-10: the HTML preview iframe was `/v1/p/sbx_01M23Q7W…/3211/open`, the
- * API logged "unaddressed on a shared box", and the frame showed another
- * session's page. The id that reaches the runtime is the one to preview with.
- */
-export function proxySandboxSegment(runtimeUrl: string, backendUrl: string = getBackendUrl()): string | null {
-  try {
-    const backend = new URL(backendUrl);
-    const url = new URL(runtimeUrl);
-    const proxyPrefix = `${stripTrailingSlashes(backend.pathname)}/p/`;
-    if (url.origin !== backend.origin || !url.pathname.startsWith(proxyPrefix)) return null;
-    const segment = url.pathname.slice(proxyPrefix.length).split('/')[0] ?? '';
-    return segment.trim() || null;
-  } catch {
-    return null;
-  }
 }

@@ -12,7 +12,7 @@
  * A zero-byte SSE stream is that failure's exact signature. opencode writes
  * an event immediately on a real connection (`server.connected`), and the
  * sandbox daemon additionally injects a keepalive event within 20s of silence
- * (`apps/kortix-sandbox-agent-server/src/sse-keepalive.ts`) — so a stream
+ * (`apps/kortix-sandbox-agent-server/src/routes/proxy/sse-keepalive.ts`) — so a stream
  * that closed without EVER delivering a byte did not reach a live opencode.
  * This module records that outcome per `sandboxId:port`, and the proxy's next
  * `/global/event` connect for that sandbox consumes the mark to bypass the
@@ -67,11 +67,6 @@ export function shouldBypassIngressCache(key: string, nowMs = Date.now()): boole
   if (markedAtMs === undefined) return false;
   silentStreamMarks.delete(key);
   return nowMs - markedAtMs <= SSE_SILENT_MARK_MAX_AGE_MS;
-}
-
-/** Test seam: this registry is module state by design (one per api process). */
-export function resetSseStallRegistryForTests(): void {
-  silentStreamMarks.clear();
 }
 
 /**

@@ -34,7 +34,7 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
       .select({
         projectId: chatChannelBindings.projectId,
         agentName: chatChannelBindings.agentName,
-        opencodeModel: chatChannelBindings.opencodeModel,
+        opencodeModel: chatChannelBindings.model,
         conversationPolicy: chatChannelBindings.conversationPolicy,
       })
       .from(chatChannelBindings)
@@ -132,7 +132,7 @@ export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | n
   try {
     const rows = await db
       .update(chatChannelBindings)
-      .set({ opencodeModel })
+      .set({ model: opencodeModel })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
         eq(chatChannelBindings.workspaceId, ctx.teamId),
@@ -184,7 +184,7 @@ export interface ProjectAgentGovernance {
   /**
    * True when the project has adopted `kortix.yaml`'s `agents:` block — the listed
    * names are ENFORCED (an undeclared name isn't a real launchable agent), not
-   * merely discovered from `.kortix/opencode/agents/*.md`. Mirrors
+   * merely discovered from agent `.md` files. Mirrors
    * `ProjectConfigSummary.agent_discovery === 'declarative'`. Callers that
    * validate a channel-binding's `agentName` against the catalog should only
    * reject unknown names when this is true — a legacy (undeclared) project
@@ -255,7 +255,7 @@ export async function listChannelBindingsForProject(projectId: string): Promise<
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      opencodeModel: chatChannelBindings.model,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })
@@ -282,7 +282,7 @@ export async function getChannelBindingById(
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      opencodeModel: chatChannelBindings.model,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })

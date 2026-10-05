@@ -4,7 +4,7 @@
  *
  * ONE validator reference, three surfaces:
  *
- *   1. `https://kortix.com/schema/kortix{,.v1,.v2}.schema.json` — the same
+ *   1. `https://kortix.com/schema/kortix{,.v1,.v2,.v3}.schema.json` — the same
  *      documents published at `apps/web/public/schema/` for editor
  *      `$schema` integration.
  *   2. This command — the CLI-local copy, for scripting / offline use /
@@ -16,69 +16,56 @@
  * between "the schema the CLI prints" and "the schema the URL serves."
  */
 import { KORTIX_SCHEMA_BASE_URL, manifestJsonSchema } from '@kortix/manifest-schema';
+import { takeFlags } from '../command-argv.ts';
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix schema [options]
 
 Print the canonical JSON Schema for kortix.toml / kortix.yaml — the same
-document served at ${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json (and the
+document served at ${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json (and the
 v1 / combined variants). Point an editor's "$schema" at that URL for live
 validation + autocomplete, or pipe this command's output into ajv or any
 other JSON Schema validator.
 
 Options:
-  --version <1|2>   Print only that schema version (default: the combined
+  --version <1|2|3>   Print only that schema version (default: the combined
                      document, which dispatches on kortix_version).
   --url             Print the canonical URL for the selected version instead
                      of the schema body.
   -h, --help        Show this help.
 `;
 
-interface Flags {
-  version?: 1 | 2;
-  url: boolean;
-  help: boolean;
-}
-
-function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { url: false, help: false };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === '--version') {
-      const next = argv[++i];
-      if (next !== '1' && next !== '2') {
-        throw new Error(`--version must be "1" or "2" (got ${JSON.stringify(next)}).`);
-      }
-      flags.version = next === '1' ? 1 : 2;
-    } else if (arg === '--url') {
-      flags.url = true;
-    } else if (arg === '-h' || arg === '--help') {
-      flags.help = true;
-    } else {
-      throw new Error(`unknown option "${arg}"`);
-    }
+/** `--version <1|2|3>`; absent keeps the combined document. */
+function schemaVersion(raw: string | undefined): 1 | 2 | 3 | undefined {
+  if (raw === undefined) return undefined;
+  if (raw !== '1' && raw !== '2' && raw !== '3') {
+    throw new Error(`--version must be "1", "2" or "3" (got ${JSON.stringify(raw)}).`);
   }
-  return flags;
+  return Number(raw) as 1 | 2 | 3;
 }
 
-function schemaFilename(version?: 1 | 2): string {
+function schemaFilename(version?: 1 | 2 | 3): string {
   if (version === 1) return 'kortix.v1.schema.json';
   if (version === 2) return 'kortix.v2.schema.json';
+  if (version === 3) return 'kortix.v3.schema.json';
   return 'kortix.schema.json';
 }
 
 export function runSchema(argv: string[]): number {
-  let flags: Flags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${status.err(err instanceof Error ? err.message : String(err))}\n`);
-    return 1;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(
+    argv,
+    HELP,
+    (rest) => ({
+      version: schemaVersion(takeFlagValue(rest, ['--version'])),
+      url: takeFlagBool(rest, ['--url']),
+    }),
+    (message) => {
+      process.stderr.write(`${status.err(message)}\n`);
+      return 1;
+    },
+  );
+  if (typeof flags === 'number') return flags;
 
   const url = `${KORTIX_SCHEMA_BASE_URL}/${schemaFilename(flags.version)}`;
   if (flags.url) {

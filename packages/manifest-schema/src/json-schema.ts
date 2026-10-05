@@ -3,7 +3,7 @@
  * the Kortix equivalent of opencode's https://opencode.ai/config.json.
  *
  * This is DATA generated from the same constants/enums the imperative
- * validator (`./index.ts`) uses (`GRANTABLE_KORTIX_CLI_ACTIONS`,
+ * validator (`./index.ts`) uses (`GRANTABLE_KORTIX_PERMISSIONS`,
  * `CONNECTOR_PROVIDERS`, `AGENT_MODES_V2`, `WORKSPACE_MODES_V2`, …) so the
  * two can never silently drift apart — see the conformance test
  * (`__tests__/json-schema.conformance.test.ts`), which runs a shared fixture
@@ -39,6 +39,8 @@
  *     `enabledValueSchema` — not left to this warning-level exemption.
  */
 
+import { IMPORT_PATH_PATTERN } from './imports';
+import { AGENT_FILE_PATTERN } from './layout';
 import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
@@ -48,11 +50,14 @@ import {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
-  DEPRECATED_KORTIX_CLI_ALIASES,
-  GRANTABLE_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_PERMISSION_ALIASES,
+  GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
+  PI_PACKAGE_NAME_RE,
+  PI_PACKAGE_NPM_RE,
+  PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
-  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
   DURATION_RE,
@@ -67,8 +72,6 @@ import {
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
-  manifestDefaultConfigDir,
-  manifestUsesAgentMap,
 } from './constants';
 import {
   CONNECTOR_HEADER_NAME_MAX_LENGTH,
@@ -99,37 +102,59 @@ const ENV_NAME_PATTERN_CASE_INSENSITIVE = '^[A-Za-z_][A-Za-z0-9_]*$';
 
 const NON_EMPTY_STRING: JsonSchemaFragment = { type: 'string', minLength: 1 };
 
-/** The `connectors` / `secrets` / `skills` / `kortix_cli` grant-set shape:
+/** One `agents.<name>.apps` entry: an App slug (`SLUG_RE`) or the `*` wildcard. */
+const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
+
+/** The `connectors` / `secrets` / `skills` / `kortix_permissions` grant-set shape:
  *  an allowlist of names, or the "all"/"none" sentinel (spec §2.2/§2.4/§2.5).
- *  `itemSchema` lets `kortix_cli` additionally constrain each entry to the
+ *  `itemSchema` lets `kortix_permissions` additionally constrain each entry to the
  *  grantable-action enum. */
 function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): JsonSchemaFragment {
   return {
-    description: 'An allowlist of names, or the "all" / "none" sentinel.',
+    description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
     oneOf: [
       { type: 'array', items: itemSchema },
-      { type: 'string', enum: ['all', 'none'] },
+      { type: 'string', enum: ['all', '*', 'none'] },
     ],
   };
 }
 
 /**
- * Every string a `kortix_cli` grant-list entry may legally be, version-gated
+ * Every string a `kortix_permissions` grant-list entry may legally be, version-gated
  * to mirror `validateGrantList`'s clean break (`./index.ts`): v1 still
  * tolerates the legacy no-op actions (warning, not error — an existing
  * manifest that lists one must keep validating), so its enum is the live
  * grantable catalog PLUS the legacy set. v2 hard-rejects them, so its enum
  * is the live grantable catalog ONLY. Both always accept the `"*"` wildcard.
  */
-function kortixCliEnum(version: number): readonly string[] {
-  const renamed = Object.keys(DEPRECATED_KORTIX_CLI_ALIASES);
-  return manifestUsesAgentMap(version)
-    ? [...GRANTABLE_KORTIX_CLI_ACTIONS, ...renamed, '*']
-    : [...GRANTABLE_KORTIX_CLI_ACTIONS, ...renamed, ...LEGACY_TOLERATED_KORTIX_CLI_ACTIONS, '*'];
+function kortixPermissionsEnum(version: 1 | 2): readonly string[] {
+  // The renamed aliases are in BOTH enums: the validator accepts them (they
+  // still resolve), so an editor must not red-squiggle a file that passes
+  // `kortix validate`. They are absent from the grantable catalog, so nothing
+  // presents them as a live choice.
+  const renamed = Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES);
+  return version === 2
+    ? [...GRANTABLE_KORTIX_PERMISSIONS, ...renamed, '*']
+    : [...GRANTABLE_KORTIX_PERMISSIONS, ...renamed, ...LEGACY_TOLERATED_KORTIX_PERMISSIONS, '*'];
 }
 
-function kortixCliGrantSetSchema(version: number): JsonSchemaFragment {
-  return grantSetSchema({ type: 'string', enum: [...kortixCliEnum(version)] });
+function kortixPermissionsGrantSetSchema(version: 1 | 2): JsonSchemaFragment {
+  return {
+    ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum(version)] }),
+    description: 'Kortix permissions: the project.* IAM actions this agent may exercise, or "all" / "none".',
+  };
+}
+
+/** `kortix_cli` — the deprecated input alias of `kortix_permissions`. Same
+ *  value shape; the imperative validator warns on it and errors when it
+ *  disagrees with `kortix_permissions` (a cross-field rule JSON Schema cannot
+ *  express). */
+function deprecatedKortixCliGrantSetSchema(version: 1 | 2): JsonSchemaFragment {
+  return {
+    ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum(version)] }),
+    deprecated: true,
+    description: 'Deprecated alias for kortix_permissions.',
+  };
 }
 
 /** `PermissionRuleConfig`: a bare action, or a glob-pattern → action map. */
@@ -164,7 +189,7 @@ function permissionConfigSchema(): JsonSchemaFragment {
   };
 }
 
-/** An agent's native `.kortix/opencode/agents/<name>.md` frontmatter — full
+/** An agent's own `.md` frontmatter (`agents/<name>.md`) — full
  *  OpenCode `AgentConfig` parity (mirrors `validateAgentMdFrontmatter`). Not
  *  part of the manifest schema's own tree (frontmatter lives in a sibling
  *  file the manifest never embeds) — published as a `$defs` entry on the v2
@@ -175,7 +200,7 @@ function agentMdFrontmatterSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     description:
-      "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+      "Behavior for one agent — lives in its .md frontmatter (agents.<name>.file, default agents/<name>.md), never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
     properties: {
       description: { type: 'string' },
       model: { type: 'string' },
@@ -276,7 +301,11 @@ function opencodeSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     properties: {
-      config_dir: relativePathSchema(),
+      config_dir: {
+        ...relativePathSchema(),
+        description:
+          'Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode.',
+      },
     },
     additionalProperties: true,
   };
@@ -296,6 +325,7 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
       cpu: { type: 'integer', minimum: SANDBOX_CPU_BOUNDS.min },
       memory: { type: 'integer', minimum: SANDBOX_MEMORY_BOUNDS.min },
       disk: { type: 'integer', minimum: SANDBOX_DISK_BOUNDS.min },
+      container_runtime: { type: 'boolean' },
     },
     // Exactly one of image/dockerfile (`validateSandboxTemplates`).
     oneOf: [
@@ -448,10 +478,9 @@ const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED
  *    tolerates the stray legacy key (warning-level only, so unconstrained
  *    here); v2 forbids it outright (`false` schema — matches the `auth.secret`
  *    forbidden-key pattern below) — see `validateConnectors`. */
-function connectorSchema(version: number): JsonSchemaFragment {
-  const modern = manifestUsesAgentMap(version);
-  const credentialSchema: JsonSchemaFragment = modern ? { const: 'shared' } : {};
-  const agentScopeSchema: JsonSchemaFragment | boolean = modern ? false : {};
+function connectorSchema(version: 1 | 2): JsonSchemaFragment {
+  const credentialSchema: JsonSchemaFragment = version === 2 ? { const: 'shared' } : {};
+  const agentScopeSchema: JsonSchemaFragment | boolean = version === 2 ? false : {};
   return {
     type: 'object',
     required: ['slug', 'provider'],
@@ -560,8 +589,10 @@ function agentEntryV1Schema(): JsonSchemaFragment {
     properties: {
       name: SLUG_SCHEMA,
       connectors: grantSetSchema(),
-      kortix_cli: kortixCliGrantSetSchema(1),
+      kortix_permissions: kortixPermissionsGrantSetSchema(1),
+      kortix_cli: deprecatedKortixCliGrantSetSchema(1),
       env: grantSetSchema(),
+      apps: grantSetSchema(),
     },
     additionalProperties: true,
   };
@@ -575,8 +606,22 @@ function agentBlockV2Schema(): JsonSchemaFragment {
   return {
     type: 'object',
     properties: {
+      file: {
+        type: 'string',
+        pattern: AGENT_FILE_PATTERN,
+        description: "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md.",
+      },
       enabled: { type: 'boolean' },
+      tools: { type: 'object', additionalProperties: { type: 'boolean' } },
       sandbox: SLUG_SCHEMA,
+      // Declaration only; no provider network boundary enforces this yet.
+      network_egress: {
+        type: 'object',
+        required: ['version', 'default', 'rules'],
+        properties: { version: { const: 1 }, default: { const: 'deny' }, rules: { type: 'array', maxItems: 0 } },
+        additionalProperties: false,
+        description: 'Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships.',
+      },
       connectors: grantSetSchema(),
       connectors_required: {
         type: 'array',
@@ -591,8 +636,70 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
-      kortix_cli: kortixCliGrantSetSchema(2),
-      workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2] },
+      apps: {
+        ...grantSetSchema({ type: 'string', pattern: APP_GRANT_ENTRY_PATTERN }),
+        description:
+          'Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.',
+      },
+      kortix_permissions: kortixPermissionsGrantSetSchema(2),
+      kortix_cli: deprecatedKortixCliGrantSetSchema(2),
+      repository_access: { type: 'boolean', description: 'Allow new sessions to access the project repository. Defaults to true.' },
+      workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2], deprecated: true },
+      // This agent's pi packages, on top of the top-level list; `exclude` drops top-level ones.
+      harnesses: harnessesSchema('agent'),
+    },
+    additionalProperties: false,
+    allOf: [
+      { if: { required: ['workspace'], properties: { workspace: { const: 'branch' } } }, then: { properties: { repository_access: { const: true } } } },
+      { if: { required: ['workspace'], properties: { workspace: { enum: ['runtime', 'read'] } } }, then: { properties: { repository_access: { const: false } } } },
+    ],
+  };
+}
+
+/** `harnesses:` — top level (every agent) or on one agent (adds `exclude`). */
+function harnessesSchema(scope: 'project' | 'agent'): JsonSchemaFragment {
+  const source = { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: PI_PACKAGE_PATH_RE.source }] };
+  return {
+    type: 'object',
+    properties: {
+      opencode: {
+        type: 'object',
+        properties: {
+          plugins: { type: 'array', items: { type: 'string', pattern: '^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$' } },
+          ...(scope === 'agent' ? { exclude: { type: 'array', items: { type: 'string', pattern: '^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$' } } } : {}),
+        },
+        additionalProperties: false,
+      },
+      pi: {
+        type: 'object',
+        properties: {
+          packages: {
+            type: 'array',
+            maxItems: 20,
+            items: {
+              oneOf: [
+                source,
+                {
+                  type: 'object',
+                  required: ['source'],
+                  properties: {
+                    source,
+                    extensions: { type: 'array', items: { type: 'string' } },
+                    skills: { type: 'array', items: { type: 'string' } },
+                    prompts: { type: 'array', items: { type: 'string' } },
+                    themes: { type: 'array', items: { type: 'string' } },
+                  },
+                  additionalProperties: false,
+                },
+              ],
+            },
+          },
+          ...(scope === 'agent'
+            ? { exclude: { type: 'array', items: { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NAME_RE.source }, { pattern: PI_PACKAGE_PATH_RE.source }] } } }
+            : {}),
+        },
+        additionalProperties: false,
+      },
     },
     additionalProperties: false,
   };
@@ -682,9 +789,9 @@ export function buildManifestV1Schema(): JsonSchemaFragment {
     title: 'Kortix manifest (kortix_version 1)',
     description:
       'kortix.toml / kortix.yaml, schema version 1 — `[[agents]]` is a per-agent governance ' +
-      'OVERLAY (connectors/kortix_cli/env grants); absence means an unrestricted default agent ' +
+      'OVERLAY (connectors/kortix_permissions/env grants); absence means an unrestricted default agent ' +
       '(adopt-to-govern back-compat). `[[channels]]` is accepted (validated, though dead at ' +
-      'runtime — see docs/specs/2026-07-05-agent-first-config-unification.md §1.5).',
+      'runtime).',
     type: 'object',
     required: ['kortix_version'],
     properties: {
@@ -697,40 +804,42 @@ export function buildManifestV1Schema(): JsonSchemaFragment {
   };
 }
 
-/**
- * The map-shaped body, shared by `kortix_version: 2` and `3`.
- *
- * v3 is v2 with two defaults flipped — `runtime` defaults to `pi` and project
- * config lives in `.kortix/pi` — and NO new syntax, so it reuses this builder
- * rather than duplicating ~50 properties that would then drift.
- */
-export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
-  const configDir = manifestDefaultConfigDir(version);
+/** `kortix_version: 2` body. */
+export function buildManifestV2Schema(): JsonSchemaFragment {
   return {
     $schema: DRAFT,
-    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v${version}.schema.json`,
-    title: `Kortix manifest (kortix_version ${version})`,
+    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json`,
+    title: 'Kortix manifest (kortix_version 2)',
     description:
-      `kortix.yaml, schema version ${version} — YAML-only. ` +
-      (version >= 3
-        ? 'The pi-native version: `runtime` defaults to `pi` and project config lives in ' +
-          '`.kortix/pi`. Otherwise identical to version 2. '
-        : '') +
-      '`agents` is a name→block MAP, ' +
-      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must ' +
-      'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
-      'prompt itself) lives entirely in that agent’s own native ' +
-      `\`${configDir}/agents/<name>.md\` frontmatter + body — authoring any of those fields ` + +
-      'here is a hard error. `[[channels]]` is removed outright. See ' +
-      'docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.',
+      'kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, ' +
+      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/repository_access/enabled) plus `file`, ' +
+      'the path of the agent’s `.md`; every agent must ' +
+      'be declared, and agent behavior (description/model/mode/temperature/permission/the ' +
+      'prompt itself) lives entirely in that agent’s own `.md` frontmatter + body ' +
+      '(`agents.<name>.file`, default `agents/<name>.md`) — authoring any of those fields ' +
+      'here is a hard error. `[[channels]]` is removed outright.',
     type: 'object',
-    required: ['kortix_version', 'default_agent', 'agents'],
+    required: ['kortix_version', 'default_agent'],
+    // `agents` is required in the file itself unless `imports` can supply it:
+    // this schema sees ONE file, and a split manifest may declare every agent
+    // in an imported one. The imperative validator checks the merged document.
+    if: { not: { required: ['imports'] } },
+    then: { required: ['agents'] },
     properties: {
-      kortix_version: { const: version },
+      kortix_version: { const: 2 },
+      // Other YAML files (or directories of them) whose `triggers`,
+      // `connectors`, `agents`, and `apps` merge into this manifest.
+      imports: {
+        type: 'array',
+        items: { type: 'string', pattern: IMPORT_PATH_PATTERN },
+      },
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
       default_agent: NON_EMPTY_STRING,
       runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      // Per-harness native settings. `pi.packages`: pi packages
+      // (https://pi.dev/packages) in pi's own settings format, for every agent.
+      harnesses: harnessesSchema('project'),
       agents: {
         type: 'object',
         minProperties: 1,
@@ -738,6 +847,7 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
         additionalProperties: agentBlockV2Schema(),
       },
       ...sharedSectionProperties(2),
+      pi: { ...opencodeSchema(), description: 'Pi native config directory (defaults to harnesses/pi, then .kortix/pi).' },
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,
     },
@@ -748,9 +858,37 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
   };
 }
 
+/** v3 keeps v2 governance but puts agent behavior in YAML. */
+export function buildManifestV3Schema(): JsonSchemaFragment {
+  const v2 = buildManifestV2Schema();
+  const agent = agentBlockV2Schema();
+  const behavior = agentMdFrontmatterSchema();
+  delete agent.properties.file;
+  agent.properties = {
+    ...agent.properties,
+    ...behavior.properties,
+    prompt: { type: 'string' },
+    prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN },
+  };
+  delete agent.properties.disable;
+  agent.allOf.push({ not: { required: ['prompt', 'prompt_file'] } });
+  return {
+    ...v2,
+    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json`,
+    title: 'Kortix manifest (kortix_version 3)',
+    description: 'YAML-only agent behavior with inline prompt or prompt_file; no native harness agent config required.',
+    properties: {
+      ...v2.properties,
+      kortix_version: { const: 3 },
+      opencode: false,
+      agents: { ...v2.properties.agents, additionalProperties: agent },
+    },
+  };
+}
+
 /**
  * The combined document: ONE stable URL that validates a manifest of
- * EITHER known version, dispatched by an `if/then` on `kortix_version`
+ * any known version, dispatched by an `if/then` on `kortix_version`
  * (spec ask: "one single validator reference"). Each branch inlines the
  * SAME body a standalone `kortix.v1`/`kortix.v2` document would use (the
  * builder functions above are the single source for both), so this document
@@ -759,8 +897,8 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
  */
 export function buildManifestSchema(): JsonSchemaFragment {
   const v1 = buildManifestV1Schema();
-  const v2 = buildManifestV2Schema(2);
-  const v3 = buildManifestV2Schema(3);
+  const v2 = buildManifestV2Schema();
+  const v3 = buildManifestV3Schema();
   // Strip the per-document $id/$schema/title/description from the inlined
   // bodies — only the combined document's own carry those.
   const { $schema: _s1, $id: _i1, title: _t1, description: _d1, ...v1Body } = v1;
@@ -772,8 +910,8 @@ export function buildManifestSchema(): JsonSchemaFragment {
     title: 'Kortix manifest',
     description:
       'kortix.toml / kortix.yaml — combined schema covering every published `kortix_version`. ' +
-      'Dispatches to the v1 or v2 shape by `kortix_version`. Prefer this URL when the version is ' +
-      `not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json\` (or v1) ` +
+      'Dispatches to the v1, v2 or v3 shape by `kortix_version`. Prefer this URL when the version is ' +
+      `not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json\` (or v1/v2) ` +
       'when it is.',
     type: 'object',
     required: ['kortix_version'],
@@ -792,16 +930,14 @@ export function buildManifestSchema(): JsonSchemaFragment {
  *  (the CLI's `kortix schema` command, the web app's `/schema/*.json`
  *  static files, the kortix-system skill) reads from. */
 export const KORTIX_V1_JSON_SCHEMA: JsonSchemaFragment = buildManifestV1Schema();
-export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema(2);
-export const KORTIX_V3_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema(3);
+export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema();
+export const KORTIX_V3_JSON_SCHEMA: JsonSchemaFragment = buildManifestV3Schema();
 export const KORTIX_JSON_SCHEMA: JsonSchemaFragment = buildManifestSchema();
 
 /** The one accessor every caller should use — "always return the correct,
  *  fully-valid schema for a given kortix_version." Pass no argument (or
  *  `'combined'`) for the single URL that dispatches on `kortix_version`. */
-export function manifestJsonSchema(
-  version: 1 | 2 | 3 | 'combined' = 'combined',
-): JsonSchemaFragment {
+export function manifestJsonSchema(version: 1 | 2 | 3 | 'combined' = 'combined'): JsonSchemaFragment {
   if (version === 1) return KORTIX_V1_JSON_SCHEMA;
   if (version === 2) return KORTIX_V2_JSON_SCHEMA;
   if (version === 3) return KORTIX_V3_JSON_SCHEMA;

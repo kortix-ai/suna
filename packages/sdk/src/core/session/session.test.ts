@@ -42,6 +42,25 @@ describe('session/health', () => {
     expect(isRuntimeReady(null)).toBe(false);
   });
 
+  it('isRuntimeReady reads the harness block before the pre-W3 opencode field', () => {
+    const block = (ready: boolean, state: string) => ({
+      id: 'pi',
+      version: null,
+      state,
+      ready,
+      error: null,
+      session: { id: null, required: true },
+      turn: null,
+      details: {},
+    });
+    // The process is up but the initial session is not pinned yet: not ready,
+    // although the flat field says `ok`.
+    expect(isRuntimeReady({ opencode: 'ok', harness: block(false, 'ok') })).toBe(false);
+    expect(isRuntimeReady({ harness: block(true, 'ok') })).toBe(true);
+    // runtimeReady still wins: it adds the host's workspace checks.
+    expect(isRuntimeReady({ runtimeReady: false, harness: block(true, 'ok') })).toBe(false);
+  });
+
   it('getSessionHealth parses a 200 body + reports ready', async () => {
     respond = () =>
       new Response(JSON.stringify({ status: 'ready', version: 'v9' }), { status: 200 });
@@ -150,10 +169,10 @@ describe('session/url', () => {
     expect(
       rewriteLocalhostUrl(3000, '/x', {
         ...opts,
-        sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+        sandboxId: 'sbx_01BBBBBBBBBBBBBBBBBBBBBBBB',
         apiBaseUrl: 'http://localhost:8008/v1',
       }),
-    ).toBe('http://p3000-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.localhost:8008/x');
+    ).toBe('http://p3000-sbx-01bbbbbbbbbbbbbbbbbbbbbbbb.localhost:8008/x');
   });
 
   describe('preview origin (the deployment advertises a template)', () => {
@@ -178,9 +197,9 @@ describe('session/url', () => {
       expect(
         rewriteLocalhostUrl(8081, '/learn', {
           ...withTemplate,
-          sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+          sandboxId: 'sbx_01BBBBBBBBBBBBBBBBBBBBBBBB',
         }),
-      ).toBe('https://dev-p8081-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.p.kortix.com/learn');
+      ).toBe('https://dev-p8081-sbx-01bbbbbbbbbbbbbbbbbbbbbbbb.p.kortix.com/learn');
     });
 
     it('keeps the query string and normalizes a missing leading slash', () => {
@@ -346,10 +365,19 @@ describe('session/url', () => {
 });
 
 describe('session/preview', () => {
-  it('buildPreviewAuthEndpoint derives the /p/auth endpoint', () => {
+  it('buildPreviewAuthEndpoint derives the /p/auth endpoint for the named server', () => {
     expect(
-      buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html'),
+      buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html', 'http://localhost:8008/v1'),
     ).toBe('http://localhost:8008/v1/p/auth');
+  });
+
+  it('buildPreviewAuthEndpoint trusts no origin when none is known', () => {
+    // No serverUrl and no window: the bearer would go to whatever origin the
+    // URL names, so no endpoint is returned.
+    expect(buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html')).toBeNull();
+    expect(
+      buildPreviewAuthEndpoint('https://collector.example/v1/p/sbx1/3000/', 'http://localhost:8008/v1'),
+    ).toBeNull();
   });
 
   it('buildStaticFilePreviewUrl owns the static-file service route', () => {

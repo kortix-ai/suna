@@ -25,11 +25,9 @@ describe('the source assertions below are reading the right files', () => {
 
 /**
  * The setup steps are the project's other entry points into Customize. Five of
- * the six land on a capability page; a plain project MEMBER holds none of the
- * leaves those pages assert (#6522 moved `project.customize.read` and the
- * connector/skill/secret/file reads out of PROJECT_MEMBER_BASELINE), so
- * pressing one used to produce a "forbidden" toast. They are hidden now, never
- * disabled.
+ * the six land on a capability page, and each carries exactly the read leaf
+ * that page asserts. A tile whose page the caller cannot open is hidden, never
+ * disabled — pressing one would only produce a "forbidden" toast.
  */
 describe('setup tiles are IAM-gated', () => {
   test('every tile declares the leaves its destination asserts', () => {
@@ -45,7 +43,7 @@ describe('setup tiles are IAM-gated', () => {
   // Keyed by `key`, never by `title`. The titles are checklist copy ("Connect
   // a tool", "Invite your team") and rewording one must not be able to break
   // a permission assertion.
-  test('the five Customize steps carry the surface leaf AND their own read leaf', () => {
+  test('the five Customize steps carry exactly their own read leaf', () => {
     for (const [key, leaf] of [
       ['connectors', PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
       ['triggers', PROJECT_ACTIONS.PROJECT_TRIGGER_READ],
@@ -55,8 +53,7 @@ describe('setup tiles are IAM-gated', () => {
     ] as const) {
       const tile = PROJECT_SETUP_TILES.find((t) => t.key === key);
       expect(tile).toBeDefined();
-      expect(tile!.actions).toContain(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ);
-      expect(tile!.actions).toContain(leaf);
+      expect(tile!.actions).toEqual([leaf]);
       expect(PROJECT_SETUP_TILE_ACTIONS).toContain(leaf);
     }
   });
@@ -67,7 +64,6 @@ describe('setup tiles are IAM-gated', () => {
   test('the team step gates on members.READ alone — it is not a Customize page', () => {
     const tile = PROJECT_SETUP_TILES.find((t) => t.key === 'team');
     expect(tile!.actions).toEqual([PROJECT_ACTIONS.PROJECT_MEMBERS_READ]);
-    expect(tile!.actions).not.toContain(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ);
     expect(tile!.actions).not.toContain(PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
   });
 
@@ -77,7 +73,6 @@ describe('setup tiles are IAM-gated', () => {
     // query on the action list.
     expect(sectionsSource).toContain('useProjectCans(projectId, PROJECT_SETUP_TILE_ACTIONS)');
     expect(new Set(PROJECT_SETUP_TILE_ACTIONS).size).toBe(PROJECT_SETUP_TILE_ACTIONS.length);
-    expect(PROJECT_SETUP_TILE_ACTIONS).toContain(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ);
   });
 
   test('hides on a RECEIVED denial only — never mid-probe, never disabled', () => {
@@ -124,9 +119,7 @@ describe('every setup tile carries exactly one step key', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test('every tile has a non-empty checklist title', () => {
-    for (const tile of PROJECT_SETUP_TILES) {
-      expect(tile.title.trim().length).toBeGreaterThan(0);
-    }
+  test('resolves each title from the stable step key', () => {
+    expect(sectionsSource).toContain('title: t(`setup.steps.${tile.key}`)');
   });
 });

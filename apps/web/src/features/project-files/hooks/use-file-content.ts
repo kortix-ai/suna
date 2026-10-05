@@ -1,9 +1,9 @@
 'use client';
 
+import type { FileContent } from '@/features/file-browser/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
-import type { FileContent } from '@/features/file-browser/types';
 
 export const fileContentKeys = {
   all: ['project-files', 'content'] as const,
@@ -31,7 +31,13 @@ export function useFileContent(
     refetchOnWindowFocus: false,
     retry: (failureCount, error: Error) => {
       const msg = error.message.toLowerCase();
-      if (msg.includes('404') || msg.includes('403') || msg.includes('not found') || msg.includes('access denied')) return false;
+      if (
+        msg.includes('404') ||
+        msg.includes('403') ||
+        msg.includes('not found') ||
+        msg.includes('access denied')
+      )
+        return false;
       return failureCount < 3;
     },
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),

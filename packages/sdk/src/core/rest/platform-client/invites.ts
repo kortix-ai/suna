@@ -1,8 +1,15 @@
 /**
  * Platform API client — sandbox invite accept/decline.
+ *
+ * The API removed `/v1/platform/invites/*` with the account-level sandbox.
+ * Invitations are account and project invites now (`listAccountInvites`,
+ * `acceptAccountInvite`). These exports remain for import compatibility until
+ * the next major.
  */
 
-import { platformFetch } from './shared';
+import { retiredEndpointError } from '../../http/api/errors';
+
+const INSTEAD = 'Use the account invite functions (acceptAccountInvite, declineAccountInvite).';
 
 // Visible form — viewer is the intended recipient, so all details are returned.
 export interface InviteDetailsVisible {
@@ -35,34 +42,17 @@ export interface InviteDetailsRedacted {
 
 export type InviteDetails = InviteDetailsVisible | InviteDetailsRedacted;
 
-export async function getInvite(inviteId: string): Promise<InviteDetails> {
-  const result = await platformFetch<InviteDetails>(
-    `/platform/invites/${encodeURIComponent(inviteId)}`,
-    { method: 'GET' },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Invite not found');
-  }
-  return result.data;
+/** @deprecated Sandbox invites were removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function getInvite(_inviteId: string): Promise<InviteDetails> {
+  throw retiredEndpointError('getInvite', INSTEAD);
 }
 
-export async function acceptInvite(inviteId: string): Promise<{ status: string; sandbox_id: string }> {
-  const result = await platformFetch<{ status: string; sandbox_id: string }>(
-    `/platform/invites/${encodeURIComponent(inviteId)}/accept`,
-    { method: 'POST' },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to accept invite');
-  }
-  return result.data;
+/** @deprecated Sandbox invites were removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function acceptInvite(_inviteId: string): Promise<{ status: string; sandbox_id: string }> {
+  throw retiredEndpointError('acceptInvite', INSTEAD);
 }
 
-export async function declineInvite(inviteId: string): Promise<void> {
-  const result = await platformFetch<void>(
-    `/platform/invites/${encodeURIComponent(inviteId)}/decline`,
-    { method: 'POST' },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to decline invite');
-  }
+/** @deprecated Sandbox invites were removed from the API. Always rejects with `ENDPOINT_RETIRED`. */
+export async function declineInvite(_inviteId: string): Promise<void> {
+  throw retiredEndpointError('declineInvite', INSTEAD);
 }

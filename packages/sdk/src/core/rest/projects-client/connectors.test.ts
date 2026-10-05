@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   activateConnection,
+  addComputerToProject,
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
@@ -17,9 +18,11 @@ import {
   getDiscoverConnector,
   listAllConnections,
   listConnections,
+  listConnectSections,
   listConnectToolkits,
   listConnectors,
   listDiscoverConnectors,
+  listDiscoverSections,
   listPipedreamApps,
   listPipedreamSections,
   listSessionConnectRequests,
@@ -49,6 +52,20 @@ import {
   startConnectionOAuth2DeviceAuthorization,
   syncConnectors,
   updateConnectionCredential,
+  callConnector,
+  listConnectorAccounts,
+  type ConnectorCallResult,
+  type ConnectorConnectOptions,
+  type ConnectorConnectOwner,
+  renameConnection,
+  shareConnection,
+  connectionSharedWithEveryone,
+  describeConnectorTool,
+  getConnectorCatalog,
+  listConnectorTools,
+  type Connection,
+  type ConnectionShare,
+  type ConnectionSharePrincipal,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -274,6 +291,40 @@ test('connection methods use the canonical connection route contract', async () 
   expect(last().url).toContain('/connections/connection-1/activate');
   await setDefaultConnection('P1', 'connection-1');
   expect(last().url).toContain('/connections/connection-1/default');
+
+  nextResponse = {
+    status: 200,
+    body: {
+      connection_id: 'connection-1',
+      connector_alias: 'gmail',
+      owner_type: 'project',
+      owner_id: null,
+      label: 'Support inbox',
+      status: 'active',
+      is_default: true,
+      metadata: {},
+      connected_as: 'support@example.test',
+    },
+  };
+  const renamed = await renameConnection('P1', 'connection-1', 'Support inbox');
+  expect(last()).toMatchObject({ method: 'PUT', body: { label: 'Support inbox' } });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/label');
+  expect(renamed.label).toBe('Support inbox');
+  expect(renamed.connected_as).toBe('support@example.test');
+
+  // Your own private account, shared: POST .../share with who may use it; an
+  // empty list shares it with everyone in the project.
+  nextResponse = {
+    status: 200,
+    body: { ...canonicalConnectionType, connection_id: 'connection-1', owner_type: 'project', is_default: false },
+  };
+  const audience: ConnectionSharePrincipal[] = [{ principal_type: 'group', principal_id: 'group-1' }];
+  const shared = await shareConnection('P1', 'connection-1', audience);
+  expect(last()).toMatchObject({ method: 'POST', body: { principals: audience } });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/share');
+  expect(shared.owner_type).toBe('project');
+  await shareConnection('P1', 'connection-1');
+  expect(last().body).toEqual({ principals: [] });
 
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
   await ensureProjectConnectorConnection('P1', 'gmail');
@@ -529,36 +580,6 @@ test('getConnectorConfig GETs the config, url-encoding a slug with special chara
   expect(result.slug).toBe('my app/v1');
 });
 
-test('computer connector config exposes its assigned machine ids', async () => {
-  const tunnelIds = [
-    '11111111-1111-4111-8111-111111111111',
-    '22222222-2222-4222-8222-222222222222',
-  ];
-  nextResponse = {
-    status: 200,
-    body: {
-      slug: 'studio-computers',
-      name: 'Studio computers',
-      provider: 'computer',
-      platform: null,
-      credentialMode: 'shared',
-      authorizationStrategy: 'project',
-      app: null,
-      account: null,
-      url: null,
-      transport: null,
-      endpoint: null,
-      baseUrl: null,
-      spec: null,
-      tunnelIds,
-      auth: { type: 'none', in: 'header', name: null, prefix: null },
-      headers: {},
-    },
-  };
-  const result = await getConnectorConfig('P1', 'studio-computers');
-  expect(result.tunnelIds).toEqual(tunnelIds);
-});
-
 test('setConnectorName PUTs { name }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorName('P1', 'slack', 'Team Slack');
@@ -594,18 +615,91 @@ test('createConnector POSTs the draft as the raw body', async () => {
   expect(last().body).toEqual(draft);
 });
 
-test('createConnector sends a Computers profile machine allowlist', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  const draft: import('./connectors').ConnectorDraftInput = {
-    slug: 'studio-computers',
-    name: 'Studio computers',
-    provider: 'computer',
-    tunnel_ids: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
-    create_only: true,
+// A paired computer is an ACCOUNT of the project's `computer` connector. The
+// connection view carries the machine it points at and its live status.
+const computerConnection: Connection = {
+  connection_id: 'connection-computer',
+  connector_alias: 'computer',
+  owner_type: 'member',
+  owner_id: 'user-1',
+  label: 'Studio Mac',
+  status: 'active',
+  is_default: true,
+  metadata: {},
+  tunnel_id: '11111111-1111-4111-8111-111111111111',
+  machine: {
+    online: true,
+    last_heartbeat_at: '2026-09-28T10:00:00.000Z',
+    hostname: 'studio-mac',
+    platform: 'darwin',
+  },
+};
+
+test('listConnections passes a computer account through with its machine status', async () => {
+  nextResponse = { status: 200, body: { connections: [computerConnection] } };
+  const [row] = (await listConnections('P1')).connections;
+  expect(row?.tunnel_id).toBe('11111111-1111-4111-8111-111111111111');
+  expect(row?.machine).toEqual({
+    online: true,
+    last_heartbeat_at: '2026-09-28T10:00:00.000Z',
+    hostname: 'studio-mac',
+    platform: 'darwin',
+  });
+});
+
+// The owner decides on the machine who may use it (Ask each time / Always /
+// Off). The view reports that choice so a UI or an agent can say "waiting for
+// you to allow access".
+test('listConnections passes the machine access state through', async () => {
+  const asking: Connection = {
+    ...computerConnection,
+    machine: {
+      ...computerConnection.machine!,
+      access: { mode: 'ask', granted_until: '2026-09-28T12:00:00.000Z' },
+    },
   };
-  await createConnector('P1', draft);
+  const off: Connection = {
+    ...computerConnection,
+    connection_id: 'connection-off',
+    machine: { ...computerConnection.machine!, access: { mode: 'off', granted_until: null } },
+  };
+  nextResponse = { status: 200, body: { connections: [asking, off] } };
+  const [first, second] = (await listConnections('P1')).connections;
+  expect(first?.machine?.access).toEqual({ mode: 'ask', granted_until: '2026-09-28T12:00:00.000Z' });
+  expect(second?.machine?.access?.mode).toBe('off');
+  // An agent that never reported its access state (npm 0.1.x) reads as null.
+  const legacy: NonNullable<Connection['machine']>['access'] = null;
+  expect(legacy).toBeNull();
+});
+
+test('addComputerToProject POSTs { tunnel_id, share } and returns the connection view', async () => {
+  nextResponse = { status: 200, body: computerConnection };
+  const result = await addComputerToProject('P1', {
+    tunnelId: '11111111-1111-4111-8111-111111111111',
+    share: 'project',
+  });
   expect(last().method).toBe('POST');
-  expect(last().body).toEqual(draft);
+  expect(last().url).toBe('http://test.local/projects/P1/computers');
+  expect(last().body).toEqual({
+    tunnel_id: '11111111-1111-4111-8111-111111111111',
+    share: 'project',
+  });
+  expect(result.connection_id).toBe('connection-computer');
+  expect(result.machine?.online).toBe(true);
+});
+
+test('addComputerToProject omits share so the server applies its private default', async () => {
+  nextResponse = { status: 200, body: computerConnection };
+  await addComputerToProject('P1', { tunnelId: '11111111-1111-4111-8111-111111111111' });
+  expect(last().body).toEqual({ tunnel_id: '11111111-1111-4111-8111-111111111111' });
+});
+
+test('addComputerToProject surfaces a refusal as an ApiError with the status', async () => {
+  nextResponse = { status: 409, body: { error: 'computer belongs to another account' } };
+  const error = await addComputerToProject('P1', {
+    tunnelId: '11111111-1111-4111-8111-111111111111',
+  }).catch((e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(409);
 });
 
 test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async () => {
@@ -683,6 +777,43 @@ test('listConnectToolkits GETs the Composio-first toolkit catalog with paginatio
   expect(result.toolkits[0]?.slug).toBe('gmail');
   expect(result.nextCursor).toBe('cursor-2');
   expect(result.hasMore).toBe(true);
+});
+
+test('listConnectSections GETs the Composio browse page with true category totals', async () => {
+  const gmail = {
+    slug: 'gmail',
+    name: 'Gmail',
+    logo: null,
+    description: 'Email',
+    categories: ['email'],
+    isNoAuth: false,
+    connected: false,
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      provider: 'composio',
+      sections: [{ key: 'email', label: 'email', total: 58, toolkits: [gmail] }],
+      categories: [{ key: 'email', label: 'email', count: 58 }],
+    },
+  };
+
+  const result = await listConnectSections('P1', { perCategory: 6, maxCategories: 12 });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/connectors/projects/P1/connect/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  expect(result.provider).toBe('composio');
+  // `total` is the category's size, not `toolkits.length` — 58 over one card.
+  expect(result.sections).toEqual([{ key: 'email', label: 'email', total: 58, toolkits: [gmail] }]);
+  expect(result.categories).toEqual([{ key: 'email', label: 'email', count: 58 }]);
+});
+
+test('listConnectSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { provider: 'composio', sections: [], categories: [] } };
+  await listConnectSections('P1');
+  expect(last().url).toMatch(/\/connectors\/projects\/P1\/connect\/sections$/);
 });
 
 test('listPipedreamApps GETs with q + cursor as query params when given', async () => {
@@ -787,6 +918,51 @@ test('listDiscoverConnectors GETs a searchable cursor page', async () => {
   expect(last().url).toContain('q=notion+admin');
   expect(last().url).toContain('cursor=48');
   expect(last().method).toBe('GET');
+});
+
+test('listDiscoverConnectors accepts a query object with a category filter and page size', async () => {
+  nextResponse = { status: 200, body: { items: [], total: 70, hasMore: true, nextCursor: '24' } };
+  const result = await listDiscoverConnectors('P1', {
+    q: 'pay',
+    category: 'finance',
+    cursor: '48',
+    limit: 24,
+  });
+  expect(last().url).toContain('/connectors/projects/P1/discover/connectors?');
+  expect(last().url).toContain('q=pay');
+  expect(last().url).toContain('category=finance');
+  expect(last().url).toContain('cursor=48');
+  expect(last().url).toContain('limit=24');
+  expect(result.total).toBe(70);
+});
+
+test('listDiscoverSections GETs the Discover browse page with true category totals', async () => {
+  const stripe = { id: 'mcp/stripe', slug: 'stripe', name: 'Stripe', categories: ['payments'] };
+  nextResponse = {
+    status: 200,
+    body: {
+      popular: [stripe],
+      sections: [{ key: 'finance', label: 'Finance', total: 116, items: [stripe] }],
+      categories: [{ key: 'finance', label: 'Finance', count: 116 }],
+    },
+  };
+
+  const result = await listDiscoverSections('P1', { perCategory: 6, maxCategories: 12 });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/connectors/projects/P1/discover/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  // `total` is the category's size, not `items.length` — 116 over one card.
+  expect(result.sections[0]?.total).toBe(116);
+  expect(result.popular.map((item) => item.slug)).toEqual(['stripe']);
+  expect(result.categories).toEqual([{ key: 'finance', label: 'Finance', count: 116 }]);
+});
+
+test('listDiscoverSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
+  await listDiscoverSections('P1');
+  expect(last().url).toMatch(/\/connectors\/projects\/P1\/discover\/sections$/);
 });
 
 test('getDiscoverConnector GETs detail by encoded catalogue id', async () => {
@@ -975,6 +1151,36 @@ test('connectorConnect and connectorFinalize are the provider-neutral names for 
   expect(finalized.connected).toBe(true);
 });
 
+test('connectorFinalize can finalize the PROJECT-owned account the connect started', async () => {
+  // The route defaults an absent `owner` to `me` (`parseConnectorConnectOwner`),
+  // so a finalize with no owner polls the CALLER's member connection. A connect
+  // sent with `owner: 'project'` therefore had no matching finalize on this
+  // surface at all: the poll could only ever report the wrong account, and the
+  // caller waited out the full Connect Link timeout.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', { owner: 'project' });
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect/finalize');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ owner: 'project' });
+});
+
+test('connectorFinalize can pin the poll to one exact connection', async () => {
+  // Without a selector the route resolves the most recently updated row in the
+  // owner scope. Naming the connection removes that recency race when the
+  // caller already knows which account it reconciled.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', { owner: 'project', connectionId: 'connection-7' });
+  expect(last().body).toEqual({ owner: 'project', connection_id: 'connection-7' });
+});
+
+test('connectorFinalize still sends an empty body when given no options', async () => {
+  // Backwards compatible: every published caller passes two arguments, and the
+  // route must keep applying its own `me` default for them.
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  await connectorFinalize('P1', 'gmail', {});
+  expect(last().body).toEqual({});
+});
+
 test('connect surfaces the already-connected verdict the popup flow branches on', () => {
   // `runConnectLinkFlow` reads `response.connected` to skip the hosted page for a
   // no-auth toolkit and for an account that is already live. The field was
@@ -988,4 +1194,287 @@ test('connect surfaces the already-connected verdict the popup flow branches on'
   };
   expect(noAuth.connected).toBe(true);
   expect(needsAuth.connected).toBe(false);
+});
+
+/**
+ * Account selection. One connector can hold the project's shared account and
+ * each member's own, and the agent may use any of them — so a call has to be
+ * able to say WHICH, and a caller has to be able to find out what the choices
+ * are. Before this, resolution silently took the first entitled account and
+ * the only way to influence it was a per-session dropdown in the composer.
+ */
+test('callConnector sends no account key when the caller names none', async () => {
+  nextResponse = { status: 200, body: { ok: true, data: { id: 1 } } };
+  await callConnector('P1', 'gmail.send_email', { to: 'a@b.c' });
+  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/call');
+  expect(calls[0].body).toEqual({
+    connector: 'gmail',
+    action: 'send_email',
+    args: { to: 'a@b.c' },
+  });
+});
+
+test('callConnector forwards the chosen account so the gateway runs as it', async () => {
+  nextResponse = { status: 200, body: { ok: true, data: { id: 1 } } };
+  await callConnector('P1', 'gmail.send_email', { to: 'a@b.c' }, { account: 'Personal' });
+  expect(calls[0].body).toEqual({
+    connector: 'gmail',
+    action: 'send_email',
+    args: { to: 'a@b.c' },
+    account: 'Personal',
+  });
+});
+
+test('listConnectorAccounts reads the accounts a call may run as', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connector: 'gmail',
+      accounts: [
+        { connection_id: 'c-1', label: 'Work', owner_type: 'project', is_default: true },
+        { connection_id: 'c-2', label: 'Personal', owner_type: 'member', is_default: false },
+      ],
+    },
+  };
+  const accounts = await listConnectorAccounts('P1', 'gmail');
+  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/connectors/gmail/accounts');
+  expect(calls[0].method).toBe('GET');
+  expect(accounts.map((account) => account.label)).toEqual(['Work', 'Personal']);
+  // Default first, because that is the one an unselected call resolves to.
+  expect(accounts[0].is_default).toBe(true);
+});
+
+/**
+ * Owner is a choice made at connect time, not a connector-wide mode.
+ *
+ * `authorization_strategy` made the two owner types mutually exclusive per
+ * connector, and a `user`-strategy connector reached no connect flow at all —
+ * the refusal that had no remedy. The caller now states who the new account
+ * belongs to: `me` (the signed-in human's own) or `project` (shared).
+ */
+test('connectorConnect sends no owner when the caller names none', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
+  await connectorConnect('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect');
+  expect(last().method).toBe('POST');
+  // Omitted rather than null: the API reads the key's presence to pick its default.
+  expect(last().body).toEqual({});
+});
+
+test('connectorConnect forwards the owner the new account is created under', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
+  await connectorConnect('P1', 'gmail', { owner: 'project' });
+  expect(last().body).toEqual({ owner: 'project' });
+
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/y' } };
+  await connectorConnect('P1', 'gmail', { owner: 'me' });
+  expect(last().body).toEqual({ owner: 'me' });
+});
+
+test('pipedreamConnect, the published alias, carries the owner too', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/z' } };
+  await pipedreamConnect('P1', 'gmail', { owner: 'me' });
+  expect(last().body).toEqual({ owner: 'me' });
+});
+
+test('a call result echoes the account it ran as', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      ok: true,
+      data: { id: 1 },
+      account: { connection_id: 'c-2', label: 'Personal', owner_type: 'member' },
+    },
+  };
+  // A transcript has to be able to show WHICH identity sent the mail, including
+  // when the caller named no account and resolution picked one.
+  const result: ConnectorCallResult<{ id: number }> = await callConnector(
+    'P1',
+    'gmail.send_email',
+    { to: 'a@b.c' },
+  );
+  expect(result.account).toEqual({
+    connection_id: 'c-2',
+    label: 'Personal',
+    owner_type: 'member',
+  });
+  expect(result.account?.owner_type).toBe('member');
+});
+
+test('ConnectorConnectOwner is the two words every connect surface accepts', () => {
+  const owners: ConnectorConnectOwner[] = ['project', 'me'];
+  const options: ConnectorConnectOptions = { owner: 'project' };
+  expect(owners).toEqual(['project', 'me']);
+  expect(options.owner).toBe('project');
+});
+
+// ── Who may use a shared account ────────────────────────────────────────────
+
+const sharedAccount = (shared_with: ConnectionShare[] | undefined): Connection => ({
+  connection_id: 'c-shared',
+  connector_alias: 'crm',
+  owner_type: 'project',
+  owner_id: null,
+  label: 'Sales CRM',
+  status: 'active',
+  is_default: true,
+  metadata: {},
+  ...(shared_with ? { shared_with } : {}),
+});
+
+const share = (principal_type: ConnectionShare['principal_type'], label: string): ConnectionShare => ({
+  grant_id: `g-${label}`,
+  principal_type,
+  principal_id: `id-${label}`,
+  label,
+  expires_at: null,
+});
+
+test('listConnections carries a shared account audience and whether the caller may use it', async () => {
+  const sales = share('group', 'Sales');
+  nextResponse = {
+    status: 200,
+    body: { connections: [{ ...sharedAccount([sales]), usable: false }] },
+  };
+  const { connections } = await listConnections('P1');
+  expect(connections[0]?.shared_with).toEqual([sales]);
+  expect(connections[0]?.usable).toBe(false);
+});
+
+test('connectionSharedWithEveryone: no grant, or a grant to the project, is everyone', () => {
+  expect(connectionSharedWithEveryone(sharedAccount([]))).toBe(true);
+  // An older server sends no `shared_with`: a shared account was everyone's.
+  expect(connectionSharedWithEveryone(sharedAccount(undefined))).toBe(true);
+  expect(
+    connectionSharedWithEveryone(sharedAccount([share('group', 'Sales'), share('project', 'Acme')])),
+  ).toBe(true);
+  expect(connectionSharedWithEveryone(sharedAccount([share('group', 'Sales')]))).toBe(false);
+  expect(connectionSharedWithEveryone(sharedAccount([share('member', 'ada@example.test')]))).toBe(false);
+});
+
+test('connectionSharedWithEveryone: a private account is nobody else\'s', () => {
+  expect(
+    connectionSharedWithEveryone({ ...sharedAccount(undefined), owner_type: 'member', owner_id: 'u-1' }),
+  ).toBe(false);
+});
+
+// ─── Payload-size fix: schemas are opt-in, not the default ─────────────────
+//
+// The full per-action JSON Schema was the dominant contributor to
+// GET /connectors/projects/:id/connectors (1.6MB body) and
+// GET /connectors/projects/:id/catalog (439KB body) on prod. The API includes
+// `inputSchema` unless a caller sends `include_schemas=false`; an explicit
+// `false` MUST reach the wire, or the opt-out does nothing.
+
+test('listConnectors sends no query by default, and forwards an explicit includeSchemas either way', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await listConnectors('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/connectors');
+
+  await listConnectors('P1', { includeSchemas: false });
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/connectors?include_schemas=false',
+  );
+
+  await listConnectors('P1', { includeSchemas: true });
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/connectors?include_schemas=true',
+  );
+});
+
+test('getConnectorCatalog forwards an explicit includeSchemas: false', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await getConnectorCatalog('P1', { includeSchemas: false });
+  expect(new URL(last()!.url).searchParams.get('include_schemas')).toBe('false');
+});
+
+test('getConnectorCatalog forwards slug and includeSchemas as query params', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await getConnectorCatalog('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+
+  await getConnectorCatalog('P1', { slug: 'gmail', includeSchemas: true });
+  const url = new URL(last()!.url);
+  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.searchParams.get('slug')).toBe('gmail');
+  expect(url.searchParams.get('include_schemas')).toBe('true');
+});
+
+test('listConnectorTools never asks for schemas — no caller of it reads inputSchema', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        {
+          slug: 'gmail',
+          name: 'Gmail',
+          provider: 'composio',
+          status: 'active',
+          actions: [{ path: 'send', name: 'Send', description: '', risk: 'write', inputSchema: null }],
+        },
+      ],
+    },
+  };
+  await listConnectorTools('P1');
+  // The title is the contract: this helper must OPT OUT of the schemas, or the
+  // server's include-by-default sends them and the summary path pays 439KB it
+  // never reads. Asserting the bare URL only proved the bug.
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/catalog?include_schemas=false',
+  );
+});
+
+test('describeConnectorTool fetches ONE connector, with its schema, instead of the whole catalog', async () => {
+  const schema = { type: 'object', properties: { to: { type: 'string' } } };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        {
+          slug: 'gmail',
+          name: 'Gmail',
+          provider: 'composio',
+          status: 'active',
+          actions: [{ path: 'send', name: 'Send', description: 'Send mail', risk: 'write', inputSchema: schema }],
+        },
+      ],
+    },
+  };
+  const tool = await describeConnectorTool('P1', 'gmail.send');
+  const url = new URL(last()!.url);
+  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.searchParams.get('slug')).toBe('gmail');
+  expect(url.searchParams.get('include_schemas')).toBe('true');
+  expect(tool?.inputSchema).toEqual(schema);
+});
+
+test('describeConnectorTool picks the named connector when the server ignores slug', async () => {
+  // An older API (the CLI ships separately) answers the whole catalog; the
+  // requested connector is not guaranteed to be the first entry.
+  const schema = { type: 'object', properties: { message: { type: 'object' } } };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        { slug: 'echo', name: 'Echo', provider: 'http', status: 'active', actions: [] },
+        {
+          slug: 'graph',
+          name: 'Graph',
+          provider: 'openapi',
+          status: 'active',
+          actions: [{ path: 'sendMail', name: 'Send mail', description: '', risk: 'write', inputSchema: schema }],
+        },
+      ],
+    },
+  };
+  const tool = await describeConnectorTool('P1', 'graph.sendMail');
+  expect(tool?.connector).toBe('graph');
+  expect(tool?.inputSchema).toEqual(schema);
+});
+
+test('describeConnectorTool: a malformed tool name (no dot) resolves to null without a request', async () => {
+  calls = [];
+  const tool = await describeConnectorTool('P1', 'not-a-tool-name');
+  expect(tool).toBeNull();
+  expect(calls).toHaveLength(0);
 });

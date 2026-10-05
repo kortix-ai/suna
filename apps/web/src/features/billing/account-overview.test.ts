@@ -10,6 +10,17 @@ import { formatUsd } from './account-overview';
  * sign goes.
  */
 describe('formatUsd', () => {
+  test('formats currency with the selected locale', () => {
+    expect(formatUsd(99891.85, 'de-DE')).toBe(
+      new Intl.NumberFormat('de-DE', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(99891.85),
+    );
+  });
+
   test('groups thousands — a five-figure balance is read, not counted', () => {
     expect(formatUsd(99891.85)).toBe('$99,891.85');
   });

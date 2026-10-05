@@ -8,7 +8,6 @@ import {
   bulkActReviewItems,
   listReviewItems,
   resolveApproval,
-  submitReviewItem,
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -64,16 +63,6 @@ export function useBulkActReviewItems() {
   });
 }
 
-export function useSubmitReviewItem() {
-  const ctx = useProjectContext();
-  const projectId = ctx?.projectId ?? '';
-  const invalidate = useInvalidate(projectId);
-  return useMutation<ApiReviewItem, Error, Parameters<typeof submitReviewItem>[1]>({
-    mutationFn: (input) => submitReviewItem(projectId, input),
-    onSuccess: invalidate,
-  });
-}
-
 /**
  * Resolve a connector approval (`call:` adapted review item) directly from the
  * inbox — the SAME call + payload the in-session approval prompt uses
@@ -89,10 +78,10 @@ export function useResolveReviewApproval() {
   return useMutation<
     { ok: boolean },
     Error,
-    { executionId: string; decision: 'approve' | 'deny' }
+    { executionId: string; decision: 'approve' | 'deny'; note?: string }
   >({
-    mutationFn: ({ executionId, decision }) =>
-      resolveApproval(projectId, executionId, decision),
+    mutationFn: ({ executionId, decision, note }) =>
+      resolveApproval(projectId, executionId, decision, { note }),
     onSuccess: invalidate,
     // Every call site (review-center-connected.tsx) passes its own call-time
     // `onError` to `resolve.mutate(vars, { onError })` and shows a specific

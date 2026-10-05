@@ -27,10 +27,23 @@ export function providerLabel(provider: string | null | undefined): string {
  * an account with — the difference decides whether they go looking for a login
  * somewhere else.
  */
-export function providerSentence(provider: string | null | undefined): string {
+export interface ProviderSentenceCopy {
+  hosted: (provider: string) => string;
+  stored: (provider: string) => string;
+}
+
+const DEFAULT_PROVIDER_SENTENCE_COPY: ProviderSentenceCopy = {
+  hosted: (provider) => `Hosted on ${provider}.`,
+  stored: (provider) => `Stored in ${provider}.`,
+};
+
+export function providerSentence(
+  provider: string | null | undefined,
+  copy: ProviderSentenceCopy = DEFAULT_PROVIDER_SENTENCE_COPY,
+): string {
   const label = providerLabel(provider);
-  if (provider === 'code-storage' || provider === 'code_storage') return `Stored in ${label}.`;
-  return `Hosted on ${label}.`;
+  if (provider === 'code-storage' || provider === 'code_storage') return copy.stored(label);
+  return copy.hosted(label);
 }
 
 export function repositoryWebUrl(
@@ -43,6 +56,20 @@ export function repositoryWebUrl(
 
 export type ConnectionTone = 'connected' | 'attention' | 'unknown';
 
+export interface ConnectionStatusCopy {
+  connected: string;
+  attention: string;
+  connecting: string;
+  disconnected: string;
+}
+
+const DEFAULT_CONNECTION_STATUS_COPY: ConnectionStatusCopy = {
+  connected: 'Connected',
+  attention: 'Needs attention',
+  connecting: 'Connecting…',
+  disconnected: 'Not connected',
+};
+
 /**
  * A backend connection status turned into something a person can act on.
  *
@@ -52,12 +79,47 @@ export type ConnectionTone = 'connected' | 'attention' | 'unknown';
  * exactly as useful as no connection at all, and printing the enum would just
  * ask them to interpret it.
  */
-export function connectionStatusLabel(status: string | null | undefined): {
+export function connectionStatusLabel(
+  status: string | null | undefined,
+  copy: ConnectionStatusCopy = DEFAULT_CONNECTION_STATUS_COPY,
+): {
   tone: ConnectionTone;
   label: string;
 } {
-  if (status === 'connected') return { tone: 'connected', label: 'Connected' };
-  if (status === 'error' || status === 'failed') return { tone: 'attention', label: 'Needs attention' };
-  if (status === 'pending' || status === 'connecting') return { tone: 'unknown', label: 'Connecting…' };
-  return { tone: 'unknown', label: 'Not connected' };
+  if (status === 'connected') return { tone: 'connected', label: copy.connected };
+  if (status === 'error' || status === 'failed')
+    return { tone: 'attention', label: copy.attention };
+  if (status === 'pending' || status === 'connecting') {
+    return { tone: 'unknown', label: copy.connecting };
+  }
+  return { tone: 'unknown', label: copy.disconnected };
+}
+
+/** Rows the default-branch picker renders at once. */
+export const BRANCH_PICKER_LIMIT = 50;
+
+/**
+ * The rows the default-branch picker shows for one search string.
+ *
+ * A long-lived project's remote holds one branch per session: thousands of
+ * refs. Rendering each as a menu row froze the tab, then crashed it. The
+ * picker now renders at most `limit` rows and says how many it held back.
+ *
+ * The current branch always comes first when it matches, so the selected
+ * value is visible without a search. Matching is a case-insensitive
+ * substring; the order is otherwise the server's.
+ */
+export function filterBranchNames(
+  names: readonly string[],
+  current: string,
+  query: string,
+  limit: number = BRANCH_PICKER_LIMIT,
+): { visible: string[]; hidden: number } {
+  const needle = query.trim().toLowerCase();
+  const matches = (name: string) => !needle || name.toLowerCase().includes(needle);
+  const ordered = [current, ...names.filter((name) => name !== current)].filter(
+    (name) => name && matches(name),
+  );
+  const unique = [...new Set(ordered)];
+  return { visible: unique.slice(0, limit), hidden: Math.max(0, unique.length - limit) };
 }

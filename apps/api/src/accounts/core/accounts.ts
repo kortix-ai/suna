@@ -22,10 +22,10 @@ import {
   autoClaimPendingInvites,
   getMembership,
   normalizeString,
-  readBody,
   resolveAccountDisplayNames,
   serializeAccount,
 } from './app';
+import { readJsonObject } from '../../shared/http-body';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -40,10 +40,10 @@ export function registerAccountRoutes(): void {
       ...auth,
       responses: {
         200: json(z.array(AccountSummarySchema), 'Accounts the user belongs to'),
-        ...errors(401),
+        ...errors(401, 500),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const userEmail = c.get('userEmail') as string;
 
@@ -82,19 +82,21 @@ export function registerAccountRoutes(): void {
       // `account_members` says WHICH accounts; `role_assignments` says at what
       // role. Reading the role off the join labelled the switcher with a value
       // the engine no longer decides on.
+      const readMembershipRows = () =>
+        db
+          .select({
+            accountId: accountMembers.accountId,
+            name: accounts.name,
+            createdAt: accounts.createdAt,
+            updatedAt: accounts.updatedAt,
+            branding: accounts.branding,
+          })
+          .from(accountMembers)
+          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+          .where(eq(accountMembers.userId, userId));
       const loadMemberships = async () => {
         const [membershipRows, rolesByAccount] = await Promise.all([
-          db
-            .select({
-              accountId: accountMembers.accountId,
-              name: accounts.name,
-              createdAt: accounts.createdAt,
-              updatedAt: accounts.updatedAt,
-              branding: accounts.branding,
-            })
-            .from(accountMembers)
-            .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-            .where(eq(accountMembers.userId, userId)),
+          readMembershipRows(),
           accountRolesForUser(userId),
         ]);
         return membershipRows.map((m) => ({
@@ -128,8 +130,10 @@ export function registerAccountRoutes(): void {
       // both would trade a 10-line ordering discipline for a multi-parameter
       // abstraction that hides the one real asymmetry that matters — this
       // route's bootstrap failure is fatal (500 below), /me's is not.
-      let memberships = await loadMemberships();
-      if (memberships.length === 0) {
+      //
+      // The decision needs only WHETHER a membership exists, so this read
+      // skips the roles. The list below reads both.
+      if ((await readMembershipRows()).length === 0) {
         try {
           await bootstrapPersonalAccount(userId, userEmail);
         } catch (err) {
@@ -152,7 +156,12 @@ export function registerAccountRoutes(): void {
       // invite must not roll back the others, or the account just bootstrapped).
       await autoClaimPendingInvites(userId, userEmail);
 
-      memberships = await loadMemberships();
+      // Read unconditionally, after the claim. Reusing the pre-claim rows when
+      // this request claimed nothing races a concurrent list: the first call of
+      // a fresh sign-in claims the invite between this call's first read and
+      // its claim, so this call sees no pending invite, claims 0, and would
+      // return the list without the workspace the user was just added to.
+      const memberships = await loadMemberships();
       if (memberships.length === 0) {
         console.warn(`[accounts] No memberships for ${userId} after bootstrap+claim`);
         return c.json({ error: 'Failed to initialize account' }, 500);
@@ -205,7 +214,7 @@ export function registerAccountRoutes(): void {
         ...errors(400, 401, 403),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get("userId") as string;
 
       // Self-host account-creation restriction: gate the creation of
@@ -225,7 +234,7 @@ export function registerAccountRoutes(): void {
         );
       }
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const name = normalizeString(body.name);
       if (!name) return c.json({ error: 'name is required' }, 400);
       if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
@@ -277,7 +286,7 @@ export function registerAccountRoutes(): void {
         ...errors(401, 403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
 
@@ -363,7 +372,7 @@ export function registerAccountRoutes(): void {
         ...errors(400, 401, 403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
 
@@ -371,7 +380,7 @@ export function registerAccountRoutes(): void {
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const name = normalizeString(body.name);
       if (!name) return c.json({ error: 'name is required' }, 400);
       if (name.length > 255) return c.json({ error: 'name is too long' }, 400);

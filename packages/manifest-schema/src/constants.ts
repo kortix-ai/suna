@@ -95,7 +95,6 @@ export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor'] as const;
  * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
  * exits; `stream` runs it once and keeps it alive. Both emit events as stdout
  * lines — downstream (filter → prompt → session_mode) cannot tell them apart.
- * See docs/specs/2026-08-12-monitors.md §"The monitor contract (v1)".
  */
 export const MONITOR_MODES = ['poll', 'stream'] as const;
 
@@ -192,8 +191,9 @@ export const SANDBOX_MEMORY_BOUNDS = { min: 1, max: 128 } as const;
 export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 
 /**
- * The actions an agent's `[[agents]].kortix_cli` may grant — the project-scoped
- * surface. MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
+ * The permissions an agent's `kortix_permissions` grant may list — the
+ * project-scoped surface (`kortix_cli` is the deprecated manifest alias).
+ * MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
  * every project-scoped action, including the manager-tier leaves
  * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`):
  * these are still reachable via a project's `manager` role, so an agent can be
@@ -205,9 +205,9 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
  * agent-session token is project-scoped (`account_tokens.project_id`):
  * apps/api's IAM v2 engine (`iam/engine-v2.ts`'s `computeTokenScope`) refuses
  * ANY account-scope action outright for a project-bound token — BEFORE the
- * agent's `kortix_cli` grant is even loaded or consulted. This list is a
+ * agent's `kortix_permissions` grant is even loaded or consulted. This list is a
  * curation/UX surface (what the CLI/dashboard editor OFFER as grantable, and
- * what `validateGrantList` flags as a bad `kortix_cli` entry), not the
+ * what `validateGrantList` flags as a bad `kortix_permissions` entry), not the
  * security boundary itself — grant-omission alone would not stop a
  * hypothetical non-project-scoped token from calling an account action.
  *
@@ -217,10 +217,10 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
  * audit, 2026-07): none of them were ever asserted on any route, so granting
  * or omitting them was a silent no-op.
  */
-// MUST stay in sync with apps/api iam/actions.ts GRANTABLE_KORTIX_CLI (=
+// MUST stay in sync with apps/api projects/agents.ts GRANTABLE_KORTIX_PERMISSIONS (=
 // Object.values(PROJECT_ACTIONS)). The unit-agents-parse drift-guard test
 // fails loudly if these diverge (this package can't import apps/api).
-export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
+export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.read',
   'project.write',
   'project.delete',
@@ -237,6 +237,7 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.trigger.fire',
   'project.gateway.logs.read',
   'project.gateway.spend.read',
+  'project.usage.read',
   'project.gateway.budget.set',
   'project.gateway.keys.manage',
   // IAM v1 per-capability leaves.
@@ -248,8 +249,10 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.command.write',
   'project.file.read',
   'project.file.write',
-  'project.customize.read',
-  'project.customize.write',
+  'project.settings.write',
+  'project.sandbox.write',
+  'project.model.read',
+  'project.model.write',
   'project.gitops.read',
   'project.gitops.push',
   'project.gitops.merge',
@@ -268,7 +271,7 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.review.act',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
-  // agent-session token outright (projects/routes/r3.ts) — an agent that could
+  // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
   // mint a fresh, grant-less project token would escape its own ceiling. The
   // leaf exists so a CUSTOM ROLE can withhold it from humans.
   'project.credentials.issue',
@@ -277,30 +280,39 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
 /**
  * Actions removed from the enforcement catalog (IAM dead-catalog cleanup,
  * 2026-07) but that older project manifests may still list under
- * `kortix_cli`. None of them were ever asserted on any route, so granting or
+ * `kortix_permissions`. None of them were ever asserted on any route, so granting or
  * omitting them was always a no-op — but a manifest merge/ship must not start
  * hard-failing for projects that happen to still mention one. Kept out of
- * `GRANTABLE_KORTIX_CLI_ACTIONS` (they must never appear in the role editor
+ * `GRANTABLE_KORTIX_PERMISSIONS` (they must never appear in the role editor
  * or be recommended for new manifests) and instead surfaced as a
  * deprecation warning by `validateGrantList`.
  */
 /**
- * `kortix_cli` spellings that are still ACCEPTED but are the pre-cutover name
- * for another leaf. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
- * because they were the same capability named twice; a manifest that still
- * lists one keeps validating and is rewritten to the value here when the grant
- * is resolved.
+ * `kortix_permissions` entries that are still ACCEPTED but are the old name for
+ * one or more leaves. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
+ * because they were the same capability named twice; `project.customize.*` was
+ * one leaf for five unrelated topics and split into one leaf per topic. A
+ * manifest that still lists one keeps validating and is rewritten to the leaves
+ * here when the grant is resolved.
  *
  * This is the single source: apps/api's grant canonicalizer imports it rather
  * than keeping a second copy, and the CLI's `validate --scopes` annotates from
  * it. Two hand-written copies of a key table is how they drift.
  */
-export const DEPRECATED_KORTIX_CLI_ALIASES: Readonly<Record<string, string>> = {
-  'project.cr.open': 'project.gitops.push',
-  'project.cr.merge': 'project.gitops.merge',
+export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  'project.cr.open': ['project.gitops.push'],
+  'project.cr.merge': ['project.gitops.merge'],
+  'project.customize.read': ['project.model.read'],
+  'project.customize.write': [
+    'project.settings.write',
+    'project.sandbox.write',
+    'project.model.read',
+    'project.model.write',
+    'project.agent.write',
+  ],
 };
 
-export const LEGACY_TOLERATED_KORTIX_CLI_ACTIONS: readonly string[] = [
+export const LEGACY_TOLERATED_KORTIX_PERMISSIONS: readonly string[] = [
   'project.session.exec',
   'project.gateway.routing.edit',
   'project.schedule.read',
@@ -357,44 +369,8 @@ export const AGENT_THEME_COLORS_V2 = [
 ] as const;
 export const HEX_COLOR_RE_V2 = /^#[0-9a-fA-F]{6}$/;
 
-// ─── Schema versions ──────────────────────────────────────────────────────
-//
-// v1  TOML or YAML, `[[agents]]` ARRAY, grants default to `all`.
-// v2  YAML only,    `agents:` MAP,      grants default to `none`, runtime
-//     defaults to `opencode`, project config lives in `.kortix/opencode`.
-// v3  Exactly v2's body, with two defaults flipped for the pi runtime:
-//     `runtime` defaults to `pi`, and project config lives in `.kortix/pi`.
-//
-// v3 deliberately adds NO new syntax. A pi project should not have to restate
-// `runtime: pi` in a file whose version already says so, and its agents should
-// not live in a directory named after the runtime it does not use. Everything
-// else — the agents map, deny-by-default grants, permission trees — is v2, so
-// every v2 validator and reader applies unchanged.
-
-/** Highest `kortix_version` this build understands. */
-export const KNOWN_SCHEMA_VERSION = 3;
-
-/**
- * Does this version use the v2-shaped body (`agents:` map, deny-by-default
- * grants, YAML-only)? True for v2 and up.
- *
- * Written as `>= 2`, never `=== 2 || === 3`: every one of these call sites is
- * asking "is this the modern body?", and an equality list is a gate that
- * silently starts failing the day v4 lands.
- */
-export function manifestUsesAgentMap(version: number): boolean {
-  return version >= 2;
-}
-
-/** The runtime a manifest gets when it declares none. */
-export function manifestDefaultRuntime(version: number): 'opencode' | 'pi' {
-  return version >= 3 ? 'pi' : 'opencode';
-}
-
-/**
- * Where this project's agents, skills, and commands live when the manifest
- * names no `config_dir` — `.kortix/pi` from v3, `.kortix/opencode` before it.
- */
-export function manifestDefaultConfigDir(version: number): string {
-  return version >= 3 ? '.kortix/pi' : '.kortix/opencode';
-}
+/** A pi package source (`harnesses.pi.packages`): an exact npm pin, or a repo path starting with `./` that never climbs out with `..`. */
+export const PI_PACKAGE_NPM_RE = /^npm:(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+export const PI_PACKAGE_PATH_RE = /^\.\/(?!.*(^|\/)\.\.(\/|$))[^\s:]+$/;
+/** An npm package name without a version (`pi-web-access`, `@scope/name`): what an agent's `exclude` lists. */
+export const PI_PACKAGE_NAME_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;

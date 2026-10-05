@@ -5,9 +5,9 @@ import {
   type ManifestFormat,
   type ManifestIssue,
   manifestCandidatePaths,
-  parseManifestText,
   validateManifest,
 } from '@kortix/manifest-schema';
+import { resolveLocalManifestImports } from './manifest-imports.ts';
 
 /** The `[env]` contract from the manifest — names the runtime needs. */
 export interface EnvSpec {
@@ -91,7 +91,9 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
   const resolved = resolveLocalManifest(cwd);
   if (!resolved) return null;
   const raw = readFileSync(resolved.path, 'utf8');
-  const data = parseManifestText(raw, resolved.format);
+  // `data` is the MERGED document when the manifest declares `imports:` — what
+  // the platform runs. `raw` stays the root file's own text.
+  const data = resolveLocalManifestImports(resolved.path, resolved.format).raw;
   return {
     path: resolved.path,
     format: resolved.format,
@@ -113,16 +115,6 @@ export function lintManifest(
   format: ManifestFormat = 'toml',
 ): ManifestIssues {
   const { issues } = validateManifest(data, format);
-  return classifyIssues(issues);
-}
-
-/**
- * Validate a manifest from raw text. Returns a syntax-error issue when it
- * doesn't parse; otherwise runs the canonical schema. Pass the `format` so a
- * `kortix.yaml` is parsed as YAML (defaults to TOML for back-compat).
- */
-export function lintManifestText(raw: string, format: ManifestFormat = 'toml'): ManifestIssues {
-  const { issues } = validateManifest(raw, format);
   return classifyIssues(issues);
 }
 

@@ -8,13 +8,15 @@
 // (the orchestrator) so the original ordering is preserved.
 
 import { z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountMembers } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { accountGroupMembers, accountInvitations, accountScimUsers } from '@kortix/db';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { scimAuth } from '../middleware/scim-auth';
 import { makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
+import { withDirectoryTransaction } from '../iam/directory-transaction';
+import { emailTrustedSql } from '../iam/email-trust';
 import { getSupabase } from '../shared/supabase';
 
 // SCIM payloads are large/dynamic — model permissively.
@@ -28,6 +30,20 @@ export const scimRouter = makeOpenApiApp<any>();
 // import hoisting in the orchestrator.
 scimRouter.use('/accounts/:accountId/*', scimAuth);
 
+class ScimRollback extends Error {}
+
+scimRouter.use('/accounts/:accountId/*', async (c, next) => {
+  if (c.req.method === 'GET') return next();
+  try {
+    await withDirectoryTransaction(c.req.param('accountId')!, async () => {
+      await next();
+      if (c.res.status >= 400) throw new ScimRollback();
+    });
+  } catch (error) {
+    if (!(error instanceof ScimRollback)) throw error;
+  }
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 type ParsedFilter = { attr: string; value: string } | null;
@@ -36,8 +52,10 @@ type ParsedFilter = { attr: string; value: string } | null;
  *  `attr eq "value"` with optional whitespace. Returns null if unsupported. */
 export function parseFilter(raw: string | undefined): ParsedFilter {
   if (!raw) return null;
-  const m = raw.match(/^\s*(\w+)\s+eq\s+"([^"]*)"\s*$/);
-  return m ? { attr: m[1]!, value: m[2]! } : null;
+  const m = raw.match(/^\s*(\w+)\s+eq\s+("(?:[^"\\]|\\.)*")\s*$/i);
+  if (!m) return null;
+  try { return { attr: m[1]!, value: JSON.parse(m[2]!) as string }; }
+  catch { return null; }
 }
 
 /**
@@ -52,13 +70,22 @@ export function isUnsupportedFilter(raw: string | undefined): boolean {
   return typeof raw === 'string' && raw.trim().length > 0 && parseFilter(raw) === null;
 }
 
-export function listResponse<T>(resources: T[]) {
+export const ScimListQuery = z.object({
+  filter: z.string().optional(),
+  startIndex: z.coerce.number().int().min(0).optional(),
+  count: z.coerce.number().int().min(0).optional(),
+});
+
+export function listResponse<T>(resources: T[], query: { startIndex?: number; count?: number } = {}) {
+  const startIndex = Math.max(1, query.startIndex ?? 1);
+  const count = Math.min(200, query.count ?? 200);
+  const page = resources.slice(startIndex - 1, startIndex - 1 + count);
   return {
     schemas: ['urn:ietf:params:scim:api:messages:2.0:ListResponse'],
     totalResults: resources.length,
-    startIndex: 1,
-    itemsPerPage: resources.length,
-    Resources: resources,
+    startIndex,
+    itemsPerPage: page.length,
+    Resources: page,
   };
 }
 
@@ -98,34 +125,25 @@ export async function emailsByUserId(userIds: string[]): Promise<Map<string, str
   return map;
 }
 
+/**
+ * The Auth user a directory email names. Only an identity whose email is
+ * trusted (iam/email-trust.ts) qualifies: an SSO identity from another
+ * account's IdP that did not verify the email's domain is never linked.
+ */
 export async function userIdByEmail(email: string, accountId?: string): Promise<string | null> {
-  const supabase = getSupabase();
-  try {
-    // Supabase admin doesn't expose a direct email-lookup; use the paginated
-    // list with a small page and filter client-side. For directories this
-    // small it's acceptable; a real production deployment should add a
-    // local email→user_id table.
-    const normalized = email.trim().toLowerCase();
-    const { data } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const matches = (data?.users ?? []).filter(
-      (u) => (u.email ?? '').trim().toLowerCase() === normalized,
-    );
-    if (matches.length === 0) return null;
-    if (matches.length === 1 || !accountId) return matches[0]!.id;
-    // Duplicate auth users can exist for one email (e.g. the account was created
-    // both by an admin invite AND by SSO first-login). Prefer the id that is
-    // ALREADY a member of this account, so SCIM updates the real member row
-    // instead of forking a second membership onto the wrong auth user.
-    const ids = matches.map((m) => m.id);
-    const [memberRow] = await db
-      .select({ userId: accountMembers.userId })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, ids)))
-      .limit(1);
-    return memberRow?.userId ?? matches[0]!.id;
-  } catch {
-    return null;
-  }
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+  const rows = await db.execute(sql`
+    SELECT u.id::text AS id
+    FROM auth.users u
+    LEFT JOIN kortix.account_memberships m
+      ON m.user_id = u.id AND m.account_id = ${accountId ?? null}::uuid
+    WHERE u.email = ${normalized}
+      AND ${emailTrustedSql(sql`u`, accountId)}
+    ORDER BY (m.user_id IS NOT NULL) DESC, u.created_at, u.id
+    LIMIT 1
+  `);
+  return (rows[0] as { id: string } | undefined)?.id ?? null;
 }
 
 export function buildUser(
@@ -241,12 +259,34 @@ export async function buildGroup(
     .select({ userId: accountGroupMembers.userId })
     .from(accountGroupMembers)
     .where(eq(accountGroupMembers.groupId, group.groupId));
+  const directoryUsers = await db.select().from(accountScimUsers)
+    .where(eq(accountScimUsers.accountId, accountId));
+  const byUserId = new Map(directoryUsers.filter(u => u.userId).map(u => [u.userId, u]));
+  const byInviteId = new Map(directoryUsers.filter(u => u.invitationId).map(u => [u.invitationId, u]));
+  const invites = await db.select().from(accountInvitations).where(and(
+    eq(accountInvitations.accountId, accountId), isNull(accountInvitations.acceptedAt),
+    sql`${accountInvitations.bootstrapGrants} @> ${JSON.stringify([{ group_id: group.groupId }])}::jsonb`,
+  ));
+  const memberIds = new Set<string>();
+  for (const user of directoryUsers) {
+    if (!user.deletedAt && Array.isArray(user.profile.groups) && user.profile.groups.some(g => g?.value === group.groupId)) {
+      memberIds.add(user.scimId);
+    }
+  }
+  for (const member of memberRows) {
+    const user = byUserId.get(member.userId);
+    if (!user || (user.active && !user.deletedAt)) memberIds.add(user?.scimId ?? member.userId);
+  }
+  for (const invite of invites) {
+    const user = byInviteId.get(invite.inviteId);
+    if (!user || (user.active && !user.deletedAt)) memberIds.add(user?.scimId ?? invite.inviteId);
+  }
   return {
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
     id: group.groupId,
     displayName: group.name,
     externalId: group.externalId,
-    members: memberRows.map((m) => ({ value: m.userId })),
+    members: [...memberIds].sort().map(value => ({ value })),
     meta: {
       resourceType: 'Group',
       created: group.createdAt.toISOString(),

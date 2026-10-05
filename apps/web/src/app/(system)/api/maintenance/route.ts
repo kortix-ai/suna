@@ -1,12 +1,15 @@
+import { MAINTENANCE_PUBLIC_CACHE_CONTROL } from '@/lib/maintenance-client';
 import {
   getMaintenanceConfig,
+  readDatabaseMaintenanceConfig,
+  reconcileMaintenanceEdgeConfig,
   setMaintenanceConfig,
   type MaintenanceConfig,
   type MaintenanceLevel,
 } from '@/lib/maintenance-store';
 import { createClient } from '@/lib/supabase/server';
 import { getUserRolesWithToken } from '@kortix/sdk';
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -14,12 +17,20 @@ export const revalidate = 0;
 // ---------------------------------------------------------------------------
 // GET /api/maintenance — public, returns current maintenance config
 // ---------------------------------------------------------------------------
+//
+// Every open tab polls this (MaintenanceBannerHost, root layout, every 60 s and
+// on focus — marketing pages included, on purpose: a system notice must reach
+// visitors too). It reads only this environment's Edge Config key and answers
+// with a short shared cache, so a fleet of tabs costs one origin hit per
+// ~10 s per edge region. The database → Edge Config reconcile runs after the
+// response (`after`), throttled per instance, never in the request.
 
 export async function GET() {
+  after(() => reconcileMaintenanceEdgeConfig());
   try {
     const config = await getMaintenanceConfig();
     return NextResponse.json(config, {
-      headers: { 'Cache-Control': 'no-store, max-age=0' },
+      headers: { 'Cache-Control': MAINTENANCE_PUBLIC_CACHE_CONTROL },
     });
   } catch (err) {
     console.error('[api/maintenance] GET error:', err);
@@ -88,8 +99,9 @@ export async function PUT(request: NextRequest) {
     );
   }
 
-  // Merge with current config so partial updates work
-  const current = await getMaintenanceConfig();
+  // Merge with the database state (the source of truth) so partial updates
+  // work; fall back to the Edge Config state if the API cannot be read.
+  const current = await readDatabaseMaintenanceConfig().catch(() => getMaintenanceConfig());
   const updated: MaintenanceConfig = {
     level: body.level ?? current.level,
     title: body.title ?? current.title,

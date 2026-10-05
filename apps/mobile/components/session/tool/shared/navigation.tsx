@@ -1,0 +1,336 @@
+/**
+ * Where a tool row sends the reader: files, sessions, previews, links.
+ *
+ * Mirrors apps/web `tool/shared/infrastructure.tsx` `ToolNavigationContext` /
+ * `useToolNavigation` / `useProxyUrl` / `useServicePreview` /
+ * `ServicePreviewActions` / `ServicePreviewViewport` /
+ * `ServicePreviewUrlFallback` / `InlineServicePreview`, adapted to mobile's
+ * mechanisms:
+ * - a FILE opens in `FilePreviewSheet` (the sheet every other file-open on mobile
+ *   uses) through `useToolFilePreviewStore` — web's `useFilePreviewStore`
+ *   equivalent. `ToolFilePreviewHost` renders that viewer and must be mounted
+ *   once per screen that shows tool rows (the session screen);
+ * - a SESSION opens through `useTabStore().navigateToSession`;
+ * - a sandbox PREVIEW (localhost URL) opens the in-session sheet
+ *   (`SandboxPreviewSheet`, `useToolPreviewStore`) over the session — never the
+ *   Browser page tab, which replaces the session and loses the reader's place
+ *   (KRTX-602). The explicit "open in the full browser" control still opens the
+ *   Browser page tab (`page:browser`);
+ * - an EXTERNAL link opens with `openLink` (http/https only): kortix.com in
+ *   the in-app browser, any other site in the system browser.
+ *
+ * Mobile has no iframe, so `ServicePreviewViewport` is a tappable card: its tap
+ * opens the in-session sheet instead of an embedded page.
+ */
+
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { View } from 'react-native';
+import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
+import type { SandboxFile } from '@/api/types';
+import { FilePreviewSheet, type PreviewFile } from '@/components/files/FilePreviewSheet';
+import type { SheetRef } from '@/components/kortix/sheet';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { Text } from '@/components/ui/text';
+import { useColorScheme } from 'nativewind';
+
+import { ResultRow } from './result-row';
+import { useSandboxContext } from '@/contexts/SandboxContext';
+import { THEME } from '@/lib/utils/theme';
+import { ArrowSquareOutIcon, CaretRightIcon, GlobeIcon, MonitorIcon } from '@/lib/icons';
+import { getSandboxPortUrl } from '@/lib/platform/client';
+import { webSpace } from '@/lib/session/user-message';
+import { useTabStore } from '@/stores/tab-store';
+import { useToolPreviewStore } from '@/stores/tool-preview-store';
+import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './styles';
+import { ToolSurfaceContext } from './surface';
+import { openLink } from '@/lib/utils/open-link';
+
+/** `false` inside a surface where tool rows must not navigate (sub-agent lists). */
+export const ToolNavigationContext = createContext(true);
+
+// ─── File preview (web `useFilePreviewStore`) ───────────────────────────────
+
+// The store lives in `stores/` so markdown can open a preview without importing
+// this file (which imports the sheet, which imports markdown: a require cycle).
+export { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
+import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
+
+/**
+ * The one file preview the transcript opens files into — tool rows, message
+ * attachment tiles and file mentions: `FilePreviewSheet`, the sheet Recent
+ * files opens (Jay, 2026-09-22 and 2026-09-28 — never the full-screen
+ * `FileViewer` again). Mount it once on the screen that renders the
+ * transcript; without it `openFile` records the request and nothing opens.
+ *
+ * "Add to chat" shows while `SessionChatInput` is mounted: it registers its
+ * mention writer as `addToChat` (the composer is swapped out while a question
+ * prompt shows, and the bar keeps Download alone then).
+ */
+export function ToolFilePreviewHost() {
+  const path = useToolFilePreviewStore((s) => s.path);
+  const closePreview = useToolFilePreviewStore((s) => s.closePreview);
+  const addToChat = useToolFilePreviewStore((s) => s.addToChat);
+  const { sandboxUrl } = useSandboxContext();
+  const sheetRef = useRef<SheetRef>(null);
+  const file = useMemo<PreviewFile | null>(() => {
+    if (!path) return null;
+    const fullPath = path.startsWith('/') ? path : `/workspace/${path}`;
+    return { name: fullPath.split('/').pop() || fullPath, path: fullPath };
+  }, [path]);
+
+  // The store is the source of truth: a row's tap sets the path, which opens
+  // the sheet; the sheet's close clears it.
+  useEffect(() => {
+    if (file) sheetRef.current?.open();
+  }, [file]);
+
+  return (
+    <FilePreviewSheet
+      ref={sheetRef}
+      file={file}
+      sandboxUrl={sandboxUrl}
+      onAdd={addToChat ? (picked) => addToChat(picked.path) : undefined}
+      onDismiss={closePreview}
+    />
+  );
+}
+
+// ─── useToolNavigation ───────────────────────────────────────────────────────
+
+/** The Browser page tab, for the explicit "open in the full browser" control. */
+function openBrowserTab(url: string, display: string) {
+  const tabs = useTabStore.getState();
+  tabs.navigateToPage('page:browser');
+  tabs.setTabState('page:browser', { savedUrl: url, savedDisplay: display });
+}
+
+export function useToolNavigation() {
+  const enabled = useContext(ToolNavigationContext);
+
+  const openFile = useCallback(
+    (path: string, line?: number) => {
+      if (!enabled || !path) return;
+      useToolFilePreviewStore.getState().openPreview(path, line);
+    },
+    [enabled],
+  );
+
+  const openSession = useCallback(
+    (sessionId: string) => {
+      if (!enabled || !sessionId) return;
+      useTabStore.getState().navigateToSession(sessionId);
+    },
+    [enabled],
+  );
+
+  const openExternal = useCallback(
+    (targetUrl?: string) => {
+      const safe = safeHttpUrl(targetUrl);
+      if (!enabled || !safe) return;
+      openLink(safe).catch(() => {});
+    },
+    [enabled],
+  );
+
+  /** A sandbox / HTML preview opens in the in-session sheet, over the session (KRTX-602). */
+  const openPreview = useCallback(
+    (previewUrl: string, label?: string) => {
+      if (!enabled || !previewUrl) return;
+      useToolPreviewStore.getState().openPreview(previewUrl, label);
+    },
+    [enabled],
+  );
+
+  return { enabled, openExternal, openFile, openSession, openPreview };
+}
+
+// ─── Sandbox previews ────────────────────────────────────────────────────────
+
+/** A localhost URL → the sandbox proxy URL for its port, or `null`. */
+export function useProxyUrl(localhostUrl: string): { proxyUrl: string; port: number } | null {
+  const { sandboxId } = useSandboxContext();
+  return useMemo(() => {
+    if (!localhostUrl || !sandboxId) return null;
+    if (!isProxiableLocalhostUrl(localhostUrl)) return null;
+    const parsed = parseLocalhostUrl(localhostUrl);
+    if (!parsed) return null;
+    const path = parsed.path === '/' ? '' : parsed.path;
+    return { proxyUrl: getSandboxPortUrl(sandboxId, String(parsed.port)) + path, port: parsed.port };
+  }, [localhostUrl, sandboxId]);
+}
+
+export function useServicePreview(url: string, label?: string, _sessionId?: string) {
+  const { enabled: navigationEnabled, openExternal, openPreview } = useToolNavigation();
+  const proxy = useProxyUrl(url);
+  const externalUrl = proxy ? null : safeHttpUrl(url);
+  const previewUrl = proxy ? proxy.proxyUrl : externalUrl;
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const displayLabel = label || (proxy ? 'App preview' : url);
+
+  // The primary tap: the in-session sheet over the session (KRTX-602). A public
+  // URL, which the sandbox proxy does not cover, opens externally as before.
+  const openInSession = useCallback(() => {
+    if (!navigationEnabled || !previewUrl) return;
+    if (proxy) openPreview(previewUrl, displayLabel);
+    else openExternal(previewUrl);
+  }, [displayLabel, navigationEnabled, openExternal, openPreview, previewUrl, proxy]);
+
+  // The explicit "open in the full browser" control. A sandbox proxy URL needs
+  // the app's auth, which the system browser does not carry, so it opens in the
+  // in-app Browser page tab; a public URL opens externally.
+  const openInBrowser = useCallback(() => {
+    if (!navigationEnabled || !previewUrl) return;
+    if (!proxy) {
+      openExternal(previewUrl);
+      return;
+    }
+    const parsed = parseLocalhostUrl(url);
+    openBrowserTab(
+      previewUrl,
+      parsed ? `localhost:${parsed.port}${parsed.path === '/' ? '' : parsed.path}` : displayLabel,
+    );
+  }, [displayLabel, navigationEnabled, openExternal, previewUrl, proxy, url]);
+
+  return {
+    navigationEnabled,
+    proxy,
+    previewUrl,
+    /** Mobile loads nothing inline, so a preview is never loading or failed. */
+    isLoading: false,
+    hasError: false,
+    refreshKey,
+    handleRefresh,
+    displayLabel,
+    openInSession,
+    openInBrowser,
+    onLoad: noop,
+    onError: noop,
+  };
+}
+
+function noop() {}
+
+export type ServicePreviewState = ReturnType<typeof useServicePreview>;
+
+/** Web: refresh · open externally · "Open as tab". Mobile: arrow = full browser, "Open" = in-session sheet. */
+export function ServicePreviewActions({ preview }: { preview: ServicePreviewState }) {
+  const palette = useTurnPalette();
+  const { navigationEnabled, previewUrl, openInSession, openInBrowser } = preview;
+  const disabled = !navigationEnabled || !previewUrl;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(1), flexShrink: 0 }}>
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={disabled}
+        onPress={openInBrowser}
+        accessibilityLabel="Open in browser"
+      >
+        <Icon as={ArrowSquareOutIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
+      </Button>
+      <Button variant="secondary" size="sm" disabled={disabled} onPress={openInSession}>
+        <Text>Open</Text>
+      </Button>
+    </View>
+  );
+}
+
+/**
+ * A running app in the transcript: ONE row, the same shape as a `show`
+ * output's row (COR-107; Jay, 2026-09-22). It replaces the old block — a mono
+ * URL strip with a globe, a grey viewport box, an outline button repeating the
+ * label, and two more controls — which asked the reader to find the target
+ * among five elements. The row is the target: a screen glyph, "App preview",
+ * the port under it, a chevron. The token-bearing proxy URL is never shown.
+ */
+export function ServicePreviewRow({ preview, url }: { preview: ServicePreviewState; url: string }) {
+  const { displayLabel, navigationEnabled, previewUrl, openInSession } = preview;
+  const disabled = !navigationEnabled || !previewUrl;
+  const parsed = parseLocalhostUrl(url);
+  const where = parsed
+    ? `localhost:${parsed.port}${parsed.path && parsed.path !== '/' ? parsed.path : ''}`
+    : 'Live preview';
+
+  return (
+    <ResultRow
+      icon={MonitorIcon}
+      title={displayLabel && displayLabel !== url ? displayLabel : 'App preview'}
+      subtitle={where}
+      onPress={disabled ? undefined : openInSession}
+    />
+  );
+}
+
+/** The tappable body of a preview: label + Open. Never renders the token-bearing URL. */
+export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
+  const palette = useTurnPalette();
+  const { displayLabel, navigationEnabled, previewUrl, openInSession } = preview;
+  return (
+    <Button
+      variant="outline"
+      disabled={!navigationEnabled || !previewUrl}
+      onPress={openInSession}
+      accessibilityLabel={`Open ${displayLabel}`}
+    >
+      <Icon as={ArrowSquareOutIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
+      <Text numberOfLines={1}>{displayLabel}</Text>
+    </Button>
+  );
+}
+
+export function ServicePreviewViewport({ preview, url = '' }: { preview: ServicePreviewState; url?: string }) {
+  const palette = useTurnPalette();
+  const fill = useContext(ToolSurfaceContext) === 'panel';
+  // In the transcript the preview IS the row; only the panel draws a viewport.
+  if (!fill) return <ServicePreviewRow preview={preview} url={url} />;
+  return (
+    <View
+      style={{
+        backgroundColor: palette.muted,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: webSpace(6),
+        ...(fill ? { flex: 1 } : { aspectRatio: 16 / 9 }),
+      }}
+    >
+      <ServicePreviewUrlFallback preview={preview} />
+    </View>
+  );
+}
+
+export function InlineServicePreview({ url, label }: { url: string; label?: string }) {
+  const palette = useTurnPalette();
+  const preview = useServicePreview(url, label);
+  const fill = useContext(ToolSurfaceContext) === 'panel';
+  if (!fill) return <ServicePreviewRow preview={preview} url={url} />;
+  return (
+    <View style={{ overflow: 'hidden' }}>
+      <View
+        style={{
+          height: webSpace(8),
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: TURN_SPACE.gap1_5,
+          paddingHorizontal: webSpace(2.5),
+          backgroundColor: palette.muted40Bg,
+          borderBottomWidth: 1,
+          borderBottomColor: palette.border30,
+        }}
+      >
+        <GlobeIcon size={TURN_SPACE.statusIcon} color={palette.muted50} />
+        <Text
+          variant="muted"
+          numberOfLines={1}
+          style={[TURN_TYPE.xs, { flex: 1, fontFamily: monoFont, color: palette.mutedForeground }]}
+        >
+          {preview.displayLabel}
+        </Text>
+      </View>
+      <ServicePreviewViewport preview={preview} />
+    </View>
+  );
+}

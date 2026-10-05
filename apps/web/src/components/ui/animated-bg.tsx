@@ -2,142 +2,48 @@
 
 import { cn } from '@/lib/utils';
 import { m, useMotionValue, useTransform } from 'motion/react';
-import type { TargetAndTransition } from 'motion/react';
-import { useEffect, useState, useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 type Tone = 'light' | 'medium' | 'dark';
 
-const LeftArc = ({
-  size,
-  tone,
-  opacity,
-  style,
-  className,
-  blurAmount,
-}: {
-  size: number;
-  tone: Tone;
-  opacity: number; // 0.22–0.38
-  style?: React.CSSProperties;
-  className?: string;
-  blurAmount?: number;
-}) => {
-  const uid = useId();
-  const sw = 542;
-  const sh = 520;
+type ArcColor = 'c1' | 'c2' | 'c3';
 
-  const { c1, c2, c3 } = {
-    light: { c1: '#D9D9D9', c2: '#DEDEDE', c3: '#3B3B3B' },
-    medium: { c1: '#C9C9C9', c2: '#D4D4D4', c3: '#2F2F2F' },
-    dark: { c1: '#B9B9B9', c2: '#C8C8C8', c3: '#232323' },
-  }[tone];
-
-  const d =
-    'M541.499 151.597C249.646 151.597 13.0527 388.191 13.0527 680.043H-138.506C-138.506 304.487 165.943 0.0385742 541.499 0.0385742V151.597Z';
-
-  return (
-    <svg
-      width={size}
-      height={size * (sh / sw)}
-      viewBox="-50 -50 642 620"
-      fill="none"
-      className={className}
-      style={{
-        overflow: 'visible',
-        transform: 'translate3d(0, 0, 0)',
-        ...style,
-      }}
-    >
-      <defs>
-        <linearGradient
-          id={`L0_${tone}_${uid}`}
-          x1="201.497"
-          y1="0.0386"
-          x2="201.497"
-          y2="680.043"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor={c1} />
-          <stop offset="1" stopOpacity="0" />
-        </linearGradient>
-        <linearGradient
-          id={`L1_${tone}_${uid}`}
-          x1="541.499"
-          y1="401.469"
-          x2="-138.506"
-          y2="401.469"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor={c2} />
-          <stop offset="1" stopColor={c3} />
-        </linearGradient>
-
-        <filter
-          id={`Ledge_${uid}`}
-          x="-50%"
-          y="-50%"
-          width="200%"
-          height="200%"
-        >
-          <feGaussianBlur stdDeviation="3" />
-        </filter>
-
-        <mask id={`Lmask_${uid}`} maskUnits="userSpaceOnUse">
-          <g filter={`url(#Ledge_${uid})`}>
-            <path d={d} fill="#fff" />
-          </g>
-        </mask>
-
-        <pattern
-          id={`Lgrain_${uid}`}
-          patternUnits="userSpaceOnUse"
-          width="100"
-          height="100"
-        >
-          <image
-            href="/grain-texture.png"
-            x="0"
-            y="0"
-            width="100"
-            height="100"
-            preserveAspectRatio="none"
-          />
-        </pattern>
-      </defs>
-
-      <g opacity={opacity}>
-        <g
-          style={{
-            filter:
-              blurAmount && blurAmount > 0
-                ? `blur(${blurAmount}px)`
-                : undefined,
-          }}
-        >
-          <path d={d} fill={`url(#L0_${tone}_${uid})`} />
-          <path d={d} fill={`url(#L1_${tone}_${uid})`} />
-        </g>
-
-        <g
-          mask={`url(#Lmask_${uid})`}
-          style={{ mixBlendMode: 'overlay' }}
-          opacity={0.6}
-          pointerEvents="none"
-        >
-          <rect
-            x="0"
-            y="0"
-            width="120%"
-            height="120%"
-            fill={`url(#Lgrain_${uid})`}
-          />
-        </g>
-      </g>
-    </svg>
-  );
+const ARC_TONES: Record<Tone, Record<ArcColor, string>> = {
+  light: { c1: '#D9D9D9', c2: '#DEDEDE', c3: '#3B3B3B' },
+  medium: { c1: '#C9C9C9', c2: '#D4D4D4', c3: '#2F2F2F' },
+  dark: { c1: '#B9B9B9', c2: '#C8C8C8', c3: '#232323' },
 };
 
-const RightArc = ({
+type ArcGradient = { box: [number, number, number, number]; from: ArcColor; to?: ArcColor }; // box: x1,y1,x2,y2
+type ArcDef = {
+  prefix: 'L' | 'R';
+  ratio: number; // height / width
+  viewBox: string;
+  d: string;
+  gradients: ArcGradient[];
+};
+
+export const LEFT_ARC: ArcDef = {
+  prefix: 'L',
+  ratio: 520 / 542,
+  viewBox: '-50 -50 642 620',
+  d: 'M541.499 151.597C249.646 151.597 13.0527 388.191 13.0527 680.043H-138.506C-138.506 304.487 165.943 0.0385742 541.499 0.0385742V151.597Z',
+  gradients: [
+    { box: [201.497, 0.0386, 201.497, 680.043], from: 'c1' },
+    { box: [541.499, 401.469, -138.506, 401.469], from: 'c2', to: 'c3' },
+  ],
+};
+
+export const RIGHT_ARC: ArcDef = {
+  prefix: 'R',
+  ratio: 657 / 532,
+  viewBox: '-50 -50 632 757',
+  d: 'M3.50098 155.457C378.985 155.457 683.375 459.847 683.375 835.331H834.934C834.934 376.144 462.688 3.89844 3.50098 3.89844V155.457Z',
+  gradients: [{ box: [419.217, 3.89844, 419.217, 835.331], from: 'c1' }],
+};
+
+export const ArcSvg = ({
+  cfg,
   size,
   tone,
   opacity,
@@ -145,6 +51,7 @@ const RightArc = ({
   className,
   blurAmount,
 }: {
+  cfg: ArcDef;
   size: number;
   tone: Tone;
   opacity: number; // 0.22–0.38
@@ -153,18 +60,13 @@ const RightArc = ({
   blurAmount?: number;
 }) => {
   const uid = useId();
-  const sw = 532;
-  const sh = 657;
-  const c = { light: '#D9D9D9', medium: '#C9C9C9', dark: '#B9B9B9' }[tone];
-
-  const d =
-    'M3.50098 155.457C378.985 155.457 683.375 459.847 683.375 835.331H834.934C834.934 376.144 462.688 3.89844 3.50098 3.89844V155.457Z';
+  const colors = ARC_TONES[tone];
 
   return (
     <svg
       width={size}
-      height={size * (sh / sw)}
-      viewBox="-50 -50 632 757"
+      height={size * cfg.ratio}
+      viewBox={cfg.viewBox}
       fill="none"
       className={className}
       style={{
@@ -174,36 +76,37 @@ const RightArc = ({
       }}
     >
       <defs>
-        <linearGradient
-          id={`R0_${tone}_${uid}`}
-          x1="419.217"
-          y1="3.89844"
-          x2="419.217"
-          y2="835.331"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor={c} />
-          <stop offset="1" stopOpacity="0" />
-        </linearGradient>
+        {cfg.gradients.map(({ box, from, to }, i) => (
+          <linearGradient
+            key={i}
+            id={`${cfg.prefix}${i}_${tone}_${uid}`}
+            x1={box[0]}
+            y1={box[1]}
+            x2={box[2]}
+            y2={box[3]}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop stopColor={colors[from]} />
+            <stop
+              offset="1"
+              stopColor={to ? colors[to] : undefined}
+              stopOpacity={to ? undefined : '0'}
+            />
+          </linearGradient>
+        ))}
 
-        <filter
-          id={`Redge_${uid}`}
-          x="-50%"
-          y="-50%"
-          width="200%"
-          height="200%"
-        >
+        <filter id={`${cfg.prefix}edge_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3" />
         </filter>
 
-        <mask id={`Rmask_${uid}`} maskUnits="userSpaceOnUse">
-          <g filter={`url(#Redge_${uid})`}>
-            <path d={d} fill="#fff" />
+        <mask id={`${cfg.prefix}mask_${uid}`} maskUnits="userSpaceOnUse">
+          <g filter={`url(#${cfg.prefix}edge_${uid})`}>
+            <path d={cfg.d} fill="#fff" />
           </g>
         </mask>
 
         <pattern
-          id={`Rgrain_${uid}`}
+          id={`${cfg.prefix}grain_${uid}`}
           patternUnits="userSpaceOnUse"
           width="100"
           height="100"
@@ -222,28 +125,21 @@ const RightArc = ({
       <g opacity={opacity}>
         <g
           style={{
-            filter:
-              blurAmount && blurAmount > 0
-                ? `blur(${blurAmount}px)`
-                : undefined,
+            filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined,
           }}
         >
-          <path d={d} fill={`url(#R0_${tone}_${uid})`} />
+          {cfg.gradients.map((_, i) => (
+            <path key={i} d={cfg.d} fill={`url(#${cfg.prefix}${i}_${tone}_${uid})`} />
+          ))}
         </g>
 
         <g
-          mask={`url(#Rmask_${uid})`}
+          mask={`url(#${cfg.prefix}mask_${uid})`}
           style={{ mixBlendMode: 'overlay' }}
           opacity={0.6}
           pointerEvents="none"
         >
-          <rect
-            x="0"
-            y="0"
-            width="120%"
-            height="120%"
-            fill={`url(#Rgrain_${uid})`}
-          />
+          <rect x="0" y="0" width="120%" height="120%" fill={`url(#${cfg.prefix}grain_${uid})`} />
         </g>
       </g>
     </svg>
@@ -262,15 +158,7 @@ type ArcCfg = {
   blur: string[]; // DOF: more blur when smaller
 };
 
-const Arc = ({
-  left,
-  cfg,
-  duration = 4.6,
-}: {
-  left?: boolean;
-  cfg: ArcCfg;
-  duration?: number;
-}) => {
+const Arc = ({ left, cfg, duration = 4.6 }: { left?: boolean; cfg: ArcCfg; duration?: number }) => {
   const stylePos: React.CSSProperties = {
     left: cfg.pos.left,
     right: cfg.pos.right,
@@ -282,10 +170,7 @@ const Arc = ({
   };
 
   // Convert blur strings to numbers for Safari compatibility
-  const blurValues = useMemo(
-    () => cfg.blur.map((b) => parseFloat(b)),
-    [cfg.blur],
-  );
+  const blurValues = useMemo(() => cfg.blur.map((b) => parseFloat(b)), [cfg.blur]);
 
   // Use motion value for better performance (no re-renders)
   const animationProgress = useMotionValue(0);
@@ -338,21 +223,13 @@ const Arc = ({
         animationProgress.set(elapsed / (duration * 1000));
       }}
     >
-      {left ? (
-        <LeftArc
-          size={cfg.size}
-          tone={cfg.tone}
-          opacity={cfg.opacity}
-          blurAmount={currentBlur}
-        />
-      ) : (
-        <RightArc
-          size={cfg.size}
-          tone={cfg.tone}
-          opacity={cfg.opacity}
-          blurAmount={currentBlur}
-        />
-      )}
+      <ArcSvg
+        cfg={left ? LEFT_ARC : RIGHT_ARC}
+        size={cfg.size}
+        tone={cfg.tone}
+        opacity={cfg.opacity}
+        blurAmount={currentBlur}
+      />
     </m.div>
   );
 };
@@ -385,7 +262,7 @@ export function AnimatedBg({
     return (
       <div
         className={cn(
-          'absolute inset-0 overflow-hidden pointer-events-none',
+          'pointer-events-none absolute inset-0 overflow-hidden',
           variant === 'header' ? 'z-0' : '-z-10',
         )}
         aria-hidden="true"
@@ -399,7 +276,7 @@ export function AnimatedBg({
           }}
         />
         {variant === 'hero' && (
-          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+          <div className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
         )}
       </div>
     );
@@ -521,10 +398,7 @@ export function AnimatedBg({
   ];
 
   // Helper function to merge custom arcs with defaults
-  const mergeArcs = (
-    defaultArcs: ArcCfg[],
-    customArcs?: Partial<ArcCfg>[],
-  ): ArcCfg[] => {
+  const mergeArcs = (defaultArcs: ArcCfg[], customArcs?: Partial<ArcCfg>[]): ArcCfg[] => {
     if (!customArcs || customArcs.length === 0) return defaultArcs;
 
     return customArcs.map((customArc, i) => {
@@ -533,12 +407,8 @@ export function AnimatedBg({
         pos: customArc.pos || defaultArc.pos,
         size: customArc.size || defaultArc.size,
         tone: customArc.tone || defaultArc.tone,
-        opacity:
-          customArc.opacity !== undefined
-            ? customArc.opacity
-            : defaultArc.opacity,
-        delay:
-          customArc.delay !== undefined ? customArc.delay : defaultArc.delay,
+        opacity: customArc.opacity !== undefined ? customArc.opacity : defaultArc.opacity,
+        delay: customArc.delay !== undefined ? customArc.delay : defaultArc.delay,
         x: customArc.x || defaultArc.x,
         y: customArc.y || defaultArc.y,
         scale: customArc.scale || defaultArc.scale,
@@ -550,17 +420,13 @@ export function AnimatedBg({
   const baseLeft = variant === 'header' ? headerLeft : heroLeft;
   const baseRight = variant === 'header' ? headerRight : heroRight;
 
-  const left = customArcs?.left
-    ? mergeArcs(baseLeft, customArcs.left)
-    : baseLeft;
-  const right = customArcs?.right
-    ? mergeArcs(baseRight, customArcs.right)
-    : baseRight;
+  const left = customArcs?.left ? mergeArcs(baseLeft, customArcs.left) : baseLeft;
+  const right = customArcs?.right ? mergeArcs(baseRight, customArcs.right) : baseRight;
 
   return (
     <div
       className={cn(
-        'absolute inset-0 overflow-hidden pointer-events-none',
+        'pointer-events-none absolute inset-0 overflow-hidden',
         variant === 'header' ? 'z-0' : '-z-10',
       )}
       style={{
@@ -578,7 +444,7 @@ export function AnimatedBg({
       </div>
       {/* Bottom gradient fade overlay */}
       {variant === 'hero' && (
-        <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+        <div className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
       )}
     </div>
   );

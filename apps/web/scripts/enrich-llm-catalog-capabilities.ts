@@ -41,6 +41,11 @@ const DEFAULT_SOURCE_URL = 'https://models.dev/api.json';
 const OUTPUT_PATH = fileURLToPath(
   new URL('../../../packages/llm-catalog/src/catalog.generated.json', import.meta.url),
 );
+// The `{ id, env }` projection browser code reads instead of the full snapshot
+// (`CATALOG_PROVIDER_ENV` in @kortix/llm-catalog). Always written with it.
+const PROVIDER_ENV_OUTPUT_PATH = fileURLToPath(
+  new URL('../../../packages/llm-catalog/src/provider-env.generated.json', import.meta.url),
+);
 
 // models.dev emits THREE shapes here (verified live, 2026-07):
 // {type:'effort', values:[...]}, {type:'toggle'} (no values), and
@@ -75,6 +80,7 @@ interface ModelsDevModel {
   id?: string;
   name?: string;
   description?: string;
+  provider?: { npm?: string; api?: string };
   released?: string | null;
   release_date?: string | null;
   attachment?: boolean;
@@ -203,6 +209,7 @@ function normalizeModel(modelKey: string, model: ModelsDevModel) {
     ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
     ...(typeof model.family === 'string' ? { family: model.family } : {}),
     ...(typeof model.status === 'string' ? { status: model.status } : {}),
+    ...(model.provider && typeof model.provider === 'object' ? { provider: model.provider } : {}),
     ...(modalities ? { modalities } : {}),
     ...(limit ? { limit } : {}),
     ...(cost ? { cost } : {}),
@@ -210,7 +217,7 @@ function normalizeModel(modelKey: string, model: ModelsDevModel) {
 }
 
 function normalizeCatalog(data: ModelsDevResponse, sourceUrl: string, fetchedAt: string) {
-  const providers: unknown[] = [];
+  const providers: Array<{ id: string; env?: string[] } & Record<string, unknown>> = [];
   let modelCount = 0;
 
   for (const [providerKey, provider] of Object.entries(data)) {
@@ -266,6 +273,11 @@ async function main(): Promise<void> {
 
   const catalog = normalizeCatalog(data, sourceUrl, new Date().toISOString());
   writeFileSync(OUTPUT_PATH, `${JSON.stringify(catalog, null, 2)}\n`);
+  const providerEnv = catalog.providers.map((provider) => ({
+    id: provider.id,
+    env: provider.env ?? [],
+  }));
+  writeFileSync(PROVIDER_ENV_OUTPUT_PATH, `${JSON.stringify(providerEnv, null, 2)}\n`);
   console.log(
     `wrote ${OUTPUT_PATH} (${catalog.provider_count} providers, ${catalog.model_count} models)`,
   );

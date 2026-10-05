@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
-import Link from 'next/link';
+import { useTranslations } from '@/i18n/use-translations';
+import Link from '@/components/site-link';
 
 import type { Platform } from './detect-os';
 
@@ -66,6 +67,7 @@ export function PlatformCard({
   rows: CardRow[];
   filled: Platform | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <section className="bg-popover flex flex-col overflow-hidden rounded-md border">
       {image}
@@ -88,7 +90,7 @@ export function PlatformCard({
             <div className="min-w-0 flex-1">
               <p className="text-foreground truncate text-sm font-medium">{row.label}</p>
               {row.meta ? (
-                <p className="text-muted-foreground truncate text-xs">{row.meta}</p>
+                <p className="text-muted-foreground text-xs">{row.meta}</p>
               ) : null}
             </div>
 
@@ -111,17 +113,17 @@ export function PlatformCard({
                 asChild
                 size="sm"
                 variant={row.id === filled ? 'default' : 'outline'}
-                className="shrink-0 active:scale-[0.97]"
+                className="shrink-0 active:scale-[0.96]"
               >
                 <Link
                   href={row.href}
                   // Five buttons all reading "Download" is useless to a screen
                   // reader. The visible label stays short; the accessible one says
                   // which platform it is.
-                  aria-label={`Download Kortix for ${row.label}`}
+                  aria-label={tI18nComplete('text8d602d64e902', { value0: row.label })}
                   {...(row.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                 >
-                  Download
+                  {tI18nComplete.raw('textd6eafe823591')}
                 </Link>
               </Button>
             )}

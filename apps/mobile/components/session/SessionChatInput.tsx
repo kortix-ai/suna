@@ -1,77 +1,64 @@
 /**
- * SessionChatInput — chat input with agent/model/variant toolbar and @mentions.
+ * SessionChatInput — the thread's chat input.
  *
- * Matches the Computer frontend's chat input:
- * - Left toolbar: Agent selector, Model selector, Variant (thinking) toggle
- * - Right toolbar: Send / Stop buttons
- * - Multiline text input
- * - @mention autocomplete for files, agents, and sessions
+ * The card is `Composer`, the same one the project home renders (design.md
+ * §5): text on top, then add · model · send. This file adds what only a thread
+ * has: @mentions, slash commands, the message queue slot, file upload at pick
+ * (`useComposerAttachments`, COR-185),
+ * AutoContinue, and the model sheet with the active model's thinking levels.
+ * The agent is chosen in the model sheet's Agent tab (`ModelPickerSheet`).
  */
 
-import React, { forwardRef, useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Platform,
-  Animated,
+  Pressable,
   StyleSheet,
-  ActionSheetIOS,
-  Alert,
-  Image,
-  Keyboard,
-  useWindowDimensions,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
 import {
-  Infinity as InfinityIcon,
-  Slash as SlashIcon,
-  Info as InfoIcon,
-  X as XIcon,
-  Plus as PlusIcon,
-  Paperclip as PaperclipIcon,
-  Settings as SettingsIcon,
-  ChevronRight as ChevronRightIcon,
-} from 'lucide-react-native';
+  InfinityIcon,
+  StackIcon,
+  XIcon,
+  TerminalIcon,
+} from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetScrollView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
-import { getAuthToken } from '@/api/config';
+import type { SessionPromptPart } from '@kortix/sdk';
+import type { AttachedFile } from '@/lib/session/attachments';
+import { planComposerSend } from '@/lib/session/send-plan';
+import { uploadErrorMessage } from '@/lib/session/composer-uploads';
+import { useToast } from '@/components/kortix/toast-provider';
+import { useComposerAttachments } from './useComposerAttachments';
+import { useRecoverPendingPick } from './useRecoverPendingPick';
+import { useComposerDraft } from '@/lib/session/use-composer-draft';
+import { AttachSheet, type AttachSheetRef } from './AttachSheet';
+import { SessionFilesSheet } from './SessionFilesSheet';
+import { useToolFilePreviewStore } from './tool/shared/navigation';
 
-import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
-import type { Session } from '@/lib/platform/types';
-import { MentionSuggestions } from './MentionSuggestions';
+import type { Agent, FlatModel, Command } from '@/lib/session/runtime-data';
+import type { Session } from '@/lib/session/types';
+import { MentionSuggestions, SuggestionCard, SuggestionRow } from './MentionSuggestions';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
-import { Text as RNText } from 'react-native';
-import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { useSkillMentions } from './useSkillMentions';
+import { suggestionMenuTakesSubmit } from '@/lib/session/skill-mentions';
+import { type SheetRef } from '@/components/kortix/sheet';
+import { AutoContinueSheet, useAutoContinue } from './autocontinue';
+import { Composer, COMPOSER_CONTROL_HIT_SLOP } from '@/components/kortix/composer';
+import { sessionFileMentionLabel, type SessionFile } from '@/lib/session/session-files';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { ModelPickerSheet } from './ModelPickerSheet';
+import { composerChip, type PickerOption } from '@/lib/session/composer-config';
+import { useLocalConfigStore } from '@/lib/session/local-config';
+import { modelOptionKey, modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface AttachedFile {
-  /** Local URI on device (file:// or content://) */
-  uri: string;
-  /** Display name */
-  name: string;
-  /** MIME type */
-  mimeType: string;
-  /** File size in bytes (may be undefined for some pickers) */
-  size?: number;
-  /** True if this is an image and should show a preview thumbnail */
-  isImage: boolean;
-}
+export type { AttachedFile } from '@/lib/session/attachments';
 
 export interface PromptOptions {
   agent?: string;
@@ -80,131 +67,68 @@ export interface PromptOptions {
 }
 
 export type { TrackedMention } from './useMentions';
+export type { AutoContinueMode } from './autocontinue';
 
-// ─── AutoContinue configuration (shared with frontend) ────────────────────────
-
-export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
-
-interface AutoContinueAlgorithm {
-  id: AutoContinueMode;
-  label: string;
-  role: string;
-  description: string;
-  commandName: string;
-  bestFor: string;
-  strengths: string[];
-  weaknesses: string[];
-  howItWorks: string;
+/** The uploaded files a send carries (COR-185): the prompt's file parts and the picked files behind them. */
+export interface SendAttachments {
+  fileParts: SessionPromptPart[];
+  files: AttachedFile[];
 }
 
-const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
-  {
-    id: 'autowork',
-    label: 'Kraemer',
-    role: 'Connector',
-    description: 'Fast TDD loop — reliable for clear specs',
-    commandName: 'autowork',
-    bestFor: 'Clear specs, coding tasks, "just build it" work',
-    strengths: [
-      'Reliable and balanced speed/cost',
-      'Solid TDD discipline — writes tests first, implements, verifies',
-      'No overhead from extra validation passes',
-    ],
-    weaknesses: [
-      'Can miss subtle edge cases that need deeper second-pass reasoning',
-      'No adversarial self-review — trusts its own DONE claim',
-    ],
-    howItWorks:
-      'The original autowork algorithm. Runs an autonomous loop where the agent works until it emits DONE, then enters a verification phase where it self-reviews and emits VERIFIED. Simple binary loop — no staged validators, no critic, no phase system.',
-  },
-  {
-    id: 'autowork1',
-    label: 'Kubet',
-    role: 'Validator',
-    description: 'Adversarial review — catches hidden issues',
-    commandName: 'autowork1',
-    bestFor: 'Correctness-critical tasks — ops planning, complex logic, risk analysis',
-    strengths: [
-      'Catches hidden issues through forced adversarial self-review',
-      'Most reliable outcomes across all task types',
-      '3-level validator pipeline ensures nothing slips through',
-      'Async process critic monitors efficiency during work',
-    ],
-    weaknesses: [
-      'Slower and more expensive due to validation passes',
-      'May over-engineer simple tasks that do not need 3 levels of review',
-    ],
-    howItWorks:
-      'After the agent claims DONE, the system drives it through a 3-level validator pipeline. Level 1 (Format) — Are all files valid? Does the build pass? Any syntax errors? Level 2 (Quality) — Do tests pass? Are requirements traced? Any anti-patterns? Level 3 (Top-notch) — Adversarial edge cases, performance review, regression sweep. The agent must pass each level before advancing. An async critic also nudges the agent if it stalls.',
-  },
-  {
-    id: 'autowork2',
-    label: 'Ino',
-    role: 'Decomposer',
-    description: 'Kanban cards — structured per-module work',
-    commandName: 'autowork2',
-    bestFor: 'Multi-domain tasks — investigations, audits, research, modular systems',
-    strengths: [
-      'Strong structured breakdown into discrete work units',
-      'Each card goes through its own review/test cycle',
-      'Thorough coverage of individual domains',
-    ],
-    weaknesses: [
-      'Can underscope if it misses cards for certain requirements',
-      'Integration mistakes between independently built parts',
-      'Most expensive due to per-card overhead',
-    ],
-    howItWorks:
-      'Work is organized as a kanban board with explicit prefixes: [BACKLOG], [IN PROGRESS], [REVIEW], [TESTING], [DONE]. Cards advance sequentially and the system enforces progress markers. After all cards hit [DONE], a final integration check runs.',
-  },
-  {
-    id: 'autowork3',
-    label: 'Saumya',
-    role: 'Architect',
-    description: 'Entropy search — diverge then compress',
-    commandName: 'autowork3',
-    bestFor: 'Design, strategy, architecture — problems with ambiguity',
-    strengths: [
-      'Fastest and cheapest across all tasks',
-      'Produces clean, well-architected solutions',
-      'Genuine strategic exploration — not fake variations',
-    ],
-    weaknesses: [
-      'Implementation detail correctness can slip',
-      'Upfront exploration adds no value on spec-driven tasks',
-      'Tests may validate components without catching integration bugs',
-    ],
-    howItWorks:
-      'Uses five entropy-phased stages: EXPAND (diverge problem framings), BRANCH (crystallize distinct candidates), ATTACK (candidates cross-attack), RANK (score + pick one path), COMPRESS (execute winner with TDD). Phase markers ensure it does not converge early.',
-  },
-];
-
-const DEFAULT_AUTOCONTINUE_MODE: AutoContinueMode = 'autowork';
-
 interface SessionChatInputProps {
-  onSend: (text: string, options: PromptOptions, mentions?: TrackedMention[]) => void;
+  onSend: (
+    text: string,
+    options: PromptOptions,
+    mentions?: TrackedMention[],
+    attachments?: SendAttachments,
+  ) => void;
   onStop?: () => void;
   isBusy?: boolean;
   disabled?: boolean;
+  /** Focus the field at mount: it replaces a field that had the keyboard up. */
+  autoFocus?: boolean;
+  /** `nativeID` of the text field, for the thread's drag-to-dismiss area. */
+  inputNativeID?: string;
   placeholder?: string;
-  /** Agent/model/variant config */
+  /** The agent a send runs on, and all agents for @mentions and the model sheet's Agent tab. */
   agent?: Agent | null;
   agents?: Agent[];
+  /** Picks the agent from the model sheet's Agent tab. Omit to hide the tab. */
+  onAgentChange?: (name: string) => void;
+  /** The Agent tab's `+`: starts a new session that creates an agent. */
+  onCreateAgent?: () => void;
   model?: FlatModel | null;
   models?: FlatModel[];
+  /** The model list is not known yet: the composer chip hides instead of flashing a label. */
+  modelsLoading?: boolean;
+  /**
+   * The sandbox has not listed its agents yet (a new thread): the chip reads
+   * the agent project home sent with, never the model name (`composerChip`).
+   */
+  agentsLoading?: boolean;
+  /**
+   * The project's catalog loaded with no model (`isModelUnavailable`): the
+   * chip reads "Connect model", and Send calls `onConnectModel` instead of
+   * sending, and the draft stays (KRTX-251). One flag for both, so they agree.
+   */
+  modelUnavailable?: boolean;
+  /** "Connect provider" in the model sheet's empty state, and Send while `modelUnavailable`. */
+  onConnectModel?: () => void;
   modelKey?: { providerID: string; modelID: string } | null;
   variant?: string | null;
   variants?: string[];
-  onAgentChange?: (name: string) => void;
   onModelChange?: (providerID: string, modelID: string) => void;
-  onVariantCycle?: () => void;
   onVariantSet?: (variant: string | null) => void;
   /** Data for @mentions */
   sessions?: Session[];
   currentSessionId?: string | null;
   sandboxUrl?: string;
+  /** The project the thread belongs to: files upload to it at pick (COR-185). */
+  projectId?: string;
+  /** The thread can carry files (it has a project session). False refuses a send with files. */
+  canAttach?: boolean;
   /** Called when the user submits while agent is busy — enqueue instead of send */
-  onEnqueue?: (text: string) => void;
+  onEnqueue?: (text: string, options: PromptOptions, mentions?: TrackedMention[]) => Promise<void>;
   /** Slot rendered above the text input inside the card (used for queue UI) */
   inputSlot?: React.ReactNode;
   /** Emits whether the draft currently has non-whitespace content */
@@ -213,59 +137,83 @@ interface SessionChatInputProps {
   commands?: Command[];
   /** Called when a command is submitted (staged command + optional args) */
   onCommand?: (command: Command, args?: string) => void;
-  /** Hides config toolbar (agent/model/variant selectors) — used for onboarding */
-  onboardingMode?: boolean;
   /** Initial text to populate the input with (e.g. restored after question prompt) */
   initialText?: string;
   /** Called whenever the input text changes — used to track current text externally */
   onTextChange?: (text: string) => void;
+  /** Persists the typed text under this key (`draftKey`, COR-143). Omit for no draft. */
+  draftKey?: string | null;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function SessionChatInput({
+// Stable defaults so optional array props keep one identity across renders.
+const EMPTY_AGENTS: Agent[] = [];
+const EMPTY_MODELS: FlatModel[] = [];
+const EMPTY_VARIANTS: string[] = [];
+const EMPTY_SESSIONS: Session[] = [];
+const EMPTY_COMMANDS: Command[] = [];
+
+function SessionChatInputImpl({
   onSend,
   onStop,
   isBusy = false,
   disabled = false,
-  placeholder = 'Ask anything...',
+  autoFocus,
+  inputNativeID,
+  placeholder = 'Ask anything',
   agent,
-  agents = [],
+  agents = EMPTY_AGENTS,
+  onAgentChange,
+  onCreateAgent,
   model,
-  models = [],
+  models = EMPTY_MODELS,
+  modelsLoading = false,
+  agentsLoading = false,
+  modelUnavailable = false,
+  onConnectModel,
   modelKey,
   variant,
-  variants = [],
-  onAgentChange,
+  variants = EMPTY_VARIANTS,
   onModelChange,
-  onVariantCycle,
   onVariantSet,
-  sessions = [],
+  sessions = EMPTY_SESSIONS,
   currentSessionId,
   sandboxUrl,
+  projectId,
+  canAttach = false,
   onEnqueue,
   inputSlot,
   onDraftChange,
-  commands = [],
+  commands = EMPTY_COMMANDS,
   onCommand,
-  onboardingMode = false,
   initialText = '',
   onTextChange,
+  draftKey = null,
 }: SessionChatInputProps) {
   const [text, setText] = useState(initialText);
+  useComposerDraft(draftKey, text, setText);
+  // The rendered text, for handlers that must keep one identity across
+  // keystrokes (the memoized sheets below take them as props).
+  const textRef = useRef(text);
+  textRef.current = text;
   const inputRef = useRef<TextInput>(null);
-  const cursorRef = useRef(0);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const themeColors = useThemeColors();
 
-  // Config sheet — imperative BottomSheetModal ref (same pattern as ProjectPicker).
-  const configSheetRef = useRef<BottomSheetModal>(null);
-  const openConfigSheet = useCallback(() => {
-    Keyboard.dismiss();
-    requestAnimationFrame(() => {
-      configSheetRef.current?.present();
-    });
+  const modelSheetRef = useRef<SheetRef>(null);
+  // The model sheet's Agent tab: the thread's agents, the active one checked.
+  // The agent project home last sent with (`ProjectHome` → `setAgent`).
+  const pendingAgentName = useLocalConfigStore((s) => s.selectedAgent);
+  const agentChoice = useMemo(
+    () =>
+      onAgentChange
+        ? { agents, activeName: agent?.name ?? null, onSelect: onAgentChange, onCreate: onCreateAgent }
+        : undefined,
+    [agents, agent?.name, onAgentChange, onCreateAgent],
+  );
+  const openModelSheet = useCallback(() => {
+    modelSheetRef.current?.open();
   }, []);
 
   // ── Slash commands ───────────────────────────────────────────────────────
@@ -283,143 +231,34 @@ export function SessionChatInput({
     sandboxUrl,
   });
 
-  const [autocontinueMode, setAutocontinueMode] = useState<AutoContinueMode | null>(null);
+  // ── Skills ("#") ──────────────────────────────────────────────────────
+  // The Skills page was removed from mobile (COR-160): a skill stays
+  // reachable through the composer's own "#" trigger instead. Reuses the
+  // project's `Command[]` list `/` already fetches, filtered to
+  // `source === 'skill'` — see `lib/session/skill-mentions.ts`.
+  const skill = useSkillMentions({ commands });
+
+  const auto = useAutoContinue(commands, onCommand);
   const [showAutoSheet, setShowAutoSheet] = useState(false);
-  const [showActionsSheet, setShowActionsSheet] = useState(false);
+  const attachSheetRef = useRef<AttachSheetRef>(null);
+  const filesSheetRef = useRef<SheetRef>(null);
 
   // ── File attachments ─────────────────────────────────────────────────────
 
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-
-  const removeAttachedFile = useCallback((index: number) => {
-    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const addFiles = useCallback((files: AttachedFile[]) => {
-    setAttachedFiles((prev) => [...prev, ...files]);
-  }, []);
-
-  const handleAttachPress = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Photo Library', 'Camera', 'Browse Files'],
-          cancelButtonIndex: 0,
-        },
-        async (buttonIndex) => {
-          if (buttonIndex === 1) {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ['images'],
-              allowsMultipleSelection: true,
-              quality: 0.9,
-            });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.fileName || a.uri.split('/').pop() || 'image.jpg',
-                mimeType: a.mimeType || 'image/jpeg',
-                size: a.fileSize,
-                isImage: true,
-              })));
-            }
-          } else if (buttonIndex === 2) {
-            const { status } = await ImagePicker.requestCameraPermissionsAsync();
-            if (status !== 'granted') {
-              Alert.alert('Permission required', 'Camera access is needed to take photos.');
-              return;
-            }
-            const result = await ImagePicker.launchCameraAsync({ quality: 0.9 });
-            if (!result.canceled) {
-              addFiles([{
-                uri: result.assets[0].uri,
-                name: result.assets[0].fileName || `photo_${Date.now()}.jpg`,
-                mimeType: result.assets[0].mimeType || 'image/jpeg',
-                size: result.assets[0].fileSize,
-                isImage: true,
-              }]);
-            }
-          } else if (buttonIndex === 3) {
-            const result = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.name,
-                mimeType: a.mimeType || 'application/octet-stream',
-                size: a.size,
-                isImage: (a.mimeType || '').startsWith('image/'),
-              })));
-            }
-          }
-        },
-      );
-    } else {
-      // Android: use a simple Alert for choice
-      Alert.alert('Attach file', 'Choose source', [
-        {
-          text: 'Photo Library',
-          onPress: async () => {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ['images'],
-              allowsMultipleSelection: true,
-              quality: 0.9,
-            });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.fileName || a.uri.split('/').pop() || 'image.jpg',
-                mimeType: a.mimeType || 'image/jpeg',
-                size: a.fileSize,
-                isImage: true,
-              })));
-            }
-          },
-        },
-        {
-          text: 'Browse Files',
-          onPress: async () => {
-            const result = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.name,
-                mimeType: a.mimeType || 'application/octet-stream',
-                size: a.size,
-                isImage: (a.mimeType || '').startsWith('image/'),
-              })));
-            }
-          },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
-  }, [addFiles]);
-
-  const availableAutoAlgorithms = useMemo(
-    () =>
-      AUTOCONTINUE_ALGORITHMS.filter((alg) =>
-        Array.isArray(commands) && commands.some((c) => c.name === alg.commandName),
-      ),
-    [commands],
-  );
-
-  const currentAutoAlgorithm = useMemo(
-    () => availableAutoAlgorithms.find((alg) => alg.id === autocontinueMode) || null,
-    [availableAutoAlgorithms, autocontinueMode],
-  );
-
-  useEffect(() => {
-    if (autocontinueMode && !currentAutoAlgorithm) {
-      setAutocontinueMode(null);
-    }
-  }, [autocontinueMode, currentAutoAlgorithm]);
+  // A file starts uploading the moment it is picked; Send waits for the
+  // uploads still in flight (`preparing`), then posts their handles.
+  const toast = useToast();
+  const attachments = useComposerAttachments(projectId);
+  const [preparing, setPreparing] = useState(false);
+  useRecoverPendingPick(attachments.add);
 
   const handleTextChange = useCallback(
     (newText: string) => {
+      textRef.current = newText;
       setText(newText);
       onTextChange?.(newText);
-      cursorRef.current = newText.length;
-      mention.handleTextChange(newText, newText.length);
+      mention.prune(newText);
+      skill.prune(newText);
 
       // Slash command detection (disabled while a command is staged)
       if (!stagedCommand) {
@@ -432,24 +271,33 @@ export function SessionChatInput({
         }
       }
     },
-    [mention, stagedCommand],
+    [mention, skill, stagedCommand],
   );
 
   const handleSelectionChange = useCallback(
     (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
-      cursorRef.current = e.nativeEvent.selection.end;
+      mention.detect(textRef.current, e.nativeEvent.selection.end);
+      skill.detect(textRef.current, e.nativeEvent.selection.end);
     },
-    [],
+    [mention, skill],
   );
 
   const handleMentionSelect = useCallback(
     (item: MentionItem) => {
       const newText = mention.selectMention(item, text);
       setText(newText);
-      cursorRef.current = newText.length;
       setTimeout(() => inputRef.current?.focus(), 50);
     },
     [mention, text],
+  );
+
+  const handleSkillSelect = useCallback(
+    (item: MentionItem) => {
+      const newText = skill.selectSkill(item, text);
+      setText(newText);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    },
+    [skill, text],
   );
 
   const filteredCommands = useMemo(() => {
@@ -473,84 +321,13 @@ export function SessionChatInput({
     [],
   );
 
-  // ── Animated placeholder ────────────────────────────────────────────────
-  const placeholderVariants = useMemo(
-    () => [
-      placeholder,
-      'Ask about any file in this project',
-      'Ask for changed files and diffs',
-      'Ask to compact when context is full',
-      'Reference files with @',
-    ],
-    [placeholder],
-  );
-
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (text.trim().length > 0) return;
-
-    const interval = setInterval(() => {
-      // Exit: fade out + slide up
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: -8,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        // Switch text
-        setPlaceholderIndex((i) => (i + 1) % placeholderVariants.length);
-        // Reset position to below
-        slideAnim.setValue(8);
-        // Enter: fade in + slide up to center
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 350,
-            useNativeDriver: true,
-          }),
-          Animated.timing(slideAnim, {
-            toValue: 0,
-            duration: 350,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      });
-    }, 6000);
-
-    return () => clearInterval(interval);
-  }, [text, placeholderVariants.length, fadeAnim, slideAnim]);
-
-  // Reset animation when user clears input
-  useEffect(() => {
-    if (text.trim().length === 0) {
-      fadeAnim.setValue(1);
-      slideAnim.setValue(0);
-    }
-  }, [text, fadeAnim, slideAnim]);
-
-  const showAnimatedPlaceholder = text.trim().length === 0 && !inputSlot && !stagedCommand;
-  // ────────────────────────────────────────────────────────────────────────
-
-  const canSend = (text.trim().length > 0 || attachedFiles.length > 0) && !disabled && !isUploading;
   const hasDraftText = text.trim().length > 0;
-  const hasContent = text.trim().length > 0 || attachedFiles.length > 0;
 
   useEffect(() => {
     onDraftChange?.(hasDraftText);
   }, [hasDraftText, onDraftChange]);
 
-  const hasToolbar = agents.length > 0 || models.length > 0;
-
-  const handleSubmit = useCallback(async () => {
+  const submitNow = useCallback(async () => {
     // Slash command popover open — select highlighted command
     if (slashFilter !== null && filteredCommands.length > 0) {
       handleSelectCommand(filteredCommands[slashIndex]);
@@ -562,40 +339,80 @@ export function SessionChatInput({
       return;
     }
 
+    // The `#` menu takes Send only while it shows rows. A draft ending in
+    // `#word` that names no skill draws no menu, so Send sends it.
+    if (suggestionMenuTakesSubmit({ isOpen: skill.isOpen, itemCount: skill.items.length })) {
+      skill.dismiss();
+      return;
+    }
+
+    const trimmedRaw = text.trim();
+    const fileCount = attachments.files.length;
+    const plan = planComposerSend({
+      text: trimmedRaw,
+      fileCount,
+      disabled: disabled || preparing,
+      isBusy,
+      canQueue: Boolean(onEnqueue),
+      canAttach,
+      modelUnavailable,
+      allowEmpty: Boolean(stagedCommand),
+    });
+    if (plan === 'noop') return;
+    // No model: connect one first. Nothing is sent or queued; the draft,
+    // the staged command, and the files stay.
+    if (plan === 'connect-model') {
+      onConnectModel?.();
+      return;
+    }
+
     // Staged command — execute it with args
     if (stagedCommand) {
-      const args = text.trim();
-      onCommand?.(stagedCommand, args || undefined);
+      onCommand?.(stagedCommand, trimmedRaw || undefined);
       setText('');
       setStagedCommand(null);
       return;
     }
-
-    const trimmed = text.trim();
-    if (!trimmed || disabled) return;
-
-    // Dismiss the keyboard on send so the user sees the new message land
-    // (matches WhatsApp / iMessage behavior on phones).
-    Keyboard.dismiss();
-
-    if (autocontinueMode && onCommand) {
-      const alg = AUTOCONTINUE_ALGORITHMS.find((a) => a.id === autocontinueMode);
-      const command = alg && commands.find((c) => c.name === alg.commandName);
-      if (command) {
-        onCommand(command, trimmed || undefined);
-        setText('');
-        setSlashFilter(null);
-        setSlashIndex(0);
-        mention.reset();
-        return;
-      }
+    // Both refusals keep the text and the files in the composer.
+    if (plan === 'refuse-busy-files') {
+      toast.error('Wait for the reply to finish, then send your files.');
+      return;
+    }
+    if (plan === 'refuse-no-session') {
+      toast.error("Files can't be sent in this thread.");
+      return;
     }
 
-    // If the agent is busy and we have an enqueue handler, queue instead of sending
-    if (isBusy && onEnqueue) {
-      onEnqueue(trimmed);
+    // A send keeps the keyboard up: the next message, or a queued follow-up,
+    // is typed without reopening it. The list follows the sent message.
+
+    // A picked "#skill" token resolves like the staged "/" command above —
+    // a structured dispatch that runs immediately, mirroring apps/web's
+    // `planDraftSubmission` exactly (see `lib/session/skill-mentions.ts`).
+    // A skill deleted since it was picked — or a draft that carries files or
+    // `@` mentions, which a command dispatch cannot carry — degrades to the
+    // "/name args" plain-text fallback and falls through to the normal send
+    // path below, which sends the uploaded files and keeps the mentions.
+    let trimmed = trimmedRaw;
+    if (skill.mentions.length > 0) {
+      const skillPlan = skill.resolveSubmission(text, fileCount > 0 || mention.mentions.length > 0);
+      if (skillPlan.kind === 'command') {
+        onCommand?.(skillPlan.command, skillPlan.args);
+        setText('');
+        attachments.clearAfterSend();
+        mention.reset();
+        skill.reset();
+        return;
+      }
+      trimmed = skillPlan.text;
+    }
+
+    if (auto.dispatch(trimmed)) {
       setText('');
+      setSlashFilter(null);
+      setSlashIndex(0);
       mention.reset();
+      skill.reset();
       return;
     }
 
@@ -603,66 +420,165 @@ export function SessionChatInput({
     if (agent?.name) options.agent = agent.name;
     if (modelKey) options.model = modelKey;
     if (variant) options.variant = variant;
-
     const trackedMentions = mention.mentions.length > 0 ? [...mention.mentions] : undefined;
-    const filesToUpload = [...attachedFiles];
 
-    // Clear input immediately for snappy UX
-    setText('');
-    setAttachedFiles([]);
-    mention.reset();
-
-    if (filesToUpload.length > 0 && sandboxUrl) {
-      setIsUploading(true);
+    if (plan === 'queue' && onEnqueue) {
+      // Keep the draft on a refused write; server acceptance is the durability boundary.
       try {
-        const xmlParts: string[] = [];
-
-        // Upload files. The server (/file/upload) guarantees collision-free
-        // destinations — if two files share a name it auto-suffixes and
-        // returns the actual written path. (Ported from web 04f8296.)
-        await Promise.all(
-          filesToUpload.map(async (f, idx) => {
-            const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const optimisticPath = `/workspace/uploads/${safeName}`;
-
-            const formData = new FormData();
-            formData.append('path', '/workspace/uploads');
-            formData.append('file', { uri: f.uri, name: safeName, type: f.mimeType } as any);
-
-            const token = await getAuthToken();
-            const res = await fetch(`${sandboxUrl}/file/upload`, {
-              method: 'POST',
-              headers: token ? { Authorization: `Bearer ${token}` } : {},
-              body: formData,
-            });
-
-            // Use the server-returned path (collision-free) or fall back to optimistic
-            const uploadedPath = res.ok
-              ? ((await res.json() as Array<{ path: string }>)[0]?.path ?? optimisticPath)
-              : optimisticPath;
-
-            xmlParts[idx] = `<file path="${uploadedPath}" mime="${f.mimeType}" filename="${f.name}">\nThis file has been uploaded and is available at the path above.\n</file>`;
-          }),
-        );
-
-        const xmlBlock = xmlParts.join('\n');
-        const finalText = xmlBlock ? `${trimmed}\n\n${xmlBlock}` : trimmed;
-        onSend(finalText, options, trackedMentions);
-      } catch {
-        // Upload failed — still send the message without file refs
-        onSend(trimmed, options, trackedMentions);
-      } finally {
-        setIsUploading(false);
-      }
-    } else {
-      onSend(trimmed, options, trackedMentions);
+        await onEnqueue(trimmed, options, trackedMentions);
+        setText('');
+        mention.reset();
+        skill.reset();
+      } catch { /* The queue handler reports the refusal. */ }
+      return;
     }
-  }, [text, disabled, onSend, agent, modelKey, variant, mention, isBusy, onEnqueue, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachedFiles, sandboxUrl]);
 
-  // Variant display
-  const variantLabel = variant
-    ? variant.charAt(0).toUpperCase() + variant.slice(1)
-    : 'Default';
+    if (fileCount === 0) {
+      // Clear input immediately for snappy UX
+      setText('');
+      mention.reset();
+      skill.reset();
+      onSend(trimmed, options, trackedMentions);
+      return;
+    }
+
+    // With files: wait for every upload, then send their handles. A failed or
+    // slow upload keeps the text and the files for another try.
+    setPreparing(true);
+    let sent: SendAttachments;
+    try {
+      sent = await attachments.takeForSend();
+    } catch (err) {
+      toast.error(uploadErrorMessage(err));
+      setPreparing(false);
+      return;
+    }
+    setPreparing(false);
+    setText('');
+    mention.reset();
+    skill.reset();
+    attachments.clearAfterSend();
+    onSend(trimmed, options, trackedMentions, { fileParts: sent.fileParts, files: sent.files });
+  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, modelUnavailable, onConnectModel, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, auto, attachments]);
+
+  // One submission at a time: two taps inside one frame both read the same
+  // draft (the cleared text has not rendered yet), so the second would send
+  // it again. Released a frame after the submission settles.
+  const submittingRef = useRef(false);
+  const handleSubmit = useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await submitNow();
+    } finally {
+      requestAnimationFrame(() => {
+        submittingRef.current = false;
+      });
+    }
+  }, [submitNow]);
+
+  // Web's groups, order, and empty-search view (`lib/session/model-picker.ts`):
+  // the real upstream provider, never the raw provider name (always "Kortix"
+  // under the gateway).
+  const modelOptions = useMemo<PickerOption[]>(
+    () => modelPickerOptions(models, modelKey ?? null),
+    [models, modelKey],
+  );
+
+  const handleModelSelect = useCallback(
+    (key: string) => {
+      // A model id can contain "/", so the key is looked up, not split.
+      const picked = models.find((m) => modelOptionKey(m) === key);
+      if (picked) onModelChange?.(picked.providerID, picked.modelID);
+    },
+    [models, onModelChange],
+  );
+
+  const thinking = useMemo(
+    () => ({ levels: variants, selected: variant ?? null, onSelect: (level: string | null) => onVariantSet?.(level) }),
+    [variants, variant, onVariantSet],
+  );
+
+  // `+` opens the Add sheet: Camera · Photos · Files, then Recent files. It only
+  // attaches; AutoContinue lives in the model sheet, under Thinking.
+  const hasAutoContinue = auto.algorithms.length > 0;
+  const autoContinueRow = useMemo(
+    () =>
+      hasAutoContinue
+        ? {
+            value: auto.mode ? auto.current?.label || 'On' : 'Off',
+            // The AutoContinue sheet stacks over the model sheet; closing it returns there.
+            onPress: () => setShowAutoSheet(true),
+          }
+        : undefined,
+    [hasAutoContinue, auto.mode, auto.current],
+  );
+  const handleAddPress = useCallback(() => {
+    attachSheetRef.current?.open();
+  }, []);
+  const closeAutoSheet = useCallback(() => setShowAutoSheet(false), []);
+  // One element for the whole mount: the memoized Add sheet skips keystrokes.
+  const attachSheetExtras = useMemo(
+    () => (
+      <SettingsGroup>
+        <SettingsRow
+          icon={StackIcon}
+          label="Recent files"
+          onPress={() => attachSheetRef.current?.closeThen(() => filesSheetRef.current?.open())}
+        />
+      </SettingsGroup>
+    ),
+    [],
+  );
+
+  const { addFileMention } = mention;
+  const handleSelectSessionFile = useCallback(
+    (file: SessionFile) => {
+      const newText = addFileMention(sessionFileMentionLabel(file.path), textRef.current);
+      setText(newText);
+    },
+    [addFileMention],
+  );
+
+  // "Add to chat" in the transcript's file preview (attachments, mentions, tool
+  // rows): the same mention Recent files writes. Held in a ref so the
+  // registration does not churn on every keystroke.
+  const addFileMentionRef = useRef((path: string) => handleSelectSessionFile({ path } as SessionFile));
+  addFileMentionRef.current = (path: string) => handleSelectSessionFile({ path } as SessionFile);
+  useEffect(() => {
+    const { setAddToChat } = useToolFilePreviewStore.getState();
+    setAddToChat((path) => addFileMentionRef.current(path));
+    return () => setAddToChat(null);
+  }, []);
+
+  const cardHeader =
+    inputSlot || stagedCommand ? (
+      <View className="gap-2">
+        {/* Queue / question slot */}
+        {inputSlot}
+        {stagedCommand ? (
+          <View className="flex-row items-center gap-2">
+            <View className="shrink flex-row items-center gap-1.5 rounded-full bg-secondary py-1.5 pl-3 pr-2">
+              <Icon as={TerminalIcon} size={14} className="text-muted-foreground" />
+              <Text variant="small" numberOfLines={1} className="shrink leading-5">
+                /{stagedCommand.name}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setStagedCommand(null);
+                  setText('');
+                }}
+                hitSlop={11}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove command ${stagedCommand.name}`}
+                className="active:opacity-60">
+                <Icon as={XIcon} size={14} className="text-muted-foreground" />
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    ) : null;
 
   return (
     <>
@@ -673,7 +589,6 @@ export function SessionChatInput({
             commands={filteredCommands}
             selectedIndex={slashIndex}
             onSelect={handleSelectCommand}
-            isDark={isDark}
           />
         )}
 
@@ -687,1426 +602,130 @@ export function SessionChatInput({
           />
         )}
 
-        {/* Text input area */}
-        <View className="px-3 pt-1 pb-2">
-          <View className="rounded-2xl px-3 pt-2 pb-1 bg-card border border-border">
-            {/* Queue / question slot — rendered above textarea */}
-            {inputSlot}
+        {/* Skill suggestions — above the input, opened by "#" (COR-160) */}
+        {slashFilter === null && !mention.isOpen && skill.isOpen && skill.items.length > 0 && (
+          <MentionSuggestions
+            items={skill.items}
+            selectedIndex={skill.selectedIndex}
+            onSelect={handleSkillSelect}
+          />
+        )}
 
-            {/* Attached file previews */}
-            {attachedFiles.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 6 }}
-                contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
-              >
-                {attachedFiles.map((f, idx) => (
-                  <View
-                    key={idx}
-                    style={{
-                      position: 'relative',
-                      borderRadius: 8,
-                      overflow: 'hidden',
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    }}
-                  >
-                    {f.isImage ? (
-                      <Image
-                        source={{ uri: f.uri }}
-                        style={{ width: 52, height: 52, borderRadius: 8 }}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', padding: 4 }}>
-                        <Ionicons name="document-outline" size={22} color={isDark ? '#a1a1aa' : '#71717a'} />
-                        <RNText
-                          numberOfLines={2}
-                          style={{ fontSize: 9, color: isDark ? '#a1a1aa' : '#71717a', textAlign: 'center', marginTop: 2 }}
-                        >
-                          {f.name}
-                        </RNText>
-                      </View>
-                    )}
-                    {/* Remove button */}
-                    <TouchableOpacity
-                      onPress={() => removeAttachedFile(idx)}
-                      style={{
-                        position: 'absolute',
-                        top: 2,
-                        right: 2,
-                        width: 16,
-                        height: 16,
-                        borderRadius: 8,
-                        backgroundColor: 'rgba(0,0,0,0.55)',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                      hitSlop={4}
-                    >
-                      <XIcon size={9} color="#fff" strokeWidth={3} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-
-            {/* Staged command badge */}
-            {stagedCommand && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingBottom: 6,
-                  gap: 8,
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    borderRadius: 8,
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    borderWidth: 1,
-                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                  }}
-                >
-                  <Ionicons
-                    name="terminal-outline"
-                    size={12}
-                    color={isDark ? '#a1a1aa' : '#71717a'}
-                    style={{ marginRight: 6 }}
-                  />
-                  <RNText
-                    style={{
-                      fontSize: 13,
-                      fontFamily: 'Roobert-Medium',
-                      color: isDark ? '#F8F8F8' : '#121215',
-                      maxWidth: 220,
-                    }}
-                    numberOfLines={1}
-                  >
-                    /{stagedCommand.name}
-                  </RNText>
-                  <TouchableOpacity
-                    onPress={() => { setStagedCommand(null); setText(''); }}
-                    hitSlop={8}
-                    style={{ marginLeft: 6 }}
-                  >
-                    <Ionicons name="close" size={12} color={isDark ? '#71717a' : '#a1a1aa'} />
-                  </TouchableOpacity>
-                </View>
-                {stagedCommand.description && (
-                  <RNText
-                    numberOfLines={1}
-                    style={{
-                      fontSize: 11,
-                      fontFamily: 'Roobert',
-                      color: isDark ? '#71717a' : '#a1a1aa',
-                      flex: 1,
-                    }}
-                  >
-                    {stagedCommand.description}
-                  </RNText>
-                )}
-              </View>
-            )}
-
-            <>
-                {/* TextInput + animated placeholder wrapper */}
-                <View style={{ position: 'relative' }}>
-                  {showAnimatedPlaceholder && (
-                    <Animated.Text
-                      pointerEvents="none"
-                      style={{
-                        position: 'absolute',
-                        left: 0,
-                        top: Platform.OS === 'ios' ? 5 : 3,
-                        fontSize: 14,
-                        color: isDark ? '#999999' : '#6e6e6e',
-                        opacity: fadeAnim,
-                        transform: [{ translateY: slideAnim }],
-                        zIndex: 1,
-                      }}
-                    >
-                      {placeholderVariants[placeholderIndex]}
-                    </Animated.Text>
-                  )}
-                  <TextInput
-                    ref={inputRef}
-                    value={text}
-                    onChangeText={handleTextChange}
-                    onSelectionChange={handleSelectionChange}
-                    placeholder={stagedCommand ? 'Enter details and press send, or tap X to cancel' : ''}
-                    placeholderTextColor={isDark ? '#555' : '#aaa'}
-                    multiline
-                    maxLength={10000}
-                    style={{
-                      maxHeight: 100,
-                      fontSize: 14,
-                      lineHeight: 20,
-                      color: isDark ? '#F8F8F8' : '#121215',
-                      paddingTop: Platform.OS === 'ios' ? 5 : 3,
-                      paddingBottom: Platform.OS === 'ios' ? 5 : 3,
-                      minHeight: 32,
-                    }}
-                    onSubmitEditing={handleSubmit}
-                    blurOnSubmit={false}
-                    returnKeyType="default"
-                    editable={!disabled}
-                  />
-                </View>
-
-                {/* Compact toolbar row — minimal like Slack */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 2 }}>
-                  {/* Left: "+" button + compact context indicators */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    {!onboardingMode && (
-                      <TouchableOpacity
-                        onPress={() => setShowActionsSheet(true)}
-                        activeOpacity={0.7}
-                        hitSlop={6}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                        }}
-                      >
-                        <PlusIcon size={14} color={isDark ? '#a1a1aa' : '#71717a'} strokeWidth={2} />
-                      </TouchableOpacity>
-                    )}
-
-                    {/* Compact config label */}
-                    <TouchableOpacity
-                      onPress={openConfigSheet}
-                      activeOpacity={0.7}
-                      hitSlop={6}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 6,
-                        paddingVertical: 3,
-                        borderRadius: 12,
-                      }}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={{
-                          fontSize: 13,
-                          fontFamily: 'Roobert',
-                          color: isDark ? '#71717a' : '#a1a1aa',
-                          maxWidth: 140,
-                        }}
-                      >
-                        {agent?.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : 'Agent'}
-                        {model?.modelName ? ` · ${model.modelName}` : ''}
-                        {variant ? ` · ${variantLabel}` : ''}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={9}
-                        color={isDark ? '#52525b' : '#d4d4d8'}
-                        style={{ marginLeft: 2 }}
-                      />
-                    </TouchableOpacity>
-
-                    {/* Compact autocontinue indicator — only when mode is active */}
-                    {!!autocontinueMode && currentAutoAlgorithm && (
-                      <TouchableOpacity
-                        onPress={() => setShowAutoSheet(true)}
-                        activeOpacity={0.7}
-                        hitSlop={6}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingHorizontal: 6,
-                          paddingVertical: 3,
-                          borderRadius: 10,
-                          backgroundColor: isDark ? 'rgba(109,40,217,0.15)' : 'rgba(99,102,241,0.12)',
-                        }}
-                      >
-                        <View style={{
-                          width: 5,
-                          height: 5,
-                          borderRadius: 2.5,
-                          backgroundColor: isDark ? '#c4b5fd' : '#6366f1',
-                          marginRight: 4,
-                        }} />
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontFamily: 'Roobert-Medium',
-                            color: isDark ? '#c4b5fd' : '#4c1d95',
-                          }}
-                          numberOfLines={1}
-                        >
-                          {currentAutoAlgorithm.label}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {/* Right: queue + send/stop */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {isBusy && canSend && onEnqueue && (
-                      <TouchableOpacity
-                        onPress={handleSubmit}
-                        activeOpacity={0.7}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          borderRadius: 12,
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                        }}
-                      >
-                        <Ionicons name="list-outline" size={11} color={isDark ? '#a1a1aa' : '#71717a'} style={{ marginRight: 3 }} />
-                        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? '#a1a1aa' : '#71717a' }}>
-                          Queue
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                    {isBusy ? (
-                      <TouchableOpacity
-                        onPress={onStop}
-                        activeOpacity={0.7}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: themeColors.primary,
-                        }}
-                      >
-                        <Ionicons name="stop" size={12} color={themeColors.primaryForeground} />
-                      </TouchableOpacity>
-                    ) : hasContent ? (
-                      <TouchableOpacity
-                        onPress={handleSubmit}
-                        disabled={!canSend}
-                        activeOpacity={0.7}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: canSend ? themeColors.primary : (isDark ? '#232324' : '#E5E7EB'),
-                        }}
-                      >
-                        <Ionicons
-                          name="arrow-up"
-                          size={14}
-                          color={canSend ? themeColors.primaryForeground : (isDark ? '#999999' : '#6e6e6e')}
-                        />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        onPress={handleSubmit}
-                        disabled={true}
-                        activeOpacity={0.7}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: isDark ? '#232324' : '#E5E7EB',
-                        }}
-                      >
-                        <Ionicons name="arrow-up" size={14} color={isDark ? '#999999' : '#6e6e6e'} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              </>
-          </View>
+        {/* The project home's card (design.md §5): same edge, same bottom gap.
+            `pb-3` under `px-4`: vertical padding is one step below horizontal
+            (design.md §2). It is the gap above the keyboard while typing. */}
+        <View className="px-4 pb-3 pt-1">
+          <Composer
+            inputRef={inputRef}
+            autoFocus={autoFocus}
+            inputNativeID={inputNativeID}
+            value={text}
+            onChangeText={handleTextChange}
+            onSelectionChange={handleSelectionChange}
+            onSubmit={handleSubmit}
+            placeholder={stagedCommand ? 'Add details, then send' : placeholder}
+            maxLength={10000}
+            disabled={disabled || preparing}
+            sending={preparing}
+            allowEmptySend={!!stagedCommand}
+            busy={isBusy}
+            onStop={onStop}
+            header={cardHeader}
+            attachments={attachments.files}
+            attachmentUploads={attachments.uploads}
+            onAttach={handleAddPress}
+            attachLabel="Add"
+            onRemoveAttachment={attachments.remove}
+            chip={
+              modelsLoading
+                ? null
+                : composerChip({
+                    connectModel: modelUnavailable,
+                    agentName: agent?.name,
+                    pendingAgentName,
+                    agentsLoading,
+                    modelName: model ? pickerModelName(model) : undefined,
+                  })
+            }
+            onChipPress={openModelSheet}
+            accessory={
+              auto.mode && auto.current ? (
+                <Button
+                  variant="secondary"
+                  size="icon-md"
+                  className="rounded-full"
+                  hitSlop={COMPOSER_CONTROL_HIT_SLOP}
+                  onPress={() => setShowAutoSheet(true)}
+                  accessibilityLabel={`AutoContinue, ${auto.current.label}`}>
+                  <Icon as={InfinityIcon} size={18} className="text-kortix-purple" />
+                </Button>
+              ) : null
+            }
+          />
         </View>
-
-
       </View>
 
-      {/* Actions bottom sheet — attach, config, autocontinue */}
-      <ActionsSheet
-        visible={showActionsSheet}
-        onClose={() => setShowActionsSheet(false)}
-        isDark={isDark}
-        onAttach={() => { setShowActionsSheet(false); setTimeout(handleAttachPress, 300); }}
-        onConfig={() => { setShowActionsSheet(false); setTimeout(openConfigSheet, 300); }}
-        onAutoContinue={availableAutoAlgorithms.length > 0 ? () => { setShowActionsSheet(false); setTimeout(() => setShowAutoSheet(true), 300); } : undefined}
-        autocontinueLabel={autocontinueMode ? (currentAutoAlgorithm?.label || 'Auto') : 'Off'}
-        autocontinueActive={!!autocontinueMode}
-        configLabel={`${agent?.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : 'Agent'}${model?.modelName ? ` · ${model.modelName}` : ''}${variant ? ` · ${variantLabel}` : ''}`}
-        onboardingMode={onboardingMode}
+      {/* Add sheet — Camera · Photos · Files, then Recent files. */}
+      <AttachSheet ref={attachSheetRef} onPick={attachments.add}>
+        {attachSheetExtras}
+      </AttachSheet>
+
+      {/* Recent files — the files this session produced; a row previews the file, "Add to chat" mentions it. */}
+      <SessionFilesSheet
+        ref={filesSheetRef}
+        sessionId={currentSessionId}
+        sandboxUrl={sandboxUrl}
+        onSelect={handleSelectSessionFile}
       />
 
-      {/* Config bottom sheet — agent, model, variant (dynamic-sized) */}
-      <ConfigSheet
-        ref={configSheetRef}
-        isDark={isDark}
-        agents={agents}
-        selectedAgent={agent || null}
-        onAgentChange={(name) => { onAgentChange?.(name); }}
-        models={models}
-        selectedModel={model || null}
-        onModelChange={(pid, mid) => { onModelChange?.(pid, mid); }}
-        variants={variants}
-        selectedVariant={variant || null}
-        onVariantSet={(v) => onVariantSet?.(v)}
+      {/* Model sheet — models by provider, thinking level of the active model */}
+      <ModelPickerSheet
+        ref={modelSheetRef}
+        options={modelOptions}
+        activeKey={model ? modelOptionKey(model) : null}
+        onSelect={handleModelSelect}
+        thinking={thinking}
+        onConnect={onConnectModel}
+        agent={agentChoice}
+        autoContinue={autoContinueRow}
       />
 
       <AutoContinueSheet
         visible={showAutoSheet}
-        onClose={() => setShowAutoSheet(false)}
-        selected={autocontinueMode}
-        onSelect={(mode) => setAutocontinueMode(mode)}
-        algorithms={availableAutoAlgorithms}
+        onClose={closeAutoSheet}
+        selected={auto.mode}
+        onSelect={auto.setMode}
+        algorithms={auto.algorithms}
         isDark={isDark}
       />
     </>
   );
 }
 
-function AutoContinueButton({
-  isDark,
-  isActive,
-  label,
-  onPress,
-}: {
-  isDark: boolean;
-  isActive: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  const activeBg = isDark ? 'rgba(109,40,217,0.18)' : 'rgba(99,102,241,0.16)';
-  const inactiveBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
-  const activeColor = isDark ? '#C4B5FD' : '#4C1D95';
-  const mutedColor = isDark ? '#a1a1aa' : '#71717a';
-
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
-        backgroundColor: isActive ? activeBg : inactiveBg,
-        borderWidth: isActive ? 1 : 0,
-        borderColor: isActive ? (isDark ? 'rgba(192,132,252,0.4)' : 'rgba(99,102,241,0.4)') : 'transparent',
-      }}
-      hitSlop={6}
-    >
-      <Text
-        style={{
-          fontSize: 12,
-          fontFamily: 'Roobert-Medium',
-          color: isActive ? (isDark ? '#F8F8F8' : '#1f2937') : mutedColor,
-          marginLeft: 0,
-        }}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-      <Ionicons
-        name="chevron-down"
-        size={10}
-        color={isActive ? (isDark ? '#c4b5fd' : '#4c1d95') : mutedColor}
-        style={{ marginLeft: 4 }}
-      />
-    </TouchableOpacity>
-  );
-}
-
-// ─── Actions Sheet ──────────────────────────────────────────────────────────
-
-interface ActionsSheetProps {
-  visible: boolean;
-  onClose: () => void;
-  isDark: boolean;
-  onAttach: () => void;
-  onConfig: () => void;
-  onAutoContinue?: () => void;
-  autocontinueLabel: string;
-  autocontinueActive: boolean;
-  configLabel: string;
-  onboardingMode: boolean;
-}
-
-function ActionsSheet({
-  visible,
-  onClose,
-  isDark,
-  onAttach,
-  onConfig,
-  onAutoContinue,
-  autocontinueLabel,
-  autocontinueActive,
-  configLabel,
-  onboardingMode,
-}: ActionsSheetProps) {
-  const insets = useSafeAreaInsets();
-  const muted = isDark ? '#a1a1aa' : '#71717a';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const bg = isDark ? '#1a1a1d' : '#FFFFFF';
-
-  // Sync `visible` prop to the imperative BottomSheetModal API so the caller
-  // API stays unchanged. Dismiss originating from user gesture flows back
-  // through onClose; programmatic dismissals are guarded by dismissingRef.
-  const sheetRef = useRef<BottomSheetModal>(null);
-  const dismissingRef = useRef(false);
-
-  useEffect(() => {
-    if (visible) {
-      dismissingRef.current = false;
-      sheetRef.current?.present();
-    } else {
-      dismissingRef.current = true;
-      sheetRef.current?.dismiss();
-    }
-  }, [visible]);
-
-  const handleSheetDismiss = useCallback(() => {
-    if (!dismissingRef.current) onClose();
-    dismissingRef.current = false;
-  }, [onClose]);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
-
-  const rows: Array<{
-    key: string;
-    icon: typeof PaperclipIcon;
-    label: string;
-    description: string;
-    onPress: () => void;
-  }> = [];
-
-  if (!onboardingMode) {
-    rows.push({
-      key: 'attach',
-      icon: PaperclipIcon,
-      label: 'Attach files',
-      description: 'Photos, documents, or files',
-      onPress: onAttach,
-    });
-  }
-  rows.push({
-    key: 'config',
-    icon: SettingsIcon,
-    label: 'Agent & Model',
-    description: configLabel,
-    onPress: onConfig,
-  });
-  if (onAutoContinue) {
-    rows.push({
-      key: 'autocontinue',
-      icon: InfinityIcon,
-      label: 'AutoContinue',
-      description: autocontinueActive
-        ? `Active · ${autocontinueLabel}`
-        : 'Off — manual mode',
-      onPress: onAutoContinue,
-    });
-  }
-
-  return (
-    <BottomSheetModal
-      ref={sheetRef}
-      enableDynamicSizing
-      enablePanDownToClose
-      enableOverDrag={false}
-      onDismiss={handleSheetDismiss}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      backdropComponent={renderBackdrop}
-    >
-      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
-        {/* Header — drag handle is the only affordance; swipe down or tap
-            backdrop to dismiss. */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10 }}>
-          <Text
-            style={{
-              fontSize: 18,
-              fontFamily: 'Roobert-SemiBold',
-              color: fgColor,
-            }}
-          >
-            Actions
-          </Text>
-        </View>
-
-        {/* Settings-style rows: plain stroked lucide icon, title + subtitle,
-            chevron, and a thin divider between rows (no per-row card bg). */}
-        <View style={{ paddingHorizontal: 20 }}>
-          {rows.map((row, idx) => {
-            const isLast = idx === rows.length - 1;
-            return (
-              <React.Fragment key={row.key}>
-                <TouchableOpacity
-                  onPress={row.onPress}
-                  activeOpacity={0.7}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                  }}
-                >
-                  <Icon
-                    as={row.icon}
-                    size={18}
-                    color={isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)'}
-                    strokeWidth={2.2}
-                  />
-                  <View style={{ marginLeft: 16, flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontFamily: 'Roobert-Medium',
-                        color: fgColor,
-                      }}
-                    >
-                      {row.label}
-                    </Text>
-                    <Text
-                      style={{
-                        marginTop: 2,
-                        fontSize: 12,
-                        fontFamily: 'Roobert',
-                        color: muted,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {row.description}
-                    </Text>
-                  </View>
-                  <Icon
-                    as={ChevronRightIcon}
-                    size={16}
-                    color={isDark ? 'rgba(248,248,248,0.35)' : 'rgba(18,18,21,0.35)'}
-                    strokeWidth={2.2}
-                  />
-                </TouchableOpacity>
-                {!isLast && (
-                  <View
-                    style={{
-                      height: 1,
-                      backgroundColor: isDark
-                        ? 'rgba(248,248,248,0.08)'
-                        : 'rgba(18,18,21,0.08)',
-                    }}
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </View>
-      </BottomSheetView>
-    </BottomSheetModal>
-  );
-}
-
-function InfinityOffIcon({ color, size }: { color: string; size: number }) {
-  return (
-    <View style={{ width: size, height: size }}>
-      <InfinityIcon color={color} size={size} strokeWidth={2.4} />
-      <SlashIcon
-        color={color}
-        size={size}
-        strokeWidth={2}
-        style={{ position: 'absolute', left: 0, top: 0 }}
-      />
-    </View>
-  );
-}
-
-interface AutoContinueSheetProps {
-  visible: boolean;
-  onClose: () => void;
-  selected: AutoContinueMode | null;
-  onSelect: (mode: AutoContinueMode | null) => void;
-  algorithms: AutoContinueAlgorithm[];
-  isDark: boolean;
-}
-
-function AutoContinueSheet({
-  visible,
-  onClose,
-  selected,
-  onSelect,
-  algorithms,
-  isDark,
-}: AutoContinueSheetProps) {
-  const insets = useSafeAreaInsets();
-  const [detailAlg, setDetailAlg] = useState<AutoContinueAlgorithm | null>(null);
-  const isActive = selected !== null;
-  const currentAlg = algorithms.find((alg) => alg.id === selected) || null;
-  const defaultMode = useMemo(() => {
-    const preferred = algorithms.find((alg) => alg.id === DEFAULT_AUTOCONTINUE_MODE);
-    return preferred?.id ?? algorithms[0]?.id ?? null;
-  }, [algorithms]);
-
-  const { height: screenHeight } = useWindowDimensions();
-  const muted = isDark ? '#a1a1aa' : '#71717a';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-  const bg = isDark ? '#121215' : '#FFFFFF';
-
-  // Bridge `visible` prop to the imperative BottomSheetModal API.
-  const sheetRef = useRef<BottomSheetModal>(null);
-  const dismissingRef = useRef(false);
-
-  useEffect(() => {
-    if (visible) {
-      dismissingRef.current = false;
-      sheetRef.current?.present();
-    } else {
-      dismissingRef.current = true;
-      sheetRef.current?.dismiss();
-    }
-  }, [visible]);
-
-  const handleSheetDismiss = useCallback(() => {
-    if (!dismissingRef.current) onClose();
-    dismissingRef.current = false;
-  }, [onClose]);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
-
-  useEffect(() => {
-    if (!visible) {
-      setDetailAlg(null);
-    }
-  }, [visible]);
-
-  if (algorithms.length === 0) return null;
-
-  return (
-    <BottomSheetModal
-      ref={sheetRef}
-      enableDynamicSizing
-      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
-      enablePanDownToClose={!detailAlg}
-      enableOverDrag={false}
-      onDismiss={handleSheetDismiss}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      backdropComponent={renderBackdrop}
-    >
-      {detailAlg ? (
-        /* Detail view — algorithm deep-dive with its own scroller. */
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, paddingHorizontal: 20, paddingBottom: 12 }}>
-            <TouchableOpacity onPress={() => setDetailAlg(null)} hitSlop={12} style={{ marginRight: 12 }}>
-              <Ionicons name="chevron-back" size={22} color={muted} />
-            </TouchableOpacity>
-            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
-              {detailAlg.label}
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                onSelect(detailAlg.id);
-                setDetailAlg(null);
-                onClose();
-              }}
-              style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
-              hitSlop={10}
-            >
-              <Text style={{ color: isDark ? '#c4b5fd' : '#4c1d95', fontFamily: 'Roobert-Medium', fontSize: 13 }}>
-                Use
-              </Text>
-              <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ paddingHorizontal: 20 }}>
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Role
-            </Text>
-            <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? '#F8F8F8' : '#121215' }}>
-              {detailAlg.role}
-            </Text>
-
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Description
-            </Text>
-            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
-              {detailAlg.description}
-            </Text>
-
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Best for
-            </Text>
-            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
-              {detailAlg.bestFor}
-            </Text>
-
-            <View style={{ flexDirection: 'row', marginTop: 4 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                  Strengths
-                </Text>
-                {detailAlg.strengths.map((s, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#bbf7d0' : '#166534', marginBottom: 6 }}>
-                    • {s}
-                  </Text>
-                ))}
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                  Weaknesses
-                </Text>
-                {detailAlg.weaknesses.map((s, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#fed7aa' : '#9a3412', marginBottom: 6 }}>
-                    • {s}
-                  </Text>
-                ))}
-              </View>
-            </View>
-
-            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
-              How it works
-            </Text>
-            <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? '#e4e4e7' : '#1f2937' }}>
-              {detailAlg.howItWorks}
-            </Text>
-          </View>
-        </BottomSheetScrollView>
-      ) : (
-        /* List view — Off / On toggle + algorithm list. Top-level scroller so
-           scroll gestures actually work inside the sheet. */
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
-          showsVerticalScrollIndicator={false}
-        >
-        {/* Header — drag handle + backdrop tap dismiss, no explicit close. */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
-            AutoContinue
-          </Text>
-        </View>
-
-        <View>
-          <View>
-            <TouchableOpacity
-              onPress={() => { onSelect(null); onClose(); }}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 20,
-                backgroundColor: !isActive ? (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)') : 'transparent',
-              }}
-            >
-              <InfinityOffIcon color={muted} size={18} />
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                  Off
-                </Text>
-                <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
-                  Manual — you send each message
-                </Text>
-              </View>
-              {!isActive && <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => {
-                if (!isActive && defaultMode) {
-                  onSelect(defaultMode);
-                }
-              }}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 20,
-                backgroundColor: isActive ? 'rgba(99,102,241,0.08)' : 'transparent',
-              }}
-            >
-              <InfinityIcon color={isActive ? (isDark ? '#c4b5fd' : '#4c1d95') : muted} strokeWidth={2.2} size={18} />
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                  On
-                </Text>
-                <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
-                  {isActive && currentAlg
-                    ? `Running ${currentAlg.label}`
-                    : 'Pick an algorithm and the agent will continue on its own'}
-                </Text>
-              </View>
-              {isActive && <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />}
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ marginTop: 20, paddingHorizontal: 20 }}>
-            <Text style={{ fontSize: 12, color: muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Algorithms
-            </Text>
-          </View>
-
-          {algorithms.map((alg, idx) => {
-            const isSelected = selected === alg.id;
-            return (
-              <TouchableOpacity
-                key={alg.id}
-                onPress={() => {
-                  onSelect(alg.id);
-                  onClose();
-                }}
-                activeOpacity={0.7}
-                style={{
-                  paddingVertical: 14,
-                  paddingHorizontal: 20,
-                  borderBottomWidth: idx < algorithms.length - 1 ? StyleSheet.hairlineWidth : 0,
-                  borderBottomColor: border,
-                  backgroundColor: isSelected ? (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(99,102,241,0.07)') : 'transparent',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#111827' }}>
-                      {alg.label}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: muted, marginTop: 1 }}>
-                      {alg.role}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: isDark ? '#d4d4d8' : '#4b5563', marginTop: 6 }} numberOfLines={1}>
-                      {alg.description}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    hitSlop={10}
-                    onPress={() => setDetailAlg(alg)}
-                    style={{ padding: 6, marginHorizontal: 4 }}
-                  >
-                    <InfoIcon size={18} color={muted} />
-                  </TouchableOpacity>
-                  {isSelected && (
-                    <Ionicons name="checkmark" size={18} color={isDark ? '#C4B5FD' : '#4C1D95'} />
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        </BottomSheetScrollView>
-      )}
-    </BottomSheetModal>
-  );
-}
+/**
+ * Memoized: the session thread re-renders on every streamed delta, and the
+ * composer (three bottom-sheet modals) must skip those renders. Callers pass
+ * stable callbacks and memoized array props.
+ */
+export const SessionChatInput = React.memo(SessionChatInputImpl);
 
 // ─── Slash Command Suggestions ───────────────────────────────────────────────
 
+/** `/` commands: the mention list's card and rows, the command's name only. */
 function SlashCommandSuggestions({
   commands,
   selectedIndex,
   onSelect,
-  isDark,
 }: {
   commands: Command[];
   selectedIndex: number;
   onSelect: (cmd: Command) => void;
-  isDark: boolean;
 }) {
-  const bgColor = isDark ? '#1e1e20' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-  const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#999';
-
   return (
-    <View
-      style={{
-        marginHorizontal: 16,
-        marginBottom: 4,
-        borderRadius: 12,
-        backgroundColor: bgColor,
-        borderWidth: 1,
-        borderColor,
-        maxHeight: 220,
-        overflow: 'hidden',
-      }}
-    >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {commands.map((cmd, i) => (
-          <TouchableOpacity
-            key={cmd.name}
-            onPress={() => onSelect(cmd)}
-            activeOpacity={0.6}
-            style={{
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              backgroundColor: i === selectedIndex ? selectedBg : 'transparent',
-              borderBottomWidth: i < commands.length - 1 ? 1 : 0,
-              borderBottomColor: borderColor,
-            }}
-          >
-            <RNText
-              style={{
-                fontSize: 14,
-                fontFamily: 'Roobert-Medium',
-                color: fgColor,
-              }}
-            >
-              /{cmd.name}
-            </RNText>
-            {cmd.description && (
-              <RNText
-                numberOfLines={2}
-                style={{
-                  fontSize: 12,
-                  fontFamily: 'Roobert',
-                  color: mutedColor,
-                  marginTop: 2,
-                }}
-              >
-                {cmd.description}
-              </RNText>
-            )}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
+    <SuggestionCard>
+      {commands.map((cmd, i) => (
+        <SuggestionRow key={cmd.name} label={cmd.name} selected={i === selectedIndex} onPress={() => onSelect(cmd)} />
+      ))}
+    </SuggestionCard>
   );
 }
-
-type ConfigTab = 'agent' | 'model' | 'thinking';
-
-const TAB_CONFIG: { key: ConfigTab; label: string; icon: string }[] = [
-  { key: 'agent', label: 'Agent', icon: 'person-outline' },
-  { key: 'model', label: 'Model', icon: 'hardware-chip-outline' },
-  { key: 'thinking', label: 'Thinking', icon: 'flash-outline' },
-];
-
-const ConfigSheet = forwardRef<
-  BottomSheetModal,
-  {
-    isDark: boolean;
-    agents: Agent[];
-    selectedAgent: Agent | null;
-    onAgentChange: (name: string) => void;
-    models: FlatModel[];
-    selectedModel: FlatModel | null;
-    onModelChange: (providerId: string, modelId: string) => void;
-    variants: string[];
-    selectedVariant: string | null;
-    onVariantSet: (variant: string | null) => void;
-  }
->(function ConfigSheet(
-  {
-    isDark,
-    agents,
-    selectedAgent,
-    onAgentChange,
-    models,
-    selectedModel,
-    onModelChange,
-    variants,
-    selectedVariant,
-    onVariantSet,
-  },
-  ref,
-) {
-  const insets = useSafeAreaInsets();
-  const { height: screenHeight } = useWindowDimensions();
-  const [activeTab, setActiveTab] = useState<ConfigTab>('agent');
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#a1a1aa' : '#71717a';
-  const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const tabBg = getToggleTrackBg(isDark);
-  const tabActiveBg = getToggleActiveBg(isDark);
-  // Sticky header bg must match the sheet bg so the area above the tabs
-  // (around the drag handle) doesn't look like a different shade.
-  const bg = getSheetBg(isDark);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
-
-  // Filter tabs to only show ones with content
-  const visibleTabs = TAB_CONFIG.filter((t) => {
-    if (t.key === 'agent') return agents.length > 0;
-    if (t.key === 'model') return models.length > 0;
-    if (t.key === 'thinking') return variants.length > 0;
-    return false;
-  });
-
-  const handleSheetChange = useCallback(
-    (index: number) => {
-      if (index < 0) return;
-      if (visibleTabs.length === 0) return;
-      if (!visibleTabs.some((t) => t.key === activeTab)) {
-        setActiveTab(visibleTabs[0].key);
-      }
-    },
-    [activeTab, visibleTabs],
-  );
-
-  return (
-    <BottomSheetModal
-      ref={ref}
-      enableDynamicSizing
-      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
-      enablePanDownToClose
-      enableOverDrag={false}
-      onChange={handleSheetChange}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      backdropComponent={renderBackdrop}
-    >
-      {/* Top-level BottomSheetScrollView so scroll gestures work. Header +
-          tabs are wrapped in a single sticky block (index 0) so they stay
-          pinned while the items list scrolls underneath. The sheet still
-          sizes to content via enableDynamicSizing; scroll only activates
-          when content exceeds maxDynamicContentSize. */}
-      <BottomSheetScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        stickyHeaderIndices={[0]}
-      >
-      {/* Sticky header block: title + tab bar. Solid bg so scrolled items
-          don't show through. */}
-      <View style={{ backgroundColor: bg }}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
-            Configuration
-          </Text>
-        </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            marginHorizontal: 20,
-            marginBottom: 16,
-            borderRadius: 9999,
-            backgroundColor: tabBg,
-            padding: 3,
-          }}
-        >
-          {visibleTabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
-                activeOpacity={0.7}
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingVertical: 8,
-                  borderRadius: 9999,
-                  backgroundColor: isActive ? tabActiveBg : 'transparent',
-                  gap: 5,
-                }}
-              >
-                <Ionicons
-                  name={tab.icon as any}
-                  size={14}
-                  color={isActive ? fgColor : mutedColor}
-                />
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontFamily: isActive ? 'Roobert-SemiBold' : 'Roobert-Medium',
-                    color: isActive ? fgColor : mutedColor,
-                  }}
-                >
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Content (items flow below the sticky header block) */}
-      <View>
-        {/* Agent tab */}
-        {activeTab === 'agent' && agents.filter((a) => !a.hidden).map((a) => {
-          const isSelected = selectedAgent?.name === a.name;
-          return (
-            <TouchableOpacity
-              key={a.name}
-              onPress={() => onAgentChange(a.name)}
-              activeOpacity={0.6}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingHorizontal: 20,
-                paddingVertical: 14,
-                backgroundColor: isSelected ? selectedBg : 'transparent',
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontSize: 16,
-                    fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                    color: fgColor,
-                    textTransform: 'capitalize',
-                  }}
-                >
-                  {a.name}
-                </Text>
-                {a.description ? (
-                  <Text
-                    style={{ fontSize: 13, fontFamily: 'Roobert', color: mutedColor, marginTop: 3 }}
-                    numberOfLines={2}
-                  >
-                    {a.description}
-                  </Text>
-                ) : null}
-              </View>
-              {isSelected && (
-                <Ionicons name="checkmark" size={20} color={fgColor} />
-              )}
-            </TouchableOpacity>
-          );
-        })}
-
-        {/* Model tab — grouped by provider */}
-        {activeTab === 'model' && (() => {
-          // Group models by provider
-          const groups: { providerID: string; providerName: string; models: typeof models }[] = [];
-          const seen = new Map<string, typeof models>();
-          for (const m of models) {
-            const key = m.providerID;
-            if (!seen.has(key)) {
-              const group: typeof models = [];
-              seen.set(key, group);
-              groups.push({ providerID: key, providerName: m.providerName || key, models: group });
-            }
-            seen.get(key)!.push(m);
-          }
-
-          return groups.map((group) => (
-            <View key={group.providerID}>
-              {/* Provider header */}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingHorizontal: 20,
-                  paddingTop: 16,
-                  paddingBottom: 8,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontFamily: 'Roobert-SemiBold',
-                    color: mutedColor,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.8,
-                  }}
-                >
-                  {group.providerName}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontFamily: 'Roobert-Medium',
-                    color: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
-                  }}
-                >
-                  {group.models.length}
-                </Text>
-              </View>
-              {/* Models in this provider */}
-              {group.models.map((m) => {
-                const isSelected =
-                  selectedModel?.providerID === m.providerID &&
-                  selectedModel?.modelID === m.modelID;
-                return (
-                  <TouchableOpacity
-                    key={`${m.providerID}/${m.modelID}`}
-                    onPress={() => onModelChange(m.providerID, m.modelID)}
-                    activeOpacity={0.6}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingHorizontal: 20,
-                      paddingVertical: 12,
-                      backgroundColor: isSelected ? selectedBg : 'transparent',
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          fontSize: 15,
-                          fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                          color: fgColor,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {m.modelName || m.modelID}
-                      </Text>
-                      <Text
-                        style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, marginTop: 2 }}
-                        numberOfLines={1}
-                      >
-                        {m.modelID}
-                      </Text>
-                    </View>
-                    {isSelected && (
-                      <Ionicons name="checkmark" size={20} color={fgColor} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ));
-        })()}
-
-        {/* Thinking tab */}
-        {activeTab === 'thinking' && (
-          <>
-            <TouchableOpacity
-              onPress={() => onVariantSet(null)}
-              activeOpacity={0.6}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingHorizontal: 20,
-                paddingVertical: 14,
-                backgroundColor: !selectedVariant ? selectedBg : 'transparent',
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontSize: 16,
-                    fontFamily: !selectedVariant ? 'Roobert-Medium' : 'Roobert',
-                    color: fgColor,
-                  }}
-                >
-                  Default
-                </Text>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: mutedColor, marginTop: 3 }}>
-                  Standard response
-                </Text>
-              </View>
-              {!selectedVariant && (
-                <Ionicons name="checkmark" size={20} color={fgColor} />
-              )}
-            </TouchableOpacity>
-            {variants.map((v) => {
-              const isSelected = selectedVariant === v;
-              return (
-                <TouchableOpacity
-                  key={v}
-                  onPress={() => onVariantSet(v)}
-                  activeOpacity={0.6}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 20,
-                    paddingVertical: 14,
-                    backgroundColor: isSelected ? selectedBg : 'transparent',
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 16,
-                        fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                        color: fgColor,
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      {v}
-                    </Text>
-                    <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: mutedColor, marginTop: 3 }}>
-                      Extended thinking mode
-                    </Text>
-                  </View>
-                  {isSelected && (
-                    <Ionicons name="checkmark" size={20} color={fgColor} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </>
-        )}
-      </View>
-      </BottomSheetScrollView>
-    </BottomSheetModal>
-  );
-});

@@ -1,11 +1,12 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import Loading from '@/components/ui/loading';
 import { clearLastProjectId } from '@/lib/onboarding/last-project-cookie';
+import { cn } from '@/lib/utils';
 import { useImpersonation, useStopImpersonation } from '@kortix/sdk/react';
 import { EyeIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 /**
@@ -45,6 +46,7 @@ function formatRemaining(expiresAt: string, now: number): string {
 }
 
 export function ImpersonationBanner() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const session = useImpersonation();
   const stop = useStopImpersonation();
   const [now, setNow] = useState(() => Date.now());
@@ -95,7 +97,7 @@ export function ImpersonationBanner() {
           <EyeIcon className="size-4" weight="bold" />
         </span>
         <span className="min-w-0 text-sm">
-          <span className="text-muted-foreground">Acting as </span>
+          <span className="text-muted-foreground">{tI18nComplete.raw('text262a098dffb5')} </span>
           <span className="text-foreground font-medium">
             {session.accountName || session.accountId}
           </span>
@@ -112,7 +114,7 @@ export function ImpersonationBanner() {
           className="shrink-0"
         >
           {stop.isPending && <Loading variant="spokes" className="size-3.5" />}
-          Exit
+          {tI18nComplete.raw('textd17d84a60499')}
         </Button>
       </div>
     </div>

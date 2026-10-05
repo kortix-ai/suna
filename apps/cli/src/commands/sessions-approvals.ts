@@ -1,11 +1,12 @@
 import type { PermissionRequest, QuestionRequest } from '@kortix/sdk';
-import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
   locateSessionAnywhere,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { type ResolvedSession, loadSessionForChat } from './sessions-chat.ts';
@@ -93,15 +94,8 @@ async function pendingFor(resolved: ResolvedSession): Promise<{
   questions: QuestionRequest[];
 } | null> {
   try {
-    const [permissions, questions] = await Promise.all([
-      withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.permission.list()),
-      ),
-      withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.question.list()),
-      ),
-    ]);
-    return { permissions: permissions ?? [], questions: questions ?? [] };
+    const { permissions, questions } = await withKortixScope(resolved.auth, () => resolved.handle.pending());
+    return { permissions, questions };
   } catch (err) {
     surfaceApiError(err);
     return null;
@@ -178,10 +172,7 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n\n${APPROVE_HELP}`);
     return 2;
   }
-  if (always && reject) {
-    process.stderr.write(`${status.err('--always and --reject are mutually exclusive.')}\n`);
-    return 2;
-  }
+  if (always && reject) return fail('--always and --reject are mutually exclusive.');
   const target = parseTarget(rest, APPROVE_HELP);
   if (!target) return 2;
 
@@ -208,15 +199,7 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
 
   const reply = reject ? 'reject' : always ? 'always' : 'once';
   try {
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.permission.reply({
-          requestID: requestId,
-          reply,
-          message,
-        }),
-      ),
-    );
+    await withKortixScope(resolved.auth, () => resolved.handle.answerPermission(requestId, reply, message));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -296,9 +279,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
 
   try {
     if (reject) {
-      await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.question.reject({ requestID: requestId })),
-      );
+      await withKortixScope(resolved.auth, () => resolved.handle.answerQuestion(requestId, null));
       process.stdout.write(`${status.ok(`Dismissed ${C.bold}${requestId}${C.reset}`)}\n`);
       return 0;
     }
@@ -307,10 +288,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
       answers = JSON.parse(answersJson);
     } else {
       if (request && request.questions.length > 1) {
-        process.stderr.write(
-          `${status.err('This request carries several questions — pass --answers with a string[][] payload.')}\n`,
-        );
-        return 2;
+        return fail('This request carries several questions — pass --answers with a string[][] payload.');
       }
       // OpenCode accepts the displayed option labels as the canonical answers.
       const info = request?.questions[0];
@@ -320,14 +298,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
       });
       answers = [[...mapped, ...(text !== undefined ? [text] : [])]];
     }
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.question.reply({
-          requestID: requestId,
-          answers,
-        }),
-      ),
-    );
+    await withKortixScope(resolved.auth, () => resolved.handle.answerQuestion(requestId, answers));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -399,8 +370,7 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
     };
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   const positional = rest.filter((a) => !a.startsWith('-'));
@@ -416,10 +386,7 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
   }
   const executionId = positional[2];
   if ((sub === 'approve' || sub === 'deny') && !executionId) {
-    process.stderr.write(
-      `${status.err(`\`approvals ${sub}\` needs an execution id (see \`sessions approvals ${sessionId} ls\`).`)}\n`,
-    );
-    return 2;
+    return fail(`\`approvals ${sub}\` needs an execution id (see \`sessions approvals ${sessionId} ls\`).`);
   }
 
   const located = await locateSessionAnywhere(

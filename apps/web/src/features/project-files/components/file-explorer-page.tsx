@@ -18,7 +18,7 @@ import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/runtime-files';
@@ -180,12 +180,12 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       if (!projectId || !projectRef) return;
       try {
         await downloadFile(projectId, projectRef, node.path, node.name);
-        successToast(`Downloaded ${node.name}`);
+        successToast(tHardcodedUi('i18nComplete.text7eca5e05f915', { value0: node.name }));
       } catch {
-        errorToast(`Failed to download ${node.name}`);
+        errorToast(tHardcodedUi('i18nComplete.textc85c359673e0', { value0: node.name }));
       }
     },
-    [projectId, projectRef],
+    [projectId, projectRef, tHardcodedUi],
   );
 
   const handleDownloadDir = useCallback(
@@ -202,12 +202,19 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       const newPath = parentPath ? `${parentPath}/${newName}` : newName;
       try {
         await renameMutation.mutateAsync({ from: node.path, to: newPath });
-        successToast(`Renamed to ${newName}`);
+        successToast(tHardcodedUi('i18nComplete.text3c6bd1e4217c', { value0: newName }));
       } catch (err) {
-        errorToast(`Failed to rename: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(
+          tHardcodedUi('i18nComplete.textd6f8c9c8e719', {
+            value0:
+              err instanceof Error
+                ? err.message
+                : tHardcodedUi.raw('i18nComplete.textada37a724fca'),
+          }),
+        );
       }
     },
-    [renameMutation],
+    [renameMutation, tHardcodedUi],
   );
 
   const handleDelete = useCallback((node: FileNode) => {
@@ -218,13 +225,18 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync({ filePath: deleteTarget.path });
-      successToast(`Deleted ${deleteTarget.name}`);
+      successToast(tHardcodedUi('i18nComplete.text37bad7de9098', { value0: deleteTarget.name }));
     } catch (err) {
-      errorToast(`Failed to delete: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.text5d4ff119f3d4', {
+          value0:
+            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.textada37a724fca'),
+        }),
+      );
     } finally {
       setDeleteTarget(null);
     }
-  }, [deleteTarget, deleteMutation]);
+  }, [deleteTarget, deleteMutation, tHardcodedUi]);
 
   const handleHistory = useCallback((node: FileNode) => {
     setHistoryPopoverPath(node.path);
@@ -233,17 +245,17 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   const handleCopy = useCallback(
     (node: FileNode) => {
       copyToClipboard(node.path, node.name, node.type);
-      successToast(`Copied "${node.name}" to clipboard`);
+      successToast(tHardcodedUi('i18nComplete.textd46dc6f5e3e3', { value0: node.name }));
     },
-    [copyToClipboard],
+    [copyToClipboard, tHardcodedUi],
   );
 
   const handleCut = useCallback(
     (node: FileNode) => {
       cutToClipboard(node.path, node.name, node.type);
-      successToast(`Cut "${node.name}" to clipboard`);
+      successToast(tHardcodedUi('i18nComplete.text80565873fe1e', { value0: node.name }));
     },
-    [cutToClipboard],
+    [cutToClipboard, tHardcodedUi],
   );
 
   const handleDropMove = useCallback(
@@ -253,12 +265,19 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       if (sourcePath === destPath) return;
       try {
         await renameMutation.mutateAsync({ from: sourcePath, to: destPath });
-        successToast(`Moved "${sourceName}"`);
+        successToast(tHardcodedUi('i18nComplete.text854362dd1a76', { value0: sourceName }));
       } catch (err) {
-        errorToast(`Failed to move: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(
+          tHardcodedUi('i18nComplete.text66d6798adfa9', {
+            value0:
+              err instanceof Error
+                ? err.message
+                : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+          }),
+        );
       }
     },
-    [renameMutation],
+    [renameMutation, tHardcodedUi],
   );
 
   const handlePaste = useCallback(async () => {
@@ -284,7 +303,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           const normalizedSourceDir = sourceDir === '' ? '.' : sourceDir;
           const normalizedDestDir = destDir === '' ? '.' : destDir;
           if (normalizedSourceDir === normalizedDestDir) {
-            errorToast('Item is already in this directory');
+            errorToast(tHardcodedUi.raw('i18nComplete.text7a1bdceb4943'));
             return;
           }
         }
@@ -297,18 +316,23 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       if (clipboard.operation === 'copy') {
         if (clipboard.type === 'file') {
           await copyMutation.mutateAsync({ sourcePath: clipboard.path, destPath });
-          successToast(`Copied "${clipboard.name}" here`);
+          successToast(tHardcodedUi('i18nComplete.textbb45167cfb4d', { value0: clipboard.name }));
         } else {
           await mkdirMutation.mutateAsync({ dirPath: destPath });
-          successToast(`Created copy of folder "${clipboard.name}" here (empty)`);
+          successToast(tHardcodedUi('i18nComplete.textd6318e7ae71a', { value0: clipboard.name }));
         }
       } else {
         await renameMutation.mutateAsync({ from: clipboard.path, to: destPath });
-        successToast(`Moved "${clipboard.name}" here`);
+        successToast(tHardcodedUi('i18nComplete.text59004552be50', { value0: clipboard.name }));
         clearClipboard();
       }
     } catch (err) {
-      errorToast(`Failed to paste: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(
+        tHardcodedUi('i18nComplete.texta619e901f9c0', {
+          value0:
+            err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2'),
+        }),
+      );
     }
   }, [
     clipboard,
@@ -318,6 +342,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     renameMutation,
     mkdirMutation,
     clearClipboard,
+    tHardcodedUi,
   ]);
 
   useEffect(() => {
@@ -407,7 +432,9 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
                     <Skeleton className="mb-3 h-4 w-16" />
                     <div
                       className="grid gap-2"
-                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                      }}
                     >
                       {Array.from({ length: 6 }).map((_, i) => (
                         <Skeleton key={`f${i}`} className="h-10 rounded-lg" />
@@ -418,7 +445,9 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
                     <Skeleton className="mb-3 h-4 w-12" />
                     <div
                       className="grid gap-2.5"
-                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                      }}
                     >
                       {Array.from({ length: 8 }).map((_, i) => (
                         <Skeleton key={`fi${i}`} className="h-[138px] rounded-lg" />
@@ -441,10 +470,14 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
               title={tHardcodedUi.raw(
                 'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
               )}
-              description={error instanceof Error ? error.message : 'Unknown error'}
+              description={
+                error instanceof Error
+                  ? error.message
+                  : tHardcodedUi.raw('i18nComplete.text27c2ccd962c2')
+              }
               action={
                 <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
-                  Retry
+                  {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
                 </Button>
               }
             />
@@ -544,7 +577,8 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
+              {tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}{' '}
+              {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {tHardcodedUi.raw(
@@ -565,7 +599,9 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>
+              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
+            </AlertDialogCancel>
             <AlertDialogAction
               ref={deleteButtonRef}
               onClick={(e) => {

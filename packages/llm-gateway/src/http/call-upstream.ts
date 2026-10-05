@@ -1,7 +1,15 @@
 import type { UpstreamDescriptor } from '../domain';
-import { ClientAbortError, UpstreamMisconfiguredError } from '../errors';
+import { ClientAbortError, UpstreamHttpError, UpstreamMisconfiguredError } from '../errors';
 import type { AiSdkFetch } from '../transports/ai-sdk';
 import { resolveTransportKind } from '../transports/route-kind';
+// The SHARED implementation. This module carried its own copy using
+// `value.replace(/\/+$/, '')`, which CodeQL flags as `js/polynomial-redos`
+// (high, alert #5907): on a long run of slashes that is not at the end, the
+// engine retries the quantifier from every start position. The copy in
+// transports/ai-sdk/model.ts was rewritten to a linear charCodeAt loop for
+// alert #4731; this one was missed because the logic was duplicated. Importing
+// it means there is one implementation to keep correct.
+import { trimTrailingSlash } from '../transports/ai-sdk/model';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -11,8 +19,8 @@ export interface CallUpstreamOptions {
    *  signal so a caller disconnect aborts the in-flight upstream fetch too,
    *  instead of only bounding it by the retry timeout. */
   signal?: AbortSignal;
-  // Kortix-internal correlation id for this request (see pipeline/handler.ts's
-  // newRequestId()). Sent to the upstream as a best-effort header so a failed
+  // Kortix-internal correlation id for this request (see pipeline/simple-handler.ts's
+  // requestId()). Sent to the upstream as a best-effort header so a failed
   // or slow completion can be cross-referenced against the provider's own
   // request logs/support tooling — every provider here tolerates unknown
   // headers, so this is safe to always send rather than gated per-transport.
@@ -61,8 +69,24 @@ function toAiSdkFetch(fetchImpl: FetchImpl): AiSdkFetch {
   return (input, init) => fetchImpl(String(input), init ?? {});
 }
 
-function trimTrailingSlash(value: string): string {
-  return value.endsWith('/') ? value.replace(/\/+$/, '') : value;
+// OpenRouter extensions that a strict OpenAI-schema upstream (OpenCode Zen)
+// answers with 400 "Extra inputs are not permitted" (probed 2026-10-01).
+// Clients replay them after an OpenRouter turn; the Responses ingress sends `reasoning`.
+const NON_OPENAI_BODY_FIELDS = ['reasoning', 'usage', 'provider', 'transforms', 'verbosity', 'modalities', 'safety_identifier'];
+
+function toStrictChat(body: Record<string, any>): Record<string, unknown> {
+  const out = { ...body };
+  if (out.reasoning_effort === undefined && typeof out.reasoning?.effort === 'string') out.reasoning_effort = out.reasoning.effort;
+  for (const field of NON_OPENAI_BODY_FIELDS) delete out[field];
+  if (!Array.isArray(out.messages)) return out;
+  out.messages = out.messages.map(({ reasoning, reasoning_details, annotations, ...message }: Record<string, any>) => {
+    const details = Array.isArray(reasoning_details) ? reasoning_details.map((d) => d?.text ?? '').join('') : '';
+    const prior = details || (typeof reasoning === 'string' ? reasoning : '');
+    if (message.reasoning_content === undefined && prior) message.reasoning_content = prior;
+    if (Array.isArray(message.content)) message.content = message.content.map(({ cache_control, ...part }: Record<string, unknown>) => part);
+    return message;
+  });
+  return out;
 }
 
 function directOpenAiRequest(
@@ -77,7 +101,7 @@ function directOpenAiRequest(
   if (descriptor.headers) Object.assign(headers, descriptor.headers);
   if (opts.requestId) headers['x-request-id'] = opts.requestId;
 
-  let payload = body;
+  let payload = descriptor.strictChatSchema ? toStrictChat(body) : body;
   if (descriptor.bodyExtras) payload = { ...payload, ...descriptor.bodyExtras };
   if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
 
@@ -88,6 +112,96 @@ function directOpenAiRequest(
     body: JSON.stringify(payload),
     signal: opts.signal,
   });
+}
+
+/**
+ * How long a direct stream may send only SSE comments before the gateway
+ * answers the client anyway. OpenRouter answers 200 at once, sends
+ * `: OPENROUTER PROCESSING` through a prefill, and reports an endpoint's
+ * rejection as the first `data:` frame (a context overflow arrived within about
+ * 1 s of the headers on 2026-09-30). The client's headers wait at most this
+ * long; the Cloudflare response deadline in front of the API is 100 s.
+ */
+export const DIRECT_STREAM_COMMIT_MS = 10_000;
+
+// Comment bytes read without a `data:` frame before the stream is committed anyway.
+const DIRECT_STREAM_PEEK_MAX_CHARS = 64 * 1024;
+
+/**
+ * Reads a streamed direct response up to its first `data:` frame, for at most
+ * `commitAfterMs`. An error frame there served nothing, so it throws the
+ * `UpstreamHttpError` a non-2xx answer throws: dispatch fails over, and the
+ * client gets an HTTP error. OpenCode compacts on a 400
+ * `context_length_exceeded` and retries a 429; an in-band error frame is an
+ * UnknownError to it, and the turn ends. Any other first frame, a timeout, a
+ * client abort, or EOF returns a response that replays the bytes read and
+ * continues the body, as the AI SDK transport's `openStream` does for its own
+ * streams. The relay then settles a stopped prefill as it always did.
+ */
+export async function openDirectStream(
+  response: Response,
+  provider: string,
+  { commitAfterMs = DIRECT_STREAM_COMMIT_MS, signal }: { commitAfterMs?: number; signal?: AbortSignal } = {},
+): Promise<Response> {
+  if (!response.ok || !response.body) return response;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const read: Uint8Array[] = [];
+  let text = '';
+  let inFlight: ReturnType<typeof reader.read> | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const commit = new Promise<'commit'>((resolve) => {
+    timer = setTimeout(() => resolve('commit'), signal?.aborted ? 0 : commitAfterMs);
+    signal?.addEventListener('abort', () => resolve('commit'), { once: true });
+  });
+  try {
+    while (text.length <= DIRECT_STREAM_PEEK_MAX_CHARS) {
+      const reading = reader.read();
+      inFlight = reading;
+      const next = await Promise.race([reading, commit]);
+      if (next === 'commit') {
+        // The replay below hands this read to the relay, which handles its result.
+        reading.catch(() => {});
+        break;
+      }
+      inFlight = null;
+      if (next.done) break;
+      read.push(next.value);
+      text += decoder.decode(next.value, { stream: true });
+      const complete = text.slice(0, text.lastIndexOf('\n') + 1);
+      const line = complete.split('\n').find((l) => l.startsWith('data:'));
+      if (!line) continue;
+      const payload = line.slice(5).trim();
+      let error: { code?: unknown } | undefined;
+      try {
+        error = (JSON.parse(payload) as { error?: { code?: unknown } }).error;
+      } catch {
+        // `[DONE]` or a non-JSON frame: not an error frame.
+      }
+      if (error && typeof error === 'object') {
+        await reader.cancel().catch(() => {});
+        const code = Number(error.code);
+        throw new UpstreamHttpError(code >= 400 && code <= 599 ? code : 502, payload, provider);
+      }
+      break;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const chunk = read.shift();
+        if (chunk) return controller.enqueue(chunk);
+        const next = await (inFlight ?? reader.read());
+        inFlight = null;
+        if (next.done) controller.close();
+        else controller.enqueue(next.value);
+      },
+      cancel: (reason) => reader.cancel(reason),
+    }),
+    { status: response.status, statusText: response.statusText, headers: response.headers },
+  );
 }
 
 export async function callUpstream(
@@ -104,7 +218,9 @@ export async function callUpstream(
 
   const transportKind = resolveTransportKind(body, descriptor);
   if (transportKind === 'openai-compat' || transportKind === 'custom') {
-    return directOpenAiRequest(body, descriptor, opts);
+    const streaming = body.stream === true;
+    const response = await directOpenAiRequest(body, descriptor, opts);
+    return streaming ? openDirectStream(response, descriptor.provider, { signal: clientSignal }) : response;
   }
 
   const fetchImpl: AiSdkFetch | undefined = opts.fetchImpl

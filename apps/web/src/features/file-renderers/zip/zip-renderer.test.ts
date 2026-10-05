@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import JSZip from 'jszip';
 
-import { readZipEntries } from './zip-renderer';
 import { buildZipTree, MAX_ZIP_ENTRIES, zipSummary } from './zip-entries';
+import { readZipEntries } from './zip-renderer';
 
 /**
  * These build a REAL archive and read it back, rather than hand-rolling a

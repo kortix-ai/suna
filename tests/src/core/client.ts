@@ -6,8 +6,6 @@
  *
  *   await client.as(P.OWNER).get("/v1/projects/:id", { params: { id } }).then(r => r.status(200))
  */
-import { connect as netConnect } from 'node:net';
-import { connect as tlsConnect } from 'node:tls';
 import { currentRecorder } from './context';
 import { assert, BodyAssert } from './expect';
 import { log } from './log';
@@ -15,7 +13,9 @@ import type { Captured } from './result';
 
 export type Auth =
   | { mode: 'none' }
-  | { mode: 'bearer'; token: string }
+  // `ensureFresh` renews a short-lived token before a request uses it (see
+  // fixtures/supabase-session.ts). A plain token string has none.
+  | { mode: 'bearer'; token: string; ensureFresh?: () => Promise<void> }
   | { mode: 'query-token'; token: string } // ?token= (preview proxy / WS)
   | { mode: 'header-token'; token: string } // X-Kortix-Token
   | { mode: 'cookie'; cookie: string }; // raw Cookie header
@@ -62,8 +62,6 @@ export interface ReqOpts {
   raw?: boolean;
   /** Per-request timeout (ms). */
   timeoutMs?: number;
-  /** Preserve encoded path segments for security probes. GET and HEAD only. */
-  pathAsIs?: boolean;
 }
 
 const SENSITIVE_HEADERS = new Set([
@@ -72,6 +70,7 @@ const SENSITIVE_HEADERS = new Set([
   'cookie',
   'set-cookie',
   'x-kortix-token',
+  'x-kortix-ci-passthrough',
   'x-kortix-signature',
   'x-hub-signature',
   'x-hub-signature-256',
@@ -125,81 +124,6 @@ function redactBodyText(text: string | undefined): string | undefined {
       (m) => mask(m),
     );
   }
-}
-
-async function requestPathAsIs(
-  origin: string,
-  path: string,
-  method: 'GET' | 'HEAD',
-  headers: Headers,
-  timeoutMs: number,
-): Promise<Response> {
-  const target = new URL(origin);
-  return new Promise<Response>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const port = Number(target.port || (target.protocol === 'https:' ? 443 : 80));
-    const hostHeader = target.port ? `${target.hostname}:${target.port}` : target.hostname;
-    const send = () => {
-      const lines = [`${method} ${path} HTTP/1.1`, `Host: ${hostHeader}`, 'Connection: close'];
-      for (const [name, value] of Object.entries(headersToObject(headers))) {
-        if (name.toLowerCase() !== 'host' && name.toLowerCase() !== 'connection') {
-          lines.push(`${name}: ${value}`);
-        }
-      }
-      socket.write(`${lines.join('\r\n')}\r\n\r\n`);
-    };
-    const socket =
-      target.protocol === 'https:'
-        ? tlsConnect({ host: target.hostname, port, servername: target.hostname }, send)
-        : netConnect({ host: target.hostname, port }, send);
-    socket.setTimeout(timeoutMs, () =>
-      socket.destroy(new Error(`request timed out after ${timeoutMs}ms`)),
-    );
-    socket.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-    socket.on('error', reject);
-    socket.on('end', () => {
-      const raw = Buffer.concat(chunks);
-      const headerEnd = raw.indexOf('\r\n\r\n');
-      if (headerEnd < 0) {
-        reject(new Error('raw HTTP response had no header terminator'));
-        return;
-      }
-      const [statusLine, ...headerLines] = raw
-        .subarray(0, headerEnd)
-        .toString('latin1')
-        .split('\r\n');
-      const status = Number(statusLine?.match(/^HTTP\/\d(?:\.\d)?\s+(\d{3})/)?.[1] ?? 0);
-      if (status < 100) {
-        reject(new Error(`raw HTTP response had invalid status line: ${statusLine ?? ''}`));
-        return;
-      }
-      const responseHeaders = new Headers();
-      for (const line of headerLines) {
-        const separator = line.indexOf(':');
-        if (separator > 0) {
-          responseHeaders.append(line.slice(0, separator), line.slice(separator + 1).trim());
-        }
-      }
-      let body = raw.subarray(headerEnd + 4);
-      if (responseHeaders.get('transfer-encoding')?.toLowerCase().includes('chunked')) {
-        const decoded: Buffer[] = [];
-        let offset = 0;
-        while (offset < body.length) {
-          const lineEnd = body.indexOf('\r\n', offset);
-          if (lineEnd < 0) break;
-          const sizeToken = body.subarray(offset, lineEnd).toString('ascii').split(';')[0] ?? '';
-          const size = Number.parseInt(sizeToken, 16);
-          if (!Number.isFinite(size) || size === 0) break;
-          const chunkStart = lineEnd + 2;
-          decoded.push(body.subarray(chunkStart, chunkStart + size));
-          offset = chunkStart + size + 2;
-        }
-        body = Buffer.concat(decoded);
-      }
-      const responseBody = method === 'HEAD' || status === 204 || status === 304 ? null : body;
-      resolve(new Response(responseBody, { status, headers: responseHeaders }));
-    });
-  });
 }
 
 /** Wraps a captured response with assertion sugar. */
@@ -509,26 +433,6 @@ function announceBreaker(): void {
 export class Client {
   private readonly origin: string;
 
-  /**
-   * Build a client for a service URL whose public mount can include a path.
-   *
-   * The normal constructor is API-oriented: it deliberately discards `/v1`
-   * because the route templates already contain the API mount. A preview puts
-   * the standalone gateway below `/_gateway`, so gateway requests must keep
-   * that prefix without changing their route templates or coverage keys.
-   */
-  static forBaseUrl(baseUrl: string): Client {
-    const url = new URL(baseUrl);
-    const pathPrefix = url.pathname.replace(/\/+$/, '');
-    return new Client(
-      url.origin,
-      ANON,
-      60_000,
-      Number(process.env.KE2E_GATEWAY_RETRIES ?? 3),
-      pathPrefix,
-    );
-  }
-
   constructor(
     apiUrl: string,
     private readonly identity: Identity = ANON,
@@ -545,20 +449,16 @@ export class Client {
     private readonly transientGatewayRetries = Number(
       process.env.KE2E_GATEWAY_RETRIES ?? 3,
     ),
-    private readonly pathPrefix = '',
   ) {
-    this.origin = new URL(apiUrl).origin;
+    const base = new URL(apiUrl);
+    // Route templates already include /v1. Keep any reverse-proxy mount before it.
+    const mount = base.pathname.replace(/\/+$/, '').replace(/\/v1$/, '');
+    this.origin = base.origin + mount;
   }
 
   /** Clone bound to a principal/identity. */
   as(identity: Identity): Client {
-    return new Client(
-      this.origin,
-      identity,
-      this.defaultTimeoutMs,
-      this.transientGatewayRetries,
-      this.pathPrefix,
-    );
+    return new Client(this.origin, identity, this.defaultTimeoutMs, this.transientGatewayRetries);
   }
 
   withBearer(token: string, label = 'raw'): Client {
@@ -571,7 +471,7 @@ export class Client {
    * Callers must opt in only for requests that are safe to repeat.
    */
   withTransientGatewayRetries(retries = 3): Client {
-    return new Client(this.origin, this.identity, this.defaultTimeoutMs, retries, this.pathPrefix);
+    return new Client(this.origin, this.identity, this.defaultTimeoutMs, retries);
   }
 
   get(t: string, o?: ReqOpts) {
@@ -617,11 +517,7 @@ export class Client {
         path = path.replace(new RegExp(`:${k}(?=/|$|\\.)`, 'g'), encodeURIComponent(String(v)));
       }
     }
-    const requestPath =
-      this.pathPrefix && path !== this.pathPrefix && !path.startsWith(`${this.pathPrefix}/`)
-        ? `${this.pathPrefix}${path.startsWith('/') ? '' : '/'}${path}`
-        : path;
-    const url = new URL(this.origin + requestPath);
+    const url = new URL(this.origin + path);
     if (opts?.query) {
       for (const [k, v] of Object.entries(opts.query)) {
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
@@ -641,14 +537,12 @@ export class Client {
       }
     }
     for (const [k, v] of Object.entries(opts?.headers ?? {})) headers.set(k, v);
+    // Renew before reading the token. A renewal that cannot produce a usable
+    // token throws here, so the request is never sent with an expired JWT.
+    const auth = this.identity.auth;
+    if (auth.mode === 'bearer' && auth.ensureFresh) await auth.ensureFresh();
     this.applyAuth(headers, url);
     applyCiPassthrough(headers);
-
-    if (opts?.pathAsIs && method !== 'GET' && method !== 'HEAD') {
-      throw new Error('pathAsIs supports GET and HEAD requests only');
-    }
-    const pathAsWritten = `${requestPath.split('?')[0]}${url.search}`;
-    const requestUrl = opts?.pathAsIs ? `${this.origin}${pathAsWritten}` : url.toString();
 
     const routeTemplate = `${method} ${template}`;
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
@@ -661,27 +555,19 @@ export class Client {
       const started = performance.now();
       let res: Response;
       try {
-        res = opts?.pathAsIs
-          ? await requestPathAsIs(
-              this.origin,
-              pathAsWritten,
-              method as 'GET' | 'HEAD',
-              headers,
-              timeoutMs,
-            )
-          : await fetch(url, {
-              method,
-              headers,
-              body: bodyInit,
-              signal: AbortSignal.timeout(timeoutMs),
-              redirect: 'manual',
-            });
+        res = await fetch(url, {
+          method,
+          headers,
+          body: bodyInit,
+          signal: AbortSignal.timeout(timeoutMs),
+          redirect: 'manual',
+        });
       } catch (err: any) {
         // Surface as a captured network failure.
         const ms = performance.now() - started;
         const captured: Captured = {
           routeTemplate,
-          req: { method, url: requestUrl, headers: redactHeaders(headersToObject(headers)) },
+          req: { method, url: url.toString(), headers: redactHeaders(headersToObject(headers)) },
           res: { status: 0, headers: {}, bodyText: String(err?.message ?? err) },
           ms,
         };
@@ -696,7 +582,7 @@ export class Client {
           continue;
         }
         const e = new Error(
-          `network error ${method} ${requestUrl} after ${attempt}/${maxAttempts} attempt(s): ` +
+          `network error ${method} ${url} after ${attempt}/${maxAttempts} attempt(s): ` +
             `${err?.message ?? err}` +
             (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
         );
@@ -722,7 +608,7 @@ export class Client {
         routeTemplate,
         req: {
           method,
-          url: requestUrl,
+          url: url.toString(),
           headers: redactHeaders(headersToObject(headers)),
           body: redactBodyText(typeof bodyInit === 'string' ? bodyInit : undefined),
         },
@@ -765,7 +651,7 @@ export class Client {
       return response;
     }
 
-    throw new Error(`request attempt loop exhausted for ${method} ${requestUrl}`);
+    throw new Error(`request attempt loop exhausted for ${method} ${url}`);
   }
 }
 

@@ -146,9 +146,7 @@ describe('a hidden checklist costs nothing', () => {
     // Every probe is part of the gate — a new query added without a clause
     // here would let the band paint before that step's answer is known.
     for (const probe of ['connectors', 'triggers', 'slack', 'access', 'detail']) {
-      expect(checklistSource).toMatch(
-        new RegExp(`${probe}\\.isSuccess \\|\\| ${probe}\\.isError`),
-      );
+      expect(checklistSource).toMatch(new RegExp(`${probe}\\.isSuccess \\|\\| ${probe}\\.isError`));
     }
   });
 
@@ -156,7 +154,7 @@ describe('a hidden checklist costs nothing', () => {
   // "0 of 6" on its way to the real number, because the band it lives in does
   // not exist yet.
   test('the counter has no presence gate of its own', () => {
-    expect(checklistSource).toContain('{completed} of {steps.length}');
+    expect(checklistSource).toContain("t('setup.progress', { completed, total: steps.length })");
     expect(checklistSource).not.toContain('{settled && (');
   });
 
@@ -195,8 +193,10 @@ describe('the checklist motion follows the house rules', () => {
 
   test('the re-rank is a layout move on the in-out curve, and opts out under reduced motion', () => {
     expect(checklistSource).toContain('<m.div layout transition={REORDER}>');
-    expect(checklistSource).toContain('const REORDER = { duration: 0.2, ease: [0.77, 0, 0.175, 1] }');
-    expect(checklistSource).toContain('return reduceMotion ? row : (');
+    expect(checklistSource).toContain(
+      'const REORDER = { duration: 0.2, ease: [0.77, 0, 0.175, 1] }',
+    );
+    expect(checklistSource).toMatch(/return reduceMotion \? \(\s*row\s*\) : \(/);
   });
 
   test('the list is ordered through the pure helper, never by sorting the prop', () => {
@@ -216,7 +216,7 @@ describe('the checklist motion follows the house rules', () => {
     expect(checklistSource).toContain('useReducedMotion()');
     // The height animation is the vestibular trigger, so reduced motion must
     // opt out of it entirely rather than merely shortening it.
-    expect(checklistSource).toContain("reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }");
+    expect(checklistSource).toContain('reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }');
   });
 
   // Six checks popping on every paint is noise; one popping when the user
@@ -240,7 +240,9 @@ describe('the checklist motion follows the house rules', () => {
       checklistSource.indexOf('min-w-0 flex-1 truncate'),
     );
     expect(lane).toContain('<CircleIcon className="text-border size-4.5" />');
-    expect(lane).toContain('<CheckCircleIcon weight="fill" className="text-kortix-blue size-4.5" />');
+    expect(lane).toContain(
+      '<CheckCircleIcon weight="fill" className="text-kortix-blue size-4.5" />',
+    );
     // Every glyph in the lane is the same size, and the lane matches it.
     expect([...lane.matchAll(/size-[\d.]+/g)].map((m) => m[0])).toEqual([
       'size-4.5',

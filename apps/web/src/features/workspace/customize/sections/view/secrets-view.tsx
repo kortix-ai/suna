@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useTranslations } from 'next-intl';
 
 import {
@@ -12,7 +13,7 @@ import {
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -66,7 +67,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useAuth } from '@/features/providers/auth-provider';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { AudienceFields } from '@/features/workspace/customize/sections/add-account-fields';
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import {
@@ -79,6 +82,8 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
+  type ConnectionShare,
+  type SecretSharePrincipal,
   type ProjectSecret,
   type ProjectSecretsResponse,
   type SecretConsumer,
@@ -100,6 +105,7 @@ import {
   qk,
   refreshProjectProviderState,
   useFeatureFlag,
+  useProjectAccountId,
   useProjectConfig,
 } from '@kortix/sdk/react';
 import {
@@ -145,16 +151,26 @@ import {
   rollbackOptimisticProjectSecretSave,
 } from './secret-optimistic-cache';
 
+import { AudienceBadge } from './audience-badge';
+import { audienceVisibility } from './connector-connections';
+import {
+  type SecretAudienceDraft,
+  audienceDraftFrom,
+  sameSharedWith,
+  sharedWithFrom,
+} from './secret-audience';
+
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 
 type Requirement = 'required' | 'optional' | null;
 
 /**
- * A project secret is `{ identifier, key, value }` — authorization is
- * centralized on the agent grant (by identifier, in kortix.yaml); this page is
- * project-wide create/configure/value only. `identifier` is the unique handle;
- * `key` (the env var name) is NOT unique — two identifiers may share one.
+ * A project secret is `{ identifier, key, value }`. Which AGENT receives it is
+ * the agent grant (by identifier, in kortix.yaml); which PEOPLE may use the
+ * value is its audience (`sharedWith`, the same "Who can use it" as a connector
+ * account). `identifier` is the unique handle; `key` (the env var name) is NOT
+ * unique — two identifiers may share one.
  */
 export interface SecretRow {
   identifier: string;
@@ -173,6 +189,10 @@ export interface SecretRow {
   requiresRotation: boolean;
   /** 'no_agent_grant' only when the API is certain. Null covers "unknown" too. */
   deliveryBlockedReason: SecretDeliveryBlockedReason | null;
+  /** Who can use the shared value. Empty = everyone in the project. */
+  sharedWith: ConnectionShare[];
+  /** False when it is shared with specific people and the viewer is not one of them. */
+  usable: boolean;
 }
 
 type SecretSavePlan = {
@@ -185,10 +205,13 @@ type SecretSavePlan = {
   shouldSetStrategy: boolean;
   egressPolicy: SecretEgressPolicy | undefined;
   bindingChanges: { bind: string[]; unbind: string[] };
+  /** The new audience; absent when Save leaves it unchanged. */
+  sharedWith?: SecretSharePrincipal[];
   optimistic: OptimisticProjectSecretInput;
 };
 
 export function SecretsView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -212,7 +235,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
   });
 
@@ -223,6 +246,8 @@ export function SecretsView({ projectId }: { projectId: string }) {
   // read-only page, and one denied the leaf saw editable controls that 403.
   const canManage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
+  const viewerId = useAuth().user?.id ?? null;
+  const tSharing = useI18nTranslations('accessSharing');
 
   // A legacy/enforced row keeps its "Enforce at the network" badge even with the
   // flag off, so the legend must still explain that value when one exists.
@@ -277,7 +302,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
 
   return (
     <CapabilityPageShell
-      title="Secrets"
+      title={tI18nComplete.raw('textd8707d411d99')}
       /* "the real value" is exact, not hedged: an enforced secret DOES put an
          env var in the sandbox — an opaque handle under the same key
          (`apps/api/src/projects/secrets.ts`
@@ -285,7 +310,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
          credential. "Environment variable is the only exposure that puts a
          real value in the sandbox" is the claim the API actually guarantees
          (`deliversPlaintextToSandbox`, `apps/api/src/secrets/strategy.ts`). */
-      description="Encrypted credentials this project keeps out of its repository. Access decides whether agent code can read each value — Environment variable is the only exposure that sets the real value as an environment variable in the sandbox; every other one keeps it outside."
+      description={tI18nComplete.raw('texteca47e3afa10')}
       search={
         /* Hidden until there is a list to search, the same rule Triggers
            uses: a filter over nothing is a control that cannot do anything. */
@@ -295,7 +320,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               <Search />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
-              placeholder="Search secrets"
+              placeholder={tI18nComplete.raw('textb5814f05b923')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               variant="popover"
@@ -315,16 +340,16 @@ export function SecretsView({ projectId }: { projectId: string }) {
           <Button asChild variant="secondary" size="sm" className="gap-1.5">
             <Link href="/docs/project/secrets" target="_blank" rel="noreferrer">
               <BookOpenIcon className="size-3.5 shrink-0" />
-              Docs
+              {tI18nComplete.raw('text7af023c43013')}
             </Link>
           </Button>
           {showContent && canManage ? (
             <NewEntityMenu
-              label="New"
+              label={tI18nComplete.raw('text18fdd549b2ed')}
               pending={configure.pending}
               onChat={() => configure.start(newConfigPrompt('secret'))}
               manual={{
-                description: 'Name it, paste the value, choose delivery.',
+                description: tI18nComplete.raw('textefd041115e9e'),
                 onSelect: openCreate,
               }}
             />
@@ -351,10 +376,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
             title={tHardcodedUi.raw(
               'appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets',
             )}
-            description={(secretsQuery.error as Error)?.message ?? 'Failed to load secrets'}
+            description={
+              (secretsQuery.error as Error)?.message ?? tI18nComplete.raw('text398e53499fed')
+            }
             action={
               <Button variant="outline" size="sm" onClick={() => secretsQuery.refetch()}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
           />
@@ -364,28 +391,32 @@ export function SecretsView({ projectId }: { projectId: string }) {
               <InfoBanner
                 tone="warning"
                 icon={<DangerTriangleSolid weight="fill" />}
-                title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set`}
+                title={tI18nComplete('text10d33709a797', {
+                  value0: missingRequired.length,
+                  value1: missingRequired.length === 1 ? 'secret' : 'secrets',
+                })}
               >
-                Sessions can still start, but the agent will be missing these values.
+                {tI18nComplete.raw('textc18dc13ca821')}
               </InfoBanner>
             )}
 
             {filtered.length === 0 ? (
               query.trim() ? (
                 <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                  No matches for <span className="text-foreground font-mono">{query}</span>.
+                  {tI18nComplete.raw('texta8897de42124')}
+                  <span className="text-foreground font-mono">{query}</span>.
                 </p>
               ) : (
                 <EmptyState
                   icon={KeyRound}
                   size="sm"
-                  title="No secrets yet"
-                  description="Add one to inject it into every new session."
+                  title={tI18nComplete.raw('text5aa40906d187')}
+                  description={tI18nComplete.raw('text234482872368')}
                   action={
                     canManage ? (
                       <Button variant="outline" size="sm" className="gap-1.5" onClick={openCreate}>
                         <Plus className="size-3.5 shrink-0" />
-                        Add secret
+                        {tI18nComplete.raw('textf57a23c69b34')}
                       </Button>
                     ) : undefined
                   }
@@ -395,11 +426,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
               <Table className="overflow-hidden rounded-md">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead>Identifier</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead>Access</TableHead>
+                    <TableHead>{tI18nComplete.raw('text9b10587f84a2')}</TableHead>
+                    <TableHead>{tI18nComplete.raw('text8e37953d23da')}</TableHead>
+                    <TableHead>{tI18nComplete.raw('textec5ba0abb717')}</TableHead>
+                    <TableHead>{tSharing('whoCanUse')}</TableHead>
                     <TableHead className="w-[52px]">
-                      <span className="sr-only">Actions</span>
+                      <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -410,6 +442,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                       row={row}
                       llmGatewayEnabled={llmGatewayEnabled}
                       canManage={canManage}
+                      viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
                       onEdit={() => openEdit(row)}
                       onDelete={() => setDeleteRow(row)}
@@ -445,20 +478,21 @@ export function SecretsView({ projectId }: { projectId: string }) {
         onOpenChange={(open) => {
           if (!open) setDeleteRow(null);
         }}
-        title="Delete secret"
+        title={tI18nComplete.raw('text1a48c8c83043')}
         description={
-          deleteRow ? `Delete ${deleteRow.identifier}? The stored value can't be recovered.` : ''
+          deleteRow ? tI18nComplete('text05b1f0cd964e', { value0: deleteRow.identifier }) : ''
         }
-        confirmLabel="Delete"
+        confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
         onConfirm={() => {
           if (!deleteRow) return;
           removeShared.mutate(deleteRow.identifier, {
             onSuccess: () => {
               setDeleteRow(null);
-              successToast('Secret deleted');
+              successToast(tI18nComplete.raw('text50c9e2de86db'));
             },
-            onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not delete secret'),
+            onError: (e) =>
+              errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text7673a45d3385')),
           });
         }}
         isPending={removeShared.isPending}
@@ -485,6 +519,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
  * Restating them here in JSX is how the legend and the badge start disagreeing.
  */
 function SecretsAccessExplainer({ showEnforced }: { showEnforced: boolean }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   return (
     /* `w-full` because the shell's filters row is a flex line: without it the
@@ -495,11 +530,11 @@ function SecretsAccessExplainer({ showEnforced }: { showEnforced: boolean }) {
         <CaretDownIcon
           className={cn('size-3.5 shrink-0 transition-transform', open ? '' : '-rotate-90')}
         />
-        What each Access value means
+        {tI18nComplete.raw('text0d8c9f89b826')}
       </CollapsibleTrigger>
       <CollapsibleContent>
         <dl className="border-border bg-sidebar mt-2 flex flex-col gap-2.5 rounded-md border p-3">
-          {secretDeliveryLegend(showEnforced).map((mode) => (
+          {secretDeliveryLegend(showEnforced, tI18nComplete).map((mode) => (
             <div key={mode.key} className="flex flex-col gap-1 sm:flex-row sm:gap-3">
               <dt className="shrink-0 sm:w-44">
                 <Badge variant={mode.tone} size="sm">
@@ -528,22 +563,30 @@ function SecretsAccessExplainer({ showEnforced }: { showEnforced: boolean }) {
               show a badge with no matching option, and that reads as a bug
               unless the page says who set it. */}
           <p className="text-muted-foreground border-border mt-0.5 border-t pt-2.5 text-xs text-pretty">
-            {showEnforced ? 'The first values' : 'The first two'} are the exposure you choose.
+            {showEnforced
+              ? tI18nComplete.raw('text8aa824e472ff')
+              : tI18nComplete.raw('texte5a718af362a')}{' '}
+            {tI18nComplete.raw('texte1673f438808')}
             {showEnforced ? (
               <>
                 {' '}
-                <span className="text-foreground">Enforce at the network</span> reaches a session
-                only when its agent lists the identifier under{' '}
-                <code className="font-mono">secrets</code> in{' '}
+                <span className="text-foreground">
+                  {tI18nComplete.raw('text82ff5452a98d')}
+                </span>{' '}
+                {tI18nComplete.raw('text49e63b9b35ec')} <code className="font-mono">secrets</code>{' '}
+                {tI18nComplete.raw('text582967534d0f')}{' '}
                 <code className="font-mono">kortix.yaml</code>;{' '}
-                <code className="font-mono">secrets: all</code> does not count.
+                <code className="font-mono">secrets: all</code>{' '}
+                {tI18nComplete.raw('text17313fb7bf82')}
               </>
             ) : null}{' '}
-            The last three are usages Kortix assigns —{' '}
-            <span className="text-foreground">LLM gateway</span> when you connect a model provider,{' '}
-            <span className="text-foreground">Connector</span> when you bind a connector,{' '}
-            <span className="text-foreground">Git</span> when you connect a repository — and each is
-            gated the same way; none of them can be chosen or changed here.
+            {tI18nComplete.raw('text52c3509531f1')}{' '}
+            <span className="text-foreground">{tI18nComplete.raw('textad26af1426b3')}</span>{' '}
+            {tI18nComplete.raw('textbbdce4215935')}{' '}
+            <span className="text-foreground">{tI18nComplete.raw('text8f0d706fff25')}</span>{' '}
+            {tI18nComplete.raw('text41232780dc9c')}{' '}
+            <span className="text-foreground">{tI18nComplete.raw('textb949c922b6ef')}</span>{' '}
+            {tI18nComplete.raw('text06a6228ef85f')}
           </p>
         </dl>
       </CollapsibleContent>
@@ -598,6 +641,8 @@ export function buildRows(
     egressPolicy: item.egress_policy ?? null,
     requiresRotation: Boolean(item.requires_rotation),
     deliveryBlockedReason: secretDeliveryBlockedReason(item),
+    sharedWith: item.shared_with ?? [],
+    usable: item.usable ?? true,
   });
 
   const rows: SecretRow[] = [];
@@ -627,6 +672,8 @@ export function buildRows(
       egressPolicy: null,
       requiresRotation: false,
       deliveryBlockedReason: null,
+      sharedWith: [],
+      usable: true,
     });
   }
 
@@ -664,25 +711,29 @@ function statusLabel(row: SecretRow): string {
  *               "required field" convention every form uses
  */
 function SecretMarks({ row }: { row: SecretRow }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   if (!row.system && row.requirement !== 'required') return null;
   return (
     <span className="flex shrink-0 items-center gap-1">
       {row.system ? (
-        <Hint label="Managed by Kortix" side="top">
+        <Hint label={tI18nComplete.raw('texte9ec6c0ad396')} side="top">
           <Lock
             className="text-muted-foreground size-3.5 shrink-0"
-            aria-label="Managed by Kortix"
+            aria-label={tI18nComplete.raw('texte9ec6c0ad396')}
           />
         </Hint>
       ) : null}
       {row.requirement === 'required' ? (
-        <Hint label={row.configured ? 'Required' : 'Required — not set'} side="top">
+        <Hint
+          label={row.configured ? 'Required' : tI18nComplete.raw('text85f09652bb1d')}
+          side="top"
+        >
           <Asterisk
             className={cn(
               'size-3.5 shrink-0',
               row.configured ? 'text-muted-foreground' : 'text-kortix-orange',
             )}
-            aria-label={row.configured ? 'Required' : 'Required, not set'}
+            aria-label={row.configured ? 'Required' : tI18nComplete.raw('textf0335c9d1910')}
           />
         </Hint>
       ) : null}
@@ -694,6 +745,7 @@ function SecretTableRow({
   row,
   llmGatewayEnabled,
   canManage,
+  viewerId,
   busy,
   onEdit,
   onDelete,
@@ -701,11 +753,14 @@ function SecretTableRow({
   row: SecretRow;
   llmGatewayEnabled: boolean;
   canManage: boolean;
+  viewerId: string | null;
   busy: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tSharing = useI18nTranslations('accessSharing');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
   const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
@@ -738,12 +793,29 @@ function SecretTableRow({
             {delivery.label}
           </Badge>
           {row.requiresRotation && (
-            <span className="text-kortix-orange text-[11px] font-medium">Rotation required</span>
+            <span className="text-kortix-orange text-xs font-medium">
+              {tI18nComplete.raw('texte450e0da6cf9')}
+            </span>
           )}
           {shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy, row.consumer) && (
-            <span className="text-kortix-orange text-[11px] font-medium">No agent grant</span>
+            <span className="text-kortix-orange text-xs font-medium">
+              {tI18nComplete.raw('text6404e0b5d78d')}
+            </span>
           )}
         </div>
+      </TableCell>
+      <TableCell className="align-middle">
+        {row.configured ? (
+          <div className="flex flex-col items-start gap-1">
+            <AudienceBadge
+              visibility={audienceVisibility(row.sharedWith, viewerId)}
+              labels={row.sharedWith.map((share) => share.label)}
+            />
+            {row.usable ? null : (
+              <span className="text-muted-foreground text-xs">{tSharing('notSharedWithYou')}</span>
+            )}
+          </div>
+        ) : null}
       </TableCell>
       <TableCell>
         {!canManageShared ? null : (
@@ -766,7 +838,9 @@ function SecretTableRow({
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={onEdit}>
                 <PencilSimpleIcon className="size-3.5 shrink-0" />
-                {row.configured ? 'Edit secret' : 'Set value'}
+                {row.configured
+                  ? tI18nComplete.raw('textb5068d24eb4f')
+                  : tI18nComplete.raw('text58bf3410b028')}
               </DropdownMenuItem>
               {row.configured && (
                 <DropdownMenuItem onClick={onDelete}>
@@ -815,7 +889,7 @@ export function ProjectSecretDialog({
   });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
     enabled: open,
   });
@@ -861,12 +935,25 @@ function SecretDialog({
   egressEnabled: boolean;
   onSaved: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const projectConfig = useProjectConfig(projectId);
   const isEdit = row !== null;
   const [identifier, setIdentifier] = useState(row?.identifier ?? '');
   const [key, setKey] = useState(row?.key ?? '');
   const [value, setValue] = useState('');
+  // Who can use the value. A new secret defaults to everyone, as every secret
+  // did before audiences existed; editing opens on the stored audience.
+  const viewerId = useAuth().user?.id ?? null;
+  const accountId = useProjectAccountId(projectId);
+  const tSharing = useI18nTranslations('accessSharing');
+  const projectName =
+    useQuery({ queryKey: qk.project.detail(projectId), queryFn: () => getProjectDetail(projectId), ...contract('config') })
+      .data?.project?.name ?? '';
+  const [audience, setAudience] = useState<SecretAudienceDraft>(() =>
+    audienceDraftFrom(row?.sharedWith ?? [], viewerId),
+  );
+  const nextSharedWith = sharedWithFrom(audience, viewerId);
   /**
    * What the system makes of the name and value typed so far (spec §7). It is
    * recomputed on every keystroke rather than latched on blur: a user who
@@ -922,6 +1009,7 @@ function SecretDialog({
     setSelectedConnectorSlugs(null);
     setEditedHosts(null);
     setLegacyInject(currentPolicy?.inject ?? null);
+    setAudience(audienceDraftFrom(row?.sharedWith ?? [], viewerId));
   };
 
   const requiresValue = !row?.configured;
@@ -958,6 +1046,17 @@ function SecretDialog({
     if (row?.consumer === 'connector' && nextConnectorSlugs.length === 0) {
       throw new Error('Select at least one connector.');
     }
+    if (!nextSharedWith) {
+      throw new Error('Pick who can use it.');
+    }
+    // Sent only when it changes: a new secret narrowed to someone, or an edit.
+    const sharedWith = row
+      ? sameSharedWith(row.sharedWith, nextSharedWith)
+        ? undefined
+        : nextSharedWith
+      : nextSharedWith.length > 0
+        ? nextSharedWith
+        : undefined;
 
     const hasValueChange = Boolean(value.trim()) || !row?.configured;
     const egressPolicy = needsHosts ? (enforcedPolicy ?? undefined) : undefined;
@@ -976,6 +1075,7 @@ function SecretDialog({
       shouldSetStrategy,
       egressPolicy,
       bindingChanges,
+      sharedWith,
       optimistic: {
         projectId,
         identifier: finalIdentifier,
@@ -1001,7 +1101,17 @@ function SecretDialog({
         shouldSetStrategy,
         egressPolicy,
         bindingChanges,
+        sharedWith,
       } = plan;
+      // Who can use it, on its own: the value and delivery stay as they are.
+      const shareOnly = () =>
+        sharedWith
+          ? upsertProjectSecret(projectId, {
+              name: finalKey,
+              identifier: finalIdentifier,
+              shared_with: sharedWith,
+            })
+          : null;
 
       if (!(strategy === 'broker' && nextConsumer === 'connector')) {
         await Promise.all(
@@ -1017,6 +1127,7 @@ function SecretDialog({
           strategy,
           consumer: nextConsumer,
           ...(egressPolicy ? { egress_policy: egressPolicy } : {}),
+          ...(sharedWith ? { shared_with: sharedWith } : {}),
         });
         if (strategy === 'broker' && nextConsumer === 'connector') {
           await Promise.all([
@@ -1045,15 +1156,14 @@ function SecretDialog({
             ),
           ]);
         }
-        return result;
+        return (await shareOnly()) ?? result;
       }
-      return null;
+      return shareOnly();
     },
     onMutate: async (plan) => {
       const queryKey = qk.project.secrets(projectId);
       await queryClient.cancelQueries({ queryKey });
       const context = beginOptimisticProjectSecretSave(queryClient, queryKey, plan.optimistic);
-      onOpenChange(false);
       return context;
     },
     onSuccess: (result, plan) => {
@@ -1064,13 +1174,14 @@ function SecretDialog({
       }
       // The write can land while the running sandboxes refuse the new policy.
       // A plain success toast would hide that split outcome.
-      const syncWarning = secretDeliverySyncWarning(plan.finalIdentifier, result);
+      const syncWarning = secretDeliverySyncWarning(plan.finalIdentifier, result, tI18nComplete);
       if (syncWarning) {
         warningToast(syncWarning.message, { description: syncWarning.description });
       } else {
-        successToast(`Saved ${plan.finalIdentifier}`);
+        successToast(tI18nComplete('textaf6b8a4894f0', { value0: plan.finalIdentifier }));
       }
       resetForm();
+      onOpenChange(false);
       onSaved();
       queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
@@ -1080,8 +1191,7 @@ function SecretDialog({
         qk.project.secrets(projectId),
         context?.previous,
       );
-      onOpenChange(true);
-      errorToast(err.message || 'Failed to save secret');
+      errorToast(err.message || tI18nComplete.raw('textfc85de2d5feb'));
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
@@ -1101,7 +1211,7 @@ function SecretDialog({
     mutationFn: (agent: string) => grantSecretToAgent(projectId, grantIdentifier, agent),
     onSuccess: (result) => {
       setGrantConfirmOpen(false);
-      const outcome = agentGrantOutcome(result);
+      const outcome = agentGrantOutcome(result, tI18nComplete);
       const options = outcome.description ? { description: outcome.description } : undefined;
       if (outcome.tone === 'info') infoToast(outcome.message, options);
       else successToast(outcome.message, options);
@@ -1128,7 +1238,7 @@ function SecretDialog({
     try {
       save.mutate(prepareSavePlan());
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Failed to save secret');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textfc85de2d5feb'));
     }
   }
 
@@ -1139,34 +1249,41 @@ function SecretDialog({
       : `Set ${row.identifier}`;
   const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer, {
     llmGatewayEnabled,
+    tI18nComplete,
   });
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
-  const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
+  const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier, tI18nComplete);
   // Offer "Enforce at the network" only when the experimental flag is on, or
   // when this row is already enforced (so a legacy secret stays readable and
   // can be moved off enforcement even after the flag is switched back off).
   const rowIsEnforced = row ? secretExposure(row.strategy, row.consumer) === 'enforced' : false;
-  const exposureOptions = secretExposureOptions(egressEnabled || rowIsEnforced);
-  const echoNotice = enforcedEchoNotice(hosts);
-  const legacyDetail = legacyInjectionDetail(legacyInject ? currentPolicy : null);
+  const exposureOptions = secretExposureOptions(egressEnabled || rowIsEnforced, tI18nComplete);
+  const echoNotice = enforcedEchoNotice(hosts, tI18nComplete);
+  const legacyDetail = legacyInjectionDetail(legacyInject ? currentPolicy : null, tI18nComplete);
   // The dialog keeps the row it opened with, so a completed grant clears its own
   // warning — the refetch only reaches the table behind it.
   const grantNotice =
     row &&
     shouldWarnMissingAgentGrant(row.deliveryBlockedReason, strategy, nextConsumer) &&
     !grant.isSuccess
-      ? missingAgentGrantNotice(row.identifier)
+      ? missingAgentGrantNotice(row.identifier, tI18nComplete)
       : null;
   const grantManifest = agentGrantSnippet(
     grantIdentifier,
     selectedGrantAgent,
     selectedGrantCandidate?.currentSecrets,
   );
-  const grantConfirmation = agentGrantConfirmation(grantIdentifier, selectedGrantAgent ?? '');
+  const grantConfirmation = agentGrantConfirmation(
+    grantIdentifier,
+    selectedGrantAgent ?? '',
+    tI18nComplete,
+  );
   const selectedGrantHint = selectedGrantCandidate
     ? agentGrantCandidateHint(selectedGrantCandidate)
     : null;
-  const canSave = canSaveSecretDelivery({
+  const canSave =
+    nextSharedWith !== null &&
+    canSaveSecretDelivery({
     isEdit,
     key,
     value,
@@ -1177,6 +1294,8 @@ function SecretDialog({
     nextConsumer,
     enforcedPolicyValid: enforcedPolicy !== null,
     selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
+    audienceChanged:
+      row !== null && nextSharedWith !== null && !sameSharedWith(row.sharedWith, nextSharedWith),
   });
 
   return (
@@ -1192,10 +1311,7 @@ function SecretDialog({
         <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-xl">
           <ModalHeader>
             <ModalTitle>{title}</ModalTitle>
-            <ModalDescription>
-              The identifier selects this credential. Access decides whether agent code can read the
-              value, and who else may spend it.
-            </ModalDescription>
+            <ModalDescription>{tI18nComplete.raw('textd432610668ee')}</ModalDescription>
           </ModalHeader>
           <form onSubmit={handleSubmit} autoComplete="off">
             <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
@@ -1205,14 +1321,14 @@ function SecretDialog({
                     className="text-muted-foreground text-xs font-medium"
                     htmlFor="secret-dialog-identifier"
                   >
-                    Identifier
+                    {tI18nComplete.raw('text9b10587f84a2')}
                   </label>
                   <Input
                     id="secret-dialog-identifier"
                     name="kortix-secret-identifier"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder={key ? key : 'e.g. GMAPS-primary'}
+                    placeholder={key ? key : tI18nComplete.raw('text2f3263f5c933')}
                     className="bg-sidebar disabled:bg-sidebar h-8 rounded-none border-none px-0 font-mono"
                     autoFocus={!isEdit}
                     autoComplete="off"
@@ -1255,42 +1371,56 @@ function SecretDialog({
 
               {!isEdit && (
                 <p className="text-muted-foreground text-xs">
-                  Leave the identifier blank to use the key as its own identifier — the common case.
-                  Set it explicitly to keep a second value under the same key (e.g. a backup key).
+                  {tI18nComplete.raw('text39bccc5f46a7')}
                 </p>
               )}
               {row?.configured && (
                 <p className="text-muted-foreground text-xs">
-                  Leave the value blank to leave it unchanged.
+                  {tI18nComplete.raw('text51b5970e84eb')}
                 </p>
               )}
+
+              <AudienceFields
+                projectId={projectId}
+                value={audience}
+                onChange={setAudience}
+                canShare
+                accountId={accountId}
+                everyoneLabel={tSharing('everyone', { project: projectName })}
+                disabled={save.isPending}
+              />
 
               {/* The two things the system recognized, said once, where the
                   user can act on them. Both only ever change a DEFAULT — the
                   picker below stays free. */}
               {!isEdit && classification.signingNote && (
-                <InfoBanner tone="warning" title="This credential signs requests locally">
-                  {classification.signingNote} Keep it in the environment so the code that computes
-                  the signature can hold it.
+                <InfoBanner tone="warning" title={tI18nComplete.raw('text28cd762621a4')}>
+                  {classification.signingNote} {tI18nComplete.raw('text4d737ad2895f')}
                 </InfoBanner>
               )}
               {!isEdit && classification.modelProvider && exposure === 'enforced' && (
                 <InfoBanner
                   tone="neutral"
-                  title={`Recognized: ${classification.modelProvider.label} key`}
+                  title={tI18nComplete('text04b204d5535c', {
+                    value0: classification.modelProvider.label,
+                  })}
                 >
                   {classification.hosts.length > 0
-                    ? `The approved host is prefilled with ${classification.hosts[0]}, so agent code can call ${classification.modelProvider.label} directly without ever holding the key.`
-                    : `Add ${classification.modelProvider.label}'s API host below so agent code can call it directly without ever holding the key.`}{' '}
-                  If the Kortix model gateway should spend it for model requests instead, connect{' '}
-                  {classification.modelProvider.label} under LLM providers — one key is served by
-                  one of the two, not both.
+                    ? tI18nComplete('texta1827e131521', {
+                        value0: classification.hosts[0],
+                        value1: classification.modelProvider.label,
+                      })
+                    : tI18nComplete('texta8415274068a', {
+                        value0: classification.modelProvider.label,
+                      })}{' '}
+                  {tI18nComplete.raw('textf0e27f45cf6a')} {classification.modelProvider.label}{' '}
+                  {tI18nComplete.raw('text137f1b68d2c8')}
                 </InfoBanner>
               )}
 
               <Field>
                 <FieldLabel htmlFor="secret-dialog-delivery">
-                  {usageAssigned ? 'Access' : 'Can your code read this value?'}
+                  {usageAssigned ? 'Access' : tI18nComplete.raw('text696c6794e048')}
                 </FieldLabel>
                 {usageAssigned ? (
                   /* Read-only, because another flow assigned it. Same treatment
@@ -1304,8 +1434,7 @@ function SecretDialog({
                       {selectedDelivery.label}
                     </Badge>
                     <p className="text-muted-foreground mt-2 text-xs text-pretty">
-                      {selectedDelivery.description} Kortix assigned this — it cannot be changed
-                      here.
+                      {selectedDelivery.description} {tI18nComplete.raw('text5740535823f9')}
                     </p>
                   </div>
                 ) : (
@@ -1338,10 +1467,8 @@ function SecretDialog({
               </Field>
 
               {strategy === 'runtime' && (
-                <InfoBanner tone="warning" title="Readable inside the sandbox">
-                  Agent code and commands can read this value. Use this option only when the secret
-                  must be available to a local process — a credential that signs requests, or a
-                  protocol Kortix cannot enforce.
+                <InfoBanner tone="warning" title={tI18nComplete.raw('text4fb8319405f3')}>
+                  {tI18nComplete.raw('textdb71b63b5778')}
                 </InfoBanner>
               )}
 
@@ -1362,10 +1489,10 @@ function SecretDialog({
                           disabled={grant.isPending}
                         >
                           <SelectTrigger
-                            aria-label="Agent to grant this secret to"
+                            aria-label={tI18nComplete.raw('text33e745179bcb')}
                             className="h-8 w-48"
                           >
-                            <SelectValue placeholder="Choose an agent" />
+                            <SelectValue placeholder={tI18nComplete.raw('textb6890bc23a9c')} />
                           </SelectTrigger>
                           <SelectContent>
                             {grantPlan.candidates.map((candidate) => (
@@ -1393,7 +1520,7 @@ function SecretDialog({
                   )}
                   {grantPlan.candidates.length === 0 && (
                     <span className="text-muted-foreground mt-2 block text-xs text-pretty">
-                      This project declares no agent. Add one to kortix.yaml first.
+                      {tI18nComplete.raw('textf23c70160b5b')}
                     </span>
                   )}
                   {selectedGrantHint && (
@@ -1415,10 +1542,9 @@ function SecretDialog({
               {needsHosts && (
                 <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">Approved hosts</p>
+                    <p className="text-sm font-medium">{tI18nComplete.raw('textd3297c00f7a2')}</p>
                     <p className="text-muted-foreground text-xs text-pretty">
-                      The sandbox holds a handle under this key. Kortix swaps the real value in
-                      outside the sandbox, and only on a request to one of these hosts.
+                      {tI18nComplete.raw('text76f48924ee10')}
                     </p>
                   </div>
 
@@ -1446,22 +1572,21 @@ function SecretDialog({
                   </InfoBanner>
 
                   <Field>
-                    <FieldLabel htmlFor="secret-dialog-hosts">Hosts</FieldLabel>
+                    <FieldLabel htmlFor="secret-dialog-hosts">
+                      {tI18nComplete.raw('textbba9af131107')}
+                    </FieldLabel>
                     <Textarea
                       id="secret-dialog-hosts"
                       value={hosts}
                       onChange={(event) => setEditedHosts(event.target.value)}
-                      placeholder={'api.example.com\nuploads.example.com'}
+                      placeholder={tI18nComplete.raw('text07de8e6e567f')}
                       minHeight={56}
                       maxHeight={112}
                       variant="outline"
                       className="font-mono text-xs"
                       disabled={save.isPending}
                     />
-                    <FieldDescription>
-                      One exact HTTPS host per line. Wildcards, paths, and ports are not accepted.
-                      Every other host is denied.
-                    </FieldDescription>
+                    <FieldDescription>{tI18nComplete.raw('text80befc2e0620')}</FieldDescription>
                   </Field>
 
                   {/* Legacy rows only. The slot is shown, never edited: it is
@@ -1486,7 +1611,7 @@ function SecretDialog({
                         onClick={() => setLegacyInject(null)}
                         disabled={save.isPending}
                       >
-                        Remove the slot
+                        {tI18nComplete.raw('text4a72652fb7e7')}
                       </Button>
                     </div>
                   )}
@@ -1499,15 +1624,15 @@ function SecretDialog({
               {row?.consumer === 'connector' && (
                 <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
                   <Field>
-                    <FieldLabel>Connectors</FieldLabel>
+                    <FieldLabel>{tI18nComplete.raw('textc3d2e79ebdd0')}</FieldLabel>
                     {connectorsLoading ? (
                       <div className="space-y-2">
                         <Skeleton className="h-12 rounded-md" />
                         <Skeleton className="h-12 rounded-md" />
                       </div>
                     ) : connectorOptions.length === 0 ? (
-                      <InfoBanner tone="neutral" title="No connectors available">
-                        Add a connector that requires project-owned authentication first.
+                      <InfoBanner tone="neutral" title={tI18nComplete.raw('text10798ef769fd')}>
+                        {tI18nComplete.raw('text0b834e60371f')}
                       </InfoBanner>
                     ) : (
                       <div className="bg-popover overflow-hidden rounded-md border">
@@ -1550,18 +1675,14 @@ function SecretDialog({
                         ))}
                       </div>
                     )}
-                    <FieldDescription>
-                      Selected connectors resolve this secret on the server. The sandbox receives no
-                      value.
-                    </FieldDescription>
+                    <FieldDescription>{tI18nComplete.raw('textb7de71558bf4')}</FieldDescription>
                   </Field>
                 </div>
               )}
 
               {row?.requiresRotation && (
-                <InfoBanner tone="warning" title="Replace the previous value">
-                  An earlier sandbox may retain the previous value. Rotate it at the provider, then
-                  save the replacement here.
+                <InfoBanner tone="warning" title={tI18nComplete.raw('text640b080e1d85')}>
+                  {tI18nComplete.raw('text90c889e0b6ff')}
                 </InfoBanner>
               )}
             </ModalBody>
@@ -1575,7 +1696,7 @@ function SecretDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={save.isPending}
               >
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
               <Button
                 type="submit"
@@ -1584,7 +1705,7 @@ function SecretDialog({
                 disabled={save.isPending || !canSave}
               >
                 {save.isPending && <Loading className="size-4 shrink-0" />}
-                Save
+                {tI18nComplete.raw('text1509f561f241')}
               </Button>
             </ModalFooter>
           </form>

@@ -29,7 +29,11 @@ export interface ProjectConfigSummary {
    *  to decide whether to offer an upgrade. See `../lib/manifest-verdict`. */
   manifest_version: ProjectManifestVerdict;
   env: { required: string[]; optional: string[] };
+  /** The text of the project's `opencode.jsonc`: OpenCode's own config file. */
   open_code_raw: string | null;
+  /** The project's default agent. */
+  default_agent: string | null;
+  /** @deprecated The pre-W4 name of `default_agent`. Same value. */
   open_code_default_agent: string | null;
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
@@ -41,6 +45,9 @@ export interface ProjectConfigSummary {
      *  follows the project default. */
     model?: string | null;
     source: 'opencode' | 'kortix.yaml';
+    /** True for a platform-owned agent the API injects (the Meta coordinator),
+     *  not one declared in `kortix.yaml`. Hosts render it read-only. */
+    platform?: boolean;
     enabled?: boolean;
     sandbox?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
@@ -50,7 +57,14 @@ export interface ProjectConfigSummary {
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions) the agent may exercise. */
+      kortix_permissions: string[] | 'all';
+      /** @deprecated Wire alias of `kortix_permissions` for pre-rename clients. */
       kortix_cli: string[] | 'all';
+      /** Kortix Apps (by slug) the agent may open when restricted/private
+       *  (spec 2026-09-22 §2.5). `[]` = none (the default). Optional: the
+       *  platform meta-agent's synthetic entry carries no App grant. */
+      apps?: string[] | 'all';
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;

@@ -3,9 +3,6 @@ title: Legacy kortix.toml
 description: Support status and the migration path from v1 kortix.toml to v2 kortix.yaml.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Callout } from 'fumadocs-ui/components/callout';
-
 This page covers the v1 manifest (`kortix.toml`, `kortix_version: 1`). For the current manifest, see [Manifest reference](/docs/project/manifest).
 
 ## Support status
@@ -43,7 +40,7 @@ Delete `kortix.toml`.
 </Step>
 </Steps>
 
-Agent behavior — system prompt, `model`, `mode`, `temperature`, and more — never moves. It already lives in each agent's `.md` frontmatter under `.kortix/opencode/agents/`, in both v1 and v2. See [Agents](/docs/project/agents).
+Agent behavior — system prompt, `model`, `mode`, `temperature`, and more — does not change. It lives in each agent's `.md` frontmatter. A v1 project keeps those files under `.kortix/opencode/agents/`, and v2 still reads them there. v2 projects created from 2026-09 keep them in `agents/` at the repo root, and `agents.<name>.file` names each one. See [Agents](/docs/project/agents).
 
 Check the result with `kortix validate --file kortix.yaml`. Fetch the full v2 schema with `kortix schema --version 2`. See [CLI reference](/docs/cli) for both commands.
 
@@ -53,14 +50,15 @@ Check the result with `kortix validate --file kortix.yaml`. Fetch the full v2 sc
 |---|---|---|
 | `[[agents]]` (array) | `agents:` (map keyed by name) | Convert each array item to a map entry. |
 | `[[agents]].env` | `agents.<name>.secrets` | Renamed. Default flips from `all` to `none` — see the callout below. |
-| `[[agents]].model`, `[[agents]].file` | removed | Dead in v1 (parsed, never applied). Agent behavior always comes from the agent's `.md` frontmatter. |
+| `[[agents]].model` | removed | Dead in v1 (parsed, never applied). Agent behavior always comes from the agent's `.md` frontmatter. |
+| `[[agents]].file` | `agents.<name>.file` | Dead in v1 (parsed, never applied). In v2 it names the agent's `.md`. |
 | no `default_agent` | `default_agent` (required) | Must name a declared, enabled agent. |
 | `[[channels]]` | removed | Channel routing is dashboard-managed. A connected channel appears as a `connectors:` entry with `provider: channel`. |
 | `[sandbox]` (singular, image keys directly on it) | `sandbox.templates` (list) | Move each image into a template entry. |
 | `[[sandboxes]]` | `sandbox.templates` | Renamed. |
 
-<Callout type="warn" title="Secrets default to none in v2">
+:::warning[Secrets default to none in v2]
   In v1, an agent with no `env` field gets every project secret by default. In v2, an agent with no `secrets` field gets none. When you migrate, list every secret each agent needs — an agent that silently loses a secret can fail mid-task.
-</Callout>
+:::
 
-A few `kortix_cli` actions are legacy-tolerated in v1 (`project.session.exec`, `project.gateway.routing.edit`, `project.schedule.read`, `project.schedule.write`, `project.webhook.read`, `project.webhook.write`, `channel.read`, `channel.connect`, `channel.send`, `channel.disconnect`) — the platform warns but allows them. The same actions are a hard error in v2. Remove them from any agent's `kortix_cli` grant before you migrate.
+A few `kortix_permissions` actions are legacy-tolerated in v1 (`project.session.exec`, `project.gateway.routing.edit`, `project.schedule.read`, `project.schedule.write`, `project.webhook.read`, `project.webhook.write`, `channel.read`, `channel.connect`, `channel.send`, `channel.disconnect`) — the platform warns but allows them. The same actions are a hard error in v2. Remove them from any agent's `kortix_permissions` grant before you migrate.

@@ -11,397 +11,128 @@
  *  - duplicate streaming (delta event-id idempotency, T14)
  *
  * REALITY, same as run-session-backlog.flow.ts: every flow here needs a real
- * booted Daytona sandbox with a live OpenCode daemon inside it (the finalizer
- * and the abort-reason classifier both run INSIDE the sandbox process — see
- * apps/kortix-sandbox-agent-server/src/main.ts and
- * packages/sdk/src/core/http/abort-error.ts). None of that exists in the
- * local profile. Every flow is gated `requires: ["funded", "daytona"]`; the
- * local runner self-skips it cleanly (planLocalFlows), and it runs for real
- * against dev-api/staging where those capabilities are funded.
+ * booted sandbox, which the local profile does not have. Every flow is gated
+ * `requires: ["funded", "daytona"]`; the local runner self-skips it cleanly
+ * (planLocalFlows), and it runs for real against a deployed target.
  *
- * There is no Kortix-level session-scoped abort route (confirmed against
- * apps/api/src/projects/routes/*.ts and sandbox-proxy/routes/*.ts — grep for
- * `path:.*abort` returns nothing there). The client-invoked "Stop" action the
- * web app exposes calls OpenCode's OWN `/session/:id/abort` through the
- * preview proxy — the same call RUN-5 already exercises. The
- * server-triggered abort `POST /stop` now performs
+ * RUN-9, SESS-23 and SESS-24 run once per harness (`harnessFlow`) and read the
+ * conversation through `GET .../transcript`: live while the session runs, the
+ * durable mirror once it is stopped (`source` says which). The client Stop is
+ * the runtime abort the web sends (`abortTurn`, fixtures/session-run.ts); no
+ * Kortix abort route exists yet. The abort `POST /stop` performs first
  * (`abortLiveTurnBeforeStop`, apps/api/src/projects/reaping/stop-box.ts) is a
- * DIFFERENT call: server-to-daemon `POST {sandbox}/kortix/abort`, HMAC-signed,
- * never reachable from an external client — we observe its effect only
- * through the OpenCode message list, never call it directly.
- *
- * `/transcript` (GET .../sessions/:sessionId/transcript,
- * apps/api/src/projects/lib/session-transcript.ts) is NOT a DB-only read: it
- * early-returns `{available:false}` the instant `project_sessions.status !==
- * 'running'` (confirmed — `stopSession` flips that same column via
- * `applyStoppedState`, apps/api/src/projects/reaping/sandbox-state-sync.ts).
- * So it degrades gracefully once a session is stopped, but it does NOT keep
- * serving the live transcript. The read that genuinely survives a stopped
- * runtime, confirmed DB-only, is the session detail read
- * (`GET .../sessions/:sessionId`) — its `opencode_sessions`/`name` mirror is
- * the exact server-owned snapshot SESS-10 already covers and that the web's
- * "persisted-pin paint" instant-switch fix reads to paint a session before
- * (or without) touching its sandbox at all. SESS-24 below exercises that read
- * for the "message read-back survives a stopped runtime" contract, and also
- * asserts `/transcript`'s own graceful (not erroring) degradation once
- * stopped, so both the real DB-backed path and the documented live-transcript
- * boundary are pinned.
+ * server-to-daemon `POST {sandbox}/kortix/abort`, HMAC-signed and never
+ * reachable from an external client, so SESS-23 observes its effect only
+ * through the transcript.
  */
-import { flow } from '../core/flow';
-import { isKe2eRetryableError } from '../core/client';
-import { waitFor, sleep } from '../core/poll';
-import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
-import type { FlowContext } from '../core/types';
+import { flow, harnessFlow } from '../core/flow';
+import { waitFor } from '../core/poll';
+import {
+  abortTurn,
+  assertRuntimeHarness,
+  bootSession,
+  endedAfter,
+  erroredMessageIds,
+  isAbortStamp,
+  readTranscript,
+  sandboxIdOf,
+  sendPrompt,
+  stopSessionAndWait,
+  waitForAssistantText,
+  waitForSessionReady,
+  waitForTurn,
+  type TranscriptMessage,
+} from '../fixtures/session-run';
 
-// ── Shared helpers (deliberately duplicated from run-session-backlog.flow.ts —
-// this suite has no shared session-runtime helper module; every flow file
-// owns its own copy, matching the existing convention). ───────────────────
+const MORPH = { providerID: 'kortix', modelID: 'morph-dsv41flash' };
 
-async function waitForSessionReady(
-  ctx: FlowContext,
-  projectId: string,
-  sessionId: string,
-  timeoutMs = 300_000,
-): Promise<any> {
-  try {
-    return await waitFor(
-      async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
-          {},
-          {
-            params: { projectId, sessionId },
-            query: { wait_ms: '8000' },
-            timeoutMs: 25_000,
-          },
-        );
-        if (r.statusCode >= 500 && r.statusCode <= 599) return null;
-        r.status(200);
-        return r.json<any>();
-      },
-      {
-        until: (s) =>
-          s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-        timeoutMs,
-        intervalMs: 3_000,
-        description: `session runtime ready for ${sessionId}`,
-        retryOnError: isKe2eRetryableError,
-      },
-    );
-  } catch (error) {
-    throw markSessionReadinessTimeoutRetryable(error, sessionId);
-  }
-}
-
-async function bootSandbox(
-  ctx: FlowContext,
-  opts?: { prompt?: string; readinessTimeoutMs?: number; opencodeModel?: string },
-): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  // Inside a step so a boot failure records its `POST /start` polls — request
-  // capture is AsyncLocalStorage-scoped to `ctx.step`. See the twin helper in
-  // run-session-backlog.flow.ts for the run that proved this matters.
-  return ctx.step('a fresh session boots to a ready runtime', async () => {
-    const project = await ctx.fixtures.sharedSeededProject();
-    const session = await ctx.fixtures.session(project, {
-      prompt: opts?.prompt ?? 'say hello',
-      opencodeModel: opts?.opencodeModel,
-    });
-    const started = await waitForSessionReady(
-      ctx,
-      project.id,
-      session.id,
-      opts?.readinessTimeoutMs,
-    );
-    const sandbox = started.sandbox;
-    const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
-    return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
-  });
-}
-
-const WORKSPACE = '/workspace';
-
-function ocPath(sandboxId: string, suffix: string): string {
-  const tail = suffix.startsWith('/') ? suffix : `/${suffix}`;
-  return `/v1/p/${sandboxId}/8000${tail}`;
-}
-
-async function createOcConversation(ctx: FlowContext, sandboxId: string): Promise<string> {
-  const ready = await waitFor(
-    async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session?directory=${encodeURIComponent(WORKSPACE)}`), {});
-      if (r.statusCode === 502 || r.statusCode === 503 || r.statusCode === 504) return null;
-      return r;
-    },
-    {
-      until: (r) => Boolean(r),
-      timeoutMs: 120_000,
-      intervalMs: 3_000,
-      description: `OpenCode REST ready on sandbox ${sandboxId}`,
-    },
-  );
-  ready!.status([200, 201]);
-  const id = ready!.json<any>()?.id;
-  if (!id) throw new Error(`OpenCode session create returned no id: ${ready!.text()}`);
-  return id;
-}
-
-/** Raw OpenCode message row shape (info.role/info.time/info.error), same as
- * OpenCode returns through the proxy — see run-session-backlog.flow.ts's
- * identical local type for the same wire shape. */
-type OcMessage = {
-  info?: {
-    id?: string;
-    role?: string;
-    time?: { created?: number; completed?: number };
-    error?: { name?: string; message?: string } | null;
-  };
-  id?: string;
-  role?: string;
-  parts?: Array<{ type?: string; text?: string; synthetic?: boolean }>;
-};
-
-function ocRole(m: OcMessage): string | undefined {
-  return m.info?.role ?? m.role;
-}
-
-function ocId(m: OcMessage): string | undefined {
-  return m.info?.id ?? m.id;
-}
-
-function ocText(m: OcMessage): string {
-  return (m.parts ?? [])
-    .filter((p) => p.type === 'text' && !p.synthetic && typeof p.text === 'string')
-    .map((p) => p.text as string)
-    .join('\n');
-}
-
-async function listOcMessages(
-  ctx: FlowContext,
-  sandboxId: string,
-  ocSessionId: string,
-): Promise<OcMessage[]> {
-  const r = await ctx.client
-    .as(ctx.P.OWNER)
-    .get(ocPath(sandboxId, `/session/${ocSessionId}/message`));
-  r.status(200);
-  const body = r.json<any>();
-  return Array.isArray(body) ? body : [];
-}
-
-/**
- * The two error names OpenCode stamps when a turn is ABORTED — the same
- * whitelist RUN-9 asserts against below. Anything else on `info.error` is a
- * genuine provider/gateway failure, NOT an "Interrupted" stamp.
- */
-const OC_ABORT_ERROR_NAMES = ['AbortError', 'MessageAbortedError'];
-
-function ocErrorName(m: OcMessage): string | undefined {
-  return ((m.info ?? (m as any))?.error as { name?: string } | undefined)?.name;
-}
-
-/** An assistant turn the runtime finished by ABORTING it (the "Interrupted" stamp). */
-function isAbortStamp(m: OcMessage): boolean {
-  const name = ocErrorName(m);
-  return ocRole(m) === 'assistant' && Boolean(name) && OC_ABORT_ERROR_NAMES.includes(name!);
-}
-
-/**
- * An assistant turn that died on something that is NOT an abort — a provider or
- * Kortix-gateway failure. The turn is TERMINAL: `time.completed` is stamped and
- * no further part will ever be appended to it.
- */
-function terminalTurnFailure(messages: OcMessage[], knownIds: Set<string>): OcMessage | null {
-  for (const m of messages) {
-    if (ocRole(m) !== 'assistant') continue;
-    const id = ocId(m);
-    if (id && knownIds.has(id)) continue;
-    const name = ocErrorName(m);
-    if (name && !OC_ABORT_ERROR_NAMES.includes(name)) return m;
-  }
-  return null;
-}
-
-/**
- * `Invalid error response format: Gateway request failed` reads like a gateway
- * bug and is not one. Both halves are HARDCODED by `@ai-sdk/gateway`: it emits
- * `Invalid error response format: ${defaultMessage}` when a non-2xx body fails
- * its `{ error: { message: string } }` schema, and `defaultMessage` is the
- * constant `'Gateway request failed'`. The real body is discarded into
- * `.response`/`.validationError`, which OpenCode does not surface.
- *
- * On this deployment the body that fails that schema is the `api-router`
- * Cloudflare Worker's synthetic maintenance response
- * (`infra/cloudflare/workers/api-router/worker.mjs:157`), which the Worker
- * substitutes for ANY origin 502/503/504 and which spells `error` as a STRING:
- * `{"error":"MAINTENANCE_MODE","message":…}`. So this signature means "the edge
- * swallowed an origin 5xx", and the origin's real message is gone. Say that in
- * the failure text — the alternative is another triage cycle spent on it.
- */
-function decodeOpaqueGatewayError(detail: string): string {
-  if (!detail.includes('Invalid error response format')) return '';
-  return (
-    ' — NOTE: this string is emitted by @ai-sdk/gateway when an error body fails' +
-    ' its {error:{message}} schema; both halves are hardcoded constants and carry' +
-    ' NO information about the real failure. On this deployment that body is the' +
-    ' api-router Worker maintenance response substituted for an origin 502/503/504' +
-    ' (infra/cloudflare/workers/api-router/worker.mjs:157, `error` is a string).' +
-    ' Read X-Origin-Status / X-Request-Id at the edge, or replay with the CI' +
-    ' passthrough header, to recover the origin error.'
-  );
-}
-
-/**
- * A turn that ended on a provider/gateway error can never produce the marker, so
- * waiting out the remaining budget only converts a diagnosable upstream failure
- * into a misleading "timed out waiting for <marker>". Raised as its own class so
- * `waitFor`'s retryOnError does not swallow it, and marked ke2eRetryable so the
- * runner spends an INFRA attempt on it — a transient upstream outage is exactly
- * what a retry is for, and a persistent one still fails the flow, by name.
- */
-class TerminalTurnError extends Error {
-  readonly ke2eRetryable = true;
-  readonly ke2eRetryClass = 'infra';
-  constructor(message: string) {
-    super(message);
-    this.name = 'TerminalTurnError';
-  }
-}
-
-async function waitForAssistantMarker(
-  ctx: FlowContext,
-  sandboxId: string,
-  ocSessionId: string,
-  marker: string,
-  timeoutMs = 240_000,
-  /** Assistant ids that already carried an error BEFORE this wait started. */
-  preExistingErrorIds: Set<string> = new Set(),
-): Promise<OcMessage[]> {
-  return waitFor(
-    async () => {
-      const messages = await listOcMessages(ctx, sandboxId, ocSessionId);
-      // Run 32330628092 (shard 2) spent 191.4s of a 240s budget re-reading a
-      // transcript that had been terminal for 48.6s: the turn's last assistant
-      // message carried `UnknownError: Invalid error response format: Gateway
-      // request failed` and zero text parts, while staging's edge was
-      // simultaneously serving MAINTENANCE_MODE 503s. Surface THAT, immediately.
-      const dead = terminalTurnFailure(messages, preExistingErrorIds);
-      if (dead) {
-        const err = (dead.info ?? (dead as any))?.error as
-          | { name?: string; message?: string; data?: { message?: string } }
-          | undefined;
-        const detail = err?.data?.message ?? err?.message ?? '';
-        throw new TerminalTurnError(
-          `the assistant turn ended on a NON-abort runtime error, so "${marker}" can never appear: ` +
-            `${err?.name ?? 'unknown'}${detail ? `: ${detail}` : ''} (message ${ocId(dead) ?? '?'})` +
-            decodeOpaqueGatewayError(detail),
-        );
-      }
-      return messages;
-    },
-    {
-      until: (messages) =>
-        messages.some((m) => ocRole(m) === 'assistant' && ocText(m).includes(marker)),
-      timeoutMs,
-      intervalMs: 4_000,
-      description: `assistant reply containing "${marker}" in OpenCode session ${ocSessionId}`,
-      // A laundered edge 503 mid-wait is transit, not a verdict — ride it out.
-      // The terminal-turn verdict above must NOT be ridden out, so exclude it.
-      retryOnError: (error) => !(error instanceof TerminalTurnError) && isKe2eRetryableError(error),
-    },
-  );
+/** Index of the user message whose text contains `marker`, or -1. */
+function userIndex(messages: TranscriptMessage[], marker: string): number {
+  return messages.findIndex((m) => m.role === 'user' && m.text.includes(marker));
 }
 
 // ─── RUN-9: Stop → immediate send ─────────────────────────────────────────
-// Abort a running turn through OpenCode's OWN runtime abort route (the same
-// client-invoked path RUN-5 exercises — this is what the web "Stop" button
-// calls) and, with NO settling delay, send a second prompt on the same
-// conversation. Pins two contracts at once:
+// Stop a running turn the way the web Stop button does (the same call RUN-5
+// makes) and, with NO settling delay, send a second prompt. Pins two
+// contracts at once:
 //   1. the second turn's reply addresses ONLY the second prompt — no bleed
 //      from the aborted first turn's partial output (the duplicate-streaming
 //      class of bug the branch's delta event-id idempotency fix targets);
 //   2. the first turn's own last assistant message is left PROPERLY
-//      finalized — an abort error AND `time.completed` set — rather than a
-//      dangling, never-completed row (the historical cause of a phantom
-//      "Interrupted" marker, T11).
-flow(
+//      finalized — `completed` set — rather than a dangling, never-completed
+//      row (the historical cause of a phantom "Interrupted" marker, T11).
+harnessFlow(
   'RUN-9',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocSessionId = await createOcConversation(ctx, sandboxId);
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const firstMarker = `RUN9_TURN_ONE_${Date.now()}`;
 
     await ctx.step('start a long first turn', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          parts: [
-            {
-              type: 'text',
-              text: 'Write a very long, detailed (2000+ word) essay about the history of railways. Keep writing at length; do not stop early.',
-            },
-          ],
-        });
-      r.status([200, 202, 204]);
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `${firstMarker}: write a very long, detailed (2000+ word) essay about the history of railways. Keep writing at length; do not stop early.`,
+      );
+      await waitForTurn(
+        ctx,
+        projectId,
+        sessionId,
+        (t) => t.turns.some((turn) => turn.state === 'active'),
+        'the first turn to become active',
+        120_000,
+      );
     });
 
-    await ctx.step('abort it via the runtime abort route while it is still running', async () => {
-      // Give the run a moment to actually start producing tokens before
-      // aborting — same margin RUN-5 uses.
-      await sleep(3_000);
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocSessionId}/abort`), {});
-      r.status([200, 204]);
+    await ctx.step('Stop it while it is still running', async () => {
+      await abortTurn(ctx, session);
     });
 
-    const secondPromptMarker = `RUN9_TURN_TWO_OK_${Date.now()}`;
+    const secondMarker = `RUN9_TURN_TWO_OK_${Date.now()}`;
     await ctx.step(
-      'immediately (no settling delay) send a second, distinct prompt on the same conversation',
+      'immediately (no settling delay) send a second, distinct prompt',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-            parts: [
-              {
-                type: 'text',
-                text: `Disregard everything above. Reply with exactly this single token and nothing else: ${secondPromptMarker}`,
-              },
-            ],
-          });
-        r.status([200, 202, 204]);
+        await sendPrompt(
+          ctx,
+          projectId,
+          sessionId,
+          `The railway essay task is canceled. For this new turn, confirm the cancellation by replying with exactly this single token and nothing else: ${secondMarker}`,
+        );
       },
     );
 
-    let messages: OcMessage[] = [];
+    let messages: TranscriptMessage[] = [];
     await ctx.step(
       'the second turn’s reply appears and addresses ONLY the second prompt (no bleed from the aborted first turn)',
       async () => {
-        messages = await waitForAssistantMarker(ctx, sandboxId, ocSessionId, secondPromptMarker);
-        const userIdxs = messages.reduce<number[]>((acc, m, i) => {
-          if (ocRole(m) === 'user') acc.push(i);
-          return acc;
-        }, []);
-        if (userIdxs.length < 2) {
+        messages = await waitForAssistantText(ctx, projectId, sessionId, secondMarker);
+        const first = userIndex(messages, firstMarker);
+        const second = userIndex(messages, secondMarker);
+        if (first < 0 || second <= first) {
           throw new Error(
-            `expected two user turns in the conversation, saw ${userIdxs.length}: ${JSON.stringify(messages.map((m) => ({ role: ocRole(m), id: ocId(m) })))}`,
+            `expected the first prompt (index ${first}) before the second (index ${second}): ${JSON.stringify(messages.map((m) => ({ role: m.role, id: m.id })))}`,
           );
         }
-        const secondUserIdx = userIdxs[1];
-        const turn2Assistants = messages
-          .slice(secondUserIdx + 1)
-          .filter((m) => ocRole(m) === 'assistant');
-        const turn2Text = turn2Assistants.map(ocText).join('\n');
-        if (!turn2Text.includes(secondPromptMarker)) {
+        const turn2Text = messages
+          .slice(second + 1)
+          .filter((m) => m.role === 'assistant')
+          .map((m) => m.text)
+          .join('\n');
+        if (!turn2Text.includes(secondMarker)) {
           throw new Error(`second turn's assistant output missing its own marker: ${turn2Text}`);
         }
         if (/railway/i.test(turn2Text)) {
@@ -412,58 +143,37 @@ flow(
       },
     );
 
-    await ctx.step(
-      "the first turn's last assistant message carries the abort error with time.completed set",
-      async () => {
-        const userIdxs = messages.reduce<number[]>((acc, m, i) => {
-          if (ocRole(m) === 'user') acc.push(i);
-          return acc;
-        }, []);
-        const secondUserIdx = userIdxs[1];
-        const turn1Assistants = messages
-          .slice(0, secondUserIdx)
-          .filter((m) => ocRole(m) === 'assistant');
-        const turn1Last = turn1Assistants[turn1Assistants.length - 1];
-        if (!turn1Last) {
-          throw new Error('the first (aborted) turn produced no assistant message to finalize');
-        }
-        const info = turn1Last.info ?? (turn1Last as any);
-        if (!info?.time?.completed) {
-          throw new Error(
-            `the first turn's assistant message has no time.completed set — it is a dangling, never-finalized row (the phantom "Interrupted" class of bug): ${JSON.stringify(turn1Last)}`,
-          );
-        }
-        // OpenCode 1.17.11 (pinned in packages/shared/src/runtime-versions.json)
-        // does NOT guarantee `info.error` on an abort. `SessionProcessor.cleanup`
-        // stamps `time.completed` with no error at the end of EVERY processor
-        // iteration, and the prompt-level abort finalizer early-returns when
-        // `time.completed` is already set — so an abort that lands between
-        // iterations finalizes the row with no error at all. Run 32306385663
-        // caught exactly that: `time.completed` set, `parts: []`, no error.
-        //
-        // `time.completed` above is the load-bearing half — it is what
-        // `isAbortableHusk` reads, and a missing one is the real "dangling row"
-        // bug. What must still never happen is the turn ending on a genuine
-        // provider failure dressed up as an abort, so assert that instead.
-        const abortErrorName = (info?.error as { name?: string } | undefined)?.name;
-        if (abortErrorName && !['AbortError', 'MessageAbortedError'].includes(abortErrorName)) {
-          throw new Error(
-            `the first turn ended on a NON-abort error even though it was aborted: ${JSON.stringify(turn1Last)}`,
-          );
-        }
-      },
-    );
+    await ctx.step("the first turn's last assistant message is finalized", async () => {
+      const first = userIndex(messages, firstMarker);
+      const second = userIndex(messages, secondMarker);
+      const turn1 = messages.slice(first + 1, second).filter((m) => m.role === 'assistant');
+      const last = turn1[turn1.length - 1];
+      if (!last) throw new Error('the first (aborted) turn produced no assistant message to finalize');
+      if (!last.completed) {
+        throw new Error(
+          `the first turn's assistant message has no completed time — a dangling, never-finalized row (the phantom "Interrupted" class of bug): ${JSON.stringify(last)}`,
+        );
+      }
+      // An abort does not guarantee an error on the row: OpenCode stamps
+      // `completed` with no error at the end of every processor iteration, and
+      // its abort finalizer returns early when `completed` is already set.
+      // What must never happen is a genuine provider failure dressed as an
+      // abort.
+      if (last.error?.name && !isAbortStamp(last)) {
+        throw new Error(`the first turn ended on a NON-abort error although it was stopped: ${JSON.stringify(last)}`);
+      }
+    });
   },
 );
 
 // ─── SESS-23: Park → wake → send ──────────────────────────────────────────
-// `POST /stop` now aborts the live turn BEFORE powering the sandbox off
+// `POST /stop` aborts the live turn BEFORE powering the sandbox off
 // (`abortLiveTurnBeforeStop`, apps/api/src/projects/reaping/stop-box.ts,
-// T11). Waking the box (`/start`) and sending a new prompt must
-// deliver that new prompt EXACTLY once — no replay of the original prompt,
-// and no additional "Interrupted"/abort stamps beyond the single one the stop
-// itself produced (the repeated-Interrupted regression this branch fixes).
-flow(
+// T11). Waking the box (`/start`) and sending a new prompt must deliver that
+// new prompt EXACTLY once — no replay of the original prompt, and no
+// additional "Interrupted"/abort stamps beyond the one the stop produced (the
+// repeated-Interrupted regression this branch fixes).
+harnessFlow(
   'SESS-23',
   {
     domain: 'sessions',
@@ -475,185 +185,149 @@ flow(
     // the first OpenCode read through the preview proxy right after `/start`
     // reported ready — the box was still waking (the "503 = waking state"
     // class), i.e. the same pre-existing stop→wake defect the earlier
-    // quarantine documented (#6638 investigation). Re-quarantined until the
-    // wake path is proven on a staging dry run
+    // quarantine documented (#6638 investigation). On Kortix routes
+    // (2026-09-28, local stack, 2 of 2 runs) the OpenCode defect reads
+    // differently: the first prompt after the wake is recorded
+    // "accepted by the runtime but never became a message" and gets no
+    // reply. SESS-23-pi passed the same flow. Quarantined until the wake path
+    // is proven on a staging dry run
     // (`gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>`);
     // un-quarantine ONLY in the PR that carries that green run.
     quarantine:
-      'stop→wake: first post-wake OpenCode read through the preview proxy answers 503 while the box is still waking after /start reports ready — pre-existing wake-path defect, re-quarantined 2026-08-26 (gate run 32992496089)',
-    // 420_000 was smaller than the sum of the bounds this flow itself contains:
-    // boot readiness 300_000 + OpenCode readiness 120_000 + stop-settle 60_000
-    // + wake readiness (below) + assistant marker 240_000. The two readiness
-    // waits ALONE were 600_000 — 1.43x the whole budget — so run 32306385663
-    // hit `flow SESS-23 exceeded 420000ms` on both attempts. Matches the
-    // 900_000 that SESS-10 already declares for the same boot+turn shape.
-    timeoutMs: 900_000,
+      'stop→wake on OpenCode: the first prompt after the wake is accepted by the runtime but never becomes a message, so it gets no reply (local stack 2026-09-28, 2 of 2 runs; pi passes). First seen as a post-wake 503 on gate run 32992496089; quarantined since 2026-08-26',
+    // Boot readiness 540_000 + turn start 120_000 + stop settle 60_000 + wake
+    // 180_000 + reply 240_000 exceeds 900_000 only when every wait runs to its
+    // bound; 1_200_000 matches SESS-24.
+    timeoutMs: 1_200_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'POST /v1/projects/:projectId/sessions/:sessionId/stop',
     ],
   },
-  async (ctx) => {
-    const { projectId, sessionId, sandboxId } = await bootSandbox(ctx, {
-      opencodeModel: 'gpt-5.6-luna',
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness, {
+      opencodeModel: 'morph-dsv41flash',
     });
-    const ocSessionId = await createOcConversation(ctx, sandboxId);
 
     const originalMarker = `SESS23_ORIGINAL_${Date.now()}`;
     await ctx.step('start a long-running turn that will still be live at stop time', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
-          parts: [
-            {
-              type: 'text',
-              text: `${originalMarker}: write a very long (2000+ word) essay about the history of clock towers. Keep writing at length.`,
-            },
-          ],
-        });
-      r.status([200, 202, 204]);
-      await sleep(3_000);
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `${originalMarker}: write a very long (2000+ word) essay about the history of clock towers. Keep writing at length.`,
+        { model: MORPH },
+      );
+      await waitForTurn(
+        ctx,
+        projectId,
+        sessionId,
+        (t) => t.turns.some((turn) => turn.state === 'active'),
+        'the long turn to become active',
+        120_000,
+      );
     });
 
     let preStopUserIds: string[] = [];
     let preStopAbortCount = 0;
-    let preStopMessageIds: string[] = [];
-    let preWakeErrorIds = new Set<string>();
     await ctx.step('capture the message baseline before stopping', async () => {
-      const messages = await listOcMessages(ctx, sandboxId, ocSessionId);
-      preStopMessageIds = messages.map((m) => ocId(m)).filter((id): id is string => Boolean(id));
-      preStopUserIds = messages
-        .filter((m) => ocRole(m) === 'user')
-        .map((m) => ocId(m))
-        .filter((id): id is string => Boolean(id));
-      // Count ABORT stamps only. `Boolean(info.error)` also counts a provider or
-      // gateway failure, so an unrelated upstream blip used to be reported as
-      // "a NEW 'Interrupted' stamp appeared" — the wrong defect, named wrongly.
+      const { messages } = await readTranscript(ctx, projectId, sessionId);
+      preStopUserIds = messages.filter((m) => m.role === 'user' && m.id).map((m) => m.id!);
+      // Count ABORT stamps only: a provider or gateway failure is a different
+      // defect and must not be reported as a new "Interrupted" stamp.
       preStopAbortCount = messages.filter(isAbortStamp).length;
     });
 
     await ctx.step(
-      "stop the session's sandbox via the session stop route (aborts the turn first) → 200 stopped",
+      "stop the session's sandbox via the session stop route (aborts the turn first) → 200 stopped (or stopping, then stopped)",
       async () => {
-        // `stop` 409s ("Session is not running") whenever the session_sandboxes
-        // row is not yet `active` (apps/api/src/projects/session-lifecycle/stop.ts).
-        // `/start` reporting stage `ready` proves the RUNTIME answers, not that
-        // the sandbox row has already settled to `active`, and this step lands
-        // only ~3s after the prompt above — so on a slow deployed target the stop
-        // can arrive during that window. Retry the stop across the settle window
-        // instead of failing the whole flow on it; a 409 that never clears still
-        // fails, and names the status the API actually reported.
-        const stopped = await waitFor(
-          async () =>
-            ctx.client.as(ctx.P.OWNER).post(
-              '/v1/projects/:projectId/sessions/:sessionId/stop',
-              {},
-              { params: { projectId, sessionId } },
-            ),
-          {
-            until: (r) => r.statusCode !== 409,
-            timeoutMs: 60_000,
-            intervalMs: 3_000,
-            description: `session ${sessionId} to become stoppable (stop returns 409 until the sandbox row is active)`,
-            retryOnError: isKe2eRetryableError,
-          },
-        );
-        stopped.status(200).body().has('$.status', 'stopped');
+        // `stop` 409s ("Session is not running") until the session_sandboxes
+        // row is `active`; `/start` reporting `ready` proves the RUNTIME
+        // answers, not that the row has settled. Retry across that window; a
+        // 409 that never clears still fails, with the status the API reported.
+        await stopSessionAndWait(ctx, projectId, sessionId, { waitUntilStoppable: true });
       },
     );
 
-    await ctx.step('wake the box back up via /start', async () => {
-      // A WAKE is not a cold boot — the VM is resumed, not created (~19-25s
-      // measured). The 300_000 default is cold-boot money, and spending it here
-      // lets one slow wake swallow the whole flow budget.
-      await waitForSessionReady(ctx, projectId, sessionId, 180_000);
+    let stoppedAbortCount = 0;
+    await ctx.step("the stop's own abort stamps the live turn at most once", async () => {
+      // pi stamps the aborted reply `MessageAbortedError`; OpenCode can finalize
+      // it with no error at all. Either is one Interrupted marker at most. The
+      // stopped session answers from its durable mirror.
+      const { messages } = await readTranscript(ctx, projectId, sessionId);
+      stoppedAbortCount = messages.filter(isAbortStamp).length;
+      if (stoppedAbortCount > preStopAbortCount + 1) {
+        throw new Error(`stopping one live turn added ${stoppedAbortCount - preStopAbortCount} abort stamps`);
+      }
     });
 
+    await ctx.step('wake the box back up via /start', async () => {
+      // A WAKE resumes the VM (~19-25s measured); cold-boot money would let one
+      // slow wake swallow the whole flow budget.
+      const started = await waitForSessionReady(ctx, projectId, sessionId, 180_000);
+      await assertRuntimeHarness(ctx, sandboxIdOf(started), harness);
+    });
+
+    let preWakeErrorIds = new Set<string>();
+    let afterWakeUserCount = 0;
     await ctx.step(
       'immediately after wake, before sending anything new: no redelivery of the original prompt, and the abort-stamp count is unchanged',
       async () => {
-        const messages = await listOcMessages(ctx, sandboxId, ocSessionId);
-        const userIds = messages
-          .filter((m) => ocRole(m) === 'user')
-          .map((m) => ocId(m))
-          .filter((id): id is string => Boolean(id));
-        if (userIds.length !== preStopUserIds.length) {
+        const { messages } = await readTranscript(ctx, projectId, sessionId);
+        const userIds = messages.filter((m) => m.role === 'user' && m.id).map((m) => m.id!);
+        if (JSON.stringify([...userIds].sort()) !== JSON.stringify([...preStopUserIds].sort())) {
           throw new Error(
-            `user-turn count changed across the wake (redelivery?): before=${preStopUserIds.length} after=${userIds.length}`,
-          );
-        }
-        if (JSON.stringify(userIds.sort()) !== JSON.stringify([...preStopUserIds].sort())) {
-          throw new Error(
-            `user message ids changed across the wake — the original prompt was redelivered as a new message: before=${JSON.stringify(preStopUserIds)} after=${JSON.stringify(userIds)}`,
+            `user message ids changed across the wake — the original prompt was redelivered: before=${JSON.stringify(preStopUserIds)} after=${JSON.stringify(userIds)}`,
           );
         }
         const abortCount = messages.filter(isAbortStamp).length;
-        if (abortCount !== preStopAbortCount) {
+        if (abortCount !== stoppedAbortCount) {
           throw new Error(
-            `abort-marked assistant message count changed on wake alone (no new prompt sent yet) — a new "Interrupted" stamp appeared: before=${preStopAbortCount} after=${abortCount}`,
+            `abort-marked assistant message count changed on wake alone (no new prompt sent yet) — a new "Interrupted" stamp appeared: after stop=${stoppedAbortCount} after wake=${abortCount}`,
           );
         }
-        // Anything already carrying an error at this point predates the wake
-        // prompt and must not be blamed on it by the terminal-turn escape.
-        preWakeErrorIds = new Set(
-          messages
-            .filter((m) => ocRole(m) === 'assistant' && Boolean(ocErrorName(m)))
-            .map((m) => ocId(m))
-            .filter((id): id is string => Boolean(id)),
-        );
+        afterWakeUserCount = userIds.length;
+        // Errors already present predate the wake prompt and must not be
+        // blamed on it by the terminal-turn check.
+        preWakeErrorIds = erroredMessageIds(messages);
       },
     );
 
     const newMarker = `SESS23_AFTER_WAKE_${Date.now()}`;
     await ctx.step('send a new prompt → exactly one delivery', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
-          parts: [
-            {
-              type: 'text',
-              text: `Reply with exactly this single token and nothing else: ${newMarker}`,
-            },
-          ],
-        });
-      r.status([200, 202, 204]);
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Reply with exactly this single token and nothing else: ${newMarker}`,
+        { model: MORPH },
+      );
     });
 
     await ctx.step(
-      'the wake prompt lands exactly once, and the pre-existing abort-stamp count still has NOT grown',
+      'the wake prompt lands exactly once, and the abort-stamp count has NOT grown',
       async () => {
-        const messages = await waitForAssistantMarker(
-          ctx,
-          sandboxId,
-          ocSessionId,
-          newMarker,
-          240_000,
-          preWakeErrorIds,
-        );
-        const userIds = messages
-          .filter((m) => ocRole(m) === 'user')
-          .map((m) => ocId(m))
-          .filter((id): id is string => Boolean(id));
-        if (userIds.length !== preStopUserIds.length + 1) {
+        const messages = await waitForAssistantText(ctx, projectId, sessionId, newMarker, {
+          knownErrorIds: preWakeErrorIds,
+        });
+        const userCount = messages.filter((m) => m.role === 'user').length;
+        if (userCount !== afterWakeUserCount + 1) {
           throw new Error(
-            `expected exactly one new user message after the wake prompt, saw ${userIds.length - preStopUserIds.length}: ${JSON.stringify(userIds)}`,
+            `expected exactly one new user message after the wake prompt, saw ${userCount - afterWakeUserCount}`,
           );
         }
-        const assistantsWithMarker = messages.filter(
-          (m) => ocRole(m) === 'assistant' && ocText(m).includes(newMarker),
-        );
-        if (assistantsWithMarker.length !== 1) {
-          throw new Error(
-            `expected exactly one assistant reply carrying the wake-prompt marker, saw ${assistantsWithMarker.length}`,
-          );
+        const replies = messages.filter((m) => m.role === 'assistant' && m.text.includes(newMarker));
+        if (replies.length !== 1) {
+          throw new Error(`expected exactly one assistant reply carrying the wake-prompt marker, saw ${replies.length}`);
         }
         const abortCount = messages.filter(isAbortStamp).length;
-        if (abortCount !== preStopAbortCount) {
+        if (abortCount !== stoppedAbortCount) {
           throw new Error(
-            `abort-marked assistant message count grew after the wake prompt — a NEW "Interrupted" stamp appeared on top of the pre-existing one(s): before=${preStopAbortCount} after=${abortCount}`,
+            `abort-marked assistant messages grew after the wake prompt — a NEW "Interrupted" stamp appeared: after stop=${stoppedAbortCount} now=${abortCount}`,
           );
         }
       },
@@ -670,12 +344,12 @@ flow(
 // runtime is stopped — proving the cached-paint read path works without a
 // live runtime. The transcript route then serves the durable mirror rather
 // than attempting a live read from the stopped sandbox.
-flow(
+harnessFlow(
   'SESS-24',
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    timeoutMs: 1_200_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -684,8 +358,8 @@ flow(
       'POST /v1/projects/:projectId/sessions/:sessionId/stop',
     ],
   },
-  async (ctx) => {
-    const project = await ctx.fixtures.sharedSeededProject();
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.sharedSeededProject(harness);
     const owner = ctx.client.as(ctx.P.OWNER);
     const markerA = `SESS24_SESSION_A_${Date.now()}`;
     const markerB = `SESS24_SESSION_B_${Date.now()}`;
@@ -703,11 +377,13 @@ flow(
         waitForSessionReady(ctx, project.id, sessionA.id),
         waitForSessionReady(ctx, project.id, sessionB.id),
       ]);
-      sandboxA = String(startedA.sandbox.external_id ?? startedA.sandbox.externalId);
-      sandboxB = String(startedB.sandbox.external_id ?? startedB.sandbox.externalId);
-      if (!sandboxA || !sandboxB || sandboxA === sandboxB) {
+      sandboxA = sandboxIdOf(startedA);
+      sandboxB = sandboxIdOf(startedB);
+      if (sandboxA === sandboxB) {
         throw new Error(`expected two distinct sandboxes, got A=${sandboxA} B=${sandboxB}`);
       }
+      await assertRuntimeHarness(ctx, sandboxA, harness);
+      await assertRuntimeHarness(ctx, sandboxB, harness);
     });
 
     await ctx.step(
@@ -838,13 +514,31 @@ flow(
       },
     );
 
-    await ctx.step("stop session A's sandbox → 200 stopped", async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/stop',
-        {},
-        { params: { projectId: project.id, sessionId: sessionA.id } },
+    await ctx.step("session A's completed turn has a durable transcript before stopping", async () => {
+      await waitFor(
+        async () => {
+          const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+            params: { projectId: project.id, sessionId: sessionA.id },
+            query: { shape: 'sync' },
+          });
+          r.status(200);
+          return r.json<any>();
+        },
+        {
+          until: (t) =>
+            t?.available === true &&
+            t?.source === 'mirror' &&
+            t?.complete === true &&
+            JSON.stringify(t?.messages ?? []).includes(markerA),
+          timeoutMs: 180_000,
+          intervalMs: 4_000,
+          description: `session A durable transcript containing its own marker`,
+        },
       );
-      r.status(200).body().has('$.status', 'stopped');
+    });
+
+    await ctx.step("stop session A's sandbox → 200 stopped (or stopping, then stopped)", async () => {
+      await stopSessionAndWait(ctx, project.id, sessionA.id);
     });
 
     await ctx.step(
@@ -917,33 +611,22 @@ flow(
 // durable row, the idempotency key, the state projection, and the two write
 // gates. Whether the runtime then answers the prompt is SESS-23's business.
 //
-// The runtime IS booted to ready first, though, and that is load-bearing rather
-// than incidental. `holdInboxPrompts` (session-lifecycle/inbox-rows.ts) writes a
-// reader-visible `result.held` for `queued` and `forwarded` rows, but a row the
-// drain has already CLAIMED (`status = 'running'`) gets a PAYLOAD flag only —
-// `markCommandForwarded` replaces `result` wholesale, so `promptState` keeps
-// answering `delivering/null` until that claimed delivery lands. On a COLD box
-// the claim window is the whole of `continueSession`, up to
-// `READY_DEADLINE_MS = 300_000` (session-lifecycle/engine.ts). Run 32330628092
-// posted into a cold session, the drain claimed the row 6s later, and the hold
-// step then re-POSTed for 32s against a row that read `delivering/null` every
-// time and could not have read anything else. That is the documented server
-// contract, not a defect — Stop cannot unsend a POST. Booting first keeps the
-// claim window at ~1.3s, so every branch of the hold predicate is reachable.
+// Boot before delivery assertions. Stop exposes waiting/held immediately,
+// including a claimed delivery; the worker checks that hold before each POST.
 flow(
   'SESS-25',
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
-    // Raised with the readiness wait added below: a real cold boot measured
-    // 36-50s typically and 158s worst-success in run 32330628092, and it now
-    // runs BEFORE the inbox assertions rather than racing them.
-    timeoutMs: 600_000,
+    // Preview run 34938179244 measured a fresh Daytona image build at up to
+    // 439s. Readiness now permits that cold path before the inbox assertions.
+    timeoutMs: 1_200_000,
     routes: [
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
     ],
@@ -953,11 +636,8 @@ flow(
     const session = await ctx.fixtures.session(project);
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: project.id, sessionId: session.id };
-    // See the header: the hold predicate is unsatisfiable while the drain holds
-    // a claim against a box that is still booting. `ctx.fixtures.session` does
-    // NOT wait for readiness, so wait here, before the first prompt exists.
     await ctx.step('the session runtime is ready before anything is queued', async () => {
-      await waitForSessionReady(ctx, project.id, session.id, 240_000);
+      await waitForSessionReady(ctx, project.id, session.id, 540_000);
     });
     const clientMessageId = `q_sess25_${Date.now()}`;
     // The CLIENT mints the wire id: OpenCode orders its transcript by the id's
@@ -975,6 +655,7 @@ flow(
           client_message_id: clientMessageId,
           message_id: wireMessageId,
           parts: [{ type: 'text', text: 'SESS-25 inbox prompt' }],
+          placement: 'transcript',
           overrides: { directory: '/workspace' },
         },
         { params },
@@ -1047,63 +728,34 @@ flow(
       if (mine.client_message_id !== clientMessageId) {
         throw new Error(`inbox row carries the wrong client id: ${mine.client_message_id}`);
       }
+      if (mine.placement !== 'transcript' || mine.full_text !== 'SESS-25 inbox prompt') {
+        throw new Error('Inbox did not preserve placement and full accepted text');
+      }
       if (!['queued', 'waiting', 'delivering', 'failed'].includes(mine.state)) {
         throw new Error(`unexpected prompt state: ${mine.state}`);
       }
     });
 
     await ctx.step('holding the queue is a SERVER fact, not a browser one', async () => {
-      // What the Stop button writes. A client-side pause would leave the
-      // admission gate free to deliver the very message the user pressed Stop
-      // to get ahead of, one scheduler tick after the abort.
-      // A row the drain has ALREADY CLAIMED (status 'running') gets only a
-      // PAYLOAD flag from the instant hold — `stopPausedOnDelivery` — because
-      // `markCommandForwarded` replaces `result` wholesale, so `promptState`
-      // answers `delivering/null` for it. The `held` marker lands only once the
-      // claimed delivery settles, in the background (CLAIMED_SETTLE_MS = 3_000,
-      // apps/api/src/projects/session-lifecycle/inbox-hold-settle.ts). Run
-      // 32306385663 read the response one tick too early and saw exactly that.
-      // The route is idempotent, so re-POST until the row is held or gone — a
-      // hold that never lands still fails the flow. The budget is sized for a
-      // READY box (claim -> forward ~1.3s measured), which the readiness step
-      // above guarantees; 30s was sized for that too but ran against a cold box,
-      // where the claim can stand for up to READY_DEADLINE_MS = 300s.
-      let lastSeen = 'never observed';
-      const held = await waitFor(
-        async () =>
-          owner.post(
-            '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
-            { held: true },
-            { params },
-          ),
-        {
-          until: (r) => {
-            if (r.statusCode !== 200) return false;
-            const mine = (r.json<any>().prompts ?? []).find(
-              (p: any) => p.prompt_id === promptId,
-            );
-            // Absent = already delivered; it IS the transcript and cannot be held.
-            if (!mine) {
-              lastSeen = 'absent (delivered)';
-              return true;
-            }
-            lastSeen = `${mine.state}/${mine.reason ?? 'null'}`;
-            return mine.state === 'waiting' && mine.reason === 'held';
-          },
-          timeoutMs: 90_000,
-          intervalMs: 2_000,
-          description: `prompt ${promptId} to read waiting/held once the hold settles`,
-          retryOnError: isKe2eRetryableError,
-        },
-      ).catch((error) => {
-        // Name the state actually observed. A bare "timed out waiting for
-        // waiting/held" cost run 32330628092 a whole triage cycle to discover
-        // the row had read `delivering/null` for every one of its 4 polls.
-        throw error instanceof Error
-          ? Object.assign(error, { message: `${error.message}; last observed state: ${lastSeen}` })
-          : error;
-      });
+      const held = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+        { held: true },
+        { params },
+      );
       held.status(200);
+      for (const response of [
+        held,
+        await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params }),
+      ]) {
+        response.status(200);
+        const mine = (response.json<any>().prompts ?? []).find(
+          (p: any) => p.prompt_id === promptId,
+        );
+        // A consumed prompt is omitted because it belongs to the transcript.
+        if (mine && (mine.state !== 'waiting' || mine.reason !== 'held')) {
+          throw new Error(`Stop did not persist: ${mine.state}/${mine.reason}`);
+        }
+      }
 
       const bad = await owner.post(
         '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
@@ -1135,6 +787,35 @@ flow(
         { params: { ...params, promptId } },
       );
       r.status([200, 404]);
+    });
+
+    await ctx.step('PATCH edits a waiting prompt in place, or refuses it honestly if it is on the wire', async () => {
+      // The queue list's edit: new text, same row, nothing sent. 409 means the
+      // agent already has the old text; 404 means it is answered and gone.
+      const empty = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+        { text: '  ' },
+        { params: { ...params, promptId } },
+      );
+      empty.status(400);
+      const r = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+        { text: 'SESS-25 edited prompt' },
+        { params: { ...params, promptId } },
+      );
+      r.status([200, 409, 404]);
+      if (r.statusCode === 200) {
+        const edited = r.json<any>();
+        if (edited.prompt_id !== promptId || edited.full_text !== 'SESS-25 edited prompt') {
+          throw new Error(`PATCH did not return the edited row: ${JSON.stringify(edited)}`);
+        }
+        const listed = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params });
+        listed.status(200);
+        const mine = (listed.json<any>().prompts ?? []).find((p: any) => p.prompt_id === promptId);
+        if (mine && mine.full_text !== 'SESS-25 edited prompt') {
+          throw new Error(`the queue still lists the old text: ${mine.full_text}`);
+        }
+      }
     });
 
     await ctx.step('DELETE removes the prompt, or refuses it honestly if it is on the wire', async () => {

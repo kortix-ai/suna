@@ -21,13 +21,15 @@ a given import path is:
 
 | Tier | Entries | Guarantee |
 |---|---|---|
-| Stable | `.`, `./react`, `./server` | semver |
+| Stable | `.`, `./react`, `./server`, `./wire-message-id` | semver |
 | Deprecated | the 20 legacy subpaths | works; removed on the next major |
 | Internal | `./internal/*` | **no guarantee**, may change in any release |
 
 `.` is the canonical entry — everything framework-free lives there. `./react`
 and `./server` exist because React is a peer dependency and `./server` statically
-imports `node:async_hooks`, respectively. The 20 legacy subpaths
+imports `node:async_hooks`, respectively. `./wire-message-id` is the wire
+message-id clock module alone — it has no imports, so a server loads it without
+the root barrel; the root exports the same names. The 20 legacy subpaths
 (`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
 the zustand stores, …) are `@deprecated` aliases that still resolve — import from
 the root instead. That the root really does cover all of them is asserted by
@@ -40,7 +42,7 @@ designed API.
 ## IN SCOPE — the agent product (what the SDK needs)
 
 ### 1. Auth / session token  ✅
-Injection seam, not an endpoint. `configureKortix({ getToken })` → Supabase token on every request; 401 retry; cache invalidation.
+Injection seam, not an endpoint. `configureKortix({ getToken })` → token on every request. `backendApi`, `backendApi.postStream` and `authenticatedFetch` all send through `send()` (`core/http/transport.ts`): one header policy (bearer, client surface, admin bypass, act-as), one default deadline, one 401 replay with a fresh token.
 
 ### 1b. Token validation helper (pasted-API-key UX)  ✅
 `kortix.validateToken()` → `GET /v1/accounts/me`. Never throws — resolves
@@ -77,6 +79,7 @@ try/catching every call.
 | transcript | `GET .../sessions/:sid/transcript` → `projects-client/sessions.ts`'s `getSessionTranscript` ✅, facade `session(pid,sid).transcript()` ✅ (previously listed ✅ here with no client fn behind it — that was false; now genuinely wired) |
 | preview candidates (live ports) | `GET .../sessions/:sid/previews` |
 | public shares | `GET/POST/DELETE .../sessions/:sid/public-shares[/:id]` |
+| public transcript share (`{ transcript: true }`, one live link per session; `findActiveTranscriptShare`) + anonymous read (`getPublicSessionShare`, `getPublicSessionShareMessages`, by `share_id` or `kps_` token) | `POST .../sessions/:sid/public-shares` · `GET /v1/public/session-shares/:ref[/messages]` |
 
 ### 5b. Token minting (CLI PATs) — Kortix-as-a-Backend-critical  ✅
 | op | REST | SDK |
@@ -314,7 +317,7 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Channels (Slack/email/Meet installs) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
 | Connector runtime | 🟡 web-local |
-| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Reachable from the root barrel like the rest of the runtime client; `@kortix/sdk/opencode-client` is a deprecated alias for the same names |
+| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ⚠️ **Deprecated**: the sandbox daemon serves none of these routes, so every call answers 404. Client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Reachable from the root barrel like the rest of the runtime client; `@kortix/sdk/opencode-client` is a deprecated alias for the same names |
 
 ### To make the SDK the whole data layer
 1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).

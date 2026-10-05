@@ -20,6 +20,18 @@ const TRANSIENT_SLACK_ERRORS = new Set([
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Slack's read methods drop a JSON body. A call site that forgot `form: true`
+ * failed silently twice: users.info (2026-08-19) and conversations.info
+ * (until 2026-10-02). The method name decides now, not each caller.
+ */
+const FORM_ONLY_METHOD = /\.(info|list|history|replies)$/;
+
+/** Whether a call goes form-encoded: a read method always, any other when asked. */
+export function slackSendsForm(method: string, form?: boolean): boolean {
+  return form === true || FORM_ONLY_METHOD.test(method);
+}
+
 async function slackApiCall(
   token: string,
   method: string,
@@ -44,6 +56,7 @@ async function slackApiCall(
   // (chat.postMessage, chat.startStream) may have already landed, so retrying it
   // would duplicate the message. chat.update / reactions.* are idempotent and
   // retry freely.
+  const form = slackSendsForm(method, opts.form);
   const idempotent = opts.idempotent !== false;
   const maxAttempts = Math.max(1, (opts.retries ?? 1) + 1);
   let last: SlackApiResult = { ok: false, error: 'unknown' };
@@ -52,12 +65,12 @@ async function slackApiCall(
       const res = await fetch(`${SLACK_API_BASE}/${method}`, {
         method: 'POST',
         headers: {
-          'Content-Type': opts.form
+          'Content-Type': form
             ? 'application/x-www-form-urlencoded; charset=utf-8'
             : 'application/json; charset=utf-8',
           authorization: `Bearer ${token}`,
         },
-        body: opts.form
+        body: form
           ? new URLSearchParams(
               Object.entries(body)
                 .filter(([, v]) => v !== undefined && v !== null)
@@ -468,6 +481,34 @@ export async function publishHomeView(
   }
 }
 
+/**
+ * Open a modal. Slack's only way to collect typed input from a button press.
+ *
+ * `trigger_id` is single-use and expires in ~3 seconds, so this must be the
+ * first thing the handler does — anything awaited before it (a DB read, an
+ * authorization check) can spend the budget and the modal silently never
+ * opens. The caller is responsible for that ordering.
+ */
+export async function openModal(
+  token: string,
+  triggerId: string,
+  view: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const r = await slackApiCall(token, 'views.open', { trigger_id: triggerId, view });
+    if (!r.ok) {
+      // `expired_trigger_id` is the one worth recognising: it means the handler
+      // did work before opening, not that the view was malformed.
+      console.warn('[slack-api] views.open failed', { error: r.error });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[slack-api] views.open error', err);
+    return false;
+  }
+}
+
 // Resolve a bot by the name a human would type, e.g. "Incident reporter".
 //
 // The slash command is registered with should_escape:false, so Slack sends the
@@ -534,13 +575,66 @@ export async function isBotUser(token: string, userId: string): Promise<boolean 
   }
 }
 
-export async function getChannelName(token: string, channel: string): Promise<string | null> {
+/**
+ * A Slack user's display name (`display_name`, else `real_name`, else the
+ * handle), for showing a person which Slack account they are about to link.
+ * Null on any failure; the caller then shows the id alone.
+ */
+export async function getSlackUserDisplayName(token: string, userId: string): Promise<string | null> {
   try {
-    const r = await slackApiCall(token, 'conversations.info', { channel });
+    const r = await slackApiCall(token, 'users.info', { user: userId }, { form: true });
     if (!r.ok) return null;
-    const info = r.channel as { name?: string } | undefined;
-    return info?.name ?? null;
+    const u = r.user as
+      | { name?: string; profile?: { display_name?: string; real_name?: string } }
+      | undefined;
+    const name = u?.profile?.display_name?.trim() || u?.profile?.real_name?.trim() || u?.name?.trim();
+    return name || null;
   } catch {
     return null;
+  }
+}
+
+export type SlackConversationType = 'channel' | 'private_channel' | 'im' | 'mpim';
+
+/** What a person recognizes a Slack conversation by. */
+export interface SlackConversationLabel {
+  /**
+   * A channel's name without `#`, the other person's name for a direct
+   * message, or the members' handles for a group DM. Null when Slack did not
+   * say.
+   */
+  name: string | null;
+  type: SlackConversationType | null;
+  /** Deleted, or out of the bot's reach (`channel_not_found`). */
+  unavailable: boolean;
+}
+
+/**
+ * Name a conversation for a person. `conversations.info` must go form-encoded:
+ * sent as JSON, Slack drops the `channel` parameter and answers
+ * `channel_not_found`, which left every binding unnamed until 2026-10-02.
+ */
+export async function describeSlackConversation(token: string, channel: string): Promise<SlackConversationLabel> {
+  const unknown: SlackConversationLabel = { name: null, type: null, unavailable: false };
+  try {
+    const r = await slackApiCall(token, 'conversations.info', { channel }, { form: true });
+    if (!r.ok) return r.error === 'channel_not_found' ? { ...unknown, unavailable: true } : unknown;
+    const info = r.channel as
+      | { name?: string; user?: string; is_im?: boolean; is_mpim?: boolean; is_private?: boolean }
+      | undefined;
+    if (!info) return unknown;
+    if (info.is_im) {
+      const name = info.user ? await getSlackUserDisplayName(token, info.user) : null;
+      return { name, type: 'im', unavailable: false };
+    }
+    if (info.is_mpim) {
+      // `mpdm-sam--alex--kim-1`: the members' handles, which Slack shows as the
+      // conversation's name, without its prefix and counter.
+      const handles = info.name?.replace(/^mpdm-/, '').replace(/-\d+$/, '').split('--').filter(Boolean) ?? [];
+      return { name: handles.length > 0 ? handles.join(', ') : null, type: 'mpim', unavailable: false };
+    }
+    return { name: info.name ?? null, type: info.is_private ? 'private_channel' : 'channel', unavailable: false };
+  } catch {
+    return unknown;
   }
 }

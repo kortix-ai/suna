@@ -1,14 +1,20 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import { kortixApiKeys } from '@kortix/db';
 import { db } from '../shared/db';
+import { createLastUsedTracker } from '../shared/throttled-last-used';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   hashSecretKey,
-  candidateSecretKeyHashes,
   generateApiKeyPair,
   generateSandboxKeyPair,
   isApiKeySecretConfigured,
+  isGatewayKey,
   isKortixToken,
+  isAccountToken,
+  isServiceAccountToken,
+  isTunnelToken,
 } from '../shared/crypto';
+import { isOAuthAccessToken, isOAuthRefreshToken } from '../oauth/access-token';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -47,8 +53,9 @@ export interface CreateApiKeyResult {
 
 // ─── Throttle for last_used_at updates ───────────────────────────────────────
 
-const THROTTLE_MS = 15 * 60 * 1000;
-const lastUsedCache = new Map<string, number>();
+const updateLastUsedThrottled = createLastUsedTracker((keyId) =>
+  db.update(kortixApiKeys).set({ lastUsedAt: new Date() }).where(eq(kortixApiKeys.keyId, keyId)),
+);
 
 // ─── CRUD Operations ─────────────────────────────────────────────────────────
 
@@ -174,8 +181,25 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
     return { isValid: false, error: 'Invalid API key format — expected kortix_ prefix' };
   }
 
+  // A credential minted into one of the platform's other tables — a session or
+  // CLI PAT, a service account, a gateway key, a tunnel token, an OAuth token —
+  // can never match kortix_api_keys. Refuse it by shape: no doomed indexed
+  // probe and an error that names the presented credential, not "not found"
+  // (prod 2026-10-03: one client presenting its session PAT to /v1/router/*
+  // wrote 71 "Token not found in DB" warns in a minute; the token was valid).
+  const foreign = isAccountToken(secretKey) ? 'a personal access token (kortix_pat_)'
+    : isServiceAccountToken(secretKey) ? 'a service-account token (kortix_sa_)'
+    : isGatewayKey(secretKey) ? 'a gateway key (kortix_gw_)'
+    : isTunnelToken(secretKey) ? 'a tunnel token (kortix_tnl_)'
+    : isOAuthAccessToken(secretKey) ? 'an OAuth access token (kortix_oat_)'
+    : isOAuthRefreshToken(secretKey) ? 'an OAuth refresh token (kortix_ort_)'
+    : null;
+  if (foreign) {
+    return { isValid: false, error: `Invalid API key format — ${foreign} is not an API key` };
+  }
+
   try {
-    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
+    const secretKeyHashes = await candidateSecretKeyHashesAsync(secretKey);
 
     const [row] = await db
       .select({
@@ -196,8 +220,9 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
       .limit(1);
 
     if (!row) {
-      const hasAnyKeys = await db.select({ keyId: kortixApiKeys.keyId }).from(kortixApiKeys).limit(1);
-      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHashes[0]!.slice(0, 16)}... prefix="${secretKey.slice(0, 20)}..." anyKeysInDb=${hasAnyKeys.length > 0}`);
+      // No second probe query here: a miss must cost one indexed lookup, not
+      // two, because anyone can present an unknown token.
+      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHashes[0]!.slice(0, 16)}... prefix="${secretKey.slice(0, 20)}..."`);
       return { isValid: false, error: 'API key not found or invalid' };
     }
 
@@ -205,6 +230,7 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
       return { isValid: false, error: 'API key expired' };
     }
 
+    markTokenValidated(secretKey);
     // Fire-and-forget: update last_used_at (throttled)
     updateLastUsedThrottled(row.keyId).catch(() => {});
 
@@ -218,36 +244,5 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
   } catch (err) {
     console.error('API key validation error:', err);
     return { isValid: false, error: 'Validation error' };
-  }
-}
-
-// ─── Internal ────────────────────────────────────────────────────────────────
-
-async function updateLastUsedThrottled(keyId: string): Promise<void> {
-  const now = Date.now();
-  const lastUpdate = lastUsedCache.get(keyId) || 0;
-
-  if (now - lastUpdate < THROTTLE_MS) {
-    return;
-  }
-
-  lastUsedCache.set(keyId, now);
-
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) {
-        lastUsedCache.delete(k);
-      }
-    }
-  }
-
-  try {
-    await db
-      .update(kortixApiKeys)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(kortixApiKeys.keyId, keyId));
-  } catch (err) {
-    console.warn('Failed to update last_used_at:', err);
   }
 }

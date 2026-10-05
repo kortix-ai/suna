@@ -1,4 +1,4 @@
-import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
+import { GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +7,7 @@ import {
   AGENT_MODE_LABEL,
   AGENT_MODES,
   grantSummary,
-  KORTIX_CLI_CATALOG,
+  KORTIX_PERMISSIONS_CATALOG,
   PERMISSION_ACTION_LABEL,
   PERMISSION_ACTION_ONLY_KEYS,
   PERMISSION_ACTIONS,
@@ -15,11 +15,10 @@ import {
   PERMISSION_KEY_LABEL,
   PERMISSION_RULE_GROUPS,
   PERMISSION_RULE_KEYS,
+  behaviorBlock,
   stableStringify,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
-  WORKSPACE_MODE_LABEL,
-  WORKSPACE_MODES,
 } from './agent-editor';
 
 const read = (file: string) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
@@ -32,6 +31,21 @@ const permissionEditorSource = read('./permission-editor.tsx');
 const sectionSources = [accessFieldsSource, basicsFieldsSource, permissionEditorSource];
 const allEditorSources = [...sectionSources, editorSource, primitivesSource, grantFieldSource];
 
+describe('behaviorBlock', () => {
+  test('the draft carries the behavior once, as `behavior`, never the pre-W4 `opencode` alias', () => {
+    const served = { secrets: 'all', behavior: { mode: 'primary' }, opencode: { mode: 'primary' } } as never;
+    expect(behaviorBlock(served)).toEqual({ secrets: 'all', behavior: { mode: 'primary' } } as never);
+  });
+
+  test('an API that answers only `opencode` still fills `behavior`', () => {
+    expect(behaviorBlock({ opencode: { steps: 3 } } as never)).toEqual({ behavior: { steps: 3 } } as never);
+  });
+
+  test('a block without behavior stays without it', () => {
+    expect(behaviorBlock({ secrets: 'all' } as never)).toEqual({ secrets: 'all' } as never);
+  });
+});
+
 describe('agent environment editor', () => {
   test('loads sandbox templates and exposes the Environment field', () => {
     expect(editorSource).toContain('listProjectSandboxTemplates(projectId)');
@@ -43,9 +57,9 @@ describe('agent environment editor', () => {
     expect(accessFieldsSource).toContain('stalePin');
     // The Environment control IS the shared sandbox menu the composer uses.
     expect(accessFieldsSource).toContain('<SandboxTemplateMenu');
-    expect(accessFieldsSource).toContain('label="Environment"');
+    expect(accessFieldsSource).toContain("raw('text9e471951a1b4')");
     expect(accessFieldsSource).toContain("set('sandbox'");
-    expect(accessFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain("raw('texte8cb80e5c5cb')");
   });
 });
 
@@ -124,6 +138,11 @@ describe('stableStringify — the dirty check', () => {
     );
   });
 
+  test('disabled repository access remains distinct from an omitted or enabled policy', () => {
+    expect(stableStringify({ repository_access: false })).not.toBe(stableStringify({}));
+    expect(stableStringify({ repository_access: false })).not.toBe(stableStringify({ repository_access: true }));
+  });
+
   test('an undefined value reads the same as an absent key', () => {
     expect(stableStringify({ a: 1, b: undefined })).toBe(stableStringify({ a: 1 }));
   });
@@ -165,20 +184,24 @@ describe('mode pickers use the shared component library', () => {
     }
   });
 
-  test('Tabs stay scoped to the grant-mode field — every section uses Select', () => {
+  test('Tabs stay scoped to grants; repository access uses a Switch and enums use Select', () => {
     for (const source of sectionSources) {
       expect(source).not.toContain('@/components/ui/tabs');
-      expect(source).toContain("from '@/components/ui/select'");
+      expect(source).toContain(source === accessFieldsSource
+        ? "from '@/components/ui/switch'"
+        : "from '@/components/ui/select'");
     }
   });
 
   // The control these replaced hid "unset" behind clicking the already-active
   // segment. Every inherit-capable picker must now NAME that option.
   test('every inherit-capable picker names its inherit option', () => {
-    expect(accessFieldsSource).toContain('Project default');
-    expect(basicsFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain("raw('texte8cb80e5c5cb')");
+    expect(basicsFieldsSource).toContain("raw('text64f405e80a8d')");
     expect(permissionEditorSource).toContain('inheritLabel');
-    expect(permissionEditorSource).toContain('inheritLabel="Inherit"');
+    expect(permissionEditorSource).toContain(
+      "inheritLabel={tI18nComplete.raw('text3f72f0385768')}",
+    );
   });
 });
 
@@ -186,7 +209,6 @@ describe('display-name maps — Select renders the value verbatim', () => {
   test('every mode and action has a non-empty capitalized label', () => {
     const cases: [readonly string[], Record<string, string>][] = [
       [AGENT_MODES, AGENT_MODE_LABEL],
-      [WORKSPACE_MODES, WORKSPACE_MODE_LABEL],
       [PERMISSION_ACTIONS, PERMISSION_ACTION_LABEL],
     ];
     for (const [values, labels] of cases) {
@@ -200,17 +222,17 @@ describe('display-name maps — Select renders the value verbatim', () => {
   });
 });
 
-// KORTIX_CLI_CATALOG (the picker's grouped catalog) MUST expose exactly the
-// actions `GRANTABLE_KORTIX_CLI_ACTIONS` allows — imported from the real
+// KORTIX_PERMISSIONS_CATALOG (the picker's grouped catalog) MUST expose exactly the
+// actions `GRANTABLE_KORTIX_PERMISSIONS` allows — imported from the real
 // @kortix/manifest-schema package (not a hand-copied array) so an action
 // silently added or removed on either side of the mirror fails this test
 // immediately instead of only showing up as a UI gap someone notices later.
 // bun:test files aren't bundled for the browser, so importing the package
 // here carries none of the "not in the web bundle" bundle-size concern that
-// keeps KORTIX_CLI_CATALOG itself hand-authored — apps/api's
+// keeps KORTIX_PERMISSIONS_CATALOG itself hand-authored — apps/api's
 // unit-agents-parse.test.ts does the same cross-package import.
-describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
-  const all = KORTIX_CLI_CATALOG.flatMap((g) => g.actions);
+describe('KORTIX_PERMISSIONS_CATALOG — grantable action mirror', () => {
+  const all = KORTIX_PERMISSIONS_CATALOG.flatMap((g) => g.actions);
 
   test('only project-scoped actions appear (account-scoped admin never grantable)', () => {
     for (const a of all) {
@@ -229,9 +251,9 @@ describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
     expect(all).toContain('project.gateway.keys.manage');
   });
 
-  test('full-array equality against the real GRANTABLE_KORTIX_CLI_ACTIONS (order-independent)', () => {
-    expect(all.length).toBe(GRANTABLE_KORTIX_CLI_ACTIONS.length);
-    expect([...all].sort()).toEqual([...GRANTABLE_KORTIX_CLI_ACTIONS].sort());
+  test('full-array equality against the real GRANTABLE_KORTIX_PERMISSIONS (order-independent)', () => {
+    expect(all.length).toBe(GRANTABLE_KORTIX_PERMISSIONS.length);
+    expect([...all].sort()).toEqual([...GRANTABLE_KORTIX_PERMISSIONS].sort());
   });
 
   test('has no duplicate actions across groups', () => {

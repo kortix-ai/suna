@@ -108,6 +108,18 @@ describe('managed-skill overlay', () => {
     expect(managedSkillOverlayHash(renamed)).not.toBe(base);
   });
 
+  test('hash is the one the sandbox daemon computes for the same input (golden vector)', () => {
+    // The same hex is pinned in apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts
+    // for its overlayHash. The daemon compares the two, so either side drifting
+    // re-downloads the overlay on every boot.
+    expect(
+      managedSkillOverlayHash([
+        { path: 'kortix-system/SKILL.md', content: '---\ndescription: how kortix works\n---\nbody v2\n' },
+        { path: 'kortix-cli/SKILL.md', content: 'cli skill v2\n' },
+      ]),
+    ).toBe('453944bd7d750bb9b878fee50df662da07552c962238bc37a95f96853a75bcf9');
+  });
+
   test('hash is not confusable across a path/content boundary shift', () => {
     // Length-prefixed framing: `ab` + `c` must not hash like `a` + `bc`.
     const left = managedSkillOverlayHash([{ path: 'ab', content: 'c' }]);
@@ -223,7 +235,7 @@ describe('runtime assets manifest', () => {
 
 /**
  * THE COMPATIBILITY GUARD. Deployed daemons read the v1 keys off this document
- * (apps/kortix-sandbox-agent-server/src/runtime-assets.ts). Dropping or renaming
+ * (apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts). Dropping or renaming
  * one is invisible in a typecheck of the API alone and breaks every box already
  * in the field — the accept-encoding two-list divergence, again. This test is
  * what stops a future refactor from doing it quietly.
@@ -341,6 +353,16 @@ describe('manifest v2 components', () => {
     expect(opencode.source).toBe('npm');
     // No `path`: 167 MB per stale box must not cross our control plane.
     expect(Object.hasOwn(opencode, 'path')).toBe(false);
+  });
+
+  test('managed-catalog states the current managed lineup, config-derived and stable per process', async () => {
+    _resetRuntimeAssetsCache();
+    const managedCatalog = (await runtimeAssetsManifest()).components['managed-catalog'];
+    expect(Array.isArray(managedCatalog.ids)).toBe(true);
+    // Not stat'd or hashed from a file — a second read within the same
+    // process is byte-identical without needing `_resetRuntimeAssetsCache()`.
+    const again = (await runtimeAssetsManifest()).components['managed-catalog'];
+    expect(again.ids).toEqual(managedCatalog.ids);
   });
 });
 

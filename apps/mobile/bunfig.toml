@@ -1,0 +1,13 @@
+[test]
+# Registers the shared in-memory AsyncStorage mock (stores/in-memory-async-storage.ts)
+# before any test file's imports run. Bun shares one module registry across the
+# whole `bun test` process, and a persisted store binds to whichever AsyncStorage
+# it saw the one time its module first evaluated. Without this preload, a test
+# file that imports a persisted store WITHOUT importing the shared mock first
+# (e.g. a plain `import { PAGE_TABS } from '@/stores/tab-store'`) can still bind
+# that store to the real, unmocked package and break every later test of it —
+# in-memory-async-storage.test.ts only catches a competing `mock.module` call,
+# not a missing one.
+# `lib/testing/sdk-single-instance.ts`: `@kortix/sdk/react` shares this app's React and
+# React Query (the SDK package has its own copies; see the file).
+preload = ["./stores/in-memory-async-storage.ts", "./lib/testing/sdk-single-instance.ts"]

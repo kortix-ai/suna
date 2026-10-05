@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * Creating a trigger — a schedule or a webhook.
  *
@@ -42,7 +43,12 @@ import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
-import { createProjectTrigger, listProjectSessions, upsertProjectSecret } from '@kortix/sdk';
+import {
+  createProjectTrigger,
+  listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
+  upsertProjectSecret,
+} from '@kortix/sdk';
 import {
   type ModelKey,
   contract,
@@ -63,7 +69,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { TRIGGER_SESSION_ACCESS_COPY } from './trigger-session-access-copy';
+import { triggerSessionAccessCopy } from './trigger-session-access-copy';
 
 import {
   KIND_COPY,
@@ -82,14 +88,25 @@ import {
 
 type Step = 'type' | 'what' | 'how';
 
-/** A random signing key, hex-encoded. */
+/**
+ * A random signing key, hex-encoded.
+ *
+ * NO `Math.random` fallback. This key SIGNS webhook payloads, so a predictable
+ * one is forgeable — and V8's `Math.random` is xorshift128+, whose internal
+ * state is recoverable from a handful of outputs, so the old fallback produced
+ * a key an attacker could reproduce (CodeQL js/insecure-randomness, #6471).
+ * `crypto.getRandomValues` is available in every browser back to IE11 and in
+ * Node >= 19, so that branch was dead code that could only ever weaken the key.
+ * Refusing is the correct failure here: no key at all is safer than one that
+ * looks random and is not.
+ */
 function generateSigningKey(): string {
-  if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
-    const bytes = new Uint8Array(32);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  if (typeof crypto === 'undefined' || !('getRandomValues' in crypto)) {
+    throw new Error('Cannot generate a signing key: this browser has no secure random source.');
   }
-  return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Saved-secret names are UPPER_SNAKE_CASE — mirror the API's own rule so a
@@ -128,6 +145,7 @@ export function ScheduleCreateModal({
    *  than asking a question the page already answered. Still changeable. */
   initialAgent?: string | null;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [kind, setKind] = useState<TriggerKind | null>(null);
   const copy = kind ? KIND_COPY[kind] : null;
   const isCron = kind === 'cron';
@@ -164,7 +182,7 @@ export function ScheduleCreateModal({
   const models = useMemo(() => flattenModels(providers), [providers]);
   const sessions = useQuery({
     queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: open && mode === 'pinned',
     ...contract('inventory'),
   });
@@ -275,13 +293,16 @@ export function ScheduleCreateModal({
       const created = listing.triggers
         .filter((t) => t.type === kind && t.name === name.trim())
         .slice(-1)[0];
-      successToast(isCron ? 'Schedule created' : 'Webhook created', {
-        description: isCron
-          ? runAt
-            ? describeOneOff(runAt)
-            : describeCadence(cron.trim())
-          : 'Copy its address from the panel to finish setup.',
-      });
+      successToast(
+        isCron ? tI18nComplete.raw('text84e98b45ad8b') : tI18nComplete.raw('text20bf63f7b46f'),
+        {
+          description: isCron
+            ? runAt
+              ? describeOneOff(runAt)
+              : describeCadence(cron.trim())
+            : 'Copy its address from the panel to finish setup.',
+        },
+      );
       if (created) onCreated(created.slug);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Could not create it'),
@@ -329,13 +350,13 @@ export function ScheduleCreateModal({
     >
       <ModalContent className="gap-0 overflow-hidden p-0 sm:max-w-lg" modalClassName="lg:max-w-lg">
         <ModalHeader className="pb-1">
-          <ModalTitle>{copy ? copy.createLabel : 'New trigger'}</ModalTitle>
+          <ModalTitle>{copy ? copy.createLabel : tI18nComplete.raw('texta38f4ea67a30')}</ModalTitle>
           <ModalDescription>
             {step === 'type'
-              ? 'Choose how this trigger starts.'
+              ? tI18nComplete.raw('textf60eb7723e40')
               : isCron
-                ? 'Have an agent do something on its own, on a schedule you set.'
-                : 'Let another app start an agent by sending a request.'}
+                ? tI18nComplete.raw('text530f84eed1b8')
+                : tI18nComplete.raw('text8d5ac88c84ff')}
           </ModalDescription>
           <StepIndicator step={step} labels={stepLabels} />
         </ModalHeader>
@@ -345,43 +366,49 @@ export function ScheduleCreateModal({
             <div className="space-y-2">
               <TypeCard
                 icon={TimerIcon}
-                title="Scheduled"
-                description="Runs automatically on a repeating schedule, or once at a set time."
+                title={tI18nComplete.raw('text4724f344c1c0')}
+                description={tI18nComplete.raw('textfd7761663e4f')}
                 onClick={() => chooseKind('cron')}
               />
               <TypeCard
                 icon={WebhooksLogoIcon}
-                title="Webhook"
-                description="Starts when another app sends a request to a private address."
+                title={tI18nComplete.raw('text4814f62c108d')}
+                description={tI18nComplete.raw('textf1b28a589920')}
                 onClick={() => chooseKind('webhook')}
               />
             </div>
           ) : step === 'what' && copy ? (
             <>
-              <Field label="Name" hint={`Shown in your list of ${copy.noun}s.`}>
+              <Field
+                label={tI18nComplete.raw('textdcd1d5223f73')}
+                hint={tI18nComplete('text42bd5f3bc3ca', { value0: copy.noun })}
+              >
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Daily standup digest"
+                  placeholder={tI18nComplete.raw('textc8cf587a3b6c')}
                   maxLength={64}
                   autoFocus
                 />
               </Field>
 
               <Field
-                label="Instruction"
-                hint="Sent to the agent every time this runs, as if you had typed it."
+                label={tI18nComplete.raw('text112f3ccb1b36')}
+                hint={tI18nComplete.raw('text03956d4b33dc')}
               >
                 <Textarea
                   value={instruction}
                   onChange={(e) => setInstruction(e.target.value)}
-                  placeholder="Write today's status report and save it to /workspace/reports/"
+                  placeholder={tI18nComplete.raw('text2438ee64fbf9')}
                   rows={5}
                   className="leading-relaxed"
                 />
               </Field>
 
-              <Field label="Agent" hint="Which agent handles each run.">
+              <Field
+                label={tI18nComplete.raw('text11b39c93777e')}
+                hint={tI18nComplete.raw('text1b7bdab96532')}
+              >
                 {/* Same shape as the detail sheet: a full-width rounded-md
                     panel, not the chat composer pill these selectors ship
                     with. The control must not look different depending on
@@ -395,13 +422,16 @@ export function ScheduleCreateModal({
                 </div>
               </Field>
 
-              <Field label="Model" hint="Leave this alone to use the agent's usual model.">
+              <Field
+                label={tI18nComplete.raw('text5e2c614c23f0')}
+                hint={tI18nComplete.raw('text0593f4f7c4ed')}
+              >
                 <div className="bg-popover flex w-full items-center rounded-md border px-2 py-1.5">
                   <ModelSelector
                     models={models}
                     providers={providers}
                     selectedModel={model}
-                    unsetLabel="Agent's usual model"
+                    unsetLabel={tI18nComplete.raw('text57069bbd0d2e')}
                     onSelect={setModel}
                   />
                 </div>
@@ -410,7 +440,7 @@ export function ScheduleCreateModal({
           ) : (
             <>
               {isCron ? (
-                <Field label="When it runs">
+                <Field label={tI18nComplete.raw('text1bd739e67b5e')}>
                   <ScheduleBuilder
                     value={cron}
                     onChange={setCron}
@@ -422,14 +452,14 @@ export function ScheduleCreateModal({
                 </Field>
               ) : (
                 <Field
-                  label="Signing key"
-                  hint="Both sides sign each request with this, so nobody else can start your agent."
+                  label={tI18nComplete.raw('text49395b9594c2')}
+                  hint={tI18nComplete.raw('textcbdd5dc3da21')}
                 >
                   <div className="flex gap-2">
                     <Input
                       value={signingKey}
                       onChange={(e) => setSigningKey(e.target.value)}
-                      placeholder="Paste or generate a key"
+                      placeholder={tI18nComplete.raw('text74414cb4f277')}
                       className="font-mono text-sm"
                     />
                     <Button
@@ -440,12 +470,11 @@ export function ScheduleCreateModal({
                       onClick={() => setSigningKey(generateSigningKey())}
                     >
                       <ArrowsClockwiseIcon className="size-3.5 shrink-0" />
-                      Generate
+                      {tI18nComplete.raw('text49e49bb4401e')}
                     </Button>
                   </div>
                   <InfoBanner tone="info" className="text-xs">
-                    We save this as a project secret and give you the web address once the webhook
-                    exists.
+                    {tI18nComplete.raw('textc22e9b2269f5')}
                   </InfoBanner>
                 </Field>
               )}
@@ -457,15 +486,15 @@ export function ScheduleCreateModal({
                     size="sm"
                     className="text-muted-foreground -mx-2 w-[calc(100%+1rem)] justify-between px-2"
                   >
-                    Advanced
+                    {tI18nComplete.raw('text9f088dbebd6c')}
                     <CaretDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
                   </Button>
                 </DisclosureTrigger>
                 <DisclosureContent>
                   <div className="space-y-6 pt-4">
                     <Field
-                      label="Memory between runs"
-                      hint="Whether the agent picks up where it left off, or starts clean."
+                      label={tI18nComplete.raw('text345e6cf10469')}
+                      hint={tI18nComplete.raw('text319d909352ff')}
                     >
                       <RunLocationFields
                         mode={mode}
@@ -484,30 +513,30 @@ export function ScheduleCreateModal({
                     </Field>
 
                     <Field
-                      label="Session access"
-                      hint="Pinned sessions keep their own sharing settings. This policy applies when the trigger creates a session."
+                      label={tI18nComplete.raw('textbc9424d3f527')}
+                      hint={tI18nComplete.raw('text8493c3761028')}
                     >
                       <SharingPicker
                         projectId={projectId}
                         value={sessionAccess}
                         onChange={setSessionAccess}
                         showHeading={false}
-                        copy={TRIGGER_SESSION_ACCESS_COPY}
+                        copy={triggerSessionAccessCopy(tI18nComplete)}
                       />
                     </Field>
 
                     {!isCron && (
                       <>
                         <Field
-                          label="Only run when"
-                          hint="Ignore requests you don't care about. Leave empty to run on all of them."
+                          label={tI18nComplete.raw('text94c7226773af')}
+                          hint={tI18nComplete.raw('text8e47e838d897')}
                         >
                           <ConditionsEditor rows={conditions} onChange={setConditions} />
                         </Field>
 
                         <Field
-                          label="Name the saved secret"
-                          hint="The key above is saved under this name in Secrets. Built from the name if you leave this blank."
+                          label={tI18nComplete.raw('text301cd463a175')}
+                          hint={tI18nComplete.raw('text432020e4f157')}
                         >
                           <Input
                             value={secretName}
@@ -520,11 +549,11 @@ export function ScheduleCreateModal({
                     )}
 
                     <Field
-                      label="Custom ID"
+                      label={tI18nComplete.raw('text7396f100afdf')}
                       hint={
                         isCron
-                          ? "Built from the name if you leave this blank. It can't be changed later."
-                          : "Used at the end of the web address. Built from the name if you leave this blank, and it can't be changed later."
+                          ? tI18nComplete.raw('textfb2536db879a')
+                          : tI18nComplete.raw('text9f2198f23b84')
                       }
                     >
                       <Input
@@ -537,8 +566,8 @@ export function ScheduleCreateModal({
                     </Field>
 
                     <Field
-                      label="Start it right away"
-                      hint="Turn this off to create it paused and look it over first."
+                      label={tI18nComplete.raw('textd90c143bf007')}
+                      hint={tI18nComplete.raw('textbed03adbb73f')}
                     >
                       <div className="bg-card flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
                         <Label htmlFor="schedule-start-active" className="text-sm font-normal">
@@ -568,23 +597,23 @@ export function ScheduleCreateModal({
           {step === 'how' ? (
             <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setStep('what')}>
               <ArrowLeftIcon className="size-4 shrink-0" />
-              Back
+              {tI18nComplete.raw('text76900f1bfd16')}
             </Button>
           ) : step === 'what' ? (
             <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setStep('type')}>
               <ArrowLeftIcon className="size-4 shrink-0" />
-              Back
+              {tI18nComplete.raw('text76900f1bfd16')}
             </Button>
           ) : (
             <span />
           )}
           <div className="flex items-center gap-2">
             <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             {step === 'type' ? null : step === 'what' ? (
               <Button size="sm" className="gap-1.5" onClick={goForward}>
-                Continue
+                {tI18nComplete.raw('text31fbef162594')}
                 <ArrowRightIcon className="size-4 shrink-0" />
               </Button>
             ) : (
@@ -656,11 +685,15 @@ function TypeCard({
 }
 
 function StepIndicator({ step, labels }: { step: Step; labels: Record<Step, string> }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const order: Step[] = ['type', 'what', 'how'];
   return (
     <div
       className="flex items-center gap-2 pt-3"
-      aria-label={`Step ${order.indexOf(step) + 1} of ${order.length}`}
+      aria-label={tI18nComplete('texteb0fea7e437e', {
+        value0: order.indexOf(step) + 1,
+        value1: order.length,
+      })}
     >
       {order.map((id, index) => {
         const current = step === id;

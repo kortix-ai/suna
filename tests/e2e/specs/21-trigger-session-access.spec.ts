@@ -4,6 +4,7 @@ import { loadEnv } from '../../src/core/env';
 import {
   createDatabaseSession,
   setDatabaseEnterpriseDemo,
+  setDatabaseTriggerRunFailed,
 } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
@@ -58,7 +59,7 @@ async function openTriggerAccess(page: Page, projectId: string) {
   return { panel, section, sheet };
 }
 
-test.describe('21 — Trigger-created session access UI', () => {
+test.describe('21 — Session access UI', () => {
   test('defaults private and saves selected members and groups through the trigger PATCH', async ({
     page,
   }) => {
@@ -113,6 +114,8 @@ test.describe('21 — Trigger-created session access UI', () => {
         accountId,
         userId: crypto.randomUUID(),
         visibility: 'private',
+        // A trigger run: the sidebar lists it under Automated, not the viewer's own sessions.
+        initiator: { type: 'trigger', id: 'access-policy-ui' },
         metadata: {
           custom_name: 'Shared scheduled session',
           source: 'trigger:scheduler',
@@ -155,6 +158,8 @@ test.describe('21 — Trigger-created session access UI', () => {
       await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
+      // Automated runs sit in their own section, closed until opened (KRTX-639).
+      await page.getByRole('button', { name: 'Automated', exact: true }).click();
       const ownSidebarLink = page.locator(`a[href$="/sessions/${ownSessionId}"]`);
       const sharedSidebarLink = page.locator(`a[href$="/sessions/${sharedTriggerSessionId}"]`);
       const ownSidebarRow = ownSidebarLink.locator('..');
@@ -180,7 +185,10 @@ test.describe('21 — Trigger-created session access UI', () => {
       await expect(ownInventoryRow).toBeVisible();
       await expect(ownInventoryRow.locator('[data-session-shared="true"]')).toHaveCount(0);
       await expect(sharedInventoryRow).toBeVisible();
-      await expect(sharedInventoryRow.locator('[data-session-shared="true"] svg')).toHaveCount(1);
+      // The chip names the run's starter (the trigger's schedule icon) and its access icon.
+      const sharedChip = sharedInventoryRow.locator('[data-session-shared="true"][data-session-starter="trigger"]');
+      await expect(sharedChip).toHaveCount(1);
+      await expect(sharedChip.locator('svg')).toHaveCount(2);
       await expect(sharedInventoryRow.getByText('Shared', { exact: true })).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -265,6 +273,257 @@ test.describe('21 — Trigger-created session access UI', () => {
       }
       if (project) await project.dispose().catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
+  // Prod 2026-09-30: a trigger's runs failed for hours while the Schedule
+  // page showed an ordinary active schedule.
+  test('a trigger whose last run failed shows the reason on its row and in its panel', async ({
+    page,
+  }, testInfo) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(120_000);
+
+    const runId = Date.now().toString(36);
+    const email = `e2e-trigger-failed-${runId}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+    const env = loadEnv();
+    let project: ManifestProject | null = null;
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    try {
+      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+      const account = accounts.find(
+        (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+      );
+      if (!account) throw new Error('the seeded user owns no account');
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
+        accountId: account.account_id,
+        userId: user.id,
+        name: `Trigger failure ${runId}`,
+        databaseUrl: databaseUrl!,
+      });
+      const projectId = project.id;
+      const created = await api<{ triggers: Array<{ slug: string; name: string }> }>(
+        session.access_token,
+        'POST',
+        `/projects/${projectId}/triggers`,
+        {
+          name: 'Inbox triage',
+          type: 'cron',
+          cron: '0 0 3 * * *',
+          timezone: 'UTC',
+          prompt_template: 'Triage the inbox.',
+        },
+        201,
+      );
+      const slug = created.triggers.find((trigger) => trigger.name === 'Inbox triage')!.slug;
+      const reason = 'Out of credits: Payment Required: Insufficient credits.';
+      await setDatabaseTriggerRunFailed(env, { projectId, slug, error: reason });
+
+      await installBrowserSessionDirect(page, session, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, account.account_id);
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme });
+        await page.goto(`/projects/${projectId}/customize/triggers`, { waitUntil: 'domcontentloaded' });
+        await dismissOnboarding(page);
+        const row = page.getByRole('row', { name: /Inbox triage/ });
+        await expect(row.getByText('Last run didn’t finish', { exact: true })).toBeVisible();
+        await row.getByRole('button', { name: 'Inbox triage', exact: true }).click();
+        const sheet = page.getByRole('dialog', { name: 'Inbox triage', exact: true });
+        await expect(sheet.getByText('Last run didn’t finish', { exact: true })).toBeVisible();
+        await expect(sheet.getByText(`${reason} The next run tries again.`)).toBeVisible();
+        await testInfo.attach(`failed-trigger-${colorScheme}.png`, {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        });
+      }
+      expect(pageErrors).toEqual([]);
+    } finally {
+      if (project) await project.dispose().catch(() => {});
+      await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
+
+  test('an owner lets admins open every session; the admin then finds a member\'s private session', async ({
+    page,
+    browser,
+  }) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(240_000);
+
+    const runId = Date.now().toString(36);
+    const ownerEmail = `e2e-oversight-owner-${runId}@example.test`;
+    const adminEmail = `e2e-oversight-admin-${runId}@example.test`;
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const admin = await createAuthUser(adminEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
+    const adminSession = await signIn(adminEmail, authOptions);
+    const env = loadEnv();
+    let accountId: string | null = null;
+    let project: ManifestProject | null = null;
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    try {
+      // Personal accounts are lazy; a token mint creates the owner's.
+      await api(ownerSession.access_token, 'POST', '/accounts/tokens', { name: `e2e-${runId}` }, 201);
+      const team = await api<{ account_id: string }>(
+        ownerSession.access_token,
+        'POST',
+        '/accounts',
+        { name: `Oversight ${runId}` },
+        201,
+      );
+      accountId = team.account_id;
+      await api(
+        ownerSession.access_token,
+        'POST',
+        `/accounts/${accountId}/members`,
+        { email: adminEmail, role: 'admin' },
+        201,
+      );
+      project = await createManifestProject({
+        api,
+        accessToken: ownerSession.access_token,
+        accountId,
+        userId: owner.id,
+        name: `Oversight UI ${runId}`,
+        databaseUrl: databaseUrl!,
+      });
+      const projectId = project.id;
+      // Another member's private session: invisible to the admin by default.
+      await createDatabaseSession(env, {
+        projectId,
+        accountId,
+        userId: crypto.randomUUID(),
+        visibility: 'private',
+        metadata: { custom_name: 'Member private chat' },
+      });
+      // A whole-project session, so the Access facet has two kinds to offer.
+      await createDatabaseSession(env, {
+        projectId,
+        accountId,
+        userId: crypto.randomUUID(),
+        visibility: 'project',
+        metadata: { custom_name: 'Team roadmap' },
+      });
+
+      // Owner: the switch is off, then on through the confirm dialog.
+      await installBrowserSessionDirect(page, ownerSession, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await page.goto(`/projects/${projectId}/sessions?accountId=${accountId}&accountTab=settings`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await dismissOnboarding(page);
+      const toggle = page.getByRole('switch', { name: 'Admins can open every session' });
+      await expect(toggle).toBeEnabled();
+      await expect(toggle).toHaveAttribute('aria-checked', 'false');
+      await toggle.click();
+      const confirm = page.getByRole('alertdialog');
+      await expect(confirm.getByText('Let admins open every session?')).toBeVisible();
+      const patchRequest = page.waitForRequest(
+        (request) =>
+          request.method() === 'PATCH' &&
+          request.url().endsWith(`/v1/accounts/${accountId}/iam/session-oversight`),
+      );
+      const patchResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          response.url().endsWith(`/v1/accounts/${accountId}/iam/session-oversight`),
+      );
+      await confirm.getByRole('button', { name: 'Turn on', exact: true }).click();
+      expect((await patchRequest).postDataJSON()).toEqual({ enabled: true });
+      expect((await patchResponse).status()).toBe(200);
+      await expect(toggle).toHaveAttribute('aria-checked', 'true');
+      const readback = await api<{ enabled: boolean }>(
+        ownerSession.access_token,
+        'GET',
+        `/accounts/${accountId}/iam/session-oversight`,
+      );
+      expect(readback.enabled).toBe(true);
+
+      // Admin: the switch is read-only for them, and the Sessions page now
+      // lists the member's private session.
+      const adminContext = await browser.newContext();
+      const adminPage = await adminContext.newPage();
+      try {
+        await installBrowserSessionDirect(adminPage, adminSession, `/projects/${projectId}`, authOptions);
+        await selectAccountForUi(adminPage, accountId);
+        // GET only: on a split origin (staging web → staging-api) the CORS
+        // preflight OPTIONS matches the same URL first and answers 204.
+        const inventory = adminPage.waitForResponse(
+          (response) =>
+            response.request().method() === 'GET' &&
+            response.url().includes(`/v1/projects/${projectId}/sessions`) &&
+            response.url().includes('scope=project'),
+        );
+        await adminPage.goto(`/projects/${projectId}/sessions`, { waitUntil: 'domcontentloaded' });
+        await dismissOnboarding(adminPage);
+        expect((await inventory).status()).toBe(200);
+        const memberRow = adminPage.getByLabel('Show details for Member private chat');
+        await expect(memberRow).toBeVisible();
+        // The row names its owner and its access; the admin's is not theirs.
+        await expect(memberRow.locator('[data-session-owner]')).toHaveAttribute(
+          'aria-label',
+          /· Only the owner$/,
+        );
+        await expect(memberRow.locator('[data-session-shared="true"]')).toHaveCount(1);
+
+        // The Access facet narrows the inventory: whole-project sessions only.
+        await adminPage
+          .getByRole('button', { name: 'Session view options', exact: true })
+          .last()
+          .click();
+        // Drive the submenu from the keyboard. The toolbar sits at the right
+        // edge, so at 1280px the submenu flips LEFT of the menu, and a pointer
+        // jump from its trigger leaves Radix's grace area and closes it (the
+        // pre-existing Status submenu does the same). Keys are deterministic.
+        //
+        // No hover, and the pointer parked off the menu: toggling the filter
+        // reflows the list, Chromium re-dispatches mousemove under a cursor
+        // that did not move, and a cursor left over the menu moved focus to
+        // another item and closed this submenu before `aria-checked` could be
+        // read (2 of 3 attempts on main, Tests run 35744224673).
+        await adminPage.mouse.move(0, 0);
+        await adminPage.getByRole('menuitem', { name: /^Access/ }).focus();
+        await adminPage.keyboard.press('ArrowRight');
+        const wholeProject = adminPage.getByRole('menuitemcheckbox', { name: /Whole project/ });
+        await expect(wholeProject).toBeVisible();
+        for (let step = 0; step < 4; step += 1) {
+          if (await wholeProject.evaluate((el) => el === document.activeElement)) break;
+          await adminPage.keyboard.press('ArrowDown');
+        }
+        await expect(wholeProject).toBeFocused();
+        await adminPage.keyboard.press('Space');
+        await expect(wholeProject).toHaveAttribute('aria-checked', 'true');
+        await adminPage.keyboard.press('Escape');
+        await adminPage.keyboard.press('Escape');
+        await expect(adminPage.getByLabel('Show details for Team roadmap')).toBeVisible();
+        await expect(memberRow).toHaveCount(0);
+
+        await adminPage.goto(
+          `/projects/${projectId}/sessions?accountId=${accountId}&accountTab=settings`,
+          { waitUntil: 'domcontentloaded' },
+        );
+        const adminToggle = adminPage.getByRole('switch', { name: 'Admins can open every session' });
+        await expect(adminToggle).toBeDisabled();
+        await expect(adminPage.getByText('Only an account owner can change this.')).toBeVisible();
+      } finally {
+        await adminContext.close();
+      }
+      expect(pageErrors).toEqual([]);
+    } finally {
+      if (project) await project.dispose().catch(() => {});
+      if (accountId) {
+        await api(ownerSession.access_token, 'DELETE', '/billing/account/delete-immediately', {
+          account_id: accountId,
+        }).catch(() => {});
+      }
+      await deleteAuthUser(owner.id, authOptions).catch(() => {});
+      await deleteAuthUser(admin.id, authOptions).catch(() => {});
     }
   });
 });

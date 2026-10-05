@@ -30,7 +30,8 @@ export async function onSetupLinkModalClose(input: {
   // Same base the intake passes: these public setup-link routes are addressed
   // by backend url, not through the app's authenticated client.
   const finalize =
-    input.finalize ?? ((token: string) => finalizeConnectorSetupLink(token, { backendUrl: setupLinkApiBase() }));
+    input.finalize ??
+    ((token: string) => finalizeConnectorSetupLink(token, { backendUrl: setupLinkApiBase() }));
   try {
     await finalize(input.token);
   } catch {

@@ -387,3 +387,24 @@ describe('ToolParts wrapper — un-cap keeps height only (Task 17, W11/D14)', ()
     expect(wrapperClassName).not.toContain('overflow-visible');
   });
 });
+
+describe('ToolParts — a lone show call fills the panel', () => {
+  // The show tool sizes its preview `h-full` all the way down to the iframe.
+  // That height only resolves if this column has one; without it the iframe
+  // fell back to the browser's 150px default and the preview was clipped.
+  function columnClass(parts: ToolPart[]): string {
+    const provider = ToolParts({ parts, sessionId: 's1' }) as ReactElement<{
+      children: ReactElement<{ className: string }>;
+    }>;
+    return provider.props.children.props.className;
+  }
+
+  test('one show call: the column takes the full height', () => {
+    expect(columnClass([part('show', 'completed')])).toContain('h-full');
+    expect(columnClass([part('show-user', 'completed')])).toContain('h-full');
+  });
+
+  test('any other tool, or several calls, keeps its natural height', () => {
+    expect(columnClass([part('bash', 'completed')])).not.toContain('h-full');
+  });
+});

@@ -2,8 +2,9 @@
 
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { Command } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import type { Command } from '../../core/runtime/runtime-types';
+import { useRuntimeSupports } from '../use-runtime-supports';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } from './shared';
 
 // ============================================================================
@@ -21,11 +22,15 @@ import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } fro
  * treats a corrupt localStorage placeholder as a miss, so every consumer
  * (`detectCommandFromText`, the slash menu, command attachments) can iterate
  * the result unconditionally.
+ *
+ * Slash commands are a runtime capability (`session.commands`): a runtime
+ * without them is never asked, and the list stays empty.
  */
-export function useOpenCodeCommands() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimeCommands() {
+  const runtimeReady = useRuntimeReady();
+  const supported = useRuntimeSupports('session.commands');
   return useQuery<Command[]>({
-    queryKey: opencodeKeys.commands(),
+    queryKey: runtimeKeys.commands(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.command.list();
@@ -34,13 +39,13 @@ export function useOpenCodeCommands() {
       return commands;
     },
     placeholderData: () => cachedRuntimeList<Command>(LS_COMMANDS),
-    enabled: runtimeReady,
+    enabled: runtimeReady && supported,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
 }
 
-export interface ExecuteOpenCodeCommandInput {
+export interface ExecuteRuntimeCommandInput {
   sessionId: string;
   command: string;
   args?: string;
@@ -49,14 +54,14 @@ export interface ExecuteOpenCodeCommandInput {
   variant?: string;
 }
 
-export async function executeOpenCodeCommand({
+export async function executeRuntimeCommand({
   sessionId,
   command,
   args,
   agent,
   model,
   variant,
-}: ExecuteOpenCodeCommandInput): Promise<void> {
+}: ExecuteRuntimeCommandInput): Promise<void> {
   const client = getClient();
   const result = await client.session.command({
     sessionID: sessionId,
@@ -69,9 +74,9 @@ export async function executeOpenCodeCommand({
   unwrap(result);
 }
 
-export function useExecuteOpenCodeCommand() {
+export function useExecuteRuntimeCommand() {
   return useMutation({
-    mutationFn: executeOpenCodeCommand,
+    mutationFn: executeRuntimeCommand,
     // CRITICAL: Disable retry for commands. The /command endpoint blocks until
     // the agent finishes, which can take minutes (e.g. onboarding). If a proxy
     // timeout or network error kills the connection, TanStack Query's default
@@ -81,3 +86,13 @@ export function useExecuteOpenCodeCommand() {
     retry: false,
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `ExecuteRuntimeCommandInput`. Removed in the next major. */
+export type ExecuteOpenCodeCommandInput = ExecuteRuntimeCommandInput;
+/** @deprecated Renamed to `executeRuntimeCommand`. Removed in the next major. */
+export const executeOpenCodeCommand = executeRuntimeCommand;
+/** @deprecated Renamed to `useRuntimeCommands`. Removed in the next major. */
+export const useOpenCodeCommands = useRuntimeCommands;
+/** @deprecated Renamed to `useExecuteRuntimeCommand`. Removed in the next major. */
+export const useExecuteOpenCodeCommand = useExecuteRuntimeCommand;

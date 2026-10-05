@@ -1,0 +1,252 @@
+/**
+ * The two blocking interactions a turn can raise: a permission request before
+ * a tool runs, and a question the agent asks the user. Both are Kortix types
+ * (`RuntimePermissionRequest`, `RuntimeQuestionRequest`), answered over the
+ * routes the product already calls (`/permission/:id/reply`,
+ * `/question/:id/reply|reject`).
+ */
+import { randomUUID } from 'node:crypto'
+import type {
+  RuntimePermissionCapability,
+  RuntimePermissionReply,
+  RuntimePermissionRequest,
+  RuntimeQuestion,
+  RuntimeQuestionRequest,
+  RuntimeToolRef,
+} from '@kortix/api-contract/transcript'
+import type { RuntimeFrame } from './transcript'
+
+export type PermissionReply = RuntimePermissionReply
+
+/** `allow` | `ask` | `deny` per tool name, `*` as the default. */
+export type PermissionRule = 'allow' | 'ask' | 'deny'
+/** OpenCode's `PermissionRuleConfig`: a bare action, or a glob-pattern -> action map. */
+export type PermissionRuleConfig = PermissionRule | Record<string, PermissionRule>
+export type PermissionPolicy = Record<string, PermissionRuleConfig>
+
+const RULES = new Set(['allow', 'ask', 'deny'])
+const isRule = (value: unknown): value is PermissionRule => typeof value === 'string' && RULES.has(value)
+
+/**
+ * Compile the manifest's compiled `permission` block (OpenCode's
+ * PermissionConfig: `{ [tool]: 'allow'|'ask'|'deny' | { [pattern]: rule } }`).
+ * Pattern maps are KEPT whole and matched per call by {@link resolveRule} —
+ * collapsing them to their `*` entry would turn an explicit
+ * `bash: { 'rm -rf *': 'deny', '*': 'allow' }` into an unconditional allow.
+ * A tool with no rule is `allow`, OpenCode's default. A bare action
+ * (`permission: deny`) is OpenCode's whole-agent form: it covers every tool.
+ */
+export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
+  const policy: PermissionPolicy = {}
+  if (isRule(raw)) return { '*': raw }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return policy
+  for (const [tool, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (isRule(value)) policy[tool] = value
+    else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const patterns: Record<string, PermissionRule> = {}
+      for (const [pattern, rule] of Object.entries(value as Record<string, unknown>)) {
+        if (isRule(rule)) patterns[pattern] = rule
+      }
+      if (Object.keys(patterns).length > 0) policy[tool] = patterns
+    }
+  }
+  return policy
+}
+
+/**
+ * OpenCode's `Wildcard.match` (`packages/opencode/src/util/wildcard.ts`):
+ * backslashes normalise to `/`, `*` becomes `.*`, `?` becomes `.`, every other
+ * regex metacharacter is escaped, and the whole pattern is anchored and
+ * dot-all. A pattern ending in ` *` also matches the bare command, so `ls *`
+ * covers a plain `ls`.
+ */
+function wildcardMatch(value: string, pattern: string): boolean {
+  let escaped = pattern
+    .replaceAll('\\', '/')
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.')
+  if (escaped.endsWith(' .*')) escaped = `${escaped.slice(0, -3)}( .*)?`
+  return new RegExp(`^${escaped}$`, 's').test(value.replaceAll('\\', '/'))
+}
+
+/**
+ * OpenCode's `Wildcard.all`: patterns are sorted by length then name and the
+ * LAST match wins, so the most specific pattern decides and the one-character
+ * `*` is the weakest entry in the map.
+ */
+function matchPatterns(subject: string, patterns: Record<string, PermissionRule>): PermissionRule | undefined {
+  let matched: PermissionRule | undefined
+  const sorted = Object.entries(patterns).sort(([a], [b]) => a.length - b.length || a.localeCompare(b))
+  for (const [pattern, rule] of sorted) {
+    if (wildcardMatch(subject, pattern)) matched = rule
+  }
+  return matched
+}
+
+/**
+ * The string a pattern is tested against, per tool — the subject OpenCode sends
+ * as the permission request's pattern: the command line for `bash`, the skill
+ * name for `skill`, the target path for the workspace tools.
+ */
+export function permissionSubject(tool: string, args: unknown): string | undefined {
+  if (!args || typeof args !== 'object') return undefined
+  const value = (args as Record<string, unknown>)[tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : 'path']
+  return typeof value === 'string' ? value : undefined
+}
+
+/** Resolve one tool's rule for this call. `undefined` means "no rule applies". */
+function resolveRule(config: PermissionRuleConfig | undefined, tool: string, args: unknown): PermissionRule | undefined {
+  if (config === undefined || typeof config === 'string') return config
+  const subject = permissionSubject(tool, args)
+  if (subject !== undefined) return matchPatterns(subject, config)
+  // No subject to test the specific patterns against. A restriction we cannot
+  // evaluate must never silently degrade to `allow`.
+  if (Object.entries(config).some(([pattern, rule]) => pattern !== '*' && rule !== 'allow')) return 'ask'
+  return config['*']
+}
+
+/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs; the search and scrape tools reach the web. */
+const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
+  write: 'edit',
+  web_search: 'websearch',
+  image_search: 'websearch',
+  scrape_webpage: 'webfetch',
+}
+
+/**
+ * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
+ * `memory` writes files under `memory/`: every command but `view` is an `edit`, so `edit: deny` stops it as it stops `write`.
+ */
+export function toolCapability(tool: string, args?: unknown): string {
+  if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'
+  return TOOL_CAPABILITY[tool] ?? tool
+}
+
+/** One call's rule under `policy`: the tool's entry, else its capability's, else `*`. `undefined` means the policy says nothing. */
+export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
+  return resolveRule(policy[tool] ?? policy[toolCapability(tool, args)] ?? policy['*'], tool, args)
+}
+
+/**
+ * Whether an agent may see a skill. The manifest `skills:` grant compiles to
+ * OpenCode's `permission.skill` rule; only a `deny` hides a skill. pi has no
+ * skill tool to gate on load, so an `ask` skill stays listed.
+ */
+export function skillGranted(policy: PermissionPolicy, name: string): boolean {
+  return resolvePolicyRule(policy, 'skill', { name }) !== 'deny'
+}
+
+export class PermissionBroker {
+  private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void }>()
+  private readonly alwaysAllowed = new Set<string>()
+
+  constructor(
+    private readonly sessionID: string,
+    private readonly publish: (frame: RuntimeFrame) => void,
+    private policy: PermissionPolicy = {},
+    private readonly onAsked?: (request: RuntimePermissionRequest) => void,
+  ) {}
+
+  setPolicy(policy: PermissionPolicy): void {
+    this.policy = policy
+  }
+
+  rule(tool: string, args?: unknown): PermissionRule {
+    const resolved = resolvePolicyRule(this.policy, tool, args)
+    // A deny outranks an earlier "always": approving `ls` must not unlock the
+    // `rm -rf *` the same pattern map denies.
+    if (resolved === 'deny') return 'deny'
+    if (this.alwaysAllowed.has(toolCapability(tool, args))) return 'allow'
+    return resolved ?? 'allow'
+  }
+
+  /** Resolves with the user's reply; never rejects. */
+  ask(input: { tool: string; args: unknown; ref?: RuntimeToolRef }): Promise<PermissionReply> {
+    const request: RuntimePermissionRequest = {
+      id: `perm_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
+      sessionID: this.sessionID,
+      // The capability, so "always" covers every tool that shares it (`write` and `edit`).
+      permission: toolCapability(input.tool, input.args),
+      patterns: [permissionSubject(input.tool, input.args) ?? '*'],
+      metadata: input.args && typeof input.args === 'object' ? (input.args as Record<string, unknown>) : {},
+      always: ['*'],
+      ...(input.ref ? { tool: input.ref } : {}),
+    }
+    return new Promise<PermissionReply>((resolve) => {
+      this.pending.set(request.id, { request, resolve })
+      this.publish({ type: 'permission.asked', properties: { ...request } })
+      this.onAsked?.(request)
+    })
+  }
+
+  reply(id: string, reply: PermissionReply): boolean {
+    const entry = this.pending.get(id)
+    if (!entry) return false
+    this.pending.delete(id)
+    if (reply === 'always') this.alwaysAllowed.add(entry.request.permission)
+    this.publish({ type: 'permission.replied', properties: { sessionID: this.sessionID, requestID: id, reply } })
+    entry.resolve(reply)
+    return true
+  }
+
+  list(): RuntimePermissionRequest[] {
+    return [...this.pending.values()].map((entry) => entry.request)
+  }
+
+  /** A turn that ends (abort, error) releases every request it left open. */
+  rejectAll(): void {
+    for (const id of [...this.pending.keys()]) this.reply(id, 'reject')
+  }
+}
+
+export class QuestionBroker {
+  private readonly pending = new Map<string, { request: RuntimeQuestionRequest; resolve: (answers: string[][] | null) => void }>()
+
+  constructor(
+    private readonly sessionID: string,
+    private readonly publish: (frame: RuntimeFrame) => void,
+    private readonly onAsked?: (request: RuntimeQuestionRequest) => void,
+  ) {}
+
+  /** Resolves with the answers, or null when rejected; never rejects. */
+  ask(questions: RuntimeQuestion[], ref?: RuntimeToolRef): Promise<string[][] | null> {
+    const request: RuntimeQuestionRequest = {
+      id: `que_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
+      sessionID: this.sessionID,
+      questions,
+      ...(ref ? { tool: ref } : {}),
+    }
+    return new Promise((resolve) => {
+      this.pending.set(request.id, { request, resolve })
+      this.publish({ type: 'question.asked', properties: { ...request } })
+      this.onAsked?.(request)
+    })
+  }
+
+  reply(id: string, answers: string[][]): boolean {
+    const entry = this.pending.get(id)
+    if (!entry) return false
+    this.pending.delete(id)
+    this.publish({ type: 'question.replied', properties: { sessionID: this.sessionID, requestID: id, answers } })
+    entry.resolve(answers)
+    return true
+  }
+
+  reject(id: string): boolean {
+    const entry = this.pending.get(id)
+    if (!entry) return false
+    this.pending.delete(id)
+    this.publish({ type: 'question.rejected', properties: { sessionID: this.sessionID, requestID: id } })
+    entry.resolve(null)
+    return true
+  }
+
+  list(): RuntimeQuestionRequest[] {
+    return [...this.pending.values()].map((entry) => entry.request)
+  }
+
+  rejectAll(): void {
+    for (const id of [...this.pending.keys()]) this.reject(id)
+  }
+}

@@ -11,7 +11,7 @@
  * This module owns catalog *construction + read*. There is no deterministic
  * install engine anymore — adding an item to an existing project is an agent
  * import (POST /:projectId/marketplace/install-session, in
- * projects/routes/r10.ts), which resolves an entry by id via `getCatalogEntry`
+ * projects/routes/marketplace-install-session.ts), which resolves an entry by id via `getCatalogEntry`
  * and hands its files to a session to read/merge/CR.
  */
 
@@ -23,6 +23,7 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
+import { AGENTS_DIR, agentFileCandidates, SKILLS_DIR } from "@kortix/manifest-schema";
 import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
@@ -149,7 +150,10 @@ function projectAgentsAndTriggers(
 
   const agentNames = m.agents && typeof m.agents === "object" ? Object.keys(m.agents) : [];
   const agents: ProjectAgent[] = agentNames.map((name) => {
-    const md = files.find((f) => pathOf(f) === `.kortix/opencode/agents/${name}.md`);
+    const candidates = agentFileCandidates(manifest, name);
+    const md = candidates
+      .map((candidate) => files.find((f) => pathOf(f) === candidate))
+      .find((file) => file !== undefined);
     // Parse the agent's own `.md` frontmatter with the YAML parser (not a
     // line-based one) so folded block scalars (`description: >-`) resolve to the
     // real text, and collapse it to a single line for the card.
@@ -560,10 +564,9 @@ agents that run them.
   [use-case pages](https://kortix.com/use-cases) — the wizard wires the agent,
   its skill, grants, and any scheduled trigger into your project.
 - **Bulk clone:** clone this pack as a project to get every runbook skill under
-  \`.kortix/opencode/skills/\` and every persona agent file under
-  \`.kortix/opencode/agents/\`. Agent files ship undeclared — add the ones you
-  want to \`kortix.yaml\`'s \`agents:\` map (grants are deny-by-default) before
-  using them.
+  \`skills/\` and every persona agent file under \`agents/\`. Agent files ship
+  undeclared — add the ones you want to \`kortix.yaml\`'s \`agents:\` map
+  (grants are deny-by-default, \`file: agents/<name>.md\`) before using them.
 
 Everything is plain files in your repo: read, edit, and adapt them to how your
 team actually works.
@@ -571,13 +574,13 @@ team actually works.
 
 /** Rewrite a marketplace-template `runtime/` path to its conventional
  *  in-project location, mirroring the install wizard's target mapping
- *  (`@skills/y` → `.kortix/opencode/skills/y`, `@agents/x.md` →
- *  `.kortix/opencode/agents/x.md`). Non-runtime paths return undefined. */
+ *  (`@skills/y` → `skills/y`, `@agents/x.md` → `agents/x.md`). Non-runtime
+ *  paths return undefined. */
 function useCasePackRepoPath(path: string): string | undefined {
   if (path.startsWith("runtime/skills/"))
-    return `.kortix/opencode/skills/${path.slice("runtime/skills/".length)}`;
+    return `${SKILLS_DIR}/${path.slice("runtime/skills/".length)}`;
   if (path.startsWith("runtime/agents/"))
-    return `.kortix/opencode/agents/${path.slice("runtime/agents/".length)}`;
+    return `${AGENTS_DIR}/${path.slice("runtime/agents/".length)}`;
   return undefined;
 }
 
@@ -829,44 +832,55 @@ async function externalRefs(): Promise<ExternalRef[]> {
   return out;
 }
 
-// Authenticate GitHub API/raw calls when a token is configured — lifts the
-// unauthenticated 60 req/hr scan ceiling to 5,000/hr so many marketplaces can be
-// browsed + installed without rate-limiting. Kept out of @kortix/registry (which
-// stays pure) — injected here as a fetch wrapper via the loader's fetchImpl.
+// Every marketplace registry fetch goes through here. GitHub's own API and raw
+// hosts are fetched directly, with the token when one is configured — it lifts
+// the unauthenticated 60 req/hr scan ceiling to 5,000/hr. Every other host (a
+// url-kind registry source, or anything a registry file points at) goes through
+// the DNS-resolving SSRF guard, which also re-checks each redirect hop. That
+// holds with or without a token: a deployment without one used to fetch other
+// hosts with plain `fetch`, which follows redirects anywhere. Kept out of
+// @kortix/registry (which stays pure) — injected via the loader's fetchImpl.
 const GITHUB_TOKEN =
   process.env.GITHUB_TOKEN || process.env.MANAGED_GIT_GITHUB_TOKEN || "";
 const GITHUB_HOSTS = new Set(["api.github.com", "raw.githubusercontent.com"]);
-const githubFetch: typeof fetch = !GITHUB_TOKEN
-  ? fetch
-  : (((
-      input: Parameters<typeof fetch>[0],
-      init?: Parameters<typeof fetch>[1],
-    ) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : (input as Request).url;
-      // Exact hostname match — NOT substring — so the token is never sent to a
-      // look-alike host like `api.github.com.evil.com` or `evil.com?x=api.github.com`.
-      let host = "";
-      try {
-        host = new URL(url).hostname;
-      } catch {
-        // unparseable URL → no auth
-      }
-      if (GITHUB_HOSTS.has(host)) {
-        const headers = new Headers(init?.headers);
-        if (!headers.has("authorization"))
-          headers.set("authorization", `Bearer ${GITHUB_TOKEN}`);
-        return fetch(input, { ...init, headers });
-      }
-      // Non-GitHub host (url-kind registry source) — route through the
-      // DNS-resolving SSRF guard so a public domain that resolves to a
-      // private/metadata IP is blocked at fetch time. See F-1.
-      return safeEgressFetch(url, init);
-    }) as typeof fetch);
+
+export function createMarketplaceFetch(
+  githubToken: string,
+  deps: { fetch: typeof fetch; safeFetch: typeof safeEgressFetch } = {
+    fetch: ((input, init) => fetch(input, init)) as typeof fetch,
+    safeFetch: safeEgressFetch,
+  },
+): typeof fetch {
+  return ((
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+    // Exact hostname match — NOT substring — so the token is never sent to a
+    // look-alike host like `api.github.com.evil.com` or `evil.com?x=api.github.com`.
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(url);
+    } catch {
+      // unparseable URL → the guard below refuses it
+    }
+    if (parsed && parsed.protocol === "https:" && GITHUB_HOSTS.has(parsed.hostname)) {
+      if (!githubToken) return deps.fetch(input, init);
+      const headers = new Headers(init?.headers);
+      if (!headers.has("authorization"))
+        headers.set("authorization", `Bearer ${githubToken}`);
+      return deps.fetch(input, { ...init, headers });
+    }
+    return deps.safeFetch(url, init);
+  }) as typeof fetch;
+}
+
+const githubFetch: typeof fetch = createMarketplaceFetch(GITHUB_TOKEN);
 
 /** Loader options that authenticate GitHub calls (shared by catalog + install). */
 export const githubLoaderOptions: { fetchImpl: typeof fetch } = {
@@ -969,6 +983,47 @@ export function assertAllowedSourceAddress(address: string): void {
       "Only https registry URLs on public hosts are allowed.",
     );
   throw new AllowedSourceValidationError("This source type is not allowed.");
+}
+
+/**
+ * Throw with a clear reason if a CONNECTOR ENDPOINT (MCP server URL, GraphQL
+ * endpoint, HTTP base URL) isn't a safe absolute https URL on a public host.
+ *
+ * Distinct from {@link assertAllowedSourceAddress}: a registry SOURCE address
+ * may be GitHub shorthand (`owner/repo`), so that guard lets anything that is
+ * not `http://`/`https://` through as a repo reference. A connector endpoint
+ * is never shorthand — it is fetched verbatim — so `HTTP://host`, `ws://host`,
+ * `localhost:3000/mcp` and `my server/mcp` all slipped past the source guard,
+ * reached `safeEgressFetch`, and died as an unhandled `UnsafeEgressError`
+ * (500 + Sentry: Better Stack API prod 2026-09-07 "url must be https",
+ * "invalid url"). Parse with WHATWG `URL`, which normalises the scheme case,
+ * and reject everything that is not https on a public host as the typed
+ * {@link AllowedSourceValidationError} the routes already turn into a 400.
+ */
+export function assertAllowedEndpointUrl(address: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(address.trim());
+  } catch {
+    throw new AllowedSourceValidationError(
+      `Connector endpoint must be an absolute https URL: "${address}"`,
+    );
+  }
+  if (parsed.protocol !== "https:") {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must use https on a public host.",
+    );
+  }
+  if (isPrivateHost(parsed.hostname)) {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must use https on a public host.",
+    );
+  }
+  if (parsed.username || parsed.password) {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must not embed credentials.",
+    );
+  }
 }
 
 /** Start (or join) a build of the external catalog — resolves when every source
@@ -1857,7 +1912,7 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 // support files still exist in registries for dependency resolution but aren't
 // browse/install choices on their own. Install has no per-type authz of its own:
 // POST /:projectId/marketplace/install-session gates on a single project.write
-// check up front (see handleMarketplaceInstallSession in projects/routes/r10.ts),
+// check up front (see handleMarketplaceInstallSession in projects/routes/marketplace-install-session.ts),
 // then runs the install as an agent session that reads the item's source and
 // opens a change request — there is no per-committed-file capability gate. So
 // widening this set never bypasses authz.
@@ -1968,20 +2023,6 @@ export async function listCatalogItemsLive(
   opts: ItemQuery = {},
 ): Promise<CatalogItem[]> {
   return filterCatalogItems((await mergedCatalog()).items, opts);
-}
-
-/** Installable use-case templates. Kept OUT of the marketplace browse list
- *  (`MARKETPLACE_VISIBLE_TYPES`) on purpose — a template installs through the
- *  guided wizard (`POST /v1/templates/:id/install`, which renders inputs and
- *  merges the manifest), not the raw marketplace commit path. So the /v1/templates
- *  API lists them here, bypassing the browse filter. */
-/** Pure: the installable templates within a catalog item list. */
-export function selectTemplateItems(items: CatalogItem[]): CatalogItem[] {
-  return items.filter((it) => it.type === "registry:template" && !it.hidden);
-}
-
-export async function listTemplateCatalogItems(): Promise<CatalogItem[]> {
-  return selectTemplateItems((await mergedCatalog()).items);
 }
 
 /** Progressive catalog, paginated. Opt-in: pass `limit` to slice; omit it (or

@@ -3,9 +3,9 @@ title: Triggers
 description: A trigger starts a session on a schedule, from a webhook, or from a monitor.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-
 A trigger starts a [session](/docs/work/sessions) with no person present. Use a trigger to automate recurring or event-driven work.
+
+To follow up on one session's task later — "check tomorrow whether they replied" — use a [reminder](/docs/connect/reminders) instead. A reminder is a trigger scoped to that session. It lives in the database, not `kortix.yaml`.
 
 ## Trigger types
 
@@ -17,15 +17,15 @@ Kortix supports three trigger types.
 
 You define triggers in the project manifest, `kortix.yaml`. Each trigger holds a prompt that renders as the fired session's first message. Runtime state — such as the last fire time and status — lives outside the manifest, in the database. Firing a trigger does not create a commit.
 
+A project with many triggers can keep them out of the root file. List a directory under [`imports:`](/docs/project/manifest#imports), then put each trigger, or each group, in its own YAML file below it. Every page and command here works the same way on a split manifest. An edit is written to the file that declares the trigger.
+
 Creating, updating, or deleting a trigger through the API, SDK, or dashboard writes directly to the default branch. It does not go through a [change request](/docs/work/change-requests) (CR). Editing `kortix.yaml` inside a session and running `kortix ship` follows the normal branch and CR flow instead.
 
 ## Set up a cron trigger
 
 <Steps>
 
-<Step>
-### Add the trigger
-
+<Step title="Add the trigger">
 ```sh
 kortix triggers add daily-digest --type cron \
   --cron "0 0 9 * * 1-5" --timezone America/Los_Angeles \
@@ -35,9 +35,7 @@ kortix triggers add daily-digest --type cron \
 `cron` is a 6-field expression: second, minute, hour, day, month, weekday. This command edits your local `kortix.yaml` only.
 </Step>
 
-<Step>
-### Ship it
-
+<Step title="Ship it">
 ```sh
 kortix ship
 ```
@@ -45,9 +43,7 @@ kortix ship
 `kortix ship` commits `kortix.yaml` and pushes it. The schedule goes live once this lands on your project's default branch.
 </Step>
 
-<Step>
-### Confirm it runs
-
+<Step title="Confirm it runs">
 ```sh
 kortix triggers ls
 ```
@@ -63,9 +59,7 @@ A webhook trigger needs a secret. Kortix uses it to check the signature on every
 
 <Steps>
 
-<Step>
-### Add the secret
-
+<Step title="Add the secret">
 ```sh
 kortix secrets set WEBHOOK_SECRET=<a-random-value>
 ```
@@ -73,9 +67,7 @@ kortix secrets set WEBHOOK_SECRET=<a-random-value>
 See [Secrets](/docs/project/secrets) for more on secrets.
 </Step>
 
-<Step>
-### Add the trigger
-
+<Step title="Add the trigger">
 ```sh
 kortix triggers add new-lead --type webhook \
   --secret-env WEBHOOK_SECRET \
@@ -85,17 +77,13 @@ kortix triggers add new-lead --type webhook \
 `--secret-env` names the secret that signs requests to this trigger.
 </Step>
 
-<Step>
-### Ship it
-
+<Step title="Ship it">
 ```sh
 kortix ship
 ```
 </Step>
 
-<Step>
-### Send it a request
-
+<Step title="Send it a request">
 Kortix builds the webhook URL from your project id and the trigger's slug:
 
 ```
@@ -124,9 +112,7 @@ Four rules define the contract:
 
 <Steps>
 
-<Step>
-### Add the monitor
-
+<Step title="Add the monitor">
 ```sh
 kortix triggers add checkout-errors --type monitor \
   --run "./monitors/checkout-errors.ts" \
@@ -137,9 +123,7 @@ kortix triggers add checkout-errors --type monitor \
 `--mode poll` re-runs the command every `--interval` and expects it to exit. `--mode stream` runs it once and keeps it alive; a stream takes no `--interval`. Both shapes produce lines, and nothing downstream can tell them apart. `cron`, `run_at`, `timezone`, and `secret_env` are rejected on a monitor.
 </Step>
 
-<Step>
-### Ship it
-
+<Step title="Ship it">
 ```sh
 kortix ship
 ```
@@ -147,9 +131,7 @@ kortix ship
 The platform starts the monitor box once this lands on the default branch.
 </Step>
 
-<Step>
-### Confirm it runs
-
+<Step title="Confirm it runs">
 ```sh
 kortix triggers ls
 kortix triggers info checkout-errors
@@ -262,6 +244,19 @@ sandbox can retain the previous value.
 3. **`reuse`** — re-prompt the most recent non-failed session this trigger previously created. A pinned trigger falls back here too, before falling further.
 4. **`fresh`** — create a new sandbox and branch. This is the default, and the final fallback for every mode. The new session becomes the trigger's session for future `reuse` and `keyed` fires.
 
+A `reuse` or `keyed` session whose history no longer fits the model, even after automatic compaction, is retired. The next fire starts a fresh session. Any other failure keeps the session for the next fire.
+
+## Failed runs
+
+When a run that a trigger started ends with an error, Kortix records it on the trigger:
+
+- `last_status` becomes `failed` and `last_error` holds the reason, for example `Out of credits: Payment Required: Insufficient credits.`
+- The Schedule page marks the trigger "Last run didn’t finish" and shows the reason in its panel.
+- The account owner gets one mobile push when the first run fails. A later failed run updates the reason without another push.
+- The trigger stays `failed` while it keeps firing. A new fire does not prove that its run works.
+
+The next run that finishes clears the failure. A run you stop yourself, a subagent, and a retried model call are not run outcomes. A fire that fails before a run starts, for example a session that cannot be created, clears on the next fire that succeeds.
+
 ## Session access
 
 Sessions a trigger creates use the private policy by default. The trigger
@@ -333,7 +328,7 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 
 | Method + path | Needs | Notes |
 | --- | --- | --- |
-| `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state, and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
+| `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state (`last_fired_at`, `last_status`, `last_error`, `last_attempt_at`), and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
 | `POST /v1/projects/{projectId}/triggers` | `project.trigger.create` | Creates a trigger. Commits to the manifest directly. |
 | `PATCH /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
 | `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state. |
@@ -348,6 +343,6 @@ A project-level switch stops every trigger in the project at once, independent o
 ## Limits and reliability
 
 - The scheduler polls roughly every second (default 1,000 ms; configurable via `KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`). Cron precision is best-effort to the second, even though the expression has a seconds field.
-- Each project allows 3 triggered sessions provisioning at once, by default. The account's plan-tier active-session cap can also apply. A fire past either limit returns `queued` (`202`) instead of failing, and runs once a slot frees up.
+- Each project allows 3 triggered sessions provisioning at once, by default. A fire past that returns `queued` (`202`) instead of failing, and runs once one of them finishes provisioning. There is no cap on how many sessions run at once.
 - A manual or webhook fire has a 45-second timeout. Loading the manifest has a 30-second timeout.
 - A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry. A webhook fire is keyed on the delivery ID header, or a hash of the body and signature when the sender sends no ID.

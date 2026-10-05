@@ -1,25 +1,17 @@
 import { create } from 'zustand';
 
-import {
-  getActiveOpenCodeUrl,
-  getActiveWorkspaceUrl,
-} from '../../core/session/server-store/active';
+import { getActiveRuntimeUrl } from '../../core/session/server-store/active';
 import type { ServerStore } from '../../core/session/server-store/types';
 
 // Re-export the public surface that lives in sibling modules so importers of
 // '../browser/stores/server-store' (and '@kortix/sdk/server-store') stay unchanged.
-export {
-  getSandboxUrlForExternalId,
-  runtimeUrlForSandbox,
-  getPublicShareUrlForToken,
-} from '../../core/session/server-store/url-helpers';
+export { getSandboxUrlForExternalId, getPublicShareUrlForToken } from '../../core/session/server-store/url-helpers';
 export {
   deriveSubdomainOpts,
   getActiveDbSandboxId,
   getActiveOpenCodeUrl,
+  getActiveRuntimeUrl,
   getActiveSandboxId,
-  getActiveWorkspaceSandboxId,
-  getActiveWorkspaceUrl,
   getBackendPort,
 } from '../../core/session/server-store/active';
 
@@ -28,8 +20,7 @@ export {
  *
  * The runtime (which sandbox the app talks to) is owned by `current-runtime`,
  * set by the active session via `useSession`. This store exposes it as a stable
- * surface: `getActiveServerUrl()` resolves the control proxy URL and
- * `getActiveWorkspaceUrl()` resolves files, PTYs, and ports. The
+ * surface: `getActiveServerUrl()` resolves the active OpenCode proxy URL. The
  * old multi-instance registry, the persisted server list, and the server-
  * switching machinery are gone — there is no "active server" to switch.
  *
@@ -38,6 +29,5 @@ export {
  * zustand read surface for React hosts.
  */
 export const useServerStore = create<ServerStore>(() => ({
-  getActiveServerUrl: () => getActiveOpenCodeUrl(),
-  getActiveWorkspaceUrl: () => getActiveWorkspaceUrl(),
+  getActiveServerUrl: () => getActiveRuntimeUrl(),
 }));

@@ -244,7 +244,7 @@ function restream(
 /**
  * Bun < 1.3 — the `oven/bun:1.2-slim` runtime image — does not define
  * `CompressionStream`. Calling it there turned every compressible response into
- * a 500 (`ReferenceError: CompressionStream is not defined`; Essentia,
+ * a 500 (`ReferenceError: CompressionStream is not defined`; SampleCo,
  * 2026-08-26), while local Bun 1.3.14 has it, so every local test passed.
  * Feature-detect once and fall back to `node:zlib`, which streams on every Bun
  * this repo runs.

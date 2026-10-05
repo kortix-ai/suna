@@ -12,17 +12,20 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import Loading from '@/components/ui/loading';
+import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useModelStore, type ProviderListResponse } from '@kortix/sdk/react';
-import { modelInDefaultView } from './model-picker-default-view';
+import {
+  contract, qk, type ProviderListResponse, useFeatureFlag, useModelAccess, useModelStore,
+} from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
+  CaretRightIcon as CaretRight,
   CreditCardIcon as CreditCard,
   KeyIcon as KeyRound,
   PlusIcon as Plus,
@@ -30,12 +33,20 @@ import {
   StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAvailableSelectedModel } from './model-availability';
-import { modelItemValue, pickerGroupId, pickerGroupLabel, splitModelLabel } from './model-grouping';
-import { shouldShowFreeTag } from './model-tags';
+import {
+  isPickerGroupOpen,
+  modelItemValue,
+  pickerGroupId,
+  pickerGroupLabel,
+  buildPickerSections,
+  splitModelLabel,
+} from './model-grouping';
+import { modelInDefaultView } from './model-picker-default-view';
+import { isSubscriptionModel, pickerModelName, shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
@@ -67,12 +78,16 @@ export function ConnectProviderDialog({
 }
 
 import Hint from '@/components/ui/hint';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import { Tag } from '@/components/ui/tag';
 
 type ModelRef = { providerID: string; modelID: string };
 
 /**
- * The one default this picker sets: MY default model, from the star on a row.
+ * The one default this picker sets: the ACCOUNT default model, from the star on
+ * a row. It is the default for every member of the account, so it needs
+ * `project.model.write` and the star is hidden without it.
  *
  * The other two scopes are gone from here, not lost — each already had a
  * better home, on the screen that owns the thing being defaulted:
@@ -118,6 +133,7 @@ function ModelRow({
   defaultControls,
   onSelect,
   scope,
+  showSubscriptionTag = true,
 }: {
   model: FlatModel;
   groupProviderID: string;
@@ -129,9 +145,16 @@ function ModelRow({
   /** Which copy of the model this is — see `modelItemValue`. The pinned copy
    *  and the in-group copy must not share a cmdk value. */
   scope: 'pinned' | 'model';
+  /** False inside a section whose heading already names the billing, so the
+   *  same fact is not repeated on every row. */
+  showSubscriptionTag?: boolean;
 }) {
+  const t = useTranslations('modelSelector');
   const isFree = shouldShowFreeTag(model);
-  const { lead, trail } = splitModelLabel(model.modelName);
+  const isSubscription = isSubscriptionModel(model);
+  // Display name only — `model.modelName` still carries " (ChatGPT)" for search
+  // and for the aria labels below, where there is no group heading to lean on.
+  const { lead, trail } = splitModelLabel(pickerModelName(model));
 
   return (
     <CommandItem
@@ -142,8 +165,8 @@ function ModelRow({
 
         The two `bg-*` overrides are a FIX, not a preference. `CommandItem`
         paints its hover and highlight with `bg-accent`, and in the dark theme
-        `--accent` and `--popover` are the same colour (both `oklch(0.1913 0 0)`
-        — surface-1, `globals.css`), so the row highlight was mathematically
+        `--accent` and `--popover` resolve to the same surface token in dark mode,
+        so the row highlight was mathematically
         invisible against the popover it sits on. Light mode was fine, which is
         why it read as "sometimes there's a hover". `--hover` and `--active` are
         the tokens the design system defines for exactly this — a transient
@@ -152,8 +175,10 @@ function ModelRow({
       */
       className={cn(
         'group py-1',
-        'hover:bg-hover data-[selected=true]:bg-hover',
-        isSelected && 'bg-active data-[selected=true]:bg-active',
+        // Same `data-nav` scope as `CommandItem`'s own selected classes, so
+        // tailwind-merge replaces them instead of stacking a second selector.
+        'hover:bg-hover [&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-hover',
+        isSelected && 'bg-active [&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-active',
       )}
       /* The raw id no longer has a line of its own. It is still the only way to
          tell two same-named models apart, so it stays reachable on hover
@@ -168,7 +193,7 @@ function ModelRow({
         /* Stripped of the tinted tile so it reads as a mark on the row, not a
            chip — `cn` puts these last, so they win over the component's own
            `bg-zinc-*`. */
-        className="size-4 rounded-none bg-transparent dark:bg-transparent"
+        className="size-4 rounded-none bg-transparent"
       />
 
       <span className="min-w-0 flex-1 truncate leading-tight">
@@ -176,7 +201,18 @@ function ModelRow({
         {trail ? <span className="text-muted-foreground font-normal"> {trail}</span> : null}
       </span>
 
-      {isFree && <Tag variant="free">Free</Tag>}
+      {/*
+        ONE tag per row. A subscription model is billed to the connected ChatGPT
+        account instead of metered per token, and that is the only thing the two
+        copies of e.g. "GPT-6 Astra" do not share — so it is what the tag says.
+        Neutral on purpose: this is metadata, not status, and the seven
+        `kortix-*` accents are reserved for state.
+      */}
+      {isFree ? (
+        <Tag variant="free">{t('free')}</Tag>
+      ) : isSubscription && showSubscriptionTag ? (
+        <Tag>{t('included')}</Tag>
+      ) : null}
 
       {/*
         ONE trailing slot, always the same 24px wide, so swapping what sits in
@@ -197,7 +233,7 @@ function ModelRow({
 
         This used to cross-fade: the star faded in over 150ms and the check
         faded out over 100ms. Dragging the cursor down the list left a trail of
-        stars at every opacity between 0 and 1 — five or six rows mid-transition
+        stars at every opacity between 0 and 1 — five or six rows mid-fade
         at once, none of them the row under the cursor. It read as flicker
         because it WAS flicker. Two causes, both fixed by removing the fade:
 
@@ -212,11 +248,11 @@ function ModelRow({
              easing one opacity in opposite directions is what "comes and goes
              and comes back" looks like.
 
-        The row's own background swaps with no transition from those same two
+        The row's own background swaps immediately from those same two
         triggers, so the star now matches the row it belongs to. What still
         animates is what cannot trail: colour and background on the icon the
         cursor is actually over, and the press scale. Do not put `opacity` back
-        in that transition list.
+        in that property list.
       */}
       <span className="relative flex size-6 shrink-0 items-center justify-center">
         {isSelected && (
@@ -228,10 +264,10 @@ function ModelRow({
             type="button"
             aria-label={
               isAccountDefault
-                ? `${model.modelName} is your default model`
-                : `Set ${model.modelName} as my default model`
+                ? t('defaultAria', { model: model.modelName })
+                : t('setDefaultAria', { model: model.modelName })
             }
-            title={isAccountDefault ? 'Your default model' : 'Set as my default model'}
+            title={isAccountDefault ? t('defaultTitle') : t('setDefaultTitle')}
             /* No `aria-pressed`: that promises a toggle, and clicking the
                filled star does nothing. Clearing an account default is a real
                action with a real fallback behind it, and it belongs where the
@@ -255,7 +291,7 @@ function ModelRow({
               /* `opacity` is NOT in this list, on purpose — see above. These
                  only ever run on the one row the cursor is on, so they cannot
                  leave a trail. */
-              'transition-[color,background-color,transform] duration-150 ease-out',
+              'duration-normal transition-[color,background-color,transform] ease-out',
               /* Press feedback, only where a press does something — the
                  already-default star is a no-op, and a control that recoils
                  under the finger while changing nothing is a worse lie than no
@@ -317,6 +353,13 @@ export interface ModelSelectorProps {
   projectId?: string;
 
   /**
+   * Offer the member's own ChatGPT subscription (pooled provider secrets) at
+   * the end of the list. Only an interactive session can use a personal
+   * account; a scheduled or background run cannot, so its pickers leave this off.
+   */
+  offerChatGptAccounts?: boolean;
+
+  /**
    * Controlled open state. Omit for the normal case — the trigger owns its
    * own popover and nothing changes.
    *
@@ -342,14 +385,16 @@ export function ModelSelector({
   selectedModel,
   onSelect,
   defaultControls,
-  unsetLabel = 'No model',
+  unsetLabel,
   disabled = false,
   modelsLoading = false,
   triggerLabelClassName,
+  offerChatGptAccounts = false,
   open: openProp,
   onOpenChange,
 }: ModelSelectorProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tModel = useTranslations('modelSelector');
+  const t = useTranslations('threads');
 
   // Controlled when `open` is supplied, uncontrolled otherwise — Radix's own
   // rule. `setOpen` below is the single write path every internal caller
@@ -368,6 +413,7 @@ export function ModelSelector({
   );
 
   const [search, setSearch] = useState('');
+  const [toggledGroups, setToggledGroups] = useState<ReadonlyMap<string, boolean>>(new Map());
   const {
     openConnectProvider,
     openUpgrade,
@@ -386,6 +432,26 @@ export function ModelSelector({
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  // Bring your own ChatGPT subscription (pooled provider secrets). Any member
+  // connects their own account from here; Customize is not needed. Hidden when
+  // a manager disabled the ChatGPT provider for the project.
+  const tPooled = useTranslations('pooledSecrets');
+  const pooledSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
+  const chatGptPossible =
+    offerChatGptAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
+  const modelAccess = useModelAccess(chatGptPossible ? projectId : null);
+  const chatGptAvailable =
+    chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
+  const [chatGptOpen, setChatGptOpen] = useState(false);
+  // Every write this picker offers is `project.model.write` on the API: the
+  // star sets the ACCOUNT default (the default for every member, not a personal
+  // one), and "+" / sliders open the provider modal. A member without the leaf
+  // got a "You don't have permission" toast for each. Hidden on a RECEIVED
+  // denial only, from the shared project-page probe batch.
+  const caps = useProjectPageCans(projectId ?? undefined);
+  const canManageModels =
+    !projectId || caps[PROJECT_ACTIONS.PROJECT_MODEL_WRITE]?.allowed !== false;
+  const rowDefaultControls = canManageModels ? defaultControls : undefined;
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);
@@ -398,11 +464,15 @@ export function ModelSelector({
       m.providerID === availableSelectedModel?.providerID &&
       m.modelID === availableSelectedModel?.modelID,
   );
-  const displayName = current?.modelName || unsetLabel;
+  const displayName = current?.modelName || unsetLabel || t('noModel');
 
   useEffect(() => {
     if (!open) {
       setSearch('');
+      // Back to the defaults on every open. A section the user toggled last
+      // time is not a preference they set; carrying it would make the
+      // picker's height depend on history.
+      setToggledGroups(new Map());
     }
   }, [open]);
 
@@ -433,8 +503,11 @@ export function ModelSelector({
   /** Is there anything to pick AT ALL, ignoring the search box? The empty
    *  state below branches on this: "no models match your search" and "you have
    *  no models" are different problems with different ways out. */
-  const hasAnyModel = useMemo(
-    () => baseModels.some((m) => m.enabled !== false),
+  const hasAnyModel = useMemo(() => baseModels.some((m) => m.enabled !== false), [baseModels]);
+  /** Does this member already have ChatGPT subscription models? Then the row
+   *  manages their accounts instead of offering to connect one. */
+  const hasChatGptModels = useMemo(
+    () => baseModels.some((m) => m.enabled !== false && pickerGroupId(m) === 'codex'),
     [baseModels],
   );
 
@@ -471,6 +544,14 @@ export function ModelSelector({
     });
     return entries;
   }, [visibleModels, llmGatewayEnabled]);
+
+  /** Provider groups, with any multi-credential provider split per account. */
+  const searching = search.trim().length > 0;
+
+  const sections = useMemo(
+    () => buildPickerSections(grouped),
+    [grouped],
+  );
 
   /**
    * The account default, lifted to the top of the list in its own section.
@@ -522,19 +603,32 @@ export function ModelSelector({
     openUpgrade();
   }, [openUpgrade, setOpen]);
 
+  const handleOpenChatGpt = useCallback(() => {
+    setOpen(false);
+    setChatGptOpen(true);
+  }, [setOpen]);
+
   return (
     <>
       {connectionModal}
+      {projectId && chatGptPossible && (
+        <ChatGptAccountsDialog projectId={projectId} open={chatGptOpen} onOpenChange={setChatGptOpen} />
+      )}
       <CommandPopover
         open={disabled ? false : open}
         onOpenChange={(next) => !disabled && setOpen(next)}
       >
         <CommandPopoverTrigger>
-          <Button type="button" variant="ghost" size="sm" className="text-foreground/70 rounded-lg">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground rounded-lg"
+          >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown
               className={cn(
-                'size-3 transition-transform duration-200 ease-out',
+                'duration-moderate size-3 transition-transform ease-out',
                 open && 'rotate-180',
               )}
             />
@@ -553,39 +647,26 @@ export function ModelSelector({
           <>
             <CommandInput
               compact
-              placeholder={tHardcodedUi.raw(
-                'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
-              )}
+              placeholder={tModel('search')}
               value={search}
               onValueChange={setSearch}
               rightElement={
+                canManageModels ? (
                 <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
-                  <Hint
-                    label={tHardcodedUi.raw(
-                      'componentsSessionModelSelector.line239JsxTextConnectProvider',
-                    )}
-                    side="top"
-                    className="z-50"
-                  >
+                  <Hint label={tModel('connectProvider')} side="top" className="z-50">
                     <button
                       type="button"
-                      aria-label="Add provider"
+                      aria-label={tModel('addProvider')}
                       onClick={() => handleOpenProviderModal('providers')}
                       className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                     >
                       <Plus className="size-4" />
                     </button>
                   </Hint>
-                  <Hint
-                    label={tHardcodedUi.raw(
-                      'componentsSessionModelSelector.line251JsxTextManageModels',
-                    )}
-                    side="top"
-                    className="z-50"
-                  >
+                  <Hint label={tModel('manageModels')} side="top" className="z-50">
                     <button
                       type="button"
-                      aria-label="Manage models"
+                      aria-label={tModel('manageModels')}
                       onClick={() => handleOpenProviderModal('models')}
                       className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                     >
@@ -593,6 +674,7 @@ export function ModelSelector({
                     </button>
                   </Hint>
                 </div>
+                ) : undefined
               }
             />
 
@@ -607,7 +689,7 @@ export function ModelSelector({
                 <div
                   className="flex min-h-32 items-center justify-center"
                   role="status"
-                  aria-label="Loading models"
+                  aria-label={tModel('loading')}
                 >
                   <Loading className="text-muted-foreground size-4 shrink-0" />
                 </div>
@@ -620,7 +702,10 @@ export function ModelSelector({
                           it also stays in its own provider section below, so
                           that section is never missing a model, and the star
                           in both places is the same fact. */}
-                      <CommandGroup heading={<GroupHeading>Your default</GroupHeading>} forceMount>
+                      <CommandGroup
+                        heading={<GroupHeading>{tModel('yourDefault')}</GroupHeading>}
+                        forceMount
+                      >
                         <ModelRow
                           model={pinnedDefault.model}
                           groupProviderID={pinnedDefault.providerID}
@@ -630,7 +715,7 @@ export function ModelSelector({
                             availableSelectedModel?.modelID === pinnedDefault.model.modelID
                           }
                           isAccountDefault
-                          defaultControls={defaultControls}
+                          defaultControls={rowDefaultControls}
                           onSelect={handleSelect}
                           scope="pinned"
                         />
@@ -639,50 +724,129 @@ export function ModelSelector({
                     </>
                   )}
 
-                  {grouped.map((group, groupIndex) => (
-                    <Fragment key={group.providerID}>
-                      {/* A rule between sections, so provider blocks read as
-                          blocks rather than one long list broken by grey text.
-                          Never before the first — `grouped` is built from the
-                          already-filtered list, so an empty group cannot exist
-                          and a separator can never end up orphaned. */}
-                      {groupIndex > 0 && <CommandSeparator />}
-                      {/* A provider heading only earns its row when there is a
-                          second provider to tell apart. With one group (the
-                          common gateway case — everything is "Kortix") the
-                          label answers a question nobody asked; cmdk skips the
-                          heading element entirely when `heading` is undefined,
-                          so no empty padding is left behind. */}
-                      <CommandGroup
-                        heading={
-                          grouped.length > 1 ? (
-                            <GroupHeading>{group.providerName}</GroupHeading>
-                          ) : undefined
-                        }
-                        forceMount
-                      >
-                        {group.models.map((model) => (
-                          <ModelRow
-                            key={`${model.providerID}:${model.modelID}`}
-                            model={model}
-                            groupProviderID={group.providerID}
-                            groupProviderName={group.providerName}
-                            isSelected={
-                              availableSelectedModel?.providerID === model.providerID &&
-                              availableSelectedModel?.modelID === model.modelID
-                            }
-                            isAccountDefault={
-                              defaultControls?.accountDefault?.providerID === model.providerID &&
-                              defaultControls?.accountDefault?.modelID === model.modelID
-                            }
-                            defaultControls={defaultControls}
-                            onSelect={handleSelect}
-                            scope="model"
+                  {sections.map((section, sectionIndex) => {
+                    const selectedInSection = section.models.find(
+                      (m) =>
+                        availableSelectedModel?.providerID === m.providerID &&
+                        availableSelectedModel?.modelID === m.modelID,
+                    );
+                    const open = isPickerGroupOpen({
+                      groupIndex: sectionIndex,
+                      groupProviderID: section.id,
+                      hasSearch: searching,
+                      containsSelected: !!selectedInSection,
+                      toggled: toggledGroups,
+                    });
+                    // Records the flip of what is on screen, so collapsing a
+                    // default-open group (the managed set, or the one holding
+                    // the selected model) works like collapsing any other.
+                    const toggle = () =>
+                      setToggledGroups((prev) => new Map(prev).set(section.id, !open));
+                    const collapsible = sections.length > 1;
+                    return (
+                      <Fragment key={section.id}>
+                        {sectionIndex > 0 && <CommandSeparator />}
+                        <CommandGroup forceMount>
+                          {/* The LABEL is the control: the provider's name
+                              expands and collapses its own models, rather than
+                              a separate "show N models" row underneath it.
+                              Every section gets the same header, the managed
+                              set included. A lone section has nothing to
+                              collapse against, so it gets no header. */}
+                          {collapsible && (
+                            <CommandItem
+                              value={`section-${section.id}`}
+                              onSelect={toggle}
+                              className="cursor-pointer"
+                            >
+                              {open ? (
+                                <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
+                              ) : (
+                                <CaretRight className="text-muted-foreground size-3.5 shrink-0" />
+                              )}
+                              <span className="min-w-0 truncate text-sm font-medium">
+                                {section.label}
+                              </span>
+                              <span className="flex-1" />
+                              {/* Said once for the section, not once per row:
+                                  every model under a subscription heading is
+                                  billed the same way. */}
+                              {section.models.some(isSubscriptionModel) && (
+                                <Tag>{tModel('included')}</Tag>
+                              )}
+                              {/* A collapsed group that holds the selected
+                                  model names it, so collapsing never hides
+                                  what you are on. */}
+                              {!open && selectedInSection && (
+                                <>
+                                  <span className="text-muted-foreground min-w-0 truncate text-xs">
+                                    {pickerModelName(selectedInSection)}
+                                  </span>
+                                  <Check className="text-foreground size-4 shrink-0" />
+                                </>
+                              )}
+                              {!open && !selectedInSection && (
+                                <span className="text-muted-foreground text-xs tabular-nums">
+                                  {section.models.length}
+                                </span>
+                              )}
+                            </CommandItem>
+                          )}
+                          {open &&
+                            section.models.map((model) => (
+                              <ModelRow
+                                key={`${section.id}:${model.providerID}:${model.modelID}`}
+                                model={model}
+                                groupProviderID={section.providerID}
+                                groupProviderName={section.label}
+                                isSelected={
+                                  availableSelectedModel?.providerID === model.providerID &&
+                                  availableSelectedModel?.modelID === model.modelID
+                                }
+                                isAccountDefault={
+                                  defaultControls?.accountDefault?.providerID === model.providerID &&
+                                  defaultControls?.accountDefault?.modelID === model.modelID
+                                }
+                                defaultControls={rowDefaultControls}
+                                onSelect={handleSelect}
+                                scope="model"
+                                showSubscriptionTag={false}
+                              />
+                            ))}
+                        </CommandGroup>
+                      </Fragment>
+                    );
+                  })}
+                  {/* The member's own way in to ChatGPT: connect a subscription,
+                      or manage the accounts behind the ChatGPT section above.
+                      Not a search result, so it stays out of a filtered list. */}
+                  {chatGptAvailable && !searching && (
+                    <>
+                      <CommandSeparator />
+                      <CommandGroup forceMount>
+                        <CommandItem
+                          value="chatgpt-subscription"
+                          onSelect={handleOpenChatGpt}
+                          className="cursor-pointer"
+                        >
+                          <ProviderLogo
+                            providerID="codex"
+                            name="ChatGPT"
+                            size="small"
+                            className="size-4 rounded-none bg-transparent"
                           />
-                        ))}
+                          <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+                            {hasChatGptModels
+                              ? tPooled('manageChatGptAccounts')
+                              : tPooled('useYourChatGpt')}
+                          </span>
+                          {!hasChatGptModels && (
+                            <span className="text-muted-foreground text-xs">{tPooled('connect')}</span>
+                          )}
+                        </CommandItem>
                       </CommandGroup>
-                    </Fragment>
-                  ))}
+                    </>
+                  )}
                 </>
               ) : hasAnyModel ? (
                 /* Models ARE connected — the SEARCH matched none of them.
@@ -691,29 +855,31 @@ export function ModelSelector({
                    two apart: typing "zzz" with 40 models connected showed
                    "No models available" and a Connect-provider CTA. */
                 <div className="px-3 py-5 text-center">
-                  <div className="text-foreground text-sm font-medium">No models match</div>
+                  <div className="text-foreground text-sm font-medium">
+                    {tModel('noMatch.title')}
+                  </div>
                   <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                    Nothing matches “{search.trim()}”. Try a different search.
+                    {tModel('noMatch.description', { search: search.trim() })}
                   </p>
                   <div className="mt-4 flex items-center justify-center">
                     <Button type="button" size="xs" variant="outline" onClick={() => setSearch('')}>
-                      Clear search
+                      {tModel('noMatch.clear')}
                     </Button>
                   </div>
                 </div>
               ) : (
                 <div className="px-3 py-5 text-center">
-                  <div className="text-foreground text-sm font-medium">No models available</div>
+                  <div className="text-foreground text-sm font-medium">{tModel('empty.title')}</div>
                   <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
                     {showUpgradeOption
-                      ? 'Upgrade or connect your own provider to start using this session.'
-                      : 'Connect your own provider to start using this session.'}
+                      ? tModel('empty.upgradeDescription')
+                      : tModel('empty.description')}
                   </p>
                   <div className="mt-4 flex items-center justify-center gap-2">
                     {showUpgradeOption && (
                       <Button type="button" size="xs" onClick={handleUpgrade}>
                         <CreditCard className="size-3.5" />
-                        Upgrade
+                        {tModel('upgrade')}
                       </Button>
                     )}
                     <Button
@@ -723,8 +889,13 @@ export function ModelSelector({
                       onClick={() => handleOpenProviderModal('providers')}
                     >
                       <KeyRound className="size-3.5" />
-                      Connect provider
+                      {tModel('connectProvider')}
                     </Button>
+                    {chatGptAvailable && (
+                      <Button type="button" size="xs" variant="outline" onClick={handleOpenChatGpt}>
+                        {tPooled('connectChatGpt')}
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -735,4 +906,3 @@ export function ModelSelector({
     </>
   );
 }
-

@@ -4,11 +4,9 @@ import { connectors, projects, projectSessionConnectorBindings } from '@kortix/d
  * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
  * flow (mirrors triggers). The manifest holds the connector definition.
  * Credential MODE is always `shared` (`per_user` — each member brings their
- * own — was removed 2026-07-05, docs/specs/2026-07-05-agent-first-config-
- * unification.md §2.5). Connectors are project-wide visible — the only ACCESS
+ * own — was removed 2026-07-05). Connectors are project-wide visible — the only ACCESS
  * gate is the agent-side `agents.<name>.connectors` grant (declared in git, on
- * the agent, not the connector). Credentials live in the split store. See
- * docs/specs/connector.md §3, §5–6.
+ * the agent, not the connector). Credentials live in the split store.
  */
 import { and, eq } from 'drizzle-orm';
 import { featureDisabledBody } from '../feature-flags/gate';
@@ -332,20 +330,16 @@ export async function setConnectorCredentialShared(
       connectorId: connectors.connectorId,
       accountId: connectors.accountId,
       providerType: connectors.providerType,
-      authorizationStrategy: connectors.authorizationStrategy,
       authSecret: connectors.authSecret,
     })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   if (!connector) return { ok: false, error: 'connector not found', status: 404 };
-  if (connector.authorizationStrategy !== 'project') {
-    return {
-      ok: false,
-      error: 'Shared credentials require a project authorization strategy',
-      status: 409,
-    };
-  }
+  // No more "this connector's strategy must be project" gate — see
+  // connection-access.ts. A shared (project-owned) and a private (member-owned)
+  // account can coexist on the same connector now, so storing a shared
+  // credential is never refused for the connector's other accounts' shape.
   if (connector.authSecret) {
     return {
       ok: false,
@@ -380,8 +374,8 @@ export async function setConnectorCredentialShared(
 }
 
 /**
- * `shared` is now the only credential mode (`per_user` removed 2026-07-05,
- * docs/specs/2026-07-05-agent-first-config-unification.md §2.5). This entry
+ * `shared` is now the only credential mode (`per_user` removed 2026-07-05).
+ * This entry
  * point is kept, restricted to a `shared`-only no-op: it strips a lingering
  * legacy `credential: per_user` key from kortix.yaml (if present) and
  * re-syncs, but never writes a mode back. Callers asking for anything other
@@ -530,8 +524,6 @@ export interface ConnectorConfigView {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  /** Platform-managed Computers profiles only. Manifest connectors omit it. */
-  tunnelIds?: string[];
   auth: {
     type:
       | 'none'

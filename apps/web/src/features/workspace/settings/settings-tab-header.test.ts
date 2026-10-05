@@ -25,7 +25,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const TABS_DIR = join(import.meta.dir, 'tabs');
@@ -72,7 +72,6 @@ const TAB_ID_FOR_FILE: Record<string, string> = {
   'general-tab.tsx': 'general',
   'credits-tab.tsx': 'credits',
   'plan-tab.tsx': 'plan',
-  'preferences-tab.tsx': 'preferences',
   'profile-tab.tsx': 'profile',
   'sandbox-tab.tsx': 'sandbox',
   'security-tab.tsx': 'security',
@@ -84,7 +83,11 @@ const TAB_ID_FOR_FILE: Record<string, string> = {
  *  more — see the table's header comment for why each one is here instead of
  *  in `TAB_ID_FOR_FILE`. `members-tab.tsx` is not here: it is deleted, not
  *  present-but-headingless — see the table's header comment. */
-const FILES_WITHOUT_REGISTRY_HEADING = ['models-tab.tsx', 'snapshots-tab.tsx'];
+const FILES_WITHOUT_REGISTRY_HEADING = [
+  'models-tab.tsx',
+  'preferences-tab.tsx',
+  'snapshots-tab.tsx',
+];
 
 /**
  * Strip block comments, line comments, and JSX comment blocks before

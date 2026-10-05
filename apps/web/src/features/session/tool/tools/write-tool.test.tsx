@@ -98,9 +98,7 @@ describe('WriteTool speaks the tense the row is actually in', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolRunningContext.Provider value>
-          <WriteTool
-            part={makePart({ filePath: '/workspace/app.py', content: 'a' }, 'running')}
-          />
+          <WriteTool part={makePart({ filePath: '/workspace/app.py', content: 'a' }, 'running')} />
         </ToolRunningContext.Provider>,
       ),
     );
@@ -112,9 +110,7 @@ describe('WriteTool speaks the tense the row is actually in', () => {
 
   test('a settled call is past tense — a finished transcript is all of these', () => {
     const html = renderToStaticMarkup(
-      withProviders(
-        <WriteTool part={makePart({ filePath: '/workspace/app.py', content: 'a' })} />,
-      ),
+      withProviders(<WriteTool part={makePart({ filePath: '/workspace/app.py', content: 'a' })} />),
     );
 
     expect(html).toContain('Wrote');

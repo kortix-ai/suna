@@ -4,17 +4,24 @@ import { AppState } from 'react-native';
 import 'react-native-url-polyfill/auto';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
+import { createDeadlineFetch } from '@/lib/utils/with-deadline';
+import { resolveEndpoints } from '@/lib/deployment/deployment';
+import { activeDeployment } from '@/lib/deployment/store';
 
 /**
  * Supabase Configuration
- * 
- * Configure with environment variables:
- * - EXPO_PUBLIC_SUPABASE_URL
- * - EXPO_PUBLIC_SUPABASE_ANON_KEY
+ *
+ * The build's EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY, or the
+ * private deployment chosen on the auth screen (lib/deployment): its web
+ * runtime config names its own Supabase, so sign-in moves with the API.
  */
 
-const supabaseUrl = resolveLocalUrl(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const endpoints = resolveEndpoints(activeDeployment, {
+  EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+});
+const supabaseUrl = resolveLocalUrl(endpoints.supabaseUrl);
+const supabaseAnonKey = endpoints.supabaseAnonKey;
 
 // Validate environment variables
 if (!supabaseUrl || supabaseUrl === 'YOUR_SUPABASE_URL' || (!supabaseUrl.startsWith('https://') && !supabaseUrl.startsWith('http://'))) {
@@ -28,6 +35,30 @@ if (!supabaseAnonKey || supabaseAnonKey === 'YOUR_SUPABASE_ANON_KEY' || supabase
 }
 
 /**
+ * AsyncStorage key of the persisted auth session. Same value supabase-js
+ * derives by default (`sb-<first host label>-auth-token`); passed explicitly so
+ * useAuth can read the stored session when the restore stalls.
+ */
+export const SUPABASE_AUTH_STORAGE_KEY = (() => {
+  try {
+    return `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
+  } catch {
+    return undefined;
+  }
+})();
+
+/**
+ * Auth calls abort after 15 s. React Native's Android HTTP client has no
+ * timeout, so a stalled token refresh would otherwise hang sign-in and session
+ * restore forever. Storage uploads are not capped: they can run longer.
+ */
+const AUTH_REQUEST_TIMEOUT_MS = 15_000;
+const authDeadlineFetch = createDeadlineFetch((input, init) => fetch(input, init), {
+  timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+  shouldTimeout: (url) => url.includes('/auth/v1/'),
+});
+
+/**
  * Supabase client instance with AsyncStorage for session persistence
  */
 export const supabase = (() => {
@@ -39,9 +70,15 @@ export const supabase = (() => {
     return createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         storage: AsyncStorage,
+        ...(SUPABASE_AUTH_STORAGE_KEY ? { storageKey: SUPABASE_AUTH_STORAGE_KEY } : {}),
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
+      },
+      global: {
+        // The wrapper has fetch's call signature; `typeof fetch` also carries
+        // static members no caller uses.
+        fetch: authDeadlineFetch as typeof fetch,
       },
     });
   } catch (error) {

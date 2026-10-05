@@ -1,11 +1,20 @@
 import { logger } from '../lib/logger';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
+import {
+  emailChannelAttachmentArgs,
+  findAttachmentRefs,
+  redactInlineBytes,
+  resolveAttachmentRefs,
+} from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
+import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
+import type { ChannelWriteGate } from './channel-write-scope';
 import { executeComposio } from './composio';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelCatalog,
+  withChannelDefaults,
 } from './channels';
 import {
   type ExecResult,
@@ -22,7 +31,7 @@ import {
  * access gate is the agent-side `[[agents]].connectors` grant, enforced at the
  * router before this is ever reached.
  *
- * Policy enforcement is layered (docs/specs/connector.md §8):
+ * Policy enforcement is layered:
  *   1. project-level [[policies]] (fully-qualified patterns) — admin guardrails
  *   2. connector-level [[connectors.policies]] (relative patterns) — connector-author rules
  *   3. risk-derived default (when `default_mode = risk`) or always_run (`allow_all`)
@@ -36,6 +45,7 @@ import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy'
 import { connectorRequestDigest } from './request-digest';
 import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
+import type { ConnectionOwnerType } from '../projects/lib/connection-access';
 
 export interface GatewayConnector {
   connectorId: string;
@@ -45,6 +55,14 @@ export interface GatewayConnector {
   connectionId?: string | null;
   connectionIsDefault?: boolean;
   connectionMetadata?: Record<string, unknown>;
+  /**
+   * Human-facing name + ownership of the resolved connection, carried through
+   * so a successful call can echo WHICH account ran it (`CallResult.account`).
+   * A transcript that never names the account cannot answer "whose mailbox
+   * sent that" on read-back.
+   */
+  connectionLabel?: string | null;
+  connectionOwnerType?: ConnectionOwnerType | null;
   slug: string;
   provider:
     | 'pipedream'
@@ -57,10 +75,9 @@ export interface GatewayConnector {
     | 'channel'
     | 'computer';
   platform?: string | null;
-  /** Server-side machine allowlist for a Computers connector profile. */
-  tunnelIds?: string[] | null;
-  /** Verified machine-owner accounts paired with the Computers allowlist. */
-  tunnelAccountIds?: string[] | null;
+  /** Computer connectors: the paired machine of the resolved account. Null
+   *  when the machine was unpaired. */
+  connectionTunnelId?: string | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ConnectorAuth;
@@ -118,6 +135,49 @@ export interface EmailConnectorContext {
 
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
+  /**
+   * Spec 2026-09-22 §2.5: the `X-Kortix-App-Authorization` value for a call
+   * whose base URL is a Kortix App of THIS deployment in the caller's OWN
+   * project — a ≤ 60 s signed assertion naming the calling session token.
+   * Null for any other host. Optional: absent = never attach.
+   */
+  appAuthorizationFor?(input: {
+    projectId: string;
+    baseUrl: string;
+    sessionId: string;
+    tokenId: string;
+  }): Promise<string | null>;
+  /**
+   * WHY `loadConnectorBySlug` answered null. That function collapses three
+   * states into one null — no such row, a disabled row, and a row with no
+   * usable connection for this session — and the gateway used to report all
+   * three as `connector_not_found`. An agent told "not found" about a connector
+   * it can see in `kortix connectors ls` cannot self-correct; one told
+   * `connector_not_connected` can. Optional: deps without it keep the old
+   * single reason.
+   */
+  explainMissingConnector?(
+    projectId: string,
+    slug: string,
+  ): Promise<
+    | 'connector_not_found'
+    | 'connector_not_connected'
+    | 'connector_disabled'
+    | 'account_required'
+    | 'computer_unpaired'
+  >;
+  /**
+   * v2 X7: the retired `computer` call argument named a machine. Resolves it
+   * (an account label or the machine's tunnel id) to one of the caller's
+   * reachable computer accounts on `slug`. `not_computer` when `slug` is not a
+   * computer connector (the argument then belongs to that connector); null
+   * when nothing the caller may use matches.
+   */
+  selectComputerAccount?(
+    projectId: string,
+    slug: string,
+    selector: unknown,
+  ): Promise<GatewayConnector | null | 'not_computer'>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
@@ -131,6 +191,37 @@ export interface GatewayDeps {
     projectId: string,
     sessionId: string,
   ): Promise<EmailSessionContext | null>;
+  /**
+   * A session's Slack post binds its thread to that session, so a human reply
+   * in the thread comes back to the session instead of spawning a new one.
+   * Returns the binding state echoed to the agent as `thread_binding`.
+   */
+  bindSlackThread?(input: {
+    projectId: string;
+    sessionId: string;
+    channel: string;
+    threadTs: string;
+  }): Promise<Record<string, unknown>>;
+  /**
+   * Display names for the authors of a Slack history or thread read, keyed by
+   * Slack user id. The agent reads `user_name` beside each `user` id. Best
+   * effort: absent, failing, or slow, the read is returned unchanged.
+   */
+  nameSlackUsers?(input: { projectId: string; token: string; userIds: string[] }): Promise<ReadonlyMap<string, string>>;
+  /**
+   * Keeps a Slack or Teams channel read inside the calling project's own
+   * conversations (channel-read-scope.ts). Every project in a workspace or
+   * tenant resolves the same platform token, so the token alone does not.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
+  /**
+   * Keeps a Slack write (post, edit, delete, reaction, join) out of other
+   * projects' channels and threads (channel-write-scope.ts): refused before
+   * the call, and a post that landed elsewhere is taken back after it.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -179,6 +270,20 @@ export interface GatewayDeps {
     executionId: string;
     sessionId: string | null;
   }): string | null;
+  /**
+   * Post an approval card into the chat thread of the session that made a
+   * gated call (Slack). Resolves `posted: false` for sessions with no thread.
+   * Injected so the gateway stays free of channel code.
+   */
+  postApprovalCard?(input: {
+    projectId: string;
+    sessionId: string;
+    executionId: string;
+    actionPath: string;
+    risk: Risk;
+    resultSummary: Record<string, unknown>;
+    approvalUrl: string | null;
+  }): Promise<{ posted: boolean }>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -214,17 +319,15 @@ export interface GatewayDeps {
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
-   * connectors. Verifies the selected machine belongs to the connector's
-   * stored id + owner-account grant, then relays through the tunnel core.
+   * connectors. Relays one call to the machine of the account the generic
+   * resolver chose, through the tunnel core.
    */
   executeComputerCall?(input: {
+    tunnelId: string;
     accountId: string;
     projectId: string;
     sessionId: string | null;
     actorUserId: string;
-    allowedTunnelIds: string[] | null;
-    allowedTunnelAccountIds: string[] | null;
-    selector: string | null;
     method: string;
     args: Record<string, unknown>;
   }): Promise<ComputerCallOutcome>;
@@ -237,18 +340,30 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      kind: 'permission_required';
-      requestId: string;
+      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+       *  an access refusal on the machine (`computer_access_pending` |
+       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  failure on the machine or in the relay. */
+      kind:
+        | 'computer_unpaired'
+        | 'computer_offline'
+        | 'computer_capability_not_approved'
+        | 'computer_access_pending'
+        | 'computer_access_denied'
+        | 'computer_access_off'
+        | 'error';
       message: string;
-    }
-  | { ok: false; kind: 'no_machine'; message: string }
-  | { ok: false; kind: 'error'; message: string };
+    };
 
 export interface CallInput {
   projectId: string;
   accountId: string;
   subject: ShareSubject;
   sessionId?: string | null;
+  /** The presented account token's id (`account_tokens.token_id`), when the
+   *  caller authenticated with one. With `sessionId` it identifies an agent
+   *  session — the only caller that gets a Kortix App assertion. */
+  actingTokenId?: string | null;
   connectorSlug: string;
   /** Connector-relative action path (e.g. `charges.create`). */
   actionPath: string;
@@ -256,11 +371,23 @@ export interface CallInput {
   /** @deprecated Older clients can identify an existing pending row. The
    *  gateway never blocks or polls it. */
   approvalExecutionId?: string | null;
+  /** The agent's own words on what a gated call does ("sends draft X to Y").
+   *  Shown to the approver next to the arguments, labelled unverified. Never
+   *  sent to the provider and outside the request digest. */
+  approvalContext?: string | null;
+}
+
+/** Which account a successful call ran as — echoed on the wire (router.ts). */
+export interface CallResultAccount {
+  connection_id: string;
+  label: string;
+  owner_type: string;
 }
 
 export type CallResult =
-  | { status: 'ok'; data: unknown; risk: Risk }
-  | { status: 'denied'; reason: string }
+  | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
+  /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
+  | { status: 'denied'; reason: string; message?: string }
   | {
       status: 'pending_approval';
       reason: string;
@@ -281,6 +408,31 @@ export type CallResult =
       approvalInstructions?: string | null;
     }
   | { status: 'error'; reason: string };
+
+const MAX_APPROVAL_CONTEXT = 4_000;
+const CARD_POST_BUDGET_MS = 5_000;
+const CARD_POSTED_INSTRUCTIONS =
+  'An approval card with Approve / Deny / Reply buttons was posted in the chat thread; the human decides there. Do not repost approval_url. Stop this turn — Kortix resumes the session after approve or deny.';
+
+/** A card that is slow or fails must never fail or stall the gated call. */
+async function postCardWithin(ms: number, post: () => Promise<{ posted: boolean }>): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      post().then((r) => r.posted === true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), ms);
+      }),
+    ]);
+  } catch (error) {
+    logger.warn(`[connector] approval card post failed: ${(error as Error).message}`);
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+const CONTEXT_HINT =
+  ' Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.';
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
 const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
@@ -323,6 +475,19 @@ async function resolveConnectorForCall(
   return {
     slug: input.connectorSlug,
     connector: await deps.loadConnectorBySlug(input.projectId, input.connectorSlug),
+  };
+}
+
+/**
+ * The account echo for a successful call — `undefined` when the connector
+ * resolved no connection (a no-credential/public connector).
+ */
+function gatewayConnectorAccount(connector: GatewayConnector): CallResultAccount | undefined {
+  if (!connector.connectionId) return undefined;
+  return {
+    connection_id: connector.connectionId,
+    label: connector.connectionLabel ?? '',
+    owner_type: connector.connectionOwnerType ?? 'project',
   };
 }
 
@@ -430,16 +595,88 @@ async function resolveEmailExecutionContext(
 }
 
 /** Run one connector call through the full gateway path. */
+/**
+ * The App gate credential for this call, or null. Only an agent session (a
+ * session id AND the token it presented) calling an openapi/http connector is
+ * considered, and `deps.appAuthorizationFor` decides whether the base URL is an
+ * App of the same project. A lookup failure never fails the call: the request
+ * goes out exactly as it did before this existed.
+ */
+async function appAuthorizationForCall(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  binding: ActionBinding,
+): Promise<string | null> {
+  if (!deps.appAuthorizationFor || !input.sessionId || !input.actingTokenId) return null;
+  const baseUrl =
+    binding.kind === 'openapi'
+      ? (connector.baseUrl ?? binding.server)
+      : binding.kind === 'http'
+        ? connector.baseUrl
+        : null;
+  if (!baseUrl) return null;
+  try {
+    return await deps.appAuthorizationFor({
+      projectId: input.projectId,
+      baseUrl,
+      sessionId: input.sessionId,
+      tokenId: input.actingTokenId,
+    });
+  } catch (error) {
+    logger.warn('[connector] App assertion lookup failed; calling without it', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * The connector's credential is a project secret whose audience does not
+ * include the person this call acts for (projects/lib/secret-audience.ts).
+ * `resolveCredential` throws it instead of returning null, so the caller is
+ * told the truth — not shared with them — rather than `needs_auth`.
+ */
+export class CredentialNotSharedError extends Error {
+  readonly reason = 'credential_not_shared';
+  constructor(identifier: string) {
+    super(
+      `The credential ${identifier} is shared only with specific people, and this call does not run as one of them. ` +
+        'It works in a private session of someone it is shared with. Ask its owner to share it with you.',
+    );
+    this.name = 'CredentialNotSharedError';
+  }
+}
+
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
 
-  const connector = resolved.connector;
+  let connector = resolved.connector;
+  // v2 X7: older agents select a machine with a `computer` argument. Map it to
+  // that account and strip it; relaying it would run the call on the default
+  // machine instead. An unknown name is refused, never ignored.
+  if (input.args && Object.hasOwn(input.args, 'computer') && deps.selectComputerAccount) {
+    const { computer: selector, ...args } = input.args;
+    const selected = await deps.selectComputerAccount(input.projectId, resolved.slug, selector);
+    if (selected !== 'not_computer') {
+      input = { ...input, args };
+      if (!selected) {
+        const reason = `account_not_found: no computer account you can use matches "${String(selector).slice(0, 120)}". Select the computer with --account "<name>".`;
+        await audit(deps, input, null, 'denied', null, { reason: 'account_not_found' });
+        return { status: 'denied', reason };
+      }
+      connector = selected;
+    }
+  }
   if (!connector || !connector.enabled) {
-    await audit(deps, input, null, 'denied', null, {
-      reason: 'connector_not_found',
-    });
-    return { status: 'denied', reason: 'connector_not_found' };
+    const reason = !connector
+      ? deps.explainMissingConnector
+        ? await deps.explainMissingConnector(input.projectId, resolved.slug)
+        : 'connector_not_found'
+      : 'connector_disabled';
+    await audit(deps, input, null, 'denied', null, { reason });
+    return { status: 'denied', reason };
   }
 
   const action = await deps.loadAction(connector.connectorId, input.actionPath);
@@ -450,12 +687,37 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: 'action_not_found' };
   }
 
+  // Before any credential, approval or provider call: a read of another
+  // project's conversation, or a write into it, never leaves the API.
+  const channelInput: ChannelReadInput = {
+    projectId: input.projectId,
+    platform: connector.platform ?? null,
+    actionPath: input.actionPath,
+    args: input.args ?? {},
+    risk: action.risk,
+  };
+  const channelGate =
+    connector.provider === 'channel' && deps.gateChannelRead ? await deps.gateChannelRead(channelInput) : null;
+  const channelWrite =
+    connector.provider === 'channel' && deps.gateChannelWrite ? await deps.gateChannelWrite(channelInput) : null;
+  const channelRefusal = channelGate?.refusal ?? channelWrite?.refusal ?? null;
+  if (channelRefusal) {
+    const { reason, message } = channelRefusal;
+    await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+    return { status: 'denied', reason, message };
+  }
+
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   let usable: Awaited<ReturnType<typeof connectorUsable>>;
   let attachmentClaim: Awaited<ReturnType<ConnectorAttachmentStore['claimForEmail']>> | null = null;
+  let attachmentRefs: ReturnType<typeof findAttachmentRefs> = [];
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
+    if (error instanceof CredentialNotSharedError) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: error.reason });
+      return { status: 'denied', reason: error.reason, message: error.message };
+    }
     const reason = (error as Error).message || 'credential_resolution_failed';
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
@@ -495,6 +757,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // this: <url>") is still specific about what is being approved.
     const argsPreviewDetails = buildArgsPreviewDetails(executionArgs);
     const argsPreview = argsPreviewDetails.preview;
+    const approvalContext =
+      input.approvalContext?.trim().slice(0, MAX_APPROVAL_CONTEXT) || null;
     // Keys are OMITTED when empty rather than set to null: the pending_approval
     // result is a wire shape other code compares against, and a key that carries
     // no information shouldn't change it.
@@ -514,8 +778,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ...(url
           ? {
               approvalInstructions: input.sessionId
-                ? 'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.'
-                : 'Share approval_url with a human. Retry this exact call once they approve it.',
+                ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.${approvalContext ? '' : CONTEXT_HINT}`
+                : `Share approval_url with a human. Retry this exact call once they approve it.${approvalContext ? '' : CONTEXT_HINT}`,
             }
           : {}),
       };
@@ -620,69 +884,100 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               // with no way to see who it emails. Redacted (see args-preview.ts):
               // credential-shaped fields never reach the audit trail.
               args_preview: argsPreview,
+              // Reference args (`{draft_id}`) name a target without showing it,
+              // so the agent may describe the effect. Unverified by design.
+              ...(approvalContext ? { approval_context: approvalContext } : {}),
             },
             requestDigest,
           ));
+        const extras = approvalExtras(executionId);
+        const cardPosted =
+          !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
+            ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
+                deps.postApprovalCard!({
+                  projectId: input.projectId,
+                  sessionId: input.sessionId!,
+                  executionId,
+                  actionPath: `${input.connectorSlug}.${input.actionPath}`,
+                  risk: action.risk,
+                  resultSummary: {
+                    args_preview: argsPreview,
+                    args_preview_complete: argsPreviewDetails.complete,
+                    ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  },
+                  approvalUrl: extras.approvalUrl ?? null,
+                }),
+              )
+            : false;
         return {
           status: 'pending_approval',
           reason: 'policy_require_approval',
           executionId,
           retryable: false,
-          ...approvalExtras(executionId),
+          ...extras,
+          // The human decides on the card in their thread; a pasted link next
+          // to it would only duplicate the request.
+          ...(cardPosted
+            ? { approvalInstructions: `${CARD_POSTED_INSTRUCTIONS}${approvalContext ? '' : CONTEXT_HINT}` }
+            : {}),
         };
       }
     }
   }
 
   try {
-    // Computers (Agent Computer Tunnel): relay through the shared tunnel RPC
-    // core. The connector profile owns the machine allowlist.
+    // `{ "$kortix_attachment": id }` references. The bytes are resolved only
+    // into the provider-bound copy of the arguments, below.
+    const isEmailChannel = connector.provider === 'channel' && connector.platform === 'email';
+    attachmentRefs = findAttachmentRefs(executionArgs);
+    if (
+      attachmentRefs.length > 0 &&
+      (connector.provider === 'pipedream' ||
+        connector.provider === 'composio' ||
+        connector.provider === 'computer')
+    ) {
+      // These runners take provider-native file inputs. Forwarding the
+      // reference would deliver the message without its file.
+      throw new Error(
+        `connector_attachments_unsupported: ${connector.provider} connectors do not accept Kortix attachments`,
+      );
+    }
+
+    // Computers (Agent Computer Tunnel): the generic resolver chose the
+    // account; its machine receives the call through the shared tunnel core.
     if (connector.provider === 'computer') {
       if (action.binding.kind !== 'tunnel') {
         throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
-      if (connector.tunnelIds && connector.tunnelIds.length === 0) {
-        return {
-          status: 'error',
-          reason: 'computer connector has no assigned machines',
-        };
-      }
-      const selector =
-        typeof executionArgs.computer === 'string' ? executionArgs.computer.trim() || null : null;
-      const callArgs = Object.fromEntries(
-        Object.entries(executionArgs).filter(([key]) => key !== 'computer'),
-      );
-      const outcome = await deps.executeComputerCall({
-        accountId: input.accountId,
-        projectId: input.projectId,
-        sessionId: input.sessionId ?? null,
-        actorUserId: input.subject.userId,
-        allowedTunnelIds: connector.tunnelIds ?? null,
-        allowedTunnelAccountIds: connector.tunnelAccountIds ?? null,
-        selector,
-        method: action.binding.method,
-        args: callArgs,
-      });
+      const outcome = connector.connectionTunnelId
+        ? await deps.executeComputerCall({
+            tunnelId: connector.connectionTunnelId,
+            accountId: input.accountId,
+            projectId: input.projectId,
+            sessionId: input.sessionId ?? null,
+            actorUserId: input.subject.userId,
+            method: action.binding.method,
+            args: executionArgs,
+          })
+        : ({
+            ok: false,
+            kind: 'computer_unpaired',
+            message: 'This computer was unpaired. Pair it again to use it.',
+          } as const);
       if (outcome.ok) {
         await audit(deps, input, connector, 'ok', action.risk, {
           method: action.binding.method,
         });
-        return { status: 'ok', data: outcome.data, risk: action.risk };
-      }
-      if (outcome.kind === 'permission_required') {
-        await audit(deps, input, connector, 'pending_approval', action.risk, {
-          reason: 'tunnel_permission_required',
-          request_id: outcome.requestId,
-        });
-        return {
-          status: 'pending_approval',
-          reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
-        };
+        return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
       }
       await audit(deps, input, connector, 'error', action.risk, {
-        reason: outcome.message.slice(0, 500),
+        reason: outcome.kind,
+        message: outcome.message.slice(0, 500),
       });
+      if (outcome.kind !== 'error') {
+        return { status: 'error', reason: `${outcome.kind}: ${outcome.message}` };
+      }
       logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
       return { status: 'error', reason: outcome.message };
     }
@@ -750,23 +1045,49 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         connectedAccountId,
       });
     } else {
-      let providerArgs = executionArgs;
-      if (connector.provider === 'channel' && connector.platform === 'email') {
-        if (!deps.attachmentStore && hasAttachmentHandles(executionArgs)) {
+      let providerArgs =
+        connector.provider === 'channel'
+          ? withChannelDefaults(connector.platform ?? '', input.actionPath, executionArgs)
+          : executionArgs;
+      const scope = {
+        accountId: input.accountId,
+        projectId: input.projectId,
+        sessionId: input.sessionId ?? null,
+        userId: input.subject.userId,
+      };
+      if (isEmailChannel) {
+        // The Email channel sends files by signed URL: references become the
+        // channel's own `{ attachment_id }` handles, then the URL claim runs.
+        const emailArgs =
+          attachmentRefs.length > 0
+            ? emailChannelAttachmentArgs(executionArgs, attachmentRefs)
+            : executionArgs;
+        if (!deps.attachmentStore && hasAttachmentHandles(emailArgs)) {
           throw new Error('connector_attachment_transport_unavailable');
         }
         if (deps.attachmentStore) {
-          attachmentClaim = await deps.attachmentStore.claimForEmail(
-            {
-              accountId: input.accountId,
-              projectId: input.projectId,
-              sessionId: input.sessionId ?? null,
-              userId: input.subject.userId,
-            },
-            executionArgs,
-          );
+          attachmentClaim = await deps.attachmentStore.claimForEmail(scope, emailArgs);
           providerArgs = attachmentClaim.args;
         }
+      } else if (attachmentRefs.length > 0) {
+        if (!deps.attachmentStore?.claimInline) {
+          throw new Error('connector_attachment_transport_unavailable');
+        }
+        const claim = await deps.attachmentStore.claimInline(scope, [
+          ...new Set(attachmentRefs.map((ref) => ref.attachmentId)),
+        ]);
+        // Record the claim before resolving, so a shape refusal releases it.
+        attachmentClaim = {
+          args: executionArgs,
+          claimToken: claim.claimToken,
+          attachmentIds: claim.attachmentIds,
+        };
+        providerArgs = resolveAttachmentRefs(
+          executionArgs,
+          action.inputSchema,
+          attachmentRefs,
+          claim.files,
+        );
       }
       result = await executeCall({
         binding: action.binding,
@@ -776,12 +1097,49 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         secret: executionSecret,
         args: providerArgs,
         paramHints: paramHintsFromSchema(action.inputSchema),
+        appAuthorization: await appAuthorizationForCall(deps, input, connector, action.binding),
         fetchImpl: deps.fetchImpl,
       });
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
+      // A list can hold other projects' conversations, and a thread read can
+      // answer with a different thread: the gate sees the answer first.
+      const scoped = result.ok && channelGate ? await channelGate.answer(result.data) : null;
+      if (scoped && 'refusal' in scoped) {
+        if (attachmentClaim?.claimToken) {
+          await deps.attachmentStore
+            ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
+            .catch(() => {});
+        }
+        const { reason, message } = scoped.refusal;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+        return { status: 'denied', reason, message };
+      }
+      if (scoped) result = { ...result, data: scoped.data };
+      // A post that Slack delivered somewhere other than the conversation that
+      // was checked (it resolved a name) is taken back, then refused.
+      const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
+      if (misfire) {
+        const undone = misfire.undo
+          ? await executeCall({
+              binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
+              baseUrl: connector.baseUrl,
+              auth: connector.auth,
+              headers: connector.headers,
+              secret: executionSecret,
+              args: misfire.undo.args,
+              fetchImpl: deps.fetchImpl,
+            })
+              .then((undo) => mapChannelEnvelope(undo).ok)
+              .catch(() => false)
+          : false;
+        const { reason } = misfire.refusal;
+        const message = `${misfire.refusal.message} ${undone ? 'Kortix removed it.' : 'Kortix could not remove it: delete it in Slack.'}`;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message, removed: undone });
+        return { status: 'denied', reason, message };
+      }
     }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {
@@ -796,22 +1154,32 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       }
       await audit(deps, input, connector, 'ok', action.risk, {
         http_status: result.status,
+        ...(attachmentClaim?.attachmentIds.length
+          ? { attachment_count: attachmentClaim.attachmentIds.length }
+          : {}),
       });
-      return { status: 'ok', data: result.data, risk: action.risk };
+      const named = await withSlackAuthorNames(deps, input, connector, executionSecret, result.data);
+      const data = await withSlackThreadBinding(deps, input, connector, executionArgs, named);
+      return { status: 'ok', data, risk: action.risk, account: gatewayConnectorAccount(connector) };
     }
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
         ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
         .catch(() => {});
     }
-    const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
+    // An upstream that echoes the rejected body would echo the file's base64.
+    const upstream = upstreamReason(result);
+    const reason =
+      teamsReadConsentHint(connector, result) +
+      (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
+      fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
       reason: reason.slice(0, 500),
     });
-    logger.warn(
-      `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`,
-    );
+    const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
+    if (connector.provider === 'composio' && result.status === 400) logger.debug(message);
+    else logger.warn(message);
     return { status: 'error', reason };
   } catch (e) {
     if (attachmentClaim?.claimToken) {
@@ -837,6 +1205,98 @@ function hasAttachmentHandles(args: Record<string, unknown>): boolean {
       !Array.isArray(value) &&
       typeof (value as Record<string, unknown>).attachment_id === 'string',
   );
+}
+
+/**
+ * After a session posts to Slack, bind the thread to that session: the new
+ * message's own `ts` for a top-level post, `thread_ts` for a reply. The
+ * session comes from the caller's token (never the request body), so a post
+ * can only route replies to the session that made it. A bind failure never
+ * fails the delivered message; the agent sees it in `thread_binding`.
+ */
+async function withSlackThreadBinding(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  args: Record<string, unknown>,
+  data: unknown,
+): Promise<unknown> {
+  if (
+    !deps.bindSlackThread ||
+    !input.sessionId ||
+    connector.provider !== 'channel' ||
+    connector.platform !== 'slack' ||
+    input.actionPath !== 'send_message' ||
+    !data ||
+    typeof data !== 'object'
+  ) {
+    return data;
+  }
+  const posted = data as { ts?: unknown; channel?: unknown };
+  const threadTs = typeof args.thread_ts === 'string' && args.thread_ts ? args.thread_ts : posted.ts;
+  const channel = typeof posted.channel === 'string' && posted.channel ? posted.channel : args.channel;
+  if (typeof threadTs !== 'string' || typeof channel !== 'string') return data;
+  const threadBinding = await deps
+    .bindSlackThread({ projectId: input.projectId, sessionId: input.sessionId, channel, threadTs })
+    .catch((error) => {
+      logger.warn('[connector] slack thread bind failed after a delivered post', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { bound: false, thread_ts: threadTs, reason: 'bind_failed' };
+    });
+  return { ...data, thread_binding: threadBinding };
+}
+
+/** Slack reads that answer with messages. */
+const SLACK_MESSAGE_READS: ReadonlySet<string> = new Set(['get_history', 'get_thread']);
+
+/**
+ * A Slack history or thread read names each message's author as `user_name`,
+ * beside the `user` id the agent still operates with. Slack answers with ids
+ * only, and an agent that reads ids answers with ids. Runs after the read-scope
+ * gate, on the messages the agent may see. A failed lookup returns the read
+ * unchanged.
+ */
+async function withSlackAuthorNames(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  token: string | null,
+  data: unknown,
+): Promise<unknown> {
+  if (
+    !deps.nameSlackUsers ||
+    !token ||
+    connector.provider !== 'channel' ||
+    connector.platform !== 'slack' ||
+    !SLACK_MESSAGE_READS.has(input.actionPath) ||
+    !data ||
+    typeof data !== 'object'
+  ) {
+    return data;
+  }
+  const messages = (data as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return data;
+  const authorOf = (message: unknown): string | null => {
+    const user = message && typeof message === 'object' ? (message as { user?: unknown }).user : null;
+    return typeof user === 'string' && user ? user : null;
+  };
+  const userIds = [...new Set(messages.map(authorOf).filter((id): id is string => id !== null))];
+  if (userIds.length === 0) return data;
+  const names = await deps.nameSlackUsers({ projectId: input.projectId, token, userIds }).catch((error) => {
+    logger.warn('[connector] slack author names failed (non-fatal)', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  if (!names || names.size === 0) return data;
+  return {
+    ...data,
+    messages: messages.map((message) => {
+      const name = names.get(authorOf(message) ?? '');
+      return name ? { ...(message as Record<string, unknown>), user_name: name } : message;
+    }),
+  };
 }
 
 /**
@@ -870,6 +1330,27 @@ function upstreamReason(result: ExecResult): string {
     }
   }
   return `upstream_${result.status}`;
+}
+
+/**
+ * Teams refuses a read with 403 "… Resource specific consent grants on the
+ * request ''" when the Kortix app in that team holds no permission to read its
+ * messages: the team added it before the app asked for one, and an update that
+ * adds a permission never installs itself (a team owner accepts it). Graph
+ * names a permission; this names who fixes it and where. A new app version
+ * reaches an organization only through a Teams admin's publish
+ * (teams/catalog.ts needs their sign-in).
+ */
+function teamsReadConsentHint(connector: GatewayConnector, result: ExecResult): string {
+  if (connector.provider !== 'channel' || connector.platform !== 'teams' || result.status !== 403) return '';
+  const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? '');
+  if (!/Resource specific consent/i.test(body)) return '';
+  return (
+    'Kortix cannot read messages in this team yet: the Kortix app in the team has no permission to read them. ' +
+    'A team owner updates the app in Teams (the team → ⋯ → Manage team → Apps → Update) and accepts the new permission. ' +
+    'If no update is offered, a Teams admin first publishes the latest app from the Kortix project ' +
+    '(Connectors → Channels → Microsoft Teams). '
+  );
 }
 
 /**

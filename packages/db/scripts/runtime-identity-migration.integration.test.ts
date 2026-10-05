@@ -1,11 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
-
-const dockerAvailable =
-  Bun.spawnSync(['docker', 'version'], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  }).exitCode === 0;
+import { dockerAvailable } from './docker-available';
 
 const container = `kortix-runtime-identity-${crypto.randomUUID().slice(0, 8)}`;
 

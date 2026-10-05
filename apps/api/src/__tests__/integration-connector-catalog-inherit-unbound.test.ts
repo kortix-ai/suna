@@ -63,7 +63,7 @@ function principalFor(sessionId: string | null) {
     subject: { userId: USER, groupIds: [] },
     // Agent grant allows both connectors, so the agent-grant filter is not the
     // thing hiding them — the binding resolution is.
-    agentGrant: { agent: 'test', connectors: ['veyris', 'unbound', 'revoked'], kortixCli: [] },
+    agentGrant: { agent: 'test', connectors: ['veyris', 'unbound', 'revoked'], permissions: [] },
   };
 }
 
@@ -337,11 +337,16 @@ describe('connector catalog and call resolver use one session scope', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connector: 'unbound', action: 'read', args: {} }),
     });
-    expect(callResponse.status).toBe(404);
-    expect(await callResponse.json()).toEqual({
+    // The row exists in the project; the session scope leaves it no usable
+    // connection. Since 45357b024d that is an honest `connector_not_connected`
+    // (403), not `connector_not_found` (404). Either way the call fails closed.
+    expect(callResponse.status).toBe(403);
+    expect(await callResponse.json()).toMatchObject({
       ok: false,
       status: 'denied',
-      reason: 'connector_not_found',
+      reason: 'connector_not_connected',
+      connector: 'unbound',
+      action: 'read',
     });
   });
 
@@ -381,6 +386,12 @@ describe('connector catalog and call resolver use one session scope', () => {
   });
 
   test('the fixed create-path default (inherit_unbound=true) lists unbound aliases without the safety net', async () => {
+    // THE RULE (2026-09-16): `unbound` is reachable to USER through TWO
+    // accounts — their own unpinned CONNECTION_UNBOUND_MEMBER, and the
+    // project's PINNED CONNECTION_UNBOUND_DEFAULT ("Unbound default",
+    // is_default: true in the fixture above). An unnamed call honors the
+    // deliberate pin over an unpinned "mine" row — see
+    // `selectEntitledConnectorConnection` — so this resolves the pinned one.
     const unbound = await resolveSessionConnectorConnection({
       accountId: ACCOUNT,
       projectId: PROJECT,
@@ -388,7 +399,7 @@ describe('connector catalog and call resolver use one session scope', () => {
       alias: 'unbound',
       actingUserId: USER,
     });
-    expect(unbound).toMatchObject({ connectionId: CONNECTION_UNBOUND_MEMBER, source: 'default' });
+    expect(unbound).toMatchObject({ connectionId: CONNECTION_UNBOUND_DEFAULT, source: 'default' });
 
     const catalog = await dbConnectorRouterDeps.listCatalog(principalFor(SESSION_INHERIT));
     const slugs = catalog.map((c) => c.slug).sort();
@@ -396,7 +407,7 @@ describe('connector catalog and call resolver use one session scope', () => {
 
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principalFor(SESSION_INHERIT));
     expect((await deps.loadConnectorBySlug(PROJECT, 'unbound'))?.connectionId).toBe(
-      CONNECTION_UNBOUND_MEMBER,
+      CONNECTION_UNBOUND_DEFAULT,
     );
   });
 
@@ -409,9 +420,61 @@ describe('connector catalog and call resolver use one session scope', () => {
     // and connected, so a legacy session sees it via the project default.
     expect(slugs).toEqual(['revoked', 'unbound', 'veyris']);
 
+    // Same pin as above: the project's PINNED default wins over USER's own
+    // unpinned row.
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principalFor(SESSION_LEGACY));
     expect((await deps.loadConnectorBySlug(PROJECT, 'unbound'))?.connectionId).toBe(
-      CONNECTION_UNBOUND_MEMBER,
+      CONNECTION_UNBOUND_DEFAULT,
     );
+  });
+
+  test('the catalog carries every entitled account per connector, default first', async () => {
+    // `veyris` holds two accounts the caller may run it as: their own member
+    // connection and the project's shared default. The catalog must say so —
+    // this is the fix for an agent that never learned a connector can hold more
+    // than one account and answered "one account connected" from a single
+    // get_profile call instead of listing them.
+    const catalog = await dbConnectorRouterDeps.listCatalog(principalFor(SESSION_LEGACY));
+    const veyris = catalog.find((c) => c.slug === 'veyris');
+    expect(veyris?.accounts).toEqual([
+      {
+        connection_id: CONNECTION_BOUND_MEMBER,
+        label: 'Veyris my workspace',
+        owner_type: 'member',
+        is_default: false,
+      },
+      {
+        connection_id: CONNECTION_BOUND_DEFAULT,
+        label: 'Veyris default',
+        owner_type: 'project',
+        is_default: true,
+      },
+    ]);
+    // The member account ranks first in the LIST (the caller's own identity
+    // sorts ahead of shared ones — see `entitledConnectionRank`), but the
+    // account an UNNAMED call runs as is the one a human pinned: the project
+    // default here. With several accounts and no pin it would be `null`, and
+    // the call would answer `account_required` (THE RULE, 2026-09-16).
+    expect(veyris?.default_account).toBe('Veyris default');
+
+    // `unbound` holds exactly one entitled account for this caller.
+    const unbound = catalog.find((c) => c.slug === 'unbound');
+    expect(unbound?.accounts).toEqual([
+      {
+        connection_id: CONNECTION_UNBOUND_MEMBER,
+        label: 'Unbound my workspace',
+        owner_type: 'member',
+        is_default: false,
+      },
+      {
+        connection_id: CONNECTION_UNBOUND_DEFAULT,
+        label: 'Unbound default',
+        owner_type: 'project',
+        is_default: true,
+      },
+    ]);
+    // Same rule: the caller's own account lists first, but the PINNED project
+    // account is what an unnamed call runs as.
+    expect(unbound?.default_account).toBe('Unbound default');
   });
 });

@@ -8,7 +8,9 @@ import type {
  * WHICH observation decided the state.
  *
  * `server` — `GET .../turn`, the control plane's lifecycle authority, or the
- * session's durable prompt inbox. Both are rows the server owns.
+ * session's durable prompt inbox. Both are rows the server owns — including
+ * the DISAPPEARANCE of one between two readings of the list, which is the
+ * control plane saying it handed the prompt to the runtime (`drainedAtMs`).
  * `stream` — a `session.status` / `session.idle` frame off the live SSE stream.
  * `optimistic` — this tab's own send receipt, which no server source has
  * answered yet.
@@ -22,6 +24,8 @@ export type WorkingSource = 'server' | 'stream' | 'optimistic';
 
 export interface WorkingProjection {
   state: 'idle' | 'working';
+  /** Work is waiting for delivery; do not present it as an agent response. */
+  pendingDelivery?: true;
   /** WHICH observation decided this. Never inferred, never fabricated. */
   source: WorkingSource;
   /** The wire message id (server) or the optimistic receipt id. */
@@ -242,7 +246,7 @@ export interface WorkingStreamInput {
  * This one is not an observer. Content arriving is not a report that the
  * runtime is working — it IS the runtime working, and no report outranks it.
  *
- * Reported with a screen recording (essentia, 2026-08-23): a tool row with a
+ * Reported with a screen recording (sampleco, 2026-08-23): a tool row with a
  * live spinner and text growing on screen, and a composer showing its send
  * arrow. Every observer had gone quiet; the only thing still speaking was the
  * content, and nothing was listening to it.
@@ -251,8 +255,12 @@ export interface WorkingStreamInput {
  * part off the SSE wire) and PULLED (a liveness-poll tail read whose hydrate
  * shows the transcript moved with its tail still open — `sync-store.hydrate`).
  * The pull path is what answers when the wire itself is the thing that died
- * (essentia, 2026-08-26: stream black-holed mid-turn, stale idle frame vetoing
+ * (sampleco, 2026-08-26: stream black-holed mid-turn, stale idle frame vetoing
  * the open turn row, transcript minutes behind).
+ *
+ * Closing frames (a user message update, a completed or errored assistant
+ * message, a finished part) do not stamp, because the runtime writes them
+ * after its idle frame.
  */
 export interface WorkingActivityInput {
   atMs: number;
@@ -278,6 +286,26 @@ export interface WorkingInboxInput {
    * review as a stale empty snapshot hiding a backend-confirmed queue row.
    */
   serverAtMs?: number;
+  /**
+   * This tab's clock at the reading in which a row it had SEEN waiting was
+   * gone — the control plane took it off the queue and handed it to the
+   * runtime.
+   *
+   * The one transition every observer is blind to at the same instant. The
+   * list is right that nothing of yours is waiting (it is running), and the
+   * last `/turn` read is right that there were no turns (it was issued before
+   * the hand-off). Believing both is how a session goes INACTIVE with the
+   * user's prompt in flight — the composer drops Stop and the waiting row
+   * disappears, seconds after the prompt was accepted (dev, 2026-09-06, on
+   * video).
+   *
+   * Set only by a caller that compared two readings and watched a `queued` or
+   * `delivering` row leave (see the host's `inboxDrained`). A caller that
+   * reports a count and nothing else leaves it absent, and decides exactly as
+   * before. Carried forward while the list stays empty, dropped the moment it
+   * is not — the fact is about the queue, not about one HTTP response.
+   */
+  drainedAtMs?: number;
 }
 
 /**
@@ -332,12 +360,7 @@ export function countLiveInboxPrompts(prompts: readonly SessionPrompt[]): number
   return live;
 }
 
-/** ms epoch, or null for an absent/unparseable instant. */
-function instant(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
+import { decideWorking } from './working-project';
 
 /**
  * The one place a session's working state is decided.
@@ -377,267 +400,7 @@ function instant(value: string | null | undefined): number | null {
  *    must re-evaluate at those instants — see `workingExpiryAtMs`.
  */
 export function projectWorking(inputs: WorkingInputs): WorkingProjection {
-  const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
-  const receiptLive = !!optimistic && nowMs - optimistic.atMs < OPTIMISTIC_RECEIPT_MAX_MS;
-  const receiptTurnId = optimistic
-    ? optimistic.turnId === undefined
-      ? optimistic.messageId
-      : optimistic.turnId
-    : null;
-  // TWO floors, because the two server-side observers have different knowledge.
-  //
-  // `GET .../turn` reads the control plane's ledger, and there is NO row in it
-  // until `POST .../prompts` returns. A read issued in that window is stamped
-  // after the receipt and still provably cannot see the send, so it may not
-  // answer for it at all — hence the infinity while `acceptedAtMs` is null.
-  //
-  // The SSE stream is the RUNTIME's own voice, and the store stamps a frame
-  // when this tab observed it — which only moves when the frame itself changes.
-  // So a frame stamped after the send is a NEW transition, not a stale reading,
-  // and it is the freshest thing there is. Blocking it too would leave a
-  // command's receipt (nothing ever "accepts" a command) claiming `working` for
-  // a full minute after its turn had visibly ended.
-  const serverFloor = receiptLive
-    ? (optimistic!.acceptedAtMs ?? Number.POSITIVE_INFINITY)
-    : Number.NEGATIVE_INFINITY;
-  const streamFloor = receiptLive ? optimistic!.atMs : Number.NEGATIVE_INFINITY;
-  // The stop's floor, built exactly like the send's. A `/turn` read issued
-  // before the cancel was ACKNOWLEDGED still reports the turn the cancel is
-  // ending, so it may not report `working` from it — the read is honest and
-  // out of date. Infinite while the acknowledgement is outstanding, and gone
-  // entirely once the receipt ages out, so a cancel nobody answers cannot pin
-  // the composer on idle over a turn that is really still running.
-  const abortLive = !!abort && nowMs - abort.atMs < OPTIMISTIC_ABORT_MAX_MS;
-  const abortFloor = abortLive
-    ? (abort!.settledAtMs ?? Number.POSITIVE_INFINITY)
-    : Number.NEGATIVE_INFINITY;
-
-  const serverFresh = !!server && nowMs - server.atMs <= SERVER_OBSERVATION_MAX_MS;
-  const streamFresh = !!stream && nowMs - stream.atMs <= STREAM_OBSERVATION_MAX_MS;
-  const inboxFresh = !!inbox && nowMs - inbox.atMs <= INBOX_OBSERVATION_MAX_MS;
-
-  // The runtime's own end-of-turn frame.
-  //
-  // NOT gated on `streamFresh`, unlike every branch that decides `working` from
-  // the stream. The bound exists because an old frame cannot testify to what is
-  // happening NOW — but this frame is not asked that. It is asked whether a turn
-  // that started BEFORE it has ended, and that answer does not rot: a turn which
-  // resumed would have produced a newer, non-idle frame, and then this is not an
-  // idle frame at all. Gating it cost exactly what the 3s window cost, 42s later
-  // and permanently — at `stream.atMs + STREAM_OBSERVATION_MAX_MS` the veto
-  // vanished with no new input, and a row the relay never closed put the
-  // composer back on Stop until its deadline (240 MINUTES for an accepted turn).
-  // WIRE frames only. A fabricated local idle (`origin: 'local'`) is the tab
-  // inferring, not the runtime speaking, and this veto is unbounded — one wrong
-  // local frame silenced every fresh `/turn` read for the rest of a quiet turn
-  // (dev, 2026-08-24: busy indicator gone, composer on Send, transcript poll
-  // switched off, all mid-run). See `WorkingStreamInput.origin`.
-  const idleFrame =
-    stream && stream.type === 'idle' && stream.origin !== 'local' ? stream : null;
-
-  // CONTENT FIRST. Bounded by the stream's own freshness rule, because it
-  // arrives on the same transport and goes stale for the same reasons — but
-  // within that window it outranks every observer, including an idle frame it
-  // postdates. A runtime that is emitting parts is working, whatever the last
-  // status frame said and whatever a poll that has not answered yet will say.
-  const activityFresh = !!activity && nowMs - activity.atMs <= STREAM_OBSERVATION_MAX_MS;
-  const activityAfterIdle = activityFresh && (!idleFrame || activity!.atMs > idleFrame.atMs);
-
-  /**
-   * Whether the runtime has already finished this turn.
-   *
-   * "Newer read wins" is the rule this replaces, and it is wrong here, because
-   * the two observers do not learn the same fact at the same time. The idle
-   * frame comes straight off the runtime over SSE. The ledger row is closed by
-   * a SEPARATE daemon relay (`POST .../turn-stream` `kind:"end"`) — so a `/turn`
-   * read ISSUED after the frame is still ABOUT a turn the frame already ended.
-   *
-   * MEASURED, local stack 2026-08-21, one ordinary composer turn: the idle
-   * frame reached the tab at 00:03:59.964, the refetch that frame itself
-   * triggers landed at 00:04:00.150 stamped 44ms later and still reported the
-   * turn `active`, and the ledger did not record `ended_at` until 00:04:15.132
-   * — the relay for that turn never arrived and a reconciliation sweep closed
-   * it 15.1s late. The composer's Stop button and the turn's shimmer came back
-   * 186ms after they left and stayed for fifteen seconds, with the finished
-   * reply already on screen. Even in the healthy case the relay lands ~200ms
-   * after the frame, which is still inside the window its own refetch lands in.
-   *
-   * `started_at` is what separates the two turns the rule has to tell apart: a
-   * turn that began BEFORE the frame is the turn that frame ended, and a turn
-   * that began after it is a NEW one the frame knows nothing about — a queued
-   * prompt draining, a trigger firing, a second device sending. That one keeps
-   * the ledger's full authority, with no delay and no window.
-   *
-   * A row with no start instant (a legacy `activeTurn`) cannot be ranked
-   * against the frame at all, and inventing an order there would hide a live
-   * turn. The ledger keeps it.
-   */
-  const endedByRuntime = (candidate: SessionTurn): boolean => {
-    if (!idleFrame) return false;
-    // Only a turn that began BEFORE the frame — a turn started after it is a
-    // new one the frame knows nothing about.
-    const startedAt = instant(candidate.started_at);
-    if (startedAt === null || startedAt >= idleFrame.atMs) return false;
-    // And that is the whole rule. It used to expire after
-    // `TURN_END_LEDGER_LAG_MS`, on the theory that a row still open past the
-    // relay's lag must mean the frame was a retry's `session.error` rather than
-    // the end of anything. But time is not evidence: when the `kind:"end"`
-    // relay is simply DROPPED — the documented failure mode, closed by a
-    // reconciliation sweep 15.1s late in this file's own measurement — the row
-    // stays open for exactly the same reason and the turn is exactly as
-    // finished. Expiring the veto therefore announced a finished turn again,
-    // and the user watched "Gathering thoughts…" and the Stop button come back
-    // for seconds with the answer already on screen (dev, 2026-08-23).
-    //
-    // A turn that is genuinely still running says so, and that is what returns
-    // authority to the ledger: any newer frame is not idle, so `idleFrame` is
-    // null on the next evaluation and the row decides again — immediately, with
-    // no window to tune.
-    //
-    // "Says so" assumes the stream is delivering. When it is NOT — a
-    // black-holed SSE proxy answers 200 and never writes a byte, and the
-    // client heartbeat is the only detector (apps/api injects no keepalives)
-    // — this veto is deliberately NOT expired by `STREAM_OBSERVATION_MAX_MS`
-    // (a row still open past any time bound is more often a dropped
-    // `kind:"end"` relay than a live turn). The repair for the wrong case —
-    // a running turn behind a dead stream, prod 2026-08-26 — is EVIDENCE,
-    // not time: the transcript liveness poll stays on while the server holds
-    // a turn open (`livenessBusy`'s `serverHoldsTurn`), its runtime read
-    // stamps `sessionActivityAt` when the transcript moved with an open tail
-    // (`sync-store.hydrate`), and `activityAfterIdle` above then outranks
-    // this frame. Also note `started_at` is server clock while `atMs` is this
-    // tab's clock — skew can misclassify a NEW turn as ended, and the same
-    // evidence path is what recovers it.
-    return true;
-  };
-
-  if (activityAfterIdle) {
-    return {
-      state: 'working',
-      source: 'stream',
-      turnId: null,
-      since: activity!.atMs,
-      serverOpenTurnToken: server?.turns[0]?.turn_token ?? null,
-    };
-  }
-
-  // NOT gated on `serverFresh`. A read going stale is a fact about the READ, not
-  // about the row: the control plane does not release a turn because this tab's
-  // last look got old. Gating it here made being wrong self-sealing — the token
-  // nulls, `serverHoldsTurn` (use-session.ts) goes false, `livenessBusy` goes
-  // false, and the transcript fallback poll clears its own interval. The one
-  // mechanism that could have produced fresh evidence was switched off BY the
-  // staleness it existed to repair, so a false idle could never be discovered.
-  // The token is retired by end-of-turn evidence, never by age.
-  const ledgerTurn = server?.turns[0];
-  // `serverOpenTurnToken` deliberately keeps reporting the LEDGER's turn even
-  // when the runtime's frame has decided the state above — see its docstring.
-  // It answers "is the control plane still holding authority", which is what a
-  // `/` command must check before going straight at OpenCode with no admission
-  // gate in front of it, and that stays true for as long as the row does.
-  // Only the WORKING decision moves.
-  const serverOpenTurnToken = ledgerTurn?.turn_token ?? null;
-  // EVERY row, not just the first. The ledger holds more than one open turn
-  // whenever a prompt is forwarded while another is running — measured on the
-  // local stack as `turns: [B@00:28:56, A@00:28:22]` — and the list is not
-  // ordered newest-first. Testing only `turns[0]` would let one spent row hide
-  // a live one behind it, so the projection keeps the first turn the runtime
-  // has NOT finished.
-  const openTurn = serverFresh ? server!.turns.find((t) => !endedByRuntime(t)) : undefined;
-
-  // A turn the authority is holding open, unless the stream has since said the
-  // session went idle. The stream frame is newer BY OBSERVATION, and the daemon
-  // relays `turn_end` to the control plane at the same moment the frame is
-  // emitted — so a fresher idle frame means this read is simply out of date.
-  //
-  // A LOCAL idle frame is exempt from that ordering: it is not the runtime
-  // speaking, so "newer" buys it nothing against the lifecycle authority. It
-  // lands between polls by construction (the sweep runs on connect), and
-  // waiting one poll interval for the row to outrank it again is exactly the
-  // flicker being fixed.
-  const streamContradicts =
-    !!stream && !(stream.type === 'idle' && stream.origin === 'local');
-  if (openTurn && server!.atMs >= abortFloor && (!streamContradicts || server!.atMs >= stream!.atMs)) {
-    return {
-      state: 'working',
-      source: 'server',
-      turnId: openTurn.message_id,
-      since: instant(openTurn.started_at) ?? server!.atMs,
-      serverOpenTurnToken,
-    };
-  }
-
-  // Durable rows outrank an idle read: the read is right that no TURN is
-  // running and wrong that nothing is happening.
-  //
-  // Every live row counts, INCLUDING the ones already forwarded to the runtime.
-  // A prompt queued behind a running turn is handed to OpenCode early and sits
-  // in `delivering` ACROSS the turn boundary, so the idle frame that ends the
-  // turn in front of it says nothing about it. Measured on the local stack
-  // 2026-08-21: suppressing forwarded rows on that frame left the composer idle
-  // for 13.8s with the user's queued prompt still waiting to run.
-  if (inboxFresh && inbox!.pending > 0) {
-    return {
-      state: 'working',
-      source: 'server',
-      turnId: receiptLive ? receiptTurnId : null,
-      since: inbox!.atMs,
-      serverOpenTurnToken,
-    };
-  }
-
-  const serverAnswers = serverFresh && !openTurn && server!.atMs >= serverFloor;
-  const streamAnswers = streamFresh && stream!.atMs >= streamFloor;
-
-  if (serverAnswers && (!stream || server!.atMs >= stream.atMs)) {
-    return {
-      state: 'idle',
-      source: 'server',
-      turnId: null,
-      since: instant(server!.lastEnded?.ended_at) ?? server!.atMs,
-      serverOpenTurnToken,
-    };
-  }
-
-  if (streamAnswers) {
-    return {
-      state: stream!.type === 'idle' ? 'idle' : 'working',
-      source: 'stream',
-      turnId: null,
-      since: stream!.atMs,
-      serverOpenTurnToken,
-    };
-  }
-
-  if (receiptLive) {
-    return {
-      state: 'working',
-      source: 'optimistic',
-      turnId: receiptTurnId,
-      since: optimistic!.atMs,
-      serverOpenTurnToken,
-    };
-  }
-
-  // Nothing has answered. Idle is the only honest default: a session is not
-  // working because a page failed to ask.
-  const newest =
-    server && stream
-      ? server.atMs >= stream.atMs
-        ? { source: 'server' as const, atMs: server.atMs }
-        : { source: 'stream' as const, atMs: stream.atMs }
-      : server
-        ? { source: 'server' as const, atMs: server.atMs }
-        : stream
-          ? { source: 'stream' as const, atMs: stream.atMs }
-          : { source: 'server' as const, atMs: nowMs };
-  return {
-    state: 'idle',
-    source: newest.source,
-    turnId: null,
-    since: newest.atMs,
-    serverOpenTurnToken,
-  };
+  return decideWorking(inputs);
 }
 
 /**

@@ -97,7 +97,18 @@ export function SettingsRow({
       // that rule always matches, and at specificity (0,2,0) it beats a plain
       // `items-center` (0,1,0). Without the important flag the variant wins and
       // every control top-aligns regardless of what is passed here.
-      className={cn('gap-4 px-4 py-3 !items-center', className)}
+      // Below `sm` the row cannot hold a readable label column AND its
+      // control. The controls are fixed-width (`h-8 w-56` inputs) and the
+      // email value is `truncate`, which needs `min-w-0` on a parent that is
+      // `shrink-0` — so on a 390px phone the control took everything and the
+      // help text rendered 1-2 characters per line in a 15px column
+      // (KRTX-1313). Stack instead: label above, control below, which is the
+      // design system's own narrow-width rule. `sm` and up is untouched.
+      className={cn(
+        '!items-center gap-4 px-4 py-3',
+        'max-sm:!flex-col max-sm:gap-2 max-sm:!items-stretch',
+        className,
+      )}
       {...props}
     >
       <FieldContent className="min-w-0 flex-1 gap-0">
@@ -109,7 +120,9 @@ export function SettingsRow({
         ) : null}
       </FieldContent>
       {children ? (
-        <div className="flex shrink-0 items-center justify-end gap-2">{children}</div>
+        <div className="flex shrink-0 items-center justify-end gap-2 max-sm:w-full max-sm:justify-start">
+          {children}
+        </div>
       ) : null}
     </Field>
   );

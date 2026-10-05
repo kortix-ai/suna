@@ -1,8 +1,15 @@
+import {
+  describeConfigStatus,
+  describeReloadOutcome,
+  type SessionConfigStatusInput,
+  type SessionReloadOutcomeInput,
+} from './session-config-format';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   emitJson,
+  expandSessionIdPrefix,
   locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
@@ -18,6 +25,7 @@ import {
 } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
+import { runSessionsForward } from './sessions-forward.ts';
 import type { Auth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
@@ -44,10 +52,13 @@ import {
   runSessionsWarm,
 } from './sessions-lifecycle.ts';
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
+import { runSessionsAttachments } from './sessions-attachments.ts';
+import { sessionListQuery, startedByLabel, takeSessionListFlags, type SessionListFlags } from './sessions-list.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
+import { parseMetaPair, runSessionsUpdate } from './sessions-update.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
@@ -56,7 +67,18 @@ Manage Kortix project sessions — each session is an isolated sandbox VM
 on its own ephemeral branch.
 
 Subcommands:
-  ls                                List sessions on the project. --json.
+  ls [--mine|--shared|--automated]  List sessions with who started each
+     [--search <q>]                 (STARTED BY). --mine = you started it,
+     [--children <session-id>]      --shared = another member did,
+     [--label <label>]...
+                                    --automated = a trigger, channel or API
+                                    key did; each lists top-level sessions
+                                    with their child count. --search <q>
+                                    matches every session you can see.
+                                    --children <id> lists one session's
+                                    children. --label <l> (repeatable)
+                                    lists sessions carrying every given
+                                    label. --json.
   status                            Mission control: every session + what
                                     each agent is doing right now (live).
                                     --all, --json. Aliases: overview, ps.
@@ -64,7 +86,11 @@ Subcommands:
                                     initial prompt. --agent <name> pins the
                                     session to that agent (default: the
                                     project's declared default agent).
-                                    --model <id> overrides the model.
+                                    --model <id> overrides the model. A
+                                    model on an API key or a ChatGPT
+                                    subscription runs on every key you may
+                                    use for it, and they rotate (see
+                                    \`kortix models ls\`).
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
@@ -88,11 +114,13 @@ Subcommands:
                                       bind a connection
                                       (repeatable).
                                     --no-connectors          use no connections.
-                                    --require-connector <alias>
-                                      require a connection before
-                                      provisioning (repeatable).
                                     --context <key>=<value>  runtime context
                                       (repeatable).
+                                    --label <label>          classify the
+                                      session (repeatable; free-form, 1..64
+                                      characters, at most 20).
+                                    --meta <key>=<value>     free-form
+                                      metadata (repeatable; string values).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
                                     --queue stores the prompt in the session's
@@ -109,10 +137,22 @@ Subcommands:
                                     starts fresh. Add \`ls\` to list the
                                     session's terminals, or \`kill <pty-id>\`
                                     to end one.
+  forward <session-id>              Forward sandbox ports to your machine,
+    --port <sandbox>[:<local>]      VS Code-style, so \`http://localhost:3000\`
+                                    an agent printed works in your own
+                                    browser. Repeatable; stays in the
+                                    foreground until Ctrl+C.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
-                                    doing without sending it anything.
-                                    --limit <N>, --json. Aliases: messages.
+                                    doing without sending it anything. A
+                                    stopped session is read from its saved
+                                    transcript. --limit <N>, --json.
+                                    Aliases: messages.
+  attachments <session-id>          List a session's stored files — uploads
+                                    and copies of what the agent showed —
+                                    and download them (--download <id>,
+                                    --all, --out <dir>). Works while the
+                                    session is stopped. --json.
   pending <session-id>              List open interactive prompts the agent
                                     is blocked on: tool-permission asks +
                                     questions. --json. Aliases: prompts.
@@ -147,8 +187,7 @@ Subcommands:
                                     connector access. Changes apply to the next
                                     prompt. --secret, --no-secrets,
                                     --inherit-secrets, --connector,
-                                    --no-connectors, --require-connector,
-                                    --no-required-connectors, --json.
+                                    --no-connectors, --json.
                                     Alias: access.
   share <session-id>                Who inside Kortix can open this session.
                                     --mode private|project|members, --member
@@ -181,8 +220,19 @@ Subcommands:
                                     --exclude <session-id>, --json.
   model <session-id> <model-id>     Change the model a session runs. A live
                                     box restarts, ending the turn in flight.
+                                    A session with no keys for the new
+                                    model's provider gets every key you may
+                                    use there.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
+  update [<session-id>]             Change labels and metadata. --label <l>
+                                    adds, --unlabel <l> removes,
+                                    --clear-labels empties the list, --meta
+                                    <key>=<value> sets, --unmeta <key>
+                                    removes (all repeatable). Without an id
+                                    it updates $KORTIX_SESSION_ID — the
+                                    session the agent runs in. --json.
+                                    Alias: label.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
   rm <session-id>...                Stop + delete one or more sessions.
@@ -213,6 +263,11 @@ export async function runSessions(argv: string[]): Promise<number> {
   // `shell` owns its own flag parsing (incl. --new + a positional session id).
   if (sub === 'shell' || sub === 'terminal' || sub === 'ssh') {
     return runSessionsShell(argv.slice(1));
+  }
+  // `forward` owns its own flag parsing (repeatable --port + a positional
+  // session id) and blocks in the foreground until Ctrl+C.
+  if (sub === 'forward' || sub === 'ports') {
+    return runSessionsForward(argv.slice(1));
   }
   // `log` owns its own flag parsing (incl. --limit + a positional session id),
   // so route it before we consume flags below.
@@ -249,6 +304,9 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'scope' || sub === 'access') {
     return runSessionsScope(argv.slice(1));
   }
+  if (sub === 'update' || sub === 'label' || sub === 'set') {
+    return runSessionsUpdate(argv.slice(1));
+  }
   // Everything below owns its own flag parsing (repeatable flags, positional
   // subcommands, or a stdin body), so route before the shared parse.
   if (sub === 'queue') {
@@ -265,6 +323,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'files') {
     return runSessionsFiles(argv.slice(1));
+  }
+  // `attachments` reads the platform's private store, never the sandbox.
+  if (sub === 'attachments') {
+    return runSessionsAttachments(argv.slice(1));
   }
   if (sub === 'stop' || sub === 'pause') {
     return runSessionsStop(argv.slice(1));
@@ -302,6 +364,17 @@ export async function runSessions(argv: string[]): Promise<number> {
   let agentFlag: string | undefined;
   let withFiles: string[] = [];
   let overrides: SessionOverrides = {};
+  // `ls` flags first: `--label` also exists on `new`, whose override parse
+  // below would otherwise consume it.
+  let listFlags: SessionListFlags | undefined;
+  if (sub === 'ls' || sub === 'list') {
+    try {
+      listFlags = takeSessionListFlags(rest);
+    } catch (err) {
+      process.stderr.write(`${status.err((err as Error).message)}\n`);
+      return 2;
+    }
+  }
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
@@ -325,7 +398,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list':
-      return sessionsLs(ctxOpts, json);
+      return sessionsLs(ctxOpts, listFlags!, json);
     case 'new':
     case 'create':
       return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides, withFiles, connectAfter);
@@ -340,7 +413,7 @@ export async function runSessions(argv: string[]): Promise<number> {
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
     case 'reload':
-      return sessionsReload(rest[0], rest.slice(1), ctxOpts);
+      return sessionsReload(rest[0], rest.slice(1), ctxOpts, json);
     case 'rename':
       return sessionsRename(rest[0], rest[1], ctxOpts);
     case 'rm':
@@ -362,9 +435,11 @@ export type SessionOverrides = {
   model?: string;
   secrets?: string[];
   connectors?: Record<string, { connection_id: string }>;
-  requiredConnectors?: string[];
   runtimeContext?: Record<string, string>;
+  labels?: string[];
+  metadata?: Record<string, string>;
 };
+
 
 /** Parse (and consume) the `sessions new` override flags from argv. Repeatable
  *  flags take `key=value` pairs: --connector gmail=<connection-id>, --context k=v. */
@@ -396,8 +471,6 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
     };
   }
   if (noConnectors) out.connectors = {};
-  const requiredConnectors = takeFlagValues(argv, ['--require-connector']);
-  if (requiredConnectors.length) out.requiredConnectors = [...new Set(requiredConnectors)];
   for (const pair of takeFlagValues(argv, ['--context'])) {
     const eq = pair.indexOf('=');
     if (eq <= 0 || eq === pair.length - 1) {
@@ -405,16 +478,36 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
     }
     (out.runtimeContext ??= {})[pair.slice(0, eq)] = pair.slice(eq + 1);
   }
+  const labels = takeFlagValues(argv, ['--label']);
+  if (labels.length) out.labels = labels;
+  for (const pair of takeFlagValues(argv, ['--meta'])) {
+    const [key, value] = parseMetaPair(pair);
+    (out.metadata ??= {})[key] = value;
+  }
   return out;
 }
 
-async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
+const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
+  let parentId = flags.children;
+  if (parentId && !SESSION_UUID_RE.test(parentId)) {
+    const expanded = await expandSessionIdPrefix(ctx.client, ctx.projectId, parentId);
+    if (expanded === 'ambiguous') {
+      process.stderr.write(`${status.err(`Several sessions match "${parentId}" — use more of the id.`)}\n`);
+      return 2;
+    }
+    if (expanded) parentId = expanded.session_id;
+  }
+
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<ProjectSession[]>(
+      `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
+    );
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -425,23 +518,30 @@ async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (sessions.length === 0) {
+    const filtered = flags.startedBy || flags.search || flags.children || flags.labels?.length;
     process.stdout.write(
-      `  ${C.dim}No sessions yet — start one with \`kortix sessions new\`.${C.reset}\n`,
+      `  ${C.dim}${filtered ? 'No matching sessions.' : 'No sessions yet — start one with `kortix sessions new`.'}${C.reset}\n`,
     );
     return 0;
   }
 
-  const labels = sessions.map((s) => s.name ?? shortId(s.session_id));
-  const labelW = Math.max(...labels.map((l) => l.length), 6);
+  const viewer = ctx.auth.user_id;
+  const showChildren = sessions.some((s) => typeof s.child_count === 'number');
+  const showLabels = sessions.some((s) => s.labels?.length);
+  const label = (s: ProjectSession) =>
+    `${s.name ?? shortId(s.session_id)}${s.search_match === 'child' ? ' (match in child)' : ''}`;
+  const labelW = Math.min(Math.max(...sessions.map((s) => label(s).length), 6), 48);
+  const byW = Math.min(Math.max(...sessions.map((s) => startedByLabel(s, viewer).length), 10), 24);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', labelW)}   STATUS         BRANCH                                    UPDATED${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
   );
   for (const s of sessions) {
-    const label = s.name ?? shortId(s.session_id);
-    const branch = trimMid(s.branch_name, 40);
     process.stdout.write(
-      `  ${pad(label, labelW)}   ${statusColor(s.status)}${pad(s.status, 13)}${C.reset}  ${pad(branch, 40)}  ${C.faded}${formatRelative(s.updated_at)}${C.reset}\n`,
+      `  ${pad(trimMid(label(s), labelW), labelW)}   ${pad(trimMid(startedByLabel(s, viewer), byW), byW)}   ` +
+        `${showChildren ? `${pad(String(s.child_count ?? 0), 8)}  ` : ''}` +
+        `${statusColor(s.status)}${pad(s.status, 13)}${C.reset}  ${pad(trimMid(s.branch_name, 40), 40)}  ${C.faded}${showLabels ? pad(formatRelative(s.updated_at), 10) : formatRelative(s.updated_at)}${C.reset}` +
+        `${showLabels ? `  ${(s.labels ?? []).join(', ')}` : ''}\n`,
     );
   }
   process.stdout.write(
@@ -511,13 +611,13 @@ async function sessionsNew(
   // non-binding 'default' sentinel when none is configured. See
   // apps/api/src/projects/lib/sessions.ts createProjectSession.
   if (agent) body.agent_name = agent;
-  if (overrides.model) body.opencode_model = overrides.model;
+  // `model` since W4; `opencode_model` is the same pin for an older self-hosted API.
+  if (overrides.model) body.model = body.opencode_model = overrides.model;
   if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
   if (overrides.connectors !== undefined) body.connector_bindings = overrides.connectors;
-  if (overrides.requiredConnectors !== undefined) {
-    body.require_connectors = overrides.requiredConnectors;
-  }
   if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
+  if (overrides.labels) body.labels = overrides.labels;
+  if (overrides.metadata) body.metadata = overrides.metadata;
 
   const prepared = await prepareClientCreatedBranch(ctx, body);
   if (prepared === 'error') return 1;
@@ -645,6 +745,9 @@ async function sessionsNew(
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
   if (decision !== 'no') {
+    // A runtime without `session.attach` (pi) makes `connect` exit 1 with the
+    // reason and the shell/chat alternatives; asking first keeps an OpenCode
+    // user who answers "n" from waiting for the sandbox.
     const go =
       decision === 'connect' ||
       (await confirm('  Connect to it now?', true, { onEndOfInput: false }));
@@ -680,6 +783,8 @@ async function sendPromptToSession(
   await handle.prompts.create({
     clientMessageId: randomUUID(),
     messageId: wireMessageId(),
+    // The CLI cannot read the transcript; the server places the id.
+    remintOnDelivery: true,
     parts: [{ type: 'text', text }],
     ...(defaults.agent || defaults.model
       ? {
@@ -770,6 +875,9 @@ async function sessionsInfo(
   process.stdout.write(`  ${C.dim}base_ref   ${C.reset}${s.base_ref}\n`);
   process.stdout.write(`  ${C.dim}agent      ${C.reset}${s.agent_name}\n`);
   process.stdout.write(`  ${C.dim}provider   ${C.reset}${s.sandbox_provider}\n`);
+  if (s.labels?.length) {
+    process.stdout.write(`  ${C.dim}labels     ${C.reset}${s.labels.join(', ')}\n`);
+  }
   if (s.sandbox_url) {
     process.stdout.write(`  ${C.dim}sandbox    ${C.reset}${s.sandbox_url}\n`);
   }
@@ -938,12 +1046,12 @@ async function sessionsReload(
   sessionId: string | undefined,
   args: string[],
   opts: CtxOpts,
+  json: boolean,
 ): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const json = args.includes('--json');
   const statusOnly = args.includes('--status');
   const force = args.includes('--force');
   const assumeYes = args.includes('--yes') || args.includes('-y');
@@ -975,32 +1083,15 @@ async function sessionsReload(
 
   if (statusOnly) {
     try {
-      const state = await client.get<{
-        running_etag: string | null;
-        latest_etag: string | null;
-        stale: boolean | null;
-        sandbox_reachable: boolean;
-      }>(`/projects/${projectId}/sessions/${canonicalSessionId}/config`);
+      const state = await client.get<SessionConfigStatusInput>(
+        `/projects/${projectId}/sessions/${canonicalSessionId}/config`,
+      );
       if (json) {
         process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
         return 0;
       }
-      if (state.stale === null) {
-        // Never claim "up to date" when the answer is "could not ask".
-        process.stdout.write(
-          `${status.warn(
-            state.sandbox_reachable
-              ? 'This project has no compiled agent config to compare.'
-              : 'Sandbox unreachable — cannot tell whether this session is current.',
-          )}\n`,
-        );
-        return 0;
-      }
-      process.stdout.write(
-        state.stale
-          ? `${status.warn(`Behind — running ${C.bold}${state.running_etag}${C.reset}, latest is ${C.bold}${state.latest_etag}${C.reset}. Run \`kortix sessions reload ${shortId(sessionId)}\`.`)}\n`
-          : `${status.ok(`Up to date (${state.running_etag}).`)}\n`,
-      );
+      const line = describeConfigStatus(state, shortId(sessionId), (text) => `${C.bold}${text}${C.reset}`);
+      process.stdout.write(`${line.tone === 'warn' ? status.warn(line.text) : status.ok(line.text)}\n`);
       return 0;
     } catch (err) {
       return surfaceApiError(err);
@@ -1008,14 +1099,7 @@ async function sessionsReload(
   }
 
   try {
-    const result = await client.post<{
-      applied: boolean;
-      previous_etag: string | null;
-      etag: string | null;
-      repo_refreshed: boolean;
-      agent_files?: string;
-      detail: string;
-    }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
+    const result = await client.post<SessionReloadOutcomeInput & { repo_refreshed: boolean }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
       refresh_repo: !args.includes('--no-repo'),
       force,
     });
@@ -1023,24 +1107,16 @@ async function sessionsReload(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return 0;
     }
-    if (!result.applied) {
-      process.stdout.write(`${status.warn(result.detail)}\n`);
-      return 0;
-    }
-    // `detail` is the server's sentence and it is the only thing entitled to say
-    // whether the AGENT changed. This line used to hardcode "The next prompt
-    // runs the new config" for every applied reload, which was false whenever
-    // the session's agent files were left alone — the etag moved and the agent
-    // did not. The etag transition is still worth printing; the claim is not
-    // ours to make.
-    //
-    // Only two outcomes deserve a warning. An earlier version keyed off a
-    // boolean and warned on `already-current` and `not-applicable`, which are
-    // plain successes.
-    const needsAttention = result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
-    const etags = `${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}${C.reset}`;
-    const line = `Reloaded ${C.bold}${shortId(canonicalSessionId)}${C.reset}${etags}\n  ${result.detail}`;
-    process.stdout.write(`${needsAttention ? status.warn(line) : status.ok(line)}\n`);
+    // Wording and tone live in session-config-format.ts: `detail` is the
+    // server's sentence and the only thing entitled to say whether the AGENT
+    // changed; the tone warns whenever it may not have.
+    const line = describeReloadOutcome(
+      result,
+      shortId(canonicalSessionId),
+      (text) => `${C.bold}${text}${C.reset}`,
+      (text) => `${C.dim}${text}${C.reset}`,
+    );
+    process.stdout.write(`${line.tone === 'warn' ? status.warn(line.text) : status.ok(line.text)}\n`);
     return 0;
   } catch (err) {
     return surfaceApiError(err);

@@ -3,8 +3,9 @@
 import { Kortix } from '@/features/icon/icons/kortix';
 import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { thread } from './content';
+import { getLocalizedChannelsContent } from './content';
 
 /** The square avatar every turn carries: an initial for a person, the Kortix
  *  mark for the agent. Drawn rather than imported so nothing here needs an
@@ -45,7 +46,8 @@ function Avatar({ kind, who }: { kind: string; who: string }): ReactNode {
  * diff happens in the web app. Do not redraw this as a code review pane.
  */
 export function ThreadMock(): ReactNode {
-  const { mock } = thread;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { mock } = getLocalizedChannelsContent(tI18nComplete).thread;
 
   return (
     <figure className="border-border bg-card flex h-full flex-col overflow-hidden rounded-sm border">

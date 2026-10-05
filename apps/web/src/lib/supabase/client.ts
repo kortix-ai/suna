@@ -1,6 +1,6 @@
-import { createBrowserClient } from '@supabase/ssr'
-import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants'
-import { getEnv } from '@/lib/env-config'
+import { getEnv } from '@/lib/env-config';
+import { createBrowserClient } from '@supabase/ssr';
+import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants';
 
 /**
  * Resolve the browser-facing Supabase URL as an ABSOLUTE URL.
@@ -14,9 +14,9 @@ import { getEnv } from '@/lib/env-config'
  */
 function resolveBrowserSupabaseUrl(url: string): string {
   if (url.startsWith('/') && typeof window !== 'undefined') {
-    return new URL(url, window.location.origin).toString().replace(/\/$/, '')
+    return new URL(url, window.location.origin).toString().replace(/\/$/, '');
   }
-  return url
+  return url;
 }
 
 /**
@@ -27,23 +27,23 @@ function resolveBrowserSupabaseUrl(url: string): string {
  */
 export async function fetchSamlEnabled(): Promise<boolean> {
   try {
-    const runtimeEnv = getEnv()
-    const url = resolveBrowserSupabaseUrl(runtimeEnv.SUPABASE_URL)
-    const key = runtimeEnv.SUPABASE_ANON_KEY
-    if (!url || !key) return false
-    const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
-    if (!res.ok) return false
-    const data = (await res.json()) as { saml_enabled?: boolean }
-    return Boolean(data?.saml_enabled)
+    const runtimeEnv = getEnv();
+    const url = resolveBrowserSupabaseUrl(runtimeEnv.SUPABASE_URL);
+    const key = runtimeEnv.SUPABASE_ANON_KEY;
+    if (!url || !key) return false;
+    const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { saml_enabled?: boolean };
+    return Boolean(data?.saml_enabled);
   } catch {
-    return false
+    return false;
   }
 }
 
 export function createClient() {
-  const runtimeEnv = getEnv()
-  const url = resolveBrowserSupabaseUrl(runtimeEnv.SUPABASE_URL)
-  const key = runtimeEnv.SUPABASE_ANON_KEY
+  const runtimeEnv = getEnv();
+  const url = resolveBrowserSupabaseUrl(runtimeEnv.SUPABASE_URL);
+  const key = runtimeEnv.SUPABASE_ANON_KEY;
 
   // `@supabase/ssr` never sets `secure` itself (confirmed against the
   // installed package's `dist/` — zero matches for `secure`), so on
@@ -52,7 +52,7 @@ export function createClient() {
   // `last-project-cookie.ts`'s `window.location.protocol === 'https:'` check
   // — NOT `httpOnly`, which `createBrowserClient` needs JS read access to
   // avoid (see the class doc on `@supabase/ssr`).
-  const secure = typeof window !== 'undefined' && window.location.protocol === 'https:'
+  const secure = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
   if (!url || !key) {
     if (typeof window !== 'undefined') {
@@ -66,7 +66,7 @@ export function createClient() {
         sameSite: 'lax',
         secure,
       },
-    })
+    });
   }
 
   return createBrowserClient(url, key, {
@@ -76,5 +76,5 @@ export function createClient() {
       sameSite: 'lax',
       secure,
     },
-  })
+  });
 }

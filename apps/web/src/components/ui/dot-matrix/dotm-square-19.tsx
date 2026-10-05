@@ -1,14 +1,9 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
+import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
-export type DotmSquare19Props = DotMatrixCommonProps;
 
 const STEP_COUNT = 48;
 const BASE_OPACITY = 0.08;
@@ -26,14 +21,14 @@ const CURVE_SAMPLES: readonly Point[] = Array.from({ length: 96 }, (_, index) =>
   const t = (index / 96) * Math.PI * 2;
   return {
     x: Math.sin(t),
-    y: 0.58 * Math.sin(2 * t)
+    y: 0.58 * Math.sin(2 * t),
   };
 });
 
 function gridPoint(row: number, col: number): Point {
   return {
     x: (col - 2) / 2,
-    y: (2 - row) / 2
+    y: (2 - row) / 2,
   };
 }
 
@@ -41,7 +36,7 @@ function loopPoint(step: number): Point {
   const t = ((step % STEP_COUNT) / STEP_COUNT) * Math.PI * 2;
   return {
     x: Math.sin(t),
-    y: 0.58 * Math.sin(2 * t)
+    y: 0.58 * Math.sin(2 * t),
   };
 }
 
@@ -64,48 +59,32 @@ function headInfluence(dot: Point, head: Point): number {
   return Math.exp(-distSq / 0.19);
 }
 
-export function DotmSquare19({
-  speed = 1.45,
-  pattern = "full",
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare19Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
-  });
-  const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
-    cycleMsBase: 1700,
-    steps: STEP_COUNT,
-    speed,
-  });
+function makeResolver(cycle: number, reducedMotion: boolean): DotAnimationResolver {
 
-  const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const dot = gridPoint(row, col);
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         const curveGlow = Math.exp(-minCurveDistanceSq(dot) / 0.2);
         const centerBoost = Math.exp(-(dot.x * dot.x + dot.y * dot.y) / 0.06);
         return {
           style: {
-            opacity: Math.min(PEAK_OPACITY, BASE_OPACITY + curveGlow * CURVE_OPACITY + centerBoost * 0.18)
-          }
+            opacity: Math.min(
+              PEAK_OPACITY,
+              BASE_OPACITY + curveGlow * CURVE_OPACITY + centerBoost * 0.18,
+            ),
+          },
         };
       }
 
-      const headA = loopPoint(step);
-      const headB = loopPoint(step + STEP_COUNT / 2);
-      const trailA = loopPoint(step - 4);
-      const trailB = loopPoint(step + STEP_COUNT / 2 - 4);
+      const headA = loopPoint(cycle);
+      const headB = loopPoint(cycle + STEP_COUNT / 2);
+      const trailA = loopPoint(cycle - 4);
+      const trailB = loopPoint(cycle + STEP_COUNT / 2 - 4);
 
       const lead = Math.max(headInfluence(dot, headA), headInfluence(dot, headB));
       const trail = Math.max(headInfluence(dot, trailA), headInfluence(dot, trailB));
@@ -119,21 +98,6 @@ export function DotmSquare19({
 
       return { style: { opacity: Math.min(PEAK_OPACITY, opacity) } };
     };
-  }, [reducedMotion, step]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
 }
+
+export const DotmSquare19 = createDotm5x5Component('DotmSquare19', makeResolver, { speed: 1.45, cycleMsBase: 1700, steps: STEP_COUNT });

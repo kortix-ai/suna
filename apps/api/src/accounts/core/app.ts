@@ -1,7 +1,7 @@
+import { AccountSummarySchema as ContractAccountSummarySchema } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
 import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
 import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import {
@@ -10,21 +10,29 @@ import {
 } from '../../shared/impersonation';
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { trustedEmailForUser } from '../../iam/email-trust';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
 export const accountsRouter = makeOpenApiApp<AppEnv>();
 
-export function defaultAccountName(email: string | null | undefined): string {
-  const normalized = email?.trim();
-  return normalized ? `${normalized}'s Account` : 'Account';
+/**
+ * The name for an account nobody named — never the raw email (KRTX-638). See
+ * `suggestAccountName` for the order it tries.
+ */
+export function defaultAccountName(
+  email: string | null | undefined,
+  fullName?: string | null,
+): string {
+  return suggestAccountName({ email, fullName });
 }
 
 // A stored name counts as "proper" only when it isn't one of the placeholder
 // values migrations left behind ('Personal', 'User'). Placeholder accounts
-// fall back to an email-derived name.
+// fall back to `defaultAccountName` — a suggested name, never the email.
 export function properAccountName(name: string | null | undefined): string | null {
   const normalized = name?.trim();
   if (!normalized || normalized === 'Personal' || normalized === 'User') return null;
@@ -56,18 +64,7 @@ export const EffectiveBrandingSchema = z
   .nullable()
   .optional();
 
-export const AccountSummarySchema = z
-  .object({
-    account_id: z.string(),
-    name: z.string(),
-    slug: z.string(),
-    created_at: z.string(),
-    updated_at: z.string(),
-    account_role: z.string().optional(),
-    is_primary_owner: z.boolean().optional(),
-    branding: EffectiveBrandingSchema,
-  })
-  .openapi('AccountSummary');
+export const AccountSummarySchema = ContractAccountSummarySchema.openapi('AccountSummary');
 
 export const AccountDetailSchema = z
   .object({
@@ -141,6 +138,8 @@ export const MeSchema = z
         session_id: z.string().nullable(),
         agent: z.string().nullable(),
         connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        kortix_permissions: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        /** @deprecated Same value as kortix_permissions; kept for pre-rename CLIs. */
         kortix_cli: z.union([z.literal('all'), z.array(z.string())]).nullable(),
         env: z.union([z.literal('all'), z.array(z.string())]).nullable(),
       })
@@ -162,14 +161,6 @@ export const AccountIdParam = z.object({ accountId: z.string() });
 
 export type AccountRole = 'owner' | 'admin' | 'member';
 
-export async function readBodyTokens(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
-}
-
 export async function resolveAccountForUser(
   userId: string,
   override: string | undefined,
@@ -186,14 +177,6 @@ export async function resolveAccountForUser(
     return membership.accountId;
   }
   return resolveAccountId(userId);
-}
-
-export async function readBody(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
 }
 
 export function normalizeString(value: unknown): string | null {
@@ -334,12 +317,25 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
 // untouched: they must go through the explicit accept/decline dialog so the
 // recipient consents AND the project_members grant actually gets applied. See
 // the per-invite skip in the loop below.
-export async function autoClaimPendingInvites(userId: string, email: string): Promise<void> {
-  if (!email) return;
-  const normalized = email.trim().toLowerCase();
-  if (!normalized) return;
+/**
+ * Claim the caller's pending, grant-free account invites. Best effort: never
+ * throws. Returns how many invites it claimed, so a caller can skip re-reading
+ * memberships when nothing changed.
+ *
+ * The address matched is the caller's TRUSTED email (iam/email-trust.ts), not
+ * the token's claim: an SSO identity whose IdP account has not verified the
+ * email's domain claims nothing. `email` is the address the caller expects;
+ * a mismatch with the trusted one also claims nothing.
+ */
+export async function autoClaimPendingInvites(userId: string, email: string): Promise<number> {
+  if (!email) return 0;
+  const expected = email.trim().toLowerCase();
+  if (!expected) return 0;
+  let claimed = 0;
 
   try {
+    const normalized = await trustedEmailForUser(userId);
+    if (!normalized || normalized !== expected) return 0;
     const pending = await db
       .select()
       .from(accountInvitations)
@@ -360,6 +356,7 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       // the account, can't see the project, and is never shown the accept/decline
       // dialog. Leave grant-carrying invites pending for the recipient to act on.
       if ((invite.bootstrapGrants ?? []).length > 0) continue;
+      if (invite.email.trim().toLowerCase() !== normalized) continue;
       try {
         // IDENTITY, then the ROLE. `accountMemberships` is the table;
         // `accountMembers` is a view over it plus role_assignments, and a
@@ -381,6 +378,7 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })
           .where(eq(accountInvitations.inviteId, invite.inviteId));
+        claimed += 1;
       } catch {
         // Skip individual invite failures; keep processing the rest.
       }
@@ -388,4 +386,5 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
   } catch {
     // Table may not exist yet — fall through.
   }
+  return claimed;
 }

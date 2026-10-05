@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The agent editor's Access pages — Skills, Connectors, Secrets — built from
  * the SAME cards and the SAME modals as the project-wide tabs of the same
@@ -52,10 +53,16 @@ import {
   listProjectSecrets,
   type ProjectConfigSummary,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { KeyIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
+import {
+  contract,
+  qk,
+  useProjectAccountId,
+  useProjectApps,
+} from '@kortix/sdk/react';
+import { GlobeIcon, KeyIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useState } from 'react';
+import { appGrantRows } from './agent-apps-grant';
 
 // ─── The shared catalog ──────────────────────────────────────────────────
 
@@ -93,12 +100,13 @@ function GrantCatalog({
    *  Required toggle. */
   trailingFor?: (id: string) => ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <GrantModeField
       value={value}
       onChange={onChange}
       allLabel={allLabel}
-      noneLabel="Deny — nothing granted."
+      noneLabel={tI18nComplete.raw('text765b240c2900')}
       alwaysRender
     >
       {({ selected, toggle, mode }) => {
@@ -107,11 +115,11 @@ function GrantCatalog({
           return (
             <ErrorState
               size="sm"
-              title="Couldn’t load the catalog"
+              title={tI18nComplete.raw('text3f2d97c61a7e')}
               action={
                 onRetry ? (
                   <Button variant="outline" size="sm" onClick={onRetry}>
-                    Retry
+                    {tI18nComplete.raw('text942087cc2d41')}
                   </Button>
                 ) : undefined
               }
@@ -139,7 +147,7 @@ function GrantCatalog({
                   checked: checked(item.id),
                   onCheckedChange: () => toggle(item.id),
                   disabled: mode !== 'pick',
-                  label: `Grant ${item.id}`,
+                  label: tI18nComplete('textd4170e74c3b0', { value0: item.id }),
                 }}
               />
             ))}
@@ -147,17 +155,17 @@ function GrantCatalog({
               <CatalogCard
                 key={id}
                 title={<span className="font-mono">{id}</span>}
-                description="Granted in kortix.yaml, but this project no longer declares it."
+                description={tI18nComplete.raw('textfecc36d012be')}
                 badges={
                   <Badge variant="destructive" size="xs">
-                    Missing
+                    {tI18nComplete.raw('text6be36ca49ee8')}
                   </Badge>
                 }
                 select={{
                   checked: true,
                   onCheckedChange: () => toggle(id),
                   disabled: mode !== 'pick',
-                  label: `Grant ${id}`,
+                  label: tI18nComplete('textd4170e74c3b0', { value0: id }),
                 }}
               />
             ))}
@@ -179,6 +187,7 @@ export function SkillsGrantPage({
   config: ProjectConfigSummary;
   editor: AgentDraft;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const skills = toArray(config.skills);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const detail = detailSelection({
@@ -189,17 +198,21 @@ export function SkillsGrantPage({
   return (
     <>
       <EditorSection
-        title="Skills"
-        description="Instructions and scripts this agent can load into a session. Click a skill to read it."
+        title={tI18nComplete.raw('text66d0f523a379')}
+        description={tI18nComplete.raw('text836cd8e8a791')}
         trailing={
-          <GrantHeaderTrailing value={editor.draft.skills} tab="skills" label="All skills" />
+          <GrantHeaderTrailing
+            value={editor.draft.skills}
+            tab="skills"
+            label={tI18nComplete.raw('text78abcbbfb830')}
+          />
         }
       >
         <div className="py-4">
           <GrantCatalog
             value={editor.draft.skills}
             onChange={(v) => editor.set('skills', v)}
-            allLabel="Every skill in this project, including ones added later."
+            allLabel={tI18nComplete.raw('textf059c2dbe260')}
             items={skills.map((skill) => ({
               id: skill.name,
               card: { title: skill.name, description: skill.description },
@@ -209,8 +222,8 @@ export function SkillsGrantPage({
               <EmptyState
                 icon={SparkleIcon}
                 size="sm"
-                title="No skills yet"
-                description="Skills declared in this project appear here for the agent to pick from."
+                title={tI18nComplete.raw('text32ae9b80f832')}
+                description={tI18nComplete.raw('text62d220bbfcc8')}
               />
             }
           />
@@ -239,6 +252,7 @@ export function ConnectorsGrantPage({
   projectId: string;
   editor: AgentDraft;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useProjectAccountId(projectId);
   const canWrite =
@@ -246,7 +260,7 @@ export function ConnectorsGrantPage({
     true;
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
   });
   const connectors = connectorsQuery.data?.connectors ?? [];
@@ -266,10 +280,14 @@ export function ConnectorsGrantPage({
   return (
     <>
       <EditorSection
-        title="Connectors"
-        description="Outside services this agent can call. Click one to connect it or manage its accounts; mark one Required and a session will not start until it resolves."
+        title={tI18nComplete.raw('textc3d2e79ebdd0')}
+        description={tI18nComplete.raw('textc174fc077197')}
         trailing={
-          <GrantHeaderTrailing value={draft.connectors} tab="connectors" label="All connectors" />
+          <GrantHeaderTrailing
+            value={draft.connectors}
+            tab="connectors"
+            label={tI18nComplete.raw('textd83250185d41')}
+          />
         }
       >
         <div className="space-y-2 py-4">
@@ -286,7 +304,7 @@ export function ConnectorsGrantPage({
                 set('connectors_required', kept.length ? kept : undefined);
               }
             }}
-            allLabel="Every connector in this project, including ones added later."
+            allLabel={tI18nComplete.raw('text35e54cea7f41')}
             isLoading={connectorsQuery.isLoading}
             isError={connectorsQuery.isError}
             onRetry={() => void connectorsQuery.refetch()}
@@ -321,16 +339,16 @@ export function ConnectorsGrantPage({
             empty={
               <EmptyState
                 size="sm"
-                title="No connectors yet"
-                description="Connectors added to this project appear here for the agent to pick from."
+                title={tI18nComplete.raw('text51ae0a7e3783')}
+                description={tI18nComplete.raw('text9bf8fe539046')}
               />
             }
           />
           {draft.connectors === 'all' && draft.connectors_required?.length ? (
             <p className="text-muted-foreground text-xs">
-              Required before session start:{' '}
-              <span className="font-mono">{draft.connectors_required.join(', ')}</span>. Switch to
-              Pick to change it.
+              {tI18nComplete.raw('textf39fe0fefce2')}{' '}
+              <span className="font-mono">{draft.connectors_required.join(', ')}</span>
+              {tI18nComplete.raw('text954401fb96d1')}
             </p>
           ) : null}
         </div>
@@ -355,6 +373,7 @@ export function ConnectorsGrantPage({
 // ─── Secrets ─────────────────────────────────────────────────────────────
 
 export function SecretsGrantPage({ projectId, editor }: { projectId: string; editor: AgentDraft }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const accountId = useProjectAccountId(projectId);
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { accountId }).allowed === true;
@@ -371,11 +390,15 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
   return (
     <>
       <EditorSection
-        title="Secrets"
-        description="Project secrets handed to this agent's sessions as environment variables. Click one to edit it."
+        title={tI18nComplete.raw('textd8707d411d99')}
+        description={tI18nComplete.raw('textbb74cc7dce98')}
         trailing={
           <span className="flex items-center gap-2">
-            <GrantHeaderTrailing value={editor.draft.secrets} tab="secrets" label="All secrets" />
+            <GrantHeaderTrailing
+              value={editor.draft.secrets}
+              tab="secrets"
+              label={tI18nComplete.raw('text0b38e3daeb93')}
+            />
             {canWrite ? (
               <Button
                 variant="secondary"
@@ -384,7 +407,7 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
                 onClick={() => setDialog({ open: true, row: null })}
               >
                 <PlusIcon className="size-4" />
-                New
+                {tI18nComplete.raw('text18fdd549b2ed')}
               </Button>
             ) : null}
           </span>
@@ -394,7 +417,7 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
           <GrantCatalog
             value={editor.draft.secrets}
             onChange={(v) => editor.set('secrets', v)}
-            allLabel="Every secret in this project, including ones added later."
+            allLabel={tI18nComplete.raw('text86fdc0c950d5')}
             isLoading={secretsQuery.isLoading}
             isError={secretsQuery.isError}
             onRetry={() => void secretsQuery.refetch()}
@@ -413,12 +436,12 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
                   <>
                     {!row.configured ? (
                       <Badge variant="destructive" size="xs">
-                        No value
+                        {tI18nComplete.raw('text4fd0272a5628')}
                       </Badge>
                     ) : null}
                     {row.system ? (
                       <Badge variant="muted" size="xs">
-                        System
+                        {tI18nComplete.raw('text6725e7bbcd28')}
                       </Badge>
                     ) : null}
                   </>
@@ -430,8 +453,8 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
               <EmptyState
                 icon={KeyIcon}
                 size="sm"
-                title="No secrets yet"
-                description="Secrets added to this project appear here for the agent to pick from."
+                title={tI18nComplete.raw('text5aa40906d187')}
+                description={tI18nComplete.raw('textfc7605717e58')}
                 action={
                   canWrite ? (
                     <Button
@@ -441,7 +464,7 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
                       onClick={() => setDialog({ open: true, row: null })}
                     >
                       <PlusIcon className="size-4" />
-                      Add a secret
+                      {tI18nComplete.raw('text98aa52b34c8f')}
                     </Button>
                   ) : undefined
                 }
@@ -457,5 +480,81 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
       />
     </>
+  );
+}
+
+// ─── Apps ────────────────────────────────────────────────────────────────
+
+/**
+ * Which Kortix Apps this agent may open — `agents.<name>.apps` in
+ * kortix.yaml, the same All · Pick · None machine as Connectors and the same
+ * cards.
+ *
+ * The grant decides admission for a `restricted` or `private` App only. A
+ * `project` App admits any agent that holds `project.app.read`, a `public` App
+ * admits everyone, and a `password` App admits no agent at all — so a row for
+ * one of those is still grantable (its mode can change) but is flagged as not
+ * currently load-bearing.
+ *
+ * Enforcement is the App gate (`agentAppAccessDecision`, apps/api/src/apps/
+ * access.ts).
+ */
+export function AppsGrantPage({ projectId, editor }: { projectId: string; editor: AgentDraft }) {
+  const t = useI18nTranslations('agentApps');
+  const appsQuery = useProjectApps(projectId);
+  const rows = appGrantRows(appsQuery.data);
+  return (
+    <EditorSection
+      title={t('title')}
+      description={t('description')}
+      trailing={
+        <GrantHeaderTrailing
+          value={editor.draft.apps}
+          href={(id) => `/projects/${id}/apps`}
+          label={t('manageApps')}
+        />
+      }
+    >
+      <div className="space-y-3 py-4" data-testid="agent-apps-grant">
+        <GrantCatalog
+          value={editor.draft.apps}
+          onChange={(v) => editor.set('apps', v)}
+          allLabel={t('allLabel')}
+          isLoading={appsQuery.isLoading}
+          isError={appsQuery.isError}
+          onRetry={() => void appsQuery.refetch()}
+          items={rows.map((row) => ({
+            id: row.id,
+            card: {
+              leading: (
+                <span className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-md">
+                  <GlobeIcon className="size-4" />
+                </span>
+              ),
+              title: <span className="font-mono">{row.id}</span>,
+              description: row.name === row.id ? null : row.name,
+              badges: row.needsGrant ? (
+                <Badge variant="outline" size="xs">
+                  {t('needsGrant')}
+                </Badge>
+              ) : (
+                <Badge variant="muted" size="xs">
+                  {t('openWithoutGrant')}
+                </Badge>
+              ),
+            },
+          }))}
+          empty={
+            <EmptyState
+              icon={GlobeIcon}
+              size="sm"
+              title={t('emptyTitle')}
+              description={t('emptyDescription')}
+            />
+          }
+        />
+        <p className="text-muted-foreground text-xs text-pretty">{t('grantNote')}</p>
+      </div>
+    </EditorSection>
   );
 }

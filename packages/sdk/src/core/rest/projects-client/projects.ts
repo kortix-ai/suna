@@ -2,6 +2,7 @@
 
 import type { CatalogModel } from '@kortix/llm-catalog';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { retiredEndpointError } from '../../http/api/errors';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
   type ProjectFileEntry,
@@ -22,41 +23,82 @@ import {
  * dependency-light, and importing `@kortix/api-contract` would drag zod into
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
+ *
+ * `review_center`, `agent_tunnel`, `session_transcript_history` and `teams`
+ * are deprecated. `agent_tunnel` graduated like `review_center` below: a
+ * paired computer is a connector account and needs no flag. So did
+ * `session_transcript_history`: every session saves its transcript and shows
+ * it while its computer is off. And `teams`: every project can connect
+ * Microsoft Teams.
+ *
+ * `review_center` is deprecated. Review Center graduated out of the flag
+ * system: it is on for every project, and the API no longer lists, resolves,
+ * or accepts the key. It stays in this union so code written against the older
+ * union still compiles, and `useFeatureFlag(id, 'review_center')` reports
+ * `enabled: true`. It is absent from {@link FEATURE_FLAG_KEYS} and from
+ * `KortixProject.experimental`. Removed in the next major.
  */
 export type FeatureFlagKey =
+  /** @deprecated Graduated — computers need no flag (the platform's `TUNNEL_ENABLED` is the only gate). Removed in the next major. */
   | 'agent_tunnel'
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
+  /** @deprecated Graduated — every project can connect Microsoft Teams. Removed in the next major. */
   | 'teams'
   | 'llm_gateway'
+  /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
   | 'meta_agent'
   | 'apps'
   | 'monitors'
+  | 'reminders'
   | 'warm_sessions'
   | 'secrets_egress'
-  | 'pi_worker';
+  | 'pi_worker'
+  /** @deprecated Graduated — every session saves its transcript. Removed in the next major. */
+  | 'session_transcript_history'
+  | 'pooled_provider_secrets'
+  | 'pi_harness'
+  | 'config_releases'
+  /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
+  | 'agent_principal'
+  | 'us_region'
+  /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
+  | 'human_messaging';
+
+/** The deprecated keys of {@link FeatureFlagKey}: the API never sends them. */
+type GraduatedFeatureFlagKey =
+  | 'agent_tunnel'
+  | 'teams'
+  | 'review_center'
+  | 'session_transcript_history'
+  | 'agent_principal'
+  | 'human_messaging';
+/** The keys `KortixProject.experimental` carries on every response. */
+type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
 /**
- * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
- * union above. Cross-package drift tests compare this against the API's
- * `FEATURE_FLAG_KEYS`.
+ * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
+ * order as the union above, minus deprecated graduated keys. Cross-package
+ * drift tests compare this against the API's `FEATURE_FLAG_KEYS`.
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
-  'agent_tunnel',
   'marketplace',
   'connectors_api_discover',
   'agentmail_email',
-  'teams',
   'llm_gateway',
-  'review_center',
   'meta_agent',
   'apps',
   'monitors',
+  'reminders',
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
+  'pooled_provider_secrets',
+  'pi_harness',
+  'config_releases',
+  'us_region',
 ] as const;
 
 /**
@@ -98,6 +140,9 @@ export interface KortixProject {
   account_id: string;
   name: string;
   repo_url: string;
+  /** The git origin a client clones and pushes: the Kortix git proxy when it
+   *  is enabled, else `repo_url`. Absent from APIs older than this field. */
+  git_origin_url?: string;
   default_branch: string;
   manifest_path: string;
   status: 'active' | 'archived';
@@ -108,14 +153,17 @@ export interface KortixProject {
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
   /** Effective on/off for each feature flag for THIS project. The field name is
-   *  a stable wire detail — the system is called "Feature flags". */
-  experimental?: Record<FeatureFlagKey, boolean>;
+   *  a stable wire detail — the system is called "Feature flags". Deprecated
+   *  graduated keys (`review_center`, `agent_tunnel`, …) are absent from the
+   *  wire, so they are optional here. */
+  experimental?: Record<ServedFeatureFlagKey, boolean> &
+    Partial<Record<GraduatedFeatureFlagKey, boolean>>;
   /** Full feature-flag catalog (drives Customize → Feature flags).
    *  Self-describing so the UI never hard-codes the list. */
   experimental_features?: FeatureFlagView[];
-  /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
+  /** @deprecated The API no longer sends it. Removed in the next major. */
   warm_pool?: { enabled: boolean; size: number };
-  /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
+  /** @deprecated The API no longer sends it. Removed in the next major. */
   warm_pool_available?: boolean;
   /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
    *  platform default/distribution. */
@@ -131,6 +179,8 @@ export interface KortixProject {
    *  Stored in `metadata.icon_glyph`; surfaced top-level so callers do not read
    *  raw metadata. Server-validated against a fixed catalogue, or null. */
   icon_glyph?: ProjectGlyph | null;
+  /** The project's page in the web app. Absent from APIs older than this field. */
+  dashboard_url?: string;
 }
 
 export interface ProjectConfigSummary {
@@ -153,6 +203,11 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** True for a platform-owned agent (SUNA — the coordinator) that the API
+     *  injects, not one declared in `kortix.yaml`. Its configuration is fixed:
+     *  hosts render it read-only and never open the agent editor for it.
+     *  Absent/false = an ordinary editable project agent. */
+    platform?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
@@ -161,7 +216,14 @@ export interface ProjectConfigSummary {
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions). Absent on servers released
+       *  before 2026-09-22 — fall back to `kortix_cli`. */
+      kortix_permissions?: string[] | 'all';
+      /** @deprecated Renamed to `kortix_permissions` (same value). Removed in the next major. */
       kortix_cli: string[] | 'all';
+      /** Kortix Apps (by slug) the agent may open when restricted/private.
+       *  `[]` = none. Absent on servers released before 2026-09-22 (= none). */
+      apps?: string[] | 'all';
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
@@ -203,6 +265,8 @@ export interface GatewayCatalogModel {
    * split-on-slash heuristic cannot recover it.
    */
   provider?: string;
+  /** The real provider's display name ("OpenCode Go"). Absent on managed models. */
+  provider_name?: string;
   release_date?: string;
   released?: string;
   family?: string;
@@ -224,6 +288,14 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Customer USD per million tokens for each eligible managed route. */
+  managedPricingRoutes?: Record<string, Array<{
+    route: string;
+    role: 'preferred' | 'eligible';
+    input: number;
+    cacheRead: number;
+    output: number;
+  }>>;
   /**
    * The project's stored EXCEPTIONS to the default model set
    * (`wireModelId -> enabled`). Served by `/model-picker` so a client toggling
@@ -312,7 +384,7 @@ export interface ProvisionProjectInput {
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
   /** Default branch for the newly-created managed repo. Omit to accept the
-   *  server's own default (`apps/api/src/projects/routes/r1.ts`). */
+   *  server's own default (`apps/api/src/projects/routes/projects.ts`). */
   default_branch?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
@@ -518,7 +590,7 @@ export interface ProjectLlmCatalogProvidersResponse {
  * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
  * needs. Unlike `getProjectLlmCatalog`/`getProjectModelPicker`, works for
  * native (non-gateway) projects too — see the route's doc comment
- * (apps/api/src/projects/routes/r4.ts, `/llm-catalog/providers`).
+ * (apps/api/src/projects/routes/models.ts, `/llm-catalog/providers`).
  */
 export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
   return unwrap(
@@ -533,8 +605,16 @@ export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
+/**
+ * `showErrors: false`: `/new` renders this failure inline, with its own wording
+ * and its own retry. The global handler toasting it as well produced two
+ * different explanations of one failure — prod showed GitHub's raw 403 plus
+ * "Our team has been notified" over an inline message that said something else.
+ */
 export async function createProjectRepo(input: CreateProjectRepoInput) {
-  return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
+  return unwrap(
+    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
+  );
 }
 
 /**
@@ -578,7 +658,7 @@ export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering
  *
  * The `error` frame's `status` mirrors the HTTP status the equivalent
  * `/provision` response would have carried for the same failure — the route
- * (`apps/api/src/projects/routes/r1.ts`) writes `result.status` from the
+ * (`apps/api/src/projects/routes/projects.ts`) writes `result.status` from the
  * shared `runProvision` core alongside `error`/`code`, exactly the fields
  * `provisionProjectStream` (below) copies onto the error it throws. Without
  * this, a host reading only `.status`/`.code` (as `apps/web`'s
@@ -647,7 +727,7 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
  *
  * The stream always ends in a terminal `done` or `error` frame — the server
  * guarantees it (see the route's `finally`/catch in
- * `apps/api/src/projects/routes/r1.ts`). A stream that closes with NEITHER is
+ * `apps/api/src/projects/routes/projects.ts`). A stream that closes with NEITHER is
  * treated as a failure here too, never as an implicit success: resolving
  * with no project would hand the caller an undefined project id and route a
  * user to `/projects/undefined`.
@@ -931,16 +1011,14 @@ export async function getProjectSandboxProviderTransition(
 }
 
 /**
- * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
- * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
- * the platform default). Live ready/warming counts come back on each template via
- * `listProjectSnapshots`.
+ * @deprecated The per-template warm pool was removed from the API. Always
+ * rejects with `ENDPOINT_RETIRED`.
  */
 export async function updateTemplateWarmPool(
-  projectId: string,
-  input: { slug: string; enabled?: boolean; size?: number },
-) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
+  _projectId: string,
+  _input: { slug: string; enabled?: boolean; size?: number },
+): Promise<KortixProject> {
+  throw retiredEndpointError('updateTemplateWarmPool');
 }
 
 export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
@@ -951,6 +1029,8 @@ export async function setProjectOnboardingComplete(projectId: string, completed:
 
 /** Use case the account picked during guided project onboarding. */
 export type OnboardingUseCase =
+  | 'founder'
+  | 'product_design'
   | 'sales'
   | 'support'
   | 'marketing'
@@ -967,6 +1047,8 @@ export type OnboardingCompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '
  *  partial profile is the normal case, not an error case. */
 export interface OnboardingProfile {
   use_case?: OnboardingUseCase;
+  /** The typed answer when `use_case` is `'other'`. The API trims it and caps it at 120 characters. */
+  use_case_note?: string;
   company_domain?: string;
   company_size?: OnboardingCompanySize;
 }

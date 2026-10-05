@@ -2,6 +2,13 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   DESKTOP_BASE_ZOOM,
+  desktopComputerAccessGet,
+  desktopComputerAccessSet,
+  desktopComputerConnect,
+  desktopComputerDisconnect,
+  desktopComputerOpenLogs,
+  desktopComputerPause,
+  desktopComputerStatus,
   desktopPlatform,
   desktopShellPlatform,
   getDesktopZoom,
@@ -182,5 +189,129 @@ describe('desktop zoom persistence', () => {
     await zoomReset();
     expect(getDesktopZoom()).toBe(DESKTOP_BASE_ZOOM);
     expect(DESKTOP_BASE_ZOOM).not.toBe(1);
+  });
+});
+
+describe('desktop computer commands', () => {
+  test('return null in a browser, where there is no native bridge', async () => {
+    Object.defineProperty(globalThis, 'window', { value: {}, configurable: true, writable: true });
+    expect(await desktopComputerStatus()).toBeNull();
+    expect(
+      await desktopComputerConnect({ projectId: 'p' }),
+    ).toBeNull();
+  });
+
+  test('invoke the shell command with its arguments', async () => {
+    const calls: Array<[string, unknown]> = [];
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        __TAURI__: {
+          core: {
+            invoke: async (cmd: string, args?: unknown) => {
+              calls.push([cmd, args]);
+              if (cmd === 'computer_connect') return { ok: true, tunnelId: 't-1' };
+              if (cmd === 'computer_pause') {
+                return { ok: true, status: { available: true, paired: true, paused: true } };
+              }
+              return { available: true, paired: false };
+            },
+          },
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    const input = { projectId: '3f2a1b4c-5d6e-4f70-8a91-b2c3d4e5f607' };
+    expect(await desktopComputerConnect(input)).toEqual({ ok: true, tunnelId: 't-1' });
+    expect(await desktopComputerStatus()).toMatchObject({ paired: false });
+    expect(await desktopComputerPause()).toMatchObject({ paused: true });
+    await desktopComputerOpenLogs();
+    expect(calls.map(([cmd]) => cmd)).toEqual([
+      'computer_connect',
+      'computer_status',
+      'computer_pause',
+      'computer_open_logs',
+    ]);
+    expect(calls[0]![1]).toEqual(input);
+  });
+
+  test('pause and resume reject with the reason when the desktop app reports a failure (X5)', async () => {
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        __TAURI__: {
+          core: {
+            invoke: async (cmd: string) =>
+              cmd === 'computer_pause'
+                ? { ok: false, error: 'launchctl: Operation not permitted', status: { available: true } }
+                : { available: true, paired: true, serviceActive: true },
+          },
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    await expect(desktopComputerPause()).rejects.toThrow('launchctl: Operation not permitted');
+  });
+
+  test('access get/set and disconnect pass through the desktop answers (X4, X5)', async () => {
+    const calls: Array<[string, unknown]> = [];
+    const access = {
+      mode: 'ask',
+      grantedUntil: null,
+      deniedUntil: null,
+      keepAwake: false,
+      keepAwakeSupported: true,
+      pendingRequest: null,
+    };
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        __TAURI__: {
+          core: {
+            invoke: async (cmd: string, args?: unknown) => {
+              calls.push([cmd, args]);
+              if (cmd === 'computer_access_set') {
+                if ((args as { mode?: string }).mode === 'sometimes') throw new Error("Error invoking remote method 'kortix:invoke': Error: mode must be one of ask, always, off");
+                return { ...access, ...(args as object) };
+              }
+              if (cmd === 'computer_disconnect') {
+                return { ok: true, serverUnpaired: false, status: { available: true, paired: false } };
+              }
+              return access;
+            },
+          },
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    expect(await desktopComputerAccessGet()).toEqual(access);
+    expect(await desktopComputerAccessSet({ mode: 'always', keepAwake: true })).toMatchObject({ mode: 'always', keepAwake: true });
+    await expect(desktopComputerAccessSet({ mode: 'sometimes' as 'ask' })).rejects.toThrow(
+      'mode must be one of ask, always, off',
+    );
+    expect(await desktopComputerDisconnect()).toMatchObject({ ok: true, serverUnpaired: false });
+    expect(calls.map(([cmd]) => cmd)).toEqual([
+      'computer_access_get',
+      'computer_access_set',
+      'computer_access_set',
+      'computer_disconnect',
+    ]);
+  });
+
+  test('return null when an older shell rejects the command', async () => {
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        __TAURI__: {
+          core: {
+            invoke: async () => {
+              throw new Error('Unknown command: computer_status');
+            },
+          },
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    expect(await desktopComputerStatus()).toBeNull();
   });
 });

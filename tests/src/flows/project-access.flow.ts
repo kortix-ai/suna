@@ -18,6 +18,7 @@
  * is denied. Source of truth: apps/api/src/projects/index.ts (access +
  * group-grants handlers) and apps/api/src/accounts/invites.ts.
  */
+import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 
 // ─── Per-user project access (list / grant / revoke) ─────────────────────
@@ -703,6 +704,113 @@ flow(
         r.status(200).body().has('$.email_matches_caller', false).has('$.email', null);
       },
     );
+  },
+);
+
+// INV-8 — the invitee's own pending invites. The reported bug: an invitee who
+// signed up WITHOUT clicking the email link landed in an auto-created project
+// and never saw the invite. `GET /v1/account-invites` lists every pending
+// invite addressed to the caller's email, including the project the invite
+// grants, so the `/projects` selector can offer Join.
+flow(
+  'INV-8',
+  {
+    domain: 'projects',
+    serial: true,
+    routes: [
+      'POST /v1/projects/:projectId/access/invite',
+      'GET /v1/account-invites',
+      'POST /v1/account-invites/:inviteId/accept',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const inviteEmail = `${ctx.fixtures.name('inv8')}@${ctx.env.testEmailDomain}`.toLowerCase();
+    let inviteId = '';
+    await ctx.step('invite an email with no Kortix account to a project → 201', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/access/invite',
+          { email: inviteEmail, role: 'member' },
+          { params: { projectId: p.id } },
+        );
+      r.status(201).body().has('$.status', 'invited').exists('$.invite_id');
+      inviteId = r.json<any>().invite_id;
+    });
+    // The invitee signs up without the email link.
+    const addressee = await ctx.fixtures.userWithEmail(inviteEmail, { label: 'INV8-ADDRESSEE' });
+
+    await ctx.step('the invitee lists the invite with its workspace and project', async () => {
+      const r = await ctx.client.as(addressee).get('/v1/account-invites');
+      r.status(200);
+      const mine = (r.json<any>().invites as any[]).find((invite) => invite.invite_id === inviteId);
+      const actual = mine
+        ? {
+            account_id: mine.account_id,
+            initial_role: mine.initial_role,
+            projects: (mine.projects as any[]).map((g) => ({ project_id: g.project_id, role: g.role })),
+            has_project_name: typeof mine.projects[0]?.name === 'string' && mine.projects[0].name.length > 0,
+            has_expiry: typeof mine.expires_at === 'string',
+          }
+        : null;
+      const expected = {
+        account_id: team.id,
+        initial_role: 'member',
+        projects: [{ project_id: p.id, role: 'member' }],
+        has_project_name: true,
+        has_expiry: true,
+      };
+      assert({
+        kind: 'body',
+        description: 'the pending invite is listed with its account, role and project',
+        expected,
+        actual,
+        pass: JSON.stringify(actual) === JSON.stringify(expected),
+      });
+    });
+    await ctx.step('another user never sees an invite addressed to someone else', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account-invites');
+      r.status(200);
+      const ids = (r.json<any>().invites as any[]).map((invite) => invite.invite_id);
+      assert({
+        kind: 'body',
+        description: "OWNER's list excludes the invite addressed to another email",
+        expected: 'absent',
+        actual: ids.includes(inviteId) ? 'present' : 'absent',
+        pass: !ids.includes(inviteId),
+      });
+    });
+    await ctx.step('ANON cannot list invites → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/account-invites');
+      r.status(401);
+    });
+    await ctx.step('joining grants the project and removes the invite from the list', async () => {
+      const accept = await ctx.client
+        .as(addressee)
+        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+      accept.status(200).body().has('$.account_id', team.id);
+      const granted = JSON.stringify(accept.json<any>().bootstrap_grants_applied);
+      const expectedGrant = JSON.stringify([{ project_id: p.id, role: 'member' }]);
+      assert({
+        kind: 'body',
+        description: 'accept applies the invited project grant',
+        expected: expectedGrant,
+        actual: granted,
+        pass: granted === expectedGrant,
+      });
+      const r = await ctx.client.as(addressee).get('/v1/account-invites');
+      r.status(200);
+      const ids = (r.json<any>().invites as any[]).map((invite) => invite.invite_id);
+      assert({
+        kind: 'body',
+        description: 'an accepted invite is no longer pending',
+        expected: 'absent',
+        actual: ids.includes(inviteId) ? 'present' : 'absent',
+        pass: !ids.includes(inviteId),
+      });
+    });
   },
 );
 

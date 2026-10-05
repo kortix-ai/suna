@@ -20,17 +20,24 @@ import {
   setChannelConversationPolicy,
   setChannelModel,
 } from "../../channels/slack/selection";
-import { backfillChannelName } from "../../channels/slack/dispatch";
+import { backfillSlackBindingLabel } from "../../channels/slack/binding-label";
+import { loadSlackTokenForProject, loadTeamsServiceUrlForProject } from "../../channels/install-store";
+import { teamsThreadTitles } from "../../channels/teams/binding";
+import { backfillTeamsBindingLabel, needsTeamsNameBackfill } from "../../channels/teams/channel-label";
+import { isTeamsChannelThreadId } from "../../channels/teams/util";
+import { requestMemo } from "../../lib/request-context";
+import { withTimeout } from "../../shared/with-timeout";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
+import { resolveFeatureFlag } from "../../feature-flags/registry";
+import { usableProviderKeys } from "../../secrets/provider-key-selection";
 import { validateNativeOpencodeModelRef } from "../lib/session-model-change";
 import {
   type ModelSource,
   chooseEffectiveAgent,
   chooseEffectiveModel,
-  toOpencodeModelRef,
   toWireModel,
 } from "../../llm-gateway/resolution/effective";
 import { type AccountModelDefaults, getAccountModelDefaults } from "../../repositories/model-preferences";
@@ -41,6 +48,9 @@ import { projectsApp } from "../lib/app";
 
 /** The three Slack conversation-join policies (channels/slack/participants.ts). */
 const CONVERSATION_POLICIES = ["owner_approval", "owner_only", "project_open"] as const;
+
+/** How long `GET /channels/bindings` waits for Teams to name unnamed threads. */
+const TEAMS_NAMING_BUDGET_MS = 2_500;
 
 function projectDefaultAgentOf(metadata: unknown): string | null {
   return typeof (metadata as Record<string, unknown> | null)?.default_agent === "string"
@@ -58,6 +68,69 @@ interface ModelResolutionCtx {
    *  resolution: an explicit pin reports verbatim and the gateway default
    *  chain is not consulted. */
   llmGatewayEnabled: boolean;
+  /** The project's `pooled_provider_secrets` flag. */
+  pooledEnabled: boolean;
+}
+
+/**
+ * Can a chat conversation's sessions run `model`? A conversation is shared, so
+ * only what its sessions will reach counts: Kortix models, the project's own
+ * keys, and pooled keys shared with the whole project — which those sessions
+ * select (channels/model-access.ts). Nobody's personal key or ChatGPT
+ * connection counts: a shared session never reaches one (spec 2026-09-22
+ * §2.3), and a conversation pinned to one failed every message with
+ * "Connect Codex to use this model".
+ */
+async function conversationCanRunUncached(input: {
+  userId: string;
+  accountId: string;
+  projectId: string;
+  freeModelsOnly: boolean;
+  pooledEnabled: boolean;
+  model: string;
+}): Promise<boolean> {
+  const base = {
+    userId: input.userId,
+    accountId: input.accountId,
+    projectId: input.projectId,
+    freeModelsOnly: input.freeModelsOnly,
+    model: input.model,
+    personalUserId: null,
+  };
+  if (await isModelServableForAccount(base)) return true;
+  if (!input.pooledEnabled) return false;
+  const keys = await usableProviderKeys({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    userId: input.userId,
+    grantUserId: null,
+    model: input.model,
+  }).catch(() => null);
+  return keys ? isModelServableForAccount({ ...base, providerSecretPools: { [keys.providerId]: keys.secretIds } }) : false;
+}
+
+/**
+ * Request-scoped memo over {@link conversationCanRunUncached}.
+ *
+ * `GET /channels/bindings` calls this once per binding via
+ * `resolveBindingEffectiveModel` (N+1: measured 93 DB queries / 621ms server
+ * time across ~29 bindings in prod, 2026-09-27). Multiple channels commonly
+ * pin the SAME model, and every other input is constant across the whole
+ * request (one project, one requesting user) — so the only key that varies is
+ * `model`. `requestMemo` collapses repeats to one servability probe per unique
+ * model for the lifetime of this request; it never persists across requests,
+ * so a key just revoked/granted is still re-checked on the very next call.
+ */
+async function conversationCanRun(input: {
+  userId: string;
+  accountId: string;
+  projectId: string;
+  freeModelsOnly: boolean;
+  pooledEnabled: boolean;
+  model: string;
+}): Promise<boolean> {
+  const key = `channel-bindings:conversationCanRun:${input.accountId}:${input.projectId}:${input.userId}:${input.freeModelsOnly}:${input.pooledEnabled}:${input.model}`;
+  return requestMemo(key, () => conversationCanRunUncached(input));
 }
 
 // Mirrors resolveEffectiveModel (default-model.ts) but batches the account
@@ -70,6 +143,7 @@ async function resolveBindingEffectiveModel(
   explicitModel: string | null,
   agentName: string,
   ctx: ModelResolutionCtx,
+  oneToOne = false,
 ): Promise<{ model: string | null; source: ModelSource }> {
   if (!ctx.llmGatewayEnabled) {
     // Native mode: the pin is a native `provider/model` ref OpenCode resolves
@@ -79,14 +153,19 @@ async function resolveBindingEffectiveModel(
     return { model: null, source: "platform" };
   }
   if (explicitModel) {
-    const servable = await isModelServableForAccount({
+    const servable = await conversationCanRun({
       userId: ctx.userId,
       accountId: ctx.accountId,
       projectId: ctx.projectId,
       freeModelsOnly: ctx.freeModelsOnly,
+      pooledEnabled: ctx.pooledEnabled,
       model: explicitModel,
     });
     if (servable) return { model: toWireModel(explicitModel), source: "explicit" };
+    // A one-to-one chat's sessions are private to its person, whose own keys
+    // and ChatGPT subscription count there; they picked this model with them
+    // (`/model`). This view runs as someone else and cannot check those keys.
+    if (oneToOne) return { model: toWireModel(explicitModel), source: "explicit" };
   }
   return chooseEffectiveModel({
     agentDefault: ctx.modelDefaults.agents[agentName] ?? null,
@@ -96,16 +175,44 @@ async function resolveBindingEffectiveModel(
   });
 }
 
+/** A one-to-one chat with the bot: a Teams personal chat, a Slack DM. */
+function oneToOneConversation(row: ChannelBindingRow): boolean {
+  if (row.platform === "teams") return row.channelType === "personal";
+  if (row.platform === "slack") return row.channelId.startsWith("D");
+  return false;
+}
+
+/**
+ * Should `GET /channels/bindings` ask Slack to name this row?
+ *
+ * Every Slack row without a stored name, DMs included: a DM is named after the
+ * other person (`users.info`). The answer is stored, so a row costs Slack calls
+ * once; a lookup that names nothing is not repeated for 10 minutes
+ * (`channels/slack/binding-label.ts`). Before that, DMs were excluded because
+ * their lookup never named anything and repeated on every poll (measured prod:
+ * 29 HTTP calls / 453 ms on one project).
+ */
+export function needsSlackNameBackfill(binding: ChannelBindingRow): boolean {
+  return binding.platform === "slack" && !binding.channelName;
+}
+
 async function serializeBinding(
   row: ChannelBindingRow,
   projectDefaultAgent: string | null,
   modelCtx: ModelResolutionCtx,
+  channelUnavailable = false,
+  threadTitle: string | null = null,
 ) {
   const effectiveAgent = chooseEffectiveAgent({
     explicit: row.agentName,
     projectDefault: projectDefaultAgent,
   });
-  const effectiveModel = await resolveBindingEffectiveModel(row.opencodeModel, effectiveAgent.agent, modelCtx);
+  const effectiveModel = await resolveBindingEffectiveModel(
+    row.opencodeModel,
+    effectiveAgent.agent,
+    modelCtx,
+    oneToOneConversation(row),
+  );
   return {
     bindingId: row.bindingId,
     platform: row.platform,
@@ -113,6 +220,11 @@ async function serializeBinding(
     channelId: row.channelId,
     channelName: row.channelName,
     channelType: row.channelType,
+    // Slack answered that the conversation is deleted or out of the bot's reach.
+    channelUnavailable,
+    // A Teams channel thread: its session's title. Every thread of a channel
+    // is its own binding named `Team › Channel`; this tells them apart.
+    threadTitle,
     agentName: row.agentName,
     opencodeModel: row.opencodeModel,
     conversationPolicy: row.conversationPolicy,
@@ -131,7 +243,7 @@ projectsApp.openapi(
     method: "get",
     path: "/{projectId}/channels/bindings",
     tags: ["channels"],
-    summary: "GET /:projectId/channels/bindings",
+    summary: "List channel bindings of a project",
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), "OK"), ...errors(404) },
@@ -148,29 +260,81 @@ projectsApp.openapi(
     const accountId = loaded.row.accountId as string;
     const projectDefaultAgent = projectDefaultAgentOf(loaded.row.metadata);
     const bindings = await listChannelBindingsForProject(projectId);
-    // Rows created before channel-name persistence existed on every bind path
-    // (or created before the project's Slack token was available) can still
-    // have `channelName === null`. Resolve those live on read so the settings
-    // page shows the real Slack channel name on the very next load instead of
-    // waiting for the channel's next Slack event.
-    await Promise.all(
-      bindings
-        .filter((b) => b.platform === "slack" && !b.channelName)
-        .map(async (b) => {
-          b.channelName = await backfillChannelName(b.workspaceId, b.channelId, projectId);
-        }),
-    );
+    // A Slack row without a stored name is named on read, and the name is
+    // stored, so the settings page shows `#general` or a person's name on the
+    // very next load. The bot token is the SAME for every Slack binding in
+    // this project: load it once (each load decrypts a project secret). Five
+    // lookups at a time keep a first load with many DMs under Slack's rate
+    // limits.
+    const needsBackfill = bindings.filter(needsSlackNameBackfill);
+    const unavailable = new Set<string>();
+    if (needsBackfill.length > 0) {
+      const slackToken = await loadSlackTokenForProject(projectId);
+      for (let i = 0; i < needsBackfill.length; i += 5) {
+        await Promise.all(
+          needsBackfill.slice(i, i + 5).map(async (b) => {
+            const label = await backfillSlackBindingLabel(b.workspaceId, b.channelId, projectId, slackToken);
+            b.channelName = label.name;
+            b.channelType = label.type ?? b.channelType;
+            if (label.unavailable) unavailable.add(b.bindingId);
+          }),
+        );
+      }
+    }
+    // A Teams channel thread whose name does not say its team is named on read
+    // when its id does: the General channel's id is the team's id. The name is
+    // stored, and one Teams read per team serves every thread in it. A cold
+    // read is ~1.4 s (token + connector, measured); the list waits for names
+    // at most TEAMS_NAMING_BUDGET_MS, and a lookup still running stores its
+    // name for the next load.
+    const teamsUnnamed = bindings.filter(needsTeamsNameBackfill);
+    const teamsServiceUrl = teamsUnnamed.length > 0 ? await loadTeamsServiceUrlForProject(projectId).catch(() => null) : null;
+    if (teamsServiceUrl) {
+      const naming = (async () => {
+        for (let i = 0; i < teamsUnnamed.length; i += 5) {
+          await Promise.all(
+            teamsUnnamed.slice(i, i + 5).map(async (b) => {
+              const name = await backfillTeamsBindingLabel(b, projectId, teamsServiceUrl);
+              if (name) {
+                b.channelName = name;
+                b.channelType = "channel";
+              }
+            }),
+          );
+        }
+      })();
+      await withTimeout(naming, TEAMS_NAMING_BUDGET_MS).catch(() => {});
+    }
+    const [modelDefaults, mayUseManagedModels, threadTitles] = await Promise.all([
+      getAccountModelDefaults(accountId, projectId),
+      accountMayUseManagedModels(accountId),
+      teamsThreadTitles(
+        projectId,
+        bindings.filter((b) => b.platform === "teams" && isTeamsChannelThreadId(b.channelId)).map((b) => b.channelId),
+      ),
+    ]);
     const modelCtx: ModelResolutionCtx = {
       userId: loaded.userId,
       accountId,
       projectId,
-      modelDefaults: await getAccountModelDefaults(accountId, projectId),
-      freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
+      modelDefaults,
+      freeModelsOnly: !mayUseManagedModels,
       llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+      pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
     };
     return c.json({
       projectDefaultAgent,
-      bindings: await Promise.all(bindings.map((b) => serializeBinding(b, projectDefaultAgent, modelCtx))),
+      bindings: await Promise.all(
+        bindings.map((b) =>
+          serializeBinding(
+            b,
+            projectDefaultAgent,
+            modelCtx,
+            unavailable.has(b.bindingId),
+            threadTitles.get(b.channelId) ?? null,
+          ),
+        ),
+      ),
     });
   },
 );
@@ -188,7 +352,7 @@ projectsApp.openapi(
     method: "patch",
     path: "/{projectId}/channels/bindings/{bindingId}",
     tags: ["channels"],
-    summary: "PATCH /:projectId/channels/bindings/:bindingId",
+    summary: "Update a channel binding",
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), bindingId: z.string() }),
@@ -285,7 +449,7 @@ projectsApp.openapi(
           );
         }
         // Same two-path gate as session create (lib/sessions.ts): gateway ON
-        // validates via the gateway resolver and stores `kortix/<wire>`;
+        // validates via the gateway resolver and stores the wire id;
         // gateway OFF (native OpenCode) enforces the native `provider/model`
         // shape and stores the ref verbatim.
         if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
@@ -296,20 +460,24 @@ projectsApp.openapi(
           stored = trimmed;
         } else {
         const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId as string));
-        const servable = await isModelServableForAccount({
+        const servable = await conversationCanRun({
           userId: loaded.userId,
           accountId: loaded.row.accountId as string,
           projectId,
           freeModelsOnly,
+          pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
           model: trimmed,
         });
         if (!servable) {
           return c.json(
-            { error: `Model "${trimmed}" is not available for this account`, code: "model_not_servable" },
+            {
+              error: `Model "${trimmed}" is not available to this conversation. A conversation is shared: it can run Kortix models and keys shared with the whole project, not anyone's own key or ChatGPT subscription.`,
+              code: "model_not_servable",
+            },
             409,
           );
         }
-        stored = toOpencodeModelRef(trimmed);
+        stored = toWireModel(trimmed);
         }
       }
       const ok = await setChannelModel(ctx, stored);
@@ -331,6 +499,7 @@ projectsApp.openapi(
       modelDefaults: await getAccountModelDefaults(accountId, projectId),
       freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
       llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+      pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
     };
     return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));
   },

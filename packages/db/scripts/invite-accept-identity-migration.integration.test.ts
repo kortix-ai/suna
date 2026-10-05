@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
+import { dockerAvailable } from './docker-available';
 
 /**
  * Regression test for Better Stack error 97669531…
@@ -24,9 +25,6 @@ import { resolve } from 'node:path';
  * Docker is required; the suite is skipped when docker is unavailable (same
  * gate pattern as runtime-identity-migration.integration.test.ts).
  */
-
-const dockerAvailable =
-  Bun.spawnSync(['docker', 'version'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
 
 const container = `kortix-invite-accept-${crypto.randomUUID().slice(0, 8)}`;
 

@@ -1,4 +1,5 @@
 import type { StreamTaskChunk } from '../slack-api';
+import { markdownToCardElements } from './markdown';
 
 const ADAPTIVE_CARD_VERSION = '1.5';
 
@@ -59,19 +60,116 @@ function stepElements(step: StreamTaskChunk): CardElement[] {
   if (step.output) {
     out.push({ type: 'TextBlock', text: step.output, wrap: true, isSubtle: true, spacing: 'none', size: 'small' });
   }
+  if (step.sources && step.sources.length > 0) {
+    // Citations as a footer of links — the Teams twin of the Slack step
+    // `sources`. TextBlock renders `[text](url)` markdown natively.
+    const links = step.sources
+      .slice(0, 8)
+      .map((sc) => `[${sc.text || sc.url}](${sc.url})`)
+      .join('  ·  ');
+    out.push({ type: 'TextBlock', text: links, wrap: true, isSubtle: true, size: 'small', spacing: 'none' });
+  }
   return out;
+}
+
+/**
+ * Teams refuses a message over about 28 KB, card JSON included, and the
+ * refusal is silent to the person waiting: the live card simply stops
+ * changing. Every card that grows with the run is kept under this.
+ */
+export const TEAMS_CARD_BUDGET_BYTES = 24_000;
+
+/** The plan's share of a card, so a long run still leaves room for its answer. */
+const PLAN_BUDGET_BYTES = 12_000;
+
+export const TRUNCATION_NOTE = '_… truncated — open the session for the full output._';
+
+export function cardBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
 }
 
 function planContainer(title: string, steps: StreamTaskChunk[]): CardElement[] {
   const elements: CardElement[] = [
     { type: 'TextBlock', text: title, weight: 'bolder', size: 'medium', wrap: true },
   ];
-  for (const step of steps) elements.push(...stepElements(step));
+  // Newest steps first into the budget: the step in flight is the one a
+  // reader needs, and the oldest ones are what a long run can spare.
+  const shown: CardElement[][] = [];
+  let used = 0;
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const els = stepElements(steps[i]!);
+    const size = cardBytes(els);
+    if (shown.length > 0 && used + size > PLAN_BUDGET_BYTES) break;
+    shown.unshift(els);
+    used += size;
+  }
+  const hidden = steps.length - shown.length;
+  if (hidden > 0) {
+    elements.push(text(`… ${hidden} earlier ${hidden === 1 ? 'step' : 'steps'}`, { isSubtle: true, size: 'small' }));
+  }
+  for (const els of shown) elements.push(...els);
   return elements;
 }
 
-export function buildPlanCard(title: string, steps: StreamTaskChunk[]): Record<string, unknown> {
-  return card(planContainer(title, steps));
+/**
+ * The longest head of `body` whose rendered card fits the budget, cut at a
+ * line break and marked as cut. The whole body when it fits.
+ *
+ * A long answer used to be cut at 11,000 characters with no mark, and one
+ * whose card still exceeded the limit — a table, code, anything not ASCII —
+ * was refused by Teams and never shown at all.
+ */
+export function fitBodyToCard(
+  body: string,
+  render: (body: string) => unknown,
+  budget = TEAMS_CARD_BUDGET_BYTES,
+): { body: string; truncated: boolean } {
+  if (cardBytes(render(body)) <= budget) return { body, truncated: false };
+  const marked = (head: string) => {
+    let out = head.trimEnd();
+    // An unclosed fence would swallow the note into the code block.
+    if ((out.match(/^```/gm) ?? []).length % 2 === 1) out += '\n```';
+    return `${out}\n\n${TRUNCATION_NOTE}`;
+  };
+  let lo = 0;
+  let hi = body.length;
+  let best = marked('');
+  for (let i = 0; i < 20 && lo < hi; i++) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const head = body.slice(0, mid);
+    const nl = head.lastIndexOf('\n');
+    const cut = nl > mid * 0.6 ? head.slice(0, nl) : head;
+    const candidate = marked(cut);
+    if (cardBytes(render(candidate)) <= budget) {
+      best = candidate;
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return { body: best, truncated: true };
+}
+
+export const TEAMS_STOP_VERB = 'teams_stop';
+
+/**
+ * The live "working on it" card.
+ *
+ * `sessionId` adds the Stop button. Every other Kortix surface can end a run
+ * the moment it goes wrong; in Teams the only lever was to wait out the
+ * 30-minute GC, and a wedged turn swallowed every later message in the
+ * conversation (dev 2026-09-19). The button carries the session id because the
+ * invoke that comes back names no turn of its own.
+ */
+export function buildPlanCard(
+  title: string,
+  steps: StreamTaskChunk[],
+  sessionId?: string,
+): Record<string, unknown> {
+  return card(
+    planContainer(title, steps),
+    sessionId ? [executeAction('Stop', TEAMS_STOP_VERB, { sessionId })] : undefined,
+  );
 }
 
 export function buildFinalCard(opts: {
@@ -82,7 +180,8 @@ export function buildFinalCard(opts: {
 }): Record<string, unknown> {
   const elements: CardElement[] = planContainer(opts.title, opts.steps);
   if (opts.body) {
-    elements.push({ type: 'TextBlock', text: opts.body, wrap: true, spacing: 'medium' });
+    const [first, ...rest] = markdownToCardElements(opts.body);
+    if (first) elements.push({ ...first, spacing: 'medium' }, ...rest);
   }
   if (opts.sessionUrl) {
     elements.push({
@@ -97,8 +196,70 @@ export function buildFinalCard(opts: {
   return card(elements);
 }
 
-export function buildAnswerCard(body: string, sessionUrl?: string): Record<string, unknown> {
-  const elements: CardElement[] = [{ type: 'TextBlock', text: body, wrap: true }];
+/** Buttons that post back to Kortix. Only cards Kortix builds may carry them. */
+const POSTBACK_ACTIONS: ReadonlySet<string> = new Set(['Action.Execute', 'Action.Submit']);
+
+function isPostback(value: unknown): boolean {
+  return !!value && typeof value === 'object' && POSTBACK_ACTIONS.has(String((value as { type?: unknown }).type));
+}
+
+/**
+ * An agent-built card (`teams send --card-file`, `teams post --card-file`)
+ * without the buttons that post back to Kortix. Kortix's own cards post its
+ * verbs (Stop, Approve, a join decision, a review); an agent could otherwise
+ * post a look-alike a person clicks. Agent buttons never had a handler of
+ * their own. Links (`Action.OpenUrl`) and show/hide stay.
+ */
+export function withoutPostbackActions<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => !isPostback(item))
+      .map((item) => withoutPostbackActions(item))
+      .filter((item) => !(item && typeof item === 'object' && (item as { type?: unknown }).type === 'ActionSet' && !((item as { actions?: unknown[] }).actions?.length))) as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'selectAction' && isPostback(child)) continue;
+      out[key] = withoutPostbackActions(child);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+export function buildAnswerCard(
+  body: string,
+  sessionUrl?: string,
+  customCard?: Record<string, unknown>,
+  /** The live card's steps. A custom card replaced them outright; Slack keeps its plan above the blocks. */
+  plan?: { title: string; steps: StreamTaskChunk[] },
+): Record<string, unknown> {
+  // The agent handed us a full Adaptive Card (`teams send --card-file`): use
+  // it verbatim, with the run's steps above it and the session link below.
+  if (customCard && customCard.type === 'AdaptiveCard') {
+    const out = { ...withoutPostbackActions(customCard) };
+    const own = Array.isArray(out.body) ? (out.body as CardElement[]) : [];
+    if (plan?.steps.length) {
+      const [first, ...rest] = own;
+      out.body = [...planContainer(plan.title, plan.steps), ...(first ? [{ ...first, separator: true, spacing: 'medium' }, ...rest] : [])];
+    }
+    if (sessionUrl) {
+      const bodyEls = Array.isArray(out.body) ? [...(out.body as CardElement[])] : [];
+      bodyEls.push({
+        type: 'TextBlock',
+        text: `[Open session in Kortix ↗](${sessionUrl})`,
+        wrap: true,
+        isSubtle: true,
+        size: 'small',
+        spacing: 'medium',
+      });
+      out.body = bodyEls;
+    }
+    return out;
+  }
+  const elements: CardElement[] = markdownToCardElements(body);
+  if (elements.length === 0) elements.push({ type: 'TextBlock', text: body, wrap: true });
   if (sessionUrl) {
     elements.push({
       type: 'TextBlock',
@@ -122,14 +283,70 @@ function emphasisContainer(items: CardElement[]): CardElement {
   return { type: 'Container', style: 'emphasis', spacing: 'medium', bleed: true, items };
 }
 
-export function buildConnectAccountCard(loginUrl: string): Record<string, unknown> {
+export function buildConnectAccountCard(loginUrl: string, opts: { resumes?: boolean } = {}): Record<string, unknown> {
+  const lines = [
+    'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
+    ...(opts.resumes ? ['What you sent runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
+  return card(headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')), [
+    openUrlAction('Connect or create account', loginUrl),
+  ]);
+}
+
+/**
+ * The sign-in prompt in a channel or group chat when Teams refuses the
+ * targeted message that carries the link (login-card.ts). It carries no link:
+ * everyone in the conversation sees this card, and the link links whoever
+ * opens it (identity-routes.ts `/bind`).
+ */
+export function buildConnectPrivatelyCard(input: {
+  /** A deep link that opens a one-to-one chat with the bot; null when unknown. */
+  chatUrl: string | null;
+  botName: string;
+  /** A message the user sent here is parked and runs once they connect. */
+  resumes?: boolean;
+}): Record<string, unknown> {
+  const lines = [
+    `I send the sign-in link only in a private chat, so nobody else can use it. Open a chat with ${input.botName} and send /login.`,
+    ...(input.resumes ? ['What you sent here runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
   return card(
-    headerBlock(
-      '🔗',
-      'Connect your Kortix account',
-      'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
-    ),
-    [openUrlAction('Connect or create account', loginUrl)],
+    headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')),
+    input.chatUrl ? [openUrlAction(`Open chat with ${input.botName}`, input.chatUrl)] : undefined,
+  );
+}
+
+/** The "Open in Kortix" message action's answer. */
+export function buildOpenSessionCard(url: string): Record<string, unknown> {
+  return card(headerBlock('🔗', "This conversation's Kortix session"), [{ ...openUrlAction('Open session ↗', url), style: 'positive' }]);
+}
+
+/** The channel's answer when the sign-in link went to the person's 1:1 chat instead. */
+export function buildConnectSentPrivatelyCard(input: { botName: string; resumes?: boolean }): Record<string, unknown> {
+  const lines = [
+    `I sent you the sign-in link in your private chat with ${input.botName}, so nobody else can use it.`,
+    ...(input.resumes ? ['What you sent here runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
+  return card(headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')));
+}
+
+/** The 1:1 note after `/login` completes in the browser. Slack says "Slack connected". */
+export function buildConnectedCard(input: { email: string | null; resumed: boolean; hasAccess: boolean; projectId: string }): Record<string, unknown> {
+  const who = input.email ? `as **${input.email}**` : 'to your Kortix account';
+  if (!input.hasAccess) {
+    return card(
+      headerBlock('🔒', 'Connected', `Your Teams account is linked ${who}, but your account can't run this project yet.`),
+      [executeAction('Request access', 'teams_request_access', { projectId: input.projectId })],
+    );
+  }
+  return card(headerBlock('✅', 'Connected', `Your Teams account is linked ${who}. ${input.resumed ? 'Picking up your message now.' : 'Mention me with a task any time.'}`));
+}
+
+/** What an account admin gets in their 1:1 chat when someone asks for project access. */
+export function buildAccessRequestNoticeCard(input: { requester: string; reviewUrl: string }): Record<string, unknown> {
+  return card(
+    headerBlock('🔑', 'Access requested', `${input.requester} asked for access to a Kortix project from Teams. Approve it under Members in Kortix.`),
+    [{ ...openUrlAction('Review in Kortix', input.reviewUrl), style: 'positive' }],
   );
 }
 
@@ -201,35 +418,442 @@ export function buildSelectCard(opts: {
   return card(body);
 }
 
+export interface ModelPickerOption {
+  id: string;
+  label: string;
+  /** How the model is reached: `chatgpt`, `key` (an API key), `kortix`. */
+  via: 'chatgpt' | 'key' | 'kortix';
+  /** The provider's display name (`Anthropic`, `OpenRouter`). */
+  providerLabel: string;
+}
+
+/** Past this many choices, buttons stop being scannable and a searchable dropdown wins. */
+const MAX_MODEL_BUTTONS = 8;
+
+/** How a model is paid for, as Slack's model picker groups it. */
+const VIA_GROUPS: Array<{ via: ModelPickerOption['via']; label: string }> = [
+  { via: 'chatgpt', label: 'ChatGPT subscriptions' },
+  { via: 'key', label: 'API keys' },
+  { via: 'kortix', label: 'Kortix models' },
+];
+
+function viaHint(o: ModelPickerOption): string {
+  if (o.via === 'chatgpt') return 'ChatGPT subscription';
+  if (o.via === 'key') return `${o.providerLabel} key`;
+  return 'Kortix';
+}
+
+/**
+ * The `/models` card: every model this conversation may run, as the web picker
+ * lists them — the person's ChatGPT subscriptions and API keys (their own in a
+ * personal chat, the project's everywhere) before Kortix models.
+ *
+ * Up to MAX_MODEL_BUTTONS choices are one-tap buttons; more become a
+ * searchable dropdown with one Use button. Both post `teams_set_model` with
+ * `model` (the dropdown's input id is `model` too), so one handler serves both.
+ */
+export function buildModelPickerCard(opts: {
+  models: ModelPickerOption[];
+  /** The conversation's pick as a wire id, or null for the project default. */
+  current: string | null;
+  currentLabel: string | null;
+  defaultLabel: string | null;
+  /** "Rotates across 2 ChatGPT connections: …" for the current pick. */
+  keysNote?: string | null;
+  /** Which keys count in this conversation. */
+  scopeNote: string;
+}): Record<string, unknown> {
+  const subtitle = [
+    opts.current ? `Currently ${opts.currentLabel ?? opts.current}` : `Currently the project default${opts.defaultLabel ? ` (${opts.defaultLabel})` : ''}`,
+    opts.keysNote ?? null,
+  ].filter(Boolean).join(' · ');
+  const body: CardElement[] = [...headerBlock('🧠', 'Model', subtitle)];
+  const defaultChoice = { label: 'Project default', hint: opts.defaultLabel ?? undefined, value: '' };
+  // Grouped by how each model is paid for, in Slack's order. A dropdown has no
+  // groups in Adaptive Cards, so there the order and the hint carry it.
+  const groups = VIA_GROUPS.map((g) => ({ ...g, models: opts.models.filter((m) => m.via === g.via) })).filter((g) => g.models.length);
+  const ordered = groups.flatMap((g) => g.models);
+
+  if (opts.models.length + 1 <= MAX_MODEL_BUTTONS) {
+    const option = (m: ModelPickerOption): SelectOption => ({
+      label: m.label,
+      hint: viaHint(m),
+      current: opts.current === m.id,
+      data: { model: m.id },
+    });
+    const rows: CardElement[] = [
+      selectRow({ label: defaultChoice.label, hint: defaultChoice.hint, current: !opts.current, data: { model: '' } }, 'teams_set_model', false),
+    ];
+    for (const group of groups) {
+      rows.push(text(group.label, { weight: 'bolder', size: 'small', isSubtle: true, spacing: 'medium', separator: true }));
+      group.models.forEach((m, i) => rows.push(selectRow(option(m), 'teams_set_model', i > 0)));
+    }
+    body.push(emphasisContainer(rows));
+    body.push(text(opts.scopeNote, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+    return card(body);
+  }
+
+  body.push({
+    type: 'Input.ChoiceSet',
+    id: 'model',
+    style: 'filtered',
+    value: opts.current ?? '',
+    choices: [
+      { title: `Project default${opts.defaultLabel ? ` — ${opts.defaultLabel}` : ''}`, value: '' },
+      ...ordered.map((m) => ({ title: `${m.label} · ${viaHint(m)}`, value: m.id })),
+    ],
+    spacing: 'medium',
+  });
+  body.push(text(opts.scopeNote, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+  return card(body, [executeAction('Use model', 'teams_set_model')]);
+}
+
+/**
+ * The agent picker, in both of its moods.
+ *
+ * `/agents` builds the neutral one: the conversation's current pick is marked
+ * "✓ In use". A failed session start builds the recovery one by passing `lead`
+ * — it leads with the failure, marks nothing as current (the conversation's own
+ * pick is the dead agent it is replacing), and closes with what to do next.
+ * Both carry the same `teams_set_agent` verb, so one tap fixes the conversation
+ * either way and `interactivity.ts` needs no second handler.
+ */
+export function buildAgentPickerCard(opts: {
+  agents: ReadonlyArray<{ name: string; description?: string | null }>;
+  current: string | null;
+  lead?: { title: string; subtitle: string };
+}): Record<string, unknown> {
+  const current = opts.lead ? null : opts.current;
+  const emoji = opts.lead ? '⚠️' : '🤖';
+  const title = opts.lead?.title ?? 'Agent';
+  const subtitle = opts.lead?.subtitle ?? (current ? `Currently ${current}` : 'Currently the default agent');
+  const footer = opts.lead ? 'Pick one, then send your message again.' : undefined;
+  // The card listed six agents and dropped the rest: a project with more had
+  // agents no one could pick from Teams. Past the button limit the choice is a
+  // searchable dropdown, as the model picker does; its input id is `agent`,
+  // the field `teams_set_agent` reads.
+  if (opts.agents.length + 1 > MAX_MODEL_BUTTONS) {
+    const body: CardElement[] = [...headerBlock(emoji, title, subtitle), {
+      type: 'Input.ChoiceSet',
+      id: 'agent',
+      style: 'filtered',
+      value: current ?? '',
+      choices: [
+        { title: 'Default agent', value: '' },
+        ...opts.agents.map((a) => ({ title: a.description ? `${a.name} · ${clipText(a.description, 60)}` : a.name, value: a.name })),
+      ],
+      spacing: 'medium',
+    }];
+    if (footer) body.push(text(footer, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+    return card(body, [executeAction('Use agent', 'teams_set_agent')]);
+  }
+  const options: SelectOption[] = [
+    { label: 'Default', current: !opts.lead && !current, data: { agent: '' } },
+    ...opts.agents.map((a) => ({
+      label: a.name,
+      hint: a.description ?? undefined,
+      current: current === a.name,
+      data: { agent: a.name },
+    })),
+  ];
+  return buildSelectCard({ emoji, title, subtitle, verb: 'teams_set_agent', options, ...(footer ? { footer } : {}) });
+}
+
 export function buildPanelCard(opts: {
   emoji?: string;
   title: string;
   rows: Array<{ label: string; value: string }>;
   url?: string;
+  /** Buttons before "Open in Kortix", e.g. the `/status` panel's changes. */
+  actions?: CardElement[];
 }): Record<string, unknown> {
   const body: CardElement[] = [
     ...headerBlock(opts.emoji ?? 'ℹ️', opts.title),
     emphasisContainer([{ type: 'FactSet', facts: opts.rows.map((r) => ({ title: r.label, value: r.value })) }]),
   ];
-  const actions = opts.url ? [openUrlAction('Open in Kortix', opts.url)] : undefined;
+  const actions = [...(opts.actions ?? []), ...(opts.url ? [openUrlAction('Open in Kortix', opts.url)] : [])];
   return card(body, actions);
 }
 
-export function buildQuestionCard(
-  questions: Array<{ question: string; options?: Array<{ label: string }> }>,
-): Record<string, unknown> {
-  const body: CardElement[] = [...headerBlock('💬', 'A quick question')];
-  for (const q of questions) body.push(text(q.question, { weight: 'bolder', wrap: true, spacing: 'small' }));
-  const seen = new Set<string>();
-  const actions: CardElement[] = [];
-  for (const o of questions.flatMap((q) => q.options ?? [])) {
-    if (!o.label || seen.has(o.label)) continue;
-    seen.add(o.label);
-    actions.push(executeAction(o.label, 'teams_answer', { answer: o.label }));
-    if (actions.length >= 6) break;
+/** `/status` buttons: each opens the picker `/models`, `/agents`, `/projects` would post. */
+export const TEAMS_OPEN_PANEL_VERB = 'teams_open_panel';
+export type TeamsPanel = 'models' | 'agents' | 'projects';
+
+export function openPanelAction(title: string, panel: TeamsPanel): CardElement {
+  return executeAction(title, TEAMS_OPEN_PANEL_VERB, { panel });
+}
+
+/** A small repo preview column, or none. Teams loads the image itself: https only. */
+function imageColumn(url: string | null | undefined, alt: string): CardElement[] {
+  if (!url?.startsWith('https://')) return [];
+  return [{
+    type: 'Column',
+    width: '72px',
+    verticalContentAlignment: 'center',
+    items: [{ type: 'Image', url, altText: `${alt} repository`, width: '72px' }],
+  }];
+}
+
+export interface ProjectRow {
+  projectId: string;
+  name: string;
+  /** `owner/repo`, when the project has a GitHub repository. */
+  repo?: string | null;
+  imageUrl?: string | null;
+  /** The project in Kortix. */
+  url: string;
+  current?: boolean;
+}
+
+/** One project: preview, name and repo, Open, and (in a picker) Use. */
+function projectRow(p: ProjectRow, separator: boolean, pickVerb?: string): CardElement {
+  const buttons: CardElement[] = [openUrlAction('Open', p.url)];
+  if (pickVerb) {
+    buttons.push({
+      type: 'Action.Execute',
+      title: p.current ? '✓ In use' : 'Use',
+      verb: pickVerb,
+      data: { verb: pickVerb, projectId: p.projectId },
+      ...(p.current ? {} : { style: 'positive' }),
+    });
   }
-  body.push(text('Tap an option, or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'medium' }));
-  return card(body, actions.length ? actions : undefined);
+  const label: CardElement[] = [
+    text(p.name, { weight: 'bolder', spacing: 'none', color: p.current ? 'good' : 'default' }),
+  ];
+  if (p.repo) label.push(text(p.repo, { isSubtle: true, size: 'small', spacing: 'none' }));
+  return {
+    type: 'ColumnSet',
+    separator,
+    spacing: 'medium',
+    columns: [
+      ...imageColumn(p.imageUrl, p.name),
+      { type: 'Column', width: 'stretch', verticalContentAlignment: 'center', items: label },
+      { type: 'Column', width: 'auto', verticalContentAlignment: 'center', items: [{ type: 'ActionSet', actions: buttons }] },
+    ],
+  };
+}
+
+/** `/projects`: every project this Teams tenant runs, as Slack's project carousel lists them. */
+export function buildProjectsCard(projects: ReadonlyArray<ProjectRow>): Record<string, unknown> {
+  return card([
+    ...headerBlock('📁', 'Connected projects', 'Pick which project this conversation runs.'),
+    emphasisContainer(projects.map((p, i) => projectRow(p, i > 0, 'teams_pick_project'))),
+  ]);
+}
+
+/**
+ * What a person sees when they add the app for themselves: Slack's App Home,
+ * as a card in their 1:1 chat. Teams has a home tab too, but it frames a web
+ * page, which Kortix does not serve inside Teams.
+ */
+export function buildHomeCard(opts: { projects: ReadonlyArray<ProjectRow> }): Record<string, unknown> {
+  const body: CardElement[] = headerBlock(
+    '👋',
+    'Kortix is ready',
+    'Send me a task right here, or @-mention me in any chat or channel I am in. An agent picks it up and replies with live progress.',
+  );
+  if (opts.projects.length) {
+    body.push(
+      text('Projects in this organization', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+      emphasisContainer(opts.projects.map((p, i) => projectRow(p, i > 0))),
+    );
+  }
+  body.push(
+    text('Try something like', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    emphasisContainer(WELCOME_EXAMPLES.map((example, i) => text(`• ${example}`, { spacing: i ? 'small' : 'none', wrap: true }))),
+    text('Type /login to connect your Kortix account, and /help for every command.', { isSubtle: true, size: 'small', spacing: 'medium', wrap: true }),
+  );
+  return card(body);
+}
+
+/** `/sessions`: the conversations' recent sessions this person may open. */
+export function buildSessionsCard(sessions: ReadonlyArray<{
+  title: string;
+  projectName: string;
+  when: string;
+  status?: string;
+  url: string;
+  /** The project repo's preview image, as Slack shows it. */
+  imageUrl?: string | null;
+}>): Record<string, unknown> {
+  const rows: CardElement[] = sessions.map((s, i) => ({
+    type: 'ColumnSet',
+    separator: i > 0,
+    spacing: 'small',
+    selectAction: openUrlAction('Open session', s.url),
+    columns: [
+      ...imageColumn(s.imageUrl, s.projectName),
+      {
+        type: 'Column',
+        width: 'stretch',
+        verticalContentAlignment: 'center',
+        items: [
+          text(s.title, { weight: 'bolder', spacing: 'none', maxLines: 2 }),
+          text([s.projectName, s.status, s.when].filter(Boolean).join(' · '), { isSubtle: true, size: 'small', spacing: 'none' }),
+        ],
+      },
+      {
+        type: 'Column',
+        width: 'auto',
+        verticalContentAlignment: 'center',
+        items: [{ type: 'ActionSet', actions: [openUrlAction('Open', s.url)] }],
+      },
+    ],
+  }));
+  return card([
+    ...headerBlock('🗂️', 'Recent sessions', 'Started from Teams, newest first.'),
+    emphasisContainer(rows),
+  ]);
+}
+
+export interface TeamsQuestion {
+  question: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  /** Several answers allowed. */
+  multiple?: boolean;
+  /** An answer outside the listed options is allowed. */
+  custom?: boolean;
+}
+
+const MAX_BUTTON_OPTIONS = 6;
+/** Past this, a column of radios stops being scannable and a dropdown wins. */
+const MAX_EXPANDED_CHOICES = 6;
+
+/**
+ * An `Input.*` id doubles as the label the agent reads back, because
+ * `handleForm` relays `- <id>: <value>` and a `q1` would tell it nothing. Ids
+ * cannot contain a comma — `fieldIds` travels comma-joined — so strip those
+ * and keep it short enough to stay readable in the relayed message.
+ */
+function questionFieldId(question: string, index: number): string {
+  const cleaned = question.replace(/[,\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return `Question ${index + 1}`;
+  return cleaned.length > 60 ? `${cleaned.slice(0, 59)}…` : cleaned;
+}
+
+/**
+ * The card that asks. Two shapes, picked by what the question actually is.
+ *
+ * ONE question, a handful of options, one answer, no free text → a button per
+ * option. It is one tap, and that is the common case.
+ *
+ * Anything else → a real form. The old card flattened EVERY option of EVERY
+ * question into a single deduped button row: two questions offering "Yes"
+ * showed one button, nothing said which question a button belonged to, and a
+ * tap sent back a single bare label for what were several questions. It also
+ * dropped `header`, `multiple`, `custom` and every option `description` on the
+ * floor. A form answers all of them — one `Input.ChoiceSet` per question,
+ * multi-select when asked, a text box when free-form answers are allowed — and
+ * `handleForm` relays the answers back labelled with their questions.
+ */
+export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, unknown> {
+  const list = (questions ?? []).filter((q) => q?.question?.trim());
+  if (list.length === 0) return buildNoticeCard('The agent asked a question, but it arrived empty.', '💬');
+
+  const single = list.length === 1 ? list[0] : null;
+  const options = single?.options?.filter((o) => o?.label?.trim()) ?? [];
+  // `custom` deliberately does NOT force the form. The relay route defaults it
+  // to true (`obj.custom === false ? false : true`, projects/routes/turn-questions.ts), so
+  // gating on it would turn every plain yes/no into a form with a Submit
+  // button. In Teams the free-text path already exists and always has: the
+  // card says "or just reply in the chat", and a reply arrives as the next
+  // turn. The form's own "(other)" box is for when the user is in a form
+  // anyway.
+  const oneTap = single && options.length > 0 && options.length <= MAX_BUTTON_OPTIONS && !single.multiple;
+
+  if (oneTap && single) {
+    const body: CardElement[] = [...headerBlock('💬', single.header?.trim() || 'A quick question')];
+    body.push(text(single.question, { weight: 'bolder', wrap: true, spacing: 'small' }));
+    // An Action has no room for a subtitle, so a described option explains
+    // itself above the buttons instead of losing the description entirely.
+    for (const o of options) {
+      if (o.description?.trim()) {
+        body.push(text(`**${o.label}** — ${o.description.trim()}`, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+      }
+    }
+    body.push(text('Tap an option, or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'medium' }));
+    return card(
+      body,
+      // The question rides along with the answer. `Action.Execute` REPLACES
+      // the card, so without it the conversation is left showing a bare
+      // "Answer received: Yes" — no context for anyone reading the channel
+      // later, and a bare label for the agent. Truncated because action data
+      // travels on every tap.
+      options.map((o) =>
+        executeAction(o.label, 'teams_answer', {
+          answer: o.label,
+          question: single.question.slice(0, 200),
+        }),
+      ),
+    );
+  }
+
+  const fields: TeamsFormField[] = [];
+  const numbered = list.length > 1;
+  for (const [i, q] of list.entries()) {
+    const id = questionFieldId(q.question, i);
+    const opts = q.options?.filter((o) => o?.label?.trim()) ?? [];
+    // Shape of the Kortix web question UI: each question carries its short
+    // header, and several questions say where they sit ("2 of 3") so
+    // "question 2" means one thing. The position lives in the caption, never
+    // as a "2. " prefix on the label: Teams renders TextBlock markdown, and a
+    // label starting "2. " became an indented ordered list, out of line with
+    // its caption and choices. The field ID stays the bare question —
+    // `handleForm` relays it to the agent, which should read the question.
+    const header = q.header?.trim();
+    const label = q.question;
+    const caption = numbered ? `${i + 1} of ${list.length}${header ? ` · ${header}` : ''}` : header || undefined;
+    if (opts.length > 0) {
+      fields.push({
+        id,
+        label,
+        caption,
+        type: q.multiple ? 'multichoice' : 'choice',
+        // Every option VISIBLE, as the web UI shows them — a dropdown hides the
+        // choices behind a tap and turns "which of these?" into "open this to
+        // find out". Past MAX_EXPANDED_CHOICES a list of radios stops being
+        // scannable, and the dropdown earns its place back.
+        style: opts.length <= MAX_EXPANDED_CHOICES ? 'expanded' : 'compact',
+        // A description belongs on the choice itself, where the user reads it.
+        choices: opts.map((o) => ({
+          title: o.description?.trim() ? `${o.label} — ${o.description.trim()}` : o.label,
+          value: o.label,
+        })),
+        placeholder: q.multiple ? 'Pick one or more' : 'Pick one',
+      });
+      // `custom` means the listed options are not exhaustive. The relay route
+      // defaults it to TRUE, so this box appears under nearly every question —
+      // which is why it carries NO label of its own: an unlabeled box directly
+      // under the choices reads as "or say it yourself", where a repeated bold
+      // "Something else" read as a second question.
+      if (q.custom) {
+        fields.push({ id: `${id} (other)`, label: '', type: 'text', placeholder: 'Or type your own answer' });
+      }
+    } else {
+      fields.push({ id, label, caption, type: 'textarea', placeholder: 'Your answer' });
+    }
+  }
+
+  const form = buildFormCard({
+    title: single?.header?.trim() || (list.length > 1 ? `${list.length} questions` : 'A quick question'),
+    subtitle: 'Answer here, or just reply in the chat.',
+    submitLabel: 'Send answers',
+    fields,
+  });
+  // `buildFormCard` returns null only when nothing usable survived; the
+  // questions still have to reach the user, so fall back to plain text.
+  return form ?? buildNoticeCard(list.map((q) => q.question).join('\n\n'), '💬');
+}
+
+/** The id the review card's feedback box reports under. */
+export const REVIEW_FEEDBACK_INPUT = 'reviewFeedback';
+
+/** The primary button per review kind, as Slack words it (review-cards.ts). */
+function reviewPrimaryLabel(kind: string | undefined): string {
+  if (kind === 'change') return 'Ship it';
+  if (kind === 'decision') return 'Answer';
+  return 'Approve';
 }
 
 export function buildReviewCard(opts: {
@@ -238,6 +862,8 @@ export function buildReviewCard(opts: {
   summary: string;
   risk: string;
   viewUrl?: string;
+  /** `change`, `decision`, or an approval. A decision has nothing to deny. */
+  kind?: string;
 }): Record<string, unknown> {
   const riskColor = opts.risk === 'high' ? 'attention' : opts.risk === 'medium' ? 'warning' : 'good';
   const body: CardElement[] = [...headerBlock('📝', opts.title, opts.summary)];
@@ -248,20 +874,92 @@ export function buildReviewCard(opts: {
       ]),
     );
   }
+  // `Action.Execute` returns EVERY input on the card, whichever button was
+  // pressed — so one optional box serves all three verdicts. Without it
+  // `applyVerdict` was always called with `feedback: null` and the agent was
+  // told to "ask what to change", asking the reviewer for something they
+  // already knew when they clicked. The column has always existed
+  // (review_items.feedback); nothing ever filled it.
+  body.push(
+    text('Feedback (optional)', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    {
+      type: 'Input.Text',
+      id: REVIEW_FEEDBACK_INPUT,
+      isMultiline: true,
+      placeholder: 'What should change, or why — sent to the agent with your decision',
+    },
+  );
   const actions: CardElement[] = [
-    { type: 'Action.Execute', title: 'Approve', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'approve' }, style: 'positive' },
+    { type: 'Action.Execute', title: reviewPrimaryLabel(opts.kind), verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'approve' }, style: 'positive' },
     executeAction('Request changes', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'changes' }),
-    { type: 'Action.Execute', title: 'Deny', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'reject' }, style: 'destructive' },
   ];
+  if (opts.kind !== 'decision') {
+    actions.push({ type: 'Action.Execute', title: opts.kind === 'change' ? 'Reject' : 'Deny', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'reject' }, style: 'destructive' });
+  }
   if (opts.viewUrl) actions.push(openUrlAction('View in Kortix', opts.viewUrl));
   return card(body, actions);
 }
+
+export function buildJoinRequestCard(opts: {
+  requesterLabel: string;
+  projectId: string;
+  sessionId: string;
+  conversationId: string;
+  requesterUserId: string;
+  requesterTeamsUserId: string;
+}): Record<string, unknown> {
+  const data = {
+    projectId: opts.projectId,
+    sessionId: opts.sessionId,
+    conversationId: opts.conversationId,
+    requesterUserId: opts.requesterUserId,
+    requesterTeamsUserId: opts.requesterTeamsUserId,
+  };
+  return card(
+    headerBlock(
+      '🔒',
+      `${opts.requesterLabel} wants to join this Kortix session`,
+      'This conversation is private until you approve them. Only the session owner can decide.',
+    ),
+    [
+      { type: 'Action.Execute', title: 'Approve', verb: 'teams_thread_join', style: 'positive', data: { verb: 'teams_thread_join', decision: 'approved', ...data } },
+      { type: 'Action.Execute', title: 'Deny', verb: 'teams_thread_join', style: 'destructive', data: { verb: 'teams_thread_join', decision: 'denied', ...data } },
+    ],
+  );
+}
+
+export function buildProjectPickerCard(
+  projects: Array<{ projectId: string; name: string }>,
+  pendingId: string | null,
+): Record<string, unknown> {
+  return card(
+    headerBlock(
+      '📁',
+      'Which project should this conversation use?',
+      "Several Kortix projects are connected to this team. Pick one — I'll remember it here and run your message.",
+    ),
+    projects.slice(0, 8).map((p) =>
+      executeAction(p.name, 'teams_pick_project', { projectId: p.projectId, ...(pendingId ? { pendingId } : {}) }),
+    ),
+  );
+}
+
+/** What the welcome card suggests trying: the three Slack's channel intro lists. */
+const WELCOME_EXAMPLES = [
+  'summarize this thread and draft a reply to the customer',
+  'pull last week’s signups, group them by source, and drop a CSV here',
+  'put together a one-pager on our Q2 numbers',
+];
 
 export function buildWelcomeCard(opts: { projectUrl?: string }): Record<string, unknown> {
   const body = headerBlock(
     '👋',
     'Kortix is connected here',
     '@-mention me with a task and an agent gets on it — replying right here with live progress. Type `/help` to see what I can do.',
+  );
+  body.push(
+    text('Try @-mentioning me with something like', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    emphasisContainer(WELCOME_EXAMPLES.map((example, i) => text(`• ${example}`, { spacing: i ? 'small' : 'none', wrap: true }))),
   );
   const actions = opts.projectUrl ? [openUrlAction('Open in Kortix', opts.projectUrl)] : undefined;
   return card(body, actions);
@@ -281,4 +979,226 @@ export function buildHelpCard(commands: Array<{ cmd: string; desc: string }>): R
     ...headerBlock('⚡', 'Kortix commands', 'Run a command, or just @-mention me with a task.'),
     emphasisContainer(rows),
   ]);
+}
+
+// ─── Forms: real inputs, not a list of options in prose ─────────────────────
+//
+// Teams' only rich surface is the Adaptive Card, and a card can carry actual
+// inputs — text boxes, dropdowns, toggles, dates — with one Submit. An
+// `Action.Execute` returns every input's value to the bot in
+// `activity.value.action.data`, keyed by the input's `id`, alongside the
+// action's own data. `channels/teams/interactivity.ts` reads them back under
+// the `teams_form` verb and feeds the answers into the session as the user's
+// next message, so a form round-trips exactly like a typed reply.
+//
+// The card is built HERE rather than handed over as raw JSON by the agent so
+// the submit verb, the field ids and the branding cannot drift, and so a
+// malformed spec fails server-side instead of rendering a dead button.
+
+export const TEAMS_FORM_VERB = 'teams_form';
+
+/** One input on a form card. `type` maps onto the Adaptive Card input set. */
+export interface TeamsFormField {
+  id: string;
+  label: string;
+  type?: 'text' | 'textarea' | 'number' | 'date' | 'time' | 'choice' | 'multichoice' | 'toggle';
+  placeholder?: string;
+  value?: string;
+  required?: boolean;
+  /** For `choice` / `multichoice`. A bare string is both label and value. */
+  choices?: Array<string | { title: string; value: string }>;
+  /**
+   * `expanded` lays every choice out as a visible radio/checkbox; `compact` is
+   * a dropdown. Unset keeps the Adaptive Cards default (compact for a single
+   * choice), so agent-authored `teams ask --form-file` forms are unchanged.
+   */
+  style?: 'expanded' | 'compact';
+  /** A small, subtle line ABOVE the label — a question's short header. */
+  caption?: string;
+}
+
+export interface TeamsFormSpec {
+  title?: string;
+  subtitle?: string;
+  submitLabel?: string;
+  fields: TeamsFormField[];
+}
+
+const MAX_FORM_FIELDS = 12;
+const MAX_CHOICES = 24;
+
+function choiceList(field: TeamsFormField): CardElement[] {
+  return (field.choices ?? [])
+    .slice(0, MAX_CHOICES)
+    .map((c) => (typeof c === 'string' ? { title: c, value: c } : { title: c.title, value: c.value }))
+    .filter((c) => !!c.title && !!c.value);
+}
+
+function formInput(field: TeamsFormField): CardElement | null {
+  const id = field.id?.trim();
+  // `fieldIds` travels as a comma-joined string on the submit action, so a
+  // comma in an id would split one field into two on the way back.
+  if (!id || id.includes(',')) return null;
+  const common = { id, ...(field.required ? { isRequired: true, errorMessage: `${field.label} is required` } : {}) };
+  switch (field.type ?? 'text') {
+    case 'textarea':
+      return { type: 'Input.Text', isMultiline: true, placeholder: field.placeholder, value: field.value, ...common };
+    case 'number':
+      return { type: 'Input.Number', placeholder: field.placeholder, value: field.value, ...common };
+    case 'date':
+      return { type: 'Input.Date', value: field.value, ...common };
+    case 'time':
+      return { type: 'Input.Time', value: field.value, ...common };
+    case 'toggle':
+      return { type: 'Input.Toggle', title: field.label, value: field.value ?? 'false', valueOn: 'true', valueOff: 'false', ...common };
+    case 'choice':
+    case 'multichoice': {
+      const choices = choiceList(field);
+      if (choices.length === 0) return null;
+      return {
+        type: 'Input.ChoiceSet',
+        choices,
+        ...(field.type === 'multichoice' ? { isMultiSelect: true, style: 'expanded' } : {}),
+        ...(field.style ? { style: field.style } : {}),
+        placeholder: field.placeholder,
+        value: field.value,
+        ...common,
+      };
+    }
+    default:
+      return { type: 'Input.Text', placeholder: field.placeholder, value: field.value, ...common };
+  }
+}
+
+/**
+ * A card with real inputs and a Submit. Returns null when the spec carries no
+ * usable field, so a caller never posts an empty form with a dead button.
+ */
+export function buildFormCard(spec: TeamsFormSpec): Record<string, unknown> | null {
+  const fields = (spec.fields ?? []).slice(0, MAX_FORM_FIELDS);
+  const body: CardElement[] = [...headerBlock('📝', spec.title?.trim() || 'A few details', spec.subtitle)];
+  const ids: string[] = [];
+  for (const field of fields) {
+    const input = formInput(field);
+    if (!input) continue;
+    if (field.caption?.trim()) {
+      body.push(text(field.caption.trim(), { isSubtle: true, size: 'small', spacing: 'large', wrap: true }));
+    }
+    // A toggle renders its own label, so it does not get a second one. An
+    // EMPTY label means the input belongs to the field above it — the "type
+    // your own answer" box under a question — and a second bold label there is
+    // what made one question read as two.
+    if ((field.type ?? 'text') !== 'toggle' && field.label.trim()) {
+      body.push(
+        text(field.label, {
+          weight: 'bolder',
+          size: 'small',
+          spacing: field.caption?.trim() ? 'none' : 'medium',
+          wrap: true,
+        }),
+      );
+    }
+    body.push(input);
+    ids.push(field.id.trim());
+  }
+  if (ids.length === 0) return null;
+  return card(body, [
+    executeAction(spec.submitLabel?.trim() || 'Submit', TEAMS_FORM_VERB, { fieldIds: ids.join(',') }),
+  ]);
+}
+
+/** The verb and input id of the approval card for a gated connector call. */
+export const TEAMS_APPROVAL_VERB = 'teams_approval';
+export const APPROVAL_NOTE_INPUT = 'approvalNote';
+
+const APPROVAL_VALUE_MAX = 300;
+
+function clipText(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+/**
+ * A policy-gated connector call waiting on a human: the agent's own
+ * description (labelled unverified), the parameters the connector will
+ * receive, a message box, and Approve / Deny. `Action.Execute` returns the box
+ * with whichever button was pressed, so the message rides with either.
+ */
+export function buildTeamsApprovalCard(opts: {
+  executionId: string;
+  actionPath: string;
+  risk: string | null;
+  argsPreview: Record<string, unknown> | null;
+  approvalContext: string | null;
+  approvalUrl: string | null;
+  approvable: boolean;
+}): Record<string, unknown> {
+  const body: CardElement[] = [
+    ...headerBlock('🛡️', 'The agent needs your approval', `Run ${opts.actionPath}${opts.risk ? ` · ${opts.risk}` : ''}`),
+  ];
+  if (opts.approvalContext) {
+    body.push(
+      text("Agent's description (written by the agent, not verified)", { weight: 'bolder', size: 'small', spacing: 'medium' }),
+      emphasisContainer([text(clipText(opts.approvalContext, 2_800), { spacing: 'none' })]),
+    );
+  }
+  const facts = Object.entries(opts.argsPreview ?? {}).map(([key, value]) => ({
+    title: key,
+    value:
+      value === '[redacted]'
+        ? 'hidden credential'
+        : clipText(typeof value === 'string' ? value : JSON.stringify(value) ?? '', APPROVAL_VALUE_MAX),
+  }));
+  body.push(
+    text('Parameters the connector will receive', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    facts.length > 0 ? { type: 'FactSet', facts } : text('No parameters recorded.', { isSubtle: true, spacing: 'none' }),
+    text('Message to the agent (optional)', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    {
+      type: 'Input.Text',
+      id: APPROVAL_NOTE_INPUT,
+      isMultiline: true,
+      maxLength: 2000,
+      placeholder: 'Sent to the agent with your decision',
+    },
+  );
+  const actions: CardElement[] = [];
+  if (opts.approvable) {
+    actions.push({
+      type: 'Action.Execute',
+      title: 'Approve',
+      verb: TEAMS_APPROVAL_VERB,
+      data: { verb: TEAMS_APPROVAL_VERB, executionId: opts.executionId, decision: 'approve' },
+      style: 'positive',
+    });
+  }
+  actions.push({
+    type: 'Action.Execute',
+    title: 'Deny',
+    verb: TEAMS_APPROVAL_VERB,
+    data: { verb: TEAMS_APPROVAL_VERB, executionId: opts.executionId, decision: 'deny' },
+    style: 'destructive',
+  });
+  if (opts.approvalUrl) actions.push(openUrlAction('Open in Kortix', opts.approvalUrl));
+  return card(body, actions);
+}
+
+/** What the approval card becomes once anyone decided. */
+export function buildTeamsApprovalOutcomeCard(opts: {
+  actionPath: string;
+  decision: 'approve' | 'deny';
+  note: string;
+  /** Who decided: the presser's Teams name, or "a teammate in Kortix". */
+  decidedBy?: string;
+}): Record<string, unknown> {
+  const body: CardElement[] = headerBlock(
+    opts.decision === 'approve' ? '✅' : '⛔',
+    `${opts.decision === 'approve' ? 'Approved' : 'Denied'}: ${opts.actionPath}`,
+    opts.decidedBy ? `by ${opts.decidedBy}` : undefined,
+  );
+  if (opts.note) {
+    body.push(
+      text('Message to the agent', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+      emphasisContainer([text(clipText(opts.note, 2_000), { spacing: 'none' })]),
+    );
+  }
+  return card(body);
 }

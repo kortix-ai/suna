@@ -6,11 +6,12 @@ import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 
 const ICON_BUTTON =
-  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-150 duration-300 ease-out';
+  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-(--duration-normal) duration-(--duration-slow) ease-out';
 
 /**
  * Send ⇄ stop ⇄ pending cross-fade. The three states used to be three separate
@@ -32,6 +33,12 @@ export interface SendStopControlProps {
   escCount: number;
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
+  /**
+   * A labeled button that submits, shown in place of send AND stop. Set while
+   * the composer edits a queued message: the send saves the edit back into
+   * the queue, so a busy turn's Stop is not the action on offer.
+   */
+  submitLabel?: string | null;
   questionCanAct: boolean;
   hasText: boolean;
   canSubmit: boolean;
@@ -44,6 +51,10 @@ export interface SendStopControlProps {
    * the thing to go fix.
    */
   agentUnavailable?: boolean;
+  /** A selected upload failed. Send is refused until it is retried or removed. */
+  attachmentFailed?: boolean;
+  /** Why the selected model cannot take the attachments. Send is refused while set. */
+  attachmentUnsupported?: string | null;
   onSubmit: () => void;
 }
 
@@ -55,6 +66,7 @@ export function SendStopControl({
   escCount,
   lockForQuestion,
   questionButtonLabel,
+  submitLabel = null,
   questionCanAct,
   hasText,
   canSubmit,
@@ -62,25 +74,50 @@ export function SendStopControl({
   disabled,
   modelUnavailable,
   agentUnavailable = false,
+  attachmentFailed = false,
+  attachmentUnsupported = null,
   onSubmit,
 }: SendStopControlProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('threads');
+  const tAttachments = useTranslations('hardcodedUi.composerAttachments');
   // One line, the same one the agent picker's tooltip carries — the two
   // controls are refusing for one reason and must not word it two ways.
   const refusal = agentUnavailable
     ? NO_AGENT_ACCESS_MESSAGE
     : modelUnavailable
       ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
-      : null;
+      : attachmentFailed
+        ? tAttachments('failedBlocksSend')
+        : attachmentUnsupported;
 
   if (isSending && !lockForQuestion) {
     return (
-      <Button size="icon-base" aria-label="Sending" disabled className={ICON_BUTTON}>
+      <Button size="icon-base" aria-label={t('sending')} disabled className={ICON_BUTTON}>
         <AnimatePresence mode="popLayout" initial={false}>
           <m.span key="pending" className="flex items-center" {...ICON_SWAP}>
             <Loading className="size-4" />
           </m.span>
         </AnimatePresence>
       </Button>
+    );
+  }
+
+  if (submitLabel && !lockForQuestion) {
+    return (
+      <Hint side="top" label={refusal ?? submitLabel}>
+        <span className="inline-flex">
+          <Button
+            size="sm"
+            disabled={!canSubmit || submitDisabled}
+            onClick={onSubmit}
+            title={refusal ?? undefined}
+            className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
+          >
+            {submitLabel}
+          </Button>
+        </span>
+      </Hint>
     );
   }
 
@@ -94,10 +131,14 @@ export function SendStopControl({
     return (
       <div className="relative flex items-center">
         {escCount > 0 && (
-          <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
-            <div className="bg-background text-foreground z-[9999] inline-flex w-fit items-center gap-1.5 overflow-hidden rounded-sm border p-1 px-1.5 text-[13px] whitespace-nowrap">
+          <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-(--duration-normal)">
+            <div className="bg-background text-foreground z-[9999] inline-flex w-fit items-center gap-1.5 overflow-hidden rounded-sm border p-1 px-1.5 text-xs whitespace-nowrap">
               <Kbd>ESC</Kbd>
-              <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
+              <span>
+                {escCount === 1
+                  ? tI18nComplete.raw('textb9ef397631ca')
+                  : tI18nComplete.raw('text9754e2d14f9e')}
+              </span>
             </div>
           </div>
         )}
@@ -105,13 +146,13 @@ export function SendStopControl({
           side="top"
           label={
             <p>
-              Stop <Kbd>ESC</Kbd> ×3
+              {tI18nComplete.raw('textcae7d57bc067')} <Kbd>ESC</Kbd> ×3
             </p>
           }
         >
           <Button
             size="icon-base"
-            aria-label="Stop"
+            aria-label={t('stop')}
             onClick={onStop}
             disabled={stopDisabled || !onStop}
             className={ICON_BUTTON}
@@ -133,7 +174,7 @@ export function SendStopControl({
         size="sm"
         disabled={!questionCanAct || disabled}
         onClick={onSubmit}
-        className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-300 ease-out active:scale-[0.96] active:duration-150"
+        className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
       >
         {questionButtonLabel}
       </Button>
@@ -141,7 +182,7 @@ export function SendStopControl({
   }
 
   return (
-    <Hint side="top" label={refusal ?? 'Send message'}>
+    <Hint side="top" label={refusal ?? t('sendMessage')}>
       {/* The span, not the button, carries the tooltip trigger: a disabled
           button takes no pointer events, so the reason the send is off would
           never open — which is exactly the state where the reason matters
@@ -159,7 +200,7 @@ export function SendStopControl({
           // refusal is a `aria-describedby`-style detail, not an identity —
           // swapping the name for it made a screen reader announce the button
           // as "No agent available", with nothing left saying what it does.
-          aria-label="Send message"
+          aria-label={t('sendMessage')}
           title={refusal ?? undefined}
           className={ICON_BUTTON}
         >

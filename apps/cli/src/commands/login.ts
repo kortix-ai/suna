@@ -5,6 +5,7 @@ import {
   authFileLocation,
   loadAuthForHost,
   saveAuthForHost,
+  sameApiBase,
 } from '../api/auth.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
@@ -16,10 +17,12 @@ import {
   validateHostName,
 } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
+import { takeFlags } from '../command-argv.ts';
+import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
-import { webDashboardUrl } from '../web-url.ts';
+import { deriveFrontendFromApiBase } from '../web-url.ts';
 import { openInBrowser } from '../browser.ts';
 
 const HELP = help`Usage: kortix login [options]
@@ -53,60 +56,15 @@ Examples:
   kortix login --token kortix_pat_... --account acme
 `;
 
-interface LoginFlags {
-  token?: string;
-  api?: string;
-  host?: string;
-  account?: string;
-  noProject: boolean;
-  help: boolean;
-}
-
-function parseFlags(argv: string[]): LoginFlags {
-  const f: LoginFlags = { help: false, noProject: false };
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '-h' || a === '--help') f.help = true;
-    else if (a === '--no-project') f.noProject = true;
-    else if (a === '--token') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--token requires a value');
-      f.token = next;
-      i += 1;
-    } else if (a === '--api') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--api requires a value');
-      f.api = next;
-      i += 1;
-    } else if (a === '--host') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--host requires a value');
-      f.host = next;
-      i += 1;
-    } else if (a === '--account') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--account requires a value');
-      f.account = next;
-      i += 1;
-    } else {
-      throw new Error(`unknown option "${a}"`);
-    }
-  }
-  return f;
-}
-
 export async function runLogin(argv: string[]): Promise<number> {
-  let flags: LoginFlags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
-    return 2;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(argv, HELP, (rest) => ({
+    host: takeFlagValue(rest, ['--host']),
+    api: takeFlagValue(rest, ['--api']),
+    token: takeFlagValue(rest, ['--token']),
+    account: takeFlagValue(rest, ['--account']),
+    noProject: takeFlagBool(rest, ['--no-project']),
+  }));
+  if (typeof flags === 'number') return flags;
 
   // Resolve which host we're logging into (top-level `login` selects it via
   // `--host`; the active host is the default). The `hosts login <name>`
@@ -121,7 +79,7 @@ export async function runLogin(argv: string[]): Promise<number> {
   });
 }
 
-export interface PerformLoginOptions {
+interface PerformLoginOptions {
   /** The host name to authenticate (already resolved by the caller). */
   hostName: string;
   /** Skip the browser flow and authenticate directly with this PAT. */
@@ -147,14 +105,18 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   try {
     validateHostName(hostName);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   // Pick the API base URL with this priority:
-  //   --api flag → existing host's URL → KORTIX_API_URL env → default
+  //   --api flag → KORTIX_API_URL env (active host only, as `activeHost()`
+  //   does) → existing host's URL → default. Built-in hosts always exist, so
+  //   an existing host's URL must not outrank the env override: the token
+  //   would go to the default API instead of the one the caller named.
   const existing = getHost(hostName);
-  const apiBase = opts.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
+  const envApiBase =
+    hostName === (activeHostName() ?? DEFAULT_HOST_NAME) ? process.env.KORTIX_API_URL : undefined;
+  const apiBase = opts.api ?? envApiBase ?? existing?.url ?? DEFAULT_API_BASE;
 
   // If this host already has a working token + caller didn't pass
   // --token or --api, treat that as a no-op login.
@@ -168,7 +130,8 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     return 0;
   }
 
-  const token = opts.token ?? (await browserLogin(apiBase, existing?.dashboard_url));
+  const dashboardUrl = existing && sameApiBase(apiBase, existing.url) ? existing.dashboard_url : undefined;
+  const token = opts.token ?? (await browserLogin(apiBase, dashboardUrl));
   if (!token) return 1;
 
   if (!token.startsWith('kortix_pat_')) {
@@ -314,7 +277,8 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
     return null;
   }
 
-  const dashUrl = webDashboardUrl(apiBase, dashboardUrl);
+  // Login targets the selected host, not the deployment running this shell.
+  const dashUrl = dashboardUrl?.trim().replace(/\/+$/, '') || deriveFrontendFromApiBase(apiBase);
   const deviceLabel = encodeURIComponent(safeHostname());
   const url =
     `${dashUrl}/cli/authorize` +

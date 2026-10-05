@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * In-session "agent needs your approval" card, pinned above the composer.
  *
@@ -33,11 +34,12 @@
  */
 
 import {
+  ApprovalAgentContext,
   ApprovalDecisionActions,
   type ApprovalDecisionValue,
   ApprovalParameters,
-  ApprovalUnreviewableNotice,
   approvalReviewable,
+  ApprovalUnreviewableNotice,
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -66,6 +68,8 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
+import { slackChannelNames } from '@/features/session/turn/channel-message';
+import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -73,6 +77,7 @@ import { useEffect, useRef, useState } from 'react';
 const DECIDED_LINGER_MS = 5_000;
 
 export function SessionApprovalPrompt() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { id: projectId, sessionId: projectSessionId } = useParams<{
     id: string;
     sessionId: string;
@@ -95,13 +100,17 @@ export function SessionApprovalPrompt() {
   }, []);
 
   const rows = approvalNoticeRows(data?.actions ?? [], decided);
+  // A Slack connector call names a conversation by id; the project's bindings
+  // name it. Read only while an approval is on screen.
+  const { data: bindings } = useChannelBindings(rows.length > 0 ? projectId : null);
+  const channelNames = slackChannelNames(bindings?.bindings ?? []);
 
-  const decide = (executionId: string, decision: ApprovalDecisionValue) => {
+  const decide = (executionId: string, decision: ApprovalDecisionValue, note?: string) => {
     const row = rows.find((candidate) => candidate.action.execution_id === executionId);
     if (!row) return;
     setBusy((current) => ({ ...current, [executionId]: decision }));
     resolve.mutate(
-      { executionId, decision },
+      { executionId, decision, note },
       {
         onSuccess: () => {
           setDecided((current) => ({
@@ -109,7 +118,11 @@ export function SessionApprovalPrompt() {
             [executionId]: { action: row.action, decision },
           }));
           setExpanded((current) => (current === executionId ? null : current));
-          successToast(decision === 'approve' ? 'Action approved' : 'Action denied');
+          successToast(
+            decision === tI18nComplete.raw('text74e21680eac7')
+              ? tI18nComplete.raw('text0674d4a026cb')
+              : tI18nComplete.raw('text4341be8eb7f0'),
+          );
           timers.current.push(
             window.setTimeout(() => {
               setDecided((current) => {
@@ -121,7 +134,9 @@ export function SessionApprovalPrompt() {
           );
         },
         onError: (cause: unknown) =>
-          errorToast(cause instanceof Error ? cause.message : 'Failed to resolve approval'),
+          errorToast(
+            cause instanceof Error ? cause.message : tI18nComplete.raw('textaa7e623fc09a'),
+          ),
         onSettled: () =>
           setBusy((current) => {
             const next = { ...current };
@@ -141,6 +156,7 @@ export function SessionApprovalPrompt() {
         setExpanded((current) => nextExpandedApproval(current, executionId))
       }
       onDecide={decide}
+      channelNames={channelNames}
     />
   );
 }
@@ -151,7 +167,9 @@ interface SessionApprovalNoticeProps {
   expanded: string | null;
   busy: Record<string, ApprovalDecisionValue>;
   onToggle: (executionId: string) => void;
-  onDecide: (executionId: string, decision: ApprovalDecisionValue) => void;
+  onDecide: (executionId: string, decision: ApprovalDecisionValue, note?: string) => void;
+  /** Bound Slack conversation ids → names, for the summary and the parameters. */
+  channelNames?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -164,28 +182,30 @@ export function SessionApprovalNotice({
   busy,
   onToggle,
   onDecide,
+  channelNames,
 }: SessionApprovalNoticeProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (rows.length === 0) return null;
 
   const pendingCount = rows.filter((row) => row.decision === null).length;
-  const headline = approvalNoticeHeadline(pendingCount);
+  const headline = approvalNoticeHeadline(pendingCount, tI18nComplete);
 
   return (
     <div
       className={cn(
         // `w-full`, or the composer's `items-center` strip shrinks this card to
         // its CONTENT width — so the notice was as wide as whatever tool name
-        // happened to be pending, and looked broken at random. Same reason the
-        // reply bar and `QuestionPrompt` carry it (see composer.tsx). Vertical
-        // spacing belongs to that strip's `gap-2`, not to a margin here.
+        // happened to be pending, and looked broken at random. Same reason
+        // `QuestionPrompt` carries it (see composer.tsx). Vertical spacing
+        // belongs to that strip's `gap-2`, not to a margin here.
         'bg-popover w-full overflow-hidden rounded-md border',
-        pendingCount > 0 ? 'border-kortix-orange/25' : 'border-border',
+        pendingCount > 0 ? 'border-kortix-orange/15' : 'border-border',
       )}
     >
       <div
         className={cn(
           'flex items-center gap-2 border-b px-3 py-2',
-          pendingCount > 0 ? 'border-kortix-orange/20' : 'border-border',
+          pendingCount > 0 ? 'border-kortix-orange/15' : 'border-border',
         )}
       >
         {pendingCount > 0 ? (
@@ -201,7 +221,7 @@ export function SessionApprovalNotice({
       <ul className="divide-border divide-y">
         {rows.map(({ action, decision }) => {
           const executionId = action.execution_id;
-          const summary = approvalArgsSummary(action);
+          const summary = approvalArgsSummary(action, channelNames);
           const request = approvalRequestFromAction(action, decision === null);
           const open = expanded === executionId;
           const reviewComplete = request.reviewComplete !== false;
@@ -223,7 +243,9 @@ export function SessionApprovalNotice({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-muted-foreground text-xs">Run</span>
+                        <span className="text-muted-foreground text-xs">
+                          {tI18nComplete.raw('text00d60e31a4e6')}
+                        </span>
                         <code className="text-foreground truncate font-mono text-xs font-medium">
                           {action.action}
                         </code>
@@ -238,12 +260,12 @@ export function SessionApprovalNotice({
                         ) : null}
                       </div>
                       {summary ? (
-                        <p className="text-foreground/80 mt-0.5 truncate font-mono text-xs">
+                        <p className="text-foreground mt-0.5 truncate font-mono text-xs">
                           {summary}
                         </p>
                       ) : null}
                       <p className="text-muted-foreground mt-0.5 text-xs">
-                        Requested {relativeTime(action.at)}
+                        {tI18nComplete.raw('text2d9e28289fac')} {relativeTime(action.at)}
                       </p>
                     </div>
                     {decision ? (
@@ -256,17 +278,17 @@ export function SessionApprovalNotice({
                       </Badge>
                     ) : (
                       <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
-                        Review
+                        {tI18nComplete.raw('textaff0766a5290')}
                         <CaretDownIcon
                           className={cn(
-                            'size-3 transition-transform duration-150',
+                            'size-3 transition-transform duration-normal',
                             open && 'rotate-180',
                           )}
                         />
                       </span>
                     )}
                     {action.approval_url ? (
-                      <Hint label="Open the full approval page" side="top">
+                      <Hint label={tI18nComplete.raw('textb7d2844482b4')} side="top">
                         <Button
                           size="icon-sm"
                           variant="ghost"
@@ -281,7 +303,7 @@ export function SessionApprovalNotice({
                             href={action.approval_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            aria-label="Open the full approval page"
+                            aria-label={tI18nComplete.raw('textb7d2844482b4')}
                             onClick={(event) => event.stopPropagation()}
                             onKeyDown={(event) => event.stopPropagation()}
                           >
@@ -294,16 +316,18 @@ export function SessionApprovalNotice({
                 </DisclosureTrigger>
                 <DisclosureContent>
                   <div className="space-y-2 px-3 pb-3">
+                    <ApprovalAgentContext dense context={request.approvalContext} />
                     <ApprovalParameters
                       dense
                       argsPreview={request.argsPreview}
                       reviewComplete={reviewComplete}
+                      channelNames={channelNames}
                     />
                     {decision === null && !reviewable ? <ApprovalUnreviewableNotice dense /> : null}
                     {decision === null ? (
                       <ApprovalDecisionActions
                         dense
-                        onDecision={(next) => onDecide(executionId, next)}
+                        onDecision={(next, note) => onDecide(executionId, next, note)}
                         busyDecision={busy[executionId] ?? null}
                         approvable={reviewable}
                       />

@@ -1,15 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSession } from '@kortix/sdk';
+import type { ChangeRequest, ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
-  groupSessionsByCoordinator,
+  groupChangeRequestsBySession,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
   sortSessionsByLastActivity,
+  starterSectionOf,
 } from './project-session-list-helpers';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
@@ -26,6 +27,81 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   } as unknown as ProjectSession;
 }
 
+function makeChangeRequest(overrides: Partial<ChangeRequest> = {}): ChangeRequest {
+  return {
+    cr_id: 'cr-1',
+    project_id: 'p1',
+    number: 1,
+    title: 'Change request',
+    head_ref: 'session/s1',
+    status: 'open',
+    origin_session_id: 's1',
+    created_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  } as ChangeRequest;
+}
+
+describe('groupChangeRequestsBySession', () => {
+  test('keeps open, merged, and closed change requests for their origin session', () => {
+    const requests = [
+      makeChangeRequest({ cr_id: 'open', number: 1, status: 'open' }),
+      makeChangeRequest({ cr_id: 'merged', number: 2, status: 'merged' }),
+      makeChangeRequest({ cr_id: 'closed', number: 3, status: 'closed' }),
+    ];
+
+    expect(
+      groupChangeRequestsBySession(requests, [makeSession()])
+        .get('s1')
+        ?.map((cr) => cr.cr_id),
+    ).toEqual(['closed', 'merged', 'open']);
+  });
+
+  test('uses a unique matching branch only when origin_session_id is absent', () => {
+    const session = makeSession({ session_id: 'legacy', branch_name: 'session/legacy' });
+    const request = makeChangeRequest({
+      origin_session_id: null,
+      head_ref: 'session/legacy',
+    });
+
+    expect(groupChangeRequestsBySession([request], [session]).get('legacy')).toEqual([request]);
+  });
+
+  test('origin_session_id wins over a matching branch', () => {
+    const origin = makeSession({ session_id: 'origin', branch_name: 'session/origin' });
+    const branchMatch = makeSession({ session_id: 'branch', branch_name: 'session/branch' });
+    const request = makeChangeRequest({
+      origin_session_id: 'origin',
+      head_ref: 'session/branch',
+    });
+
+    const grouped = groupChangeRequestsBySession([request], [origin, branchMatch]);
+    expect(grouped.get('origin')).toEqual([request]);
+    expect(grouped.has('branch')).toBe(false);
+  });
+
+  test('does not guess when a legacy branch matches more than one session', () => {
+    const request = makeChangeRequest({ origin_session_id: null, head_ref: 'shared-branch' });
+    const sessions = [
+      makeSession({ session_id: 'a', branch_name: 'shared-branch' }),
+      makeSession({ session_id: 'b', branch_name: 'shared-branch' }),
+    ];
+
+    expect(groupChangeRequestsBySession([request], sessions).size).toBe(0);
+  });
+
+  test('sorts each session newest first without mutating the response', () => {
+    const older = makeChangeRequest({ cr_id: 'older', created_at: '2026-01-01T00:00:00.000Z' });
+    const newer = makeChangeRequest({ cr_id: 'newer', created_at: '2026-01-02T00:00:00.000Z' });
+    const requests = [older, newer];
+
+    expect(groupChangeRequestsBySession(requests, [makeSession()]).get('s1')).toEqual([
+      newer,
+      older,
+    ]);
+    expect(requests).toEqual([older, newer]);
+  });
+});
+
 describe('shouldPollProjectSessions', () => {
   test('polls when a session is queued', () => {
     expect(shouldPollProjectSessions([makeSession({ status: 'queued' })])).toBe(true);
@@ -37,6 +113,31 @@ describe('shouldPollProjectSessions', () => {
 
   test('polls when a session is provisioning', () => {
     expect(shouldPollProjectSessions([makeSession({ status: 'provisioning' })])).toBe(true);
+  });
+
+  // A warm session (`metadata.warm`, pre-created and never prompted) reports
+  // `provisioning` for as long as its idle box lives (KRTX-1466). That status
+  // is not a transition in flight — the next real change is the marker drop at
+  // the first accepted turn, which happens while the user is in the session
+  // and the open-session interval covers it — so a warm row must not hold the
+  // 5s provisioning poll for up to the warm grant (~60 min).
+  test('does not poll for a warm row serialized as provisioning', () => {
+    expect(
+      shouldPollProjectSessions([
+        makeSession({ status: 'provisioning', metadata: { warm: true } }),
+      ]),
+    ).toBe(false);
+  });
+
+  test('still polls a warm row that is genuinely booting alongside a live row', () => {
+    // The warm skip is per row: a live provisioning row in the same list keeps
+    // the fast poll alive.
+    expect(
+      shouldPollProjectSessions([
+        makeSession({ status: 'provisioning', metadata: { warm: true } }),
+        makeSession({ session_id: 's2', status: 'provisioning' }),
+      ]),
+    ).toBe(true);
   });
 
   test('does not poll when every session has settled', () => {
@@ -297,19 +398,30 @@ describe('shortRelative', () => {
 });
 
 describe('resolveSessionListViewState', () => {
-  test('loading wins regardless of error or counts', () => {
+  test('a server-side filter that matches nothing is "no-matches", never the empty onboarding state', () => {
+    expect(
+      resolveSessionListViewState({ hasData: true, isError: false, totalCount: 0, visibleCount: 0, serverFiltered: true }),
+    ).toBe('no-matches');
+    expect(
+      resolveSessionListViewState({ hasData: true, isError: false, totalCount: 0, visibleCount: 0 }),
+    ).toBe('empty');
+  });
+
+  test('a list with no data and no error is loading, never "empty"', () => {
+    // The first load running, paused offline (TanStack `fetchStatus: 'paused'`,
+    // `isLoading` false), or not enabled yet: none of them means "no sessions".
     const state = resolveSessionListViewState({
-      isLoading: true,
-      isError: true,
-      totalCount: 5,
-      visibleCount: 5,
+      hasData: false,
+      isError: false,
+      totalCount: 0,
+      visibleCount: 0,
     });
     expect(state).toBe('loading');
   });
 
-  test('error wins over empty/no-matches once loading has settled', () => {
+  test('a first load that failed is "error"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: false,
       isError: true,
       totalCount: 0,
       visibleCount: 0,
@@ -317,9 +429,30 @@ describe('resolveSessionListViewState', () => {
     expect(state).toBe('error');
   });
 
+  test('rows win over a failed refetch or "Load more"', () => {
+    // TanStack v5 keeps the loaded pages and sets `status: 'error'`.
+    const state = resolveSessionListViewState({
+      hasData: true,
+      isError: true,
+      totalCount: 5,
+      visibleCount: 5,
+    });
+    expect(state).toBe('content');
+  });
+
+  test('an empty list stays "empty" when its refetch fails', () => {
+    const state = resolveSessionListViewState({
+      hasData: true,
+      isError: true,
+      totalCount: 0,
+      visibleCount: 0,
+    });
+    expect(state).toBe('empty');
+  });
+
   test('no sessions at all is "empty"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 0,
       visibleCount: 0,
@@ -329,7 +462,7 @@ describe('resolveSessionListViewState', () => {
 
   test('sessions exist but the active filter matches none: "no-matches"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 3,
       visibleCount: 0,
@@ -339,7 +472,7 @@ describe('resolveSessionListViewState', () => {
 
   test('sessions exist and the filter matches some: "content"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 3,
       visibleCount: 2,
@@ -348,31 +481,31 @@ describe('resolveSessionListViewState', () => {
   });
 });
 
-describe('groupSessionsByCoordinator', () => {
-  const meta = makeSession({ session_id: 'meta-1', agent_name: 'meta' } as never);
-  const childA = makeSession({
-    session_id: 'child-a',
-    metadata: { spawned_by_session: 'meta-1' },
-  } as never);
-  const childB = makeSession({
-    session_id: 'child-b',
-    metadata: { spawned_by_session: 'meta-1' },
-  } as never);
-  const solo = makeSession({ session_id: 'solo-1' });
-  const orphan = makeSession({
-    session_id: 'orphan-1',
-    metadata: { spawned_by_session: 'gone-1' },
-  } as never);
-
-  test('nests children under their coordinator, in list order', () => {
-    const groups = groupSessionsByCoordinator([meta, childA, solo, childB]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1', 'solo-1']);
-    expect(groups[0].children.map((c) => c.session_id)).toEqual(['child-a', 'child-b']);
-    expect(groups[1].children).toEqual([]);
+describe('getSessionDisplayTitle — Teams mention markup', () => {
+  test('a title created from a channel mention shows the words, not <at> tags', () => {
+    const title = getSessionDisplayTitle({
+      session_id: 's1',
+      name: '<at>Kortix Dev</at>summarize the README in two sentences',
+    } as never);
+    expect(title).toBe('summarize the README in two sentences');
   });
+});
 
-  test('a child whose coordinator is not in the list renders top-level', () => {
-    const groups = groupSessionsByCoordinator([orphan, solo]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['orphan-1', 'solo-1']);
+describe('starterSectionOf', () => {
+  const at = (initiator: ProjectSession['initiator'], is_owner?: boolean) => ({ initiator, is_owner });
+  test('the viewer\'s own run belongs to neither section', () => {
+    expect(starterSectionOf(at({ type: 'member', id: 'u1', label: 'Ann' }), 'u1')).toBeNull();
+  });
+  test('another member\'s run is Shared', () => {
+    expect(starterSectionOf(at({ type: 'member', id: 'u2', label: 'Bo' }), 'u1')).toBe('shared');
+  });
+  test('trigger, channel, api and system runs are Automated', () => {
+    for (const type of ['trigger', 'channel', 'api', 'system'] as const) {
+      expect(starterSectionOf(at({ type, id: 'x', label: 'x' }), 'u1')).toBe('automated');
+    }
+  });
+  test('an unclassified row falls back to is_owner', () => {
+    expect(starterSectionOf(at(null, false), 'u1')).toBe('shared');
+    expect(starterSectionOf(at(null, true), 'u1')).toBeNull();
   });
 });

@@ -10,14 +10,9 @@ const terminalSource = readFileSync(join(import.meta.dir, 'session-terminal-pane
 
 describe('runtime tool recovery', () => {
   test('Files replaces a prolonged health skeleton with its retry state', () => {
-    expect(filesSource).toContain("workspace.phase === 'resolving' || isHealthLoading,");
-    expect(filesSource).toContain(
-      "(workspace.phase === 'resolving' || isHealthLoading) && !healthWaitExpired",
-    );
-    expect(filesSource).toContain(
-      "workspace.phase === 'error' || !health?.healthy || healthWaitExpired",
-    );
-    expect(filesSource).toContain('void workspace.retry()');
+    expect(filesSource).toContain('useBoundedRuntimeWait(isHealthLoading, retryAttempt)');
+    expect(filesSource).toContain('isHealthLoading && !healthWaitExpired');
+    expect(filesSource).toContain('!health?.healthy || healthWaitExpired');
   });
 
   test('Terminal bounds readiness waits and re-arms the deadline on retry', () => {

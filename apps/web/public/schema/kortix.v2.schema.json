@@ -2,16 +2,34 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kortix.com/schema/kortix.v2.schema.json",
   "title": "Kortix manifest (kortix_version 2)",
-  "description": "kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields NaNdocs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
+  "description": "kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/repository_access/enabled) plus `file`, the path of the agent’s `.md`; every agent must be declared, and agent behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own `.md` frontmatter + body (`agents.<name>.file`, default `agents/<name>.md`) — authoring any of those fields here is a hard error. `[[channels]]` is removed outright.",
   "type": "object",
   "required": [
     "kortix_version",
-    "default_agent",
-    "agents"
+    "default_agent"
   ],
+  "if": {
+    "not": {
+      "required": [
+        "imports"
+      ]
+    }
+  },
+  "then": {
+    "required": [
+      "agents"
+    ]
+  },
   "properties": {
     "kortix_version": {
       "const": 2
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?![/\\s])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\*?\\[\\]{}]*[^\\\\*?\\[\\]{}\\s/]/?$"
+      }
     },
     "default_agent": {
       "type": "string",
@@ -24,6 +42,94 @@
         "pi"
       ]
     },
+    "harnesses": {
+      "type": "object",
+      "properties": {
+        "opencode": {
+          "type": "object",
+          "properties": {
+            "plugins": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "pi": {
+          "type": "object",
+          "properties": {
+            "packages": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                      },
+                      {
+                        "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "source"
+                    ],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                          },
+                          {
+                            "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                          }
+                        ]
+                      },
+                      "extensions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "skills": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "prompts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "themes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "agents": {
       "type": "object",
       "minProperties": 1,
@@ -33,15 +139,48 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "file": {
+            "type": "string",
+            "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.md$",
+            "description": "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md."
+          },
           "enabled": {
             "type": "boolean"
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
           },
           "sandbox": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
+          "network_egress": {
+            "type": "object",
+            "required": [
+              "version",
+              "default",
+              "rules"
+            ],
+            "properties": {
+              "version": {
+                "const": 1
+              },
+              "default": {
+                "const": "deny"
+              },
+              "rules": {
+                "type": "array",
+                "maxItems": 0
+              }
+            },
+            "additionalProperties": false,
+            "description": "Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships."
+          },
           "connectors": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -54,6 +193,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -77,7 +217,7 @@
             "description": "Deprecated input alias for connectors_required."
           },
           "secrets": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -90,13 +230,14 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
             ]
           },
           "skills": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -109,13 +250,34 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
             ]
           },
-          "kortix_cli": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+          "apps": {
+            "description": "Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$"
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "*",
+                  "none"
+                ]
+              }
+            ]
+          },
+          "kortix_permissions": {
+            "description": "Kortix permissions: the project.* IAM actions this agent may exercise, or \"all\" / \"none\".",
             "oneOf": [
               {
                 "type": "array",
@@ -138,6 +300,7 @@
                     "project.trigger.fire",
                     "project.gateway.logs.read",
                     "project.gateway.spend.read",
+                    "project.usage.read",
                     "project.gateway.budget.set",
                     "project.gateway.keys.manage",
                     "project.agent.read",
@@ -148,8 +311,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -169,6 +334,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "*"
                   ]
                 }
@@ -177,10 +344,90 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
             ]
+          },
+          "kortix_cli": {
+            "description": "Deprecated alias for kortix_permissions.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "project.read",
+                    "project.write",
+                    "project.delete",
+                    "project.session.read",
+                    "project.session.start",
+                    "project.session.stop",
+                    "project.session.bindings.write",
+                    "project.members.read",
+                    "project.members.manage",
+                    "project.trigger.read",
+                    "project.trigger.create",
+                    "project.trigger.update",
+                    "project.trigger.delete",
+                    "project.trigger.fire",
+                    "project.gateway.logs.read",
+                    "project.gateway.spend.read",
+                    "project.usage.read",
+                    "project.gateway.budget.set",
+                    "project.gateway.keys.manage",
+                    "project.agent.read",
+                    "project.agent.write",
+                    "project.skill.read",
+                    "project.skill.write",
+                    "project.command.read",
+                    "project.command.write",
+                    "project.file.read",
+                    "project.file.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
+                    "project.gitops.read",
+                    "project.gitops.push",
+                    "project.gitops.merge",
+                    "project.gitops.ref.any",
+                    "project.gitops.ref.delete",
+                    "project.secret.read",
+                    "project.secret.write",
+                    "project.connector.read",
+                    "project.connector.connections.manage",
+                    "project.connector.write",
+                    "project.app.read",
+                    "project.app.write",
+                    "project.app.deploy",
+                    "project.review.read",
+                    "project.review.submit",
+                    "project.review.act",
+                    "project.credentials.issue",
+                    "project.cr.open",
+                    "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
+                    "*"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "*",
+                  "none"
+                ]
+              }
+            ],
+            "deprecated": true
+          },
+          "repository_access": {
+            "type": "boolean",
+            "description": "Allow new sessions to access the project repository. Defaults to true."
           },
           "workspace": {
             "type": "string",
@@ -188,10 +435,163 @@
               "runtime",
               "read",
               "branch"
-            ]
+            ],
+            "deprecated": true
+          },
+          "harnesses": {
+            "type": "object",
+            "properties": {
+              "opencode": {
+                "type": "object",
+                "properties": {
+                  "plugins": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+                    }
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "pi": {
+                "type": "object",
+                "properties": {
+                  "packages": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                            },
+                            {
+                              "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "source"
+                          ],
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "anyOf": [
+                                {
+                                  "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                                },
+                                {
+                                  "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                                }
+                              ]
+                            },
+                            "extensions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "skills": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "prompts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "themes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "pattern": "^(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$"
+                        },
+                        {
+                          "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "workspace"
+              ],
+              "properties": {
+                "workspace": {
+                  "const": "branch"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "repository_access": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "workspace"
+              ],
+              "properties": {
+                "workspace": {
+                  "enum": [
+                    "runtime",
+                    "read"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "repository_access": {
+                  "const": false
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "project": {
@@ -234,7 +634,8 @@
           "minLength": 1,
           "not": {
             "pattern": "^/|(^|/)\\.\\.($|/)"
-          }
+          },
+          "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
         }
       },
       "additionalProperties": true
@@ -301,6 +702,9 @@
               "disk": {
                 "type": "integer",
                 "minimum": 1
+              },
+              "container_runtime": {
+                "type": "boolean"
               }
             },
             "oneOf": [
@@ -1099,13 +1503,28 @@
         ]
       }
     },
+    "pi": {
+      "type": "object",
+      "properties": {
+        "config_dir": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "pattern": "^/|(^|/)\\.\\.($|/)"
+          },
+          "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
+        }
+      },
+      "additionalProperties": true,
+      "description": "Pi native config directory (defaults to harnesses/pi, then .kortix/pi)."
+    },
     "channels": false
   },
   "additionalProperties": true,
   "$defs": {
     "agentMdFrontmatter": {
       "type": "object",
-      "description": "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+      "description": "Behavior for one agent — lives in its .md frontmatter (agents.<name>.file, default agents/<name>.md), never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
       "properties": {
         "description": {
           "type": "string"

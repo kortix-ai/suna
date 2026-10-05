@@ -33,17 +33,32 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     environment: prod-use2-shadow
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
-      CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
-      MAINTENANCE_TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
       ACTION: ${{ inputs.action }}
       CONFIRM: ${{ inputs.confirm }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: prod
+
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN
+            CLOUDFLARE_API_KEY=kortix-ci-env:CLOUDFLARE_GLOBAL_API_KEY
+            CLOUDFLARE_EMAIL
+            MAINTENANCE_TOKEN=kortix-ci-env:PROD_MAINTENANCE_TOKEN
 
       - name: Enforce trusted production ref
         run: |

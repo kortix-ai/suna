@@ -1,0 +1,24 @@
+/* Kortix docs theme overrides. Last in Blume's token cascade, so this wins.
+ *
+ * The accent is ink, not a hue. Kortix is black/white plus one earned accent,
+ * and a stepper badge has not earned one — the teal that used to sit in
+ * blume.config.ts was a placeholder, and it leaked into every `bg-accent`,
+ * `text-accent` and card hover border in the docs.
+ *
+ * These bind to Blume's own foreground/background tokens rather than naming a
+ * light value and a dark value. Those tokens already flip under
+ * `:root[data-theme=dark]` / `.dark`, so the pair inverts with the theme by
+ * construction and there is no hand-written light/dark pair here to drift.
+ * `--blume-action` derives from `--blume-accent` upstream, so it follows too.
+ *
+ * The dark selectors are repeated deliberately. Blume also ships a default
+ * accent under `:root[data-theme=dark]`, whose specificity (0,2,0) beats a
+ * plain `:root` rule — so matching its selectors is what lets source order
+ * decide, and a single `:root` block here would leave dark mode tinted.
+ */
+:root,
+:root[data-theme='dark'],
+.dark {
+  --blume-accent: var(--blume-foreground);
+  --blume-accent-foreground: var(--blume-background);
+}

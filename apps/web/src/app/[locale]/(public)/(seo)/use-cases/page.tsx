@@ -1,0 +1,102 @@
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+
+import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
+import { getTranslations } from '@/i18n/get-translations';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
+import { siteMetadata } from '@/lib/site-metadata';
+import { getAllUseCases } from '@/lib/use-cases';
+
+const URL = `${siteMetadata.url}/use-cases`;
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('hardcodedUi.i18nComplete');
+  const title = t.raw('textb697dd6a71d9');
+  const description = t.raw('text7fa8aef486d8');
+  return {
+    title,
+    description,
+    keywords: [
+      'Kortix use cases',
+      'AI agent case studies',
+      'AI Operating System',
+      'AI workforce',
+      'loop engineering',
+      'agent automation',
+    ],
+    openGraph: {
+      type: 'website',
+      title: `Kortix ${title}`,
+      description,
+      url: URL,
+      siteName: 'Kortix',
+      images: [{ url: `${siteMetadata.url}/banner.png` }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `Kortix ${title}`,
+      description,
+      images: [`${siteMetadata.url}/banner.png`],
+    },
+    alternates: {
+      canonical: URL,
+    },
+  };
+}
+
+export default async function UseCasesIndexPage() {
+  if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false') notFound();
+  const t = await getTranslations('hardcodedUi.i18nComplete');
+  const tUseCases = await getTranslations('useCases');
+  const title = t.raw('textb697dd6a71d9');
+  const description = t.raw('text7fa8aef486d8');
+  const useCases = getAllUseCases();
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: t.raw('text5f513e5b2937'),
+    description,
+    url: URL,
+    publisher: {
+      '@type': 'Organization',
+      name: 'Kortix',
+      logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.svg` },
+    },
+    mainEntity: {
+      '@type': 'ItemList',
+      itemListElement: useCases.map((post, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: post.data.title,
+        url: `${siteMetadata.url}${post.url}`,
+      })),
+    },
+  };
+
+  return (
+    <main className="bg-background relative min-h-screen">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
+      />
+      <div className="mx-auto max-w-7xl px-6 pb-24 sm:pb-32">
+        {/* Measure is capped at max-w-2xl so the deck reads as a paragraph, not
+            as a banner stretched across the full 80rem catalog width. */}
+        <header className="max-w-2xl pt-32 pb-12 sm:pt-44 sm:pb-16">
+          <span className="text-muted-foreground/70 font-mono text-xs tracking-wider uppercase">
+            {title}
+          </span>
+          <h1 className="text-foreground mt-4 text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
+            {tUseCases('headline')}
+          </h1>
+          <p className="text-muted-foreground mt-5 text-base leading-relaxed sm:text-lg">
+            {description}
+          </p>
+        </header>
+
+        <UseCasesBrowser posts={useCases} />
+      </div>
+    </main>
+  );
+}

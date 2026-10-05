@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The agent editor — every field of one `agents.<name>` block in a
  * kortix_version 2 manifest (agent-first spec §2.2), as three reusable parts
@@ -15,7 +17,7 @@
  * fields out its own way:
  *
  *  - `useAgentDraft` owns the draft, the baseline, the two writers (`set` for
- *    the Kortix block, `setOc` for the nested runtime block) and the dirty
+ *    the Kortix block, `setOc` for the nested `behavior` block) and the dirty
  *    check. Pure state; no shell.
  *  - `useAgentEditorOptions` loads the three option lists the sections need
  *    (secrets, connectors, sandbox templates).
@@ -33,7 +35,7 @@
  * concern. The sections are the questions you actually ask about an agent —
  * Model, Access, Workspace, Tools, Basics — and every field still writes to
  * exactly the same place it always did. `set` writes the Kortix block, `setOc`
- * writes the nested runtime block; that split is a fact about the code, not a
+ * writes the nested `behavior` block; that split is a fact about the code, not a
  * heading in the UI.
  *
  * Field blocks live in agent-editor-basics-fields.tsx (Basics + Model),
@@ -70,7 +72,7 @@ export {
   AGENT_MODE_HELP,
   AGENT_MODE_LABEL,
   AGENT_MODES,
-  KORTIX_CLI_CATALOG,
+  KORTIX_PERMISSIONS_CATALOG,
   PERMISSION_ACTION_LABEL,
   PERMISSION_ACTION_ONLY_GROUP_LABEL,
   PERMISSION_ACTION_ONLY_KEYS,
@@ -81,9 +83,6 @@ export {
   PERMISSION_RULE_KEYS,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
-  WORKSPACE_MODE_HELP,
-  WORKSPACE_MODE_LABEL,
-  WORKSPACE_MODES,
 } from './agent-editor-catalog';
 
 /**
@@ -129,12 +128,23 @@ export interface AgentDraft {
 }
 
 /**
+ * A served block with its behavior under `behavior` only. The API answers the
+ * pre-W4 `opencode` alias beside it; a draft that kept both would send two
+ * copies of every edit.
+ */
+export function behaviorBlock(block: AgentConfigBlock): AgentConfigBlock {
+  const { opencode, ...rest } = block;
+  const behavior = block.behavior ?? opencode;
+  return behavior ? { ...rest, behavior } : rest;
+}
+
+/**
  * The draft of one agent block. `initial` is read once — the caller keys the
  * component on the agent name so switching agents remounts rather than leaks.
  */
 export function useAgentDraft(initial: AgentConfigBlock): AgentDraft {
-  const [draft, setDraft] = useState<AgentConfigBlock>(initial);
-  const [baseline, setBaseline] = useState<AgentConfigBlock>(initial);
+  const [draft, setDraft] = useState<AgentConfigBlock>(() => behaviorBlock(initial));
+  const [baseline, setBaseline] = useState<AgentConfigBlock>(() => behaviorBlock(initial));
   const isDirty = useMemo(
     () => stableStringify(draft) !== stableStringify(baseline),
     [draft, baseline],
@@ -151,27 +161,28 @@ export function useAgentDraft(initial: AgentConfigBlock): AgentDraft {
     });
   }, []);
 
-  // Runtime fields live nested under `draft.opencode` — same clear-on-empty
+  // Behavior fields live nested under `draft.behavior` — same clear-on-empty
   // semantics as `set`, folded into the sub-object.
   const setOc = useCallback<SetRuntime>((key, value) => {
     setDraft((d) => {
-      const oc: RuntimeAgentConfig = { ...(d.opencode ?? {}) };
+      const oc: RuntimeAgentConfig = { ...(d.behavior ?? {}) };
       if (value === undefined || value === '') delete oc[key];
       else oc[key] = value;
       const next = { ...d };
-      if (Object.keys(oc).length > 0) next.opencode = oc;
-      else delete next.opencode;
+      if (Object.keys(oc).length > 0) next.behavior = oc;
+      else delete next.behavior;
       return next;
     });
   }, []);
 
   const discard = useCallback(() => setDraft(baseline), [baseline]);
   const commit = useCallback((saved: AgentConfigBlock) => {
-    setBaseline(saved);
-    setDraft(saved);
+    const block = behaviorBlock(saved);
+    setBaseline(block);
+    setDraft(block);
   }, []);
 
-  return { draft, oc: draft.opencode ?? {}, set, setOc, isDirty, discard, commit };
+  return { draft, oc: draft.behavior ?? {}, set, setOc, isDirty, discard, commit };
 }
 
 export interface AgentEditorOptions {
@@ -195,22 +206,40 @@ const CONNECTOR_STATUS_BADGE: Record<string, { label: string; variant: 'destruct
  */
 const EMPTY_TEMPLATES: SandboxTemplate[] = [];
 
+/**
+ * The three reads behind {@link useAgentEditorOptions}, as query options. The
+ * agent page starts them next to the agent-config read, so the editor mounts
+ * onto a warm cache instead of opening a third round of requests. One
+ * definition keeps both callers on the same keys: a second key would be a
+ * second fetch.
+ */
+export function agentEditorOptionQueries(projectId: string) {
+  return {
+    secrets: {
+      queryKey: qk.project.secrets(projectId),
+      queryFn: () => listProjectSecrets(projectId),
+      ...contract('config'),
+    },
+    connectors: {
+      queryKey: qk.project.connectors(projectId),
+      queryFn: () => listConnectors(projectId, { includeSchemas: false }),
+      ...contract('config'),
+    },
+    sandboxes: {
+      queryKey: qk.project.sandboxTemplates(projectId),
+      queryFn: () => listProjectSandboxTemplates(projectId),
+      ...contract('config'),
+    },
+  };
+}
+
 export function useAgentEditorOptions(projectId: string): AgentEditorOptions {
-  const secretsQuery = useQuery({
-    queryKey: qk.project.secrets(projectId),
-    queryFn: () => listProjectSecrets(projectId),
-    ...contract('config'),
-  });
-  const connectorsQuery = useQuery({
-    queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
-    ...contract('config'),
-  });
-  const sandboxesQuery = useQuery({
-    queryKey: qk.project.sandboxTemplates(projectId),
-    queryFn: () => listProjectSandboxTemplates(projectId),
-    ...contract('config'),
-  });
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const connectorStatusBadge = useLocalizedUiCatalog(CONNECTOR_STATUS_BADGE);
+  const queries = agentEditorOptionQueries(projectId);
+  const secretsQuery = useQuery(queries.secrets);
+  const connectorsQuery = useQuery(queries.connectors);
+  const sandboxesQuery = useQuery(queries.sandboxes);
   // One row per identifier: a secret with a shared value AND a personal
   // override lists twice in the API, once per layer.
   const secretOptions = useMemo<GrantOption[]>(() => {
@@ -223,18 +252,18 @@ export function useAgentEditorOptions(projectId: string): AgentEditorOptions {
         description: s.purpose || (s.name !== s.identifier ? `Env var ${s.name}` : undefined),
         trailing: s.system ? (
           <Badge variant="muted" size="xs">
-            System
+            {tI18nComplete.raw('text6725e7bbcd28')}
           </Badge>
         ) : undefined,
       });
     }
     return [...seen.values()].sort((a, b) => a.id.localeCompare(b.id));
-  }, [secretsQuery.data]);
+  }, [secretsQuery.data, tI18nComplete]);
   const connectorOptions = useMemo<GrantOption[]>(
     () =>
       (connectorsQuery.data?.connectors ?? [])
         .map((c) => {
-          const status = CONNECTOR_STATUS_BADGE[c.status];
+          const status = connectorStatusBadge[c.status];
           return {
             id: c.slug,
             label: c.name || c.slug,
@@ -247,7 +276,7 @@ export function useAgentEditorOptions(projectId: string): AgentEditorOptions {
           };
         })
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [connectorsQuery.data],
+    [connectorsQuery.data, connectorStatusBadge],
   );
   const sandboxTemplates = sandboxesQuery.data?.items ?? EMPTY_TEMPLATES;
   const defaultSandboxSlug = sandboxesQuery.data?.default_slug ?? null;
@@ -277,9 +306,14 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
  *
  * General is the agent itself and who runs it: overview, identity, people,
  * triggers. Access is one topic per grant set — skills, connectors, secrets,
- * project actions — each its own page (Marko, 2026-09-03: "split up ACCESS
- * … into its own standalone menu items on the left & we can have nicer UX/UI
- * for each"). Runtime is what a session runs on: model, tools, workspace.
+ * Apps, project actions — each its own page (Marko, 2026-09-03: "split up
+ * ACCESS … into its own standalone menu items on the left & we can have nicer
+ * UX/UI for each"). Runtime is what a session runs on: model, tools,
+ * workspace.
+ *
+ * `apps` is listed here unconditionally — this module is pure data — and the
+ * PAGE drops it when the project's `apps` feature flag is off, so a project
+ * without Kortix Apps never sees a grant page for them.
  */
 export const AGENT_CONFIG_SECTIONS = [
   { key: 'overview', label: 'Overview', group: 'General' },
@@ -289,11 +323,19 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'skills', label: 'Skills', group: 'Access' },
   { key: 'connectors', label: 'Connectors', group: 'Access' },
   { key: 'secrets', label: 'Secrets', group: 'Access' },
-  { key: 'actions', label: 'Project actions', group: 'Access' },
+  { key: 'apps', label: 'Apps', group: 'Access' },
+  { key: 'actions', label: 'Kortix permissions', group: 'Access' },
   { key: 'model', label: 'Model', group: 'Runtime' },
   { key: 'tools', label: 'Tools', group: 'Runtime' },
   { key: 'workspace', label: 'Workspace', group: 'Runtime' },
 ] as const satisfies readonly { key: string; label: string; group: AgentConfigSectionGroup }[];
+
+export function useLocalizedAgentConfigCatalog() {
+  return useLocalizedUiCatalog({
+    groups: AGENT_CONFIG_SECTION_GROUPS,
+    sections: AGENT_CONFIG_SECTIONS,
+  });
+}
 
 export type AgentConfigSectionKey = (typeof AGENT_CONFIG_SECTIONS)[number]['key'];
 
@@ -324,6 +366,8 @@ export function AgentConfigSections({
   skills,
   connectors,
   secrets,
+  apps,
+  authority,
 }: {
   section: AgentConfigSectionKey;
   editor: AgentDraft;
@@ -341,6 +385,12 @@ export function AgentConfigSections({
   skills?: React.ReactNode;
   connectors?: React.ReactNode;
   secrets?: React.ReactNode;
+  /** Which Kortix Apps the agent may open. Page-owned only: the picker needs
+   *  the project's App list, which no checklist fallback has. */
+  apps?: React.ReactNode;
+  /** What the agent can do once its Kortix permissions meet its IAM ceiling —
+   *  a page-owned card under the Kortix permissions checklist. */
+  authority?: React.ReactNode;
 }) {
   const { draft, oc, set, setOc } = editor;
   // Every section is a card (`EditorSectionStyle` 'panel'), so a tab holding
@@ -363,8 +413,15 @@ export function AgentConfigSections({
         return (
           secrets ?? <SecretsSection draft={draft} set={set} options={options.secretOptions} />
         );
+      case 'apps':
+        return <>{apps}</>;
       case 'actions':
-        return <ProjectActionsSection draft={draft} set={set} />;
+        return (
+          <>
+            <ProjectActionsSection draft={draft} set={set} />
+            {authority}
+          </>
+        );
       case 'triggers':
         return <>{triggers}</>;
       case 'model':

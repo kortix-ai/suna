@@ -73,9 +73,9 @@ describe('isDormantSessionWithoutRuntime', () => {
   });
 
   test('does not replace a typed start error', () => {
-    expect(
-      isDormantSessionWithoutRuntime({ ...base, stage: 'stopped', hasStartError: true }),
-    ).toBe(false);
+    expect(isDormantSessionWithoutRuntime({ ...base, stage: 'stopped', hasStartError: true })).toBe(
+      false,
+    );
   });
 });
 
@@ -122,9 +122,9 @@ describe('canRenderCachedTranscriptWhileSandboxDown', () => {
   // correct in isolation regardless of what calls it.
   test('a non-terminal sandbox status never overrides, cache or not', () => {
     for (const sandboxStatus of ['active', 'provisioning', null, undefined]) {
-      expect(canRenderCachedTranscriptWhileSandboxDown({ sandboxStatus, hasCachedContent: true })).toBe(
-        false,
-      );
+      expect(
+        canRenderCachedTranscriptWhileSandboxDown({ sandboxStatus, hasCachedContent: true }),
+      ).toBe(false);
       expect(
         canRenderCachedTranscriptWhileSandboxDown({ sandboxStatus, hasCachedContent: false }),
       ).toBe(false);

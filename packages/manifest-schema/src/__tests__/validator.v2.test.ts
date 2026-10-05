@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  manifestDefaultConfigDir,
-  manifestDefaultRuntime,
   type ManifestIssue,
   resolveGrantSet,
   validateAgentMdFrontmatter,
@@ -27,11 +25,11 @@ agents:
   support:
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
-    kortix_cli: [project.session.start, project.cr.open]
+    kortix_permissions: [project.session.start, project.cr.open]
     workspace: runtime
   pr-bot:
     connectors: [github]
-    kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    kortix_permissions: [project.cr.open, project.cr.merge, project.review.submit]
 
 triggers:
   - slug: nightly-digest
@@ -106,13 +104,13 @@ platform = "slack"
 [[agents]]
 name = "support"
 connectors = ["github"]
-kortix_cli = ["project.read", "project.session.start"]
+kortix_permissions = ["project.read", "project.session.start"]
 env = ["STRIPE_KEY"]
 
 [[agents]]
 name = "pr-bot"
 connectors = "all"
-kortix_cli = ["*"]
+kortix_permissions = ["*"]
 
 [[channels]]
 platform = "slack"
@@ -168,11 +166,11 @@ connectors:
 agents:
   - name: support
     connectors: [github]
-    kortix_cli: [project.read, project.session.start]
+    kortix_permissions: [project.read, project.session.start]
     env: [STRIPE_KEY]
   - name: pr-bot
     connectors: all
-    kortix_cli: ["*"]
+    kortix_permissions: ["*"]
 channels:
   - platform: slack
     enabled: true
@@ -394,8 +392,7 @@ agents:
   });
 });
 
-// `per_user` connector credential mode was removed 2026-07-05 (docs/specs/
-// 2026-07-05-agent-first-config-unification.md §2.5): v1 tolerates it as a
+// `per_user` connector credential mode was removed 2026-07-05: v1 tolerates it as a
 // legacy value (warning; resolves to `shared` at runtime), v2 is a clean
 // break and rejects it outright — same pattern as the removed CLI actions.
 describe('validateManifest — connector `credential: per_user` removal', () => {
@@ -528,8 +525,7 @@ connectors:
 });
 
 // The connector-side agent gate (`[[connectors]].agent_scope`) was removed
-// 2026-07 (wave-2 of the agent-first cut, docs/specs/
-// 2026-07-05-agent-first-config-unification.md §2.5): connector access is now
+// 2026-07 (wave-2 of the agent-first cut): connector access is now
 // purely the agent's own `connectors` grant. The runtime (apps/api's
 // connectors.ts `parseConnectorEntry`) no longer parses `agent_scope` at all —
 // it is silently ignored, never round-tripped back into git. Same
@@ -577,15 +573,15 @@ connectors:
 // still parseable in an existing v1 manifest (warning only — the audit
 // found nothing asserts them on any route, so tolerating them is a no-op).
 // v2 is a NEW schema version, so it gets the clean break: no tolerance.
-describe('validateManifest — kortix_cli LEGACY_TOLERATED_KORTIX_CLI_ACTIONS clean break', () => {
+describe('validateManifest — kortix_permissions LEGACY_TOLERATED_KORTIX_PERMISSIONS clean break', () => {
   test('v1 tolerates a legacy-removed action as a warning, still valid', () => {
     const { valid, errorPaths, warningPaths } = summarize(
-      'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["project.schedule.read"]\n',
+      'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["project.schedule.read"]\n',
       'toml',
     );
     expect(valid).toBe(true);
-    expect(errorPaths).not.toContain('agents[0].kortix_cli[0]');
-    expect(warningPaths).toContain('agents[0].kortix_cli[0]');
+    expect(errorPaths).not.toContain('agents[0].kortix_permissions[0]');
+    expect(warningPaths).toContain('agents[0].kortix_permissions[0]');
   });
 
   test('v2 hard-rejects the same legacy-removed action', () => {
@@ -594,10 +590,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    kortix_cli: [project.schedule.read]
+    kortix_permissions: [project.schedule.read]
 `);
     expect(valid).toBe(false);
-    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+    expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });
 
   test('v2 still hard-rejects a truly unknown (never-was-valid) action, same as before', () => {
@@ -606,10 +602,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    kortix_cli: [project.frobnicate]
+    kortix_permissions: [project.frobnicate]
 `);
     expect(valid).toBe(false);
-    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+    expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });
 });
 
@@ -820,7 +816,7 @@ agents:
 });
 
 describe('validateManifest — kortix_version 2 grant sets are shape-optional', () => {
-  test('omitting connectors, secrets, and kortix_cli on an agent is still valid shape', () => {
+  test('omitting connectors, secrets, and kortix_permissions on an agent is still valid shape', () => {
     const { valid } = summarize(`
 kortix_version: 2
 default_agent: w
@@ -830,15 +826,15 @@ agents:
     expect(valid).toBe(true);
   });
 
-  test('kortix_cli rejects a non-grantable action, same enum as v1', () => {
+  test('kortix_permissions rejects a non-grantable action, same enum as v1', () => {
     const { errorPaths } = summarize(`
 kortix_version: 2
 default_agent: w
 agents:
   w:
-    kortix_cli: [billing.read]
+    kortix_permissions: [billing.read]
 `);
-    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+    expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });
 
   test('workspace accepts the declared enum', () => {
@@ -1002,6 +998,67 @@ agents:
   });
 });
 
+describe('validateManifest — kortix_version 2 `apps` governance grant (spec 2.5)', () => {
+  test('an explicit App slug list is accepted', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    kortix_permissions: [project.app.read]
+    apps: [reports-dashboard]
+`);
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  test('"all" and "none" string sentinels are accepted', () => {
+    for (const v of ['all', 'none']) {
+      const { valid } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: ${v}
+`);
+      expect(valid).toBe(true);
+    }
+  });
+
+  test('a non-string entry is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: [42]
+`);
+    expect(errorPaths).toContain('agents.w.apps[0]');
+  });
+
+  test('an invalid sentinel string is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: everything
+`);
+    expect(errorPaths).toContain('agents.w.apps');
+  });
+
+  test('an entry that is not an App slug is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    apps: ["Reports Dashboard"]
+`);
+    expect(errorPaths).toContain('agents.w.apps[0]');
+  });
+});
+
 describe('validateManifest — version above known max still rejected', () => {
   test('kortix_version 4 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
@@ -1015,67 +1072,13 @@ agents:
   });
 });
 
-// v3 is v2's body with two defaults flipped for pi, so every v2 rule has to
-// apply to it unchanged — the validator dispatches on `manifestUsesAgentMap`
-// rather than on `version === 2` precisely so this cannot drift.
-describe('kortix_version 3 — pi-native, v2 body', () => {
-  test('a minimal v3 manifest validates', () => {
-    const { issues } = summarize(`
-kortix_version: 3
-default_agent: w
-agents:
-  w: {}
-`);
-    expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
-  });
-
-  test('runtime defaults to pi at v3, and to opencode before it', () => {
-    expect(manifestDefaultRuntime(3)).toBe('pi');
-    expect(manifestDefaultRuntime(2)).toBe('opencode');
-    expect(manifestDefaultRuntime(1)).toBe('opencode');
-  });
-
-  test('config lives in .kortix/pi at v3, .kortix/opencode before it', () => {
-    expect(manifestDefaultConfigDir(3)).toBe('.kortix/pi');
-    expect(manifestDefaultConfigDir(2)).toBe('.kortix/opencode');
-    expect(manifestDefaultConfigDir(1)).toBe('.kortix/opencode');
-  });
-
-  test('TOML is refused at v3, exactly as at v2', () => {
-    const { errorPaths, issues } = summarize('kortix_version = 3\ndefault_agent = "w"\n', 'toml');
-    expect(errorPaths).toContain('kortix_version');
-    expect(issues.some((i) => i.message.includes('must be kortix.yaml'))).toBe(true);
-  });
-
-  test("v2's deny-by-default grants still apply — an array `agents` is still an error", () => {
-    const { errorPaths } = summarize(`
-kortix_version: 3
-default_agent: w
-agents:
-  - name: w
-`);
-    expect(errorPaths.length).toBeGreaterThan(0);
-  });
-
-  test('a v2-only rejection still fires at v3 (agent_scope on a connector)', () => {
-    const { issues } = summarize(`
-kortix_version: 3
-default_agent: w
-agents:
-  w: {}
-connectors:
-  - slug: c
-    provider: mcp
-    url: https://example.test
-    agent_scope: [w]
-`);
-    const scope = issues.find((i) => i.message.includes('agent_scope is not supported'));
-    expect(scope?.severity).toBe('error');
-    expect(scope?.message).toContain('kortix_version 3');
-  });
-});
-
 describe('resolveGrantSet — v1 default-all vs v2 default-none', () => {
+  test('"*" is a synonym of "all", alone or inside a list', () => {
+    expect(resolveGrantSet('*', 'none')).toBe('all');
+    expect(resolveGrantSet(['*'], 'none')).toBe('all');
+    expect(resolveGrantSet(['*', 'project.gitops.merge'], 'none')).toBe('all');
+    expect(resolveGrantSet(['github', ' * '], 'none')).toBe('all');
+  });
   test('v1 semantics: an omitted grant resolves to "all"', () => {
     expect(resolveGrantSet(undefined, 'all')).toBe('all');
     expect(resolveGrantSet(null, 'all')).toBe('all');
@@ -1243,5 +1246,70 @@ describe('validateAgentMdFrontmatter', () => {
   test('`maxSteps` is rejected with a pointer to `steps`', () => {
     const issues = frontmatterIssues({ maxSteps: 50 });
     expect(issues.find((i) => i.path === 'agents/w.md.maxSteps')?.message).toContain('steps');
+  });
+});
+
+describe('v2 harnesses.pi.packages', () => {
+  const manifest = (packages: string) =>
+    `kortix_version: 2\ndefault_agent: w\nruntime: pi\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n${packages}`;
+
+  test('an author sees which entry is wrong and what to write instead', () => {
+    const result = validateManifest(manifest('      - npm:pi-web-access\n      - source: ./ok.ts\n        commands: []\n'), 'yaml');
+    expect(result.valid).toBe(false);
+    const errors = result.issues.filter((issue: ManifestIssue) => issue.severity === 'error');
+    expect(errors.map((issue: ManifestIssue) => issue.path)).toEqual(['harnesses.pi.packages[0]', 'harnesses.pi.packages[1].commands']);
+    expect(errors[0]!.message).toContain('npm:<name>@<x.y.z>');
+    expect(errors[1]!.message).toContain('extensions, skills, prompts, themes');
+  });
+
+  test('agent level: packages follow the same rules; exclude names packages, never versions', () => {
+    const result = validateManifest(
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      pi:\n        packages: [npm:x]\n        exclude: [npm:y@1.0.0, "Bad Name"]\n        extra: 1\n',
+      'yaml',
+    );
+    const errors = result.issues.filter((issue: ManifestIssue) => issue.severity === 'error');
+    expect(errors.map((issue: ManifestIssue) => issue.path)).toEqual([
+      'agents.w.harnesses.pi.extra',
+      'agents.w.harnesses.pi.exclude[0]',
+      'agents.w.harnesses.pi.exclude[1]',
+      'agents.w.harnesses.pi.packages[0]',
+    ]);
+    expect(errors[1]!.message).toContain('package name');
+  });
+
+  test('more than 20 packages is an error', () => {
+    const many = Array.from({ length: 21 }, (_, i) => `      - npm:pkg-${i}@1.0.0\n`).join('');
+    expect(validateManifest(manifest(many), 'yaml').valid).toBe(false);
+  });
+});
+
+describe('kortix_version 3 YAML-only agent behavior', () => {
+  test('accepts inline behavior and prompt_file, rejects v2 files and malformed behavior', () => {
+    const yaml = `kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    model: anthropic/claude-sonnet-4\n    description: Writes summaries\n    prompt: Be concise.\n    permission:\n      bash: deny\n  reader:\n    prompt_file: agents/reader.md\n`;
+    expect(summarize(yaml).errorPaths).toEqual([]);
+    expect(summarize(yaml.replace('prompt: Be concise.', 'prompt: [invalid]')).errorPaths).toContain('agents.writer.prompt');
+    expect(summarize(yaml.replace('prompt: Be concise.', 'file: agents/writer.md')).errorPaths).toContain('agents.writer.file');
+    expect(summarize(yaml.replace('prompt: Be concise.', 'prompt_file: ../secret.md')).errorPaths).toContain('agents.writer.prompt_file');
+    expect(validateManifest(yaml, 'toml').valid).toBe(false);
+    expect(summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2')).errorPaths).toContain('agents.writer.prompt');
+    expect(summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2')).errorPaths).toContain('agents.reader.prompt_file');
+  });
+});
+
+describe('v2 agent tool toggles', () => {
+  test('agent tool toggles require boolean values', () => {
+  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: false, read: true }\n    connectors: [github, slack]')).errorPaths).not.toContain('agents.support.tools');
+  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: nope }\n    connectors: [github, slack]')).errorPaths).toContain('agents.support.tools');
+  });
+});
+
+describe('v2 harnesses.opencode.plugins', () => {
+  const base = 'kortix_version: 2\ndefault_agent: w\n';
+  test('accepts global defaults and agent opt-in/out by filename', () => {
+    expect(validateManifest(base + 'harnesses:\n  opencode:\n    plugins: [audit.ts]\nagents:\n  w:\n    harnesses:\n      opencode:\n        plugins: [search.js]\n        exclude: [audit.ts]\n', 'yaml').valid).toBe(true);
+  });
+  test('rejects traversal, package references and project-wide exclude', () => {
+    const issues = validateManifest(base + 'harnesses:\n  opencode:\n    plugins: [../bad.ts, npm:pkg@1.0.0]\n    exclude: [audit.ts]\nagents:\n  w: {}\n', 'yaml').issues.filter((issue) => issue.severity === 'error');
+    expect(issues.map((issue) => issue.path)).toEqual(['harnesses.opencode.exclude', 'harnesses.opencode.plugins[0]', 'harnesses.opencode.plugins[1]']);
   });
 });

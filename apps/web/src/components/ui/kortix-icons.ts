@@ -3,6 +3,7 @@ export {
   PlusIcon as IconAdd,
   CpuIcon as IconAgent,
   WarningCircleIcon as IconAlert,
+  AppWindowIcon as IconApp,
   ArrowUpRightIcon as IconArrowUpRight,
   // ── Navigation & layout ─────────────────────────────────────
   ArrowLeftIcon as IconBack,
@@ -24,8 +25,8 @@ export {
   ChatCircleIcon as IconComment,
   CopyIcon as IconCopy,
   TrashIcon as IconDelete,
+  RocketIcon as IconDeploy,
   CheckCircleIcon as IconDone,
-  DownloadIcon as IconDownload,
   PencilIcon as IconEdit,
   ArrowSquareOutIcon as IconExternal,
   WarningOctagonIcon as IconFailed,
@@ -48,16 +49,15 @@ export {
   EnvelopeIcon as IconMail,
   ListIcon as IconMenu,
   ChatIcon as IconMessage,
+  // ── Voice / call ────────────────────────────────────────────
+  MicrophoneIcon as IconMic,
+  MicrophoneSlashIcon as IconMicOff,
   DotsThreeIcon as IconMore,
   DotsThreeVerticalIcon as IconMoreVertical,
   BellIcon as IconNotification,
   PauseIcon as IconPause,
-  PlayIcon as IconPlay,
-  // ── Voice / call ────────────────────────────────────────────
-  MicrophoneIcon as IconMic,
-  MicrophoneSlashIcon as IconMicOff,
   PhoneDisconnectIcon as IconPhoneOff,
-  SpeakerHighIcon as IconVolume,
+  PlayIcon as IconPlay,
   // ── Files & folders ─────────────────────────────────────────
   GitBranchIcon as IconProject,
   ArrowClockwiseIcon as IconRefresh,
@@ -78,10 +78,8 @@ export {
   // ── People & comms ──────────────────────────────────────────
   UserIcon as IconUser,
   UsersIcon as IconUsers,
+  SpeakerHighIcon as IconVolume,
   WarningIcon as IconWarning,
-
-  AppWindowIcon as IconApp,
-  RocketIcon as IconDeploy,
 } from '@phosphor-icons/react';
 
 export type { Icon } from '@phosphor-icons/react';

@@ -2,14 +2,16 @@
 
 import type { FileContent } from '@/features/file-browser/types';
 import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useRuntimeStore, fileContentKeys } from '@kortix/sdk/react';
+import { fileContentKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFile } from '../api/runtime-files';
-import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
+import { sandboxWakingRefetchInterval } from './file-read-retry';
+import { useServerHealth } from './use-server-health';
 import { isSystemDirectoryPath } from './system-dir';
 
-// The SDK's key family — the one `file.edited` invalidates (see use-file-list.ts).
+// Keyed by the SDK factory: the live event stream invalidates it on
+// `file.edited` and at turn end, so an open viewer shows the agent's edit.
 export { fileContentKeys };
 
 /**
@@ -22,7 +24,9 @@ export function useFileContent(
   filePath: string | null,
   options?: { enabled?: boolean; staleTime?: number },
 ) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  // Asleep, not booting — the re-read below takes the slow lane.
+  const { parked } = useServerHealth();
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
@@ -33,11 +37,9 @@ export function useFileContent(
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
-    // A readiness 503 (parked/booting sandbox) is a pending state, not a
-    // failure: keep polling until the box is active so the file loads on its
-    // own once the sandbox wakes.
-    refetchInterval: (query) =>
-      isSandboxNotReadyError(query.state.error) ? SANDBOX_WAKING_REFETCH_INTERVAL_MS : false,
+    // A readiness 503 is a pending state, not a failure. A booting box earns the
+    // fast cadence; a parked one is watched slowly. See the helper.
+    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
   });
 }
 
@@ -46,7 +48,7 @@ export function useFileContent(
  */
 export function useInvalidateFileContent() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return (filePath?: string) => {
     if (filePath) {

@@ -90,13 +90,15 @@ export async function removeKortixPty(baseUrl: string, ptyId: string): Promise<v
  * custom headers) the OpenCode-backed terminal used, just pointed at
  * `/kortix/pty` instead of OpenCode's `/pty`.
  *
- * `opts.wake` marks the attach as USER-INITIATED (the panel's first connect, or
- * "Reconnect now"). A parked sandbox refuses the upgrade with 503, which the
+ * `opts.wake` marks the attach as USER-INITIATED (the panel opened, or a person
+ * pressed a control). A parked sandbox refuses the upgrade with 503, which the
  * browser can only surface as close code 1006 — so without this marker the
  * terminal reconnects forever against a box that nothing in the loop will ever
  * wake. The API resumes a stopped box only for a marked attach
- * (`shouldWakeStoppedSandboxForWsAttach`), so automatic backoff retries — which
- * must never resurrect a box — leave it off.
+ * (`shouldWakeStoppedSandboxForWsAttach`). The wake is asynchronous: the row
+ * stays `stopped` until the provider confirms the box, so a caller keeps the
+ * marker on its retries until the attach opens, and drops it after that. A
+ * socket that later drops because the box parked must not resurrect it.
  */
 export async function getKortixPtyWebSocketUrl(
   ptyId: string,
@@ -129,6 +131,105 @@ export async function getKortixPtyWebSocketUrl(
   const query = params.toString();
   if (!query) return connectUrl;
   return `${connectUrl}${connectUrl.includes('?') ? '&' : '?'}${query}`;
+}
+
+// ── Attach-side rules, shared by every host that owns a PTY socket ─────────
+//
+// Both of these ran on raw bytes and raw close frames in three places at once —
+// `apps/web/src/features/session/pty-connection.ts`,
+// `apps/cli/src/commands/sessions-shell.ts`, and
+// `apps/tui/src/features/terminal/pty-session.ts` — because the SDK owned the
+// REST half of the terminal and none of the socket half. Three copies of a
+// close classifier is three chances to reconnect forever against a PTY id the
+// daemon has forgotten.
+
+/**
+ * What a PTY socket close means for the owner of the attach.
+ *
+ * - `ended` — the shell exited. Show it and stop.
+ * - `reconnect` — transport loss. The same PTY id is still valid; dial again.
+ * - `replace` — the daemon no longer owns this PTY id. Reconnecting can never
+ *   succeed; mint a new terminal.
+ */
+export type PtyCloseAction = 'ended' | 'reconnect' | 'replace';
+
+/**
+ * Classify a PTY socket close.
+ *
+ * The close CODE alone cannot answer this. An intermediary normalizes the code
+ * to 1000 on a failed upstream — the historical behaviour behind the
+ * user-visible "terminal died and never came back" — so the reason string and
+ * the "did an error event fire" flag carry the truth, and a code that is not
+ * 1000 only ever adds to it.
+ *
+ * Order matters: a forgotten PTY id outranks everything, because no amount of
+ * reconnecting brings it back.
+ */
+export function classifyPtyClose(input: {
+  code: number;
+  reason: string;
+  hadError: boolean;
+}): PtyCloseAction {
+  const reason = input.reason.trim().toLowerCase();
+
+  // The daemon registry is intentionally process-local. A runtime restart, an
+  // old persisted tab, or a create/attach race can leave a client holding an
+  // id that can never succeed by reconnecting. The owner must mint a new PTY.
+  if (reason.includes('pty not found')) return 'replace';
+
+  // A clean shell exit is terminal. Everything that indicates transport loss
+  // stays reconnectable even when the code has been normalized to 1000.
+  if (reason.includes('pty exited')) return 'ended';
+  if (
+    input.hadError ||
+    reason.includes('idle timeout') ||
+    reason.includes('upstream error') ||
+    input.code !== 1000
+  ) {
+    return 'reconnect';
+  }
+
+  return 'ended';
+}
+
+const ESC = '\x1b';
+const BEL = '\x07';
+const NUL = '\x00';
+/** String Terminator: BEL, or ESC followed by a backslash. */
+const ST = `(?:${BEL}|${ESC}\\\\)`;
+
+/**
+ * Shell-integration noise that no VT emulator is meant to render literally.
+ *
+ * The sandbox daemon's shell hooks emit OSC 697 plus a BARE `{"cursor":N}` JSON
+ * payload — and the bare payload is not an escape sequence, so an emulator
+ * prints it. The rest are capability-query REPLIES (DA, DECRQM, OSC colour)
+ * echoed back at an idle prompt.
+ *
+ * Built with `new RegExp` rather than literals so the control bytes stay named
+ * constants — a literal ESC inside a regex is unreadable.
+ */
+const PTY_NOISE: readonly RegExp[] = [
+  new RegExp(`${ESC}\\]697;[^${BEL}${ESC}]*${ST}`, 'g'),
+  new RegExp(`${NUL}?\\{"cursor":\\d+\\}`, 'g'),
+  new RegExp(`${ESC}\\][0-9]+;rgb:[0-9a-fA-F/]+${ST}`, 'g'),
+  new RegExp(`${ESC}\\]4;[0-9]+;rgb:[0-9a-fA-F/]+${ST}`, 'g'),
+  new RegExp(`${ESC}\\[\\??[0-9;]*\\$y`, 'g'),
+  new RegExp(`${ESC}\\[\\d+;\\d+R`, 'g'),
+  new RegExp(`${ESC}\\[\\?[0-9;]*c`, 'g'),
+];
+
+/**
+ * Strip shell-integration noise from one chunk of PTY output.
+ *
+ * Deliberately narrow: it runs on every byte of the user's live shell, so
+ * over-stripping is worse than the noise it removes. Colour, cursor motion,
+ * and clear-screen sequences pass through untouched.
+ */
+export function sanitizePtyChunk(chunk: string): string {
+  let text = chunk;
+  for (const pattern of PTY_NOISE) text = text.replace(pattern, '');
+  return text;
 }
 
 /** Grouped namespace for ergonomic use (also available as named exports). */

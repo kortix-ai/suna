@@ -22,6 +22,8 @@ import {
   type QuickViewTarget,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
+import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/session-browser-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
 /** Same cutoff as `useIsMobile`, readable outside a component. This is a
  *  plain function (palette handlers, header onClick), so it checks the
@@ -29,8 +31,6 @@ import {
 function isMobileViewport(): boolean {
   return typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT;
 }
-import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/session-browser-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
 export function openSessionQuickView(
   view: QuickView,

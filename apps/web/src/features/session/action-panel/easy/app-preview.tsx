@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `AppPreview` — the running thing, opened.
  *
@@ -8,11 +9,11 @@
  * tab strip, so before this there was no way to reach it at all: the one output
  * the user actually wanted was the one they couldn't get to.
  *
- * This is `BrowserPanel`'s chrome — back / forward / refresh / address bar,
- * loading overlay, and the "port may not be running yet" retry — inside the
- * detail layer. It is a port rather than a reuse because `BrowserPanel` is
- * driven by a `tabId` and writes into the tab store: mounting it here would
- * spawn a tab in the app's tab bar as a side effect of opening an output.
+ * `BrowserPanel`'s chrome lives in `../shared/sandbox-browser-chrome` — this
+ * surface keeps a tab-store-free history (mounting `BrowserPanel` here would
+ * spawn a tab in the app's tab bar as a side effect of opening an output) and
+ * hands the shared chrome its model, plus the "port may not be running yet"
+ * retry below.
  *
  * The address bar controls the sandbox's own PORTS, not the open web — the same
  * rule `BrowserPanel` enforces, and for the same reason: this is a window onto
@@ -20,9 +21,7 @@
  */
 
 import { Button } from '@/components/ui/button';
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
@@ -30,22 +29,18 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { track } from '@/lib/track';
-import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
-import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
+import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { type CreateSessionPublicShareInput, probePreviewPort } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  ArrowLeftIcon as ArrowLeft,
-  ArrowRightIcon as ArrowRight,
   ArrowSquareOutIcon,
   GlobeIcon as Globe,
-  ArrowClockwiseIcon as GrRefresh,
   SparkleIcon as SparklesSolid,
   WarningIcon,
 } from '@phosphor-icons/react';
-import type React from 'react';
+import { PreviewLoadingOverlay, PreviewRecentsLanding, SandboxAddressBar } from '../shared/sandbox-browser-chrome';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
@@ -80,18 +75,6 @@ const getSandboxHealthSnapshot = (): SandboxHealth => {
   });
 };
 
-/** Split a URL so the hostname can be rendered brighter than the rest. */
-function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: string } | null {
-  try {
-    const host = new URL(url).host;
-    const idx = url.indexOf(host);
-    if (!host || idx === -1) return null;
-    return { prefix: url.slice(0, idx), host, rest: url.slice(idx + host.length) };
-  } catch {
-    return null;
-  }
-}
-
 export function AppPreview({
   url,
   name,
@@ -114,6 +97,7 @@ export function AppPreview({
    *  shows only Retry, exactly as before. */
   onSendToAgent?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The app runs on localhost *inside the sandbox*, which the browser cannot
   // reach. The proxy is what makes it openable at all.
   const { proxyUrl } = useSandboxProxy();
@@ -141,9 +125,6 @@ export function AppPreview({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  const [addressValue, setAddressValue] = useState(current);
-  const [isEditing, setIsEditing] = useState(false);
-  const [addressError, setAddressError] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
 
   const isMobile = useIsMobile();
@@ -164,10 +145,6 @@ export function AppPreview({
     getSandboxHealthSnapshot,
     getSandboxHealthSnapshot,
   );
-
-  useEffect(() => {
-    if (!isEditing) setAddressValue(current);
-  }, [current, isEditing]);
 
   // ─── The port watch. ─────────────────────────────────────────────────────
   // Cross-origin iframes frequently never fire onLoad OR onError, so both the
@@ -295,145 +272,49 @@ export function AppPreview({
     reload();
   }, [canGoForward, reload]);
 
-  /**
-   * Sandbox ports only. A bare port, `:port`, `localhost:port`, `127.0.0.1:port`
-   * or a full localhost URL — each optionally with a path. Anything else (say,
-   * `google.com`) is rejected inline rather than silently attempting to browse it.
-   */
-  const handleAddressSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      let value = addressValue.trim();
-      if (!value) return;
-
-      if (/^\d{1,5}(?:[/?#]|$)/.test(value)) value = `http://localhost:${value}`;
-      else if (/^:\d{1,5}/.test(value)) value = `http://localhost${value}`;
-      else if (/^(?:localhost|127\.0\.0\.1):\d+/i.test(value)) value = `http://${value}`;
-
-      const parsed = parseLocalhostUrl(value);
-      if (!parsed) {
-        setAddressError(true);
-        return;
-      }
-
-      setAddressError(false);
-      setIsEditing(false);
-      navigateTo(toInternalUrl(parsed.port, parsed.path));
-    },
-    [addressValue, navigateTo],
-  );
-
-  // At rest the bar shows the full URL; this overlay re-renders it with the
-  // hostname highlighted, which an <input> can't do (it can't mix text colors).
-  const urlParts = useMemo(
-    () => (isEditing || addressError || !hasPreview ? null : splitUrlForDisplay(current)),
-    [isEditing, addressError, hasPreview, current],
-  );
-
   return (
     <div className="bg-background flex h-full min-h-0 min-w-0 flex-col">
       <div className="border-border flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
         <DetailSidebarToggle />
-        <Hint label="Back" side="bottom">
-          <Button variant="ghost" size="icon" onClick={goBack} disabled={!hasPreview || !canGoBack}>
-            <ArrowLeft className="size-4" />
-          </Button>
-        </Hint>
+        <SandboxAddressBar
+          displayValue={current}
+          hasPreview={hasPreview}
+          isLoading={isLoading}
+          canGoBack={canGoBack}
+          canGoForward={canGoForward}
+          onBack={goBack}
+          onForward={goForward}
+          onReload={reload}
+          onNavigate={navigateTo}
+          placeholder={tI18nComplete.raw('text878abd024f27')}
+          inputRef={addressRef}
+          trailing={
+            // An app has no file to save and no text to put on a clipboard, so
+            // `Copy link` is the one copy action — the thing you can hand
+            // someone for a running port.
+            <ViewerActions shareContext={shareContext} shareInput={shareInput} />
+          }
+        />
 
-        <Hint label="Forward" side="bottom">
+        {/* Opening the app in a real browser tab is the only capability the
+            panel itself cannot offer, so it is a visible control outside the
+            pill. */}
+        <Hint label={tI18nComplete.raw('text306ef19c8ac3')} side="bottom">
           <Button
             variant="ghost"
             size="icon"
-            onClick={goForward}
-            disabled={!hasPreview || !canGoForward}
+            disabled={!hasPreview}
+            aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+            onClick={() => {
+              if (!previewUrl) return;
+              track('app_opened_new_tab');
+              window.open(previewUrl, '_blank', 'noopener,noreferrer');
+            }}
+            className="size-7 shrink-0 active:scale-[0.96]"
           >
-            <ArrowRight className="size-4" />
+            <ArrowSquareOutIcon className="size-3.5" />
           </Button>
         </Hint>
-
-        <Hint label="Refresh" side="bottom">
-          <Button variant="ghost" size="icon" onClick={reload} disabled={!hasPreview}>
-            <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
-          </Button>
-        </Hint>
-
-        <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1 items-center px-1">
-          <div
-            className={cn(
-              'group/address hover:bg-input focus-within:bg-input focus-within:border-border relative flex h-7 w-full items-center rounded-sm border border-transparent bg-transparent px-3 text-xs tracking-tight transition-colors',
-              addressError &&
-                'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
-            )}
-          >
-            <Input
-              ref={addressRef}
-              type="text"
-              size="xs"
-              value={addressValue}
-              onChange={(e) => {
-                setAddressValue(e.target.value);
-                if (addressError) setAddressError(false);
-              }}
-              onFocus={() => {
-                setIsEditing(true);
-                setTimeout(() => addressRef.current?.select(), 0);
-              }}
-              onBlur={() => setIsEditing(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setIsEditing(false);
-                  setAddressError(false);
-                  setAddressValue(current);
-                  addressRef.current?.blur();
-                }
-              }}
-              placeholder="Type a port, e.g. 3000"
-              className={cn(
-                'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none',
-                urlParts && 'text-transparent',
-              )}
-            />
-            {urlParts && (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 right-3.5 left-3.5 flex items-center overflow-hidden whitespace-nowrap"
-              >
-                <span className="text-muted-foreground group-hover/address:text-foreground truncate transition-colors">
-                  {urlParts.prefix}
-                  <span className="text-foreground">{urlParts.host}</span>
-                  {urlParts.rest}
-                </span>
-              </span>
-            )}
-            {addressError && (
-              <span className="text-kortix-red ml-2 shrink-0 text-xs">Sandbox ports only</span>
-            )}
-          </div>
-        </form>
-
-        {/* An app has no file to save and no text to put on a clipboard, so the
-            split button's primary falls through to `Copy link` — the one thing
-            you can hand someone for a running port. Opening the app in a real
-            browser tab is the only capability the panel itself cannot offer,
-            so it stays, behind the caret rather than as a seventh glyph. */}
-        <ViewerActions
-          shareContext={shareContext}
-          shareInput={shareInput}
-          className="ml-0.5"
-          extraMenuItems={
-            <DropdownMenuItem
-              disabled={!hasPreview}
-              onSelect={() => {
-                if (!previewUrl) return;
-                track('app_opened_new_tab');
-                window.open(previewUrl, '_blank', 'noopener,noreferrer');
-              }}
-            >
-              <ArrowSquareOutIcon />
-              Open in a new tab
-            </DropdownMenuItem>
-          }
-        />
 
         <PanelWidthButton isMobile={isMobile} />
 
@@ -442,12 +323,7 @@ export function AppPreview({
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {isLoading && hasPreview && !noApp && (
-          <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
-            <div className="text-muted-foreground flex flex-col items-center gap-2">
-              <Loading className="size-4" />
-              <p className="text-xs">Loading preview…</p>
-            </div>
-          </div>
+          <PreviewLoadingOverlay label={tI18nComplete.raw('textc4cf2b2ccb5d')} />
         )}
 
         {hasError && !noApp && (
@@ -455,7 +331,7 @@ export function AppPreview({
             icon={WarningIcon}
             size="sm"
             className="bg-background absolute inset-0 z-10"
-            title={`Couldn't load ${name}`}
+            title={tI18nComplete('textba601cdb484b', { value0: name })}
             /* The single most common cause, said plainly: the agent started the
                server a moment ago and it isn't listening yet. Only a SETTLED
                `dead` verdict earns the stopped-workspace wording — see
@@ -463,14 +339,14 @@ export function AppPreview({
             description={previewErrorReason({ sandbox: sandboxHealth, port })}
             action={
               <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
             secondaryAction={
               onSendToAgent ? (
                 <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
                   <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
-                  Send to agent
+                  {tI18nComplete.raw('text77a860cbc585')}
                 </Button>
               ) : null
             }
@@ -482,38 +358,19 @@ export function AppPreview({
              BrowserPanel's landing shows), a quiet search hint otherwise. */
           localhostRecents.length > 0 ? (
             <div className="h-full overflow-y-auto">
-              <div className="mx-auto w-full max-w-md px-6 py-12">
-                <section className="space-y-3">
-                  <h3 className="text-muted-foreground px-2 text-sm">Recents</h3>
-                  <ul className="space-y-1">
-                    {localhostRecents.map((recent) => (
-                      <li key={recent.url}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const parsed = parseLocalhostUrl(recent.url);
-                            if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
-                          }}
-                          className="hover:bg-foreground/5 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors active:scale-[0.99]"
-                        >
-                          <span className="flex size-5 shrink-0 items-center justify-center">
-                            <Globe className="text-muted-foreground/60 size-4" />
-                          </span>
-                          <span className="text-foreground/90 min-w-0 flex-1 truncate text-sm">
-                            {recentDisplayLabel(recent.url)}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              </div>
+              <PreviewRecentsLanding
+                recents={localhostRecents}
+                onOpen={(url) => {
+                  const parsed = parseLocalhostUrl(url);
+                  if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
+                }}
+              />
             </div>
           ) : (
             <div className="flex h-full items-center justify-center">
               <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
                 <Globe className="size-12 opacity-20" />
-                <p className="text-sm">Search a URL or port</p>
+                <p className="text-sm">{tI18nComplete.raw('text2f883b75cd2d')}</p>
               </div>
             </div>
           )
