@@ -23,6 +23,7 @@ import { Icon } from '@/components/ui/icon';
 import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SlackIcon } from '@/components/icons/slack-icon';
+import { TeamsIcon } from '@/components/icons/teams-icon';
 import {
   CaretDownIcon,
   CopyIcon,
@@ -36,8 +37,8 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn } from '@/lib/session/types';
 import type { Command } from '@/lib/session/runtime-data';
 import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
+import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
 import { parseTriggerEvent } from '@kortix/shared';
-import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@kortix/sdk/react';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
@@ -91,10 +92,27 @@ const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
 const META_TEXT_STYLE = { fontSize: 13, lineHeight: 16 } as const;
 
-// Telegram's fixed brand blue for its channel card; it must not follow the app
-// theme. Slack has no hue to tint with: its mark is four colors (`SlackIcon`)
-// and its name reads like Slack's wordmark, in the text color.
+// A channel card's mark and label, as web draws them (`channel-brand.tsx`). The
+// label colors are the platforms' fixed brand colors, never the app theme. Slack
+// has no hue to tint with: its mark is four colors and its name reads like
+// Slack's wordmark, in the text color.
 const TELEGRAM_BRAND_COLOR = 'hsl(198.7 91.9% 56.3%)'; // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
+const CHANNEL_LABEL_COLOR: Record<ChannelPlatform, string | undefined> = {
+  Slack: undefined,
+  Teams: '#5B5FC7', // hex-allowlist: Microsoft Teams purple #5B5FC7, web CHANNEL_BRAND_COLOR.Teams
+  Telegram: TELEGRAM_BRAND_COLOR,
+};
+const CHANNEL_LABEL: Record<ChannelPlatform, string> = {
+  Slack: 'Slack',
+  Teams: 'Microsoft Teams',
+  Telegram: 'Telegram',
+};
+
+function ChannelMark({ platform, size }: { platform: ChannelPlatform; size: number }) {
+  return platform === 'Teams' ? <TeamsIcon size={size} /> : platform === 'Slack' ? <SlackIcon size={size} /> : (
+    <Icon as={PaperPlaneTiltIcon} size={size} color={TELEGRAM_BRAND_COLOR} />
+  );
+}
 
 /** `isDark` is passed down from SessionTurn. */
 function paletteFor(isDark: boolean) {
@@ -229,7 +247,7 @@ export function UserMessage({
 
   // Both parsers are linear in the prompt: a channel or a webhook chooses this
   // text, and a regex version of each froze the JS thread on a crafted prompt.
-  const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
+  const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
@@ -301,19 +319,14 @@ export function UserMessage({
   }
 
   if (channelMessageInfo) {
-    const telegram = channelMessageInfo.platform === 'Telegram';
+    const { platform } = channelMessageInfo;
+    const labelColor = CHANNEL_LABEL_COLOR[platform];
     return (
       <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
         <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-          {telegram ? (
-            <Icon as={PaperPlaneTiltIcon} size={webSpace(3.5)} color={TELEGRAM_BRAND_COLOR} />
-          ) : (
-            <SlackIcon size={webSpace(3.5)} />
-          )}
-          <Text
-            style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }, telegram ? { color: TELEGRAM_BRAND_COLOR } : null]}
-          >
-            {channelMessageInfo.platform}
+          <ChannelMark platform={platform} size={webSpace(3.5)} />
+          <Text style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }, labelColor ? { color: labelColor } : null]}>
+            {CHANNEL_LABEL[platform]}
           </Text>
           <Text variant="muted" style={META_TEXT_STYLE}>
             ·
