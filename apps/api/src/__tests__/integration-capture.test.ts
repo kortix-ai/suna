@@ -55,6 +55,8 @@ const MEMBER = crypto.randomUUID();
 const PREFIX = accountPrefix(ACCOUNT);
 let deviceId = '';
 const MACHINE = 'b'.repeat(64);
+/** A real 2×2 PNG. */
+const REAL_PNG = '89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001049444154789c63f8cfc000440c100a001fee03fd8b5f14d40000000049454e44ae426082';
 
 async function count(table: string, where = sql`TRUE`): Promise<number> {
   const [row] = Array.from(
@@ -232,11 +234,17 @@ describe('ranges and processing', () => {
     const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
     expect(range!.status).toBe('closed');
 
+    // The vendored screenshots are placeholder bytes. Make one a real PNG: only real images reach the model.
+    const shotKeys = [...objects.keys()].filter((k) => k.startsWith(`${PREFIX}/${deviceId}/assets/`) && /\.(jpg|png)$/.test(k) && !k.endsWith('e8bd4e6799e83e494755239d46175b2f1c78b1fea3a94e3a56da068049d22ee1.png'));
+    expect(shotKeys.length).toBeGreaterThanOrEqual(2);
+    objects.set(shotKeys[0]!, new Uint8Array(Buffer.from(REAL_PNG, 'hex')));
     const prompts: string[] = [];
+    const imagesSeen: Array<Array<{ dataUrl: string }>> = [];
     const caller = {
       model: 'scripted-model',
-      async call(schema: { parse: (v: unknown) => unknown }, prompt: string, _images: unknown[], usage: Record<string, number>) {
+      async call(schema: { parse: (v: unknown) => unknown }, prompt: string, images: Array<{ dataUrl: string }>, usage: Record<string, number>) {
         prompts.push(prompt);
+        imagesSeen.push(images);
         usage.requests += 1;
         usage.prompt_tokens += 100;
         usage.completion_tokens += 10;
@@ -271,8 +279,11 @@ describe('ranges and processing', () => {
     expect(seg).toContain('Screen: Editor — Guide — Editor — https://docs.example.org/guide | text: "quarterly roadmap frame 0 sidebar"');
     expect(seg).toContain('Type "quarterly plan"');
     expect(seg).toContain('Heard: "we ship the roadmap on friday"');
-    // The action screenshots are the images the model sees.
+    // The action screenshots are the images the model sees: the real PNG only; a placeholder is skipped.
     expect(seg).toMatch(/\[shot:1\]/);
+    expect(seg).not.toMatch(/\[shot:2\]/);
+    const sent = imagesSeen.find((list) => list.length > 0)!;
+    expect(sent.map((image) => image.dataUrl.slice(0, 22))).toEqual(['data:image/png;base64,']);
   });
 });
 
