@@ -200,6 +200,17 @@ export async function storeConfigArchive(
   return outcome;
 }
 
+/**
+ * Releases over the archive limit. Unlike every other release without an ID,
+ * the answer is a fact of the commit, so it is cached: a box asks once a
+ * minute, and each miss tars and gzips the whole tree again (~1.5 s for 36 MB).
+ */
+const tooLargeReleases = new WeakSet<ConfigRelease>();
+function tooLarge(release: ConfigRelease): ConfigRelease {
+  tooLargeReleases.add(release);
+  return release;
+}
+
 /** The `none` variant's compiled governance: a valid, empty OpenCode config. */
 const EMPTY_GOVERNANCE = '{}';
 
@@ -291,12 +302,12 @@ async function build(
     }
   } catch (error) {
     if (error instanceof ConfigArchiveTooLargeError) {
-      return {
+      return tooLarge({
         ...withGovernance,
         config_dir: configDir,
         config_tree_id: composed ? null : treeId,
         reason: `config dir ${configDir}${composed ? ` with ${SKILLS_DIR}/ and the pi config dir` : ''} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`,
-      };
+      });
     }
     throw error;
   }
@@ -340,8 +351,10 @@ export async function buildConfigRelease(
   const next = build(project, commit, variant, store)
     .then((release) => {
       // A release with a reason can be transient (a compile read that failed).
-      // Only complete releases are cached.
-      if (release.release_id) bumpBounded(releases, cacheKey, { release, at: Date.now() }, MAX_CACHED_RELEASES);
+      // Only complete releases, and the deterministic over-limit answer, are cached.
+      if (release.release_id || tooLargeReleases.has(release)) {
+        bumpBounded(releases, cacheKey, { release, at: Date.now() }, MAX_CACHED_RELEASES);
+      }
       return release;
     })
     .finally(() => inflight.delete(cacheKey));

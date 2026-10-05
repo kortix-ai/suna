@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 724,
+  "count": 726,
   "routes": [
     {
       "method": "GET",
@@ -597,6 +597,14 @@
     {
       "method": "GET",
       "path": "/v1/accounts/me"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/me/devices"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/me/devices/:sessionId"
     },
     {
       "method": "GET",

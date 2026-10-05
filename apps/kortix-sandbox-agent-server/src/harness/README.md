@@ -96,7 +96,7 @@ needs through `HarnessBootContext` (`serve` starts the HTTP server).
 > section. Until then OpenCode stays the default. When the move is complete,
 > `open-code/` and the `opencode` harness id are removed.
 
-pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.0) is bundled
+pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.3) is bundled
 into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
