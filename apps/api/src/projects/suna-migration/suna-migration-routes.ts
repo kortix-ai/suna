@@ -13,7 +13,7 @@
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import type { AppEnv } from '../../types';
 import { json, errors, auth, ErrorSchema } from '../../openapi';
 import { startSunaMigration, latestSunaMigration, PHASE_ORDER } from './suna-migration-runner';

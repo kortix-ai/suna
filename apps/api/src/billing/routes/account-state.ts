@@ -3,7 +3,7 @@ import type { AppEnv } from '../../types';
 import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } from '../services/account-state';
 import { hasDatabase } from '../../shared/db';
 import { config } from '../../config';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { authorize } from '../../iam/authorize';
 import { actorOf } from '../../iam/actor';
 import { ACCOUNT_ACTIONS } from '../../iam/actions';
