@@ -26,20 +26,23 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   KeyIcon as KeyRound,
   PlusIcon as Plus,
-  ShieldCheckIcon as ShieldCheck,
   ShieldWarningIcon as ShieldWarning,
   DeviceMobileIcon as Smartphone,
   TrashIcon as Trash2,
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+
+import { CopyButton } from '@/components/markdown/copy-button';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { inputSurfaceClasses, inputTransitionClasses } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
@@ -91,13 +94,13 @@ export function FactorRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Badge variant={factor.status === 'verified' ? 'kortix' : 'outline'} size="xs">
-          {factor.status === 'verified'
-            ? copy.verified
-            : factor.status === 'unverified'
-              ? copy.unverified
-              : factor.status}
-        </Badge>
+        {/* A verified factor is the normal case and needs no label; only an
+            unfinished one is called out. */}
+        {factor.status === 'verified' ? null : (
+          <Badge variant="outline" size="xs">
+            {factor.status === 'unverified' ? copy.unverified : factor.status}
+          </Badge>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -111,13 +114,142 @@ export function FactorRow({
   );
 }
 
+const CODE_LENGTH = 6;
+
+/** Groups a TOTP secret in fours, the way authenticator apps print it,
+ *  four groups to a line so a 32-character key splits into two even rows. */
+export function formatSecret(secret: string): string {
+  return secret
+    .replace(/(.{4})(?=.)/g, '$1 ')
+    .replace(/((?:\S{4} ){3}\S{4}) /g, '$1\n');
+}
+
+/** The enrollment dialog: scan on the left, type the code on the right.
+ *  One real input sits over six drawn cells, so paste, autofill
+ *  (`one-time-code`) and screen readers all see a single field. The
+ *  container verifies as soon as the sixth digit lands. */
+export function EnrollDialog({
+  enrolling,
+  code,
+  onCodeChange,
+  onVerify,
+  isVerifying,
+  onCancel,
+  copy,
+}: {
+  enrolling: EnrollingFactor | null;
+  code: string;
+  onCodeChange: (value: string) => void;
+  onVerify: () => void;
+  isVerifying: boolean;
+  onCancel: () => void;
+  copy: SecurityTabCopy;
+}) {
+  return (
+    <Modal open={enrolling !== null} onOpenChange={(open) => !open && onCancel()}>
+      <ModalContent
+        // modal.tsx centres only from `lg`. From `sm` (640px, every tablet in
+        // portrait) this is the same centred two-column window as desktop;
+        // phones keep the bottom sheet.
+        className="overflow-hidden border-0 sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:h-auto sm:w-[calc(100%-3rem)] sm:max-w-[46rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl lg:h-auto lg:max-w-[46rem]"
+        modalClassName="space-y-0"
+      >
+        {enrolling ? (
+          <div className="flex flex-col sm:flex-row">
+            {/* `dark` scopes the dark tokens to this panel in both themes. */}
+            <div className="dark bg-background text-foreground border-border flex shrink-0 flex-col gap-5 border-b p-6 sm:w-[44%] sm:gap-6 sm:border-e sm:border-b-0 md:w-[21rem]">
+              <div className="space-y-1 pe-8 sm:pe-0">
+                <h3 className="text-lg font-semibold tracking-tight">{copy.scanTitle}</h3>
+                <p className="text-muted-foreground text-sm text-pretty">{copy.scanDescription}</p>
+              </div>
+              {/* biome-ignore lint/performance/noImgElement: QR is an inline SVG data URL, next/image adds nothing */}
+              <img
+                src={totpQrSrc(enrolling.qr)}
+                alt={copy.qrAlt}
+                className="aspect-square w-full max-w-64 self-center rounded-lg bg-white p-3 sm:max-w-none"
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-col gap-6 p-6">
+              <div className="space-y-1 pe-8">
+                <ModalTitle className="text-lg leading-7 tracking-tight">{copy.codeTitle}</ModalTitle>
+                <ModalDescription className="text-pretty">{copy.codeDescription}</ModalDescription>
+              </div>
+
+              <label className="group relative flex items-center justify-between gap-2 sm:gap-0">
+                <span className="sr-only">{copy.codeTitle}</span>
+                {Array.from({ length: CODE_LENGTH }, (_, i) => (
+                  <span
+                    key={i}
+                    aria-hidden
+                    className={cn(
+                      inputSurfaceClasses,
+                      inputTransitionClasses,
+                      'text-foreground flex h-14 w-[15%] items-center justify-center font-mono text-2xl font-medium tracking-tight',
+                      // The real input is invisible; the cell it is typing into
+                      // wears the Input focus treatment while the field has focus.
+                      i === Math.min(code.length, CODE_LENGTH - 1) &&
+                        'group-focus-within:border-ring group-focus-within:ring-ring/15 group-focus-within:ring-3',
+                    )}
+                  >
+                    {code[i] ?? ''}
+                  </span>
+                ))}
+                <input
+                  value={code}
+                  onChange={(e) =>
+                    onCodeChange(e.target.value.replace(/\D/g, '').slice(0, CODE_LENGTH))
+                  }
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={CODE_LENGTH}
+                  disabled={isVerifying}
+                  autoFocus
+                  className="absolute inset-0 cursor-text opacity-0"
+                />
+              </label>
+
+              {enrolling.secret ? (
+                <div className="border-border flex-1 space-y-2 border-t pt-5">
+                  <div className="text-muted-foreground text-xs font-medium">
+                    {copy.manualSecret}
+                  </div>
+                  <div className="border-border bg-muted/40 flex min-h-10 items-center justify-between gap-2 rounded-md border py-1.5 ps-3 pe-1">
+                    <code className="min-w-0 font-mono text-xs leading-5 font-medium tracking-tight whitespace-pre-line">
+                      {formatSecret(enrolling.secret)}
+                    </code>
+                    <CopyButton code={enrolling.secret} className="shrink-0" />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={onCancel}>
+                  {copy.cancel}
+                </Button>
+                <Button
+                  onClick={onVerify}
+                  disabled={code.length !== CODE_LENGTH || isVerifying}
+                  className="gap-1.5"
+                >
+                  {isVerifying ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+                  {copy.verifyAndEnable}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </ModalContent>
+    </Modal>
+  );
+}
+
 export interface SecurityTabViewProps {
   // Two-factor authentication
   factors?: FactorInfo[];
   factorsLoading?: boolean;
   factorsError?: boolean;
   onRetryFactors?: () => void;
-  sessionVerified?: boolean;
   removeFactorTarget?: string | null;
   onRequestRemoveFactor?: (id: string) => void;
   onCancelRemoveFactor?: () => void;
@@ -157,8 +289,7 @@ export interface SecurityTabCopy {
   twoFactorDescription: string;
   authenticatorApp: string;
   authenticatorDescription: string;
-  sessionVerified: string;
-  enrolled: string;
+  statusOn: string;
   addAuthenticatorApp: string;
   factorsLoadFailed: string;
   retry: string;
@@ -169,7 +300,8 @@ export interface SecurityTabCopy {
   scanDescription: string;
   qrAlt: string;
   manualSecret: string;
-  sixDigitCode: string;
+  codeTitle: string;
+  codeDescription: string;
   verifyAndEnable: string;
   cancel: string;
   removeFactorTitle: string;
@@ -196,8 +328,7 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
     'A second factor keeps your account safe even if your sign-in is compromised.',
   authenticatorApp: 'Authenticator app',
   authenticatorDescription: 'Add an authenticator app (TOTP) as a second factor.',
-  sessionVerified: 'Session verified',
-  enrolled: 'Enrolled',
+  statusOn: 'On · Asked at sign-in and before sensitive changes',
   addAuthenticatorApp: 'Add authenticator app',
   factorsLoadFailed: 'Couldn’t load your authenticator apps',
   retry: 'Retry',
@@ -206,13 +337,13 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
   noFactorEnrolled: 'No second factor enrolled',
   noFactorDescription:
     'If your organization requires MFA, you’ll be blocked from gated actions until you enroll an authenticator here.',
-  scanTitle: 'Scan with your authenticator app',
-  scanDescription:
-    'Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code it shows.',
+  scanTitle: 'Scan with your phone',
+  scanDescription: 'Open any authenticator app and scan this code.',
   qrAlt: 'TOTP enrollment QR code',
-  manualSecret: 'Manual entry secret',
-  sixDigitCode: '6-digit code',
-  verifyAndEnable: 'Verify and enable',
+  manualSecret: 'Can’t scan? Enter this key',
+  codeTitle: 'Enter the code',
+  codeDescription: 'Type the 6 digits your app shows. It verifies on its own.',
+  verifyAndEnable: 'Verify',
   cancel: 'Cancel',
   removeFactorTitle: 'Remove this factor?',
   removeFactorDescription:
@@ -242,7 +373,6 @@ export function SecurityTabView({
   factorsLoading = false,
   factorsError = false,
   onRetryFactors = () => {},
-  sessionVerified = false,
   removeFactorTarget = null,
   onRequestRemoveFactor = () => {},
   onCancelRemoveFactor = () => {},
@@ -279,22 +409,19 @@ export function SecurityTabView({
         />
 
         <SettingsRowGroup>
-          <SettingsRow label={copy.authenticatorApp} description={copy.authenticatorDescription}>
-            {verified.length > 0 && (
-              <Badge
-                variant="secondary"
-                size="xs"
-                className={cn(
-                  'shrink-0 gap-1',
-                  sessionVerified
-                    ? 'bg-kortix-green/15 text-kortix-green border-transparent'
-                    : 'text-muted-foreground',
-                )}
-              >
-                <ShieldCheck className="size-3.5" />
-                {sessionVerified ? copy.sessionVerified : copy.enrolled}
-              </Badge>
-            )}
+          <SettingsRow
+            label={copy.authenticatorApp}
+            description={
+              verified.length > 0 ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="bg-kortix-green size-1.5 shrink-0 rounded-full" />
+                  {copy.statusOn}
+                </span>
+              ) : (
+                copy.authenticatorDescription
+              )
+            }
+          >
             {enrolling ? null : (
               <Button
                 size="sm"
@@ -349,61 +476,15 @@ export function SecurityTabView({
           </InfoBanner>
         ) : null}
 
-        {enrolling ? (
-          <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
-            <div>
-              <h4 className="text-foreground text-sm font-medium">{copy.scanTitle}</h4>
-              <p className="text-muted-foreground mt-1 text-xs text-pretty">
-                {copy.scanDescription}
-              </p>
-            </div>
-            <div className="flex items-start gap-4">
-              {/* biome-ignore lint/performance/noImgElement: QR is an inline SVG data URL, next/image adds nothing */}
-              <img
-                src={totpQrSrc(enrolling.qr)}
-                alt={copy.qrAlt}
-                className="border-border/60 size-36 shrink-0 rounded-md border bg-white p-2"
-              />
-              <div className="min-w-0 flex-1 space-y-3">
-                {enrolling.secret && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">{copy.manualSecret}</Label>
-                    <code className="border-border/60 bg-muted/30 block truncate rounded border px-2 py-1.5 font-mono text-xs">
-                      {enrolling.secret}
-                    </code>
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <Label className="text-xs">{copy.sixDigitCode}</Label>
-                  <Input
-                    value={enrollCode}
-                    onChange={(e) =>
-                      onEnrollCodeChange(e.target.value.replace(/\D/g, '').slice(0, 6))
-                    }
-                    placeholder="123456"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    className="w-32 font-mono tracking-widest"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={onVerifyEnroll}
-                    disabled={enrollCode.length !== 6 || isVerifyingEnroll}
-                    className="gap-1.5"
-                  >
-                    {isVerifyingEnroll && <Loading className="size-4" />}
-                    {copy.verifyAndEnable}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={onCancelEnroll}>
-                    {copy.cancel}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <EnrollDialog
+          enrolling={enrolling}
+          code={enrollCode}
+          onCodeChange={onEnrollCodeChange}
+          onVerify={onVerifyEnroll}
+          isVerifying={isVerifyingEnroll}
+          onCancel={onCancelEnroll}
+          copy={copy}
+        />
 
         <ConfirmDialog
           open={removeFactorTarget !== null}
@@ -497,8 +578,7 @@ export function SecurityTab() {
     twoFactorDescription: t('twoFactorDescription'),
     authenticatorApp: t('authenticatorApp'),
     authenticatorDescription: t('authenticatorDescription'),
-    sessionVerified: t('sessionVerified'),
-    enrolled: t('enrolled'),
+    statusOn: t('statusOn'),
     addAuthenticatorApp: t('addAuthenticatorApp'),
     factorsLoadFailed: t('factorsLoadFailed'),
     retry: t('retry'),
@@ -509,7 +589,8 @@ export function SecurityTab() {
     scanDescription: t('scanDescription'),
     qrAlt: t('qrAlt'),
     manualSecret: t('manualSecret'),
-    sixDigitCode: t('sixDigitCode'),
+    codeTitle: t('codeTitle'),
+    codeDescription: t('codeDescription'),
     verifyAndEnable: t('verifyAndEnable'),
     cancel: t('cancel'),
     removeFactorTitle: t('removeFactorTitle'),
@@ -584,13 +665,19 @@ export function SecurityTab() {
   const runWithStepUp = (action: () => void) =>
     requestMfaStepUp(mfa.challengeRequired, action);
 
+  // The sixth digit submits the code; no button press needed.
+  const { enrollCode, isVerifyingEnroll, verifyEnroll } = mfa;
+  useEffect(() => {
+    if (enrollCode.length === 6 && !isVerifyingEnroll) verifyEnroll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per completed code
+  }, [enrollCode]);
+
   return (
     <SecurityTabView
       factors={mfa.factors}
       factorsLoading={mfa.factorsLoading}
       factorsError={mfa.factorsError}
       onRetryFactors={mfa.onRetryFactors}
-      sessionVerified={mfa.sessionVerified}
       removeFactorTarget={mfa.removeFactorTarget}
       onRequestRemoveFactor={mfa.setRemoveFactorTarget}
       onCancelRemoveFactor={() => mfa.setRemoveFactorTarget(null)}
