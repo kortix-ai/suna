@@ -25,6 +25,10 @@ case ":${PATH:-}:" in
 esac
 export PATH
 
+# No core dumps: a crash dump carries the process environment, secrets included.
+# Set before the privilege drop so the hard limit binds every descendant.
+ulimit -c 0 2>/dev/null || true
+
 if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
   # TEMPORARY: Platinum starts with /dev/shm as a plain directory and low
   # nofile limits. Both settings must be repaired before the privilege drop.

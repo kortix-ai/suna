@@ -19236,7 +19236,17 @@
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
       "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
-      "confirm": "Link erstellen"
+      "confirm": "Link erstellen",
+      "liveTitle": "Öffentlicher Link",
+      "liveDescription": "Jeder mit dem Link kann es ohne Anmeldung ansehen.",
+      "liveCount": "{count} Links führen hierher; Widerrufen deaktiviert alle.",
+      "copy": "Kopieren",
+      "revoke": "{count, plural, one {Link widerrufen} other {# Links widerrufen}}",
+      "createDescription": "Jeder mit dem Link kann dies ohne Anmeldung ansehen.",
+      "expiresAfter": "Läuft ab nach",
+      "cancel": "Abbrechen",
+      "expiryNever": "Nie",
+      "expiryDays": "{count, plural, one {# Tag} other {# Tagen}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Öffentlicher Link",
@@ -20514,5 +20524,20 @@
     "people": "Personen in dieser Sitzung: {names}",
     "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere",
     "more": "{count} weitere können diese Sitzung öffnen"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix-Demo",
+    "stepDetails": "Deine Angaben",
+    "stepTime": "Termin wählen",
+    "formTitle": "Bevor wir einen Termin wählen",
+    "formDescription": "Damit bereiten wir eine Vorführung für dein Team vor.",
+    "seeTimes": "Freie Termine ansehen",
+    "close": "Schließen",
+    "bookedLabel": "Termin bestätigt",
+    "bookedMeta": "{minutes} Min. · Link in deiner Einladung",
+    "inviteSent": "Einladung an {email} gesendet",
+    "reschedule": "Anderer Termin? Nutze den Link in der Einladung.",
+    "addToCalendar": "Zum Kalender hinzufügen",
+    "done": "Fertig"
   }
 }

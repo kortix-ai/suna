@@ -19247,7 +19247,17 @@
     "publicShareConfirm": {
       "title": "Create a public link?",
       "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
-      "confirm": "Create link"
+      "confirm": "Create link",
+      "liveTitle": "Public link",
+      "liveDescription": "Anyone with the link can view it without signing in.",
+      "liveCount": "{count} links point here; revoking turns them all off.",
+      "copy": "Copy",
+      "revoke": "{count, plural, one {Revoke link} other {Revoke # links}}",
+      "createDescription": "Anyone with the link can view this without signing in.",
+      "expiresAfter": "Expires after",
+      "cancel": "Cancel",
+      "expiryNever": "Never",
+      "expiryDays": "{count, plural, one {# day} other {# days}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Public link",
@@ -20514,5 +20524,20 @@
     "people": "People in this session: {names}",
     "peopleMore": "People in this session: {names} and {count} more",
     "more": "{count} more can open this session"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix demo",
+    "stepDetails": "Your details",
+    "stepTime": "Pick a time",
+    "formTitle": "Before we pick a time",
+    "formDescription": "We'll use this to prep a walkthrough for your team.",
+    "seeTimes": "See available times",
+    "close": "Close",
+    "bookedLabel": "Booking confirmed",
+    "bookedMeta": "{minutes} min · Link in your invite",
+    "inviteSent": "Invite sent to {email}",
+    "reschedule": "Need another time? Use the link in the invite.",
+    "addToCalendar": "Add to calendar",
+    "done": "Done"
   }
 }

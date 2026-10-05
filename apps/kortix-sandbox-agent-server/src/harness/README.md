@@ -74,8 +74,8 @@ spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
 `config.release.v1` (both harnesses), and the session features the runtime serves
-(`HarnessDiagnosticsService.capabilities`: all ten on OpenCode,
-`session.subagents` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
+(`HarnessDiagnosticsService.capabilities`: all ten on OpenCode;
+`session.subagents`, `session.compact` and `session.commands` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
 `routes/kortix/legacy-names.ts` for an older API.
 
@@ -96,11 +96,11 @@ needs through `HarnessBootContext` (`serve` starts the HTTP server).
 > section. Until then OpenCode stays the default. When the move is complete,
 > `open-code/` and the `opencode` harness id are removed.
 
-pi (`@earendil-works/pi-agent-core`) is bundled into the daemon binary and runs
-INSIDE the daemon process. There is no child process, no port, no RPC and no
-second sandbox: pi's built-in `bash`/`read`/`write`/`edit` run on
-`NodeExecutionEnv` over `/workspace`, Kortix adds `glob`/`grep` (ripgrep) and
-`question`, and the five Kortix tools a project template gives an OpenCode
+pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.3) is bundled
+into the daemon binary and runs INSIDE the daemon process. There is no child
+process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
+`bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
+`glob`/`grep` (ripgrep) and `question`, and the five Kortix tools a project template gives an OpenCode
 session, compiled into the daemon under the same names, arguments and output
 JSON: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage`
 (Firecrawl), `memory` and `show` (`pi/kortix-web-tools.ts`,
@@ -195,8 +195,9 @@ prompt-template expansion. A package from https://pi.dev/packages runs
 unmodified: Kortix writes no per-extension code. Kortix keeps the model (the
 gateway provider is registered with pi's `ModelRuntime` only to pass its auth
 check), the tools, the wire, and the permission policy, which runs BEFORE any
-extension `tool_call` handler. pi's compaction and auto-retry are off: the
-transcript and the product own them.
+extension `tool_call` handler. pi's auto-retry is off: the product owns it
+(`pi/transient-retry.ts`). pi's built-in `mcp`, `codemode` and `tool-search`
+extensions are not loaded: a host passes them in, and Kortix passes none.
 
 Three sources, in pi's own scopes:
 
@@ -236,9 +237,35 @@ stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
 
+### The conversation, compaction and slash commands
+
+pi's `SessionManager` (in memory) is the model context: the agent's messages
+are its projection. The state dump stores its entries (`entries`), and a
+restart restores them, so a compaction or a context edit survives it. The dump
+also keeps `agentMessages` for a daemon built before pi 1.0, which restores
+from that field; this daemon reads it only when `entries` is absent.
+
+pi's own compaction is on. It runs on demand (`POST /session/:id/summarize`),
+when the context nears the model's window, and when a model request overflows
+it or a reply is cut by the length limit (pi then retries that request once;
+the failed attempt's error is withheld from the wire and lands on the message
+only when the recovery fails). The wire carries it in OpenCode's shape: a user
+message whose one part is `compaction` (`auto`, `overflow`), an assistant
+message flagged `summary` with the summary text or an error,
+`time.compacting` on the session while it runs, and `session.compacted`. The
+transcript keeps every message. A project's `settings.json` in the pi config
+dir sets `compaction.enabled`, `reserveTokens` and `keepRecentTokens`.
+Subagent child sessions have no `AgentSession` and do not compact.
+
+`GET /command` lists pi's prompt templates (`prompts/*.md` in the pi config
+dir, and the templates of pi packages) as slash commands.
+`POST /session/:id/command` runs one: it admits `/name arguments`, pi expands
+the template, and the user message on the wire becomes the expanded text, as
+on OpenCode. A command pi does not have is a 400. pi does not read OpenCode's
+`commands/` directory.
+
 Not supported by pi today (answered honestly, never silently): session rewind
-(`/session/:id/revert`, 501 `feature_not_supported`), slash commands
-(`/session/:id/command`), summarize/compaction, MCP/connector tools, todo
+(`/session/:id/revert`, 501 `feature_not_supported`), MCP/connector tools, todo
 tools, warm-seed capture, `ctx.ui` prompts from extensions. `/kortix/health` reports `harness: 'pi'`
 and keeps `opencode: <state>` as the compatibility field the control plane
 already reads for readiness.

@@ -57,7 +57,8 @@ mock.module('@/components/kortix/pressable-surface', () => ({
     return React.createElement('rn-pressable-surface', props, children);
   },
 }));
-mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer') }));
+const LoopMotion = React.createContext(true);
+mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer'), LoopMotionContext: LoopMotion }));
 mock.module('@/components/ui/separator', () => ({ Separator: passthrough('rn-separator') }));
 mock.module('@/components/ui/text', () => ({ Text: passthrough('rn-text') }));
 mock.module('@/components/ui/button', () => ({
@@ -129,7 +130,10 @@ mock.module('@/components/session/SessionErrorBanner', () => ({ TurnErrorDisplay
 mock.module('@/components/session/tool/shared/infrastructure', () => ({ TurnLiveContext: React.createContext(false) }));
 mock.module('@/components/session/tool/tool-part-renderer', () => ({ ToolPartRenderer: passthrough('rn-tool') }));
 mock.module('@/components/session/tool/tools/register', () => ({}));
-mock.module('@/components/session/turn/activity-burst', () => ({ ActivityBurst: passthrough('rn-burst') }));
+// A burst prints its `isTrailing` and the `LoopMotionContext` it renders under.
+mock.module('@/components/session/turn/activity-burst', () => ({
+  ActivityBurst: ({ isTrailing }: any) => React.createElement('rn-burst', { isTrailing, loop: React.useContext(LoopMotion) }),
+}));
 mock.module('@/components/session/turn/user-message', () => ({ UserMessage: passthrough('rn-user-message') }));
 
 let CompactionMarker: typeof import('./compaction-divider').CompactionMarker;
@@ -346,4 +350,36 @@ describe('SessionTurn reply (characterization: one instance from streaming to fi
     expect(textParts.at(-1).isStreaming).toBeFalsy();
     expect(textPartLifecycle).toEqual(['mount:Looks good so far']);
   });
+});
+
+describe('SessionTurn segments: every burst loops while on screen, trailing is structural', () => {
+  const tool = (id: string) => ({
+    id, type: 'tool', tool: 'bash', callID: `call-${id}`, sessionID: 's-1', messageID: 'a-1',
+    state: { status: 'running', input: { command: 'ls' }, time: { start: 2_000 } },
+  });
+  const text = (id: string) => ({ id, type: 'text', text: `between ${id}`, sessionID: 's-1', messageID: 'a-1' });
+  const turn = {
+    userMessage: {
+      info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+      parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
+    },
+    assistantMessages: [
+      { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000 } }, parts: [tool('t-1'), text('x-1'), tool('t-2')] },
+    ],
+  } as unknown as import('@/lib/session/types').Turn;
+  const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never)).map((node) => node.props);
+
+  for (const onScreen of [true, false]) {
+    test(`onScreen=${onScreen}: only the last burst is trailing; every burst loops only on screen`, async () => {
+      await act(async () => {
+        tree = create(
+          <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy onScreen={onScreen} />,
+        );
+      });
+      expect(bursts()).toEqual([
+        { isTrailing: false, loop: onScreen },
+        { isTrailing: true, loop: onScreen },
+      ]);
+    });
+  }
 });
