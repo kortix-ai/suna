@@ -88,7 +88,7 @@ for (const p of persons) {
   if (!token) throw new Error(`device token for ${p.person} never arrived`);
   const c = (await http('POST', '/capture/credentials', token.device_token)).json;
   const target = { endpoint: c.endpoint, bucket: c.bucket, region: c.region, accessKeyId: c.access_key_id, secretAccessKey: c.secret_access_key, sessionToken: c.session_token };
-  const objects = deviceObjects({ prefix: token.prefix, deviceId: token.device_id, machineKey, name: who.name, activity: p.activity });
+  const objects = await deviceObjects({ prefix: token.prefix, deviceId: token.device_id, machineKey, name: who.name, activity: p.activity });
   await upload(target, objects.data);
   await upload(target, objects.manifests);
   await upload(target, objects.rest);
