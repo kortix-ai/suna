@@ -22,7 +22,7 @@ import { db } from '../shared/db';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { auditLoginFail } from '../shared/auth-audit';
+import { auditLoginFail } from '../middleware/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { requestClientIp, requestClientKey } from '../shared/client-ip';

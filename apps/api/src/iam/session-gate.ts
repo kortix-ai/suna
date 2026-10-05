@@ -16,7 +16,7 @@ import { accountSessionActivity, accounts } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { auditSessionFirstSight } from '../shared/auth-audit';
+import { auditSessionFirstSight } from '../middleware/auth-audit';
 import { requestClientIp } from '../shared/client-ip';
 import { db } from '../shared/db';
 

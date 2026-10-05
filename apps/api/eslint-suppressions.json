@@ -2846,7 +2846,7 @@
       "count": 3
     }
   },
-  "src/shared/auth-audit.ts": {
+  "src/middleware/auth-audit.ts": {
     "no-console": {
       "count": 1
     }

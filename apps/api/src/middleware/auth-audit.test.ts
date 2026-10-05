@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const rows: Array<Record<string, unknown>> = [];
-mock.module('./audit', () => ({
+mock.module('../shared/audit', () => ({
   recordAuditEvent: async (event: Record<string, unknown>) => {
     rows.push(event);
   },
