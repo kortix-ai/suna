@@ -889,7 +889,7 @@
       "count": 2
     }
   },
-  "src/iam/session-gate.ts": {
+  "src/middleware/session-gate.ts": {
     "no-console": {
       "count": 2
     }
