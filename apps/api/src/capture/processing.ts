@@ -34,6 +34,15 @@ import { db } from '../shared/db';
 import { accountPrefix } from './format';
 import { captureStore } from './store';
 
+/** The image type of `bytes` by their magic number (PNG, JPEG, WebP), or null for anything else. */
+export function imageMime(bytes: Uint8Array): 'image/png' | 'image/jpeg' | 'image/webp' | null {
+  const at = (offset: number, ...values: number[]) => values.every((v, i) => bytes[offset + i] === v);
+  if (bytes.byteLength >= 8 && at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png';
+  if (bytes.byteLength >= 4 && at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
+  if (bytes.byteLength >= 12 && at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp';
+  return null;
+}
+
 const MAX_EVENTS = 2400;
 const MAX_IMAGES = 12;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -144,7 +153,9 @@ async function loadInput(range: typeof timelineRanges.$inferSelect): Promise<Ran
     const key = `${accountPrefix(range.accountId)}/${action.deviceId}/assets/${action.screenshot}`;
     const bytes = await captureStore.getBytes(key).catch(() => null);
     if (!bytes || bytes.byteLength > MAX_IMAGE_BYTES) continue;
-    const mime = action.screenshot!.endsWith('.png') ? 'image/png' : action.screenshot!.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+    // A screenshot that is not a decodable image would fail every model call of the range.
+    const mime = imageMime(bytes);
+    if (!mime) continue;
     const index = images.length + 1;
     shotIndex.set(action.screenshot!, index);
     images.push({
@@ -212,6 +223,25 @@ function costOf(model: string, prompt: number, completion: number, reported: unk
   return (prompt * pricing.inputPerMillion + completion * pricing.outputPerMillion) / 1e6;
 }
 
+/**
+ * A gateway answer that a moment later can succeed: the model is busy (429) or
+ * its upstream is down (502/503/504). 3 attempts; the wait honours
+ * Retry-After (at most 30 s), else 2 s then 8 s. Any other answer returns at once.
+ */
+export async function retryTransient(
+  send: () => Promise<Response>,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<Response> {
+  const backoff = [2_000, 8_000];
+  for (let attempt = 0; ; attempt++) {
+    const res = await send();
+    if (![429, 502, 503, 504].includes(res.status) || attempt === backoff.length) return res;
+    const retryAfter = Number(res.headers.get('retry-after'));
+    await res.body?.cancel().catch(() => undefined);
+    await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 30_000) : backoff[attempt]!);
+  }
+}
+
 function gatewayCaller(authorization: string, model: string): Caller {
   const url = standaloneGatewayUrl();
   if (!url) throw new Error('the standalone LLM gateway is not configured');
@@ -224,14 +254,16 @@ function gatewayCaller(authorization: string, model: string): Caller {
           { type: 'text', text: attempt ? `${prompt}\n\nYour previous reply was not valid JSON for the schema. Return ONLY the JSON object.` : prompt },
           ...images.map((image) => ({ type: 'image_url', image_url: { url: image.dataUrl } })),
         ];
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { authorization, 'content-type': 'application/json' },
-          // Low reasoning effort: these are extraction tasks, and a reasoning model at the
-          // default effort spent 12k+ hidden tokens and over 300 s on one annotation pass.
-          body: JSON.stringify({ model, stream: false, temperature: 0.2, max_tokens: 16_000, reasoning_effort: 'low', messages: [{ role: 'user', content }] }),
-          signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
-        });
+        const res = await retryTransient(() =>
+          fetch(url, {
+            method: 'POST',
+            headers: { authorization, 'content-type': 'application/json' },
+            // Low reasoning effort: these are extraction tasks, and a reasoning model at the
+            // default effort spent 12k+ hidden tokens and over 300 s on one annotation pass.
+            body: JSON.stringify({ model, stream: false, temperature: 0.2, max_tokens: 16_000, reasoning_effort: 'low', messages: [{ role: 'user', content }] }),
+            signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+          }),
+        );
         const data = (await res.json().catch(() => null)) as any;
         if (!res.ok) throw new Error(`gateway ${res.status}: ${JSON.stringify(data?.error ?? data).slice(0, 300)}`);
         const prompt_tokens = Number(data?.usage?.prompt_tokens ?? 0);
