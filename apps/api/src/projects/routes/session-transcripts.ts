@@ -17,6 +17,7 @@ import {
 } from '../lib/session-transcript';
 import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 import { sessionMessageAuthors } from '../lib/session-message-authors';
+import { sessionModelUsage } from '../lib/session-model-usage';
 
 export function registerSessionTranscriptsRoutes(): void {
   // GET /v1/projects/:projectId/sessions/:sessionId/transcript
@@ -170,6 +171,35 @@ export function registerSessionTranscriptsRoutes(): void {
       const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
       if (!visible) return c.json({ error: 'Not found' }, 404);
       return c.json(await sessionMessageAuthors(visible.row));
+    },
+  );
+
+  // GET /v1/projects/:projectId/sessions/:sessionId/model-usage
+  // Which model answered each turn, and what Kortix billed for it, from the
+  // gateway's request ledger. The runtime records only the model it asked for.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/model-usage',
+      tags: ['sessions'],
+      summary: 'Read which model answered a session and what it cost',
+      description:
+        'Returns `latest`, the newest answered model request: `{served_model, fallback_from, at}`. `served_model` is the route id of the model that answered. `fallback_from` is the model the request was routed to when a fallback model answered in its place, else null. `billed_cost` is what Kortix debited for the session\'s model calls, in USD. `turns` is keyed by the runtime message id of the prompt that started each turn: `{served_models, fallback_from, billed_cost}`.',
+      ...auth,
+      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      responses: { 200: json(AnyObject, 'Session model usage'), ...errors(400, 403, 404) },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+      if (binding.kind === 'error') return binding.response as never;
+      const { loaded } = binding;
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+      const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+      if (!visible) return c.json({ error: 'Not found' }, 404);
+      return c.json(await sessionModelUsage(visible.row));
     },
   );
 }

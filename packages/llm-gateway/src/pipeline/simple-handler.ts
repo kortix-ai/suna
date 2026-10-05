@@ -819,6 +819,8 @@ export async function handleChatCompletions(
       attempts,
       candidatesTried,
       attemptFailures,
+      servedModel: routedModel,
+      ...(routedModel !== routeModel ? { fallbackFrom: routeModel } : {}),
       usage: counts,
       upstreamCost,
       finalCost,

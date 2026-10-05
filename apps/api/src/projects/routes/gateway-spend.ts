@@ -12,6 +12,7 @@ import {
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
+import { projectSpendByModel } from '../lib/session-model-usage';
 import {
   kortixBilledSpendSql,
   providerBilledSpendSql,
@@ -224,41 +225,7 @@ export function registerGatewaySpendRoutes(): void {
       );
 
       const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
-      const rows = await db
-        .select({
-          model: gatewayRequestLogs.requestedModel,
-          provider: gatewayRequestLogs.provider,
-          requests: sql<number>`count(*)::int`,
-          errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-          cost: totalSpendSql,
-          kortixCost: kortixBilledSpendSql,
-          providerCost: providerBilledSpendSql,
-          tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(gatewayRequestLogs.requestedModel, gatewayRequestLogs.provider)
-        .orderBy(desc(sql`count(*)`))
-        .limit(12);
-
-      return c.json({
-        window_days: days,
-        models: rows.map((r) => ({
-          model: r.model,
-          provider: r.provider,
-          requests: r.requests,
-          errors: r.errors,
-          cost: r.cost,
-          kortix_cost: r.kortixCost,
-          provider_cost: r.providerCost,
-          tokens: Number(r.tokens),
-        })),
-      });
+      return c.json({ window_days: days, models: await projectSpendByModel(projectId, days) });
     },
   );
 
