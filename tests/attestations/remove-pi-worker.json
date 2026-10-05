@@ -1,5 +1,5 @@
 {
-  "source_hash": "76b86141529c49dfc8ba4fb70411028aa6ee9c3176863c10d242deaf366b530a",
+  "source_hash": "ed05770c8f44b2ec1abebfedd077bacf543affdad2dcd6c87c5d9102c9aef13f",
   "diff_files": [
     ".agents/skills/contributing/SKILL.md",
     ".agents/skills/learnings/MEMORY.md",
@@ -22,7 +22,6 @@
     "apps/api/src/billing/services/account-deletion.test.ts",
     "apps/api/src/billing/services/account-deletion.ts",
     "apps/api/src/bootstrap.ts",
-    "apps/api/src/config-releases/release-tree.ts",
     "apps/api/src/config.ts",
     "apps/api/src/feature-flags/registry.ts",
     "apps/api/src/git-proxy/compiled-agent-bundle.test.ts",
@@ -163,13 +162,13 @@
     "tests/src/flows/session-scope.flow.ts",
     "tests/unit/kortixd-package-boundary.test.ts"
   ],
-  "diff_hash": "27ce114e6c1218bbfaaf548cd742bd732db807c04ad12eb024385e3741324f4c",
-  "head": "08005c13430c5c94517a5c4b029c0ec1b1465ce7",
+  "diff_hash": "6c4a9c477e53595179d5242d9b351ffd7776088583b55a5dea0e7204c573a891",
+  "head": "1dea4278708baf2b7f9d1db3b1183bf02345f36b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-05T17:42:26.625Z"
+  "at": "2026-10-05T18:46:21.117Z"
 }
