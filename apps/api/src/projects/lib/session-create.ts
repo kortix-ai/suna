@@ -4,7 +4,7 @@ import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRu
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_CELL_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -815,11 +815,31 @@ export async function createProjectSession(input: {
     }
   }
 
+  // The pi cell: the session's agent runs as a Durable Object on celld
+  // (apps/pi-worker-js) in a Platinum `runtime: cell` sandbox, and serves the
+  // same daemon contract a kortixd pi box does. The flag's availability
+  // already requires Platinum with the cell runtime; the cell's only model
+  // path is the LLM gateway, so a gateway-off project keeps the ordinary
+  // sandbox. Takes precedence over pi_worker; the platform Meta agent keeps
+  // its own box.
+  let piCellBoot = false;
+  if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_cell')) {
+    if (projectLlmGatewayEnabled(project.metadata)) {
+      piCellBoot = true;
+      piWorkerBoot = false;
+      piWorkerSha = null;
+      sandboxSlug = PI_CELL_SANDBOX_SLUG;
+    } else {
+      console.warn(`[sessions] pi_cell on ${projectId} but the LLM gateway is off; booting the ordinary sandbox`);
+    }
+  }
+
   if (
     !platformMetaAgent &&
     sandboxSlug &&
     sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
-    sandboxSlug !== PI_WORKER_SANDBOX_SLUG
+    sandboxSlug !== PI_WORKER_SANDBOX_SLUG &&
+    sandboxSlug !== PI_CELL_SANDBOX_SLUG
   ) {
     try {
       await resolveTemplate(
@@ -1414,18 +1434,19 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         agentName,
-        allowProjectImage: piWorkerBoot
+        allowProjectImage: piWorkerBoot || piCellBoot
           ? false
           : projectImageAllowedForSession(agentName, repositoryAccess),
         // v0 pins the worker to Daytona: the entrypoint override in
         // ensurePiWorkerImage is only exercised there so far. Lift once the
         // other adapters' entrypoint handling is verified.
-        provider: piWorkerBoot ? 'daytona' : providerName,
-        providerLocked: piWorkerBoot ? true : providerLocked,
+        provider: piWorkerBoot ? 'daytona' : piCellBoot ? 'platinum' : providerName,
+        providerLocked: piWorkerBoot || piCellBoot ? true : providerLocked,
         metadata: {
           session_id: sessionId,
           project_id: projectId,
           ...(piWorkerBoot ? { pi_worker_boot: true } : {}),
+          ...(piCellBoot ? { pi_cell_boot: true } : {}),
           ...(input.metadata ?? {}),
         },
         initialTurn,

@@ -14,7 +14,7 @@
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
+import { PI_CELL_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
 import {
@@ -417,7 +417,18 @@ export async function provisionSessionSandbox(opts: {
     gitProject: GitBackedProject,
     targetProvider: string,
   ): Promise<EnsureSandboxImageResult> =>
-    slug === META_SANDBOX_SLUG
+    slug === PI_CELL_SANDBOX_SLUG
+      ? // A pi cell boots the celld template; its agent is the Platinum
+        // worker's active version (apps/pi-worker-js/deploy-platinum.mjs), not
+        // an image. Nothing to build.
+        Promise.resolve({
+          snapshotName: config.KORTIX_PI_CELL_TEMPLATE,
+          slug: PI_CELL_SANDBOX_SLUG,
+          contentHash: `cell:${config.KORTIX_PI_CELL_WORKER}`,
+          built: false,
+          isDefault: false,
+        })
+      : slug === META_SANDBOX_SLUG
       ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
       : slug === PI_WORKER_SANDBOX_SLUG
         ? // The pi worker is a shared content-hashed image like meta — never a
@@ -594,6 +605,9 @@ export async function provisionSessionSandbox(opts: {
     sandboxId: sandbox.sandboxId,
     serverType,
     location,
+    // A pi cell (platform/providers/platinum.ts buildCellCreateBody): celld
+    // serves the worker's active version, listening on the agent port.
+    ...(opts.metadata?.pi_cell_boot === true ? { cell: { worker: config.KORTIX_PI_CELL_WORKER } } : {}),
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,

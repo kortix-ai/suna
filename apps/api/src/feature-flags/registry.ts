@@ -348,6 +348,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
   },
+  {
+    key: 'pi_cell',
+    name: 'Pi Cell Runtime',
+    description:
+      "Run this project's sessions as a pi cell: the pi 1.0 agent as a Durable Object in a V8 isolate on celld, with its transcript, checkpoints and workspace in the object's own SQLite. A session is ready in seconds, survives losing its process mid-turn, and costs an isolate instead of a microVM. Its shell is a POSIX interpreter over the session's own files (node and npm run in the isolate); a full Linux machine attaches on demand through the `machine` tool. On ⇒ new sessions boot a cell. Off ⇒ sessions boot the ordinary sandbox. Requires the LLM gateway.",
+    stability: 'experimental',
+    // Platinum must be the provider, and the operator must say its control
+    // plane runs the cell runtime (KORTIX_PI_CELL_ENABLED): a Platinum without
+    // it answers 501 runtime_not_enabled to every cell create.
+    available: () => config.KORTIX_PI_CELL_ENABLED && Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    // Read at session creation (projects/lib/session-create.ts): the session
+    // takes the `pi-cell` sandbox slug and Platinum creates a `runtime: cell`
+    // sandbox (platform/providers/platinum.ts buildCellCreateBody). A running
+    // session keeps its runtime until it is recreated.
+    enforcement: 'behavioral',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

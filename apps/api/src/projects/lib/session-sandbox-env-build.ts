@@ -233,7 +233,10 @@ export async function buildSessionSandboxEnvVars(input: {
       harness = llmGateway ? 'pi' : 'opencode';
     } else {
       harness = selectSessionHarness({
-        piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
+        // A pi cell is the pi harness in a Durable Object (apps/pi-worker-js).
+        piHarnessFlag:
+          resolveFeatureFlag(projectRow?.metadata, 'pi_harness') ||
+          resolveFeatureFlag(projectRow?.metadata, 'pi_cell'),
         runtime: manifestHarness,
         llmGateway,
       });

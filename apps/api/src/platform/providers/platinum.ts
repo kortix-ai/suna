@@ -179,6 +179,44 @@ export const PLATINUM_PREVIEW_TOKEN_HEADER = 'x-pt-preview-token';
 const PREVIEW_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 
 /**
+ * The create body for a session that runs as a pi cell (apps/pi-worker-js).
+ *
+ * Three things differ from a microVM create, and each is load-bearing:
+ *
+ *  - `runtime: 'cell'` with a `worker`: celld in the `pt-celld` template
+ *    serves that Platinum worker's active version, and Platinum refuses a
+ *    worker-less cell as malformed.
+ *  - every session variable is prefixed `CELLD_VAR_`, because celld passes
+ *    exactly those into the isolate: an unprefixed variable reaches the node
+ *    and never the worker, which looks like an agent with no configuration.
+ *  - `CELLD_BASE_PORT` is the agent port, so celld listens where the API, the
+ *    proxy and the SDK reach a session's daemon (8000), and the cell is
+ *    addressed exactly like a kortixd box.
+ *
+ * Measured on Platinum dev 2026-10-05: running in 1.3 s, `/kortix/health`
+ * ready 3.3 s later, a scripted turn with two tools idle 241 ms after prompt.
+ */
+export function buildCellCreateBody(input: {
+  template: string;
+  worker: string;
+  envVars: Record<string, string>;
+  base: Record<string, unknown>;
+}): Record<string, unknown> {
+  const env: Record<string, string> = { CELLD_BASE_PORT: String(AGENT_PORT) };
+  for (const [k, v] of Object.entries(input.envVars)) env[`CELLD_VAR_${k}`] = String(v);
+  const { envVars: _microVmEnv, metadata, ...base } = input.base;
+  return {
+    ...base,
+    template: input.template,
+    runtime: 'cell',
+    worker: input.worker,
+    env,
+    expose: [{ port: AGENT_PORT, public: false }],
+    metadata: { ...(metadata as Record<string, unknown> | undefined), 'kortix.runtime': 'cell' },
+  };
+}
+
+/**
  * Split a private expose response into the bare edge origin and its token.
  * Platinum appends `?t=<token>` to a private URL; the proxy must not forward a
  * query of its own on every request, so the token moves to a header.
@@ -487,7 +525,10 @@ export class PlatinumProvider implements SandboxProvider {
     if (dedup) {
       createBody.name = dedup.name;
     }
-    const createBodyJson = JSON.stringify(createBody);
+    const finalBody = opts.cell
+      ? buildCellCreateBody({ template, worker: opts.cell.worker, envVars, base: createBody })
+      : createBody;
+    const createBodyJson = JSON.stringify(finalBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
     // This asks Platinum to long-poll server-side for up to 60s
     // (wait_timeout_ms) — platinumJson's default 20s client-side abort budget
@@ -561,7 +602,7 @@ export class PlatinumProvider implements SandboxProvider {
           sandbox = await platinumJson<PlatinumSandbox>(CREATE_PATH, {
             method: 'POST',
             signal: AbortSignal.timeout(70_000),
-            body: JSON.stringify({ ...createBody, name: advancedName }),
+            body: JSON.stringify({ ...finalBody, name: advancedName }),
             headers: { 'Idempotency-Key': advancedKey },
           });
         } catch (err3) {
