@@ -49,7 +49,11 @@ describe('migration file references', () => {
 
   it('every migration path in TypeScript and JavaScript names a tracked .sql file', () => {
     const sqlFiles = new Set(git(['ls-files', '*.sql']).map((path) => basename(path)));
-    const lines = git(['grep', '-nE', 'migrations/[0-9]{14,17}_[a-z0-9_]+\\.sql', '--', '*.ts', '*.tsx', '*.js', '*.mjs']);
+    // This file's own fixtures name migrations that do not exist; skip it.
+    const lines = git([
+      'grep', '-nE', 'migrations/[0-9]{14,17}_[a-z0-9_]+\\.sql',
+      '--', '*.ts', '*.tsx', '*.js', '*.mjs', ':!tests/unit/migration-references.test.ts',
+    ]);
     expect(missingMigrationReferences(lines, sqlFiles)).toEqual([]);
   });
 });
