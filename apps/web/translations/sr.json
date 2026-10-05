@@ -19212,7 +19212,17 @@
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
       "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
-      "confirm": "Направи линк"
+      "confirm": "Направи линк",
+      "liveTitle": "Јавни линк",
+      "liveDescription": "Свако ко има линк може да га види без пријаве.",
+      "liveCount": "{count} линкова води овде; опозивањем се сви искључују.",
+      "copy": "Копирај",
+      "revoke": "{count, plural, one {Опозови линк} few {Опозови # линка} other {Опозови # линкова}}",
+      "createDescription": "Свако ко има линк може ово да види без пријаве.",
+      "expiresAfter": "Истиче након",
+      "cancel": "Откажи",
+      "expiryNever": "Никад",
+      "expiryDays": "{count, plural, one {# дан} few {# дана} other {# дана}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Јавни линк",

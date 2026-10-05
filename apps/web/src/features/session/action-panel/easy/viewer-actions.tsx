@@ -254,10 +254,10 @@ export function ViewerActions({
 }
 
 const EXPIRY_OPTIONS = [
-  { id: 'never', label: 'Never', days: null },
-  { id: '1d', label: '1 day', days: 1 },
-  { id: '7d', label: '7 days', days: 7 },
-  { id: '30d', label: '30 days', days: 30 },
+  { id: 'never', days: null },
+  { id: '1d', days: 1 },
+  { id: '7d', days: 7 },
+  { id: '30d', days: 30 },
 ] as const;
 type ExpiryId = (typeof EXPIRY_OPTIONS)[number]['id'];
 
@@ -343,18 +343,24 @@ function PublicLinkPopover({
         {live && url ? (
           <>
             <div className="flex flex-col gap-1">
-              <p className="text-foreground text-sm font-medium">Public link</p>
+              <p className="text-foreground text-sm font-medium">
+                {tHardcodedUi('publicShareConfirm.liveTitle')}
+              </p>
               <p className="text-muted-foreground text-xs">
-                Anyone with the link can view it without signing in. {expiryLabel(live.expires_at)}.
+                {tHardcodedUi('publicShareConfirm.liveDescription')} {expiryLabel(live.expires_at)}.
                 {liveShares.length > 1 &&
-                  ` ${liveShares.length} links point here; revoking turns them all off.`}
+                  ` ${tHardcodedUi('publicShareConfirm.liveCount', { count: liveShares.length })}`}
               </p>
             </div>
             <div className="bg-muted flex h-8 items-center gap-1 rounded-md pr-1 pl-2">
               <span className="text-foreground min-w-0 flex-1 truncate text-xs" title={url}>
                 {url}
               </span>
-              <PillIconButton label="Copy" done={copied} onClick={() => void copyUrl()}>
+              <PillIconButton
+                label={tHardcodedUi('publicShareConfirm.copy')}
+                done={copied}
+                onClick={() => void copyUrl()}
+              >
                 <Copy className="size-3.5" />
               </PillIconButton>
             </div>
@@ -369,7 +375,7 @@ function PublicLinkPopover({
                 {isRevoking && (
                   <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />
                 )}
-                {liveShares.length > 1 ? `Revoke ${liveShares.length} links` : 'Revoke link'}
+                {tHardcodedUi('publicShareConfirm.revoke', { count: liveShares.length })}
               </Button>
             </div>
           </>
@@ -380,11 +386,13 @@ function PublicLinkPopover({
                 {tHardcodedUi.raw('publicShareConfirm.title')}
               </p>
               <p className="text-muted-foreground text-xs">
-                Anyone with the link can view this without signing in.
+                {tHardcodedUi('publicShareConfirm.createDescription')}
               </p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <p className="text-muted-foreground text-xs">Expires after</p>
+              <p className="text-muted-foreground text-xs">
+                {tHardcodedUi('publicShareConfirm.expiresAfter')}
+              </p>
               <div className="bg-muted flex rounded-md p-0.5" role="radiogroup">
                 {EXPIRY_OPTIONS.map((option) => (
                   <button
@@ -400,7 +408,9 @@ function PublicLinkPopover({
                         : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
-                    {option.label}
+                    {option.days === null
+                      ? tHardcodedUi('publicShareConfirm.expiryNever')
+                      : tHardcodedUi('publicShareConfirm.expiryDays', { count: option.days })}
                   </button>
                 ))}
               </div>
@@ -412,7 +422,7 @@ function PublicLinkPopover({
                 disabled={share.isPending}
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                {tHardcodedUi('publicShareConfirm.cancel')}
               </Button>
               <Button size="toolbar" disabled={share.isPending} onClick={create}>
                 {share.isPending && <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />}

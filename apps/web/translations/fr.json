@@ -19212,7 +19212,17 @@
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
       "description": "Toute personne disposant du lien peut le consulter sans se connecter. Le lien reste actif jusqu'à ce que vous le révoquiez.",
-      "confirm": "Créer le lien"
+      "confirm": "Créer le lien",
+      "liveTitle": "Lien public",
+      "liveDescription": "Toute personne disposant du lien peut le consulter sans se connecter.",
+      "liveCount": "{count} liens pointent ici ; les révoquer les désactive tous.",
+      "copy": "Copier",
+      "revoke": "{count, plural, one {Révoquer le lien} other {Révoquer # liens}}",
+      "createDescription": "Toute personne disposant du lien peut consulter ceci sans se connecter.",
+      "expiresAfter": "Expire après",
+      "cancel": "Annuler",
+      "expiryNever": "Jamais",
+      "expiryDays": "{count, plural, one {# jour} other {# jours}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Lien public",

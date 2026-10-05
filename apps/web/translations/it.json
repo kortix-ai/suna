@@ -19212,7 +19212,17 @@
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
       "description": "Chiunque abbia il link può vederlo senza accedere. Il link resta attivo finché non lo revochi.",
-      "confirm": "Crea link"
+      "confirm": "Crea link",
+      "liveTitle": "Link pubblico",
+      "liveDescription": "Chiunque abbia il link può vederlo senza accedere.",
+      "liveCount": "{count} link puntano qui; revocandoli si disattivano tutti.",
+      "copy": "Copia",
+      "revoke": "{count, plural, one {Revoca link} other {Revoca # link}}",
+      "createDescription": "Chiunque abbia il link può vedere questo contenuto senza accedere.",
+      "expiresAfter": "Scade dopo",
+      "cancel": "Annulla",
+      "expiryNever": "Mai",
+      "expiryDays": "{count, plural, one {# giorno} other {# giorni}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Link pubblico",
