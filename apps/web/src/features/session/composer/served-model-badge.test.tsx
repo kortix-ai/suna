@@ -22,7 +22,9 @@ describe('ServedModelBadge', () => {
     expect(html).toContain('Running on GLM 5.3 Flash');
     // The reason sits in a tooltip: a keyboard reaches it only through focus.
     expect(html).toContain('tabindex="0"');
-    // The mark is not color alone: a glyph and the words carry it.
-    expect(html).toContain('<svg');
+    // The mark is not color alone: the words carry it, the dot repeats it.
+    expect(html).toContain('data-slot="status-dot"');
+    // A note beside the selector, not a chip: no uppercase mono badge.
+    expect(html).not.toContain('uppercase');
   });
 });
