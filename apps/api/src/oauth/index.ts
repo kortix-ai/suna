@@ -40,6 +40,7 @@ import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
 import { resolveAccountId } from '../shared/resolve-account';
+import { bearerToken } from '../shared/bearer-token';
 
 // ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
@@ -55,10 +56,10 @@ function checkTokenRateLimit(clientId: string): boolean {
 
 async function oauthTokenAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = bearerToken(authHeader);
+  if (token === null) {
     throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
   }
-  const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
   const tokenHash = await hashSecretKeyAsync(token);

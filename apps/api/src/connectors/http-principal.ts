@@ -19,6 +19,7 @@ import {
   resolveTokenPrincipal,
   sessionChannelConnectorSlugs,
 } from './db-deps-principal';
+import { bearerToken } from '../shared/bearer-token';
 
 /** The connector router's request authorizers: each reads who is calling from the Hono request. */
 export interface ConnectorRouterAuth {
@@ -66,7 +67,7 @@ export interface ConnectorRouterAuth {
 
 export async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> {
   const header = c.req.header('Authorization');
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  const token = bearerToken(header);
   if (!token) return null;
   return resolveTokenPrincipal(token, c.req.header('X-Kortix-Session-Id') ?? null);
 }

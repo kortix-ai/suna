@@ -5,6 +5,7 @@ import { metricsEnabled, renderMetrics, setEventLoopLagSeconds } from '../lib/me
 import { json, mountOpenApiDocs } from '../openapi';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../oauth/discovery';
 import { draining, schemaReady } from '../bootstrap';
+import { bearerToken } from '../shared/bearer-token';
 
 // ─── Event-loop lag monitor → a real liveness signal ─────────────────────────
 //
@@ -148,7 +149,7 @@ app.get('/v1/health/ready', readinessHandler);
 
 function hasInternalObservabilityAuth(c: any): boolean {
   const authHeader = c.req.header('Authorization');
-  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const bearer = bearerToken(authHeader) ?? '';
   const header = c.req.header('X-Kortix-Internal-Key') ?? '';
   const expected = config.INTERNAL_SERVICE_KEY;
   const safeEq = (a: string, b: string) => {

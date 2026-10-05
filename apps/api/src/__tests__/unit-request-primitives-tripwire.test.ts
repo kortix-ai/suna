@@ -5,6 +5,7 @@
  *   UUID shape check → shared/validate.ts  (isUuid)
  *   JSON object body → shared/http-body.ts (readJsonObject)
  *   HTML escaping    → shared/html.ts      (escapeHtml)
+ *   bearer token     → shared/bearer-token.ts (bearerToken)
  *
  * A private copy drifts. An address read outside the trusted-proxy rule is not
  * the address KORTIX_TRUSTED_PROXY_HOPS selects, and a strict UUID regex refuses
@@ -91,6 +92,14 @@ const JSON_OBJECT_INLINE = new RegExp(
 );
 const JSON_OBJECT_ALLOW: Record<string, string> = {};
 
+// A hand-written `Authorization: Bearer` parse in the one helper's exact form.
+// The case-insensitive and whitespace-tolerant parsers below are different
+// contracts, so they keep their own code.
+const BEARER_PARSE = /startsWith\(\s*['"`]Bearer ['"`]\s*\)/;
+const BEARER_ALLOW: Record<string, string> = {
+  'shared/bearer-token.ts': 'the one implementation',
+};
+
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
 const ESCAPE_HTML_ALLOW: Record<string, string> = {
   'shared/html.ts': 'the one implementation',
@@ -119,6 +128,11 @@ describe('request primitives have one implementation', () => {
   test('JSON object bodies are read only through shared/http-body.ts', () => {
     expect(offenders(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
     expect(staleAllowlist(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
+  });
+
+  test('Authorization: Bearer is parsed only in shared/bearer-token.ts', () => {
+    expect(offenders(BEARER_PARSE, BEARER_ALLOW)).toEqual([]);
+    expect(staleAllowlist(BEARER_PARSE, BEARER_ALLOW)).toEqual([]);
   });
 
   test('escapeHtml is defined only in shared/html.ts', () => {
