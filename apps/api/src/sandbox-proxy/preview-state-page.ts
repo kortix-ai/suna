@@ -90,21 +90,21 @@ export function previewStateCopy(state: PreviewState, port?: number): PreviewSta
     case 'starting':
       return {
         title: 'Starting the sandbox',
-        body: 'The machine behind this preview is waking up. This page will load it as soon as it answers.',
+        body: 'The preview opens when it is ready.',
         signIn: false,
         autoRetry: true,
       };
     case 'not-listening':
       return {
-        title: port ? `Nothing is listening on port ${port} yet` : 'Nothing is listening yet',
-        body: 'The sandbox is running, but no process has bound this port. Start the app in your session — this page will pick it up on its own.',
+        title: port ? `Waiting for port ${port}` : 'Waiting for the app',
+        body: 'Nothing is running on this port yet. The preview opens when the app starts.',
         signIn: false,
         autoRetry: true,
       };
     case 'unreachable':
       return {
-        title: port ? `Port ${port} isn't responding` : 'This preview is not responding',
-        body: 'The sandbox is up but the app did not answer. It may still be compiling, or it may have exited.',
+        title: port ? `Port ${port} is not answering` : 'The app is not answering',
+        body: 'Start the app in your session if it stopped. This preview reconnects on its own.',
         signIn: false,
         autoRetry: true,
       };
@@ -128,37 +128,46 @@ export function previewStatePage(input: {
   const base = stripTrailingSlashes(input.frontendUrl || '');
   const href = `${base}/preview/authorize?to=${encodeURIComponent(input.returnTo)}`;
 
+  // The waiting states draw a load line on the top edge, like a browser tab
+  // that is still loading. `unreachable` may never recover on its own, so it
+  // draws no line and offers a quiet Try again instead (KRTX-1644).
+  const loading = copy.autoRetry && input.state !== 'unreachable';
+
   // `target="_top"`: a preview is usually an iframe inside the session panel,
   // and a sign-in started INSIDE that frame would render the whole web app in a
   // preview pane. Break out to the tab instead.
+  //
+  // The card header already has refresh, so a waiting page carries no Retry
+  // button: only `unreachable`, and a page that gave up, show a text-weight
+  // Try again. The sandbox address is never printed: it is an internal host.
   const action =
     copy.signIn && base
       ? `<a class="btn" id="signin" href="${escapeHtml(href)}" target="_top" rel="noopener">Sign in to Kortix</a>`
       : copy.autoRetry
-        ? `<button class="btn" id="retry" type="button">Retry now</button>`
+        ? `<button class="link" id="retry" type="button"${loading ? ' hidden' : ''}>Try again</button>`
         : '';
 
+  // Reload quietly every 3 s, up to 40 times. No countdown: a line that
+  // re-renders every second reads as noise on a page whose job is to wait.
   const retryScript = copy.autoRetry
     ? `
     (function () {
       var KEY = 'kortix-preview-retries';
       var MAX = 40, DELAY = 3000;
       var n = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0;
-      var status = document.getElementById('status');
       var btn = document.getElementById('retry');
+      var load = document.getElementById('load');
       if (btn) btn.addEventListener('click', function () {
         sessionStorage.setItem(KEY, '0'); location.reload();
       });
-      if (n >= MAX) { if (status) status.textContent = 'Still not up. Use Retry when it is.'; return; }
-      var left = Math.round(DELAY / 1000);
-      function tick() {
-        if (status) status.textContent = left > 0 ? 'Checking again in ' + left + 's\\u2026' : 'Checking\\u2026';
-        left -= 1;
+      if (n >= MAX) {
+        if (load) load.hidden = true;
+        if (btn) btn.hidden = false;
+        var body = document.getElementById('body');
+        if (body) body.textContent = 'This is taking longer than usual. Check the app in your session, then try again.';
+        return;
       }
-      tick();
-      var t = setInterval(tick, 1000);
       setTimeout(function () {
-        clearInterval(t);
         sessionStorage.setItem(KEY, String(n + 1));
         location.reload();
       }, DELAY);
@@ -189,62 +198,63 @@ export function previewStatePage(input: {
 <style>
   :root {
     color-scheme: light dark;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0 0 0);
-    --secondary: oklch(0.9431 0 0);
-    --muted-foreground: oklch(0.5103 0 0);
-    --kortix-yellow: oklch(0.732 0.15 90.688);
+    --background: #ffffff;
+    --foreground: #1f1f1f;
+    --muted-foreground: #666666;
+    --border: #e2e2e2;
+    --ring: #0099ff;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --background: oklch(0.1398 0 0);
-      --foreground: oklch(1 0 0);
-      --secondary: oklch(0.2264 0 0);
-      --muted-foreground: oklch(0.683 0 0);
+      --background: #0b0b0b;
+      --foreground: #ffffff;
+      --muted-foreground: #999999;
+      --border: #262626;
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body {
-    display: flex; align-items: center; justify-content: center;
-    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--secondary); color: var(--foreground); padding: 24px;
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--background); color: var(--foreground);
     -webkit-font-smoothing: antialiased;
   }
-  .card {
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
-    text-align: center; max-width: 400px;
+  .load { position: fixed; top: 0; left: 0; right: 0; height: 2px; overflow: hidden; }
+  .load::after {
+    content: ""; position: absolute; inset: 0; width: 40%;
+    background: var(--foreground); opacity: .55;
+    animation: load 1.4s var(--ease) infinite;
   }
-  h1 { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin: 0; }
-  p { font-size: 13px; color: var(--muted-foreground); margin: 0; }
-  .dot {
-    width: 8px; height: 8px; border-radius: 999px; background: var(--kortix-yellow);
-    animation: pulse 1.4s ease-in-out infinite;
+  @keyframes load { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+  .page { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 28px; }
+  h1 { font-size: 13px; font-weight: 500; margin: 0; text-wrap: balance; }
+  p { font-size: 13px; color: var(--muted-foreground); margin: 0; max-width: 44ch; text-wrap: pretty; }
+  .link {
+    font: inherit; font-size: 12px; margin-top: 8px; padding: 0; border: 0; background: none; cursor: pointer;
+    color: var(--foreground); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px;
   }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .link:hover { text-decoration-color: currentColor; }
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
-    height: 30px; padding: 0 14px; margin-top: 4px; border: 0; border-radius: 8px;
-    font: inherit; font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer;
+    height: 28px; padding: 0 12px; margin-top: 10px; border: 0; border-radius: 6px;
+    font: inherit; font-size: 12px; font-weight: 500; text-decoration: none; cursor: pointer;
     background: var(--foreground); color: var(--background);
-    transition: opacity .15s;
+    transition: opacity .15s var(--ease);
   }
   .btn:hover { opacity: .9; }
-  .status { font-size: 12px; color: var(--muted-foreground); min-height: 16px; margin: 0; }
-  code {
-    font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--muted-foreground); word-break: break-all;
-  }
+  .link:focus-visible, .btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .load::after { animation: none; width: 100%; opacity: .2; } }
 </style>
 </head>
 <body>
-  <div class="card">
-    <h1>${copy.autoRetry ? '<span class="dot"></span>' : ''}${escapeHtml(copy.title)}</h1>
-    <p>${escapeHtml(copy.body)}</p>
+  ${loading ? '<div class="load" id="load" role="progressbar" aria-label="Loading preview"></div>' : ''}
+  <main class="page">
+    <h1>${escapeHtml(copy.title)}</h1>
+    <p id="body">${escapeHtml(copy.body)}</p>
     ${action}
-    <p class="status" id="status"></p>
-    <code>${escapeHtml(input.returnTo)}</code>
-  </div>
+  </main>
   <script>${signInScript}${retryScript}</script>
 </body>
 </html>`;

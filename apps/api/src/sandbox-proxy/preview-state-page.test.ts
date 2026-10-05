@@ -8,8 +8,8 @@ const STATES: Array<[PreviewState, string, boolean, boolean]> = [
   ['forbidden', 'This preview address is not signed', true, false],
   ['unknown', 'This preview is no longer available', false, false],
   ['starting', 'Starting the sandbox', false, true],
-  ['not-listening', 'Nothing is listening on port 8081 yet', false, true],
-  ['unreachable', 'Port 8081 isn&#39;t responding', false, true],
+  ['not-listening', 'Waiting for port 8081', false, true],
+  ['unreachable', 'Port 8081 is not answering', false, true],
 ];
 
 const BASE = {
@@ -39,7 +39,33 @@ describe('every preview state renders a page a person can read', () => {
     expect(previewStatePage({ ...BASE, state: 'not-listening', port: 8081 })).toContain('port 8081');
     const noPort = previewStatePage({ ...BASE, state: 'not-listening' });
     expect(noPort).not.toContain('undefined');
-    expect(noPort).toContain('Nothing is listening yet');
+    expect(noPort).toContain('Waiting for the app');
+  });
+
+  // KRTX-1644: the waiting states are one title, one line and a load line.
+  // No countdown that re-renders every second, no in-body Retry that repeats
+  // the card header's refresh, and no raw sandbox address.
+  test.each(['starting', 'not-listening'] as const)('%s shows the load line and nothing noisy', (state) => {
+    const html = previewStatePage({ ...BASE, state, port: 8081 });
+    expect(html).toContain('class="load"');
+    expect(html).not.toContain('Retry now');
+    expect(html).not.toContain('Checking again');
+    expect(html).not.toContain('setInterval');
+    expect(html).not.toContain(BASE.returnTo);
+  });
+
+  test('unreachable drops the load line and offers a quiet Try again', () => {
+    const html = previewStatePage({ ...BASE, state: 'unreachable', port: 8081 });
+    expect(html).not.toContain('class="load"');
+    expect(html).toContain('>Try again</button>');
+    expect(html).toContain('location.reload()');
+  });
+
+  test('a page that gave up stops the load line and offers Try again', () => {
+    const html = previewStatePage({ ...BASE, state: 'starting', port: 8081 });
+    expect(html).toContain('n >= MAX');
+    expect(html).toContain("load.hidden = true");
+    expect(html).toContain('>Try again</button>');
   });
 
   test('the sign-in hand-off carries where the person was going', () => {
@@ -60,7 +86,10 @@ describe('every preview state renders a page a person can read', () => {
       returnTo: 'https://x.test/"><script>alert(1)</script>',
     });
     expect(html).not.toContain('<script>alert(1)</script>');
-    expect(html).toContain('&lt;script&gt;');
+    // The address is never printed: it is an internal sandbox host.
+    expect(html).not.toContain('x.test');
+    const signIn = previewStatePage({ ...BASE, state: 'signed-out', returnTo: 'https://x.test/"><script>alert(1)</script>' });
+    expect(signIn).not.toContain('<script>alert(1)</script>');
   });
 
   test('it is self-contained — no external asset can fail to load', () => {
