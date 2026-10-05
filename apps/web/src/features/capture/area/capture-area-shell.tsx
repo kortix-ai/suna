@@ -1,5 +1,6 @@
 'use client';
 
+import { ApiError } from '@kortix/sdk';
 import { useSetCaptureEnabled } from '@kortix/sdk/react';
 import { CalendarBlankIcon, CaretDownIcon, CheckIcon, GearSixIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -24,6 +25,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
@@ -60,7 +62,26 @@ export function CaptureAreaShell({
   }, [accountId, area.workspace.data]);
 
   if (area.workspace.isLoading) return <ProjectPendingScreen />;
-  if (area.workspace.isError || !area.workspace.data) notFound();
+  if (!area.workspace.data) {
+    // Not a member (403) or no such account (404): the API's answer. Anything else
+    // (offline, a timeout, a 5xx) is a failed read the person can retry.
+    const status =
+      area.workspace.error instanceof ApiError ? area.workspace.error.status : undefined;
+    if (status === 403 || status === 404) notFound();
+    return (
+      <main className="flex min-h-svh items-center justify-center px-4">
+        <ErrorState
+          size="sm"
+          title={t('loadFailed')}
+          action={
+            <Button variant="outline" size="sm" onClick={() => area.workspace.refetch()}>
+              {t('tryAgain')}
+            </Button>
+          }
+        />
+      </main>
+    );
+  }
 
   return (
     <div className="bg-background flex min-h-svh flex-col">

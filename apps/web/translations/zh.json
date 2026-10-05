@@ -20933,7 +20933,9 @@
         "bodyMember": "请让此组织的管理员开启。",
         "turnOn": "开启 Kortix Capture",
         "failed": "无法开启 Kortix Capture"
-      }
+      },
+      "loadFailed": "无法打开 Kortix Capture。",
+      "tryAgain": "重试"
     },
     "overview": {
       "title": "概览",
@@ -21121,7 +21123,9 @@
       "empty": "此范围内没有可导出的内容。",
       "failed": "导出失败",
       "download": "下载",
-      "close": "关闭"
+      "close": "关闭",
+      "table": "表",
+      "tableHint": "一个 Parquet 文件只包含一张表。如需其他表，请再次导出。"
     },
     "ask": {
       "title": "就录制的工作提问",
@@ -21163,7 +21167,19 @@
         "moment": "时刻"
       },
       "openWorkflow": "打开工作流",
-      "openTimeline": "在时间线中打开"
+      "openTimeline": "在时间线中打开",
+      "lookedAt": "查看了：{list}",
+      "looking": "正在查看{what}…",
+      "tool": {
+        "searchMoments": "时刻",
+        "searchMomentsFor": "“{query}”相关时刻",
+        "listWorkflows": "工作流",
+        "listWorkflowsFor": "“{query}”相关工作流",
+        "getWorkflow": "一个工作流",
+        "listEpisodes": "片段",
+        "getEpisode": "一个片段",
+        "stats": "统计"
+      }
     },
     "thisComputer": {
       "title": "此电脑",
