@@ -1,5 +1,5 @@
 {
-  "source_hash": "429c032713371766678cdc5755d7e3656560ef44afcf271a92416de34263958b",
+  "source_hash": "7ee7a72272144d8adfed6c8bdd0a3823d517d2d4194c7e9b01ce4dd6eaf5581c",
   "diff_files": [
     "apps/web/src/app/[locale]/error.tsx",
     "apps/web/src/app/global-error.tsx",
@@ -8,13 +8,13 @@
     "apps/web/src/lib/chunk-load-recovery.test.ts",
     "apps/web/src/lib/chunk-load-recovery.ts"
   ],
-  "diff_hash": "8bc44a3a82810285bbff26667964e9c13331dfc8110e96af2675d74fb8061828",
-  "head": "35d4e1416b1a17151ff0e94b5820e50190a7188e",
+  "diff_hash": "5bb7ae95f1c04ccd09bbb7d21ad67f4bf2b6432acfcbdd68f0c09b0c16b5d817",
+  "head": "655e42984b2d63bb9b670c9f90e435502e58cbf6",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-05T22:06:59.474Z"
+  "at": "2026-10-05T23:36:07.996Z"
 }
