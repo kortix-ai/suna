@@ -1,28 +1,9 @@
 {
-  "name": "ptagent",
+  "name": "pi-cell",
   "main": "dist/worker.js",
-  "compatibility_date": "2025-01-01",
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "AGENT",
-        "class_name": "AgentCell"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": [
-        "AgentCell"
-      ]
-    }
-  ],
-  "vars": {
-    "TOOL_DAEMON_URL": "http://host.docker.internal:7070",
-    "SCRIPT": "[{\"tool\":\"bash\",\"id\":\"call_fixed_1\",\"args\":{\"command\":\"echo AGENT_RAN_$((6*7)) > proof.txt && cat proof.txt\"}},{\"text\":\"I ran the command and wrote proof.txt\"}]",
-    "MODEL_PROVIDER": "",
-    "MODEL_ID": "gpt-5.6-luna",
-    "MODEL_BASE_URL": ""
-  }
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": { "bindings": [{ "name": "AGENT", "class_name": "AgentCell" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentCell"] }],
+  "vars": {}
 }

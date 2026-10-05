@@ -1,1263 +1,395 @@
-// AGENT CELL — a pi agent loop living inside a Durable Object.
+// THE PI CELL — a Kortix session runtime that is a Durable Object.
 //
-// The claim being tested: a coding agent can run in a V8 isolate with NO
-// filesystem and NO child processes, keep its transcript in the cell's own
-// SQLite (which celld replicates to object storage), hibernate to nothing
-// between turns, and come back with its conversation intact.
+// One cell is one Kortix session. Its agent is pi 1.0's durable harness
+// (engine.js) running in a V8 isolate with no filesystem and no processes; its
+// state — pi's checkpoints, the transcript, the workspace tree, the session's
+// env — is the object's own SQLite, which celld replicates to object storage.
+// An evicted isolate comes back from that and resumes a run mid-turn.
 //
-// Three things make that work, and each is a decision rather than a detail:
+// TO THE PLATFORM IT IS A KORTIXD PI BOX. The API, the SDK, the web app and the
+// CLI talk to it exactly as they talk to the sandbox daemon running the pi
+// harness (apps/kortix-sandbox-agent-server, KORTIX_HARNESS=pi):
 //
-//  1. pi-agent-core, not pi-coding-agent. The latter imports node:fs,
-//     fs/promises, path and readline at module top level — 106 unresolved
-//     imports when bundled for a worker target. agent-core bundles clean.
-//     Measured, not assumed; see README.md.
+//   /kortix/health, /kortix/env, /kortix/abort, /kortix/runtime/*   (control)
+//   /global/event, /session/*, /permission, /question, …             (OpenCode surface)
+//   /file/*, /find/*, /kortix/pty, /kortix/git/commit-push           (workspace)
+//   POST {KORTIX_API_URL}/projects/:p/turn-stream                     (callbacks)
 //
-//  2. STORAGE IS TRUTH, MEMORY IS CACHE. `agent.state.messages` is rebuilt from
-//     SQLite on every wake. An isolate can be evicted between any two requests,
-//     so anything held only in a field is already lost.
+// with the same root session id (`ses_pi` + sha256 of the Kortix session), the
+// same message ids, the same event framing and the same transcript shapes. So
+// nothing outside this directory needs to know a session is a cell.
 //
-//  3. Tools are HTTP calls carrying pi's own toolCallId as an idempotency key,
-//     so a crash mid-command and a resume elsewhere retries safely.
-// A STRICT atob IS WHY A CHATGPT SUBSCRIPTION DID NOT WORK IN A CELL.
-//
-// pi's Codex provider reads the ChatGPT account id out of the OAuth access
-// token: `JSON.parse(atob(jwt.split(".")[1]))`. JWT segments are base64URL and
-// carry NO PADDING. Node's atob tolerates that; the isolate's atob implements
-// the spec and throws `Invalid base64`, which surfaces four layers up as the
-// unhelpful `Failed to extract accountId from token`.
-//
-// Measured rather than guessed: the token reached the cell intact — 1680 chars,
-// 3 segments — and the same string that node decodes fine failed here. The
-// segment needed exactly 2 characters of padding.
-//
-// So pad it (and accept base64url's - and _ while we are here) before
-// delegating. This runs before any provider is loaded, and is a no-op for
-// input that was already valid.
+// A STRICT atob IS WHY A CHATGPT SUBSCRIPTION DID NOT WORK IN A CELL: pi's
+// Codex provider decodes an unpadded base64url JWT segment with atob, and the
+// isolate's atob implements the spec and throws. Pad it first.
 const nativeAtob = globalThis.atob;
 globalThis.atob = (input) => {
   let s = String(input).replace(/-/g, "+").replace(/_/g, "/");
   const rem = s.length % 4;
   if (rem === 2) s += "==";
   else if (rem === 3) s += "=";
-  else if (rem === 1) return nativeAtob(input); // genuinely malformed — let it throw natively
+  else if (rem === 1) return nativeAtob(input);
   return nativeAtob(s);
 };
 
-import { Agent } from "@earendil-works/pi-agent-core";
-import { CELL_CWD, cellExecutionEnv, cellFs, cellShellNote } from "./execenv.cell.js";
+import { CELL_CWD, cellExecutionEnv, cellFs, cellShellNote, runCapture } from "./execenv.cell.js";
+import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
+import { CellEngine, fromAgentTool, nativeModelId } from "./engine.js";
+import { KortixEventBus, globalEventStream, runtimeEventStream } from "./kortix/bus.js";
+import { TranscriptStore } from "./kortix/transcript.js";
+import { MESSAGE_ID, MessageIdClock, ROOT_ID, mintRootId } from "./kortix/ids.js";
+import { decodeDataUrl, stripInlineAttachmentBytes } from "./kortix/attachments.js";
+import { turnErrorCode } from "./kortix/turn-events.js";
+import { CELL_VERSION, parsePromptBody } from "./kortix/prompt.js";
 import { filesAnswer } from "./cell-files.js";
 import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
-import { executionEnvFor, piTools, piToolsCell, piToolsOver, piToolsPlatinum } from "./pitools.js";
-import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
+import { loadWorkspaceSkills, withSkills } from "./skills.js";
 import { workspaceConfigDir } from "./manifest.js";
-import { attachEnvironment, readCached as readEnvironment, waitForRepo, ENVIRONMENT_TABLE_SQL } from "./environment.js";
-import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
+import { ENVIRONMENT_TABLE_SQL, attachEnvironment, readCached as readEnvironment, waitForRepo } from "./environment.js";
 import { machineTool } from "./machine-tool.js";
 import { machineFs, machineGit } from "./machine-fs.js";
-import { loadPlugins, pluginsDirFor, pluginsSummary, toPiTool, isPluginFile } from "./plugins.js";
-import { createNodeRuntime, collectWorkspace, seedRuntime } from "./nodejs.js";
-// tools.platinum.js is retired for the worker: bash/read/write/list/grep go
-// through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
-// stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
-import { providerStream, resolveModel, scriptedStream, supportedProviders } from "./model.js";
-import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
-import { WireBus, WIRE_HEARTBEAT_MS, heartbeatFrame } from "./wire.js";
-import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
-import { agentList, agentModelId, agentSystemPrompt, gatewayModelId, parseAgentConfig, selectAgent } from "./agent-config.js";
+import { isPluginFile, loadPlugins, pluginsDirFor, pluginsSummary, toPiTool } from "./plugins.js";
+import { collectWorkspace, createNodeRuntime, seedRuntime } from "./nodejs.js";
 import { globTool, readTodos, todoTools } from "./plantools.js";
-import { cloneProject, commitAndPush, fileDiffs, isCheckedOut, workingDiff, workingStatus } from "./cell-git.js";
-import { actAnswer, logsAnswer, messagesPage, partAnswer, portsAnswer, turnAnswer } from "./kortix-runtime.js";
+import { grepTool } from "./fstools.js";
+import { agentList, agentModelId, agentSystemPrompt, parseAgentConfig, selectAgent } from "./agent-config.js";
+import { agentNameFrom, agentShape, bootAnswer } from "./opencode-boot.js";
+import { cloneProject, commitAndPush, fileDiffs, isCheckedOut, workingStatus } from "./cell-git.js";
 import { banner, cdTarget, feed, newEditor, prompt, ptyCreate, ptyGet, ptyList, ptyRemove, ptySetCwd, ptyUpdate } from "./cell-pty.js";
-import { transcriptMessages } from "./transcript-read.js";
-import { mintWireMessageId, newestWireIdTime } from "../../api/src/projects/wire-message-id.ts";
-import { runtimeStateDoc, projectionEtag } from "./projection.js";
-import { ChatEventAdapter } from "../../kortix-worker/src/chat-events.ts";
 
-const streamFnOf = (agent) => agent.__streamFn;
 
-const SYSTEM_PROMPT =
-  "You are a coding agent working in a remote workspace. " +
-  "You have no local filesystem: use the bash, read and write tools, which run in the workspace. " +
-  "Be concise.";
-
-// How much summarised transcript a cell keeps for audit. Past this the oldest
-// archived messages are dropped — the record is bounded, and says so, rather
-// than growing until the cell's storage becomes the problem.
-const ARCHIVE_MAX_BYTES = 8 * 1024 * 1024;
+/** kortixd's default pi prompt, for a project whose compiled agent has none. */
+const DEFAULT_SYSTEM_PROMPT = [
+  "You are a coding agent working inside a Kortix session. The project repository is checked out at the working directory.",
+  "Use the tools to read, search and change files and to run commands. Prefer small, verifiable steps. Report what you did and what remains.",
+].join("\n");
 
 /** How much of AGENTS.md joins the system prompt. Enough for instructions, not a book. */
 const PROJECT_INSTRUCTIONS_MAX = 16_000;
 
-// Paths that do not bill. Observability and liveness: a monitor polling these
-// must not move a customer's invoice.
-const UNBILLED_PATHS = new Set(["/health", "/meter", "/sockets"]);
+/** kortixd's runtime capability names a pi session advertises; one `session.*` is required. */
+const CAPABILITIES = ["file.import", "file.append", "runtime.turns.v1", "session.compact"];
 
-// How many requests may go uncounted in storage at once. 20 turns a 154 ms
-// per-request floor into ~8 ms amortised, and bounds what a rebuild can lose
-// to requests nobody read back.
-const REQUEST_FLUSH_EVERY = 20;
+/** The longest one alarm waits on pi; a longer run is waited on across several alarms. */
+const ALARM_WAIT_MS = 10 * 60_000;
+/** The alarm that restarts the object if it is evicted while pi works. */
+const DEADMAN_MS = 30_000;
 
-const SCRIPTED_MODEL = { id: "scripted", api: "anthropic-messages", provider: "scripted", name: "scripted" };
-
-// WHICH MODEL, entirely from config. MODEL_PROVIDER is any id pi ships
-// (openai, anthropic, google, xai, groq, deepseek, mistral, openrouter,
-// cerebras, fireworks, together, moonshotai, github-copilot, google-vertex,
-// azure-openai-responses, ...); MODEL_BASE_URL redirects an OpenAI-compatible
-// one at a gateway or a test double. With no key it stays scripted, so the
-// tests neither need credentials nor spend money.
-// WHICH TOOL BACKEND. `platinum` calls the platform's own sandbox API with a
-// `sandbox:<id>`-scoped key — the credential sandboxScope.ts was built to hand
-// an agent. `daemon` is the standalone HTTP service, kept for local runs where
-// there is no control plane to call.
-//
-// Defaulting to platinum when its three variables are present, rather than to a
-// config flag, so a deployment that HAS a scoped key cannot accidentally keep
-// talking to a daemon that is not there.
-/**
- * The two tools the product's UI draws specially and pi's core set does not
- * carry: `glob` (a search view) and `todowrite`/`todoread` (the checklist the
- * session panel shows as a plan). Both backends get them — the difference
- * between backends must never be which abilities the model has.
- */
-function planTools(sql, owner) {
-  return [
-    globTool(),
-    ...todoTools(sql, (list) => owner?.wire?.publish([
-      { type: "session.todo.updated", properties: { sessionID: owner.effectiveEnv?.().KORTIX_SESSION_ID ?? "", todos: list } },
-    ])),
-  ];
-}
-
-/**
- * Does this session's work happen on the CELL'S OWN filesystem?
- *
- * The tools decided this and nothing else could ask, so `/skills` loaded over
- * a daemon that does not exist on the platform while the session's checkout
- * sat in the cell — measured live 2026-09-10: `fetch: error sending request
- * for url (http://host.docker.internal:7070/fs)`. One predicate, two callers.
- */
-export function usesCellFilesystem(env = {}) {
-  const wantsPlatinum = env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID;
-  if (wantsPlatinum) return false;
-  if (env.TOOLS_BACKEND === "cell") return true;
-  const platform = Boolean(normalizeModelEnv(env).MODEL_BASE_URL) || Boolean(env.KORTIX_SESSION_ID);
-  return platform && !env.TOOL_DAEMON_URL_FORCE;
-}
-
-function toolsFor(env, sessionId, sql, owner) {
-  const wantsPlatinum = env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID;
-  // A PLATFORM SESSION WITH NO WORKSPACE GETS THE CELL'S OWN FILESYSTEM.
-  //
-  // Measured on dev 2026-09-07: a Kortix session's cell carried fourteen
-  // KORTIX_* variables and no PT_*, so tools fell through to a daemon at
-  // host.docker.internal:7070 that does not exist on the platform — every
-  // bash call failed with "error sending request", and the session could
-  // answer questions but never touch a file. The cell can now carry its own
-  // tree and shell (execenv.cell.js), so that fallback is the right default
-  // whenever a gateway is driving and nobody handed the session a sandbox.
-  // Explicit TOOLS_BACKEND=cell asks for it anywhere; a bench with a daemon is
-  // unchanged.
-  const platform = Boolean(normalizeModelEnv(env).MODEL_BASE_URL) || Boolean(env.KORTIX_SESSION_ID);
-  if (!wantsPlatinum && owner && usesCellFilesystem(env)) {
-    owner.cellFs ??= cellFs(sql);
-    // Every changed path goes out as OpenCode's `file.edited`, so the Files
-    // panel, git status and an open viewer re-read (execenv.cell.js).
-    owner.cellFs.onChange = (paths) => owner.wire?.publish(paths.slice(0, 50).map((file) => ({ type: "file.edited", properties: { file } })));
-    // THE MACHINE IS THE WORKSPACE ONCE IT IS ATTACHED. The six tools bind to
-    // it and the cell's own tree becomes the tree the session HAD — pushed to
-    // the branch and pulled into the machine at attach (attachMachine). The
-    // env is prepared on the prompt path (prepareMachine), because minting
-    // its signed context is async and this chooser is not.
-    const extras = [...planTools(sql, owner), owner.machineTool(sessionId), ...(owner.__pluginTools ?? [])];
-    if (owner.__machineEnv) return piToolsOver(owner.__machineEnv, sql, extras);
-    return piToolsCell(env, sessionId, sql, owner.cellFs, extras);
-  }
-  // The daemon backend now runs pi's OWN tools over an ExecutionEnv — bash,
-  // read, write and, the one that matters, edit. The hand-rolled set is
-  // retired: it maintained three tools worse than pi does and had no edit at
-  // all, so every change to a file cost a whole-file rewrite.
-  if (!wantsPlatinum) return piTools(env, sessionId, sql, planTools(sql, owner));
-  // Platinum: the same six tools, over the sandbox API.
-  //
-  // list and grep used to come from tools.platinum.js here, against Platinum's
-  // native routes — which is why the Platinum path had six tools and the daemon
-  // path four. They are now written once against the ExecutionEnv and served by
-  // both, so the model's abilities do not depend on which backend a deployment
-  // happens to use.
-  return piToolsPlatinum(env, sessionId, sql, planTools(sql, owner));
-}
-
-// WHAT THE SESSION IS PRICED AT, which is not the same question as what it
-// RUNS. A price comes from the catalogue and needs no credential, so
-// MODEL_PROVIDER + MODEL_ID alone are enough to answer "what would this cost on
-// claude-sonnet-5" — useful before a key exists, and the only way a scripted
-// test can exercise the money path without turning the scripted model off.
-//
-// modelConfig() below still decides what actually runs, and it needs the key.
-/**
- * THE PLATFORM'S NAMES FOR THE SAME FOUR THINGS.
- *
- * A cell reads MODEL_PROVIDER / MODEL_API_KEY / MODEL_ID / MODEL_BASE_URL. The
- * Kortix control plane injects KORTIX_PROVIDER / KORTIX_TOKEN / KORTIX_MODEL /
- * KORTIX_LLM_BASE_URL (provisionSessionSandbox). Nothing translated between
- * them, so a real session arrived with a gateway, a credential and a model and
- * the cell found no key at all — it stayed scripted and answered nothing, with
- * every health field reporting fine. Measured on dev 2026-09-07: sessions
- * dee5338a and 5b482709 ran their turns to `done` with no model behind them.
- *
- * The mapping is kortix-worker's (configFromEnv in
- * apps/kortix-worker/src/worker.ts), including the rule that matters most:
- * KORTIX_TOKEN is a CONTROL-PLANE credential and is only valid as model auth
- * when it is being sent to the Kortix gateway. With no gateway URL there is no
- * key, and the cell stays scripted rather than posting a session token to an
- * external provider.
- *
- * Explicit MODEL_* always wins, so a bench, a suite or an operator can pin a
- * model without the platform's names getting in the way.
- */
-// The model a gateway session falls back to when the platform names none.
-// An empty model is not an option: the gateway answers 400 `model_not_found`.
-//
-// THIS MUST BE THE PLATFORM'S OWN DEFAULT, not a model that merely works.
-// It is `PLATFORM_DEFAULT_MODEL_ID` in packages/llm-catalog — the value
-// `config.LLM_GATEWAY_DEFAULT_MODEL` takes when an operator names none — and
-// picking anything else here silently overrides a deployment-wide choice for
-// every cell session, because the control plane does not send a model at all.
-//
-// It used to be `glm-5.3-flash`, chosen on 2026-09-07 for no better reason than
-// that it answered 200. Measured on dev 2026-09-08, same cell, same gateway,
-// same prompt, best of two:
-//
-//   deepseek-v4-flash    headers  906 ms   total  2438 ms
-//   glm-5.3-flash        headers 5816 ms   total  5864 ms
-//
-// and on real session turns glm took 8.5 s, 23.4 s and 23.8 s of upstream time
-// (the gateway's own log). So the arbitrary pick was costing every turn several
-// seconds and the sessions felt slow for a reason that had nothing to do with
-// the cell, which spends 3 ms.
-const GATEWAY_FALLBACK_MODEL = "deepseek-v4-flash";
-
-function normalizeModelEnv(env) {
-  // `??` IS THE WRONG OPERATOR HERE, and it cost a whole session.
-  //
-  // wrangler.json declares MODEL_PROVIDER and MODEL_BASE_URL as "" so the
-  // bindings exist for a scripted run. An empty string is not nullish, so
-  // `env.MODEL_BASE_URL ?? env.KORTIX_LLM_BASE_URL` answers "" and the
-  // platform's gateway is never reached — which makes the key undefined, which
-  // makes the cell scripted. Measured on dev 2026-09-07, session 3cd59929: all
-  // fourteen KORTIX_* variables present on the isolate, a gateway URL and a
-  // token among them, and model_mode still "scripted".
-  //
-  // So: the first value that is actually SET wins, and a declared-but-empty
-  // binding counts as unset.
-  const pick = (...vals) => vals.find((v) => typeof v === "string" && v.length > 0);
-  const gateway = pick(env.MODEL_BASE_URL, env.KORTIX_GATEWAY_URL, env.KORTIX_LLM_BASE_URL);
-  const key = pick(env.MODEL_API_KEY, env.KORTIX_API_KEY, gateway ? env.KORTIX_TOKEN : undefined);
-  // WHOSE MODEL IS IT. A gateway means the platform is driving this session, so
-  // ITS model and provider win over the node's — wrangler.json ships
-  // MODEL_ID "gpt-5.6-luna" as a bench default, and with the node first that
-  // default beat the model the session was actually started with.
-  //
-  // Measured on dev 2026-09-07, session 6342be82: the turn ran to `done`
-  // against provider `openai-codex` with the Codex Responses API, and came back
-  // with empty content and zero tokens — the gateway does not speak that shape.
-  // The platform had said which model to use and was not asked.
-  //
-  // With no gateway nothing is driving the session, so the node's own values
-  // are the answer and a bench keeps working unchanged.
-  const platform = Boolean(gateway);
-  return {
-    ...env,
-    // THE NODE'S PROVIDER IS NOT A FALLBACK EITHER, for the same reason its
-    // model id is not: `celldctl deploy` bakes the DEPLOYING MACHINE's model
-    // config into the worker's vars (syncWorkerVars), so whoever last deployed
-    // decides what every session on that worker talks to. Mine put
-    // `openai-codex` there, and the sessions dutifully spoke the Codex
-    // Responses shape at a gateway that does not (dev 2026-09-07: turns ran to
-    // `done`, empty content, zero tokens). Under a gateway the provider is the
-    // platform's or the OpenAI-compatible default the gateway serves.
-    MODEL_PROVIDER: platform
-      ? pick(env.KORTIX_PROVIDER, key ? "openrouter" : undefined)
-      : pick(env.MODEL_PROVIDER),
-    // NO NODE FALLBACK FOR THE MODEL ID when the platform is driving — the
-    // node's is a bench value, and `gpt-5.6-luna` resolves to the Codex
-    // Responses API, which the gateway does not speak (dev 2026-09-07: turns
-    // ran to `done` with empty content and zero tokens).
-    //
-    // BUT UNSET IS NOT A CHOICE THE GATEWAY ACCEPTS. Asked directly with a
-    // session's own credential it answers 400 `"" is not a recognized model`,
-    // and with a model it answers 200 and a completion. So "let the gateway
-    // decide" was not an option that existed; it was an empty string in a
-    // required field, and the turn came back empty because the request was
-    // refused before it ever reached a model.
-    //
-    // The platform's model is used when it names one. When it does not, this
-    // names one the gateway serves rather than sending nothing — overridable,
-    // because which model a deployment defaults to is a product decision and
-    // not this file's to fix forever.
-    // KORTIX_MODEL is the control plane's own resolution (explicit → agent →
-    // project → account → platform), so it wins. KORTIX_AGENT_MODEL is what
-    // the project's compiled agent asks for, and only applies where the
-    // control plane sent nothing — a cell whose env predates the model push.
-    MODEL_ID: platform
-      ? gatewayModelId(pick(env.KORTIX_MODEL, env.KORTIX_AGENT_MODEL, env.KORTIX_DEFAULT_MODEL, GATEWAY_FALLBACK_MODEL))
-      : pick(env.MODEL_ID),
-    MODEL_BASE_URL: gateway,
-    MODEL_API_KEY: key,
-  };
-}
-
-function pricedModel(rawEnv) {
-  const env = normalizeModelEnv(rawEnv ?? {});
-  if (!env.MODEL_PROVIDER || !env.MODEL_ID) return null;
-  try { return resolveModel({ provider: env.MODEL_PROVIDER, modelId: env.MODEL_ID, baseUrl: env.MODEL_BASE_URL }); }
-  catch { return null; }
-}
-
-function modelConfig(rawEnv) {
-  const env = normalizeModelEnv(rawEnv ?? {});
-  const provider = env.MODEL_PROVIDER;
-  const apiKey = env.MODEL_API_KEY;
-  if (!provider || !apiKey) return null;
-  return {
-    model: resolveModel({ provider, modelId: env.MODEL_ID, baseUrl: env.MODEL_BASE_URL }),
-    streamFn: providerStream(provider),
-    getApiKey: () => apiKey,
-  };
-}
+const json = (status, body, headers = {}) => Response.json(body, { status, headers });
+const notFound = (path) => json(404, { error: `no pi cell handler for ${path}` });
+const decodeSegment = (value) => { try { return decodeURIComponent(value); } catch { return null; } };
+const errorText = (e) => String(e?.message ?? e);
 
 export class AgentCell {
   constructor(state, env) {
-    const _ctor0 = Date.now();
     this.state = state;
-    this.env = env;
+    this.env = env ?? {};
     this.sql = state.storage.sql;
-    this.sockets = new Set();
-    this.ready = false;
-    // THIS ISOLATE, as distinct from this cell. Held in memory only, so it
-    // changes exactly when the isolate is rebuilt and never otherwise. It is
-    // the only evidence of an eviction a CALLER can obtain: celld 0.3.0 logs
-    // no eviction line, and on the platform the node's logs are not reachable
-    // from outside the microVM at all.
-    this.instance = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    this.instance = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     this.bornAt = Date.now();
-    // A SESSION IS SEQUENTIAL, AND THE INPUT GATE DOES NOT MAKE IT SO.
-    //
-    // The Durable Object input gate is released across an await on anything that
-    // is not storage (infra/celld/README.md), and a tool call is an await on
-    // HTTP. So concurrent prompts to ONE cell interleave. Measured, before this
-    // queue, with six concurrent prompts:
-    //
-    //   user:p2 user:p1 user:p3 user:p6 user:p5 user:p4
-    //   assi:call2 tool:done2 assi:ok2  assi:call3 ...
-    //
-    // Every user message landed before any assistant message — not a
-    // conversation, and worse, each buildAgent() had already read `messages`
-    // from SQLite, so all six ran on a context missing each other's turns.
-    //
-    // blockConcurrencyWhile is the wrong tool: it would hold the gate across a
-    // long HTTP call and stall reads too. A promise chain orders prompts
-    // without blocking /history, which is what a transcript actually needs.
-    this.tail = Promise.resolve();
-    // What the isolate cost before it could answer anything. Reported by
-    // /ping and /meter so the spawn budget is attributable rather than
-    // inferred from a stopwatch on the far side of an ocean.
-    this.ctorMs = Date.now() - _ctor0;
+    this.bus = new KortixEventBus({ epoch: this.instance });
+    this.clock = new MessageIdClock();
+    this.ready = false;
   }
 
-  // Called at the top of every request. An isolate may be brand new even when
-  // the cell is old, so this is idempotent and cheap rather than a constructor.
+  // ── state ──────────────────────────────────────────────────────────────
+
   init() {
     if (this.ready) return;
-    const _init0 = Date.now();
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS msgs (
-      i    INTEGER PRIMARY KEY AUTOINCREMENT,
-      role TEXT NOT NULL,
-      json TEXT NOT NULL,
-      ts   INTEGER NOT NULL
-    )`);
-    // The op ledger. Deliberately NOT part of the transcript: it is the retry
-    // record for tool calls, keyed by pi's toolCallId, and it has to survive
-    // even when the turn that produced it never completed.
-    // WHERE THE ACTIVE CONTEXT STARTS.
-    //
-    // Compaction used to DELETE the messages it summarised. That conflates two
-    // different questions — what the model should be sent, and what actually
-    // happened — and answers both by destroying the second. After a long
-    // session /history showed a summary and a tail, and the record of what the
-    // agent did was gone.
-    //
-    // The transcript is now kept and the context is a WINDOW over it.
     this.sql.exec("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)");
-
-    // WHAT THIS CELL OWES, counted where it happens.
-    //
-    // BILLED_UNITS_IMPLEMENTED in the control plane deliberately excludes
-    // 'requests' because nothing counted them — and a cell is the one runtime
-    // for which per-request is the only honest unit: it hibernates to nothing,
-    // so charging it for RAM it is not holding bills a customer for storage
-    // they already pay for separately.
-    //
-    // In the CELL's own SQLite rather than in memory, because the whole point
-    // is that a cell is evicted and rebuilt constantly. A counter in the
-    // instance would reset on every eviction, and eviction is not a rare event
-    // — it is the normal way an idle cell exists.
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS meter (
-      k     TEXT PRIMARY KEY,
-      n     INTEGER NOT NULL DEFAULT 0
-    )`);
-
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS ops (
-      id         TEXT PRIMARY KEY,
-      kind       TEXT,
-      detail     TEXT,
-      status     TEXT,
-      out        TEXT,
-      started_at INTEGER,
-      ended_at   INTEGER,
-      replayed   INTEGER DEFAULT 0,
-      result     TEXT
-    )`);
-    // The tool result itself, kept so a retry can be ANSWERED rather than
-    // re-run. `out` is the first 4000 characters for a human reading /ops;
-    // `result` is what goes back to the model.
-    try { this.sql.exec("ALTER TABLE ops ADD COLUMN result TEXT"); } catch { /* already there */ }
-    // Added after the ops table shipped, so existing cells need it too. A cell
-    // carries its SQLite across deployments; CREATE TABLE IF NOT EXISTS would
-    // leave an old cell without the column and every ledger write would fail.
-    try { this.sql.exec("ALTER TABLE ops ADD COLUMN replayed INTEGER DEFAULT 0"); } catch { /* already there */ }
-    // WHAT THE SESSION ACTUALLY COST. Estimated tokens are a planning number;
-    // this is the bill.
-    //
-    // Every assistant message carries the provider's own usage — input, output,
-    // and crucially cacheRead/cacheWrite. pi applies prompt caching itself
-    // (anthropic-messages sets cache_control; the Agent forwards sessionId for
-    // cache-aware backends), so a long session is already paying ~10x less for
-    // the repeated context than the input price suggests: claude-sonnet-5 is
-    // $2.00/Mtok in against $0.20 cached, gpt-5.6-luna $0.20 against $0.02.
-    //
-    // None of that was visible. /context priced the whole transcript at the
-    // full input rate every turn, which overstates the bill on any session long
-    // enough to matter — and hides whether caching is working at all.
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS usage (
-      i           INTEGER PRIMARY KEY AUTOINCREMENT,
-      turn        INTEGER,
-      model       TEXT,
-      input       INTEGER NOT NULL DEFAULT 0,
-      output      INTEGER NOT NULL DEFAULT 0,
-      cache_read  INTEGER NOT NULL DEFAULT 0,
-      cache_write INTEGER NOT NULL DEFAULT 0,
-      at          INTEGER NOT NULL
-    )`);
-
-    // THE TURN QUEUE. Durable, because a promise chain is not.
-    //
-    // Prompts were ordered by an in-memory promise chain, which works only while
-    // the isolate lives and only while a caller holds the connection. Both
-    // assumptions broke: celld 0.4.0 closes concurrent requests to one cell, and
-    // an evicted isolate loses everything queued behind it.
-    //
-    // Rows plus an alarm survive both. The alarm handler is the only thing that
-    // runs a turn, so ordering is a SELECT ... ORDER BY i LIMIT 1 rather than a
-    // closure someone must keep alive.
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS turns (
-      i          INTEGER PRIMARY KEY AUTOINCREMENT,
-      text       TEXT NOT NULL,
-      script     TEXT,
-      window     INTEGER,
-      status     TEXT NOT NULL,
-      error      TEXT,
-      created_at INTEGER NOT NULL,
-      started_at INTEGER,
-      ended_at   INTEGER
-    )`);
-    // The wire id the control plane placed on the prompt, handed back when the
-    // turn ends so the ledger closes the record it opened (relayTurnEnd).
-    try { this.sql.exec("ALTER TABLE turns ADD COLUMN message_id TEXT"); } catch { /* already there */ }
-    // WHICH SESSION THIS TURN IS FOR, taken from the prompt's own path.
-    //
-    // `KORTIX_SESSION_ID` cannot answer this on a SHARED cell host: it is the
-    // NODE's env, set when the first session created the box, so every cell on
-    // that node reads the same value. Measured on dev 2026-09-08 — three
-    // sessions, one prompt each, all relaying turn_end under
-    // b673ad47-4365-4ab4-951d-0b592f9b9423, which the control plane then pinned
-    // as all three roots, and all three read one transcript.
-    try { this.sql.exec("ALTER TABLE turns ADD COLUMN session_id TEXT"); } catch { /* already there */ }
-    // WHERE A TURN'S OWN MILLISECONDS GO, inside the cell.
-    //
-    // Everything from the prompt landing to the first character is measured
-    // from outside today: the API sees `upstream`, the browser sees the first
-    // delta, and the gap between them — queue, skills, agent build, the model's
-    // time to first token — is one unexplained lump. Measured 2026-09-09 from
-    // the browser's path: prompt to first delta 2230-2989 ms against an LLM
-    // call of ~880 ms. This records the parts so the lump has names.
-    try { this.sql.exec("ALTER TABLE turns ADD COLUMN timing TEXT"); } catch { /* already there */ }
-    // The id a message was streamed under, so the transcript read can name it
-    // the same way (transcript-read.js). Rows that predate the column fall back
-    // to their row number, which is what the read used to emit for every row.
-    try { this.sql.exec("ALTER TABLE msgs ADD COLUMN wire_id TEXT"); } catch { /* already there */ }
-    // ENV A SESSION SET FOR ITSELF, kept apart from the platform's own.
-    // `PUT /env/:key` writes here and `GET /env` reports only this table as
-    // `secrets`; the control plane's keys (the Kortix token above all) live in
-    // `sessionEnv` and are never handed back to a caller.
-    this.sql.exec("CREATE TABLE IF NOT EXISTS userenv (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
-    // Assistant ids are minted time-sortable, past the newest id the transcript
-    // holds (see mintWireMessageId below) — nothing to seed.
-    // THE SESSION'S OWN CONFIGURATION, WHICH MUST OUTLIVE THE ISOLATE.
-    //
-    // Per-session config does not arrive in the cell's process env — that is
-    // the NODE's, shared by every cell on it — it is pushed over
-    // POST /kortix/env. It used to be kept in `this.sessionEnv`, memory only,
-    // and the comment there called it "a write, not a restart" while it was
-    // neither: an eviction destroys the isolate and takes the whole map with
-    // it. What comes back is a cell that no longer knows it is a platform
-    // session, so `toolsFor` stops choosing the cell backend and the agent
-    // loses its filesystem — measured 2026-09-08, session 0d4f60b5: before the
-    // eviction `{"backend":"cell","files":3}`, after it no cell backend at all,
-    // and the agent answered a request to read its own file by writing a
-    // different one. The gateway URL and model go the same way, so the turn
-    // after an eviction can also lose its model.
-    //
-    // It lives in the same SQLite as the transcript and the files, so it is
-    // replicated to object storage and comes back with them. That includes the
-    // session's Kortix token: the same store already holds the conversation,
-    // and a session whose credential does not survive its own eviction cannot
-    // finish the turn it was resumed for.
-    // THE WIRE BUS, whose epoch is this isolate.
-    //
-    // `instance` changes when celld destroys and rebuilds the cell, which is
-    // exactly when a cursor stops meaning anything — so the API is told to
-    // drop it, by the same `epoch` field the reference daemon uses. Nothing
-    // durable: a replay older than this boot is a resync, honestly.
-    this.wire = this.wire ?? new WireBus({ epoch: this.instance });
     this.sql.exec("CREATE TABLE IF NOT EXISTS session_env (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
-    this.sessionEnv = this.sessionEnv ?? {};
-    for (const row of this.sql.exec("SELECT k, v FROM session_env")) {
-      this.sessionEnv[String(row.k)] = String(row.v);
-    }
-    // ONE PER ISOLATE. init() is guarded by this.ready, so this counts
-    // constructions of the object, not requests — the epoch the local node
-    // prints to its log, made durable so it can be read over HTTP from a
-    // cell running on the platform. A fresh cell reads builds=1; a cell that
-    // has been evicted and rebuilt once reads 2, and its `requests` meter
-    // carries on from where it was rather than restarting.
-    this.pending = this.pending ?? {};
-    this.pending.builds = (this.pending.builds ?? 0) + 1;
-    this.initMs = Date.now() - _init0;
+    this.sql.exec("CREATE TABLE IF NOT EXISTS userenv (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
+    this.sessionEnv = {};
+    for (const row of this.sql.exec("SELECT k, v FROM session_env")) this.sessionEnv[String(row.k)] = String(row.v);
+    this.transcript = new TranscriptStore(this.sql);
+    for (const m of this.transcript.all()) this.clock.observe(m.info.id);
+    this.#closeInterruptedMessages();
     this.ready = true;
   }
 
-  // Runs queued turns, one at a time, and reschedules while work remains.
-  // THE SIGNAL THAT LETS THE NEXT PROMPT IN.
-  //
-  // The control plane opens a ledger record when it delivers a prompt and
-  // admits the next inbox row only once that record closes. kortix-worker
-  // closes it by POSTing `turn_end` to /projects/:id/turn-stream
-  // (apps/kortix-worker/src/turn-end-relay.ts, the same body and bearer). A
-  // cell that ran the turn and said nothing left the record `active` for its
-  // whole grant. Measured on dev 2026-09-07, session b231c064: first prompt
-  // answered in 9.0 s, second prompt `waiting / turn_active` for 240 s while
-  // the cell sat idle with turn_in_flight:false.
-  //
-  // Awaited, not fire-and-forget: an alarm's un-awaited fetch may not outlive
-  // the alarm. Bounded per attempt, so a slow control plane cannot hold the
-  // queue either. Silent when the session carries no control-plane identity —
-  // a bench or a local cell has nobody to tell.
-  async relayTurnEnd(sessionId, turnI) {
-    const env = this.effectiveEnv();
-    const api = String(env.KORTIX_API_URL ?? "").replace(/\/+$/, "");
-    const project = env.KORTIX_PROJECT_ID, token = env.KORTIX_TOKEN;
-    if (!api || !project || !token) return;
-    // The session the CONTROL PLANE knows, which is not always what the isolate
-    // calls itself: an alarm has no request to read `?c=` from, so `sessionId`
-    // there is the durable object's own name. KORTIX_SESSION_ID is the id the
-    // ledger opened its record under, and `effectiveEnv` prefers the per-session
-    // value pushed over POST /kortix/env to the node-wide one.
-    const row = this.sql.exec("SELECT status, message_id, session_id FROM turns WHERE i=?", turnI).toArray()[0];
-    // THE TURN'S OWN SESSION FIRST. `KORTIX_SESSION_ID` is the node's env and is
-    // shared by every cell on a shared host, so preferring it made all of them
-    // report the host-creating session (see the session_id column above).
-    const sid = row?.session_id || env.KORTIX_SESSION_ID || sessionId;
-    const body = JSON.stringify({
-      session_id: sid, kind: "turn_end", status: row?.status === "done" ? "idle" : "error",
-      opencode_session_id: sid,
-      ...(row?.message_id ? { turn_message_id: row.message_id } : {}),
+  meta(k) {
+    return this.sql.exec("SELECT v FROM meta WHERE k = ?", k).toArray()[0]?.v ?? null;
+  }
+
+  setMeta(k, v) {
+    if (v === null || v === undefined) this.sql.exec("DELETE FROM meta WHERE k = ?", k);
+    else this.sql.exec("INSERT INTO meta(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, String(v));
+  }
+
+  /** The node's env (CELLD_VAR_*), with what the control plane pushed for this session over it. */
+  effectiveEnv() {
+    return { ...this.env, ...this.sessionEnv };
+  }
+
+  get rootId() {
+    return this.meta("root_id");
+  }
+
+  /** The root this object serves: named by the router, else derived from the session. */
+  async adoptRoot(fromRouter) {
+    if (this.rootId) return this.rootId;
+    const session = this.effectiveEnv().KORTIX_SESSION_ID;
+    const root = fromRouter && ROOT_ID.test(fromRouter) ? fromRouter : session ? await mintRootId(session) : null;
+    if (root) {
+      this.setMeta("root_id", root);
+      if (!this.meta("created_at")) this.setMeta("created_at", Date.now());
+    }
+    return root;
+  }
+
+  /** A previous isolate died mid-message: the message is finished, as aborted. */
+  #closeInterruptedMessages() {
+    for (const m of this.transcript.all()) {
+      if (m.info.role === "assistant" && !m.info.time?.completed && !m.info.error) {
+        this.transcript.apply({ type: "message.updated", properties: { sessionID: m.info.sessionID, info: { ...m.info, time: { ...m.info.time, completed: Date.now() }, error: { name: "MessageAbortedError", data: { message: "The cell restarted during this message; the turn resumed in a new message" }, code: "aborted" } } } });
+      }
+    }
+    this.transcript.flush();
+  }
+
+  // ── the agent ──────────────────────────────────────────────────────────
+
+  agentConfig() {
+    const e = this.effectiveEnv();
+    const raw = typeof e.KORTIX_COMPILED_AGENT_CONFIG === "string" ? e.KORTIX_COMPILED_AGENT_CONFIG : "";
+    const wanted = agentNameFrom(e);
+    if (this.__agentRaw !== raw || this.__agentWanted !== wanted) {
+      const config = parseAgentConfig(raw);
+      this.__agent = { config, ...selectAgent(config, wanted) };
+      this.__agentRaw = raw;
+      this.__agentWanted = wanted;
+    }
+    return this.__agent;
+  }
+
+  agentName() {
+    return this.agentConfig().name ?? agentNameFrom(this.effectiveEnv());
+  }
+
+  /** The env pi's model resolution reads: the compiled agent's model under the control plane's. */
+  modelEnv() {
+    const e = this.effectiveEnv();
+    const { agent, config } = this.agentConfig();
+    const model = agentModelId(agent, config);
+    return model ? { ...e, KORTIX_AGENT_MODEL: model } : e;
+  }
+
+  engine() {
+    if (this.__engine) return this.__engine;
+    this.__engine = new CellEngine({
+      storage: this.state.storage,
+      sql: this.sql,
+      rootId: () => this.rootId,
+      workspace: CELL_CWD,
+      env: () => this.modelEnv(),
+      publish: (frames) => this.publish(frames),
+      envFor: (target) => this.toolEnv(target?.cwd),
+      prompt: () => this.promptParts(),
+      tools: () => this.extraTools(),
+      mintMessageId: () => this.clock.mint(),
+      agentName: () => this.agentName(),
+      onTurnEnd: () => { this.relayPending().catch(() => {}); },
+      onCompaction: (phase) => this.compactionFrames(phase),
+      log: (...a) => this.log(...a),
     });
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      try {
-        const res = await fetch(`${api}/projects/${encodeURIComponent(project)}/turn-stream`, {
-          method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-          body, signal: AbortSignal.timeout(5000),
-        });
-        if (!res.ok) this.broadcast({ type: "turn_end_relay", turn: turnI, status: res.status });
-        return;   // a non-ok answer is final, like the daemon's
-      } catch (e) {
-        if (attempt === 4) this.broadcast({ type: "turn_end_relay", turn: turnI, error: String(e?.message ?? e) });
-        else await new Promise((r) => setTimeout(r, 1000 * attempt));
-      }
+    return this.__engine;
+  }
+
+  log(...parts) {
+    const line = parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ");
+    this.logs ??= [];
+    this.logs.push(`${new Date().toISOString()} ${line}`);
+    if (this.logs.length > 400) this.logs.shift();
+  }
+
+  /** Every frame goes on the bus AND into the transcript; one flush per batch. */
+  publish(frames) {
+    for (const frame of frames) {
+      if (!frame?.type) continue;
+      this.transcript.apply(frame);
+      if (!frame.transcriptOnly) this.bus.publish(frame.type, frame.properties, frame.properties?.sessionID);
     }
+    this.transcript.flush();
+    if (frames.some((f) => f.type === "message.updated" || f.type === "session.idle")) this.touch();
   }
 
-  async alarm() {
-    // The alarm is already paying for a durable write, so settling the tally
-    // here is free — and it is what bounds the loss for a cell that goes quiet
-    // mid-window and is then evicted.
-    this.init();
-    this.flushMeter();
-    this.init();
-    const sessionId = this.state.id?.toString?.() ?? "default";
+  touch() {
+    this.setMeta("updated_at", Date.now());
+  }
 
-    // A turn left 'running' means the cell died mid-turn. DO NOT re-run it.
-    //
-    // The op ledger protects a REPEATED tool call, but only because the id is
-    // stable. Re-running a turn asks the model again, and the model mints NEW
-    // toolCallIds — so every command would execute a second time with no
-    // idempotency at all. Marking it interrupted keeps that decision with
-    // whoever can actually make it.
-    // Only turns from a PREVIOUS life: a turn claimed by a concurrent alarm in
-    // this one is legitimately running. started_at older than this handler's
-    // start is the discriminator.
-    const bootAt = Date.now();
-    this.sql.exec(
-      `UPDATE turns SET status='interrupted', error='the cell died while this turn was running', ended_at=?
-        WHERE status='running' AND (started_at IS NULL OR started_at < ?)`,
-      bootAt, bootAt - 300_000,
-    );
+  sessionObject() {
+    const created = Number(this.meta("created_at")) || this.bornAt;
+    const updated = Number(this.meta("updated_at")) || created;
+    const compacting = Number(this.meta("compacting_at")) || null;
+    return {
+      id: this.rootId,
+      slug: this.rootId,
+      projectID: String(this.effectiveEnv().KORTIX_PROJECT_ID ?? "").trim() || this.effectiveEnv().KORTIX_SESSION_ID || this.rootId,
+      directory: CELL_CWD,
+      title: this.meta("title") ?? "New session",
+      version: CELL_VERSION,
+      time: { created, updated, ...(compacting ? { compacting } : {}) },
+    };
+  }
 
-    // CLAIM ATOMICALLY. Two alarm invocations can overlap — measured: on celld
-    // 0.3.0 six queued turns ran concurrently and produced the same interleaved
-    // transcript the promise chain was added to prevent (0.4.0 serialises them,
-    // so a SELECT-then-UPDATE looked correct there).
-    //
-    // A conditional UPDATE carrying a unique token is the claim: whoever's token
-    // lands owns the turn, and everyone else reads back nothing and leaves.
-    const token = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    // ONE TURN AT A TIME PER CELL, not one claimant per row.
-    //
-    // The first version guarded only against two alarms taking the SAME turn,
-    // which is not the failure: six concurrent alarms each took a DIFFERENT
-    // pending turn and ran them in parallel, producing exactly the interleaved
-    // transcript this queue exists to prevent (all six user messages, then all
-    // six turns).
-    //
-    // `NOT EXISTS (... status='running')` inside the same statement is the
-    // serialisation. A single SQLite UPDATE is atomic with respect to other JS
-    // here — the isolate is single-threaded and this call does not await — so
-    // the check and the claim cannot be split by a concurrent alarm.
-    this.sql.exec(
-      `UPDATE turns SET status='running', started_at=?, error=?
-        WHERE i = (SELECT MIN(i) FROM turns WHERE status='pending')
-          AND status='pending'
-          AND NOT EXISTS (SELECT 1 FROM turns WHERE status='running')`,
-      Date.now(), token,
-    );
-    const next = this.sql.exec("SELECT * FROM turns WHERE status='running' AND error=?", token).toArray()[0];
-    if (!next) return;   // another alarm claimed it
-    // `error` was borrowed as the claim slot; clear it so a real failure is not
-    // confused with a token.
-    this.sql.exec("UPDATE turns SET error=NULL WHERE i=?", next.i);
-    this.currentTurn = next.i;
-    const tT0 = Date.now();
-    const tLap = { queued: tT0 - (next.created_at ?? tT0) };
-    let tAt = tT0;
-    const tMark = (k) => { const now = Date.now(); tLap[k] = now - tAt; tAt = now; };
-    this.broadcast({ type: "turn_started", turn: next.i, text: String(next.text).slice(0, 120) });
-    try {
-      const script = next.script ? JSON.parse(next.script) : undefined;
-      // The checkout first: skills, AGENTS.md and every file the model may
-      // read live in it. Bounded and best-effort — see ensureCheckout.
-      await this.ensureCheckout().catch(() => null);
-      tMark("checkout");
-      // An attached machine is where this turn's tools run; a session that
-      // attached one in an earlier turn (or before an eviction) picks it up
-      // here from the record in SQLite.
-      await this.prepareMachine().catch(() => null);
-      // The project's own tools, from its checkout. Same moment as its skills:
-      // after the clone, before the agent is built.
-      const loadedPlugins = await this.plugins(sessionId).catch(() => null);
-      this.__pluginTools = (loadedPlugins?.tools ?? []).map((t) => toPiTool(t, { onError: (p, n, e) => this.broadcast({ type: "plugin", line: `${p}.${n} threw: ${e?.message ?? e}` }) }));
-      // PLUGINS GET THEIR OWN MARK. They were inside `skills`, which is where a
-      // workspace walk would hide: the phase that used to be a cached string
-      // read would simply have grown, with nothing to say it had.
-      tMark("plugins");
-      // The checkout may have just ARRIVED, so a skills answer cached from
-      // before it is stale by definition.
-      const { block } = await this.skills(sessionId, { reload: !this.skillsAfterCheckout });
-      this.skillsAfterCheckout = true;
-      const instructions = await this.projectInstructions(sessionId);
-      tMark("skills");
-      // A prompt echoed on accept is already a row; the agent is seeded
-      // without it because `agent.prompt(text)` adds it — twice would double
-      // the user's words in the model's context.
-      const echoed = !!next.message_id && this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE wire_id = ? AND role = 'user'", next.message_id).toArray()[0].n > 0;
-      const agent = this.buildAgent(sessionId, script, withSkills(withSkills(withSkills(this.systemPrompt(), instructions), block), pluginsSummary(loadedPlugins ?? {})),
-        this.wireSessionId(next, sessionId), echoed ? next.message_id : null);
-      tMark("buildAgent");
-      // TWO MARKS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
-      //
-      // `modelOpen` is when the assistant message opened. The adapter emits
-      // `message.updated` for that the moment the turn starts talking, before
-      // the model has produced a character — which is why the single mark this
-      // replaces was useless: measured on dev 2026-09-09 it read
-      // `modelFirstByte: 2` on a turn that took 1602 ms end to end, and a
-      // report built on it named the model as the cost of a wait the model had
-      // not started yet.
-      //
-      // `modelFirstText` is when the user's empty bubble first has something in
-      // it. That is the number a slow turn is actually about, and on the same
-      // dev session it is ~1.3 s — the gateway's own overhead plus prefill.
-      let opened = 0, texted = 0;
-      const markFirst = (frames) => {
-        if (!opened) { opened = 1; tMark("modelOpen"); this.persistTurnTiming(next.i, tLap); }
-        if (!texted && frames?.some((f) => this.wire?.carriesVisibleText(f))) {
-          texted = 1; tMark("modelFirstText"); this.persistTurnTiming(next.i, tLap);
-        }
-      };
-      this.__markFirstFrame = markFirst;
-      // Held so /stop has something to abort. Without a reference to the
-      // running agent there is no way to stop a turn at all: pi creates the
-      // abort signal inside the run, and every cancellation the ExecutionEnv
-      // and daemon can honour is unreachable from outside.
-      this.running = { agent, turn: next.i, sessionId };
-      // Where the transcript stood before this turn, so "did the model say
-      // anything" is a question with an exact answer rather than a guess.
-      const beforeMsgId = this.sql.exec("SELECT COALESCE(MAX(i), 0) AS i FROM msgs").toArray()[0].i;
-      if (!echoed) this.saveMessage("user", { role: "user", content: [{ type: "text", text: next.text }] }, next.message_id ?? null);
-      await agent.prompt(next.text);
-      const compacted = await this.compactIfNeeded(sessionId, streamFnOf(agent), agent.state.model, next.window || undefined);
-      if (compacted) this.broadcast({ type: "compacted", ...compacted });
-      // A TURN THAT PRODUCED NOTHING IS NOT A SUCCESS, and saying `done` about
-      // one is the most expensive lie this file can tell: the session shows an
-      // empty reply, the control plane settles the turn, and every log says
-      // fine. Measured on dev 2026-09-07: a live gateway, a resolved model, and
-      // assistant messages with empty content and zero tokens, turn after turn,
-      // with nothing anywhere naming a cause.
-      //
-      // The turn still ends — a stuck turn is worse — but it ends with a reason
-      // attached, and the reason carries what would otherwise have to be
-      // guessed: which model, which api, and whether a key and gateway were
-      // even present.
-      // CONTENT, not rows. An assistant row with an empty `content` array is
-      // exactly what a failed model call leaves behind, so counting rows called
-      // it a success — measured 2026-09-07, which is how this check passed on
-      // its first outing while the reply was still blank.
-      const produced = this.sql.exec(
-        "SELECT COUNT(*) AS n FROM msgs WHERE role = 'assistant' AND i > ? AND json_array_length(json_extract(json, '$.content')) > 0",
-        beforeMsgId,
-      ).toArray()[0].n;
-      if (produced === 0) {
-        const e = normalizeModelEnv(this.modelEnv());
-        const why = `the model produced nothing: model=${e.MODEL_ID ?? "unset"} api=${agent?.state?.model?.api ?? "?"} provider=${e.MODEL_PROVIDER ?? "unset"} gateway=${e.MODEL_BASE_URL ? "yes" : "no"} key=${e.MODEL_API_KEY ? "yes" : "no"}`;
-        this.sql.exec("UPDATE turns SET status='error', error=?, ended_at=? WHERE i=?", why, Date.now(), next.i);
-        this.broadcast({ type: "turn_error", turn: next.i, error: why });
-      } else {
-        this.sql.exec("UPDATE turns SET status='done', ended_at=? WHERE i=?", Date.now(), next.i);
-        this.broadcast({ type: "turn_done", turn: next.i });
-      }
-    } catch (e) {
-      this.sql.exec("UPDATE turns SET status='error', error=?, ended_at=? WHERE i=?",
-        String(e?.message ?? e), Date.now(), next.i);
-      this.broadcast({ type: "turn_error", turn: next.i, error: String(e?.message ?? e) });
+  /** kortixd's compaction wire: `time.compacting` on the session while it runs, then `session.compacted`. */
+  compactionFrames(phase) {
+    const sessionID = this.rootId;
+    if (phase === "start") {
+      this.setMeta("compacting_at", Date.now());
+      return [{ type: "session.updated", properties: { sessionID, info: this.sessionObject() } }];
     }
-    await this.relayTurnEnd(sessionId, next.i);
-
-    // Reschedule while anything is still pending. Immediate rather than delayed:
-    // the queue is the only ordering mechanism, so a gap is latency for no gain.
-    // Reschedule while anything is still pending. The alarm that finds another
-    // turn running will simply leave, so an extra wake costs nothing.
-    this.running = null;
-
-    const more = this.sql.exec("SELECT COUNT(*) AS n FROM turns WHERE status='pending'").toArray()[0].n;
-    if (more > 0) await this.state.storage.setAlarm(Date.now() + 1);
+    this.setMeta("compacting_at", null);
+    return [
+      { type: "session.updated", properties: { sessionID, info: this.sessionObject() } },
+      { type: "session.compacted", properties: { sessionID } },
+    ];
   }
 
-  /** The first message id that is part of the active context. */
-  contextFrom() {
-    const rows = [...this.sql.exec("SELECT v FROM meta WHERE k='context_from'")];
-    return rows.length ? Number(rows[0].v) : 0;
-  }
+  // ── the workspace ──────────────────────────────────────────────────────
 
-  setContextFrom(i) {
-    this.sql.exec("INSERT OR REPLACE INTO meta(k, v) VALUES ('context_from', ?)", String(i));
-  }
-
-  // THE ARCHIVE IS BOUNDED, because a cell's SQLite is not free.
-  //
-  // Keeping every message forever trades one problem for another: a long-lived
-  // session would grow without limit in storage that is flushed to S3 on every
-  // change. The newest archived messages are the ones worth keeping, so the
-  // oldest are dropped once the archive passes its budget. Active-context
-  // messages are never touched.
-  pruneArchive(maxBytes = ARCHIVE_MAX_BYTES) {
-    const from = this.contextFrom();
-    if (from === 0) return 0;
-    const rows = [...this.sql.exec("SELECT i, LENGTH(json) AS n FROM msgs WHERE i < ? ORDER BY i DESC", from)];
-    let kept = 0, cutBelow = null;
-    for (const r of rows) {
-      kept += r.n;
-      if (kept > maxBytes) { cutBelow = r.i; break; }
+  cell() {
+    if (!this.cellFs) {
+      this.cellFs = cellFs(this.sql);
+      // Every changed path goes out as `file.edited`, so the Files panel, git
+      // status and an open viewer re-read.
+      this.cellFs.onChange = (paths) => this.publish(paths.slice(0, 50).map((file) => ({ type: "file.edited", properties: { file } })));
     }
-    if (cutBelow === null) return 0;
-    const dropped = this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i <= ?", cutBelow).toArray()[0].n;
-    this.sql.exec("DELETE FROM msgs WHERE i <= ?", cutBelow);
-    return dropped;
+    this.cellFs.shellEnv = this.projectSecrets();
+    return this.cellFs;
   }
 
-  loadMessages(excludeWireId = null) {
-    // The WINDOW, not the archive. Everything before context_from has been
-    // summarised and stays on disk for /history and for audit. `excludeWireId`
-    // is the turn's own prompt, echoed on accept: pi adds it itself.
-    return [...this.sql.exec("SELECT json FROM msgs WHERE i >= ? AND (wire_id IS NULL OR wire_id != ?) ORDER BY i", this.contextFrom(), excludeWireId ?? "")]
-      .map((r) => JSON.parse(r.json));
+  /** The project's own secrets for the agent's shell; the control plane's KORTIX_* never. */
+  projectSecrets() {
+    const names = String(this.meta("project_env_names") ?? "").split(",").filter(Boolean);
+    const e = this.effectiveEnv();
+    const out = {};
+    for (const n of names) if (!/^KORTIX_|^CELLD_/.test(n) && typeof e[n] === "string") out[n] = e[n];
+    for (const r of this.sql.exec("SELECT k, v FROM userenv")) out[r.k] = r.v;
+    return out;
   }
 
-  saveMessage(role, message, wireId = null) {
-    this.sql.exec(
-      "INSERT INTO msgs(role, json, ts, wire_id) VALUES (?, ?, ?, ?)",
-      role, JSON.stringify(message), Date.now(), wireId ?? null,
-    );
+  /** The ExecutionEnv tools run in: the attached machine, else the cell's own tree. */
+  async toolEnv(cwd) {
+    const machine = await this.machineEnv();
+    if (machine) return machine;
+    return cellExecutionEnv(this.cell(), cwd ?? CELL_CWD);
   }
 
-  // BROADCAST THROUGH THE RUNTIME, not a field.
-  //
-  // `this.sockets` was a Set on the instance, so it emptied on every eviction —
-  // and with turns now running in an alarm, the socket is the only way a client
-  // sees progress at all. state.getWebSockets() returns the sockets the RUNTIME
-  // is holding, including ones accepted by an isolate that no longer exists.
-  //
-  // That is also what makes the capacity arithmetic work: a hibernated socket
-  // costs the node a file descriptor, not a live isolate.
-  /**
-   * THE EVENT STREAM THE PRODUCT READS.
-   *
-   * kortix-worker serves /events as SSE and pushes every pi agent event into
-   * it (`data: <event>\n\n`). A cell had only a WebSocket, so a UI that speaks
-   * the harness's contract saw NOTHING until the turn was over — the answer
-   * appeared all at once at the end instead of arriving.
-   *
-   * That is the whole difference between a 5 s wait and a 2.6 s first token:
-   * measured against this gateway, first content lands at 2.6-5.9 s while a
-   * turn completes at 5.1-7.6 s. Everything between those two numbers is time
-   * the user spent looking at nothing.
-   */
-  sse(event) {
-    const set = this.sseListeners;
-    if (!set || set.size === 0) return;
-    const line = `data: ${JSON.stringify(event)}\n\n`;
-    for (const w of [...set]) {
-      try { w.write(line); } catch { set.delete(w); }
-    }
+  /** The project's checkout, once per cell, started off the critical path. */
+  prewarmCheckout() {
+    if (this.__prewarmed || !String(this.effectiveEnv().KORTIX_REPO_URL ?? "").trim()) return;
+    this.__prewarmed = true;
+    this.ensureCheckout().catch(() => null);
   }
 
-  /**
-   * `mirror: false` when the SSE stream has already had the real thing.
-   *
-   * A WebSocket watcher gets a bare `{type}` notification for every agent
-   * event; an SSE client gets the event itself, verbatim, because that is the
-   * harness's contract. Mirroring the notification too delivered EVERY event
-   * twice — measured on dev 2026-09-07 against a live stream: `agent_start`,
-   * `turn_start`, `message_start` and `message_end` each arrived once as
-   * themselves and once as a stub, and a consumer that renders what it is sent
-   * would render the turn twice.
-   */
-  /**
-   * The id of the assistant message currently being streamed.
-   *
-   * ZERO-PADDED and monotonic because the ORDER is load-bearing: the transcript
-   * sorts by it, and "has this prompt been answered" is decided by comparing
-   * the newest assistant id to the user's. `msg-2` sorting before `msg-10` is
-   * how an answered turn reads as unanswered.
-   */
-  /**
-   * THE SESSION NAME THE PRODUCT KNOWS, resolved from a turn that is running
-   * without a request.
-   *
-   * Turns run in `alarm()`, and an alarm has no `?c=` and no path — so
-   * `sessionId` there is `this.state.id.toString()`, celld's own 64-hex object
-   * id. Every wire frame built from it named a session no client has ever
-   * heard of: measured on dev 2026-09-09, 117 `message.part.delta` frames
-   * reached the browser carrying
-   * `"sessionID":"5e46f994978d338d8fa19d95836d6279…"` while the session was
-   * 69658df3-b530-410f-b5d6-2f89822f00c9. A reducer that keys parts by session
-   * drops every one of them, and the answer still does not paint.
-   *
-   * Same order `relayTurnEnd` already uses, and for the same reason: the
-   * TURN's own session first, because `KORTIX_SESSION_ID` is the node's env
-   * and names the session that created a shared host.
-   */
-  wireSessionId(turnRow, fallback) {
-    return turnRow?.session_id || this.effectiveEnv().KORTIX_SESSION_ID || fallback;
+  async ensureCheckout() {
+    if (this.__checkoutOk) return this.__checkoutOk;
+    this.__checkoutInFlight ??= this.#checkoutOnce()
+      .then((r) => { if (r?.ok) this.__checkoutOk = r; return r; })
+      .finally(() => { this.__checkoutInFlight = null; });
+    return this.__checkoutInFlight;
   }
 
-  /**
-   * HOW MANY FILES THIS CELL HAS, or `null` when it cannot say — never 0.
-   *
-   * The table is made by cellFs() on the first tool build, so a read-only
-   * status route asking before that threw "no such table" (kparity 2026-09-07).
-   * The guard added then answered `0` instead, gated on `this.cellFs` — an
-   * instance field that a REBUILT isolate does not have until something builds
-   * tools again. So every eviction made a cell report that its files were gone.
-   *
-   * Measured on dev 2026-09-09, one session on its own box, isolate rebuilt by
-   * idle eviction with the box untouched:
-   *
-   *   before   instance mttpznfgsy701f   files 2
-   *   after    instance mttq1nkb4gfc5d   files 0
-   *   and the agent read its own file back, by content, in the next turn
-   *
-   * The data was never lost. The count was. `0` and "I have not looked" are
-   * different answers and only one of them is true here, which is the whole
-   * reason this returns null rather than a number it has not earned.
-   */
-  fileCount() {
-    try {
-      return this.sql.exec("SELECT COUNT(*) AS n FROM files").toArray()[0]?.n ?? 0;
-    } catch {
-      return null;   // no table yet: unknown, which is not the same as none
-    }
+  async #checkoutOnce() {
+    const e = this.effectiveEnv();
+    const url = typeof e.KORTIX_REPO_URL === "string" ? e.KORTIX_REPO_URL.trim() : "";
+    if (!url) return { ok: false, reason: "no repo url" };
+    const cell = this.cell();
+    await cell.ready;
+    if (await isCheckedOut(cell.fs)) return { ok: true, cloned: false };
+    const started = Date.now();
+    const ref = String(e.KORTIX_BRANCH_NAME ?? "").trim() || String(e.KORTIX_BASE_REF ?? "").trim() || undefined;
+    let r = await cloneProject({ cell, url, ref, token: e.KORTIX_TOKEN });
+    // A fresh session's branch may not exist on the origin yet: clone the base.
+    if (!r.ok && ref && e.KORTIX_BASE_REF && ref !== e.KORTIX_BASE_REF) r = await cloneProject({ cell, url, ref: String(e.KORTIX_BASE_REF).trim(), token: e.KORTIX_TOKEN });
+    this.log("checkout", { ok: r.ok, cloned: r.cloned, error: r.error, ms: Date.now() - started });
+    if (r.ok && r.cloned) this.publish([{ type: "file.edited", properties: { file: CELL_CWD } }]);
+    return r;
   }
 
-  /** Store a turn's own laps, so `/turns` can report where its time went. */
-  persistTurnTiming(i, lap) {
-    try { this.sql.exec("UPDATE turns SET timing=? WHERE i=?", JSON.stringify(lap), i); } catch { /* column may predate this build */ }
+  async configDir() {
+    if (this.__configDir) return this.__configDir;
+    try { this.__configDir = await workspaceConfigDir(cellExecutionEnv(this.cell())); } catch { this.__configDir = null; }
+    return this.__configDir;
   }
 
-  /**
-   * AN ASSISTANT ID MUST SORT WHERE THE MESSAGE HAPPENED.
-   *
-   * The client orders a transcript by id when the ids are well-formed wire ids
-   * (packages/sdk core/turns/grouping.ts), and the user's ids are: the API
-   * mints `msg_<12 hex of time><14 random>` (apps/api projects/wire-message-id.ts).
-   * `msg_cell_00000001` sorts after every one of those, so after a second
-   * message the conversation read user, user, assistant, assistant — measured
-   * 2026-09-09 on session 89848ff8: sorted by id the two assistant replies
-   * came last; sorted by time they were in place.
-   *
-   * Same module, same scheme, bumped strictly past the newest id this cell
-   * already holds — the user message that opened this turn included — and past
-   * the last id this instance minted, so a tool loop's second assistant message
-   * still follows its first within the same millisecond.
-   */
-  mintWireMessageId() {
-    let newest = null;
-    try {
-      newest = newestWireIdTime(this.sql.exec("SELECT wire_id FROM msgs WHERE wire_id IS NOT NULL").toArray().map((r) => r.wire_id));
-    } catch { newest = null; }
-    if (this.lastMintedWireTime != null && (newest === null || this.lastMintedWireTime > newest)) newest = this.lastMintedWireTime;
-    const { id, time } = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: newest });
-    this.lastMintedWireTime = time;
-    return id;
-  }
-
-  broadcast(event, { mirror = true } = {}) {
-    if (mirror) this.sse({ ...event, at: Date.now() });
-    const payload = JSON.stringify({ ...event, at: Date.now() });
-    // THE UNION, not either one. Measured on celld 0.3.0, 2026-09-02: after a
-    // cell is evicted and rebuilt, getWebSockets() returns 0 for a watcher that
-    // is still connected — but an inbound message from that same socket IS
-    // delivered to the new instance and can be replied to. The socket is not
-    // orphaned, it is half-connected: the client can talk, the server cannot
-    // push. Re-registering it on its first message (see webSocketMessage) and
-    // unioning here is what closes that gap.
-    const seen = new Set(this.state.getWebSockets?.() ?? []);
-    for (const ws of this.sockets) seen.add(ws);
-    const sockets = [...seen];
-    for (const ws of sockets) {
-      try { ws.send(payload); } catch { /* closing; the runtime will drop it */ }
-    }
-  }
-
-  // A fresh Agent per request, seeded from storage. This looks wasteful and is
-  // the point: it is the same path a COLD cell takes, so the resume path is
-  // exercised by every single request instead of only after an eviction.
-  // `script` overrides env.SCRIPT for one call. Only the scripted model reads it,
-  // so it is a test affordance and not a way to steer a real model: with an API
-  // key present the argument is ignored entirely.
-  // THE WORKSPACE'S SKILLS, LOADED ONCE PER LIVE CELL.
-  //
-  // Loading walks the skills directory: 19 round trips for two skills. Per turn
-  // that is a few hundred milliseconds of latency buying nothing, because the
-  // workspace rarely changes underneath a session. Held in memory rather than
-  // SQLite deliberately — an evicted cell rebuilds it on wake, which is also
-  // how a skill added since the cell started gets picked up.
-  async skills(sessionId, { reload = false } = {}) {
-    // KEYED BY SESSION, because the daemon roots each session at its own
-    // workspace directory. Loading them under a fixed id read skills from a
-    // directory no session works in — the agent's own `.pi/skills` was
-    // invisible, and the suite passed only because its fixture was written to
-    // that other path.
-    this.skillsCache ??= new Map();
-    // OVER THE CELL'S OWN TREE when there is one — that is where the
-    // checkout, and therefore the project's skills, actually are.
-    if (usesCellFilesystem(this.effectiveEnv())) this.cellFs ??= cellFs(this.sql);
-    const cell = this.cellFs ?? null;
-    // WHERE THE PROJECT SAYS ITS SKILLS ARE, resolved BEFORE the cache is
-    // trusted — because the answer changes exactly once, when the checkout
-    // lands, and a load taken a moment earlier read the wrong directory.
-    // `ensureCheckout` is best-effort and bounded, so "the first turn" is not
-    // the same instant as "the files are here": measured on dev 2026-09-10, a
-    // session whose clone was still in flight cached `.kortix/opencode/skills`
-    // for a v3 project and reported zero skills for the rest of its life,
-    // while a slower session on the same box found all eleven.
-    const configDir = await this.configDir(sessionId);
-    const cached = this.skillsCache.get(sessionId);
-    if (cached && !reload && cached.configDir === configDir) return cached;
-    const loaded = await loadWorkspaceSkills(
-      this.effectiveEnv(),
-      (opId) => executionEnvFor(this.effectiveEnv(), sessionId, opId, undefined, cell),
-      configDir,
-    );
+  async skills({ reload = false } = {}) {
+    const configDir = await this.configDir();
+    if (this.__skills && !reload && this.__skills.configDir === configDir) return this.__skills;
+    const loaded = await loadWorkspaceSkills(this.effectiveEnv(), () => cellExecutionEnv(this.cell()), configDir);
     loaded.configDir = configDir;
-    this.skillsCache.set(sessionId, loaded);
+    this.__skills = loaded;
     return loaded;
   }
 
-  // THE PROJECT'S PROMPT IS THE DEFAULT, not the cell's. A caller that omits
-  // the prompt used to get the built-in three sentences whatever the project
-  // declared — the same bug this reads as fixed at the two turn call sites,
-  // hiding in a default parameter.
-  buildAgent(sessionId, script, systemPrompt = this.systemPrompt(), wireSessionId = sessionId, excludeWireId = null) {
-    const configured = modelConfig(this.effectiveEnv());
-    const streamFn = configured
-      ? configured.streamFn
-      : scriptedStream(script ?? JSON.parse(this.effectiveEnv().SCRIPT ?? "[]"));
-
-    // Tools FIRST, because what the shell is decides what the prompt must say.
-    // toolsFor is what creates this.cellFs, so the note can only be written
-    // after it has run — and only for the backend it describes: a session with
-    // a Platinum workspace has a real Linux box and must not be told otherwise.
-    const tools = toolsFor(this.effectiveEnv(), sessionId, this.sql, this);
-    const note = this.cellFs ? cellShellNote() : "";
-    const agent = new Agent({
-      streamFn,
-      sessionId,
-      getApiKey: configured?.getApiKey,
-      initialState: {
-        systemPrompt: note ? `${systemPrompt}\n\n${note}` : systemPrompt,
-        model: configured?.model ?? SCRIPTED_MODEL,
-        tools,
-        messages: this.loadMessages(excludeWireId),
-      },
-    });
-
-    // ONE ADAPTER PER AGENT, because it is stateful across a turn: part ids,
-    // the accumulated text of each part, and which assistant message is open.
-    // Sharing one across turns would collide their part ids; making one per
-    // EVENT would restart the accumulation on every delta.
-    const wireAdapter = new ChatEventAdapter({
-      sessionID: wireSessionId,
-      mintMessageId: () => this.mintWireMessageId(),
-    });
-
-    agent.subscribe((event) => {
-      // RAW, FIRST. The harness pushes every agent event onto /events verbatim,
-      // and a consumer written against it expects the same shapes — deltas
-      // included, which is what makes an answer arrive rather than appear.
-      this.sse(event);
-      // AND THE SAME EVENT IN THE SHAPE THE PRODUCT READS. The web client's
-      // reducer applies OpenCode wire events and repaints incrementally only
-      // from `message.part.delta`; pi's own event names mean nothing to it.
-      // Translated by kortix-worker's adapter rather than a second copy of the
-      // mapping — it is the one the UI was written against, and its own tests
-      // pin the delta/snapshot split this bus depends on.
-      try {
-        const frames = wireAdapter.translate(event);
-        // The id the stream names this assistant message by. Saved with the
-        // message at turn_end so the transcript read answers in the same id.
-        for (const f of frames) {
-          if (f?.type === "message.updated" && f.properties?.info?.role === "assistant" && f.properties.info.id) {
-            this.turnAssistantWireId = f.properties.info.id;
-          }
-        }
-        this.wire?.publish(frames);
-        // AFTER publishing, not before: `carriesVisibleText` asks the bus which
-        // parts are reasoning, and the bus learns that as it publishes.
-        if (frames.length) this.__markFirstFrame?.(frames);
-      } catch { /* never break a turn to publish it */ }
-      // Stream what a watcher actually needs: which tool is running, and what
-      // came back. Previously this sent only `{type}`, which tells a UI that
-      // something happened and nothing about what.
-      if (event.type === "tool_execution_start") {
-        this.broadcast({ type: "tool_start", tool: event.toolName ?? event.tool?.name, id: event.toolCallId });
+  async projectInstructions() {
+    try {
+      const env = await this.toolEnv();
+      for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+        const read = await env.readTextFile(name);
+        const body = read?.ok ? String(read.value ?? "").trim() : "";
+        if (!body) continue;
+        const kept = body.length > PROJECT_INSTRUCTIONS_MAX ? `${body.slice(0, PROJECT_INSTRUCTIONS_MAX)}\n…` : body;
+        return `The project's own instructions, from ${name} in the workspace. Follow them:\n\n${kept}`;
       }
-      if (event.type === "tool_execution_end") {
-        const text = (event.result?.content ?? []).find((b) => b?.type === "text")?.text;
-        this.broadcast({ type: "tool_end", id: event.toolCallId, output: typeof text === "string" ? text.slice(0, 400) : undefined });
-      }
-      // turn_end carries the assistant message AND that turn's tool results
-      // together, which is the only point where the transcript is consistent:
-      // persisting the assistant message alone would leave a tool call with no
-      // result if the isolate died in between, and pi would resend it.
-      if (event.type === "turn_end") {
-        if (event.message) this.saveMessage("assistant", event.message, this.turnAssistantWireId ?? null);
-        // Recorded from the message the provider actually returned, not from an
-        // estimate. A turn with no usage (the scripted model) writes nothing
-        // rather than a row of zeros that would dilute the averages.
-        const u = event.message?.usage;
-        if (u && (u.input || u.output || u.cacheRead || u.cacheWrite)) {
-          this.sql.exec(
-            "INSERT INTO usage(turn, model, input, output, cache_read, cache_write, at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            this.currentTurn ?? null, event.message.model ?? null,
-            u.input ?? 0, u.output ?? 0, u.cacheRead ?? 0, u.cacheWrite ?? 0, Date.now(),
-          );
-        }
-        for (const r of event.toolResults ?? []) this.saveMessage("toolResult", r);
-      }
-      if (event.type !== "tool_execution_start" && event.type !== "tool_execution_end") {
-        // Sockets only: the SSE stream already carried this event in full,
-        // above, and sending the stub after it delivers everything twice.
-        this.broadcast({ type: event.type }, { mirror: false });
-      }
-    });
-
-    // The Agent does not expose its stream function, and compaction needs the
-    // same one so a summary is produced by the session's own model.
-    agent.__streamFn = streamFn;
-    return agent;
+    } catch { /* a workspace that cannot be read has no instructions */ }
+    return "";
   }
 
-  // COMPACT AFTER A TURN, not before: the turn that just ran is the one whose
-  // cost we now know, and compacting first would summarise a conversation the
-  // user is still mid-way through.
-  //
-  // The summary is produced by the same streamFn the agent uses, so it works
-  // with the scripted model and costs nothing in tests.
-  // The context window comes from pi's model catalogue — 400k for gpt-5.1, 1M
-  // for claude-sonnet-5, 272k for gpt-5.6-luna — so the compaction threshold is
-  // per-model and correct without a table of our own. CONTEXT_WINDOW overrides
-  // it, which is how a test triggers compaction without generating 200k tokens.
-  contextWindowFor(model, perRequest) {
-    // Per-request first, so a test can reach compaction WITHOUT restarting the
-    // node. That matters beyond convenience: restarting a working celld
-    // container repeatedly is what kept killing the local Docker VM, and a
-    // claim that needs a restart to set one number is a claim that makes the
-    // suite less likely to finish.
-    const n = Number(perRequest ?? 0);
-    if (n > 0) return n;
-    const override = Number(this.effectiveEnv().CONTEXT_WINDOW ?? 0);
-    return override > 0 ? override : (model?.contextWindow ?? 200_000);
-  }
-
-  async compactIfNeeded(sessionId, streamFn, model, perRequestWindow) {
-    const messages = this.loadMessages();
-    const window = this.contextWindowFor(model, perRequestWindow);
-    const result = await maybeCompact({
-      messages,
-      contextWindow: window,
-      summarise: async (older) => {
-        const stream = await streamFn(model, {
-          systemPrompt: SUMMARY_PROMPT,
-          messages: older,
-          tools: [],
-        });
-        const final = await stream.result();
-        return (final.content ?? []).filter((b) => b.type === "text").map((b) => b.text).join("\n") || "(no summary)";
-      },
-    });
-    if (!result) return null;
-    // Replace the transcript in ONE transaction-shaped sequence. A crash between
-    // the delete and the insert would lose the conversation outright, so the new
-    // rows are written first and the old ones removed by id afterwards.
-    const lastArchived = this.sql.exec("SELECT COALESCE(MAX(i), 0) AS m FROM msgs").toArray()[0].m;
-    // Persist each message under ITS OWN role. A compaction summary is
-    // role "compactionSummary" — flattening it to "assistant" would store a
-    // message with no content blocks as an assistant turn, and the next load
-    // would hand the model something it cannot read.
-    for (const m of result.messages) this.saveMessage(m.role, m);
-    // The summarised messages are ARCHIVED, not deleted: the context moves past
-    // them. A cell that threw them away could not answer "what did the agent
-    // do?" for anything older than the last compaction.
-    this.setContextFrom(lastArchived + 1);
-    this.pruneArchive();
-    return result;
-  }
-
-  /**
-   * THE PROJECT'S OWN TOOLS. Loaded from `<config_dir>/plugins` in the
-   * checkout, evaluated in the cell's own JavaScript runtime, and cached per
-   * cell the way skills are — the files can only change with a commit, and
-   * this runs on the prompt path.
-   */
-  async plugins(sessionId, { reload = false } = {}) {
-    if (this.__plugins && !reload) return this.__plugins;
-    const configDir = await this.configDir(sessionId);
-    const dir = pluginsDirFor(configDir ?? ".kortix/pi");
-    if (usesCellFilesystem(this.effectiveEnv())) this.cellFs ??= cellFs(this.sql);
-    const env = executionEnvFor(this.effectiveEnv(), sessionId, "plugins", undefined, this.cellFs ?? null);
-    const net = (...a) => this.cellFs?.net?.(...a) ?? fetch(...a);
-    // PLUGINS COME FROM THE WORKSPACE, AND THE WORKSPACE MOVES.
-    //
-    // Once a machine is attached it IS the workspace — the panel, git and the
-    // tools all answer from it — but the loader kept reading the cell's own
-    // tree, so a plugin written on the machine was not merely broken, it was
-    // INVISIBLE: not loaded, and not named in the diagnostics either. Measured
-    // 2026-09-14 on a real session: `.kortix/pi/plugins/pad.js` listed by the
-    // file route and absent from `/plugins`.
-    //
-    // The machine's copy arrives in ONE exec (machine-fs `bundle`). Reading it
-    // the way the cell is read would be one RPC per file, which for a checkout
-    // that has run `npm install` is thousands.
-    // NEVER WAIT FOR THE MACHINE'S CLONE HERE.
-    //
-    // `machineRepoReady()` blocks until the machine has the repo, and the whole
-    // point of taking the clone off the attach path was that a turn should not
-    // wait for it. Awaiting it here put it straight back: measured 2026-09-15,
-    // the first machine turn went 6778 ms -> 8066 ms.
-    //
-    // The cell has the same repo at the same ref, already checked out, so the
-    // plugins are read from there until the machine's copy exists — and the
-    // moment it does, the cache is dropped so the next turn reads the machine,
-    // which is what `npm install` on the box needs.
+  /** The system prompt's parts, prepared once per prompt and read by pi before each request. */
+  async preparePrompt() {
+    await this.ensureCheckout().catch(() => null);
+    const { block } = await this.skills({ reload: !this.__skillsAfterCheckout }).catch(() => ({ block: "" }));
+    this.__skillsAfterCheckout = true;
+    const plugins = await this.plugins().catch(() => null);
     const machine = await this.machineEnv();
-    if (machine && !this.__machineRepoReady) {
-      this.machineRepoReady().then((ok) => { if (ok) this.__plugins = null; }).catch(() => {});
-    }
-    const fromMachine = machine && this.__machineRepoReady;
-    const readable = {
-      async readdirWithFileTypes(dir) {
-        const r = await env.listDir(dir);
-        if (!r?.ok) throw new Error(r?.error?.message ?? "no such directory");
-        return (r.value ?? []).map((e) => ({ name: e.name, isDirectory: e.kind === "directory", isFile: e.kind === "file" }));
-      },
-      async readFileBuffer(path) {
-        const r = await env.readBinaryFile(path);
-        if (!r?.ok) throw new Error(r?.error?.message ?? "unreadable");
-        return r.value;
-      },
+    this.__prompt = {
+      system: withSkills(agentSystemPrompt(this.agentConfig().agent, DEFAULT_SYSTEM_PROMPT), plugins ? pluginsSummary(plugins) : ""),
+      shell: machine ? "" : cellShellNote(),
+      instructions: await this.projectInstructions(),
+      skills: block,
     };
-    // A PROJECT THAT SHIPS NO PLUGINS PAYS NOTHING. That is nearly every
-    // project and every turn, and the walk is the expensive part — one cheap
-    // listing of the plugins directory decides it.
-    // ASK WHEREVER THE FILES WILL BE READ FROM. Listing the cell's plugin
-    // directory to decide whether to read the MACHINE's would miss a plugin
-    // that only exists on the machine — which is the whole point of being able
-    // to write one there.
-    const shipped = await (fromMachine
-      ? machineFs(machine).readdirWithFileTypes(`${CELL_CWD}/${dir}`).then((es) => es.filter((e) => e.isFile).map((e) => e.name))
-      : env.listDir(dir).then((r) => (r?.ok ? (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name) : []))
-    ).catch(() => []);
-    const workspace = !shipped.some(isPluginFile)
-      ? { files: [], dirs: [] }
-      : await (fromMachine ? machineFs(machine).bundle(CELL_CWD) : collectWorkspace(readable, CELL_CWD)).catch((e) => {
-      this.broadcast({ type: "plugin", line: `could not read the workspace: ${e?.message ?? e}` });
-      return { files: [], dirs: [] };
-    });
-    // ONE SOURCE OF TRUTH. The listing and the reads come from what was
-    // collected, so the loader cannot look in a different place than the
-    // runtime it hands the files to — which is exactly how a plugin on the
-    // machine went missing without a word.
+    return this.__prompt;
+  }
+
+  async promptParts() {
+    return this.__prompt ?? this.preparePrompt();
+  }
+
+  /** glob, grep, todo, machine and the project's plugin tools, for pi-durable. */
+  async extraTools() {
+    const plugins = await this.plugins().catch(() => null);
+    const pluginTools = (plugins?.tools ?? []).map((t) => toPiTool(t, { onError: (p, n, e) => this.log("plugin", `${p}.${n} threw: ${e?.message ?? e}`) }));
+    return [
+      fromAgentTool(globTool(), { replay: "safe" }),
+      fromAgentTool(grepTool(), { replay: "safe" }),
+      ...todoTools(this.sql, (todos) => this.publish([{ type: "todo.updated", properties: { sessionID: this.rootId, todos } }]))
+        .map((t) => fromAgentTool(t, { replay: "safe" })),
+      fromAgentTool(this.machineTool()),
+      ...pluginTools.map((t) => fromAgentTool(t)),
+    ];
+  }
+
+  async plugins({ reload = false } = {}) {
+    if (this.__plugins && !reload) return this.__plugins;
+    const configDir = await this.configDir();
+    const dir = pluginsDirFor(configDir ?? ".kortix/pi");
+    const cell = this.cell();
+    const env = cellExecutionEnv(cell);
+    const shipped = await env.listDir(dir).then((r) => (r?.ok ? (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name) : [])).catch(() => []);
+    if (!shipped.some(isPluginFile)) {
+      this.__plugins = { tools: [], plugins: [], diagnostics: [] };
+      return this.__plugins;
+    }
+    await cell.ready;
+    const workspace = await collectWorkspace(cell.fs, CELL_CWD).catch(() => ({ files: [], dirs: [] }));
     const collectedAt = new Map(workspace.files);
     const dec = new TextDecoder();
     const absOf = (p) => (p.startsWith("/") ? p : `${CELL_CWD}/${p}`).replace(/\/+/g, "/");
-    const loaded = await loadPlugins({
+    this.__plugins = await loadPlugins({
       dir,
       readDir: async (d) => {
-        const prefix = `${absOf(d)}/`;
-        const names = [...collectedAt.keys()].filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"))
-          .map((p) => p.slice(prefix.length));
-        if (names.length) return names;
-        // A directory with nothing the collector takes is still a directory;
-        // ask, so "no plugins" and "no such directory" stay different answers.
         const r = await env.listDir(d);
         if (!r?.ok) throw new Error(r?.error?.message ?? "no such directory");
         return (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name);
@@ -1269,339 +401,33 @@ export class AgentCell {
         if (!r?.ok) throw new Error(r?.error?.message ?? "unreadable");
         return r.value;
       },
-      // ONE RUNTIME PER PLUGIN: a plugin that scribbles on its globals cannot
-      // reach its neighbours, and a plugin that throws on load takes only
-      // itself down.
-      // ONE COLLECTION, EVERY RUNTIME. A plugin of more than one file is the
-      // normal case — a `lib/` beside it, a package in node_modules — and it
-      // was impossible while each runtime was built with `fs: null`. The walk
-      // costs one pass over the checkout; the bytes are shared, not copied.
       runtimeFor: () => {
-        const rt = createNodeRuntime({ fs: null, cwd: CELL_CWD, fetch: net });
+        const rt = createNodeRuntime({ fs: null, cwd: CELL_CWD, fetch: cell.net });
         seedRuntime(rt, workspace);
-        rt.pluginContext = {
-          project: this.effectiveEnv().KORTIX_PROJECT_ID ?? null,
-          session: sessionId,
-          cwd: CELL_CWD,
-          fetch: net,
-          log: (...m) => this.broadcast({ type: "plugin", line: m.map(String).join(" ") }),
-        };
+        rt.pluginContext = { project: this.effectiveEnv().KORTIX_PROJECT_ID ?? null, session: this.rootId, cwd: CELL_CWD, fetch: cell.net, log: (...m) => this.log("plugin", m.map(String).join(" ")) };
         return rt;
       },
-      onProgress: (line) => this.broadcast({ type: "plugin", line }),
+      onProgress: (line) => this.log("plugin", line),
     }).catch(() => ({ tools: [], plugins: [], diagnostics: [] }));
-    this.__plugins = loaded;
-    return loaded;
+    return this.__plugins;
   }
 
-  /** What this session set for itself through `PUT /env/:key`. */
-  userEnv() {
-    const out = {};
-    for (const r of this.sql.exec("SELECT k, v FROM userenv ORDER BY k")) out[r.k] = r.v;
-    return out;
-  }
+  // ── the machine ────────────────────────────────────────────────────────
 
-  /**
-   * COMPACT NOW, WHETHER OR NOT THE CONTEXT IS FULL — `POST
-   * /session/:id/summarize`, OpenCode's manual compaction, which the app
-   * offers as a button and answers with a plain boolean.
-   *
-   * The automatic path only fires above the model's window, so this asks for
-   * the same work with a window of 1: everything before the last exchange is
-   * older than the budget, and `maybeCompact` summarises it. The model and the
-   * stream come from a freshly built agent because there is no turn running —
-   * this is the one compaction that happens between turns rather than after
-   * one.
-   *
-   * Returns false rather than throwing when there is nothing to summarise: a
-   * session with one exchange has no older half, and "I did not need to" is
-   * not an error.
-   */
-  async compactNow(sessionId) {
-    const { block } = await this.skills(sessionId);
-    const agent = this.buildAgent(sessionId, undefined, withSkills(this.systemPrompt(), block));
-    const compacted = await this.compactIfNeeded(sessionId, streamFnOf(agent), agent.state.model, 1);
-    if (compacted) this.broadcast({ type: "compacted", ...compacted });
-    return !!compacted;
-  }
-
-  // Hibernation handlers. Their existence is what lets the runtime evict the
-  // isolate while keeping the socket: it re-creates the object and calls these.
-  async webSocketMessage(ws, message) {
-    this.init();
-    // A terminal socket is raw text, never JSON — feed it to the line editor.
-    // After an eviction the map is empty and the TAG is what is left, so the
-    // editor is rebuilt from the terminal's stored directory.
-    const term = this.terminals?.get(ws) ?? this.adoptTerminal(ws);
-    if (term) return this.terminalInput(ws, term, message);
-    // Re-adopt a socket the runtime did not hand back.
-    //
-    // This does NOT rescue a socket that predates an eviction on celld 0.3.0,
-    // and it was written believing it would. Measured 2026-09-02: after an
-    // eviction the ping IS answered, but `readopted` stays 0 on the instance
-    // that serves the next request — celld hands the message to a transient
-    // instance whose in-memory state does not persist. There is no way for a
-    // rebuilt cell to push to a socket opened before it; the client must
-    // reconnect.
-    //
-    // Kept because it is correct and free on a runtime that DOES hand sockets
-    // back, and because `broadcast` unions both sources either way.
-    this.sockets.add(ws);
-    // The protocol is deliberately tiny. A socket is for WATCHING a session;
-    // prompts go through POST /prompt, which is durable, ordered and auditable.
-    // Accepting work here would be a second, unqueued way in.
-    let msg = {};
-    try { msg = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message)); } catch { /* ignore */ }
-    if (msg.type === "status") {
-      ws.send(JSON.stringify({
-        type: "status",
-        // The CONTEXT's message count, to match the token figure beside it.
-        // These disagreed once the archive stopped being deleted: `tokens`
-        // described the window and `messages` counted the whole table, so the
-        // one number on this endpoint that says "how big is the context" was
-        // the one that was wrong.
-        messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i >= ?", this.contextFrom()).toArray()[0].n,
-        archived: this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i < ?", this.contextFrom()).toArray()[0].n,
-        turns: [...this.sql.exec("SELECT i, status FROM turns ORDER BY i DESC LIMIT 5")],
-        at: Date.now(),
-      }));
-    }
-  }
-
-  async webSocketClose(ws, code, reason) {
-    try { ws.close(code, reason); } catch { /* already gone */ }
-  }
-
-  /**
-   * THE ENVIRONMENT THIS SESSION ACTUALLY RUNS WITH.
-   *
-   * A cell's `env` is the NODE's, not the session's. celld hands every
-   * CELLD_VAR_X on the node process to the worker as env.X — and a celld node
-   * hosts many cells, so anything set that way is identical for all of them.
-   * Infrastructure belongs there (PT_S3_*, set by the host agent); a session's
-   * configuration cannot, because its token, its gateway, its store URL and its
-   * own id differ for every cell on the node.
-   *
-   * The control plane already knows this and pushes a session's environment
-   * over HTTP once the box is up — that is what POST /kortix/env is, and what
-   * the API's `env-sync` step does (632 ms in a proxy timeline, dev
-   * 2026-09-07). This cell STORED that and then read the node's env anyway, so
-   * a real session arrived fully configured and ran with none of it. Measured
-   * the same day, session ccaea567: the isolate's env held AGENT, MODEL_*,
-   * SCRIPT, TOOL_DAEMON_URL and PT_S3_* — not one KORTIX_* name — while the
-   * sandbox carried fourteen of them.
-   *
-   * Session values win: they are the specific ones, and the node's are the
-   * defaults a bench or a suite sets.
-   */
-  effectiveEnv() {
-    const session = this.sessionEnv;
-    if (!session || Object.keys(session).length === 0) return this.env ?? {};
-    return { ...(this.env ?? {}), ...session };
-  }
-
-  /**
-   * THE AGENT THIS SESSION IS RUNNING, from the project's compiled config
-   * (agent-config.js). Re-parsed only when the config string changes — it
-   * arrives on every prompt's env sync and is the same bytes almost always.
-   */
-  /** effectiveEnv plus what the compiled agent asks for, for model resolution. */
-  modelEnv() {
-    const e = this.effectiveEnv();
-    const { agent, config } = this.agent();
-    const model = agentModelId(agent, config);
-    return model ? { ...e, KORTIX_AGENT_MODEL: model } : e;
-  }
-
-  agent() {
-    const e = this.effectiveEnv();
-    const raw = typeof e.KORTIX_COMPILED_AGENT_CONFIG === "string" ? e.KORTIX_COMPILED_AGENT_CONFIG : "";
-    if (this.__agentRaw !== raw || this.__agentWanted !== agentNameFrom(e)) {
-      const config = parseAgentConfig(raw);
-      const picked = selectAgent(config, agentNameFrom(e));
-      this.__agentRaw = raw;
-      this.__agentWanted = agentNameFrom(e);
-      this.__agent = { config, ...picked, etag: typeof e.KORTIX_COMPILED_AGENT_CONFIG_ETAG === "string" && e.KORTIX_COMPILED_AGENT_CONFIG_ETAG ? e.KORTIX_COMPILED_AGENT_CONFIG_ETAG : null };
-    }
-    return this.__agent;
-  }
-
-  /**
-   * THE PROJECT'S FILES, ONCE PER CELL.
-   *
-   * The workspace starts empty; the control plane hands down the project's
-   * git origin and this session's ref with the rest of the env
-   * (cell-session-env.ts), and the clone uses the session's own token — the
-   * one it already holds for the model gateway. Idempotent and single-flight
-   * (cell-git.js), so every caller can just ask: the first turn, and the Files
-   * panel's first list, both do.
-   *
-   * Never fatal. A project with no repo, a token the proxy refuses, a repo too
-   * big for the isolate — each leaves the session exactly as it was before
-   * this existed: an empty workspace that still answers.
-   */
-  /**
-   * The checkout, begun off the critical path and awaited by nobody.
-   *
-   * Once per isolate: `ensureCheckout` is itself idempotent, but firing a clone
-   * per health poll would have several racing, and the first one to finish is
-   * the only one that matters.
-   */
-  prewarmCheckout() {
-    if (this.__prewarmed) return;
-    // NOTHING TO CLONE YET IS NOT A PREWARM. A cell is addressed before the
-    // control plane has pushed its env, and latching the flag on that first
-    // request meant the clone was never started early at all — measured
-    // 2026-09-15: four seconds after the client opened the session the
-    // workspace was still empty, and `checkout` cost the first turn 1017 ms.
-    if (!String(this.effectiveEnv().KORTIX_REPO_URL ?? "").trim()) return;
-    this.__prewarmed = true;
-    this.ensureCheckout().catch(() => null);
-  }
-
-  /**
-   * ONE CLONE, HOWEVER MANY CALLERS.
-   *
-   * `ensureCheckout` short-circuits on a tree that is already THERE, which is
-   * not the same as one being fetched: the prewarm and the first turn both saw
-   * no checkout and both started one. Measured 2026-09-15 — two clones racing
-   * took `checkout` from 1081 ms to 2644 ms, worse than the problem the prewarm
-   * was for. Callers now share the in-flight promise.
-   *
-   * Only success is remembered. A clone that failed must be retried by the next
-   * turn rather than cached as the answer for the life of the isolate.
-   */
-  async ensureCheckout() {
-    if (this.__checkoutOk) return this.__checkoutOk;
-    this.__checkoutInFlight ??= this.checkoutOnce()
-      .then((r) => { if (r?.ok) this.__checkoutOk = r; return r; })
-      .finally(() => { this.__checkoutInFlight = null; });
-    return this.__checkoutInFlight;
-  }
-
-  async checkoutOnce() {
-    const e = this.effectiveEnv();
-    const url = typeof e.KORTIX_REPO_URL === "string" ? e.KORTIX_REPO_URL.trim() : "";
-    if (!url) return { ok: false, reason: "no repo url" };
-    this.cellFs ??= cellFs(this.sql);
-    if (await isCheckedOut(this.cellFs.fs)) return { ok: true, cloned: false, reason: "already checked out" };
-    const started = Date.now();
-    const r = await cloneProject({
-      cell: this.cellFs,
-      url,
-      ref: typeof e.KORTIX_BASE_REF === "string" && e.KORTIX_BASE_REF.trim() ? e.KORTIX_BASE_REF.trim() : undefined,
-      token: e.KORTIX_TOKEN,
-    });
-    this.broadcast({ type: "checkout", ...r, ms: Date.now() - started });
-    if (r.ok && r.cloned) {
-      // The Files panel re-reads on `file.edited`; a checkout is the largest
-      // change a workspace ever sees.
-      this.wire?.publish([{ type: "file.edited", properties: { file: CELL_CWD } }]);
-    }
-    return r;
-  }
-
-  /** A terminal socket this isolate has not seen, recognised by its tag. */
-  adoptTerminal(ws) {
-    const tags = this.state.getTags?.(ws) ?? [];
-    const tag = tags.find((t) => typeof t === "string" && t.startsWith("pty:"));
-    if (!tag) return null;
-    const ptyId = tag.slice("pty:".length);
-    const record = ptyGet(this.sql, ptyId);
-    if (!record) return null;
-    const term = { ptyId, editor: newEditor(record.cwd), abort: null };
-    this.terminals ??= new Map();
-    this.terminals.set(ws, term);
-    return term;
-  }
-
-  /**
-   * ONE LINE OF A TERMINAL SESSION: echo it, and when it is complete run it
-   * through the same shell the agent uses and write the output back.
-   *
-   * `cd` is handled apart because every exec is its own process tree — the
-   * shell forgets a directory change the moment it returns, so the new
-   * directory is LEARNED (`cd x && pwd`) and kept on the terminal's record.
-   */
-  async terminalInput(ws, term, message) {
-    const r = feed(term.editor, message);
-    term.editor = r.state;
-    if (r.echo) { try { ws.send(r.echo); } catch { /* the client left */ } }
-    if (r.interrupt) { try { term.abort?.abort(); } catch { /* already done */ } }
-    if (r.close) { try { ws.close(1000, "pty exited"); } catch { /* already gone */ } this.terminals?.delete(ws); return; }
-    if (r.line === null) return;
-    const line = r.line.trim();
-    if (!line) { try { ws.send(prompt(term.editor.cwd)); } catch { /* gone */ } return; }
-    if (line === "exit" || line === "logout") {
-      try { ws.send("exit\r\n"); ws.close(1000, "pty exited"); } catch { /* gone */ }
-      this.terminals?.delete(ws);
-      return;
-    }
-    this.cellFs ??= cellFs(this.sql);
-    const env = (await this.machineEnv()) ?? cellExecutionEnv(this.cellFs, term.editor.cwd);
-    const cd = cdTarget(line);
-    const command = cd === null ? line : `cd ${cd === "~" ? "/workspace" : cd} && pwd`;
-    term.editor.busy = true;
-    const ctl = new AbortController();
-    term.abort = ctl;
-    let out;
-    try {
-      out = await env.exec(command, { cwd: term.editor.cwd, timeout: 120, abortSignal: ctl.signal });
-    } catch (e) {
-      out = { ok: false, error: { message: String(e?.message ?? e) } };
-    }
-    term.editor.busy = false;
-    term.abort = null;
-    // \n is a line feed, not a carriage return: a terminal needs both or every
-    // line starts where the last one ended.
-    const crlf = (t) => String(t ?? "").replace(/\r?\n/g, "\r\n");
-    if (!out.ok) {
-      try { ws.send(crlf(`${out.error?.message ?? "command failed"}\n`)); } catch { /* gone */ }
-    } else if (cd !== null && out.value.exitCode === 0) {
-      const next = String(out.value.stdout ?? "").trim() || term.editor.cwd;
-      term.editor.cwd = next;
-      ptySetCwd(this.sql, term.ptyId, next);
-    } else {
-      const body = `${out.value.stdout ?? ""}${out.value.stderr ?? ""}`;
-      if (body) { try { ws.send(crlf(body.endsWith("\n") ? body : `${body}\n`)); } catch { /* gone */ } }
-    }
-    try { ws.send(prompt(term.editor.cwd)); } catch { /* gone */ }
-  }
-
-  /** The system prompt before skills and the shell note: the project's, or the cell's. */
-  systemPrompt() {
-    return agentSystemPrompt(this.agent().agent, SYSTEM_PROMPT);
-  }
-
-  /**
-   * THE `machine` TOOL, bound to this session: attaches the session's
-   * environment on first use (environment.js, over the control plane with the
-   * session's own token) and runs in it over the daemon's RPC
-   * (execenv.envrpc.js, over the provider edge). One per cell — the tool keeps
-   * the attached record, and a second instance would attach twice.
-   */
-  machineTool(sessionId) {
+  machineTool() {
     this.__machine ??= machineTool({
       attach: () => this.attachMachine(),
       envFor: async () => this.machineEnv(),
-      // `push`/`pull` move files between the CELL's tree and the machine —
-      // useful before the switch, and for anything left behind after it.
-      workspace: () => { this.cellFs ??= cellFs(this.sql); return cellExecutionEnv(this.cellFs); },
-      onProgress: (line) => this.broadcast({ type: "machine", line }),
+      workspace: () => cellExecutionEnv(this.cell()),
+      onProgress: (line) => this.log("machine", line),
     });
     return this.__machine;
   }
 
-  /** The cached environment record, if this session attached one. */
   machineRecord() {
     try { this.sql.exec(ENVIRONMENT_TABLE_SQL); return readEnvironment(this.sql); } catch { return null; }
   }
 
-  /**
-   * The ExecutionEnv over the attached machine — built once per record and
-   * re-signed before the context's day is up. Null when no machine is
-   * attached, which is what every caller checks.
-   */
   async machineEnv() {
     const record = this.machineRecord();
     if (!record) { this.__machineEnv = null; return null; }
@@ -1614,2106 +440,834 @@ export class AgentCell {
     return this.__machineEnv;
   }
 
-  /** Called on the prompt path: makes `__machineEnv` current for the sync tool chooser. */
-  async prepareMachine() { return this.machineEnv(); }
-
-  /**
-   * ATTACH, THEN MAKE THE MACHINE THE WORKSPACE. The environment clones the
-   * session branch as it was on the origin; anything the cell's tree holds
-   * that was never pushed would be lost to the model the moment its tools
-   * moved. So the cell commits and pushes first when it is dirty, and the
-   * machine pulls — one fetch, fast-forward only — before the switch.
-   */
+  /** Attach, then make the machine the workspace: unpushed cell work is pushed and pulled first. */
   async attachMachine() {
-    // EVERY LEG TIMED, because the first reading of this attach was 24 s
-    // against a 6.2 s control-plane floor and nothing said where the rest
-    // went (2026-09-12). The marks ride the same progress channel the tool
-    // already reports on, so a slow attach names its own slow part.
-    const t0 = Date.now();
-    const marks = [];
-    // BOUNDED. A provision that drags is exactly when the marks matter and
-    // exactly when there are most of them — dev answered `provisioning` 55
-    // times over 71 s once — so the middle is dropped rather than the record.
-    const MARKS_MAX = 24;
-    const mark = (label) => {
-      marks.push(`${label}=${Date.now() - t0}ms`);
-      if (marks.length > MARKS_MAX) marks.splice(Math.floor(MARKS_MAX / 2), marks.length - MARKS_MAX, "...");
-      this.broadcast({ type: "machine", line: `attach ${marks.join(" ")}` });
-    };
-    const r = await attachEnvironment({
-      env: this.effectiveEnv(),
-      sql: this.sql,
-      // EVERY ASK IS MARKED. The `ensure` leg read 2957 ms against a
-      // control-plane that provisioned in 1913 ms, and two attempts to close
-      // that gap were aimed at the wrong half because the shape of the polling
-      // was modelled rather than measured. Now the attempts are in the marks.
-      onProgress: (line) => { mark(line.replace(/[^a-z0-9()]+/gi, "-").slice(0, 28)); },
-    });
-    mark("ensure");
+    const r = await attachEnvironment({ env: this.effectiveEnv(), sql: this.sql, onProgress: (line) => this.log("machine", line) });
     if (!r.ok) return r;
     const env = await this.machineEnv();
     const e = this.effectiveEnv();
-    const branch = typeof e.KORTIX_BRANCH_NAME === "string" && e.KORTIX_BRANCH_NAME.trim() ? e.KORTIX_BRANCH_NAME.trim() : null;
-    // THE CLONE IS NOT WAITED FOR HERE. The machine is usable the moment its
-    // daemon answers, and the first thing a session runs on it usually needs
-    // no files. Only the legs below that touch git wait, and only when there
-    // is something for them to do.
+    const branch = String(e.KORTIX_BRANCH_NAME ?? "").trim() || null;
     this.__machineRepoReady = r.repoReady === true;
     try {
-      this.cellFs ??= cellFs(this.sql);
-      const dirty = branch && (await isCheckedOut(this.cellFs.fs)) && (await workingStatus(this.cellFs)).length > 0;
-      mark(dirty ? "status(dirty)" : "status(clean)");
-      // Only a cell with UNPUSHED work has to block on the machine's checkout:
-      // it is about to push to the branch the machine is cloning.
-      if (dirty && !this.__machineRepoReady) {
-        const w = await waitForRepo(r.edge);
-        this.__machineRepoReady = w.ok;
-        mark(`repo(${w.ok ? "ready" : "timeout"})`);
-      }
+      const cell = this.cell();
+      const dirty = branch && (await isCheckedOut(cell.fs)) && (await workingStatus(cell)).length > 0;
+      if (dirty && !this.__machineRepoReady) this.__machineRepoReady = (await waitForRepo(r.edge)).ok;
       if (dirty) {
-        const pushed = await commitAndPush({ cell: this.cellFs, url: e.KORTIX_REPO_URL, token: e.KORTIX_TOKEN, branch, message: "Work from the session before its machine was attached" });
-        this.broadcast({ type: "machine", line: pushed.ok ? `pushed the session tree to ${branch}` : `could not push the session tree: ${pushed.error}` });
-        mark("push");
+        const pushed = await commitAndPush({ cell, url: e.KORTIX_REPO_URL, token: e.KORTIX_TOKEN, branch, message: "Work from the session before its machine was attached" });
+        this.log("machine", pushed.ok ? `pushed the session tree to ${branch}` : `could not push the session tree: ${pushed.error}`);
       }
-      // THE PULL IS SKIPPED WHEN THERE IS NOTHING TO PULL. The box clones the
-      // session branch on boot, so a freshly attached machine is already on
-      // it; fetching again cost 1.7 s of a 14 s attach for no change
-      // (measured 2026-09-12). It still runs whenever the cell had work to
-      // push, or when the box reports a different branch than this session's.
-      if (branch && (dirty || r.branch !== branch)) {
-        const pulled = await machineGit(env).pull(branch);
-        this.broadcast({ type: "machine", line: pulled.ok ? "machine checkout is current" : `machine pull: ${pulled.output}` });
-        mark("pull");
-      }
+      if (branch && (dirty || r.branch !== branch)) await machineGit(env).pull(branch);
     } catch (err) {
-      this.broadcast({ type: "machine", line: `sync skipped: ${String(err?.message ?? err)}` });
+      this.log("machine", `sync skipped: ${errorText(err)}`);
     }
-    mark("done");
-    this.__attachMarks = marks.join(" ");
-    this.wire?.publish([{ type: "file.edited", properties: { file: CELL_CWD } }]);
+    this.__prompt = null;
+    this.publish([{ type: "file.edited", properties: { file: CELL_CWD } }]);
     return r;
   }
 
-  /** The tree the routes answer about: the machine's when attached, else the cell's. */
-  /**
-   * THE MACHINE'S CHECKOUT, WAITED FOR ONCE. Every surface that answers about
-   * FILES — the panel, the viewer, search, git — needs the clone; the model's
-   * `machine run` does not. This is where that wait is paid, at most once per
-   * cell, by whoever asks first.
-   */
   async machineRepoReady() {
     if (this.__machineRepoReady) return true;
     const record = this.machineRecord();
     if (!record) return false;
-    const w = await waitForRepo(record.edge);
-    this.__machineRepoReady = w.ok;
-    if (w.ok && w.waitedMs > 200) this.broadcast({ type: "machine", line: `waited ${w.waitedMs} ms for the machine's checkout` });
-    return w.ok;
+    this.__machineRepoReady = (await waitForRepo(record.edge)).ok;
+    return this.__machineRepoReady;
   }
 
+  /** The tree the file routes answer about: the machine's when attached, else the cell's. */
   async workspaceFs() {
     const env = await this.machineEnv();
-    if (env) await this.machineRepoReady();
-    // The file and static routes take the CELL-SHAPED object — `{fs, ready,
-    // persist}` — so the machine is handed over in that shape: its fs is the
-    // adapter, it is always ready, and there is nothing to persist because the
-    // machine's disk is the record.
-    if (env) return { kind: "machine", fs: machineFs(env), ready: Promise.resolve(), persist: async () => {} };
-    this.cellFs ??= cellFs(this.sql);
-    return this.cellFs;
-  }
-
-  /**
-   * WHERE THIS PROJECT KEEPS ITS AGENTS AND SKILLS, read from the manifest in
-   * the checkout — `.kortix/opencode` up to schema v2, `.kortix/pi` from v3,
-   * or whatever `pi.config_dir` names (manifest.js).
-   *
-   * Cached per cell once ANSWERED, and only then: the manifest can only change
-   * with a commit, but a cell is asked this before its checkout exists, and
-   * caching that first "no manifest" would pin the wrong directory for the
-   * life of the box.
-   */
-  async configDir(sessionId) {
-    if (this.__configDir) return this.__configDir;
-    try {
-      const env = executionEnvFor(this.effectiveEnv(), sessionId, "manifest", undefined, this.cellFs ?? null);
-      this.__configDir = await workspaceConfigDir(env);
-    } catch { this.__configDir = null; }
-    return this.__configDir;
-  }
-
-  /**
-   * THE PROJECT'S OWN INSTRUCTIONS. `AGENTS.md` at the root of a checkout is
-   * the file every OpenCode-shaped agent is told to follow — Kortix's platform
-   * agent's whole prompt is "Follow /workspace/AGENTS.md". A cell had no
-   * checkout, so it never had one to read; now that it does, the file joins
-   * the system prompt as what it is: the project's instructions, quoted, not
-   * paraphrased.
-   *
-   * Bounded: a repository can put anything in that file, and the context is
-   * the session's to spend.
-   */
-  async projectInstructions(sessionId) {
-    try {
-      // OVER THE SESSION'S OWN WORKSPACE, whichever it is. Reading the cell's
-      // tree directly manufactured a cell filesystem on a daemon-backed
-      // session — nothing used it, and `/model` then reported the wrong
-      // backend (the cell suite caught it, 2026-09-10).
-      const env = executionEnvFor(this.effectiveEnv(), sessionId, "instructions", undefined, this.cellFs ?? null);
-      for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-        const read = await env.readTextFile(name);
-        if (!read?.ok) continue;
-        const body = String(read.value ?? "").trim();
-        if (!body) continue;
-        const kept = body.length > PROJECT_INSTRUCTIONS_MAX ? `${body.slice(0, PROJECT_INSTRUCTIONS_MAX)}\n…` : body;
-        return `The project's own instructions, from ${name} in the workspace. Follow them:\n\n${kept}`;
-      }
-    } catch { /* a workspace that cannot be read has no instructions */ }
-    return "";
-  }
-
-  /** Bump a meter. One statement, so a concurrent request cannot lose a count. */
-  meter(key, by = 1) {
-    this.sql.exec(
-      "INSERT INTO meter(k, n) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET n = n + ?",
-      key, by, by,
-    );
-  }
-
-  /**
-   * A DURABLE WRITE IS THE WHOLE COST OF A REQUEST HERE.
-   *
-   * celld makes a SQLite write durable in object storage before it lets the
-   * response out — that is the guarantee, not a bug. Measured on dev
-   * 2026-09-07 against one warm cell: entering the cell cost 2 ms, a SQLite
-   * READ 3 ms, and a single durable WRITE 154 ms. So counting requests on the
-   * request path made every billable call an object-storage round trip, and
-   * the counter was the only reason most of them wrote anything at all.
-   *
-   * The count is now kept in the instance and flushed in one statement. It is
-   * still EXACT wherever anyone looks: /meter flushes before it reports, and
-   * the alarm flushes whatever a turn left behind. What a rebuild can lose is
-   * bounded by the threshold and only covers requests nobody ever read back —
-   * which is the trade a 154 ms floor per request is worth.
-   */
-  meterRequest() {
-    this.pending = this.pending ?? {};
-    this.pending.requests = (this.pending.requests ?? 0) + 1;
-    if (this.pending.requests >= REQUEST_FLUSH_EVERY) this.flushMeter();
-  }
-
-  /**
-   * Settle the in-memory tally. One statement per key, and a no-op when
-   * nothing is owed.
-   *
-   * `builds` rides the same path. It is written once per isolate and it used
-   * to be written inside init(), which put a durable write on the FIRST
-   * request every fresh isolate served — the single most expensive request a
-   * session makes. Measured on dev 2026-09-07: a cold isolate cost 362 ms over
-   * the wire with that write and 178 ms of that was the wire itself. Deferring
-   * it costs nothing that matters, because every reader of `builds` goes
-   * through /meter, which settles before it reports.
-   */
-  flushMeter() {
-    const p = this.pending ?? {};
-    let wrote = 0;
-    for (const [k, n] of Object.entries(p)) {
-      if (!n) continue;
-      this.meter(k, n);
-      wrote += n;
+    if (env) {
+      await this.machineRepoReady();
+      return { kind: "machine", fs: machineFs(env), ready: Promise.resolve(), persist: async () => {} };
     }
-    this.pending = {};
-    return wrote;
+    return this.cell();
+  }
+
+  // ── turns ──────────────────────────────────────────────────────────────
+
+  /** Whether the session can take a prompt: a root, and its first turn claimed when one was owed. */
+  readiness() {
+    const e = this.effectiveEnv();
+    if (!this.rootId) return { ready: false, phase: "no-session", error: "the cell has no KORTIX_SESSION_ID" };
+    const bootstrap = e.KORTIX_BOOTSTRAP_RUNTIME_SESSION === "1" || e.KORTIX_BOOTSTRAP_OPENCODE_SESSION === "1";
+    if (bootstrap && !this.meta("boot_done")) return { ready: false, phase: "initial-turn-claim", error: null };
+    if (this.__engineError) return { ready: false, phase: "engine", error: this.__engineError };
+    return { ready: true, phase: "ready", error: null };
   }
 
   /**
-   * THE CELL'S OWN CLOCK, on every answer.
-   *
-   * A caller timing a request to a cell measures four things at once: opening
-   * a connection, the hop, this isolate's work, and the hop back. When the
-   * number is wrong there is no way to tell which — and a whole tick went into
-   * guessing. Measured 2026-09-09, the API's env repair reported `post: 73 ms`
-   * to a box whose same POST answered in 9 ms p50 from a warm connection in
-   * another process, and nothing on either side said where the other 64 ms
-   * went.
-   *
-   * `x-cell-ms` is the part this isolate is responsible for. Subtracting it
-   * from the caller's own measurement leaves the network, which is the only
-   * other place the time can be. One header, every route, no new endpoint to
-   * remember to call.
-   *
-   * Deliberately NOT `Server-Timing`: that is a browser-facing format with a
-   * parser, and this is read by a log line and a shell script.
+   * Admit one prompt: publish its user message NOW (the transcript and every
+   * subscriber see it before the model is called), submit it to pi under its
+   * message id, and wake the alarm that drives the run.
    */
-  async fetch(req) {
-    const cellT0 = performance.now();
-    const res = await this.handle(req);
+  async admit(input) {
+    const messageId = input.messageId ?? this.clock.mint();
+    if (this.engine().turn(messageId)) return { messageId, deduplicated: true };
+    this.clock.observe(messageId);
+    if (!this.meta("title")) {
+      const line = input.text.trim().split("\n")[0] ?? "";
+      if (line) this.setMeta("title", line.length > 80 ? `${line.slice(0, 77)}…` : line);
+    }
+    const created = Date.now();
+    const model = nativeModelId(input.model) ?? this.engine().selectedModelId();
+    const frames = [{
+      type: "message.updated",
+      properties: { sessionID: this.rootId, info: { id: messageId, role: "user", sessionID: this.rootId, time: { created }, agent: this.agentName(), model: { providerID: this.engine().modelRef().providerID, modelID: model, ...(input.variant ? { variant: input.variant } : {}) } } },
+    }];
+    let index = 0;
+    if (input.text) frames.push({ type: "message.part.updated", properties: { sessionID: this.rootId, time: created, part: { id: `${messageId}-p${index++}`, messageID: messageId, sessionID: this.rootId, type: "text", text: input.text } } });
+    for (const file of input.files) {
+      frames.push({ type: "message.part.updated", properties: { sessionID: this.rootId, time: created, part: { id: `${messageId}-p${index++}`, messageID: messageId, sessionID: this.rootId, type: "file", mime: file.mime, url: file.url, ...(file.filename ? { filename: file.filename } : {}) } } });
+    }
+    this.publish(frames);
     try {
-      res.headers.set("x-cell-ms", (performance.now() - cellT0).toFixed(1));
-    } catch { /* a response whose headers are sealed still answers */ }
+      await this.preparePrompt();
+      const content = this.#content(input);
+      await this.engine().submit({ messageId, content, model: input.model, noReply: input.noReply });
+    } catch (e) {
+      // Nothing was admitted: the user message goes, so a redelivery starts clean.
+      this.publish([{ type: "message.removed", properties: { sessionID: this.rootId, messageID: messageId } }]);
+      throw e;
+    }
+    await this.state.storage.setAlarm(Date.now() + 1);
+    return { messageId, deduplicated: false };
+  }
+
+  /** pi's user content: the text, images the model may read, and a note for other attachments. */
+  #content(input) {
+    const images = [];
+    const others = [];
+    for (const f of input.files) {
+      const decoded = f.mime.startsWith("image/") ? decodeDataUrl(f.url) : null;
+      if (decoded) images.push({ type: "image", data: f.url.slice(f.url.indexOf(",") + 1), mimeType: f.mime });
+      else others.push(`${f.filename ?? "attachment"} (${f.mime})`);
+    }
+    const text = others.length ? `${input.text}\n\n[attachments not shown to the model: ${others.join(", ")}]` : input.text;
+    return images.length ? [{ type: "text", text }, ...images] : text;
+  }
+
+  /**
+   * The ONLY signal that finalizes a turn server-side: `kind: "end"` to the
+   * control plane's turn stream, with the user message the turn answered.
+   * Retried until apps/api says the turn is settled; a turn that cannot be
+   * relayed now is relayed by the next alarm.
+   */
+  async relayPending() {
+    if (this.__relaying) return this.__relaying;
+    this.__relaying = (async () => {
+      const e = this.effectiveEnv();
+      for (const turn of this.engine().unrelayedTurns()) {
+        const error = turn.error ? JSON.parse(turn.error) : null;
+        const body = {
+          kind: "end",
+          status: turn.status === "error" ? "error" : "idle",
+          runtime_session_id: this.rootId,
+          turn_message_id: turn.message_id,
+          ...(error ? { error_name: error.name, error_message: error.data?.message, error_status: error.data?.statusCode, error_code: error.code ?? turnErrorCode({ name: error.name, statusCode: error.data?.statusCode }) } : {}),
+        };
+        const settled = await this.postTurnStream(body, { settle: true });
+        if (settled !== false) this.engine().markRelayed(turn.message_id);
+      }
+    })().finally(() => { this.__relaying = null; });
+    return this.__relaying;
+  }
+
+  /**
+   * POST to the control plane's turn stream with the session's own token.
+   * Resolves true when settled, false when it should be tried again, null
+   * when there is no control plane to tell (a bench, a local cell).
+   */
+  async postTurnStream(frame, { settle = false, attempts = 4 } = {}) {
+    const e = this.effectiveEnv();
+    const apiUrl = String(e.KORTIX_API_URL ?? "").trim().replace(/\/+$/, "");
+    const apiRoot = apiUrl ? (apiUrl.endsWith("/v1") ? apiUrl : `${apiUrl}/v1`) : null;
+    if (!apiRoot || !e.KORTIX_PROJECT_ID || !e.KORTIX_SESSION_ID || !e.KORTIX_TOKEN) return null;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        const res = await fetch(`${apiRoot}/projects/${encodeURIComponent(e.KORTIX_PROJECT_ID)}/turn-stream`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${e.KORTIX_TOKEN}` },
+          body: JSON.stringify({ session_id: e.KORTIX_SESSION_ID, ...frame }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (!settle) return data ?? true;
+          const outcome = data?.turn_completion?.outcome;
+          if (outcome === undefined || outcome === "closed" || outcome === "already_closed" || outcome === "no_active_turn") return true;
+          this.log("turn-stream", "not settled", outcome);
+        } else {
+          const text = await res.text().catch(() => "");
+          this.log("turn-stream", res.status, text.slice(0, 200));
+          if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) return settle ? true : null;
+        }
+      } catch (err) {
+        this.log("turn-stream", "fetch failed", errorText(err));
+      }
+      if (attempt < attempts) await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+    return false;
+  }
+
+  /**
+   * Once per session: pin the root with the control plane, and run the first
+   * turn apps/api created before this cell existed (CLI, Slack and trigger
+   * sessions start with one). kortixd's boot does the same, in this order.
+   */
+  async boot() {
+    if (this.meta("boot_done") || !this.rootId) return;
+    if (this.__booting) return this.__booting;
+    this.__booting = (async () => {
+      await this.postTurnStream({ kind: "runtime_session", runtime_session_id: this.rootId }, { attempts: 2 });
+      const e = this.effectiveEnv();
+      if (e.KORTIX_BOOTSTRAP_RUNTIME_SESSION === "1" || e.KORTIX_BOOTSTRAP_OPENCODE_SESSION === "1") {
+        const claim = await this.postTurnStream({ kind: "initial_turn_claim" }, { attempts: 3 });
+        const turn = claim && typeof claim === "object" ? claim.initial_turn : null;
+        if (turn && typeof turn.prompt === "string" && typeof turn.message_id === "string" && typeof turn.turn_token === "string") {
+          try {
+            const admitted = await this.admit({ messageId: turn.message_id, text: turn.prompt, files: [] });
+            await this.postTurnStream({ kind: "turn_accepted", runtime_session_id: this.rootId, turn_message_id: admitted.messageId, turn_token: turn.turn_token }, { attempts: 2 });
+          } catch (err) {
+            this.log("boot", "initial prompt admission failed", errorText(err));
+            await this.postTurnStream({ kind: "turn_abandoned", turn_token: turn.turn_token }, { attempts: 2 });
+          }
+        }
+      }
+      this.setMeta("boot_done", Date.now());
+    })().finally(() => { this.__booting = null; });
+    return this.__booting;
+  }
+
+  /**
+   * THE ALARM DRIVES THE AGENT. celld stops an isolate's work once a response
+   * is sent, so a run started by a prompt request is carried here: open pi
+   * (which resumes checkpointed work after an eviction), arm a deadman alarm,
+   * wait for idle, relay turn ends, re-arm while work remains.
+   */
+  async alarm() {
+    this.init();
+    await this.adoptRoot(null);
+    if (!this.rootId) return;
+    await this.boot().catch((e) => this.log("boot", errorText(e)));
+    const engine = this.engine();
+    try {
+      await engine.open();
+      this.__engineError = null;
+    } catch (e) {
+      this.__engineError = errorText(e);
+      this.log("engine", "open failed", this.__engineError);
+      await this.state.storage.setAlarm(Date.now() + 15_000);
+      return;
+    }
+    if (await engine.busy()) {
+      await this.state.storage.setAlarm(Date.now() + DEADMAN_MS);
+      if (!this.__prompt) await this.preparePrompt().catch(() => null);
+      const idle = await engine.waitForIdle(ALARM_WAIT_MS);
+      await this.relayPending().catch(() => {});
+      if (!idle || (await engine.busy())) {
+        await this.state.storage.setAlarm(Date.now() + 1_000);
+        return;
+      }
+    }
+    await this.relayPending().catch(() => {});
+    if (engine.unrelayedTurns().length) await this.state.storage.setAlarm(Date.now() + 5_000);
+  }
+
+  /** The probe behind `/kortix/health?turn=1`: the reaper and the reload gate read it. */
+  turnProbe(messageId) {
+    const engine = this.engine();
+    const active = engine.activeTurn();
+    if (!messageId) {
+      const latest = engine.latestTurn();
+      return { inFlight: !!active, end: active ? null : latest ? (latest.status === "error" ? "failed" : "completed") : null, orphanedPrompt: false };
+    }
+    const turn = engine.turn(messageId);
+    if (!turn) return { inFlight: false, end: "abandoned", orphanedPrompt: true };
+    if (turn.status === "queued" || turn.status === "running") return { inFlight: true, end: null, orphanedPrompt: false };
+    return { inFlight: false, end: turn.status === "error" ? "failed" : "completed", orphanedPrompt: false };
+  }
+
+  // ── routes ─────────────────────────────────────────────────────────────
+
+  async fetch(req) {
+    const t0 = performance.now();
+    let res;
+    try {
+      res = await this.handle(req);
+    } catch (e) {
+      this.log("route", new URL(req.url).pathname, errorText(e));
+      res = json(500, { error: errorText(e) });
+    }
+    try { res.headers.set("x-cell-ms", (performance.now() - t0).toFixed(1)); } catch { /* sealed */ }
     return res;
   }
 
   async handle(req) {
-    // BEFORE init(), DELIBERATELY. /ping is the only path that reaches a cell
-    // without paying for its schema, which is what makes the two halves of a
-    // cold start separable: everything up to here is celld creating the
-    // isolate and evaluating the script, and the gap between /ping and any
-    // other path is this worker's own start-up.
-    //
-    // Measured on dev 2026-09-07 against agentOS's 4.8 ms in-process spawn —
-    // see the numbers in test/spawn-budget.mjs.
-    if (new URL(req.url).pathname === "/ping") {
-      return Response.json({
-        instance: this.instance,
-        ctorMs: this.ctorMs ?? null,
-        initMs: this.initMs ?? null,     // null until something has run init()
-        ready: this.ready,
-        ageMs: Date.now() - this.bornAt,
-        // WHAT THIS ISOLATE CAN SEE, by NAME only — never a value. Twice now a
-        // session has arrived correctly configured and behaved as if it had
-        // not, and the only way to tell "the platform did not send it" from
-        // "the cell did not read it" was to guess. A cell's env comes from
-        // CELLD_VAR_* on the sandbox, and whether the prefix survives into the
-        // isolate is exactly the kind of thing that is easier to read than to
-        // reason about.
-        envKeys: Object.keys(this.env ?? {}).sort(),
-      });
-    }
     this.init();
     const url = new URL(req.url);
-    // `/session/status` IS A ROUTE, NOT A SESSION NAMED "status". OpenCode's
-    // client asks it at boot (`GET /session/status` -> `{ [sessionID]: {type} }`).
-    // The prefix parser below took "status" for a session id, answered the
-    // root document as an ARRAY where a keyed map is the contract, and — worse
-    // — rememberNamedSession() learned a session called "status", after which
-    // every unaddressed request on the node was ambiguous and refused 503.
-    // Measured on dev 2026-09-09 from a real browser's boot sequence.
-    const pathSession = url.pathname === "/session/status"
-      ? null
-      : url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
-
-    // ADDRESSING IS NOT ROUTING, and conflating the two cost this worker every
-    // route it has except three.
-    //
-    // The API's sandbox proxy forwards the path and DROPS the query, so
-    // `/session/<id>/…` is the only way the product can name one session's
-    // isolate on a box that holds several. Every route below was written as an
-    // exact pathname, so under that form all of them missed and fell through to
-    // the catch-all — which answered 200 to anything. Measured on dev
-    // 2026-09-09 against sbx_01M21XGVJNB5TZE6SV8MRC8FMW, same isolate, same
-    // route, addressed the two ways:
-    //
-    //   GET /model?c=<session>        {"tools":{"backend":"cell","cwd":"/work"…
-    //   GET /session/<session>/model  {"ok":true,"sessionId":…,"messages":4}
-    //
-    // One of those two answers is a shrug wearing a 200, and it is the one the
-    // product gets. The prefix says WHICH cell; it must not decide WHICH route.
-    // Strip it once, here, and route on what is left. A bare `/session/<id>` is
-    // a question about the session itself, which is what `/session` answers.
-    const path = pathSession
-      ? (url.pathname.slice(pathSession[0].replace(/\/$/, "").length) || "/session")
-      : url.pathname;
-    // `GET /session/<id>` is OpenCode's `session.get`: ONE session object. It
-    // used to fall into the list route and answer `[session]`, and the client
-    // read `session.time.created` on an array — measured 2026-09-09 in Chromium
-    // after a page reload: "TypeError: Cannot read properties of undefined
-    // (reading 'created')", the crash card, and an empty conversation.
-    const bareSession = !!pathSession && (url.pathname.slice(pathSession[0].replace(/\/$/, "").length) === "");
-
-    // NOT EVERY REQUEST IS BILLABLE, and getting this wrong is not a rounding
-    // error. /meter and /health are what a monitor polls; counting them would
-    // let an operator's dashboard invent a customer's bill, and the customer
-    // could not see why. Excluded by an explicit list rather than by a prefix
-    // convention, so adding an endpoint is a decision about billing rather than
-    // an accident of its name.
-    if (!UNBILLED_PATHS.has(path)) this.meterRequest();
-    const sessionId = url.searchParams.get("c")
-      ?? (pathSession ? decodeURIComponent(pathSession[1]) : null)
-      ?? this.effectiveEnv().KORTIX_SESSION_ID
-      ?? this.state.id?.toString?.()
-      ?? "default";
-
-    // THE CLONE STARTS ON THE FIRST REQUEST THAT NAMES THIS SESSION.
-    //
-    // It was hooked to `/kortix/health`, which the control plane polls while
-    // the box opens — but that poll does not carry `c=`, so it lands on a
-    // different cell of the shared runner and the session's own isolate never
-    // heard about it. Measured 2026-09-15: three seconds of idle before the
-    // prompt still paid `checkout=1007ms`, exactly as if nothing had been
-    // prewarmed, because nothing had.
-    //
-    // Here the session IS resolved, so whatever the client touches first — the
-    // transcript, the file list, an addressed health poll — begins the clone,
-    // and the first prompt finds it done or in flight rather than starting it.
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    const method = req.method.toUpperCase();
+    await this.adoptRoot(req.headers.get("x-kortix-cell-root"));
+    const root = this.rootId;
+    if (root && !this.meta("boot_done") && !this.__bootScheduled) {
+      this.__bootScheduled = true;
+      await this.state.storage.setAlarm(Date.now() + 1);
+    }
     this.prewarmCheckout();
 
-    // THE TERMINAL TAB'S SOCKET, which is not the session watcher's. It
-    // carries raw text (xterm's keystrokes out, bytes back) for ONE terminal,
-    // so it is accepted here, before the JSON protocol below, and remembered
-    // by its id. See cell-pty.js.
-    {
-      // `/connect` is the suffix the client's socket URL carries
-      // (packages/sdk core/runtime/pty.ts); a bare id is accepted too, which
-      // is what a probe reaches for. Matching only the bare form sent the
-      // browser's terminal into the session-watcher socket, where it was
-      // answered with a JSON `hello` and swallowed every keystroke —
-      // measured in a real browser 2026-09-10.
-      const m = url.pathname.match(/\/kortix\/pty\/([^/]+?)(?:\/connect)?$/);
-      if (m && req.headers.get("upgrade") === "websocket") {
-        const ptyId = decodeURIComponent(m[1]);
-        this.cellFs ??= cellFs(this.sql);
-        const record = ptyGet(this.sql, ptyId);
-        const pair = new WebSocketPair();
-        // TAGGED, AND ACCEPTED BY THE RUNTIME. `accept()` delivers messages to
-        // the socket's own listener and never to `webSocketMessage`, so a
-        // terminal accepted that way showed its banner and then swallowed every
-        // keystroke — measured live 2026-09-10. The tag is also how a rebuilt
-        // isolate knows which terminal a socket belongs to.
-        if (typeof this.state.acceptWebSocket === "function") this.state.acceptWebSocket(pair[1], [`pty:${ptyId}`, sessionId]);
-        else pair[1].accept?.();
-        if (!record) {
-          // The client reads this reason and replaces the terminal rather than
-          // reconnecting forever (features/session/pty-connection.ts).
-          try { pair[1].close(1000, "pty not found"); } catch { /* already gone */ }
-          return new Response(null, { status: 101, webSocket: pair[0] });
-        }
-        this.terminals ??= new Map();
-        this.terminals.set(pair[1], { ptyId, editor: newEditor(record.cwd), abort: null });
-        try { pair[1].send(banner(record.cwd)); } catch { /* the client left */ }
-        return new Response(null, { status: 101, webSocket: pair[0] });
-      }
-    }
-    if (req.headers.get("upgrade") === "websocket") {
-      const pair = new WebSocketPair();
-      // acceptWebSocket, NOT accept(): the first hands the socket to the runtime
-      // so it survives the isolate being evicted, which is the whole reason a
-      // parked session costs a file descriptor instead of memory. accept() keeps
-      // it on this instance and loses it on eviction.
-      if (typeof this.state.acceptWebSocket === "function") {
-        this.state.acceptWebSocket(pair[1], [sessionId]);
-        // Answer keepalives in the runtime so a ping does not wake the isolate.
-        // A parked session that is woken every 30 s by a heartbeat is not parked.
-        this.state.setWebSocketAutoResponse?.(new WebSocketRequestResponsePair("ping", "pong"));
-      } else {
-        pair[1].accept();
-        this.sockets.add(pair[1]);
-      }
-      // Send the current state immediately: a client that connects mid-turn
-      // should not have to wait for the next event to know where things stand.
-      try {
-        pair[1].send(JSON.stringify({
-          type: "hello",
-          sessionId,
-          // The CONTEXT's message count, to match the token figure beside it.
-        // These disagreed once the archive stopped being deleted: `tokens`
-        // described the window and `messages` counted the whole table, so the
-        // one number on this endpoint that says "how big is the context" was
-        // the one that was wrong.
-        messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i >= ?", this.contextFrom()).toArray()[0].n,
-        archived: this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i < ?", this.contextFrom()).toArray()[0].n,
-          pending: this.sql.exec("SELECT COUNT(*) AS n FROM turns WHERE status IN ('pending','running')").toArray()[0].n,
-          at: Date.now(),
-        }));
-      } catch { /* client vanished between upgrade and first write */ }
-      return new Response(null, { status: 101, webSocket: pair[0] });
-    }
+    if (path === "/ping") return json(200, { instance: this.instance, root, ageMs: Date.now() - this.bornAt, envKeys: Object.keys(this.env).sort() });
 
-    // STOP THE RUNNING TURN.
-    //
-    // The whole cancellation path — pi's abortSignal, the env's /cancel, the
-    // daemon killing the process group — is unreachable without this: pi
-    // creates the signal inside the run, so something has to call abort() from
-    // outside. Nothing did, which made a runaway command unstoppable for its
-    // full timeout however well the layers beneath it behaved.
-    //
-    // `?queue=1` also drops what has not started. Off by default: stopping the
-    // command someone is watching is a different intent from discarding work
-    // they queued.
-    // ── THE KORTIX SESSION SURFACE ────────────────────────────────────────
-    //
-    // A Kortix session drives a worker over a fixed set of paths (see
-    // apps/kortix-worker/src/main.ts): /kortix/health, /kortix/env,
-    // /kortix/refresh, /events, /interrupt, /turn, /session. This cell already
-    // does every one of those things under its own names, so parity is a
-    // mapping, not a second engine — and the mapping lives here rather than in
-    // the API so a cell stays drivable by anything that speaks the session
-    // protocol.
-    //
-    // Deliberately NOT aliases in a table: each one answers in the shape the
-    // session expects, which is not always the shape this cell returns.
-    if (path === "/kortix/health") {
-      // THE FIELDS THE SESSION ACTUALLY READS, not the ones a cell would
-      // naturally report. Kortix classifies a box from this body
-      // (apps/api/src/projects/lib/legacy-runtime-bootstrap.ts): `daemon` must
-      // be the string "ok" or the box is `not-ok`, and `runtime` must be an
-      // OBJECT or the box is `legacy` and gets put through a convergence path
-      // a cell has no use for.
-      //
-      // This used to answer `{ok, agent, sessionId, runtime: "ready", ...}`.
-      // Every field of that is true and none of it is what is read: `ok` is not
-      // `daemon`, and `runtime` as a STRING is not a runtime block. Measured on
-      // dev 2026-09-06, session 708ea3ca: the cell answered /kortix/health 200
-      // with runtime "ready" throughout while the session sat in
-      // `open-session:starting` for 181 s and never opened.
-      //
-      // The shape is kortix-worker's (apps/kortix-worker/src/worker.ts), because
-      // that is the contract the session speaks and parity with it is the point.
-      const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
-      // THE TURN PROBE, which is what releases the NEXT prompt.
-      //
-      // A queued prompt is held while the session holds turn authority, and the
-      // control plane settles that by polling /kortix/health?turn=1 and reading
-      // `turn_in_flight` (readSandboxTurn in apps/api/src/projects/reaping/
-      // box-reaper.ts). A body without the field reads as "this build says
-      // nothing about turns", the marker is never cleared, and every prompt
-      // after the first waits for ever on `turn_active`.
-      //
-      // Measured on dev 2026-09-07, session dee5338a: the session reached
-      // `ready`, the prompt was accepted 202, and it sat in state `waiting`
-      // reason `turn_active` with attempts=0 — the delivery loop never tried,
-      // because nothing ever told it the turn was over.
-      const probe = url.searchParams.get("turn") === "1"
-        ? (() => {
-            const pending = this.sql.exec(
-              "SELECT COUNT(*) AS n FROM turns WHERE status IN ('pending','running')",
-            ).toArray()[0].n;
-            const inFlight = !!this.running || pending > 0;
-            const last = this.sql.exec(
-              "SELECT status, error FROM turns ORDER BY i DESC LIMIT 1",
-            ).toArray()[0] ?? null;
-            return {
-              turn_in_flight: inFlight,
-              // Only meaningful when nothing is in flight; the reader ignores
-              // it otherwise.
-              turn_end: inFlight ? null : (last?.status === "error" ? "error" : "completed"),
-              // A prompt this cell accepted and never ran. `pending` with no
-              // running turn and no alarm progress is exactly that.
-              turn_orphaned_prompt: !this.running && pending > 0,
-            };
-          })()
-        : null;
-      return Response.json({
-        ...(probe ?? {}),
-        daemon: "ok",
-        status: "ok",
-        runtimeReady: true,
-        workload: "session",
-        // A cell runs no OpenCode. The session must not wait for one, so this
-        // says the component it asks after is fine rather than absent.
-        opencode: "ok",
-        engine: "pi",
-        uptime_s: Math.floor((Date.now() - this.bornAt) / 1000),
-        repo_required: false,
-        repo_ready: true,
-        boot_error: null,
-        store_error: null,
-        model_mode: normalizeModelEnv(this.modelEnv()).MODEL_API_KEY ? "live" : "scripted",
-        model_error: null,
-        opencode_session_id: sessionId,
-        opencode_session_required: false,
-        agent_config_etag: this.agent().etag,
-        commit_sha: null,
-        branch: null,
-        runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
-        // The cell's own facts, kept alongside rather than instead of the
-        // contract: a caller that knows about cells can still use them.
-        ok: true,
-        agent: "pi-in-a-cell",
-        sessionId,
-        busy: !!this.running,
-        turns,
-        instance: this.instance,
-      });
+    // ── control ──────────────────────────────────────────────────────────
+    if (path === "/kortix/health" && method === "GET") return this.health(url);
+    if (path === "/kortix/env" && method === "POST") return this.applyEnv(req);
+    if (path === "/kortix/refresh" && method === "POST") {
+      await this.skills({ reload: true }).catch(() => null);
+      this.__prompt = null;
+      return json(200, { ok: true, repo: { before: null, after: null }, runtime: "ok", runtime_pid: null, opencode: "ok", opencode_pid: null });
     }
-    // Env sync. The session pushes the environment a turn must run with; a cell
-    // keeps it per session, so this is a write, not a restart.
-    if (path === "/kortix/env" && req.method === "POST") {
+    if (path === "/kortix/abort" && method === "POST") {
+      const aborted = await this.engine().abort().catch(() => false);
+      return json(200, { ok: true, aborted, runtime_session_id: root, opencode_session_id: root });
+    }
+    if (path === "/kortix/config/converge" || path === "/kortix/catalog/converge" || path.startsWith("/kortix/abort/after-tool")) return notFound(path);
+
+    // ── the Kortix runtime API (and its pre-W3 alias) ─────────────────────
+    const runtime = /^\/kortix\/(?:runtime|opencode)(\/.*)$/.exec(path);
+    if (runtime) return this.runtimeRoute(req, runtime[1], url, method);
+
+    // ── the OpenCode-compatible surface ──────────────────────────────────
+    if (method === "GET" && (path === "/event" || path === "/global/event")) return globalEventStream(this.bus);
+    if (path === "/session" && method === "GET") {
+      const r = this.readiness();
+      if (!r.ready) return json(503, { code: "runtime_not_ready", error: r.error ?? "the pi cell is starting", reason: r.phase, phase: r.phase }, { "x-kortix-boot-phase": `cell|${r.phase}` });
+      return json(200, [this.sessionObject()]);
+    }
+    if (path === "/session" && method === "POST") return json(200, this.sessionObject());
+    if (path === "/session/status" && method === "GET") return json(200, this.engine().activeTurn() ? { [root]: { type: "busy" } } : {});
+    const session = /^\/session\/([^/]+)(?:\/(.*))?$/.exec(path);
+    if (session) return this.sessionRoute(req, decodeSegment(session[1]), session[2] ?? "", url, method);
+
+    const part = /^\/kortix\/part\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(path);
+    if (part && method === "GET") return this.partRoute(decodeSegment(part[2]), decodeSegment(part[3]));
+
+    if (method === "GET") {
+      if (path === "/skill") {
+        const { skills } = await this.skills().catch(() => ({ skills: [] }));
+        return json(200, skills.map((s) => ({ name: s.name, description: s.description ?? "", location: s.filePath })));
+      }
+      if (path === "/tool/ids" || path === "/experimental/tool/ids") return json(200, ["read", "write", "edit", "bash", "glob", "grep", "todowrite", "todoread", "machine"]);
+      if (path === "/tool" || path === "/experimental/tool") return json(200, []);
+      if (path === "/mcp" || path === "/lsp") return json(200, {});
+      if (path === "/vcs" || path === "/vcs/status" || path === "/vcs/diff") return json(200, []);
+      if (path === "/agent") {
+        const { config, name } = this.agentConfig();
+        const ref = this.engine().modelRef();
+        return json(200, agentList(config, name, agentShape) ?? [agentShape(this.agentName(), ref.providerID, ref.modelID)]);
+      }
+      const ref = this.engine().modelRef();
+      const boot = bootAnswer(method, path, { sessionId: root, agentName: this.agentName(), projectId: this.effectiveEnv().KORTIX_PROJECT_ID, provider: ref.providerID, modelId: ref.modelID, cwd: CELL_CWD, createdAt: Number(this.meta("created_at")) || this.bornAt, version: CELL_VERSION, checkedOut: !!this.__checkoutOk });
+      if (boot) return json(boot.status, boot.body);
+    }
+    if (/^\/permission\/[^/]+\/reply$/.test(path) && method === "POST") return json(404, { error: "permission request not found" });
+    if (/^\/question\/[^/]+\/(reply|reject)$/.test(path) && method === "POST") return json(404, { error: "question request not found" });
+    if (path === "/log" && method === "POST") return json(200, true);
+    if (path === "/global/dispose") return json(200, true);
+
+    // ── the workspace ────────────────────────────────────────────────────
+    if (path === "/file" || path.startsWith("/file/") || path === "/find" || path.startsWith("/find/")) return this.fileRoute(req, path, url, method);
+    if (path === "/kortix/pty" || path.startsWith("/kortix/pty/")) return this.ptyRoute(req, path, method);
+    if (path === "/kortix/git/commit-push" && method === "POST") return this.commitPush(req);
+    if (path === "/env" && method === "GET") return json(200, { ok: true, keys: Object.keys(this.sessionEnv), secrets: Object.fromEntries([...this.sql.exec("SELECT k, v FROM userenv")].map((r) => [r.k, r.v])) });
+    const envKey = /^\/env\/([^/]+)$/.exec(path);
+    if (envKey && (method === "PUT" || method === "DELETE")) {
+      const key = decodeSegment(envKey[1]);
+      if (!key || /^KORTIX_/.test(key) || /^CELLD_/.test(key)) return json(409, { error: "reserved key" });
+      if (method === "DELETE") { this.sql.exec("DELETE FROM userenv WHERE k = ?", key); return json(200, { ok: true, key, deleted: true }); }
       const body = await req.json().catch(() => ({}));
-      const incoming = (body && typeof body === "object" && body.env && typeof body.env === "object") ? body.env : body;
-      const applied = [];
-      for (const [k, v] of Object.entries(incoming ?? {})) {
-        if (typeof k !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
-        this.sessionEnv = this.sessionEnv ?? {};
-        this.sessionEnv[k] = String(v);
-        this.sql.exec("INSERT INTO session_env(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, String(v));
-        applied.push(k);
-      }
-      // THE ENV IS WHAT THE CLONE WAS WAITING FOR. A cell holds no repo url
-      // until the control plane pushes one, which is why prewarming on the
-      // first addressed request did nothing — measured 2026-09-15, `repo:
-      // false` four seconds after the client opened the session. This push is
-      // the first moment a clone is even possible, and it lands ahead of the
-      // prompt that follows it, so the turn finds the checkout in flight
-      // instead of starting it.
-      this.prewarmCheckout();
-      return Response.json({ ok: true, sessionId, applied: applied.length, keys: applied.slice(0, 40) });
+      this.sql.exec("INSERT INTO userenv(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", key, typeof body?.value === "string" ? body.value : String(body?.value ?? ""));
+      return json(200, { ok: true, key });
     }
-    if (path === "/kortix/env") {
-      return Response.json({ ok: true, sessionId, keys: Object.keys(this.sessionEnv ?? {}) });
-    }
-    // Refresh: a session asks a worker to re-read what it can re-read. For a
-    // cell that is its skills; nothing else here is cached across a turn.
-    if (path === "/kortix/refresh" && req.method === "POST") {
-      const { skills, diagnostics } = await this.skills(sessionId, { reload: true });
-      return Response.json({ ok: true, sessionId, skills: skills.length, diagnostics });
-    }
-    // The session's own stop verb.
-    if (path === "/interrupt" && req.method === "POST") {
-      const running = this.running;
-      if (!running) return Response.json({ stopped: false, reason: "no turn is running" });
-      running.agent.abort();
-      return Response.json({ stopped: true, turn: running.turn });
-    }
-    // One turn's state, the way a session asks for it: the newest turn, and
-    // whether anything is running right now.
-    if (path === "/turn") {
-      // `i` is the turn id everywhere else in this file (this.running.turn is
-      // set from it); there is no `turn` column.
-      const rows = [...this.sql.exec("SELECT i, status, error FROM turns ORDER BY i DESC LIMIT 1")];
-      const last = rows[0] ?? null;
-      return Response.json({
-        sessionId,
-        running: !!this.running,
-        turn: this.running ? this.running.turn : (last ? last.i : null),
-        status: this.running ? "running" : (last ? last.status : "idle"),
-        error: last?.error ?? null,
-      });
-    }
-    // GET /session IS A LIST, BECAUSE THAT IS WHAT THE CONTROL PLANE PROBES.
-    //
-    // A session does not reach `ready` on the strength of /kortix/health. The
-    // start path calls ensureOpencodeSessionPin, which GETs
-    // `/session?directory=…`, expects an ARRAY of OpenCode-shaped sessions, and
-    // pins the canonical root — the most recently active entry with no
-    // `parentID` (apps/api/src/projects/opencode-session-resolver.ts). No array,
-    // no root, and the answer is `not_ready`, which the envelope reports as
-    // runtime `booting` forever.
-    //
-    // This returned a cell-shaped OBJECT. Measured on dev 2026-09-07, session
-    // 6102257c: the cell answered /kortix/health with runtimeReady true and
-    // daemon ok the whole time, and the session still ended
-    // `runtime_not_ready_timeout` with observation runtime.state "booting",
-    // because the pin could never resolve.
-    //
-    // The shape is kortix-worker's (opencodeSessionObject in
-    // apps/kortix-worker/src/runtime-surface.ts): one root, no parent. The
-    // cell's own facts ride along as extra keys, which the resolver ignores and
-    // a cell-aware caller can still read.
-    if (path === "/session/status") {
-      // OpenCode's shape: a map keyed by session id. `busy` is the cell's own
-      // running flag — the same truth /kortix/health and /session report.
-      return Response.json({ [sessionId]: { type: this.running ? "busy" : "idle" } });
-    }
-    if (path === "/session") {
-      const msgs = this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
-      const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
-      const t = this.sql.exec("SELECT MIN(ts) AS a, MAX(ts) AS b FROM msgs").toArray()[0] ?? {};
-      const created = t.a ?? this.bornAt;
-      const updated = t.b ?? created;
-      const entry = {
-        id: sessionId,
-        title: sessionId,
-        // No parentID: this cell IS the root. A parent would make it
-        // unpickable and the session would never leave `booting`.
-        parentID: null,
-        directory: this.effectiveEnv().PT_WORKSPACE_CWD ?? "/workspace",
-        time: { created, updated },
-        version: "pi",
-        // The cell's own document, alongside rather than instead of it.
-        sessionId,
-        agent: "pi-in-a-cell",
-        busy: !!this.running,
-        messages: msgs,
-        turns,
-        contextFrom: this.contextFrom(),
-      };
-      // The list for `/session`; the one object for `/session/<id>` (session.get).
-      return Response.json(bareSession ? entry : [entry]);
-    }
-    if (path === "/stop" && req.method === "POST") {
-      const running = this.running;
-      let dropped = 0;
-      if (url.searchParams.get("queue") === "1") {
-        dropped = this.sql.exec("SELECT COUNT(*) AS n FROM turns WHERE status='pending'").toArray()[0].n;
-        this.sql.exec("UPDATE turns SET status='error', error='dropped by /stop' WHERE status='pending'");
-      }
-      if (!running) return Response.json({ stopped: false, reason: "no turn is running", dropped });
-      running.agent.abort();
-      return Response.json({ stopped: true, turn: running.turn, dropped });
-    }
-
-    // WHAT SKILLS THIS CELL CAN SEE, and why one is missing.
-    //
-    // A skill with broken frontmatter is skipped with a diagnostic, and without
-    // a way to read those the only symptom is a model that never uses a skill
-    // somebody swears they wrote. `?reload=1` re-reads the workspace, which
-    // matters because the agent can WRITE skills into it.
-    if (path === "/skills") {
-      const reload = url.searchParams.get("reload") === "1";
-      const { skills, diagnostics, dirs } = await this.skills(sessionId, { reload });
-      return Response.json({
-        dirs,
-        skills: skills.map((sk) => ({ name: sk.name, description: sk.description, path: sk.filePath, bytes: sk.content.length })),
-        diagnostics,
-      });
-    }
-    // `GET /skill` — OPENCODE'S OWN NAME FOR THE SAME LIST, and the one the
-    // SDK actually calls (react/use-opencode-sessions/tools.ts). `/skills` is
-    // this runtime's richer answer, with the directories it searched and the
-    // diagnostics from reading them; the client does not know that route
-    // exists and got `unknown route`, so a project's skills were loaded into
-    // every prompt and shown in the UI as none.
-    // `GET /plugins` — what the project ships, what loaded, and what did not.
-    if (path === "/plugins" && req.method === "GET") {
-      const p = await this.plugins(sessionId, { reload: url.searchParams.get("reload") === "1" });
-      return Response.json({ dir: pluginsDirFor(await this.configDir(sessionId)), plugins: p.plugins, tools: p.tools.map((t) => t.name), diagnostics: p.diagnostics });
-    }
-    if (path === "/skill" && req.method === "GET") {
-      const { skills } = await this.skills(sessionId, { reload: url.searchParams.get("reload") === "1" });
-      return Response.json(skills.map((sk) => ({
-        name: sk.name,
-        description: sk.description ?? "",
-        location: sk.filePath,
-        content: sk.content,
-      })));
-    }
-
-    // THE ROUTE THE PRODUCT ACTUALLY DELIVERS PROMPTS ON.
-    //
-    // The session lifecycle sends every composer message and every queued
-    // prompt to POST /session/:rootId/prompt_async — not to this cell's own
-    // /prompt (apps/api engine.ts postPrompt, and the comment that names it in
-    // apps/kortix-worker/src/worker.ts). OpenCode answers 204 and runs the turn
-    // in the background; the worker matches that, so a send reaches the agent
-    // and the reply streams back over /events.
-    //
-    // Without this route the request fell through to the cell's generic
-    // handler, which answers 200 to ANY path. So the API believed every prompt
-    // was delivered and no turn ever ran. Measured on dev 2026-09-07, session
-    // ef37beb7: the session reached `ready` in 7.1 s, the prompt returned 200,
-    // and no assistant message ever appeared — the worst shape of failure,
-    // because nothing anywhere reported an error.
-    //
-    // Enqueued exactly like `/prompt?async=1`: persisted first, then the alarm
-    // does the work, so nothing runs on this request's back and an eviction
-    // mid-turn resumes rather than loses it.
-    // POST /session/:rootId/abort — THE STOP BUTTON'S REAL PATH.
-    //
-    // The SDK builds its client with `baseUrl = <backend>/p/<externalId>/<port>`
-    // and calls `session.abort()`, which resolves to `/session/:id/abort` at the
-    // raw root with no prefix. kortix-worker learned this the hard way against
-    // pi.kortix.com on 2026-09-01: the raw path 404'd, so Stop did nothing while
-    // the UI painted "Interrupted" from its own optimistic receipt and the agent
-    // ran to completion. A cell had the same hole.
-    //
-    // Idempotent and root-scoped, like the harness: aborting an idle session is
-    // a no-op, and a request naming another session is refused rather than
-    // stopping this one.
-    {
-      const m = url.pathname.match(/^\/session\/([^/]+)\/abort$/);
-      if (m && req.method === "POST") {
-        const rootId = decodeURIComponent(m[1]);
-        if (rootId !== sessionId) {
-          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        }
-        const running = this.running;
-        if (running) running.agent.abort();
-        return Response.json({ ok: true, stopped: !!running, turn: running?.turn ?? null });
-      }
-    }
-
-    // GET /session/:rootId/message — the transcript, in the shape the raw
-    // OpenCode client asks for. The harness serves it at the same raw root and
-    // for the same reason: the SDK has no prefix.
-    {
-      // Two more routes an OpenCode client polls, seen 404ing in a real
-      // browser's boot (2026-09-09): `GET /session/:id/todo` (the todo list,
-      // an array) and `POST /log` (the app's client-side log sink, answered
-      // `true`). The todo list is the model's own (plantools.js `todowrite`),
-      // stored with the transcript, so a reload and an eviction both keep it.
-      const todo = url.pathname.match(/^\/session\/([^/]+)\/todo$/);
-      if (todo && req.method === "GET") {
-        if (decodeURIComponent(todo[1]) !== sessionId) {
-          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        }
-        return Response.json(readTodos(this.sql));
-      }
-      if (path === "/log" && req.method === "POST") {
-        return Response.json(true);
-      }
-      // `GET /session/:id/diff` — the Changes tab. OpenCode's own
-      // `SnapshotFileDiff[]`, one entry per changed file with its own patch
-      // (cell-git.js fileDiffs).
-      const diff = url.pathname.match(/^\/session\/([^/]+)\/diff$/);
-      if (diff && req.method === "GET") {
-        if (decodeURIComponent(diff[1]) !== sessionId) {
-          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        }
-        this.cellFs ??= cellFs(this.sql);
-        await this.ensureCheckout().catch(() => null);
-        const menv = await this.machineEnv();
-        if (menv) { await this.machineRepoReady(); return Response.json(await machineGit(menv).fileDiffs().catch(() => [])); }
-        return Response.json(await fileDiffs(this.cellFs).catch(() => []));
-      }
-      // ONE MESSAGE, AND THE TWO DELETES THE CONTROL PLANE USES TO CANCEL A
-      // FORWARDED TURN (projects/session-lifecycle/cancel-forwarded.ts). All
-      // three answered `unknown route`, so a cancelled forward left its
-      // half-written message in the transcript forever.
-      const oneMsg = url.pathname.match(/^\/session\/([^/]+)\/message\/([^/]+)$/);
-      if (oneMsg) {
-        const rootId = decodeURIComponent(oneMsg[1]);
-        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        const messageID = decodeURIComponent(oneMsg[2]);
-        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
-        const found = transcriptMessages(rows, sessionId).find((m) => m.info.id === messageID);
-        if (req.method === "GET") {
-          if (!found) return Response.json({ error: "message not found", messageID }, { status: 404 });
-          return Response.json(found);
-        }
-        if (req.method === "DELETE") {
-          if (!found) return Response.json(false, { status: 404 });
-          const row = rows[transcriptMessages(rows, sessionId).findIndex((m) => m.info.id === messageID)];
-          this.sql.exec("DELETE FROM msgs WHERE i = ?", row.i);
-          this.wire?.publish([{ type: "message.removed", properties: { sessionID: sessionId, messageID } }]);
-          return Response.json(true);
-        }
-      }
-      // A PART IS BLANKED, NOT SPLICED OUT. Its id is `<message>-p<index>`
-      // over the stored content array, so removing an entry would renumber
-      // every part after it and silently change ids the client already holds.
-      // A null entry keeps every other index exactly where it was
-      // (transcript-read.js skips it).
-      const onePart = url.pathname.match(/^\/session\/([^/]+)\/message\/([^/]+)\/part\/([^/]+)$/);
-      if (onePart && req.method === "DELETE") {
-        const rootId = decodeURIComponent(onePart[1]);
-        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        const messageID = decodeURIComponent(onePart[2]);
-        const partID = decodeURIComponent(onePart[3]);
-        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
-        const at = transcriptMessages(rows, sessionId).findIndex((m) => m.info.id === messageID);
-        if (at < 0) return Response.json(false, { status: 404 });
-        const row = rows[at];
-        let parsed = {};
-        try { parsed = JSON.parse(row.json); } catch { parsed = {}; }
-        const content = Array.isArray(parsed?.content) ? parsed.content : [];
-        const k = Number(String(partID).slice(`${messageID}-p`.length));
-        if (!Number.isInteger(k) || k < 0 || k >= content.length || content[k] == null) {
-          return Response.json(false, { status: 404 });
-        }
-        content[k] = null;
-        this.sql.exec("UPDATE msgs SET json = ? WHERE i = ?", JSON.stringify({ ...parsed, content }), row.i);
-        this.wire?.publish([{ type: "message.part.removed", properties: { sessionID: sessionId, messageID, partID } }]);
-        return Response.json(true);
-      }
-      // WHAT A CELL WILL NOT DO, said in the route's own terms. Each of these
-      // is a real OpenCode route the SDK calls; `unknown route` reads as a
-      // broken runtime, and 501 with the reason reads as the truth.
-      const refuse = url.pathname.match(/^\/session\/([^/]+)\/(share|revert|unrevert|summarize)$/);
-      if (refuse) {
-        const rootId = decodeURIComponent(refuse[1]);
-        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        const what = refuse[2];
-        if (what === "summarize") {
-          // COMPACTION IS THE ONE A CELL REALLY HAS. `/session/:id/summarize`
-          // is OpenCode's manual compaction and answers a plain boolean.
-          const done = await this.compactNow(sessionId).catch(() => false);
-          return Response.json(!!done);
-        }
-        const detail = what === "share"
-          ? "a cell has no share host: the transcript lives in Kortix, and sharing is the control plane's own route"
-          : "revert rewrites a transcript this runtime stores append-only";
-        return Response.json({ error: `${what} is not available in a cell`, detail }, { status: 501 });
-      }
-      // A cell's tools run without prompting, so nothing ever asks — but the
-      // client still posts a reply when a user clicks through a stale prompt.
-      if (/^\/(permission|question)\/[^/]+\/(reply|reject)$/.test(url.pathname) && req.method === "POST") {
-        return Response.json({ error: "nothing is asked in a cell", detail: "its tools run without prompting, so there is no request to answer" }, { status: 409 });
-      }
-    }
-    {
-      const m = url.pathname.match(/^\/session\/([^/]+)\/message$/);
-      if (m && req.method === "GET") {
-        const rootId = decodeURIComponent(m[1]);
-        if (rootId !== sessionId) {
-          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        }
-        // In the ids the wire used, with pi's thinking as `reasoning` — see
-        // transcript-read.js for the two ways this painted every message twice.
-        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
-        return Response.json(transcriptMessages(rows, sessionId));
-      }
-    }
-
-    {
-      const m = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
-      if (m && req.method === "POST") {
-        const rootId = decodeURIComponent(m[1]);
-        // Root-scoped, like the worker: a prompt addressed to another session
-        // must not run here just because it reached this cell.
-        if (rootId !== sessionId) {
-          return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        }
-        const body = await req.json().catch(() => ({}));
-        const parts = Array.isArray(body?.parts) ? body.parts : [];
-        const text = parts
-          .filter((x) => x && (x.type === "text" || typeof x.text === "string"))
-          .map((x) => String(x.text ?? ""))
-          .join("\n")
-          .trim() || String(body?.text ?? "").trim();
-        if (!text) return Response.json({ error: "no text in prompt" }, { status: 400 });
-        // THE USER MESSAGE IS ECHOED NOW, NOT WHEN THE TURN STARTS. OpenCode
-        // answers a prompt with the user's own `message.updated` and its text
-        // part, and the Kortix client paints its bubble on Enter expecting
-        // exactly that echo to confirm it. This cell wrote the row and said
-        // nothing until the alarm ran the turn — measured in a real browser
-        // 2026-09-10 (scratchpad ui-jump.ts, session 97651ca9): 0.7 s after
-        // Enter the transcript lost the new turn (scrollHeight 914 → 709,
-        // scrollTop → 0) and got it back 0.9 s later when the turn began —
-        // the "jump" on every send. Row and frames go out on accept; the turn
-        // then finds its message already stored (see runTurn) and the agent is
-        // seeded without it, so the model still sees the prompt once.
-        const messageID = typeof body?.messageID === "string" && body.messageID ? body.messageID : this.mintWireMessageId();
-        this.sql.exec(
-          "INSERT INTO turns(text, script, window, status, created_at, message_id, session_id) VALUES (?, NULL, 0, 'pending', ?, ?, ?)",
-          text, Date.now(), messageID, rootId,
-        );
-        this.saveMessage("user", { role: "user", content: [{ type: "text", text }] }, messageID);
-        this.wire?.publish([
-          { type: "message.updated", properties: { sessionID: rootId, info: { id: messageID, role: "user", sessionID: rootId, time: { created: Date.now() } } } },
-          { type: "message.part.updated", properties: { sessionID: rootId, part: { id: `${messageID}-p0`, messageID, sessionID: rootId, type: "text", text } } },
-        ]);
-        await this.state.storage.setAlarm(Date.now() + 1);
-        // 204, because that is what OpenCode answers and what the delivery loop
-        // treats as accepted.
-        return new Response(null, { status: 204 });
-      }
-    }
-
-    if (path === "/prompt" && req.method === "POST") {
-      const body = await req.json();
-      const { script, contextWindow } = body;
-      let { text } = body;
-      // EXPLICIT INVOCATION: /prompt {skill, text}. pi formats the invocation
-      // itself, so a named skill enters the conversation the way pi's own
-      // harness enters it rather than as prose this cell invented.
-      if (body.skill) {
-        const { skills } = await this.skills(sessionId);
-        const invocation = invokeSkill(skills, body.skill, text);
-        // 404 rather than sending the model a prompt about a skill that is not
-        // there: a typo'd skill name should fail loudly at the caller.
-        if (!invocation) {
-          return Response.json({ error: `no such skill: ${body.skill}`, available: skills.map((sk) => sk.name) }, { status: 404 });
-        }
-        text = invocation;
-      }
-      // ASYNC BY REQUEST, because holding a connection open for a whole agent
-      // turn is the wrong shape and celld 0.4.0 makes that concrete.
-      //
-      // Measured across versions, six concurrent prompts to ONE cell:
-      //   0.3.0  all six queue and answer 200
-      //   0.4.0  one answers 200, five are closed mid-request
-      //          ("incomplete_message ... connection closed before message
-      //          completed"). Sequential to one cell is fine; concurrent to
-      //          DIFFERENT cells is fine. It is concurrent requests to one
-      //          Durable Object that 0.4.0 will not hold.
-      //
-      // An agent turn is 2-30 s of model time, so a held connection was already
-      // fragile: a client that disconnects loses nothing that matters, since
-      // the transcript is in SQLite either way. `?async=1` accepts the prompt,
-      // queues it behind the same promise chain that orders turns, and answers
-      // immediately. The caller watches /history or the WebSocket.
-      const wantsAsync = url.searchParams.get("async") === "1";
-      if (wantsAsync) {
-        // Persist, then wake. Nothing runs on this request's back: the work
-        // happens in the alarm, which the runtime is willing to run after the
-        // response and after an eviction.
-        this.sql.exec(
-          "INSERT INTO turns(text, script, window, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
-          text, script ? JSON.stringify(script) : null, Number(contextWindow ?? 0), Date.now(),
-        );
-        const row = this.sql.exec("SELECT MAX(i) AS i FROM turns").toArray()[0];
-        await this.state.storage.setAlarm(Date.now() + 1);
-        return Response.json({ ok: true, accepted: true, turn: row.i }, { status: 202 });
-      }
-      // Queued as ONE unit: the agent must be built (and therefore read the
-      // transcript) after the previous turn has finished writing it, or it
-      // starts from a context that is already out of date.
-      const result = this.tail.then(async () => {
-        const { block } = await this.skills(sessionId);
-        const agent = this.buildAgent(sessionId, script, withSkills(this.systemPrompt(), block));
-        this.running = { agent, turn: null, sessionId };
-        // The user message is persisted BEFORE the model runs. If the turn dies
-        // mid-flight the prompt is still in the transcript, so a resume continues
-        // rather than silently dropping what the user asked for.
-        this.saveMessage("user", { role: "user", content: [{ type: "text", text }] });
-        await agent.prompt(text);
-        const compacted = await this.compactIfNeeded(sessionId, streamFnOf(agent), agent.state.model, contextWindow);
-        if (compacted) this.broadcast({ type: "compacted", ...compacted });
-        this.running = null;
-        return this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
-      });
-      // The chain must survive a failed turn, or one error wedges the session
-      // for good. Errors still reach the caller through `result`.
-      this.tail = result.then(() => undefined, () => undefined);
-
-      return Response.json({ ok: true, messages: await result });
-    }
-
-    if (path === "/history") {
-      // The ACTIVE CONTEXT by default — what the model is actually working
-      // from. `?all=1` adds everything compaction has summarised, which is the
-      // record of what the agent did and is kept rather than deleted.
-      const all = url.searchParams.get("all") === "1";
-      const from = all ? 0 : this.contextFrom();
-      const archived = this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i < ?", this.contextFrom()).toArray()[0].n;
-      return Response.json({
-        sessionId,
-        archived,
-        contextFrom: this.contextFrom(),
-        messages: [...this.sql.exec("SELECT role, json, ts FROM msgs WHERE i >= ? ORDER BY i", from)]
-          .map((r) => ({ role: r.role, ts: r.ts, message: JSON.parse(r.json) })),
-      });
-    }
-
-    // Diagnostics: which model this cell would actually call, and everything it
-    // could be pointed at without a code change.
-    // ONE MODEL CALL, FROM INSIDE THE CELL, REPORTED HONESTLY.
-    //
-    // A turn that produces an empty assistant message and zero tokens says
-    // nothing about why. The same request made from a laptop against the same
-    // gateway with the same credential returns a completion, so the difference
-    // is something only the cell can see — its own egress, its own parse, its
-    // own timeout. This makes that difference readable instead of inferred.
-    //
-    // Never prints the credential: status, timings, byte counts and the first
-    // few characters of content only.
-    if (path === "/bench/model") {
-      const e = normalizeModelEnv(this.modelEnv());
-      if (!e.MODEL_BASE_URL || !e.MODEL_API_KEY) {
-        return Response.json({ ok: false, reason: "no gateway or no key", hasGateway: !!e.MODEL_BASE_URL, hasKey: !!e.MODEL_API_KEY });
-      }
-      const t0 = Date.now();
-      const out = { model: e.MODEL_ID, baseUrl: e.MODEL_BASE_URL };
-      try {
-        const res = await fetch(`${e.MODEL_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
-          method: "POST",
-          headers: { authorization: `Bearer ${e.MODEL_API_KEY}`, "content-type": "application/json" },
-          body: JSON.stringify({
-            model: e.MODEL_ID,
-            messages: [{ role: "user", content: url.searchParams.get("q") ?? "say pong" }],
-            stream: url.searchParams.get("stream") !== "0",
-          }),
-        });
-        out.status = res.status;
-        out.headersMs = Date.now() - t0;
-        const reader = res.body?.getReader();
-        if (!reader) { out.body = (await res.text()).slice(0, 300); return Response.json(out); }
-        const dec = new TextDecoder();
-        let bytes = 0, keepAlives = 0, firstDataMs = 0, firstContentMs = 0, text = "";
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          bytes += value.length;
-          for (const line of dec.decode(value, { stream: true }).split("\n")) {
-            if (line.startsWith(":")) { keepAlives++; continue; }
-            if (!line.startsWith("data:")) continue;
-            if (!firstDataMs) firstDataMs = Date.now() - t0;
-            const b = line.slice(5).trim();
-            if (b === "[DONE]") continue;
-            try {
-              const c = JSON.parse(b).choices?.[0]?.delta?.content;
-              if (c && !firstContentMs) { firstContentMs = Date.now() - t0; text = String(c).slice(0, 24); }
-            } catch { /* partial frame */ }
-          }
-        }
-        Object.assign(out, { bytes, keepAlives, firstDataMs, firstContentMs, totalMs: Date.now() - t0, text });
-      } catch (err) {
-        out.error = String(err?.message ?? err).slice(0, 300);
-        out.totalMs = Date.now() - t0;
-      }
-      return Response.json(out);
-    }
-
-    if (path === "/model") {
-      const e = this.effectiveEnv();
-      const c = modelConfig(e);
-      // Length and segment count only — never the credential itself. Enough to
-      // tell "the token did not arrive intact" from "the token is rejected",
-      // which are the two failures that look identical from the outside.
-      const key = e.MODEL_API_KEY ?? "";
-      let claimOk = null;
-      try {
-        claimOk = !!JSON.parse(atob(key.split(".")[1]))?.["https://api.openai.com/auth"]?.chatgpt_account_id;
-      } catch (e) { claimOk = `decode failed: ${e.message}`; }
-      // WHERE THE TOOLS ACTUALLY RUN. An attached machine takes the six tools
-      // with it (toolsFor), so a session that reported `cell` while its bash
-      // ran on a microVM was telling whoever asked the opposite of the truth.
-      const attached = this.machineRecord();
-      return Response.json({
-        tools: attached
-          ? { backend: "machine", environment: attached.externalId, cwd: CELL_CWD }
-          : (e.PT_API_URL && e.PT_SANDBOX_KEY && e.PT_WORKSPACE_ID)
-          ? { backend: "platinum", api: e.PT_API_URL, workspace: e.PT_WORKSPACE_ID }
-          : (this.cellFs || e.TOOLS_BACKEND === "cell" || normalizeModelEnv(e).MODEL_BASE_URL || e.KORTIX_SESSION_ID)
-            // `files` is what is DURABLE — rows in the cell's SQLite — not the
-            // in-memory tree, which carries just-bash's 181-path skeleton.
-            ? { backend: "cell", cwd: CELL_CWD, files: this.fileCount() }
-            : { backend: "daemon", url: e.TOOL_DAEMON_URL },
-        active: c ? { provider: c.model.provider, id: c.model.id, api: c.model.api, baseUrl: c.model.baseUrl } : "scripted",
-        credential: { length: key.length, segments: key.split(".").length, accountIdClaim: claimOk },
-        available: supportedProviders(),
-      });
-    }
-
-    // What the transcript costs right now, and whether pi would compact it.
-    if (path === "/context") {
-      const c = modelConfig(this.effectiveEnv());
-      const model = c?.model ?? pricedModel(this.env);
-      const st = compactionState(this.loadMessages(), this.contextWindowFor(model, url.searchParams.get("window")));
-      // THE TRANSCRIPT IS THE BILL, so show it in money as well as tokens.
-      // pi's catalogue carries cost per million input tokens per model, so this
-      // needs no table of our own and stays right when a price changes.
-      //
-      // `perTurn` is the number that actually matters: context is re-sent on
-      // EVERY turn, so a session's cost grows with the square of its length.
-      // That is what compaction is for.
-      const rates = model?.cost;
-      const perM = rates?.input;
-      // ESTIMATED: what the next turn would cost at the full input rate, which
-      // is the worst case and the planning number.
-      const cost = typeof perM === "number" && perM > 0
-        ? {
-            currency: "USD",
-            perMillionInputTokens: perM,
-            perTurn: Number(((st.tokens / 1e6) * perM).toFixed(4)),
-            per100Turns: Number(((st.tokens / 1e6) * perM * 100).toFixed(2)),
-          }
-        : undefined;
-
-      // ACTUAL: what the provider says this session has already cost, priced at
-      // the catalogue's own rates, with cache reads at their (much lower) rate.
-      const u = this.sql.exec(
-        `SELECT COUNT(*) AS turns, COALESCE(SUM(input),0) AS input, COALESCE(SUM(output),0) AS output,
-                COALESCE(SUM(cache_read),0) AS cacheRead, COALESCE(SUM(cache_write),0) AS cacheWrite FROM usage`,
-      ).toArray()[0];
-      const spent = rates
-        ? Number((((u.input * (rates.input ?? 0)) + (u.output * (rates.output ?? 0)) +
-                   (u.cacheRead * (rates.cacheRead ?? 0)) + (u.cacheWrite * (rates.cacheWrite ?? 0))) / 1e6).toFixed(4))
-        : undefined;
-      // Without caching every cacheRead token would have been billed at the full
-      // input rate. The difference is what pi's prompt caching is worth here.
-      const savedByCache = rates && u.cacheRead
-        ? Number(((u.cacheRead * ((rates.input ?? 0) - (rates.cacheRead ?? 0))) / 1e6).toFixed(4))
-        : 0;
-      const billed = u.input + u.cacheRead;
-      const actual = {
-        turnsWithUsage: u.turns,
-        input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite,
-        cacheHitRate: billed ? Number((u.cacheRead / billed).toFixed(3)) : 0,
-        spentUSD: spent,
-        savedByCacheUSD: savedByCache,
-      };
-      return Response.json({
-        // The CONTEXT's message count, to match the token figure beside it.
-        // These disagreed once the archive stopped being deleted: `tokens`
-        // described the window and `messages` counted the whole table, so the
-        // one number on this endpoint that says "how big is the context" was
-        // the one that was wrong.
-        messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i >= ?", this.contextFrom()).toArray()[0].n,
-        archived: this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE i < ?", this.contextFrom()).toArray()[0].n,
-        tokens: st.tokens,
-        contextWindow: st.contextWindow,
-        model: model ? `${model.provider}/${model.id}` : "scripted",
-        wouldCompact: st.should,
-        cost,
-        actual,
-        settings: st.settings,
-      });
-    }
-
-    if (path === "/turns") {
-      return Response.json({ turns: [...this.sql.exec("SELECT * FROM turns ORDER BY i")] });
-    }
-
-    if (path === "/ops") {
-      return Response.json({ ops: [...this.sql.exec("SELECT * FROM ops ORDER BY started_at")] });
-    }
-
-    // How many sockets does THIS isolate believe it has? After an eviction the
-    // object is re-created, so this answers whether a hibernated socket is
-    // handed back to the new instance — the thing that decides if "parked
-    // sessions cost a file descriptor" is true.
-    // WHAT THIS CELL HAS DONE, for the control plane to meter.
-    //
-    // Cumulative and monotonic, never reset by reading: a meter that zeroed on
-    // read would lose everything between the reader crashing and its next call,
-    // and would make two readers each see half the truth. The CP takes
-    // differences between readings instead.
-    if (path === "/meter") {
-      // Settle first: a reader must never see a number that is behind what the
-      // cell has actually served, or the control plane would difference two
-      // readings and bill the gap to whichever one happened to flush.
-      this.flushMeter();
-      const rows = [...this.sql.exec("SELECT k, n FROM meter ORDER BY k")];
-      return Response.json({
-        sessionId,
-        meters: Object.fromEntries(rows.map((r) => [r.k, r.n])),
-        // `instance` is memory, `meters.builds` is storage. Read together they
-        // say whether a gap between two readings contained an eviction: a new
-        // instance with a higher builds count is a rebuilt cell, the same
-        // instance is a cell that stayed resident.
-        instance: this.instance,
-        instanceAgeMs: Date.now() - this.bornAt,
-        ctorMs: this.ctorMs ?? null,
-        initMs: this.initMs ?? null,
-        at: Date.now(),
-      });
-    }
-
-    // GET /events — SSE, the shape kortix-worker serves and the product reads.
-    // THE STREAM, UNDER EVERY NAME A CLIENT ASKS FOR IT BY.
-    //
-    // The cell serves its event stream at `/events`. The product subscribes at
-    // `/global/event` — OpenCode's name, which the daemon serves and the
-    // frontend proxies to. On a cell that path fell through to the generic
-    // handler at the bottom of this file, which answers 200 with JSON to ANY
-    // path, so a subscriber received `{"ok":true,...}` once and then nothing:
-    // no stream, no error, no way to tell the difference from a quiet session.
-    //
-    // Measured on dev 2026-09-09:
-    //   /global/event   200 application/json   {"ok":true,"sessionId":...}
-    //   /events?c=<id>  200 text/event-stream  ": connected"
-    //
-    // What it costs is the whole of streaming: a 200-word answer arrived as 703
-    // bytes in a single step 6712 ms after the prompt, with nothing before it,
-    // so the user watches a blank screen for the entire model call.
-    //
-    // Serving the same stream under the names clients use removes the silent
-    // 200. It does NOT by itself make the UI render deltas — that also needs
-    // these events in OpenCode's wire shape (kortix-worker's ChatEventAdapter
-    // is the mapping) — and that is deliberately not claimed here.
-    // THE ROUTE THE CONTROL PLANE OPENS.
-    //
-    // `openRuntimeEventStream` in the API fetches `<box>/kortix/opencode/events`
-    // with `?since=` and `?epoch=` and requires `text/event-stream` back — it
-    // treats a 200 that is not one as `daemon_protocol_unsupported` and takes
-    // the backoff ladder, which is what the cell's catch-all used to produce.
-    // Measured on dev 2026-09-09 before this existed: the UI stream announced
-    // `{"state":"down","reason":"daemon_503"}` at 959 ms and carried no runtime
-    // frame for the next 75 seconds.
-    // THE DOCUMENT THE CONTROL PLANE READS ON EVERY SESSION OPEN — see
-    // src/projection.js for the two rules that decide whether it is accepted
-    // or stored and then refused.
-    // ── THE KORTIX-NATIVE SURFACE (kortix-runtime.js) ──────────────────
-    //
-    // A regular sandbox answers `/kortix/*` as well as OpenCode's own routes,
-    // and the control plane and dashboard prefer it. A cell answered four of
-    // them; the rest are here, in the daemon's own shapes.
-    {
-      const messages = path.match(/^\/kortix\/opencode\/messages\/([^/]+)$/);
-      if (messages && req.method === "GET") {
-        const rootId = decodeURIComponent(messages[1]);
-        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
-        const body = messagesPage({
-          sessionId: rootId,
-          messages: transcriptMessages(rows, rootId),
-          epoch: this.wire?.epoch ?? this.instance,
-          seq: this.wire?.seq ?? 0,
-          limit: url.searchParams.get("limit"),
-          before: url.searchParams.get("before"),
-          after: url.searchParams.get("after"),
-        });
-        return Response.json(body, { headers: { "X-Kortix-Transcript-Source": "cell" } });
-      }
-      const one = path.match(/^\/kortix\/opencode\/(session|todo)\/([^/]+)$/);
-      if (one && req.method === "GET") {
-        // The same answers the OpenCode routes give, under the native names.
-        const rootId = decodeURIComponent(one[2]);
-        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        if (one[1] === "todo") return Response.json(readTodos(this.sql));
-        const inner = await this.handle(new Request(new URL(`/session/${encodeURIComponent(rootId)}?c=${encodeURIComponent(sessionId)}`, url), { method: "GET" }));
-        return inner;
-      }
-      if ((path === "/kortix/opencode/config" || path === "/kortix/opencode/project-current") && req.method === "GET") {
-        const inner = path.endsWith("config") ? "/config" : "/project/current";
-        return this.handle(new Request(new URL(`${inner}?c=${encodeURIComponent(sessionId)}`, url), { method: "GET" }));
-      }
-      if (path === "/kortix/opencode/vcs-diff" && req.method === "GET") {
-        this.cellFs ??= cellFs(this.sql);
-        await this.ensureCheckout().catch(() => null);
-        const menv = await this.machineEnv();
-        if (menv) {
-          await this.machineRepoReady();
-          const per = await machineGit(menv).fileDiffs().catch(() => []);
-          return Response.json({ files: per.map((f) => ({ path: f.file, status: f.status, added: f.additions, removed: f.deletions })), patch: per.map((f) => f.patch).join("") });
-        }
-        return Response.json(await workingDiff(this.cellFs).catch(() => ({ files: [], patch: "" })));
-      }
-      if (path === "/kortix/opencode/act" && req.method === "POST") {
-        const body = await req.json().catch(() => ({}));
-        const answered = await actAnswer(body, {
-          sessionId,
-          seq: this.wire?.seq ?? 0,
-          stop: async () => {
-            const running = this.running;
-            if (!running) return false;
-            running.agent.abort();
-            return true;
-          },
-        });
-        return Response.json(answered.body, { status: answered.status });
-      }
-      // `GET /kortix/opencode/turn/:messageId` — did THIS prompt's turn finish?
-      // The control plane asks it about one wire id when it is reconciling a
-      // turn it never saw close, and the answer is in the turn ledger.
-      const turnAt = path.match(/^\/kortix\/opencode\/turn\/([^/]+)$/);
-      if (turnAt && req.method === "GET") {
-        const messageId = decodeURIComponent(turnAt[1]);
-        const row = this.sql.exec("SELECT i, status, error, message_id FROM turns WHERE message_id = ? ORDER BY i DESC LIMIT 1", messageId).toArray()[0] ?? null;
-        return Response.json(turnAnswer(row, { messageId, sessionId, seq: this.wire?.seq ?? 0, running: this.running?.turn ?? null }));
-      }
-      if (path === "/kortix/ports" && req.method === "GET") return Response.json(portsAnswer());
-      if (path === "/kortix/logs" && req.method === "GET") {
-        const rows = [...this.sql.exec("SELECT i, status, error, text, created_at FROM turns ORDER BY i DESC LIMIT 50")]
-          .map((r) => `[turn ${r.i}] ${r.status}${r.error ? ` — ${String(r.error).slice(0, 200)}` : ""} :: ${String(r.text ?? "").slice(0, 120)}`);
-        return Response.json(logsAnswer(rows.reverse()));
-      }
-      if (path === "/kortix/diag" && req.method === "GET") {
-        // The daemon's diagnostic dump, in the terms a cell has: what it is,
-        // what it holds, and what it last did.
-        this.cellFs ??= cellFs(this.sql);
-        return Response.json({
-          runtime: "cell",
-          engine: "pi",
-          instance: this.instance,
-          sessionId,
-          epoch: this.wire?.epoch ?? this.instance,
-          seq: this.wire?.seq ?? 0,
-          messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n,
-          turns: this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n,
-          ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
-          files: this.cellFs.fileCount?.() ?? null,
-          checkedOut: await isCheckedOut(this.cellFs.fs).catch(() => false),
-          // WHY A CHECKOUT HAS NOT HAPPENED, which `checkedOut: false` alone
-          // cannot say: no repo url yet, prewarm not fired, or a clone that ran
-          // and failed. Booleans only — the url carries a token.
-          repo: Boolean(String(this.effectiveEnv().KORTIX_REPO_URL ?? "").trim()),
-          prewarmed: Boolean(this.__prewarmed),
-          checkoutOk: Boolean(this.__checkoutOk),
-          // WHICH DIRECTORY THIS PROJECT'S AGENTS AND SKILLS COME FROM. The
-          // schema moved it at v3 and a session that resolved it before its
-          // checkout landed read the wrong one silently — the only symptom
-          // was an agent with no skills, which reads as a model choosing not
-          // to use them.
-          configDir: await this.configDir(sessionId).catch(() => null),
-          agent: this.agent().name,
-          agent_config_etag: this.agent().etag,
-          // WHOSE SYSTEM PROMPT IS ACTUALLY RUNNING. A compiled config can
-          // carry an agent's NAME and no prompt — that is what a project whose
-          // agent `.md` sits outside its declared config dir compiles to, and
-          // the control plane caches the failure as "this project has none".
-          // The session then answers perfectly well as the runtime's own
-          // agent, and nothing anywhere says the project's prompt was dropped.
-          agent_prompt: typeof this.agent().agent?.prompt === "string" && this.agent().agent.prompt.trim() ? "project" : "built-in",
-          // THE MACHINE, IF ONE IS ATTACHED: the environment's box id, so a
-          // session whose model said "I ran it on the machine" can be checked
-          // against a box that exists.
-          environment: this.machineRecord()?.externalId ?? null,
-          attach_marks: this.__attachMarks ?? null,
-          workspace: this.machineRecord() ? "machine" : "cell",
-          model: normalizeModelEnv(this.modelEnv()).MODEL_ID ?? null,
-          terminals: [...(this.terminals?.values() ?? [])].length,
-        });
-      }
-      const part = path.match(/^\/kortix\/part\/([^/]+)\/([^/]+)\/([^/]+)$/);
-      if (part && req.method === "GET") {
-        const rootId = decodeURIComponent(part[1]);
-        if (rootId !== sessionId) return Response.json({ error: "unknown session", expected: sessionId }, { status: 404 });
-        const rows = [...this.sql.exec("SELECT i, role, json, ts, wire_id FROM msgs ORDER BY i")];
-        const answered = partAnswer(transcriptMessages(rows, rootId), decodeURIComponent(part[2]), decodeURIComponent(part[3]));
-        return Response.json(answered.body, { status: answered.status });
-      }
-      if (path === "/kortix/git/commit-push" && req.method === "POST") {
-        const body = await req.json().catch(() => ({}));
-        const e = this.effectiveEnv();
-        this.cellFs ??= cellFs(this.sql);
-        if (this.__commitPush) return Response.json({ error: "commit-push already running" }, { status: 409 });
-        const menv = await this.machineEnv();
-        if (menv) await this.machineRepoReady();
-        this.__commitPush = menv
-          ? machineGit(menv).commitAndPush({ branch: e.KORTIX_BRANCH_NAME, message: typeof body?.message === "string" ? body.message : undefined })
-          : commitAndPush({
-          cell: this.cellFs,
-          url: e.KORTIX_REPO_URL,
-          token: e.KORTIX_TOKEN,
-          branch: e.KORTIX_BRANCH_NAME,
-          message: typeof body?.message === "string" ? body.message : undefined,
-        });
-        this.__commitPush = this.__commitPush.finally(() => { this.__commitPush = null; });
-        const r = await this.__commitPush;
-        return r.ok
-          ? Response.json({ ok: true, committed: r.committed, pushed: r.pushed, nothingToDo: r.nothingToDo, branch: r.branch, headSha: r.headSha })
-          : Response.json({ error: "commit-push failed", message: r.error }, { status: r.status ?? 500 });
-      }
-      // The bare `/env` a daemon serves beside `/kortix/env`, and the dispose
-      // the client calls when it closes a session.
-      if (path === "/env" && req.method === "GET") {
-        // `keys` is this runtime's own answer; `secrets` is what the SDK's env
-        // editor reads (core/runtime/env.ts). Only what a CALLER set through
-        // `PUT /env/:key` appears there — the platform keys beside it include
-        // this session's Kortix token, and a route that hands those back turns
-        // an env panel into a credential dump.
-        const own = this.userEnv();
-        return Response.json({ ok: true, sessionId, keys: Object.keys(this.sessionEnv ?? {}), secrets: own });
-      }
-      // `PUT /env/:key` and `DELETE /env/:key` — the env editor's writes. They
-      // land in the same per-session store the control plane's `/kortix/env`
-      // push uses, so a value set here survives an eviction like every other
-      // session setting, and they are namespaced so a caller cannot overwrite
-      // KORTIX_TOKEN from the browser.
-      const envKey = path.match(/^\/env\/([^/]+)$/);
-      if (envKey && (req.method === "PUT" || req.method === "DELETE")) {
-        const key = decodeURIComponent(envKey[1]);
-        if (/^KORTIX_/.test(key) || /^CELLD_/.test(key)) {
-          return Response.json({ error: "reserved key", detail: `${key} is set by the control plane and cannot be written from a session` }, { status: 409 });
-        }
-        if (req.method === "DELETE") {
-          this.sql.exec("DELETE FROM userenv WHERE k = ?", key);
-          return Response.json({ ok: true, key, deleted: true });
-        }
-        const body = await req.json().catch(() => ({}));
-        const value = typeof body?.value === "string" ? body.value : String(body?.value ?? "");
-        this.sql.exec("INSERT INTO userenv(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", key, value);
-        return Response.json({ ok: true, key });
-      }
-      if (path === "/global/dispose") return Response.json(true);
-      // A port proxy needs something listening, and nothing can be. The web
-      // proxy is the same answer for the same reason: it forwards through the
-      // sandbox's own network stack, and a cell is not one.
-      if (path === "/proxy" || path.startsWith("/proxy/")) {
-        return Response.json({ error: "no ports in a cell", detail: "a cell has no processes, so nothing can listen on a port" }, { status: 501 });
-      }
-      if (path === "/web-proxy" || path.startsWith("/web-proxy/")) {
-        return Response.json({ error: "no web proxy in a cell", detail: "a cell forwards nothing: its network is the guarded fetch its tools use" }, { status: 501 });
-      }
-      // `POST /kortix/abort` — the BOX-WIDE stop the control plane sends when
-      // it reaps a sandbox (projects/reaping/stop-box.ts). A cell holds one
-      // session, so it is the same abort as the session's own; answering
-      // `unknown route` made a reap look like a broken runtime.
-      if (path === "/kortix/abort" && req.method === "POST") {
-        const running = this.running;
-        if (running) running.agent.abort();
-        return Response.json({ ok: true, opencode_session_id: sessionId, aborted: !!running, turn: running?.turn ?? null });
-      }
-      if (path === "/presentation" || path.startsWith("/presentation/")) {
-        return Response.json({ error: "no converter in a cell", detail: "the deck converter is a binary this runtime does not carry" }, { status: 501 });
-      }
-    }
-    if (path === "/kortix/opencode/state") {
-      const e = this.effectiveEnv();
-      const c = modelConfig(e);
-      // THE SESSION THIS REQUEST NAMED, and nothing else.
-      //
-      // `wireSessionId` prefers the node's KORTIX_SESSION_ID over its fallback,
-      // which is right for an ALARM — a turn running with no request to read
-      // `?c=` from — and wrong here, because `fetchRuntimeState` always names
-      // the session it is asking about. On a shared host the node's env is
-      // whoever created the BOX, so a cell with no turns yet answered for a
-      // stranger.
-      //
-      // Measured on dev 2026-09-09 by asking a box about a cell that had never
-      // run a turn:
-      //
-      //   GET /kortix/opencode/state?c=never-had-a-turn-20951
-      //   -> identity.opencode_session_id = f6fc9d40-…   (the box's creator)
-      //
-      // That is the FIRST projection every session stores, because the UI opens
-      // the session before it has said anything. The control plane then compares
-      // it with the session's own pin, gets `identity_mismatch`, and serves an
-      // empty runtime leg from then on — which is exactly what a full end-to-end
-      // run reported: fourteen legs green and the session open still blank.
-      //
-      // `sessionId` is already `?c=` ?? path ?? node env ?? this object's name,
-      // so it is the addressed session whenever anyone addressed one.
-      const sid = sessionId;
-      let skills = [];
-      try { ({ skills } = await this.skills(sid)); } catch { /* a cell with no workspace still has a projection */ }
-      const doc = runtimeStateDoc({
-        sessionId: sid,
-        epoch: this.wire?.epoch ?? this.instance,
-        seq: this.wire?.seq ?? 0,
-        // `handle`, not `fetch`: this is the cell asking itself, so it must not
-        // start a second `x-cell-ms` clock inside the one already running.
-        sessions: await (await this.handle(new Request(`http://cell/session?c=${encodeURIComponent(sid)}`))).json(),
-        busy: !!this.running,
-        model: { id: c?.model ?? null, provider: c?.provider ?? null },
-        skills,
-        builtAt: Date.now(),
-      });
-      const etag = projectionEtag(doc);
-      // The API sends If-None-Match on every refresh; answering 304 is what
-      // keeps a session open from writing a new projection row each time.
-      if (req.headers.get("if-none-match") === etag) {
-        return new Response(null, { status: 304, headers: { etag } });
-      }
-      return Response.json(doc, { headers: { etag } });
-    }
-
-    // `/global/event` IS THE PRODUCT'S NAME FOR THIS STREAM, and it must carry
-    // the OpenCode wire, not pi's raw events.
-    //
-    // It used to alias `/events`, which pushes pi's own AgentEvents verbatim —
-    // `turn_started`, `message_start`, `text`. That is the harness's contract
-    // and it is meaningless to the web client, whose reducer repaints only on
-    // `message.part.delta`. Measured 2026-09-09 end to end through the
-    // browser's own path: the answer DID arrive on the stream, as
-    // `{"type":"text"}`, and nothing rendered until a transcript poll caught up
-    // — which is exactly "the message appears a couple of seconds later".
-    //
-    // `/events` keeps the raw shapes; every name the product uses gets the wire.
-    if (path === "/kortix/opencode/events" || path === "/global/event" || path === "/event") {
-      const bus = this.wire;
-      const sinceRaw = url.searchParams.get("since");
-      const since = sinceRaw === null || sinceRaw === "" ? null : Number(sinceRaw);
-      const opening = bus.opening({ since, epoch: url.searchParams.get("epoch") });
-      const enc = new TextEncoder();
-      let writer = null;
-      let beat = null;
-      const set = bus.listeners;
-      const stream = new ReadableStream({
-        start(controller) {
-          writer = { write: (line) => controller.enqueue(enc.encode(line)) };
-          controller.enqueue(enc.encode(opening));
-          set.add(writer);
-          // A SILENT STREAM IS A CLOSED STREAM. Measured on dev 2026-09-09: an
-          // attach with nothing to say was cut at 15161 ms and the API's pump
-          // announced `{"state":"down","reason":"stream_ended"}`, then took the
-          // backoff ladder — the flap this route exists to end. A comment costs
-          // three bytes and is not an event, so it cannot advance a cursor or
-          // reach a reducer.
-          // A FRAME, not a comment — a comment never reaches the app's
-          // watchdog and the page read a quiet cell as dead. See heartbeatFrame.
-          beat = setInterval(() => {
-            try { controller.enqueue(enc.encode(heartbeatFrame())); }
-            catch { clearInterval(beat); }
-          }, WIRE_HEARTBEAT_MS);
-        },
-        cancel() { set.delete(writer); if (beat) clearInterval(beat); },
-      });
-      return new Response(stream, {
-        headers: {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive",
-          // The API reads the boot id off the HEADER as well as the hello, so a
-          // caller that never parses a frame still knows which epoch it got.
-          "x-kortix-epoch": bus.epoch,
-          "x-accel-buffering": "no",
-        },
-      });
-    }
-
-    if (path === "/events") {
-      this.sseListeners = this.sseListeners ?? new Set();
-      const set = this.sseListeners;
-      const enc = new TextEncoder();
-      let writer = null;
-      const stream = new ReadableStream({
-        start(controller) {
-          writer = { write: (line) => controller.enqueue(enc.encode(line)) };
-          set.add(writer);
-          // An immediate comment so a proxy flushes headers and a client knows
-          // it is connected before anything happens.
-          controller.enqueue(enc.encode(": connected\n\n"));
-        },
-        cancel() { set.delete(writer); },
-      });
-      return new Response(stream, {
-        headers: {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive",
-          // The edge must not sit on this waiting for a full body.
-          "x-accel-buffering": "no",
-        },
-      });
-    }
-
-    if (path === "/sockets") {
-      // BOTH SOURCES, because they disagree after an eviction and the
-      // disagreement is the interesting part: the runtime may hand back none
-      // while the cell has re-adopted one from an inbound message.
-      const held = this.state.getWebSockets?.() ?? [];
-      const union = new Set(held);
-      for (const w of this.sockets) union.add(w);
-      return Response.json({
-        sockets: union.size,
-        fromRuntime: held.length,
-        readopted: this.sockets.size,
-        tags: held.map((w) => this.state.getTags?.(w) ?? null),
-      });
-    }
-
-    // FORK A SESSION. Branch a conversation at a point and carry on separately.
-    //
-    // pi has a session TREE for this — entries with parent ids, lanes, branch
-    // bounds — behind an 18-method SessionStorage interface. Implementing that
-    // over SQLite to get one user-visible feature is the wrong trade here,
-    // because a cell already IS a session: its transcript is its storage, and a
-    // fork is another cell holding a prefix of it.
-    //
-    // A cell cannot write another cell's SQLite — that is the isolation the
-    // whole design rests on — so the parent READS its own messages and the child
-    // IMPORTS them over the Durable Object binding. One RPC, no shared state.
-    if (path === "/fork" && req.method === "POST") {
-      const { to, upTo } = await req.json();
-      if (!to || typeof to !== "string") return Response.json({ error: "to (a session id) is required" }, { status: 400 });
-      if (to === sessionId) return Response.json({ error: "a session cannot fork onto itself" }, { status: 400 });
-
-      // The ACTIVE CONTEXT, not the archive. A fork is a branch of the
-      // conversation the model is in; handing the child a summarised archive it
-      // has no watermark for would put messages in its context that this cell
-      // had already decided were too old to send.
-      const all = [...this.sql.exec("SELECT role, json FROM msgs WHERE i >= ? ORDER BY i", this.contextFrom())];
-      // `upTo` counts MESSAGES, not turns, and is clamped rather than rejected:
-      // a caller asking for more than exists means "all of it".
-      const take = typeof upTo === "number" && upTo >= 0 ? Math.min(upTo, all.length) : all.length;
-      const slice = all.slice(0, take);
-
-      const child = this.env.AGENT.get(this.env.AGENT.idFromName(to));
-      const res = await child.fetch(new Request("http://cell/import", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ from: sessionId, messages: slice.map((r) => ({ role: r.role, message: JSON.parse(r.json) })) }),
-      }));
-      const body = await res.json();
-      if (!res.ok) return Response.json({ error: "the fork target refused the import", detail: body }, { status: res.status });
-      return Response.json({ ok: true, to, forked: slice.length, of: all.length });
-    }
-
-    // The other half of /fork. Refuses a session that already has a transcript:
-    // silently merging two conversations is worse than failing, and a fork onto
-    // a live session is a mistake rather than an intention.
-    if (path === "/import" && req.method === "POST") {
-      const { from, messages } = await req.json();
-      const existing = this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
-      if (existing > 0) {
-        return Response.json({ error: "this session already has a transcript", messages: existing }, { status: 409 });
-      }
-      for (const m of messages ?? []) this.saveMessage(m.role, m.message);
-      // The ops ledger is NOT copied. Those ids belong to calls the parent made;
-      // duplicating them would let the child claim a tool call it never issued,
-      // and the daemon would answer its retry from the parent's result.
-      this.sql.exec(
-        "INSERT INTO ops(id, kind, detail, status, started_at, ended_at) VALUES (?, 'fork', ?, 'done', ?, ?)",
-        `fork_${Date.now().toString(36)}`, `forked from ${from}`, Date.now(), Date.now(),
-      );
-      return Response.json({ ok: true, imported: (messages ?? []).length, from });
-    }
-
-    if (path === "/reset") {
-      this.sql.exec("DELETE FROM msgs");
-      this.sql.exec("DELETE FROM ops");
-      // The context watermark has to go with them. Left behind, it points past
-      // every row in an empty table and the session loads nothing forever.
-      this.sql.exec("DELETE FROM meta WHERE k='context_from'");
-      // THE METER IS NOT CLEARED. /reset is a conversation operation, and the
-      // party being billed must not be able to erase the bill by calling it.
-      // Work already done stays counted.
-      return Response.json({ ok: true });
-    }
-
-    // The cell's own root is a real answer: "I am here, I am this session, and
-    // this is how much of it there is." The probes read it and it costs two
-    // counts. Everything BELOW it is a path nobody wrote.
-    if (path === "/") {
-      return Response.json({
-        ok: true,
-        sessionId,
-        messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n,
-        ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
-      });
-    }
-
-    // A ROUTE THAT DOES NOT EXIST IS NOT A SUCCESS.
-    //
-    // This used to answer 200 `{ok:true,…}` to every unmatched path, and that
-    // one shrug has now cost four separate investigations: `/global/event`
-    // looked implemented, `/session/<id>/model` looked implemented, and the
-    // control plane's `GET /kortix/opencode/state` — which the cell does not
-    // serve at all — looks implemented to this day. A caller checking
-    // `res.ok` cannot tell a served route from an invented one.
-    //
-    // The counts stay in the body, because they are what the probes read and
-    // they cost one query; the STATUS is what changes, and it is the part a
-    // caller believes.
-    // THE OPENCODE BOOT SURFACE — see opencode-boot.js. Answered here, last,
-    // so a real route is never shadowed by a boot shape.
-    {
-      const e = this.effectiveEnv();
-      // The RESOLVED model, as /model reports it — not the raw env, which on a
-      // live cell named `openai-codex/gpt-5.6-luna` while the turn actually ran
-      // on the gateway's `openrouter/deepseek-v4-flash`.
-      let resolved = null;
-      try { resolved = modelConfig(e)?.model ?? null; } catch { resolved = null; }
-      const boot = bootAnswer(req.method, path, {
-        sessionId,
-        // `vcs: "git"` on the project only once there IS a checkout — the app
-        // offers its git surface on that field, and offering it over an empty
-        // workspace is how the Changes tab came up with nothing to show.
-        checkedOut: !!this.cellFs && await isCheckedOut(this.cellFs.fs).catch(() => false),
-        version: "pi-cell",
-        agentName: this.agent().name || agentNameFrom(e),
-        agents: agentList(this.agent().config, this.agent().name, agentShape),
-        projectId: e.KORTIX_PROJECT_ID,
-        provider: resolved?.provider ?? e.MODEL_PROVIDER,
-        modelId: resolved?.id ?? e.MODEL_ID,
-        cwd: CELL_CWD,
-        createdAt: this.sql.exec("SELECT MIN(ts) AS t FROM msgs").toArray()[0]?.t ?? Date.now(),
-      });
-      if (boot) return Response.json(boot.body, { status: boot.status });
-    }
-    // THE FILES PANEL AND THE FILE VIEWER read the daemon's /file and /find
-    // routes on this origin (cell-files.js). Over the cell's own tree — built
-    // here if no tool has run yet, so a fresh session's empty workspace lists
-    // as empty rather than "unknown route".
-    if (path === "/file" || path.startsWith("/file/") || path === "/find" || path.startsWith("/find/")) {
-      this.cellFs ??= cellFs(this.sql);
-      // The panel is often the FIRST thing a user opens, before any prompt —
-      // so the checkout happens here too, not only at turn start.
-      await this.ensureCheckout().catch(() => null);
-      // `/file/status` is git's answer once there is a checkout (cell-git.js).
-      const tree = await this.workspaceFs();
-      if (path === "/file/status" && req.method === "GET") {
-        if (tree.kind === "machine") { await this.machineRepoReady(); return Response.json(await machineGit(await this.machineEnv()).status().catch(() => [])); }
-        return Response.json(await workingStatus(this.cellFs).catch(() => []));
-      }
-      const answered = await filesAnswer(req, path, url, tree);
-      if (answered) return answered;
-    }
-    // THE TERMINAL TAB'S REST: list, create, rename, remove. One shell per
-    // record; the socket above carries its bytes (cell-pty.js).
-    {
-      const one = url.pathname.match(/\/kortix\/pty\/([^/]+)$/);
-      if (path === "/kortix/pty" || path.startsWith("/kortix/pty/")) {
-        if (path === "/kortix/pty" && req.method === "GET") return Response.json(ptyList(this.sql));
-        if (path === "/kortix/pty" && req.method === "POST") {
-          const body = await req.json().catch(() => ({}));
-          return Response.json(ptyCreate(this.sql, body ?? {}));
-        }
-        if (one && req.method === "PATCH") {
-          const body = await req.json().catch(() => ({}));
-          const updated = ptyUpdate(this.sql, decodeURIComponent(one[1]), body ?? {});
-          return updated ? Response.json(updated) : Response.json({ error: "pty not found" }, { status: 404 });
-        }
-        if (one && req.method === "DELETE") {
-          const gone = ptyRemove(this.sql, decodeURIComponent(one[1]));
-          for (const [ws, t] of this.terminals ?? []) {
-            if (t.ptyId === decodeURIComponent(one[1])) { try { ws.close(1000, "pty exited"); } catch { /* gone */ } this.terminals.delete(ws); }
-          }
-          return gone ? Response.json(true) : Response.json({ error: "pty not found" }, { status: 404 });
-        }
-      }
-    }
-    // THE PREVIEW SERVER (the daemon's port 3211), under /static — the proxy
-    // sends a cell's 3211 here. cell-static.js.
-    if (path === STATIC_PREFIX || path.startsWith(STATIC_PREFIX + "/")) {
-      this.cellFs ??= cellFs(this.sql);
+    if (path === STATIC_PREFIX || path.startsWith(`${STATIC_PREFIX}/`)) {
       const answered = await staticAnswer(req, path, url, await this.workspaceFs());
       if (answered) return answered;
     }
-    return Response.json({
-      ok: false,
-      error: "unknown route",
-      path,
-      sessionId,
-      messages: this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n,
-      ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
-    }, { status: 404 });
+    for (const p of ["/proxy", "/web-proxy", "/presentation", "/kortix/env-rpc"]) {
+      if (path === p || path.startsWith(`${p}/`)) return json(501, { code: "feature_not_supported", error: `${p} is not available in a pi cell: it has no processes and no ports` });
+    }
+
+    // ── diagnostics ──────────────────────────────────────────────────────
+    if (path === "/kortix/logs" || path === "/kortix/diag") return json(200, { at: new Date().toISOString(), instance: this.instance, root, logs: (this.logs ?? []).slice(-Number(url.searchParams.get("tail") ?? 200)) });
+    if (path === "/cell/state") return json(200, { root, ready: this.readiness(), turns: [...this.sql.exec("SELECT * FROM kx_turns ORDER BY created_at")], messages: this.transcript.count, busy: await this.engine().busy().catch(() => null), openedMs: this.engine().openedMs ?? null });
+    if (path === "/cell/script" && method === "POST" && this.effectiveEnv().CELL_TEST_ROUTES === "1") {
+      const body = await req.json().catch(() => ({}));
+      this.engine().script(body?.steps ?? []);
+      return json(200, { ok: true });
+    }
+    if (req.headers.get("upgrade") === "websocket") return this.ptySocket(req, path);
+    return notFound(path);
+  }
+
+  health(url) {
+    const r = this.readiness();
+    const ref = this.engine().modelRef();
+    const turn = url.searchParams.get("turn") === "1" && r.ready ? this.turnProbe(url.searchParams.get("turn_message_id")?.trim() || null) : null;
+    const harness = {
+      id: "pi",
+      version: CELL_VERSION,
+      state: r.ready ? "ok" : r.error ? "error" : "starting",
+      ready: r.ready,
+      error: r.error,
+      session: { id: this.rootId, required: true },
+      turn: turn ? { in_flight: turn.inFlight, end: turn.end, orphaned_prompt: turn.orphanedPrompt } : null,
+      details: { model: `${ref.providerID}/${ref.modelID}`, runtime: "pi-cell", instance: this.instance },
+    };
+    return json(200, {
+      daemon: "ok",
+      capabilities: CAPABILITIES,
+      status: r.ready ? "ok" : harness.state,
+      runtimeReady: r.ready,
+      boot_error: r.error,
+      workload: "session",
+      uptime_s: Math.floor((Date.now() - this.bornAt) / 1000),
+      static_web_port: null,
+      repo_required: false,
+      repo_ready: true,
+      repo: this.effectiveEnv().KORTIX_REPO_URL ?? null,
+      branch: this.effectiveEnv().KORTIX_BRANCH_NAME ?? null,
+      commit_sha: null,
+      agent_config_etag: this.effectiveEnv().KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
+      // A runtime OBJECT, or apps/api classifies the box as legacy and tries
+      // to replace its runtime (legacy-runtime-bootstrap.ts).
+      runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false, running: {} },
+      harness,
+      ...(turn ? { turn_in_flight: turn.inFlight, turn_end: turn.end, turn_orphaned_prompt: turn.orphanedPrompt } : {}),
+      // The pre-W3 flat names, for an API deploy that still reads them.
+      opencode: harness.state,
+      opencode_pid: null,
+      opencode_port: null,
+      opencode_session_id: this.rootId,
+      opencode_session_required: true,
+    });
+  }
+
+  /**
+   * `POST /kortix/env`: the control plane's env push, bearer KORTIX_TOKEN
+   * only. Project secrets and the runtime keys (model, gateway, compiled
+   * agent) are stored with the session, so they survive an eviction.
+   */
+  async applyEnv(req) {
+    if (req.headers.get("x-kortix-user-context")) return json(403, { error: "env push takes the session token, not a user context" });
+    const token = String(this.effectiveEnv().KORTIX_TOKEN ?? "").trim();
+    if (!token) return json(503, { error: "this cell has no KORTIX_TOKEN to verify the push with" });
+    if ((req.headers.get("authorization") ?? "") !== `Bearer ${token}`) return json(401, { error: "unauthorized" });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") return json(400, { error: "body must be an object" });
+    const env = body.env && typeof body.env === "object" ? body.env : {};
+    const names = Array.isArray(body.names) ? body.names.filter((n) => typeof n === "string") : Object.keys(env);
+    const before = JSON.stringify(this.sessionEnv);
+    const write = (k, v) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) return;
+      if (v === null || v === undefined) {
+        delete this.sessionEnv[k];
+        this.sql.exec("DELETE FROM session_env WHERE k = ?", k);
+      } else {
+        this.sessionEnv[k] = String(v);
+        this.sql.exec("INSERT INTO session_env(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, String(v));
+      }
+    };
+    // Names the previous push managed and this one dropped are removed.
+    const prior = String(this.meta("project_env_names") ?? "").split(",").filter(Boolean);
+    for (const n of prior) if (!names.includes(n) && !/^KORTIX_/.test(n)) write(n, null);
+    for (const [k, v] of Object.entries(env)) if (typeof v === "string") write(k, v);
+    this.setMeta("project_env_names", names.join(","));
+    const runtimeEnv = body.runtimeEnv ?? body.opencodeEnv;
+    const runtimeNames = [];
+    if (runtimeEnv && typeof runtimeEnv === "object") {
+      for (const [k, v] of Object.entries(runtimeEnv)) {
+        if (!/^KORTIX_/.test(k)) continue;
+        write(k, v);
+        runtimeNames.push(k);
+      }
+    }
+    if (body.llmGatewayEnabled === true && typeof body.llmGatewayBaseUrl === "string" && body.llmGatewayBaseUrl.trim()) write("KORTIX_LLM_BASE_URL", body.llmGatewayBaseUrl.trim());
+    if (body.llmGatewayEnabled === false) write("KORTIX_LLM_BASE_URL", null);
+    if (typeof body.revision === "string") this.setMeta("env_revision", body.revision);
+    const changed = before !== JSON.stringify(this.sessionEnv);
+    if (changed) { this.__prompt = null; this.__agentRaw = null; }
+    this.prewarmCheckout();
+    const exported = Object.keys(env).filter((k) => typeof env[k] === "string").length;
+    return json(200, {
+      ok: true,
+      changed,
+      revision: body.revision ?? null,
+      names,
+      exported,
+      managed: names.length,
+      withheld: 0,
+      agent_env_written: true,
+      egress_shim: "skipped",
+      egress_shim_hosts: [],
+      runtime_env_changed: runtimeNames.length > 0,
+      runtime_env_names: runtimeNames.sort(),
+      runtime: this.readiness().ready ? "ok" : "starting",
+      runtime_pid: null,
+      runtime_reload: null,
+      runtime_turn_ended: null,
+      opencode_env_changed: runtimeNames.length > 0,
+      opencode_env_names: runtimeNames,
+      opencode: "ok",
+      opencode_pid: null,
+      opencode_reload: null,
+      opencode_turn_ended: null,
+    });
+  }
+
+  async runtimeRoute(req, sub, url, method) {
+    const verb = (status, body) => json(status, body, { "x-kortix-turn-verb": "1" });
+    const prompt = /^\/sessions\/([^/]+)\/prompt$/.exec(sub);
+    if (prompt && method === "POST") {
+      if (decodeSegment(prompt[1]) !== this.rootId) return verb(404, { error: "not the session root" });
+      const r = this.readiness();
+      if (!r.ready) return verb(503, { code: "runtime_not_ready", error: r.error ?? "the pi cell is starting", reason: r.phase, phase: r.phase });
+      let input;
+      try { input = parsePromptBody(await req.json(), { verb: true }); } catch (e) { return verb(400, { error: errorText(e) }); }
+      try {
+        const admitted = await this.admit(input);
+        return admitted.deduplicated ? verb(200, { deduplicated: true }) : verb(202, { message_id: admitted.messageId });
+      } catch (e) {
+        return verb(503, { error: errorText(e) });
+      }
+    }
+    const abort = /^\/sessions\/([^/]+)\/abort$/.exec(sub);
+    if (abort && method === "POST") {
+      if (decodeSegment(abort[1]) !== this.rootId) return verb(404, { error: "not the session root" });
+      await this.engine().abort().catch(() => false);
+      return verb(200, true);
+    }
+    const one = /^\/messages\/([^/]+)\/([^/]+)$/.exec(sub);
+    if (one) {
+      if (decodeSegment(one[1]) !== this.rootId) return verb(404, { error: "unknown session" });
+      const message = this.transcript.messageById(decodeSegment(one[2]));
+      if (!message) return verb(404, { error: "unknown message" });
+      if (method === "DELETE") return verb(409, { error: "message deletion is not supported by the pi cell" });
+      return verb(200, this.#strip(message));
+    }
+    const list = /^\/messages\/([^/]+)$/.exec(sub);
+    if (list && method === "GET") {
+      const sessionId = decodeSegment(list[1]);
+      if (sessionId !== this.rootId) return json(200, { session_id: sessionId, epoch: this.bus.epoch, seq: this.bus.headSeq, head_seq: null, source: "pi", count: 0, has_more: false, first_message_id: null, last_message_id: null, dropped: 0, attachments_referenced: 0, attachment_bytes_saved: 0, tool_outputs_truncated: 0, messages: [] });
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20) || 20, 1), 200);
+      const after = url.searchParams.get("after")?.trim() || null;
+      const before = url.searchParams.get("before")?.trim() || null;
+      const page = after ? { messages: this.transcript.after(after, limit), hasMore: false } : this.transcript.page({ limit, before });
+      const stripped = stripInlineAttachmentBytes(page.messages, (m, p) => `/kortix/part/${encodeURIComponent(sessionId)}/${encodeURIComponent(m)}/${encodeURIComponent(p)}`);
+      const messages = stripped.value;
+      return json(200, {
+        session_id: sessionId, epoch: this.bus.epoch, seq: this.bus.headSeq, head_seq: null, source: "pi",
+        count: messages.length, has_more: page.hasMore,
+        first_message_id: messages[0]?.info.id ?? null, last_message_id: messages.at(-1)?.info.id ?? null,
+        dropped: 0, attachments_referenced: stripped.stripped, attachment_bytes_saved: stripped.savedBytes, tool_outputs_truncated: 0,
+        messages,
+      }, { "x-kortix-transcript-source": "pi" });
+    }
+    if (sub === "/agents" && method === "GET") {
+      const { config, name } = this.agentConfig();
+      const agents = (config.names.length ? config.names : [name ?? this.agentName()]).map((n) => ({ name: n, description: config.agents[n]?.description ?? null, mode: config.agents[n]?.mode ?? null }));
+      return verb(200, { agents });
+    }
+    if (sub === "/state" && method === "GET") {
+      const doc = await this.stateDoc();
+      const etag = await this.etag(doc);
+      if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { etag } });
+      return json(200, doc, { etag });
+    }
+    if (sub === "/events" && method === "GET") {
+      const sinceRaw = url.searchParams.get("since");
+      const since = sinceRaw !== null && /^\d+$/.test(sinceRaw) ? Number(sinceRaw) : null;
+      return runtimeEventStream(this.bus, { since, epoch: url.searchParams.get("epoch")?.trim() || null });
+    }
+    return notFound(`/kortix/runtime${sub}`);
+  }
+
+  async stateDoc() {
+    const { config, name } = this.agentConfig();
+    const ref = this.engine().modelRef();
+    const agentName = name ?? this.agentName();
+    const agents = (config.names.length ? config.names : [agentName]).map((n) => ({
+      name: n,
+      description: config.agents[n]?.description ?? null,
+      mode: config.agents[n]?.mode ?? null,
+      native: false,
+      hidden: config.agents[n]?.hidden ?? null,
+      color: config.agents[n]?.color ?? null,
+      variant: config.agents[n]?.variant ?? null,
+      source: "config",
+      model: n === agentName ? { providerID: ref.providerID, modelID: ref.modelID } : null,
+    }));
+    const session = this.sessionObject();
+    return {
+      schema: "kortix.runtime.v1",
+      epoch: this.bus.epoch,
+      seq: this.bus.headSeq,
+      built_at: new Date().toISOString(),
+      identity: { harness: "pi", runtime_session_id: this.rootId, harness_version: CELL_VERSION, daemon_build: null, agent_config_etag: this.effectiveEnv().KORTIX_COMPILED_AGENT_CONFIG_ETAG || null, head_seq: null },
+      agents: { known: true, value: agents },
+      commands: { known: true, value: [] },
+      config: { known: true, value: { model: `${ref.providerID}/${ref.modelID}`, small_model: null, default_agent: agentName, permission: null, instructions: null, enabled_providers: [ref.providerID] } },
+      sessions: { known: true, value: [{ id: this.rootId, title: session.title, parent_id: null, directory: CELL_CWD, time: { created: session.time.created, updated: session.time.updated, compacting: session.time.compacting ?? null, archived: null }, revert: null }] },
+      statuses: { known: true, value: { [this.rootId]: { type: this.engine().activeTurn() ? "busy" : "idle" } } },
+      permissions: { known: true, value: [] },
+      questions: { known: true, value: [] },
+    };
+  }
+
+  async etag(doc) {
+    const { built_at: _built, ...rest } = doc;
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(rest)));
+    return `"sha256-${[...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32)}"`;
+  }
+
+  #strip(message) {
+    const sid = this.rootId;
+    return stripInlineAttachmentBytes(message, (m, p) => `/kortix/part/${encodeURIComponent(sid)}/${encodeURIComponent(m)}/${encodeURIComponent(p)}`).value;
+  }
+
+  partRoute(messageId, partId) {
+    const message = this.transcript.messageById(messageId);
+    const part = message?.parts.find((p) => p.id === partId);
+    if (!part || part.type !== "file") return json(404, { error: "attachment not found" });
+    const decoded = decodeDataUrl(part.url);
+    if (!decoded) return json(404, { error: "attachment bytes are not held by this cell" });
+    return new Response(decoded.bytes, { status: 200, headers: { "content-type": part.mime || decoded.mime } });
+  }
+
+  async sessionRoute(req, sessionId, sub, url, method) {
+    if (sessionId === null) return json(400, { error: "path contains malformed percent-encoding" });
+    if (sessionId !== this.rootId) return json(404, { error: "unknown session" });
+    if (sub === "" && method === "GET") return json(200, this.sessionObject());
+    if (sub === "" && method === "PATCH") return json(200, this.sessionObject());
+    if (sub === "" && method === "DELETE") return json(200, true);
+    if (sub === "children" && method === "GET") return json(200, []);
+    const message = /^message(?:\/([^/]+)(?:\/part\/([^/]+))?)?$/.exec(sub);
+    if (message && method === "GET") {
+      const messageId = message[1] ? decodeSegment(message[1]) : null;
+      if (!messageId) {
+        const limitRaw = Number(url.searchParams.get("limit") ?? 0);
+        const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : Math.max(this.transcript.count, 1);
+        const before = (url.searchParams.get("before") ?? url.searchParams.get("cursor"))?.trim() || null;
+        const page = this.transcript.page({ limit, before });
+        const older = page.hasMore ? String(page.messages[0]?.info.id ?? "") : "";
+        return json(200, page.messages.map((m) => this.#strip(m)), older ? { "x-next-cursor": older } : {});
+      }
+      const found = this.transcript.messageById(messageId);
+      if (!found) return json(404, { error: "unknown message" });
+      return json(200, this.#strip(found));
+    }
+    if (message && method === "DELETE") return json(409, { error: "message deletion is not supported by the pi cell" });
+    if (message && method === "PATCH") return json(501, { code: "feature_not_supported", error: "part edits are not supported by the pi cell" });
+    if ((sub === "prompt_async" || sub === "message") && method === "POST") {
+      const r = this.readiness();
+      if (!r.ready) return json(503, { code: "runtime_not_ready", error: r.error ?? "the pi cell is starting", phase: r.phase });
+      let input;
+      try { input = parsePromptBody(await req.json()); } catch (e) { return json(400, { error: errorText(e) }); }
+      let admitted;
+      try { admitted = await this.admit(input); } catch (e) { return json(503, { error: errorText(e) }); }
+      if (admitted.deduplicated) return json(200, { deduplicated: true });
+      if (sub === "prompt_async") return new Response(null, { status: 204 });
+      await this.engine().waitForIdle(10 * 60_000);
+      const reply = this.transcript.all().filter((m) => m.info.role === "assistant" && m.info.parentID === admitted.messageId).at(-1);
+      return json(200, reply ? this.#strip(reply) : { info: { id: admitted.messageId, role: "user", sessionID: this.rootId }, parts: [] });
+    }
+    if (sub === "command" && method === "POST") return json(400, { error: "the pi cell has no slash commands" });
+    if (sub === "abort" && method === "POST") {
+      await this.engine().abort().catch(() => false);
+      return json(200, true);
+    }
+    if (sub === "todo" && method === "GET") return json(200, readTodos(this.sql));
+    if (sub === "diff" && method === "GET") {
+      const menv = await this.machineEnv();
+      if (menv) { await this.machineRepoReady(); return json(200, await machineGit(menv).fileDiffs().catch(() => [])); }
+      await this.ensureCheckout().catch(() => null);
+      return json(200, await fileDiffs(this.cell()).catch(() => []));
+    }
+    if (sub === "summarize" && method === "POST") {
+      try { await this.engine().compact(); await this.state.storage.setAlarm(Date.now() + 1); } catch (e) { return json(503, { error: errorText(e) }); }
+      return json(200, true);
+    }
+    if (["revert", "unrevert", "init", "fork", "share", "shell"].includes(sub) && method === "POST") {
+      return json(501, { code: "feature_not_supported", error: `${sub} is not supported by the pi cell` });
+    }
+    return notFound(`/session/${sessionId}/${sub}`);
+  }
+
+  async fileRoute(req, path, url, method) {
+    await this.ensureCheckout().catch(() => null);
+    const tree = await this.workspaceFs();
+    if (path === "/file/status" && method === "GET") {
+      if (tree.kind === "machine") return json(200, await machineGit(await this.machineEnv()).status().catch(() => []));
+      return json(200, await workingStatus(this.cell()).catch(() => []));
+    }
+    const answered = await filesAnswer(req, path, url, tree);
+    return answered ?? notFound(path);
+  }
+
+  async commitPush(req) {
+    const body = await req.json().catch(() => ({}));
+    const e = this.effectiveEnv();
+    if (this.__commitPush) return json(409, { error: "commit-push already running" });
+    const menv = await this.machineEnv();
+    if (menv) await this.machineRepoReady();
+    const message = typeof body?.message === "string" ? body.message : undefined;
+    this.__commitPush = (menv
+      ? machineGit(menv).commitAndPush({ branch: e.KORTIX_BRANCH_NAME, message })
+      : commitAndPush({ cell: this.cell(), url: e.KORTIX_REPO_URL, token: e.KORTIX_TOKEN, branch: e.KORTIX_BRANCH_NAME, message })
+    ).finally(() => { this.__commitPush = null; });
+    const r = await this.__commitPush;
+    return r.ok
+      ? json(200, { ok: true, committed: r.committed, pushed: r.pushed, nothingToDo: r.nothingToDo, branch: r.branch, headSha: r.headSha })
+      : json(r.status ?? 500, { error: "commit-push failed", message: r.error });
+  }
+
+  // ── the terminal ───────────────────────────────────────────────────────
+
+  async ptyRoute(req, path, method) {
+    if (req.headers.get("upgrade") === "websocket") return this.ptySocket(req, path);
+    const one = /\/kortix\/pty\/([^/]+)$/.exec(path);
+    if (path === "/kortix/pty" && method === "GET") return json(200, ptyList(this.sql));
+    if (path === "/kortix/pty" && method === "POST") return json(200, ptyCreate(this.sql, (await req.json().catch(() => ({}))) ?? {}));
+    if (one && method === "PATCH") {
+      const updated = ptyUpdate(this.sql, decodeSegment(one[1]), (await req.json().catch(() => ({}))) ?? {});
+      return updated ? json(200, updated) : json(404, { error: "pty not found" });
+    }
+    if (one && method === "DELETE") {
+      const id = decodeSegment(one[1]);
+      const gone = ptyRemove(this.sql, id);
+      for (const [ws, t] of this.terminals ?? []) {
+        if (t.ptyId === id) { try { ws.close(1000, "pty exited"); } catch { /* gone */ } this.terminals.delete(ws); }
+      }
+      return gone ? json(200, true) : json(404, { error: "pty not found" });
+    }
+    return notFound(path);
+  }
+
+  ptySocket(req, path) {
+    const m = /\/kortix\/pty\/([^/]+?)(?:\/connect)?$/.exec(path);
+    const pair = new WebSocketPair();
+    if (!m) {
+      pair[1].accept?.();
+      try { pair[1].close(1008, "only terminal sockets are served"); } catch { /* gone */ }
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+    const ptyId = decodeSegment(m[1]);
+    const record = ptyGet(this.sql, ptyId);
+    if (typeof this.state.acceptWebSocket === "function") this.state.acceptWebSocket(pair[1], [`pty:${ptyId}`]);
+    else pair[1].accept?.();
+    if (!record) {
+      try { pair[1].close(1000, "pty not found"); } catch { /* gone */ }
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+    this.terminals ??= new Map();
+    this.terminals.set(pair[1], { ptyId, editor: newEditor(record.cwd), abort: null });
+    try { pair[1].send(banner(record.cwd)); } catch { /* gone */ }
+    return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  adoptTerminal(ws) {
+    const tag = (this.state.getTags?.(ws) ?? []).find((t) => typeof t === "string" && t.startsWith("pty:"));
+    if (!tag) return null;
+    const ptyId = tag.slice("pty:".length);
+    const record = ptyGet(this.sql, ptyId);
+    if (!record) return null;
+    const term = { ptyId, editor: newEditor(record.cwd), abort: null };
+    this.terminals ??= new Map();
+    this.terminals.set(ws, term);
+    return term;
+  }
+
+  async webSocketMessage(ws, message) {
+    this.init();
+    const term = this.terminals?.get(ws) ?? this.adoptTerminal(ws);
+    if (term) return this.terminalInput(ws, term, message);
+  }
+
+  async webSocketClose(ws, code, reason) {
+    try { ws.close(code, reason); } catch { /* already gone */ }
+    this.terminals?.delete(ws);
+  }
+
+  /** One line of a terminal: echo it, and when complete run it in the session's shell. */
+  async terminalInput(ws, term, message) {
+    const r = feed(term.editor, message);
+    term.editor = r.state;
+    if (r.echo) { try { ws.send(r.echo); } catch { /* gone */ } }
+    if (r.interrupt) { try { term.abort?.abort(); } catch { /* done */ } }
+    if (r.close) { try { ws.close(1000, "pty exited"); } catch { /* gone */ } this.terminals?.delete(ws); return; }
+    if (r.line === null) return;
+    const line = r.line.trim();
+    if (!line) { try { ws.send(prompt(term.editor.cwd)); } catch { /* gone */ } return; }
+    if (line === "exit" || line === "logout") {
+      try { ws.send("exit\r\n"); ws.close(1000, "pty exited"); } catch { /* gone */ }
+      this.terminals?.delete(ws);
+      return;
+    }
+    const env = await this.toolEnv(term.editor.cwd);
+    const cd = cdTarget(line);
+    const command = cd === null ? line : `cd ${cd === "~" ? CELL_CWD : cd} && pwd`;
+    const ctl = new AbortController();
+    term.abort = ctl;
+    const out = await runCapture(env, command, { cwd: term.editor.cwd, timeout: 120, abortSignal: ctl.signal }).catch((e) => ({ ok: false, error: { message: errorText(e) }, stdout: "", stderr: "" }));
+    term.abort = null;
+    const crlf = (t) => String(t ?? "").replace(/\r?\n/g, "\r\n");
+    if (!out.ok) {
+      try { ws.send(crlf(`${out.error?.message ?? "command failed"}\n`)); } catch { /* gone */ }
+    } else if (cd !== null && out.exitCode === 0) {
+      term.editor.cwd = out.stdout.trim() || term.editor.cwd;
+      ptySetCwd(this.sql, term.ptyId, term.editor.cwd);
+    } else {
+      const body = `${out.stdout}${out.stderr}`;
+      if (body) { try { ws.send(crlf(body.endsWith("\n") ? body : `${body}\n`)); } catch { /* gone */ } }
+    }
+    try { ws.send(prompt(term.editor.cwd)); } catch { /* gone */ }
   }
 }
 
-/**
- * WHICH SESSIONS THIS NODE HAS BEEN ASKED ABOUT.
- *
- * A cell resolves an unaddressed request from the node's KORTIX_SESSION_ID, and
- * a RESUMED box has none: the sandbox record still declares all 14
- * CELLD_VAR_KORTIX_*, and the isolate sees zero, because `sandbox.start` does
- * not carry envVars (platinum-dev 1a026358, committed and not deployed).
- * Measured 2026-09-09 on two of the user's own boxes, both restarted at 11:36 —
- * every in-box call the web client makes answered 503, which is streaming
- * simply not working.
- *
- * The worker sees EVERY request, and the product names a session on most of
- * them (`/session/<id>/message`, `?c=`). So the node can learn what its env
- * forgot, from traffic it is already serving.
- *
- * IN MEMORY, AFTER TRYING IT THE OTHER WAY. The first version kept this in a
- * reserved cell so it would survive a restart. On a node capped at one resident
- * cell — `CELLD_MAX_RESIDENT_CELLS=1`, which test/eviction.sh runs — that index
- * cell took the only slot and evicted the working cell on every request, so its
- * in-memory meter never accumulated and the suite caught it: "the meter did not
- * count: 0". A second permanent resident cell is not free. This costs a Set
- * insert, and the product re-teaches it within one addressed request.
- */
-const namedSessions = new Set();
+// ── the router ───────────────────────────────────────────────────────────
 
-/** Remember a session this node was asked about. Bounded: past two the answer is already "ambiguous". */
-function rememberNamedSession(id) {
-  if (typeof id !== "string" || !id || id.length > 200) return;
-  if (namedSessions.size < 64) namedSessions.add(id);
-}
+/** A path that names its session's root. */
+const ROOT_IN_PATH = /^\/(?:session|kortix\/(?:runtime|opencode)\/(?:sessions|messages)|kortix\/part)\/(ses_pi[0-9a-f]{24})(?:\/|$)/;
 
-/**
- * The session this node serves, when it serves exactly one.
- *
- * ONE, deliberately. On a shared host the answer is genuinely ambiguous — the
- * web client's in-box calls name no session, so serving the "first" one would
- * hand a second user the first one's stream. Two means no answer, and the
- * caller gets the same honest 503 it got before.
- */
-function soleSessionOnThisNode() {
-  return namedSessions.size === 1 ? [...namedSessions][0] : null;
+/** The roots this node has served: a resumed box that lost its env still knows its one session. */
+const knownRoots = new Set();
+
+let cachedRoot = null;
+async function rootOfSession(sessionId) {
+  if (!sessionId) return null;
+  if (cachedRoot?.session !== sessionId) cachedRoot = { session: sessionId, root: await mintRootId(sessionId) };
+  return cachedRoot.root;
 }
 
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (url.pathname === "/health") return Response.json({ ok: true, agent: "pi-in-a-cell" });
-
-    // SPAWN, MEASURED THE WAY A LIBRARY MEASURES IT.
-    //
-    // agentOS reports 4.8 ms p50 for "time from requesting an execution to
-    // first code running", in-process on one machine — no socket, no TLS, no
-    // proxy. Every number taken from outside this node includes all three, so
-    // comparing them is comparing a function call with a request to Paris.
-    //
-    // This is the same quantity for a cell: ask the binding for an isolate that
-    // has never existed and stop the clock when its code answers. /ping is used
-    // deliberately because it returns BEFORE init(), so the reading is the
-    // spawn and not the schema.
-    //
-    // Measured on dev 2026-09-07 for the record kept in the comparison: from
-    // outside, subtracting two readings over the identical path, the spawn was
-    // 67 ms. This says what it is with nothing subtracted.
-    // WHAT A CELL CANNOT RUN — MEASURED TWICE, AND THE SECOND READING
-    // OVERTURNED HALF THE FIRST.
-    //
-    // 2026-09-07, a /bench/can endpoint asked this isolate three questions and
-    // each one dropped the connection — HTTP 000, the cell still answering
-    // /health afterwards. Not a catchable error: a refusal below the language.
-    //
-    //   `await import("node:child_process")`   dropped
-    //   `eval("1+1")`                          dropped
-    //   `new WebAssembly.Module(<bytes>)`      dropped
-    //
-    // The conclusion drawn then was that a cell has no runtime codegen, and
-    // therefore that compiled-tools-loaded-at-runtime — how agentOS ships its
-    // tools — could never work here.
-    //
-    // 2026-09-12, THE SAME THREE QUESTIONS, asked of a live cell through a
-    // probe route on this worker:
-    //
-    //   `new Function("return 1+1")()`                    -> 2
-    //   `eval("2+3")`                                     -> 5
-    //   `new WebAssembly.Instance(new WebAssembly.Module(bytes)).exports.f()` -> 7
-    //
-    // and the same WebAssembly call again from INSIDE the cell's own `node`
-    // (nodejs.js), through the shell, on a session with no machine: `wasm 7`.
-    // So runtime codegen and runtime-compiled WebAssembly are both available,
-    // and `node` in a cell needs no interpreter — it compiles the script in
-    // the engine that is already running.
-    //
-    // WHAT STILL HOLDS, and it is the part that actually settles the question:
-    // a cell has no processes, no native addons, no sockets and no second
-    // thread. agentOS's kernel is a sidecar PROCESS owning a virtual
-    // filesystem, a process table, PTYs and a network stack. None of those can
-    // exist here, whatever the engine will compile. The line is drawn by the
-    // absence of processes, not by codegen — which is the correction this
-    // paragraph exists to record.
-    //
-    // The endpoint is gone because an endpoint that kills its own request has
-    // no business shipping. The answer is here.
-    if (url.pathname === "/bench/spawn") {
-      const n = Math.max(1, Math.min(Number(url.searchParams.get("n") ?? 25), 200));
-      // WHERE THE COLD MILLISECONDS ACTUALLY GO, in two readings over the same
-      // path rather than one number and a story about it.
-      //
-      // `/ping` answers BEFORE init(), so the default reading is isolate +
-      // script evaluation + constructor and NOTHING durable. `?to=turns` stops
-      // instead at a route that runs init() and reads a table, which is the
-      // first thing that can force the object-storage lease and the schema.
-      // Subtracting them is the cost of a cell HAVING state, which is exactly
-      // the thing agentOS's 4.8 ms does not pay for: it has no durable store
-      // per instance, so there is nothing to lease.
-      //
-      // MEASURED 2026-09-09 on a probe box with nothing else on it, 80 cold
-      // spawns each, alternating so drift hit both readings equally:
-      //
-      //                    median of p50s     floor (fastest of 80)
-      //   stop=/ping           122.5 ms            39.5 ms
-      //   stop=/turns           82.0 ms            51.5 ms
-      //
-      // Read the FLOORS. The p50s are inverted — doing strictly more work
-      // cannot be faster — which is itself the result: in the middle of the
-      // distribution, node scheduling dominates and the work does not show.
-      //
-      // THE COMPARABLE NUMBER, MEASURED. `?warm=1` asks for an isolate that
-    // already exists, which is the only reading here that answers the same
-    // question agentOS's 4.8 ms does — it has no isolate to create and no
-    // durable state to lease, so its number can never include either.
-    //
-    // Dev 2026-09-09, three runs of n=100 on one node:
-    //
-    //   warm   p50 1 ms    p90 1-3 ms    p99 3-10 ms    min 0
-    //   cold   p50 59-77 ms   p90 191-230 ms            min 20
-    //
-    // 1 ms against a published 4.8 ms. This had been restated all session as
-    // "about 1 ms" without anything measuring it; it is now the bench's warm
-    // mode, and the claims below refuse to let cold and warm blur into one
-    // number.
-    //
-    // THE TAIL HAS AN OWNER, AND IT IS NOT THIS WORKER. The baseline this work
-    // is judged against carries p50 74 ms and p99 681 ms — a 10x tail nobody
-    // had attributed. `dispatch` subtracts the callee's own `x-cell-ms` from
-    // each sample, so a reading says which half it was. Dev 2026-09-09:
-    //
-    //   quiet box   total p50 95  p90 302  max 705 | dispatch 94  301  705
-    //   quiet box   total p50 75  p90 199  max 990 | dispatch 75  199  987
-    //   shared host total p50 85  p90 219  max 629 | dispatch 84  217  628
-    //
-    // Dispatch is within 1-3 ms of the total in every row, tail included. The
-    // isolate's own work is ~1 ms — the warm number — and everything else is
-    // celld getting to it. So nothing in this worker can move a cold spawn:
-    // this worker is 1 ms of it.
-    //
-    // TWO THINGS THE FIRST ATTEMPT GOT WRONG. The tail is NOT other tenants: a
-    // box with nothing else on it produced 705, 990 and 649 ms maxima against
-    // the shared host's 629, 501 and 625, and one first run on a brand-new node
-    // hit 15062 ms. And at n=100 the reported "p99" IS the maximum — index 99
-    // of 100 — so it is the worst sample, not a percentile anyone should quote
-    // as one.
-    //
-    // AND THE OTHER HALF OF THE COMPARISON, measured for the first time on
-    // 2026-09-09 rather than restated: what one cell costs in memory.
-    //
-    // A cell sandbox refuses `exec` — `runtime_capability_unsupported` — so
-    // RSS is not readable from inside one. The platform's own /metrics reports
-    // the box's `mem_used_mb` and is live (it moves 1-2 MB between reads and
-    // differs across boxes by hundreds), so the question is asked from outside:
-    // spawn N isolates on a box with nothing else on it and take the slope.
-    // test/dev-memory.sh is that probe.
-    //
-    //   N=0     488 MB     the node itself
-    //   N=100   488 MB     +0
-    //   N=200   919 MB     +431 MB   2.15 MiB/instance
-    //   N=400  1239 MB     +751 MB   1.88 MiB/instance
-    //
-    // The marginal cost from 200 to 400 is 320 MB over 200 isolates: 1.6 MiB
-    // each. The figure this work is judged against is 1.38 MiB/instance, so it
-    // is the right order and mildly understated — call it 1.6-2.2 MiB measured.
-    // Against agentOS's ~131 MB that is still ~80x, so the size claim survives
-    // its first contact with a measurement.
-    //
-    // TWO THINGS THE PROBE HAD TO LEARN. `/ping` answers BEFORE init(), so 400
-    // isolates touched that way added 0 MB — true, and not the question: an
-    // isolate that never built its schema is not a session. And reading
-    // /metrics straight after a spawn gave 486 MB for N=50, 100 and 200 then
-    // 1146 for N=400, a step function that is the sampler's lag rather than
-    // the memory's shape; the reading has to settle first.
-    //
-    // THIS CORRECTS THE RECORD. It was written here that the 65-96 ms first
-      // touch is celld's object-storage lease and therefore architectural. The
-      // durable half is ~12 ms of it. The other ~40 ms is celld routing to and
-      // starting an isolate, BEFORE any storage — and it does not move with
-      // the bundle either: a 38% smaller bundle floored at the same 20-35 ms
-      // (see build.mjs). So the cold cost is neither the lease nor the code
-      // size; it is the isolate boundary itself, which is the one thing
-      // agentOS's in-process number never crosses.
-      const stop = url.searchParams.get("to") === "turns" ? "/turns" : "/ping";
-      // WARM DISPATCH IS THE ONE QUANTITY COMPARABLE TO 4.8 ms.
-      //
-      // agentOS reports "time from requesting an execution to first code
-      // running" for an in-process runtime with no isolate boundary and no
-      // durable state. The closest thing here is asking the binding for an
-      // isolate that ALREADY EXISTS and stopping the clock when its code
-      // answers: no creation, no lease, no schema — just dispatch.
-      //
-      // Cold and warm are different questions and the default stays cold,
-      // because a benchmark that quietly reports the flattering one is how a
-      // number outlives its method.
-      const warm = url.searchParams.get("warm") === "1";
-      const t = [];
-      const d = [];   // dispatch: the part of each sample that was not the isolate
-      const fixed = `bench-warm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      if (warm) {
-        // Pay for the isolate once, outside the clock. Twice, because the
-        // first request also evaluates the script.
-        for (let i = 0; i < 2; i++) {
-          await env.AGENT.get(env.AGENT.idFromName(fixed)).fetch(new Request(`http://cell${stop}`));
-        }
-      }
-      for (let i = 0; i < n; i++) {
-        const name = warm
-          ? fixed
-          : `bench-${Date.now().toString(36)}-${i}-${Math.random().toString(36).slice(2, 8)}`;
-        const t0 = performance.now();
-        const r = await env.AGENT.get(env.AGENT.idFromName(name)).fetch(new Request(`http://cell${stop}`));
-        const took = performance.now() - t0;
-        t.push(took);
-        // WHOSE MILLISECONDS THESE ARE. The callee sets `x-cell-ms` (see the
-        // wrapper on this class's fetch), so each sample splits into the
-        // isolate's own work and everything celld did to reach it. Without
-        // this the tail is a number with no owner: a 15 s cold sample on an
-        // idle box says nothing about whether the isolate was slow or whether
-        // getting to it was.
-        // `Number(null)` is 0, not NaN, so a MISSING header would have been
-        // counted as an isolate that answered instantly and the whole sample
-        // attributed to dispatch. Read the header first, convert second.
-        const raw = r.headers.get("x-cell-ms");
-        const cm = raw === null ? NaN : Number(raw);
-        if (Number.isFinite(cm)) d.push(Math.max(0, took - cm));
-      }
-      t.sort((a, b) => a - b);
-      const at = (q) => Math.round(t[Math.min(t.length - 1, Math.floor(t.length * q))] * 100) / 100;
-      const ds = [...d].sort((a, b) => a - b);
-      const dat = (q) => Math.round(ds[Math.min(ds.length - 1, Math.floor(ds.length * q))] * 100) / 100;
-      return Response.json({
-        n, stop, mode: warm ? "warm" : "cold",
-        // The same percentiles over the dispatch half, so the tail can be
-        // attributed rather than described.
-        dispatch: d.length
-          ? { p50: dat(0.5), p90: dat(0.9), max: Math.round(Math.max(...d) * 100) / 100 }
-          : null,
-        p50: at(0.5), p90: at(0.9), p99: at(0.99),
-        min: Math.round(t[0] * 100) / 100,
-        max: Math.round(t[t.length - 1] * 100) / 100,
-        note: warm
-          ? "in-node, warm dispatch to an isolate that already exists — the same quantity agentOS reports as 4.8 ms"
-          : "in-node: no network, no TLS, no edge — a COLD isolate each sample, which agentOS never pays",
-      });
+    if (url.pathname === "/health") return Response.json({ ok: true, runtime: "pi-cell", version: CELL_VERSION });
+    const c = url.searchParams.get("c");
+    const fromPath = ROOT_IN_PATH.exec(url.pathname)?.[1] ?? null;
+    const root = fromPath
+      ?? (c ? (ROOT_ID.test(c) ? c : await rootOfSession(c)) : null)
+      ?? (await rootOfSession(env.KORTIX_SESSION_ID))
+      ?? (knownRoots.size === 1 ? [...knownRoots][0] : null);
+    if (!root) {
+      // FINAL, NOT COLD: the API's sandbox proxy retries a 503 as a port still
+      // coming up; this one names no session and never will. `x-kortix-final`
+      // stops the retries.
+      return Response.json(
+        { code: "runtime_not_ready", error: "this cell has no session", detail: "the box carries no KORTIX_SESSION_ID and the request names no root" },
+        { status: 503, headers: { "retry-after": "5", "x-kortix-final": "1", "x-kortix-boot-phase": "cell|no-session" } },
+      );
     }
-    // The session polls readiness BEFORE it has a session to name, so this one
-    // answers at the worker, not in a cell.
-    if (url.pathname === "/kortix/health" && !url.searchParams.get("c")) {
-      // Same contract as the in-cell answer: the session polls readiness
-      // BEFORE it has a session to name, and a body this one cannot classify
-      // leaves it waiting exactly as long as an unreachable box would.
-      return Response.json({
-        daemon: "ok", status: "ok", runtimeReady: true, workload: "session",
-        opencode: "ok", engine: "pi", repo_required: false, repo_ready: true,
-        boot_error: null, store_error: null, model_error: null,
-        opencode_session_required: false, opencode_session_id: null,
-        agent_config_etag: null, commit_sha: null, branch: null,
-        runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
-        ok: true, agent: "pi-in-a-cell",
-      });
-    }
-    // WHICH CELL, when the caller cannot say.
-    //
-    // A Kortix session reaches this worker through the API's sandbox proxy,
-    // which forwards the path and NOT the query — so `?c=` is absent on every
-    // request the product makes. Defaulting to "default" put all of them on an
-    // isolate that is nobody's session: the pin resolved to that isolate's
-    // internal id, and the delivery POST to /session/<the real session>/
-    // prompt_async then 404'd against it. Measured on dev 2026-09-07, session
-    // 16310084: GET /session through the proxy answered 200 while
-    // prompt_async 404'd on both 8000 and 8080.
-    //
-    // A Platinum cell sandbox holds exactly ONE Kortix session, and its id is
-    // in the environment the create put there. So that is the identity to fall
-    // back on: `?c=` still works for callers that name a cell (the suites, the
-    // eviction probes), and everything else lands on the session this cell was
-    // made for.
-    // The path names the session too, and that is what makes ONE cell sandbox
-    // able to hold MANY sessions. Every route the control plane calls carries
-    // the session in the path — /session/:id/prompt_async, /session/:id/abort —
-    // so a request that names one there does not need `?c=`, which the proxy
-    // drops anyway.
-    //
-    // Why it matters: a session currently costs a whole Platinum sandbox, and
-    // that is where the seconds are. Measured on dev 2026-09-07, warm node:
-    // POST 198 ms, row running at 1296 ms, expose 141 ms, edge live 928 ms
-    // later — 2443 ms before anything can answer. Spawning another isolate on
-    // a cell that already exists is 86 ms resumed, 146 ms new.
-    const fromPath = url.pathname === "/session/status"
-      ? null   // a route, not a session — see the cell's own parser
-      : url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/);
-    // Every request that names a session teaches this node something its env
-    // may have forgotten — see rememberNamedSession. A Set insert on a string
-    // the request has already parsed.
-    const namedHere = url.searchParams.get("c") ?? (fromPath ? decodeURIComponent(fromPath[1]) : null);
-    if (namedHere) rememberNamedSession(namedHere);
-    const name = url.searchParams.get("c")
-      ?? (fromPath ? decodeURIComponent(fromPath[1]) : null)
-      ?? env.KORTIX_SESSION_ID
-      // Node env is not the last word: a resume erases it, and then every
-      // unaddressed call is refused until someone re-pushes. What this node has
-      // been ASKED about survives that, because it never lived in the node.
-      ?? soleSessionOnThisNode()
-      ?? null;
-
-    // "default" IS THE ONE NAME celld CANNOT ROUTE, and it was this worker's
-    // fallback.
-    //
-    // Measured on dev 2026-09-09 against a box thirty seconds old, so this is
-    // not stale ownership — it is the literal string:
-    //
-    //   ?c=default   Worker failed: rejected: DurableObjectRoutingError:
-    //                The Durable Object owner is currently unreachable
-    //   ?c=Default   200      ?c=DEFAULT  200      ?c=default1  200
-    //   ?c=main 200   ?c=agent 200   ?c=session 200   ?c=<uuid> 200
-    //
-    // Every other name in that list routes. So any cell that reached the
-    // fallback answered 500 to every request, and a cell reaches the fallback
-    // exactly when its box came back without `KORTIX_SESSION_ID` — which is
-    // what a RESUMED sandbox did until `sandbox.start` began carrying env.
-    // Three of the four cell boxes running on dev at the time were in that
-    // state: every request the product made to them, none of which can carry
-    // `?c=` through a proxy that drops the query, failed at the router.
-    //
-    // AND ROUTING IT WOULD BE WORSE THAN FAILING, because a cell name is not
-    // scoped to its sandbox. Measured the same day: a box created seconds
-    // earlier, asked for the cell `sess-b`, answered with forty messages
-    // written 100 minutes before by a box that no longer exists. To repeat
-    // it: create a cell sandbox and GET /history?c=<a name an older box used>.
-    // Cell state is keyed by NAME across every
-    // sandbox sharing the deployment's storage identity. A session id is a
-    // uuid and cannot collide; "default" collides with every other box that
-    // ever lost its env, so the fallback was one shared transcript for all of
-    // them. celld refusing to route it is the only reason that never happened.
-    //
-    // Refusing is the honest answer. A request that names no session on a box
-    // that knows no session has no isolate to go to, and inventing one is how
-    // a user ends up talking to an empty agent that answers with the scripted
-    // fixture. 503, because re-pushing the session env repairs it.
-    if (name === null || name === "default") {
-      // FINAL, NOT COLD. The API's sandbox proxy retries a 502/503 four times
-      // with backoff, because a 5xx from a preview normally means the port is
-      // still coming up. This one never will: the request named no session and
-      // the next three attempts will say so again.
-      //
-      // Measured on dev 2026-09-09 against a real user's box — the cell
-      // answered in 43-85 ms and the browser waited 4.4-4.7 SECONDS:
-      //
-      //   GET  /v1/p/<box>/8000/question         503 4645ms  upstream_ms 52
-      //   POST /v1/p/<box>/8000/log              503 4722ms  upstream_ms 85
-      //   GET  /v1/p/<box>/8000/permission       503 4739ms  upstream_ms 43
-      //   GET  /v1/p/<box>/8000/lsp/diagnostics  503 4454ms  upstream_ms 48
-      //
-      // The web client makes about ten of those per view, so a session took
-      // tens of seconds to show anything. `x-kortix-final` says the agent
-      // answered and meant it; the proxy stops retrying on it.
-      return Response.json({
-        error: "no session named",
-        detail: name === "default"
-          ? "celld cannot route a cell named \"default\""
-          : "this box has no KORTIX_SESSION_ID; name the session with ?c= or /session/<id>/",
-        hint: "POST /kortix/env?c=<session> to configure this box",
-      }, { status: 503, headers: { "retry-after": "5", "x-kortix-final": "1" } });
-    }
-    return env.AGENT.get(env.AGENT.idFromName(name)).fetch(req);
+    if (knownRoots.size < 64) knownRoots.add(root);
+    const headers = new Headers(req.headers);
+    headers.set("x-kortix-cell-root", root);
+    return env.AGENT.get(env.AGENT.idFromName(root)).fetch(new Request(req, { headers }));
   },
 };

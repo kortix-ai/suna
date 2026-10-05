@@ -10,7 +10,7 @@
 // skill, not its content: the model reads the file with its own read tool when
 // a task matches. Two skills cost about 670 characters of prompt no matter how
 // long the skills themselves are.
-import { formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "@earendil-works/pi-agent-core";
+import { formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "./vendor/pi-skills.js";
 
 /**
  * Where skills live, relative to the workspace root unless absolute.

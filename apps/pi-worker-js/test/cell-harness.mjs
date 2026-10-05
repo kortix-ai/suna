@@ -40,11 +40,26 @@ function cursor(rows, query) {
     spent = true;
     return rows;
   };
+  // `.next()` reads row by row, as a real cursor does; the first call spends
+  // the cursor like the other two ways of reading it.
+  let iter = null;
   return {
     toArray: () => consume("toArray"),
+    next: () => (iter ??= consume("next")[Symbol.iterator]()).next(),
     [Symbol.iterator]: function* () { yield* consume("iteration"); },
   };
 }
+
+/** Blobs bind as Uint8Array in node:sqlite; a cell binds ArrayBuffers. */
+const bindArg = (v) => (v instanceof ArrayBuffer ? new Uint8Array(v) : v);
+/** A cell reads blobs back as ArrayBuffers; node:sqlite hands Uint8Arrays. */
+const readRow = (r) => {
+  const out = { ...r };
+  for (const k of Object.keys(out)) {
+    if (out[k] instanceof Uint8Array) out[k] = out[k].buffer.slice(out[k].byteOffset, out[k].byteOffset + out[k].byteLength);
+  }
+  return out;
+};
 
 function makeSql(db, log) {
   return {
@@ -55,19 +70,48 @@ function makeSql(db, log) {
       // bill attached — and it is the only way to claim an early return that
       // SQLite's own NULL handling would otherwise make invisible.
       log?.push(trimmed);
-      // Multi-statement CREATEs arrive as one string; SQLite's prepare takes one.
-      if (/^CREATE|^DELETE|^UPDATE|^INSERT|^DROP/i.test(trimmed) && !/RETURNING/i.test(trimmed)) {
-        if (args.length === 0) {
-          for (const stmt of trimmed.split(";").map((x) => x.trim()).filter(Boolean)) db.exec(stmt);
-          return cursor([], trimmed);
-        }
-        db.prepare(trimmed).run(...args);
+      // Several statements in one string (a schema), which prepare refuses.
+      if (args.length === 0 && /;\s*\S/.test(trimmed.replace(/'(?:[^']|'')*'/g, "''"))) {
+        db.exec(trimmed);
         return cursor([], trimmed);
       }
-      const rows = db.prepare(trimmed).all(...args).map((r) => ({ ...r }));
+      // ONE PATH FOR EVERY STATEMENT: `.all()` runs a write and returns no rows,
+      // so a CTE, an upsert or a STRICT CREATE is not misread by a keyword test.
+      const rows = db.prepare(trimmed).all(...args.map(bindArg)).map(readRow);
       return cursor(rows, trimmed);
     },
+    get databaseSize() {
+      return db.prepare("SELECT page_count * page_size AS n FROM pragma_page_count(), pragma_page_size()").get().n;
+    },
   };
+}
+
+/**
+ * `storage.transaction(fn)`, as a Durable Object has it: the callback's
+ * statements commit together, and a rejected callback rolls them back and
+ * rejects with the same error. pi-durable's storage adapter depends on both.
+ */
+export function makeTransaction(db) {
+  let depth = 0;
+  return async function transaction(fn) {
+    const savepoint = `sp${depth++}`;
+    db.exec(depth === 1 ? "BEGIN" : `SAVEPOINT ${savepoint}`);
+    try {
+      const value = await fn();
+      db.exec(depth === 1 ? "COMMIT" : `RELEASE ${savepoint}`);
+      return value;
+    } catch (error) {
+      db.exec(depth === 1 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}`);
+      throw error;
+    } finally {
+      depth--;
+    }
+  };
+}
+
+/** A Durable Object's `storage`, over one SQLite database: what pi's adapter takes. */
+export function makeStorage(db = new DatabaseSync(":memory:"), log) {
+  return { sql: makeSql(db, log), transaction: makeTransaction(db), db };
 }
 
 /**
@@ -109,6 +153,7 @@ export function makeCell(AgentCell, env = {}, opts = {}) {
     id: { toString: () => opts.id ?? "harness-cell" },
     storage: {
       sql: makeSql(db, sqlLog),
+      transaction: makeTransaction(db),
       // ALARMS MAY OVERLAP, because on celld 0.3.0 they do.
       //
       // The first version of this harness cleared the pending timer on every
