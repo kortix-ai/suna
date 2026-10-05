@@ -357,13 +357,14 @@ deleted or failed the reminder pauses itself. Max 20 active per session, 200 per
 ### Capture timeline
 
 Kortix Capture records a member's screen (app, window title, URL, on-screen
-text), input actions and, when the project allows it, audio transcripts on
-their own computer. `kortix capture` searches that timeline for the person
-this session acts for: the member who started it, in a private session. It
-never reads another member. A trigger run or a shared session has no person:
-the API answers `403 capture_no_human`. Behind the per-project `capture`
-feature flag (off by default): a project without it answers
-`feature_disabled`. Every read is audited as `capture.agent_read`.
+text), input actions and, when the account's policy allows it, audio
+transcripts on their own computer. Capture belongs to the Kortix account, not
+to a project. `kortix capture` searches that timeline for the person this
+session acts for (the member who started it, in a private session) in the
+session's account. It never reads another member. A trigger run or a shared
+session has no person: the API answers `403 capture_no_human`. Capture is
+switched on per account (off by default); while it is off the API answers
+`403 capture_disabled`. Every read is audited as `capture.agent_read`.
 
 | Command | What it does |
 | --- | --- |

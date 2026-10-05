@@ -1,6 +1,6 @@
 ---
 name: kortix-cli
-description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a reminder to check back on this task later (`kortix remind \"…\" --in 24h --every 1h`, when the project's `reminders` feature flag is on), search the screen, action and audio timeline Kortix Capture recorded for the person this session acts for (`kortix capture search \"…\"`, when the project's `capture` feature flag is on), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
+description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a reminder to check back on this task later (`kortix remind \"…\" --in 24h --every 1h`, when the project's `reminders` feature flag is on), search the screen, action and audio timeline Kortix Capture recorded for the person this session acts for (`kortix capture search \"…\"`, when Capture is on for the account), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
 ---
 
 # kortix-cli
@@ -48,7 +48,7 @@ kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a read
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
 kortix apps deploy . --slug <slug>               # deploy and block until the stable URL is ready
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
-kortix capture search "<words>"                # the Capture timeline of the person this session acts for (flag `capture`)
+kortix capture search "<words>"                # the Capture timeline of the person this session acts for (Capture on for the account)
 ```
 
 ## Coordinating sessions (spawn → wait → collect)

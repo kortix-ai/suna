@@ -20560,16 +20560,13 @@
   "capture": {
     "authorize": {
       "title": "登录 Kortix Capture",
-      "description": "确认此代码与应用中的代码一致，然后选择它记录到的项目。",
+      "description": "确认此代码与应用中的代码一致，然后选择它记录到的账户。",
       "approvingAs": "以 {email} 登录",
-      "projectLabel": "项目",
-      "noProjects": "你的项目都没有开启 Capture。项目管理者可以在 设置 → 功能开关 中开启。",
-      "notice": "应用会记录你的屏幕和操作，项目允许时也会记录音频。只有你和项目管理者可以查看。管理者的每次查看都会被记录。",
+      "notice": "应用会记录你的屏幕和操作，在账户允许时也会记录音频。你以及账户的 Capture 管理员和查看者可以读取。其他人的每次读取都会被记录。",
       "approve": "登录应用",
       "deny": "拒绝登录",
       "approvedTitle": "Kortix Capture 已登录",
-      "approvedDescription": "应用现在记录到 {project}。你可以关闭此标签页。",
-      "approvedDescriptionNoProject": "应用已登录。你可以关闭此标签页。",
+      "approvedDescription": "应用现在记录到 {account}。你可以关闭此标签页。",
       "deniedTitle": "已拒绝登录",
       "deniedDescription": "应用未登录。你可以关闭此标签页。",
       "expiredTitle": "此代码已过期",
@@ -20580,7 +20577,10 @@
       "enterCodeDescription": "应用会显示一个八位代码。",
       "codeLabel": "代码",
       "continue": "继续",
-      "codePlaceholder": "ABCD-1234"
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "账户",
+      "noAccounts": "你的账户都未开启 Capture。账户所有者或管理员可以开启它。",
+      "approvedDescriptionNoAccount": "应用已登录。你可以关闭此标签页。"
     },
     "duration": {
       "hoursMinutes": "{hours} 小时 {minutes} 分钟",

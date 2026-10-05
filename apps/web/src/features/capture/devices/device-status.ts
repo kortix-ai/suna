@@ -68,14 +68,3 @@ export function deviceStatus(device: CaptureDevice): DeviceStatusView {
     lastFrameMs: num(status.lastFrameMs),
   };
 }
-
-/** The person's computer a capture device runs on: same `machine_id` as a tunnel connection's `machineInfo.machineId`. */
-export function computerForDevice<T extends { machineInfo: Record<string, unknown> }>(
-  device: Pick<CaptureDevice, 'machine_id'>,
-  computers: readonly T[] | undefined,
-): T | null {
-  if (!device.machine_id) return null;
-  return (
-    computers?.find((computer) => computer.machineInfo?.machineId === device.machine_id) ?? null
-  );
-}

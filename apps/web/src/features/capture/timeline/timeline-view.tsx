@@ -12,7 +12,6 @@ import {
   useCaptureDevices,
   useCaptureTimeline,
   useCaptureTimelineItems,
-  useTunnelConnections,
 } from '@kortix/sdk/react';
 import {
   CaretLeftIcon,
@@ -39,7 +38,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { computerDisplayName } from '@/features/tunnel/computer-connect';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { desktopDownloadUrl } from '@/lib/desktop';
@@ -47,8 +45,8 @@ import { desktopDownloadUrl } from '@/lib/desktop';
 import { dayWindow, indexAtOrBefore, localDayOf, localTimeZone } from '../capture-time';
 import { CaptureDialog } from '../desktop/capture-dialog';
 import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
-import { computerForDevice, deviceStatus } from '../devices/device-status';
-import { useCaptureMembers, useCaptureParams, useCaptureViewer } from '../use-capture-viewer';
+import { deviceStatus } from '../devices/device-status';
+import { useCaptureAccountId, useCaptureMembers, useCaptureParams, useCaptureViewer } from '../use-capture-viewer';
 import { DevicePicker, StatusDot, useStatusText } from './device-picker';
 import { FrameStage } from './frame-stage';
 import { JumpPopover } from './jump-popover';
@@ -101,6 +99,7 @@ const MOD_KEY = () =>
  * Capture engine's local timeline window.
  */
 export function TimelineView({ projectId }: { projectId: string }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.timeline');
   const tDevices = useTranslations('capture.devices');
   const locale = useLocale();
@@ -113,24 +112,13 @@ export function TimelineView({ projectId }: { projectId: string }) {
     viewer.isManager && params.user && params.user !== members.viewerId ? params.user : undefined;
 
   // ── Device ────────────────────────────────────────────────────────────────
-  const devicesQuery = useCaptureDevices(projectId, { userId });
+  const devicesQuery = useCaptureDevices(accountId, { userId });
   const devices = useMemo(
     () => (devicesQuery.data?.devices ?? []).filter((d) => !d.revoked_at),
     [devicesQuery.data],
   );
   const desktop = useDesktopCaptureStatus();
-  const computers = useTunnelConnections();
-  const nameOf = useCallback(
-    (d: CaptureDevice) => {
-      const computer = computerForDevice(d, computers.data);
-      return (
-        (computer && computerDisplayName(computer.name, computer.machineInfo)) ||
-        d.name ||
-        tDevices('unnamed')
-      );
-    },
-    [computers.data, tDevices],
-  );
+  const nameOf = useCallback((d: CaptureDevice) => d.name || tDevices('unnamed'), [tDevices]);
   const device =
     devices.find((d) => d.device_id === params.device) ??
     defaultDevice(devices, userId ? null : desktop.data?.deviceId);
@@ -139,7 +127,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
   const statusText = useStatusText();
 
   // ── Bounds and days ───────────────────────────────────────────────────────
-  const days = useCaptureDays(deviceId ? projectId : null, { tz, userId, deviceId });
+  const days = useCaptureDays(deviceId ? accountId : null, { tz, userId, deviceId });
   const dayList = useMemo(() => days.data?.days ?? [], [days.data]);
   const bounds = useMemo(() => {
     const list = days.data?.days ?? [];
@@ -198,7 +186,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
   }, [view.T, view.spp, trackW, deviceId, range]);
   const timeline = useLatest<CaptureTimeline>(
     useCaptureTimeline(
-      projectId,
+      accountId,
       deviceId && range[1] > range[0]
         ? {
             from: new Date(range[0]).toISOString(),
@@ -242,7 +230,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
   const anchor = Math.floor(view.T / ITEMS_ALIGN) * ITEMS_ALIGN;
   const items = useLatest<CaptureTimelineItems>(
     useCaptureTimelineItems(
-      projectId,
+      accountId,
       deviceId && bounds
         ? {
             from: new Date(anchor - ITEMS_BEFORE).toISOString(),
@@ -269,7 +257,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
   const frameIdx = indexAtOrBefore(frames, view.T);
   const frame = frameIdx >= 0 ? frames[frameIdx]! : null;
   const offFrame = !frame || view.T - Date.parse(frame.ts) > pad * 1.5;
-  const media = useCaptureChunkMedia(projectId, frame?.chunk_id ?? null, { userId });
+  const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, { userId });
   const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
   // While the next chunk's URL loads, the stage keeps the last frame it showed: no blank flash mid-scrub.
   const shown = useRef<{ src: string | null; seconds: number }>({ src: null, seconds: 0 });
@@ -299,7 +287,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
     instant: boolean;
   } | null>(null);
   const far = useCaptureTimeline(
-    projectId,
+    accountId,
     farJump && deviceId
       ? {
           from: new Date(farJump.dir < 0 ? farJump.T - 86_400_000 : farJump.T + 1).toISOString(),

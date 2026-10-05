@@ -2,18 +2,18 @@ import type { DesktopCaptureLayer, DesktopCaptureStatus } from '@/lib/desktop';
 
 /**
  * What the "Record this computer" dialog shows, from the desktop app's
- * `capture_status`, the project, and the dialog's own pending work. One phase
+ * `capture_status`, the account's Capture switch, and the dialog's own pending work. One phase
  * at a time; the dialog renders exactly one primary action per phase.
  */
 export type CapturePhase =
   | 'unavailable' // no engine in this build, or it cannot run here
-  | 'projectOff' // the project's `capture` flag is off
-  | 'off' // not recording into this project (signed out, another project, or switched off)
+  | 'captureOff' // Capture is off for the account
+  | 'off' // not recording into this account (signed out, another account, or switched off)
   | 'turningOn' // device sign-in and service install in progress
   | 'signInRequired' // Kortix refused this computer (revoked, or the flag went off): sign in again
   | 'error' // the last action failed, or the recorder keeps crashing
   | 'needsPermission' // on, but macOS has not granted what the layers need
-  | 'paused' // on, paused by the person or by the project policy
+  | 'paused' // on, paused by the person or by the account policy
   | 'starting' // on, the recorder has not reported yet
   | 'recording';
 
@@ -38,7 +38,7 @@ export function missingGrants(view: DesktopCaptureStatus): CaptureGrant[] {
   return needed.filter((grant) => !permissions[grant]);
 }
 
-/** Layers that record now: switched on here and allowed by the project policy. */
+/** Layers that record now: switched on here and allowed by the account policy. */
 export function activeLayers(view: DesktopCaptureStatus): DesktopCaptureLayer[] {
   return CAPTURE_LAYERS.filter(
     (layer) => view.layers?.[layer] && view.policy?.layers[layer] !== false,
@@ -48,23 +48,23 @@ export function activeLayers(view: DesktopCaptureStatus): DesktopCaptureLayer[] 
 export function capturePhase(
   view: DesktopCaptureStatus | null | undefined,
   {
-    projectId,
-    projectHasCapture,
+    accountId,
+    captureOn,
     turningOn = false,
     failed = false,
     now = Date.now(),
   }: {
-    projectId: string;
-    projectHasCapture: boolean;
+    accountId: string | null;
+    captureOn: boolean;
     turningOn?: boolean;
     failed?: boolean;
     now?: number;
   },
 ): CapturePhase {
   if (!view?.available) return 'unavailable';
-  if (!projectHasCapture) return 'projectOff';
+  if (!captureOn) return 'captureOff';
   if (turningOn) return 'turningOn';
-  const here = view.projectId === projectId;
+  const here = !!accountId && view.accountId === accountId;
   if (view.signInRequired && here) return 'signInRequired';
   if (failed) return 'error';
   // `stopped`: the service was stopped outside the app; Record starts it again.

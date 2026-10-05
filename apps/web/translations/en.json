@@ -20560,16 +20560,13 @@
   "capture": {
     "authorize": {
       "title": "Sign in Kortix Capture",
-      "description": "Check that this code matches the one in the app, then pick the project it records into.",
+      "description": "Check that this code matches the one in the app, then pick the account it records into.",
       "approvingAs": "Signing in as {email}",
-      "projectLabel": "Project",
-      "noProjects": "None of your projects has Capture on. Anyone who manages a project can turn it on in Settings → Feature flags.",
-      "notice": "The app records your screen and your actions, and audio when the project allows it. You and the people who manage the project can read it. Every read by a manager is logged.",
+      "notice": "The app records your screen and your actions, and audio when the account allows it. You and the account’s Capture admins and viewers can read it. Every read by someone else is logged.",
       "approve": "Sign in app",
       "deny": "Deny sign-in",
       "approvedTitle": "Kortix Capture is signed in",
-      "approvedDescription": "The app now records into {project}. You can close this tab.",
-      "approvedDescriptionNoProject": "The app is signed in. You can close this tab.",
+      "approvedDescription": "The app now records into {account}. You can close this tab.",
       "deniedTitle": "Sign-in denied",
       "deniedDescription": "The app is not signed in. You can close this tab.",
       "expiredTitle": "This code expired",
@@ -20580,7 +20577,10 @@
       "enterCodeDescription": "The app shows an eight-character code.",
       "codeLabel": "Code",
       "continue": "Continue",
-      "codePlaceholder": "ABCD-1234"
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "Account",
+      "noAccounts": "None of your accounts has Capture on. An account owner or admin can turn it on.",
+      "approvedDescriptionNoAccount": "The app is signed in. You can close this tab."
     },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} m",

@@ -56,9 +56,9 @@ function issuerFromBackend(backendUrl) {
   return backendUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
 }
 
-/** `<project id>` from the prefix the issuer returned (`orgs/<account>/projects/<project>`). */
-function projectFromPrefix(prefix) {
-  const match = /(?:^|\/)projects\/([0-9a-f-]{36})$/i.exec(String(prefix || '').replace(/\/+$/, ''));
+/** `<account id>` (Capture's tenant) from the prefix the issuer returned (`orgs/<account>`). */
+function accountFromPrefix(prefix) {
+  const match = /^orgs\/([0-9a-f-]{36})$/i.exec(String(prefix || '').replace(/\/+$/, ''));
   return match ? match[1] : null;
 }
 
@@ -410,7 +410,7 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
     on: desktop.on,
     signedIn,
     signInRequired,
-    projectId: projectFromPrefix(kortix.prefix),
+    accountId: accountFromPrefix(kortix.prefix),
     deviceId: kortix.device_id || null,
     memberEmail: kortix.member_email || null,
     state,
@@ -521,7 +521,7 @@ module.exports = {
   lastError,
   libraryDir,
   parseSignInChallenge,
-  projectFromPrefix,
+  accountFromPrefix,
   readDesktop,
   restartDelay,
   runEngine,

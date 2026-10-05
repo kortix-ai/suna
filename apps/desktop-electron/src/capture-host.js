@@ -11,7 +11,6 @@ const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const capture = require('./capture');
-const { machineId } = require('./computer');
 
 const REFRESH_EVERY_MS = 30_000;
 /** The page polls capture_status; within this age the cached answer is reused. */
@@ -96,7 +95,6 @@ function setupCapture(deps) {
   let viewAt = 0;
   let refreshing = null;
   /** @type {string | null | undefined} */
-  let thisMachine;
 
   /**
    * Brings the service in line with the person's switch and the sign-in.
@@ -145,8 +143,6 @@ function setupCapture(deps) {
         serviceStopped: !heartbeat && !pending && (after.installed !== true || after.enabled === false),
       }),
       version: engineState.version,
-      // The computer agent's id for this machine: the page sends it on approval.
-      machineId: (thisMachine ??= machineId()),
       service: {
         installed: after.installed === true,
         enabled: after.enabled !== false,

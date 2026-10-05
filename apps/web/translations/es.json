@@ -20560,16 +20560,13 @@
   "capture": {
     "authorize": {
       "title": "Iniciar sesión en Kortix Capture",
-      "description": "Comprueba que este código coincide con el de la app y elige el proyecto en el que graba.",
+      "description": "Comprueba que este código coincide con el de la app y elige la cuenta en la que graba.",
       "approvingAs": "Iniciando sesión como {email}",
-      "projectLabel": "Proyecto",
-      "noProjects": "Ninguno de tus proyectos tiene Capture activado. Quien gestiona un proyecto puede activarlo en Configuración → Feature flags.",
-      "notice": "La app graba tu pantalla y tus acciones, y el audio cuando el proyecto lo permite. Tú y quienes gestionan el proyecto podéis leerlo. Cada lectura de un responsable queda registrada.",
+      "notice": "La app graba tu pantalla y tus acciones, y el audio cuando la cuenta lo permite. Tú y los administradores y lectores de Capture de la cuenta pueden leerlo. Cada lectura de otra persona queda registrada.",
       "approve": "Iniciar sesión en la app",
       "deny": "Rechazar inicio de sesión",
       "approvedTitle": "Kortix Capture ha iniciado sesión",
-      "approvedDescription": "La app ahora graba en {project}. Puedes cerrar esta pestaña.",
-      "approvedDescriptionNoProject": "La app ha iniciado sesión. Puedes cerrar esta pestaña.",
+      "approvedDescription": "La app ahora graba en {account}. Puedes cerrar esta pestaña.",
       "deniedTitle": "Inicio de sesión rechazado",
       "deniedDescription": "La app no ha iniciado sesión. Puedes cerrar esta pestaña.",
       "expiredTitle": "Este código ha caducado",
@@ -20580,7 +20577,10 @@
       "enterCodeDescription": "La app muestra un código de ocho caracteres.",
       "codeLabel": "Código",
       "continue": "Continuar",
-      "codePlaceholder": "ABCD-1234"
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "Cuenta",
+      "noAccounts": "Ninguna de tus cuentas tiene Capture activado. Un propietario o administrador de la cuenta puede activarlo.",
+      "approvedDescriptionNoAccount": "La app ha iniciado sesión. Puedes cerrar esta pestaña."
     },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} min",

@@ -20560,16 +20560,13 @@
   "capture": {
     "authorize": {
       "title": "Connecter Kortix Capture",
-      "description": "Vérifiez que ce code correspond à celui de l'application, puis choisissez le projet dans lequel elle enregistre.",
+      "description": "Vérifie que ce code correspond à celui de l’app, puis choisis le compte dans lequel elle enregistre.",
       "approvingAs": "Connexion en tant que {email}",
-      "projectLabel": "Projet",
-      "noProjects": "Aucun de vos projets n'a Capture activé. Toute personne qui gère un projet peut l'activer dans Paramètres → Feature flags.",
-      "notice": "L'application enregistre votre écran et vos actions, et l'audio quand le projet l'autorise. Vous et les personnes qui gèrent le projet pouvez le lire. Chaque lecture par un responsable est journalisée.",
+      "notice": "L’app enregistre ton écran et tes actions, et l’audio quand le compte l’autorise. Toi et les admins et lecteurs Capture du compte pouvez le lire. Chaque lecture par quelqu’un d’autre est journalisée.",
       "approve": "Connecter l'application",
       "deny": "Refuser la connexion",
       "approvedTitle": "Kortix Capture est connecté",
-      "approvedDescription": "L'application enregistre maintenant dans {project}. Vous pouvez fermer cet onglet.",
-      "approvedDescriptionNoProject": "L'application est connectée. Vous pouvez fermer cet onglet.",
+      "approvedDescription": "L’app enregistre maintenant dans {account}. Tu peux fermer cet onglet.",
       "deniedTitle": "Connexion refusée",
       "deniedDescription": "L'application n'est pas connectée. Vous pouvez fermer cet onglet.",
       "expiredTitle": "Ce code a expiré",
@@ -20580,7 +20577,10 @@
       "enterCodeDescription": "L'application affiche un code de huit caractères.",
       "codeLabel": "Code",
       "continue": "Continuer",
-      "codePlaceholder": "ABCD-1234"
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "Compte",
+      "noAccounts": "Aucun de tes comptes n’a Capture activé. Un propriétaire ou un admin du compte peut l’activer.",
+      "approvedDescriptionNoAccount": "L'application est connectée. Vous pouvez fermer cet onglet."
     },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} min",

@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils';
 
 import { relativeTime } from '../capture-time';
 import { deviceStatus, type DeviceStatusView } from '../devices/device-status';
+import { useCaptureAccountId } from '../use-capture-viewer';
 
 /** The status dot: green records, orange needs a person, no hue is idle. */
 export function StatusDot({
@@ -94,8 +95,9 @@ function DeviceRowMenu({
   name: string;
   onRevoke: () => void;
 }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.devices');
-  const sync = useSyncCaptureDevice(projectId);
+  const sync = useSyncCaptureDevice(accountId);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -156,10 +158,11 @@ export function DevicePicker({
   canRecordHere: boolean;
   onRecordHere: () => void;
 }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.timeline');
   const tDevices = useTranslations('capture.devices');
   const statusText = useStatusText();
-  const revoke = useRevokeCaptureDevice(projectId);
+  const revoke = useRevokeCaptureDevice(accountId);
   const [open, setOpen] = useState(false);
   const [revoking, setRevoking] = useState<CaptureDevice | null>(null);
   const view = device ? deviceStatus(device) : null;

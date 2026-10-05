@@ -20560,16 +20560,13 @@
   "capture": {
     "authorize": {
       "title": "Kortix Capture にサインイン",
-      "description": "このコードがアプリのコードと一致することを確認し、記録先のプロジェクトを選択します。",
+      "description": "このコードがアプリのコードと一致することを確認し、記録先のアカウントを選んでください。",
       "approvingAs": "{email} としてサインイン",
-      "projectLabel": "プロジェクト",
-      "noProjects": "Capture が有効なプロジェクトがありません。プロジェクトの管理者は 設定 → 機能フラグ で有効にできます。",
-      "notice": "アプリは画面と操作を記録し、プロジェクトが許可する場合は音声も記録します。閲覧できるのはあなたとプロジェクトの管理者だけです。管理者による閲覧はすべて記録されます。",
+      "notice": "アプリは画面と操作を記録し、アカウントが許可する場合は音声も記録します。あなたとアカウントの Capture 管理者および閲覧者が読めます。他の人による閲覧はすべて記録されます。",
       "approve": "アプリにサインイン",
       "deny": "サインインを拒否",
       "approvedTitle": "Kortix Capture にサインインしました",
-      "approvedDescription": "アプリは {project} に記録しています。このタブは閉じてかまいません。",
-      "approvedDescriptionNoProject": "アプリはサインインしました。このタブは閉じてかまいません。",
+      "approvedDescription": "アプリは {account} に記録します。このタブは閉じてかまいません。",
       "deniedTitle": "サインインを拒否しました",
       "deniedDescription": "アプリはサインインしていません。このタブは閉じてかまいません。",
       "expiredTitle": "このコードは期限切れです",
@@ -20580,7 +20577,10 @@
       "enterCodeDescription": "アプリに 8 文字のコードが表示されます。",
       "codeLabel": "コード",
       "continue": "続行",
-      "codePlaceholder": "ABCD-1234"
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "アカウント",
+      "noAccounts": "Capture がオンのアカウントがありません。アカウントのオーナーまたは管理者がオンにできます。",
+      "approvedDescriptionNoAccount": "アプリはサインインしました。このタブは閉じてかまいません。"
     },
     "duration": {
       "hoursMinutes": "{hours} 時間 {minutes} 分",

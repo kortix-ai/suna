@@ -20560,16 +20560,13 @@
   "capture": {
     "authorize": {
       "title": "Entrar no Kortix Capture",
-      "description": "Confira se este código é igual ao do app e escolha o projeto em que ele grava.",
+      "description": "Confirme que este código corresponde ao do app e escolha a conta em que ele grava.",
       "approvingAs": "Entrando como {email}",
-      "projectLabel": "Projeto",
-      "noProjects": "Nenhum dos seus projetos tem o Capture ativado. Quem gerencia um projeto pode ativá-lo em Configurações → Feature flags.",
-      "notice": "O app grava sua tela e suas ações, e o áudio quando o projeto permite. Você e quem gerencia o projeto podem ler. Toda leitura feita por um gerente é registrada.",
+      "notice": "O app grava sua tela e suas ações, e o áudio quando a conta permite. Você e os administradores e leitores do Capture da conta podem lê-lo. Cada leitura por outra pessoa é registrada.",
       "approve": "Conectar o app",
       "deny": "Recusar acesso",
       "approvedTitle": "O Kortix Capture está conectado",
-      "approvedDescription": "O app agora grava em {project}. Você pode fechar esta aba.",
-      "approvedDescriptionNoProject": "O app está conectado. Você pode fechar esta aba.",
+      "approvedDescription": "O app agora grava em {account}. Você pode fechar esta aba.",
       "deniedTitle": "Acesso recusado",
       "deniedDescription": "O app não está conectado. Você pode fechar esta aba.",
       "expiredTitle": "Este código expirou",
@@ -20580,7 +20577,10 @@
       "enterCodeDescription": "O app mostra um código de oito caracteres.",
       "codeLabel": "Código",
       "continue": "Continuar",
-      "codePlaceholder": "ABCD-1234"
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "Conta",
+      "noAccounts": "Nenhuma das suas contas tem o Capture ativado. Um proprietário ou administrador da conta pode ativá-lo.",
+      "approvedDescriptionNoAccount": "O app está conectado. Você pode fechar esta aba."
     },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} min",

@@ -2,15 +2,16 @@
  * `kortix capture` — search the Kortix Capture timeline of the person you act for.
  *
  * Kortix Capture records a person's own screen (app, window title, URL,
- * on-screen text), their input actions and, when the project allows, audio.
+ * on-screen text), their input actions and, when the account's policy allows,
+ * audio. Capture belongs to the Kortix account, not to a project.
  * Inside a session sandbox the token acts for the person the session runs for
  * (a private session); logged in as a user, it is you. Never another member.
  * The data is personal: read what the task needs, no more.
  */
-import { getCaptureFrame, getCaptureTimeline, searchCapture, type CaptureSearchKind } from '@kortix/sdk';
+import { getMyCaptureFrame, getMyCaptureTimeline, searchMyCapture, type CaptureSearchKind } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, fail, missing, resolveProjectAuth, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, pad } from '../style.ts';
 
 const HELP = help`Usage: kortix capture <subcommand> [options]
@@ -18,9 +19,10 @@ const HELP = help`Usage: kortix capture <subcommand> [options]
 Search the timeline Kortix Capture recorded for the person you act for: what
 was on screen (app, window title, URL, on-screen text), input actions, and
 audio transcripts. Inside a session it reads the timeline of the person the
-session runs for. It never reads another member's timeline. Capture is a
-per-project feature flag, off by default. Without a person (a trigger run, a
-shared session) the command fails with 403 capture_no_human.
+session runs for, in the account your token belongs to. It never reads another
+member's timeline. Capture is switched on per Kortix account (off by default;
+403 capture_disabled while off). Without a person (a trigger run, a shared
+session) the command fails with 403 capture_no_human.
 
 Subcommands:
   search <query>    Full-text search, newest first.
@@ -34,7 +36,6 @@ Options:
   --to <iso>        search, timeline: end (exclusive).
   --day <date>      timeline: one UTC day, YYYY-MM-DD (default: today).
   --limit <n>       search: results, 1 to 100 (default 20).
-  --project <id>    Project (default: linked or $KORTIX_PROJECT_ID).
   --host <name>     Operate against a non-default Kortix host.
   --json            Machine-readable output.
   -h, --help        Show this help.
@@ -62,7 +63,6 @@ export async function runCapture(argv: string[]): Promise<number> {
       to: takeFlagValue(rest, ['--to']),
       day: takeFlagValue(rest, ['--day']),
       limit: takeFlagValue(rest, ['--limit']),
-      project: takeFlagValue(rest, ['--project']),
       host: takeFlagValue(rest, ['--host']),
     };
     json = takeFlagBool(rest, ['--json']);
@@ -85,13 +85,13 @@ export async function runCapture(argv: string[]): Promise<number> {
   if (sub === 'frame' && !frameId) return missing('a frame id: kortix capture frame <id> (from `capture search`)');
   if (f.day && !/^\d{4}-\d{2}-\d{2}$/.test(f.day)) return fail('--day must be YYYY-MM-DD.');
 
-  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
-  if (!ctx) return 1;
-  const { auth, projectId } = ctx;
+  // The account is the token's own: inside a session, the session's; logged in, yours.
+  const { auth } = resolveProjectAuth({ hostArg: f.host });
+  if (!auth?.token) return fail('Not logged in. Run `kortix login`.');
   try {
     if (sub === 'search') {
       const result = await withKortixScope(auth, () =>
-        searchCapture(projectId, { q: query, kinds, app: f.app, from: f.from, to: f.to, limit }),
+        searchMyCapture({ q: query, kinds, app: f.app, from: f.from, to: f.to, limit }),
       );
       if (json) return (emitJson(result), 0);
       if (result.hits.length === 0) {
@@ -110,7 +110,7 @@ export async function runCapture(argv: string[]): Promise<number> {
     }
     if (sub === 'timeline') {
       const timeline = await withKortixScope(auth, () =>
-        getCaptureTimeline(projectId, f.from || f.to ? { from: f.from, to: f.to } : { day: f.day }),
+        getMyCaptureTimeline(f.from || f.to ? { from: f.from, to: f.to } : { day: f.day }),
       );
       if (json) return (emitJson(timeline), 0);
       if (timeline.runs.length === 0 && timeline.ranges.length === 0) {
@@ -131,7 +131,7 @@ export async function runCapture(argv: string[]): Promise<number> {
       process.stdout.write('\n');
       return 0;
     }
-    const detail = await withKortixScope(auth, () => getCaptureFrame(projectId, frameId!));
+    const detail = await withKortixScope(auth, () => getMyCaptureFrame(frameId!));
     if (json) return (emitJson(detail), 0);
     const frame = detail.frame;
     process.stdout.write(`\n  ${C.dim}${frame.ts}  ${frame.frame_id}${C.reset}  ${C.bold}${frame.app ?? '-'}${C.reset}  ${frame.title ?? ''}\n`);

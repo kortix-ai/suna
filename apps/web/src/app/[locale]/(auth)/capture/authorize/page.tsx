@@ -2,7 +2,7 @@
 
 import { useApproveCaptureDevice, useCaptureDeviceGrant, useDenyCaptureDevice } from '@kortix/sdk/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,6 @@ import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { AuthPendingScreen, AuthStatusScreen } from '@/features/auth/auth-consent';
 import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
 import { useTranslations } from '@/i18n/use-translations';
 
 export default function CaptureAuthorizePage() {
@@ -26,8 +25,8 @@ export default function CaptureAuthorizePage() {
 /**
  * The person half of the Kortix Capture device sign-in (RFC 8628). The desktop
  * app shows a code and opens `/capture/authorize?user_code=…`; the signed-in
- * member checks the code and picks one of their projects with Capture on. The
- * device then records into that project as this member.
+ * member checks the code and picks one of their accounts with Capture on
+ * (Capture's tenant). The device then records into that account as this member.
  */
 function CaptureAuthorize() {
   const t = useTranslations('capture.authorize');
@@ -47,14 +46,10 @@ function CaptureAuthorize() {
   const grant = useCaptureDeviceGrant(user ? userCode : null);
   const approve = useApproveCaptureDevice();
   const deny = useDenyCaptureDevice();
-  const { sections, listsLoading } = useProjectSelectorData();
-  const projects = useMemo(
-    () => sections.flatMap((section) => section.projects).filter((project) => project.experimental?.capture),
-    [sections],
-  );
+  const accounts = grant.data?.accounts ?? [];
   const [picked, setPicked] = useState<string | null>(null);
-  const projectId = picked ?? (projects.length === 1 ? projects[0]!.project_id : null);
-  const approvedProject = projects.find((project) => project.project_id === (grant.data?.project_id ?? projectId));
+  const accountId = picked ?? (accounts.length === 1 ? accounts[0]!.account_id : null);
+  const approvedAccount = accounts.find((account) => account.account_id === (grant.data?.account_id ?? accountId));
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -112,7 +107,7 @@ function CaptureAuthorize() {
     return (
       <AuthStatusScreen
         title={t('approvedTitle')}
-        description={approvedProject ? t('approvedDescription', { project: approvedProject.name }) : t('approvedDescriptionNoProject')}
+        description={approvedAccount ? t('approvedDescription', { account: approvedAccount.name }) : t('approvedDescriptionNoAccount')}
       />
     );
   }
@@ -148,15 +143,13 @@ function CaptureAuthorize() {
           </div>
 
           <div className="space-y-3">
-            <p className="text-muted-foreground text-sm font-medium">{t('projectLabel')}</p>
-            {listsLoading ? (
-              <Loading className="size-4" />
-            ) : projects.length === 0 ? (
-              <p className="text-muted-foreground text-xs text-pretty">{t('noProjects')}</p>
+            <p className="text-muted-foreground text-sm font-medium">{t('accountLabel')}</p>
+            {accounts.length === 0 ? (
+              <p className="text-muted-foreground text-xs text-pretty">{t('noAccounts')}</p>
             ) : (
-              <RadioGroup value={projectId ?? ''} onValueChange={setPicked}>
-                {projects.map((project) => (
-                  <RadioGroupItem key={project.project_id} value={project.project_id} variant="outline" label={project.name} />
+              <RadioGroup value={accountId ?? ''} onValueChange={setPicked}>
+                {accounts.map((account) => (
+                  <RadioGroupItem key={account.account_id} value={account.account_id} variant="outline" label={account.name} />
                 ))}
               </RadioGroup>
             )}
@@ -170,8 +163,8 @@ function CaptureAuthorize() {
             <Button
               size="lg"
               className="w-full"
-              onClick={() => projectId && void approve.mutateAsync({ userCode: info.user_code, projectId }).catch(() => undefined)}
-              disabled={busy || !projectId}
+              onClick={() => accountId && void approve.mutateAsync({ userCode: info.user_code, accountId }).catch(() => undefined)}
+              disabled={busy || !accountId}
             >
               {approve.isPending ? <Loading className="size-4 shrink-0" /> : null}
               {t('approve')}

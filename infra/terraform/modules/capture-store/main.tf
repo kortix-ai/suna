@@ -2,7 +2,7 @@
 #
 # One private bucket per environment for the Kortix Capture format (schema 2,
 # kortix-ai/capture apps/recorder/docs/capture-format.md). Devices write under
-#   orgs/<account_id>/projects/<project_id>/<device_id>/
+#   orgs/<account_id>/<device_id>/
 # with short-lived credentials the API issues: STS AssumeRole of the device
 # role below with an inline session policy that narrows it to ONE device
 # folder (apps/api/src/capture/credentials.ts). No long-lived credential for
@@ -12,7 +12,7 @@
 # manifest lands) becomes an SQS message the API's leader worker turns into one
 # idempotent ingest job. A device's index files are the fallback reader.
 #
-# Retention is the API's job (each project's policy.retention.remote_days); the
+# Retention is the API's job (each account's policy.retention.remote_days); the
 # lifecycle rule here is only a backstop above the 3650-day maximum, plus the
 # cleanup of incomplete uploads and deleted versions.
 

@@ -20560,16 +20560,13 @@
   "capture": {
     "authorize": {
       "title": "Kortix Capture anmelden",
-      "description": "Prüfe, dass dieser Code dem in der App entspricht, und wähle dann das Projekt, in das sie aufzeichnet.",
+      "description": "Prüfe, dass dieser Code dem in der App entspricht, und wähle dann das Konto, in das sie aufzeichnet.",
       "approvingAs": "Anmeldung als {email}",
-      "projectLabel": "Projekt",
-      "noProjects": "Keines deiner Projekte hat Capture aktiviert. Wer ein Projekt verwaltet, kann es unter Einstellungen → Feature-Flags aktivieren.",
-      "notice": "Die App zeichnet deinen Bildschirm und deine Aktionen auf, und Audio, wenn das Projekt es erlaubt. Du und die Personen, die das Projekt verwalten, können es lesen. Jeder Zugriff durch einen Manager wird protokolliert.",
+      "notice": "Die App zeichnet deinen Bildschirm und deine Aktionen auf, und Audio, wenn das Konto es erlaubt. Du und die Capture-Admins und -Betrachter des Kontos können es lesen. Jeder Zugriff durch andere wird protokolliert.",
       "approve": "App anmelden",
       "deny": "Anmeldung ablehnen",
       "approvedTitle": "Kortix Capture ist angemeldet",
-      "approvedDescription": "Die App zeichnet jetzt in {project} auf. Du kannst diesen Tab schließen.",
-      "approvedDescriptionNoProject": "Die App ist angemeldet. Du kannst diesen Tab schließen.",
+      "approvedDescription": "Die App zeichnet jetzt in {account} auf. Du kannst diesen Tab schließen.",
       "deniedTitle": "Anmeldung abgelehnt",
       "deniedDescription": "Die App ist nicht angemeldet. Du kannst diesen Tab schließen.",
       "expiredTitle": "Dieser Code ist abgelaufen",
@@ -20580,7 +20577,10 @@
       "enterCodeDescription": "Die App zeigt einen achtstelligen Code.",
       "codeLabel": "Code",
       "continue": "Weiter",
-      "codePlaceholder": "ABCD-1234"
+      "codePlaceholder": "ABCD-1234",
+      "accountLabel": "Konto",
+      "noAccounts": "Keines deiner Konten hat Capture aktiviert. Ein Konto-Inhaber oder Admin kann es aktivieren.",
+      "approvedDescriptionNoAccount": "Die App ist angemeldet. Du kannst diesen Tab schließen."
     },
     "duration": {
       "hoursMinutes": "{hours} Std. {minutes} Min.",

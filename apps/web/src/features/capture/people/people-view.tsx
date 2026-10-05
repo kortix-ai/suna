@@ -25,16 +25,17 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { CaptureSubpageHeader, ManagersOnly } from '../capture-shell';
 import { durationParts, lastDaysWindow } from '../capture-time';
-import { useCaptureMembers } from '../use-capture-viewer';
+import { useCaptureAccountId, useCaptureMembers } from '../use-capture-viewer';
 
 type Period = '1' | '7' | '30';
 
 function PeopleTable({ projectId }: { projectId: string }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.people');
   const tCapture = useTranslations('capture');
   const [period, setPeriod] = useState<Period>('7');
   const window = useMemo(() => lastDaysWindow(Number(period)), [period]);
-  const people = useCapturePeople(projectId, window);
+  const people = useCapturePeople(accountId, window);
   const members = useCaptureMembers(projectId, true);
 
   const rows = useMemo(() => {

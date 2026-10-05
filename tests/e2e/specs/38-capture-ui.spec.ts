@@ -71,10 +71,11 @@ test.describe("38 — Capture UI", () => {
       });
       projectId = project.id;
 
-      // Flag off: no sidebar entry, and the area answers 404 without a capture request.
+      // Capture off for the account: no sidebar entry, and the area answers 404 without a capture data request.
       const captureRequests: string[] = [];
       page.on("request", (request) => {
-        if (request.url().includes(`/v1/projects/${projectId}/capture/`))
+        // The workspace read (`/capture`, the switch) is allowed; no Capture data request is.
+        if (request.url().includes(`/v1/accounts/${accountId}/capture/`))
           captureRequests.push(request.url());
       });
       await installBrowserSessionDirect(
@@ -94,17 +95,14 @@ test.describe("38 — Capture UI", () => {
       ).toHaveCount(0);
       expect(captureRequests).toEqual([]);
 
-      // Flag on; one device signs in and uploads the vendored day of the Kortix Capture format.
-      await api(
-        session.access_token,
-        "PATCH",
-        `/projects/${projectId}/features`,
-        { feature: "capture", enabled: true },
-      );
+      // Capture on for the account; one device signs in and uploads the vendored day of the Kortix Capture format.
+      await api(session.access_token, "PATCH", `/accounts/${accountId}/capture`, {
+        enabled: true,
+      });
       await api(
         session.access_token,
         "PUT",
-        `/projects/${projectId}/capture/policy`,
+        `/accounts/${accountId}/capture/policy`,
         { policy: { layers: { screen: true, actions: true, audio: true } } },
       );
       const machineKey = syntheticMachineKey(`capture-ui-${runId}`);
@@ -128,7 +126,7 @@ test.describe("38 — Capture UI", () => {
         session.access_token,
         "POST",
         `/capture/device/grants/${started.user_code}/approve`,
-        { project_id: projectId },
+        { account_id: accountId },
       );
       const device = await anon<{ device_id: string; prefix: string }>(
         "/capture/device/token",
@@ -147,7 +145,7 @@ test.describe("38 — Capture UI", () => {
       await api(
         session.access_token,
         "POST",
-        `/projects/${projectId}/capture/devices/${device.device_id}/sync`,
+        `/accounts/${accountId}/capture/devices/${device.device_id}/sync`,
         {},
       );
       await expect
@@ -157,7 +155,7 @@ test.describe("38 — Capture UI", () => {
               await api<{ chunks: unknown[] }>(
                 session.access_token,
                 "GET",
-                `/projects/${projectId}/capture/timeline?day=${day.day}`,
+                `/accounts/${accountId}/capture/timeline?day=${day.day}`,
               )
             ).chunks.length,
           { timeout: 60_000 },
@@ -177,7 +175,7 @@ test.describe("38 — Capture UI", () => {
       ).toHaveCount(0);
       const daysRead = page.waitForResponse(
         (r) =>
-          r.url().includes(`/v1/projects/${projectId}/capture/days?tz=`) &&
+          r.url().includes(`/v1/accounts/${accountId}/capture/days?tz=`) &&
           r.status() === 200,
       );
       await page.goto(`/projects/${projectId}/capture`, {
@@ -243,7 +241,7 @@ test.describe("38 — Capture UI", () => {
       await page.getByLabel("Name").fill("Incident review");
       const saved = page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/v1/projects/${projectId}/capture/ranges`) &&
+          r.url().endsWith(`/v1/accounts/${accountId}/capture/ranges`) &&
           r.request().method() === "POST",
       );
       await page
@@ -272,7 +270,7 @@ test.describe("38 — Capture UI", () => {
       await page.getByRole("switch", { name: "Audio" }).click();
       const put = page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/v1/projects/${projectId}/capture/policy`) &&
+          r.url().endsWith(`/v1/accounts/${accountId}/capture/policy`) &&
           r.request().method() === "PUT",
       );
       await page.getByRole("button", { name: "Save policy" }).click();
@@ -280,7 +278,7 @@ test.describe("38 — Capture UI", () => {
       const policy = await api<{ policy: { layers: { audio: boolean } } }>(
         session.access_token,
         "GET",
-        `/projects/${projectId}/capture/policy`,
+        `/accounts/${accountId}/capture/policy`,
       );
       expect(policy.policy.layers.audio).toBe(false);
 

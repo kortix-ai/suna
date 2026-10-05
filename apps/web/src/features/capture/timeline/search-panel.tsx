@@ -18,6 +18,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { clockTime, shortDate } from '../capture-time';
+import { useCaptureAccountId } from '../use-capture-viewer';
 
 const KINDS: readonly CaptureSearchKind[] = ['screen', 'actions', 'audio'];
 
@@ -41,6 +42,7 @@ export function SearchPanel({
   onPick: (hit: CaptureSearchHit) => void;
   onClose: () => void;
 }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.timeline');
   const locale = useLocale();
   const [input, setInput] = useState(initialQuery);
@@ -53,7 +55,7 @@ export function SearchPanel({
   }, [input]);
   useEffect(() => inputRef.current?.focus(), []);
   const search = useCaptureSearch(
-    projectId,
+    accountId,
     q && kinds.length ? { q, kinds, userId, deviceId, limit: 50 } : null,
   );
   const hits = search.data?.hits ?? [];

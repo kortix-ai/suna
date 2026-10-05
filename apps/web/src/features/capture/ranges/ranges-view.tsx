@@ -17,7 +17,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { CaptureSubpageHeader } from '../capture-shell';
 import { clockTime, durationParts, lastDaysWindow, shortDate } from '../capture-time';
-import { useCaptureMembers, useCaptureParams, useCaptureViewer } from '../use-capture-viewer';
+import { useCaptureAccountId, useCaptureMembers, useCaptureParams, useCaptureViewer } from '../use-capture-viewer';
 
 type Period = '7' | '30';
 type Source = 'all' | 'saved' | 'detected';
@@ -36,6 +36,7 @@ export function RangeStatusBadge({ status }: { status: CaptureRange['status'] })
 
 /** Ranges — detected activity sessions and saved spans, newest first, each opening its outputs. */
 export function RangesView({ projectId }: { projectId: string }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.ranges');
   const tCapture = useTranslations('capture');
   const locale = useLocale();
@@ -47,8 +48,8 @@ export function RangesView({ projectId }: { projectId: string }) {
   const [period, setPeriod] = useState<Period>('7');
   const [source, setSource] = useState<Source>('all');
   const window = useMemo(() => lastDaysWindow(Number(period)), [period]);
-  const ranges = useCaptureRanges(projectId, { ...window, userId });
-  const devices = useCaptureDevices(projectId, { userId });
+  const ranges = useCaptureRanges(accountId, { ...window, userId });
+  const devices = useCaptureDevices(accountId, { userId });
   const deviceName = (id: string | null) =>
     id
       ? (devices.data?.devices.find((device) => device.device_id === id)?.name ?? null)

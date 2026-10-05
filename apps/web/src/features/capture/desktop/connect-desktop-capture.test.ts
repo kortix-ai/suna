@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { connectDesktopCapture, type ConnectDesktopCaptureDeps } from './connect-desktop-capture';
 
-const PROJECT = '3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b';
+const ACCOUNT = '3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b';
 
 function deps(over: Partial<ConnectDesktopCaptureDeps> = {}) {
   const calls: string[] = [];
@@ -15,8 +15,8 @@ function deps(over: Partial<ConnectDesktopCaptureDeps> = {}) {
         verificationUrl: 'https://kortix.test/capture/authorize?user_code=ABCD-1234',
       };
     },
-    approve: async (code, project) => {
-      calls.push(`approve ${code} ${project}`);
+    approve: async (code, account) => {
+      calls.push(`approve ${code} ${account}`);
     },
     finish: async () => {
       calls.push('finish');
@@ -34,10 +34,10 @@ function deps(over: Partial<ConnectDesktopCaptureDeps> = {}) {
 }
 
 describe('connectDesktopCapture', () => {
-  test('start → approve the code in place with the chosen project → finish; no browser', async () => {
+  test('start → approve the code in place with the chosen account → finish; no browser', async () => {
     const { d, calls } = deps();
-    expect(await connectDesktopCapture(PROJECT, d)).toEqual({ ok: true });
-    expect(calls).toEqual(['start', `approve ABCD-1234 ${PROJECT}`, 'finish']);
+    expect(await connectDesktopCapture(ACCOUNT, d)).toEqual({ ok: true });
+    expect(calls).toEqual(['start', `approve ABCD-1234 ${ACCOUNT}`, 'finish']);
   });
 
   test('an in-place approval that fails opens the approval page and keeps waiting', async () => {
@@ -46,7 +46,7 @@ describe('connectDesktopCapture', () => {
         throw new Error('Only a person can approve a capture device');
       },
     });
-    expect(await connectDesktopCapture(PROJECT, d)).toEqual({ ok: true });
+    expect(await connectDesktopCapture(ACCOUNT, d)).toEqual({ ok: true });
     expect(calls).toEqual([
       'start',
       'open https://kortix.test/capture/authorize?user_code=ABCD-1234',
@@ -61,7 +61,7 @@ describe('connectDesktopCapture', () => {
         throw new Error('feature_disabled');
       },
     });
-    expect(await connectDesktopCapture(PROJECT, d)).toEqual({
+    expect(await connectDesktopCapture(ACCOUNT, d)).toEqual({
       ok: false,
       error: 'feature_disabled',
     });
@@ -70,18 +70,18 @@ describe('connectDesktopCapture', () => {
 
   test('a sign-in that never starts (no engine, no issuer) returns its error and approves nothing', async () => {
     const { d, calls } = deps({ start: async () => ({ ok: false, error: 'no Kortix URL' }) });
-    expect(await connectDesktopCapture(PROJECT, d)).toEqual({ ok: false, error: 'no Kortix URL' });
+    expect(await connectDesktopCapture(ACCOUNT, d)).toEqual({ ok: false, error: 'no Kortix URL' });
     expect(calls).toEqual([]);
   });
 
   test('outside the desktop app: not available', async () => {
     const { d } = deps({ start: async () => null });
-    expect((await connectDesktopCapture(PROJECT, d)).ok).toBe(false);
+    expect((await connectDesktopCapture(ACCOUNT, d)).ok).toBe(false);
   });
 
   test('the engine refusing the token (denied, expired) comes back from finish', async () => {
     const { d } = deps({ finish: async () => ({ ok: false, error: 'the sign-in was denied' }) });
-    expect(await connectDesktopCapture(PROJECT, d)).toEqual({
+    expect(await connectDesktopCapture(ACCOUNT, d)).toEqual({
       ok: false,
       error: 'the sign-in was denied',
     });
@@ -97,12 +97,12 @@ describe('turning on Capture never touches the computer agent (tunnel)', () => {
       requests.push(
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
       );
-      return Response.json({ user_code: 'ABCD-1234', status: 'approved', project_id: PROJECT });
+      return Response.json({ user_code: 'ABCD-1234', status: 'approved', account_id: ACCOUNT });
     }) as typeof fetch;
     const bridge: string[] = [];
     try {
       createKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
-      const result = await connectDesktopCapture(PROJECT, {
+      const result = await connectDesktopCapture(ACCOUNT, {
         start: async () => (
           bridge.push('capture_sign_in_start'),
           {
@@ -111,8 +111,7 @@ describe('turning on Capture never touches the computer agent (tunnel)', () => {
             verificationUrl: 'http://app.test/capture/authorize?user_code=ABCD-1234',
           }
         ),
-        approve: (code, project) =>
-          approveCaptureDeviceGrant(code, project, { machineId: 'a'.repeat(64) }),
+        approve: (code, account) => approveCaptureDeviceGrant(code, account),
         finish: async () => (bridge.push('capture_sign_in_finish'), { ok: true }),
         cancel: async () => bridge.push('capture_sign_in_cancel'),
         openApproval: () => bridge.push('open-approval-page'),

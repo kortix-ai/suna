@@ -35,7 +35,7 @@ import {
   rangeTranscript,
   type OutputState,
 } from '../range-outputs';
-import { useCaptureMembers, useCaptureViewer } from '../use-capture-viewer';
+import { useCaptureAccountId, useCaptureMembers, useCaptureViewer } from '../use-capture-viewer';
 import { RangeStatusBadge } from './ranges-view';
 
 function OutputPending({
@@ -79,20 +79,21 @@ function OutputPending({
 
 /** One range: Steps, Transcript and Summary from its pipelines, and time by app from the timeline. */
 export function RangeView({ projectId, rangeId }: { projectId: string; rangeId: string }) {
+  const accountId = useCaptureAccountId(projectId);
   const t = useTranslations('capture.range');
   const tCapture = useTranslations('capture');
   const locale = useLocale();
   const viewer = useCaptureViewer(projectId);
   const members = useCaptureMembers(projectId, viewer.isManager);
-  const range = useCaptureRange(projectId, rangeId);
-  const process = useProcessCaptureRange(projectId);
+  const range = useCaptureRange(accountId, rangeId);
+  const process = useProcessCaptureRange(accountId);
   const data = range.data;
   const otherUser =
     data && viewer.isManager && members.viewerId && data.user_id !== members.viewerId
       ? data.user_id
       : undefined;
   const runs = useCaptureTimeline(
-    projectId,
+    accountId,
     data
       ? {
           from: data.start_at,
@@ -102,7 +103,7 @@ export function RangeView({ projectId, rangeId }: { projectId: string; rangeId: 
         }
       : null,
   );
-  const devices = useCaptureDevices(projectId, { userId: otherUser });
+  const devices = useCaptureDevices(accountId, { userId: otherUser });
 
   const byApp = useMemo(() => {
     if (!data) return [];

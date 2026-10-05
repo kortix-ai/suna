@@ -38,31 +38,33 @@ const TONES: Partial<Record<CapturePhase, StatusTone>> = {
 
 /**
  * My Capture in "Your computer": shown when this desktop app bundles the
- * engine and the project has its `capture` flag on. `visible` gates the tab;
+ * engine and Capture is on for the project's account. `visible` gates the tab;
  * `tone` and `word` are the header's Capture status.
  */
 export function useMyCapture(projectId: string, { poll = false }: { poll?: boolean } = {}) {
   const t = useTranslations('capture.dialog');
   const locale = useLocale();
   const status = useDesktopCaptureStatus({ poll });
-  const { project, loading } = useCaptureProject(projectId);
+  const { accountId, captureOn, loading } = useCaptureProject(projectId);
   const view = status.data ?? null;
   // The last status read is "now", so render stays pure.
   const now = status.dataUpdatedAt;
-  const phase = capturePhase(view, { now, projectId, projectHasCapture: Boolean(project) });
-  const visible = !loading && Boolean(view?.available) && Boolean(project);
+  const phase = capturePhase(view, { now, accountId, captureOn });
+  const visible = !loading && Boolean(view?.available) && captureOn;
   const pausedUntil =
     view?.pausedUntilMs && view.pausedUntilMs > now
       ? new Date(view.pausedUntilMs).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
       : null;
   const word =
-    phase !== 'paused'
-      ? t(`status.${phase}`)
-      : view?.policy?.paused
-        ? t('status.pausedByProject')
-        : pausedUntil
-          ? t('status.pausedUntil', { time: pausedUntil })
-          : t('status.paused');
+    phase === 'captureOff'
+      ? t('status.projectOff')
+      : phase !== 'paused'
+        ? t(`status.${phase}`)
+        : view?.policy?.paused
+          ? t('status.pausedByProject')
+          : pausedUntil
+            ? t('status.pausedUntil', { time: pausedUntil })
+            : t('status.paused');
   return { visible, phase, tone: TONES[phase] ?? ('idle' as StatusTone), word };
 }
 
@@ -74,16 +76,16 @@ export function useMyCapture(projectId: string, { poll = false }: { poll?: boole
 export function CaptureSection({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const t = useTranslations('capture.dialog');
   const status = useDesktopCaptureStatus({ poll: true });
-  const { project } = useCaptureProject(projectId);
+  const { project, accountId, captureOn } = useCaptureProject(projectId);
   const [waitingOnPage, setWaitingOnPage] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
-  const actions = useDesktopCaptureActions(projectId, { onWaitingOnPage: () => setWaitingOnPage(true) });
+  const actions = useDesktopCaptureActions(accountId, { onWaitingOnPage: () => setWaitingOnPage(true) });
   const view = status.data ?? null;
   const now = status.dataUpdatedAt;
   const phase = capturePhase(view, {
     now,
-    projectId,
-    projectHasCapture: Boolean(project),
+    accountId,
+    captureOn,
     turningOn: actions.turnOn.isPending,
     failed: actions.turnOn.isError,
   });
@@ -104,10 +106,10 @@ export function CaptureSection({ projectId, onClose }: { projectId: string; onCl
       </ModalBody>
     );
   }
-  if (!view || phase === 'unavailable' || phase === 'projectOff') {
+  if (!view || phase === 'unavailable' || phase === 'captureOff') {
     return (
       <ModalBody>
-        <p className="text-muted-foreground text-sm text-pretty">{phase === 'projectOff' ? t('projectOff') : view?.error || t('unavailable')}</p>
+        <p className="text-muted-foreground text-sm text-pretty">{phase === 'captureOff' ? t('projectOff') : view?.error || t('unavailable')}</p>
       </ModalBody>
     );
   }
@@ -142,7 +144,7 @@ export function CaptureSection({ projectId, onClose }: { projectId: string; onCl
           <p className="text-muted-foreground text-sm text-pretty">{t('noLayers')}</p>
         ) : !on ? (
           <p className="text-muted-foreground text-sm text-pretty">
-            {phase === 'off' && view.signedIn && view.projectId !== projectId ? t('otherProject') : t('intro', { project: projectName })}
+            {phase === 'off' && view.signedIn && view.accountId !== accountId ? t('otherProject') : t('intro', { project: projectName })}
           </p>
         ) : null}
 
