@@ -28,7 +28,7 @@ import {
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { isMissingRuntimeError } from '../routes/shared';
+import { isMissingRuntimeError } from '../session-open';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,

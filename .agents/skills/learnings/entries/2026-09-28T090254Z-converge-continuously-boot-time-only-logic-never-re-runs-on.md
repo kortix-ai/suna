@@ -43,7 +43,7 @@ while its gate tests four fields, so a box that failed on `runtimeBuild ===
 null` reported `last: current/ok` — a reading that says "converged" beside the
 words "not converged", and cost a diagnostic cycle.
 
-**Enforcement:** `apps/api/src/projects/routes/wake-repair-grace.test.ts` pins
+**Enforcement:** `apps/api/src/projects/session-open/wake-repair-grace.test.ts` pins
 the repair-in-flight guard on the wake fence and was red-proofed against the
 unfixed code (2 of 7 failed, on exactly the repair-in-flight cases; the 5 that
 must still park passed both before and after).

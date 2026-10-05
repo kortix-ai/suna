@@ -69,7 +69,7 @@ describe('shouldPaintFatalCard', () => {
 
   // `retriable` is not a parameter either. A stale-wake PARK
   // (`preserveEstablishedRuntimeOnOpen`'s park branch,
-  // apps/api/src/projects/routes/shared.ts:941-952) answers `stage:'failed'`
+  // apps/api/src/projects/session-open/index.ts:941-952) answers `stage:'failed'`
   // with `retriable:true` for a box nothing is driving any more; there is no
   // way to accidentally thread that value back in and suppress this card.
   test('failed: paints despite what a hypothetical retriable:true would suggest', () => {

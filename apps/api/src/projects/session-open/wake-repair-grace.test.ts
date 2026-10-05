@@ -19,7 +19,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { staleRuntimeWakeReason } from './shared';
+import { staleRuntimeWakeReason } from './index';
 
 const WAKE_GRACE_MS = 90_000;
 const NOW = Date.parse('2026-09-28T08:20:15.322Z');

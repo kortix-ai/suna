@@ -78,7 +78,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => {
     events.push('open');
     return {

@@ -2031,14 +2031,6 @@
       "count": 3
     }
   },
-  "src/projects/routes/resume-stopped-sandbox.ts": {
-    "no-console": {
-      "count": 4
-    },
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
   "src/projects/routes/review-items.ts": {
     "no-restricted-imports": {
       "count": 2
@@ -2126,45 +2118,6 @@
       "count": 1
     }
   },
-  "src/projects/routes/session-open-context.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/projects/routes/session-open-guarantee.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
-  "src/projects/routes/session-open-provision.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/projects/routes/session-open-readiness.ts": {
-    "no-console": {
-      "count": 8
-    },
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/projects/routes/session-open-recovery.ts": {
-    "no-console": {
-      "count": 2
-    },
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/projects/routes/session-open.ts": {
-    "no-console": {
-      "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
   "src/projects/routes/session-participants.ts": {
     "no-restricted-imports": {
       "count": 2
@@ -2207,11 +2160,6 @@
   "src/projects/routes/setup-links.ts": {
     "no-restricted-syntax": {
       "count": 2
-    }
-  },
-  "src/projects/routes/stopped-wake-result.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/projects/routes/trigger-webhooks.ts": {
@@ -2288,9 +2236,6 @@
     }
   },
   "src/projects/session-lifecycle/actions.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 7
     }
@@ -2302,11 +2247,6 @@
   },
   "src/projects/session-lifecycle/agent-availability.ts": {
     "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
-  "src/projects/session-lifecycle/await-stage.ts": {
-    "kortix-api/layers": {
       "count": 1
     }
   },
@@ -2331,9 +2271,6 @@
     }
   },
   "src/projects/session-lifecycle/deliver.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 4
     }
@@ -2389,11 +2326,6 @@
       "count": 1
     }
   },
-  "src/projects/session-lifecycle/start-session.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    }
-  },
   "src/projects/session-lifecycle/stop.ts": {
     "no-console": {
       "count": 3
@@ -2407,17 +2339,37 @@
       "count": 1
     }
   },
-  "src/projects/session-lifecycle/types.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    }
-  },
   "src/projects/session-lifecycle/unattended-runtime-recovery.ts": {
     "no-console": {
       "count": 1
     }
   },
   "src/projects/session-lifecycle/worker.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/projects/session-open/resume-stopped-sandbox.ts": {
+    "no-console": {
+      "count": 4
+    }
+  },
+  "src/projects/session-open/session-open-guarantee.ts": {
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/projects/session-open/session-open-readiness.ts": {
+    "no-console": {
+      "count": 8
+    }
+  },
+  "src/projects/session-open/session-open-recovery.ts": {
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/projects/session-open/session-open.ts": {
     "no-console": {
       "count": 1
     }
@@ -2640,9 +2592,6 @@
     }
   },
   "src/sandbox-proxy/forward/wake.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 1
     }

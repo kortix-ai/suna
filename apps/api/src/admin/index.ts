@@ -1430,7 +1430,7 @@ adminApp.openapi(
     // A placeholder that never acquired an external provider object contains no
     // user data and can safely be reassigned.
     await deleteSessionSandbox(sessionId);
-    const { allocateRuntimeOnOpen } = await import('../projects/routes/shared');
+    const { allocateRuntimeOnOpen } = await import('../projects/session-open');
     await allocateRuntimeOnOpen(
       { row: proj as any, userId: sess.createdBy ?? '' },
       { sandboxProvider: target, baseRef: sess.baseRef, agentName: sess.agentName },

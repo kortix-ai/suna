@@ -1,6 +1,6 @@
 import { BOOT_PHASE_HEADER, RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
-import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
+import { resumeStoppedSandboxByExternalId } from '../../projects/session-open';
 import { loadSandbox, type SandboxRecord } from '../backend';
 import { isBrowserNavigation, portUnreachableResponse } from '../preview-response';
 import { carriesSessionData } from '../session-data-ports';

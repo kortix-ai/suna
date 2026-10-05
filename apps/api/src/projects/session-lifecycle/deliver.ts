@@ -3,7 +3,7 @@ import type { ProvisionTimeline } from '../../platform/services/provision-timeli
 import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { openSession } from '../routes/shared';
+import { openSession } from '../session-open';
 import { type SandboxRecord, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';

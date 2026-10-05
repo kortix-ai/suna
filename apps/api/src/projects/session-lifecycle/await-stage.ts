@@ -1,4 +1,4 @@
-import type { SessionStartResult } from '../routes/shared';
+import type { SessionStartResult } from '../session-open';
 
 // startSession long-poll: bounded server-side wait so the client learns `ready`
 // the instant it flips instead of on its ~800ms poll tick. The cap is the

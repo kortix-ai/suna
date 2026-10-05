@@ -19,7 +19,7 @@
 
 import type { sessionSandboxes } from '@kortix/db';
 import { describe, expect, test } from 'bun:test';
-import { stoppedWakeResult } from './shared';
+import { stoppedWakeResult } from './index';
 
 const FAILED_AT = new Date('2026-08-26T03:37:09.000Z');
 const at = (ms: number) => new Date(FAILED_AT.getTime() + ms);

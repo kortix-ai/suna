@@ -55,7 +55,7 @@ consumed by a `/start` branch that returned before any provider call. Only
    E2B box read `running` for 5+ minutes while the provider said
    `not running (status: stopped)`, and the queued prompt burned against it.
 
-*Automation:* `apps/api/src/projects/routes/stopped-wake-result.test.ts` (the
+*Automation:* `apps/api/src/projects/session-open/stopped-wake-result.test.ts` (the
 10-hour replay, both stamps, the ladder, the evidence),
 `session-lifecycle/runtime-wake-fence.test.ts` (progress-aware budget, hard cap,
 cooldown ladder, the lease boundary), `reaping/sandbox-state-sync.test.ts`
