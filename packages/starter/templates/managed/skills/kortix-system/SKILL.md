@@ -105,8 +105,8 @@ Rules for both harnesses:
   (`<change-requests>` below).
 - `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` exist
   on both harnesses, with the same names and arguments.
-- pi does not have rewind, compaction, slash commands, MCP servers or a todo
-  tool. `references/pi/overview.md` lists the differences.
+- pi does not have rewind, MCP servers or a todo tool.
+  `references/pi/overview.md` lists the differences.
 </harnesses>
 
 <capabilities>

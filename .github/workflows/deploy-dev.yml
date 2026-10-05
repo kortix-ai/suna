@@ -159,7 +159,6 @@ jobs:
               - 'apps/api/**'
               - 'apps/kortix-app-runtime/**'
               - 'apps/kortix-sandbox-agent-server/**'
-              - 'apps/kortix-worker/**'  # compiled into the API image (Dockerfile pi-worker stage)
               - 'apps/sandbox/**'
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
@@ -601,7 +600,7 @@ jobs:
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CAPTURE_S3_BUCKET":"kortix-dev-capture-store","KORTIX_CAPTURE_S3_REGION":"us-west-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.us-west-2.amazonaws.com/935064898258/kortix-dev-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-dev-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-dev-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CAPTURE_S3_BUCKET":"kortix-dev-capture-store","KORTIX_CAPTURE_S3_REGION":"us-west-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.us-west-2.amazonaws.com/935064898258/kortix-dev-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-dev-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-dev-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

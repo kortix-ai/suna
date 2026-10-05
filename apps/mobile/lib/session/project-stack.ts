@@ -4,10 +4,11 @@
  *
  * The stack is `[index]`, `[index, X]`, or `[index, X, page, …]`: X is a
  * covering route (view, sessions, files, account), and `page` is a sub-page
- * pushed from the page under it (Settings → project Settings → Schedules).
- * A drawer destination replaces a covering route instead of pushing over it,
- * and drops any sub-pages, so the drawer never deepens the stack. Only a
- * sub-page open deepens it, and back pops exactly one level.
+ * pushed from the page under it (Settings → project Settings → Schedules, or
+ * the thread → Files from the session ··· sheet). A drawer destination
+ * replaces a covering route instead of pushing over it, and drops any
+ * sub-pages, so the drawer never deepens the stack. Only a sub-page open
+ * deepens it, and back pops exactly one level.
  *
  * Pure: no React, React Native, or expo imports (unit-tested under bun test).
  */
@@ -31,9 +32,16 @@ export const PROJECT_PAGE_ROUTE = 'page';
 
 /**
  * The pages that open as sub-pages: project Settings (from Settings) and its
- * Customize rows, Schedules, Secrets and Members. Tab-store page ids.
+ * Customize rows, Schedules, Secrets and Members; and the project's Files,
+ * from the session ··· sheet over the thread (KRTX-1636). Tab-store page ids.
  */
-export const SUB_PAGE_IDS = ['page:settings', 'page:schedules', 'page:secrets-nav', 'page:members'] as const;
+export const SUB_PAGE_IDS = [
+  'page:settings',
+  'page:schedules',
+  'page:secrets-nav',
+  'page:members',
+  'page:files-nav',
+] as const;
 export type SubPageId = (typeof SUB_PAGE_IDS)[number];
 
 /** True for a page id that opens as a sub-page (the `page` route's param). */
@@ -117,8 +125,42 @@ export function subPageBackMove(stack: readonly string[]): 'pop' | 'replace-home
 }
 
 /**
- * The store left the home state (a drawer session row, the Review row, a
- * notification) while a sub-page is on top. The stack ends as
+ * What the store has open, as one comparable value: null on project home,
+ * else the open page, thread, or connecting session. A sub-page records it
+ * when it mounts (`subPageShouldLeave`).
+ */
+export function projectViewKey(input: {
+  isHome: boolean;
+  activePageId: string | null;
+  activeSessionId: string | null;
+  connectingSessionId: string | null;
+}): string | null {
+  if (input.isHome) return null;
+  if (input.activePageId) return `page:${input.activePageId}`;
+  if (input.activeSessionId) return `session:${input.activeSessionId}`;
+  return `connecting:${input.connectingSessionId ?? ''}`;
+}
+
+/**
+ * A focused sub-page leaves for the view when the store's open target
+ * (`projectViewKey`) changed after the sub-page was pushed:
+ * - pushed from home (Settings from Account), the store leaves home → leave
+ * - pushed over a thread (Files), the same thread still open → stay
+ * - pushed over a thread, another session opens (a notification) → leave;
+ *   the view under it swaps its content
+ * - pushed over a thread, the store returns home (the session was deleted) →
+ *   leave; the view then removes itself and the stack ends on home
+ */
+export function subPageShouldLeave(input: {
+  viewKey: string | null;
+  viewKeyAtMount: string | null;
+}): boolean {
+  return input.viewKey !== input.viewKeyAtMount;
+}
+
+/**
+ * The store's open target changed (a drawer session row, the Review row, a
+ * notification) while a sub-page is on top (`subPageShouldLeave`). The stack ends as
  * `[index, view]`:
  * - a view under the sub-pages → `pop-to-view`: that view swaps its content.
  *   Never replace a view with a new view: the old view's cleanup would close

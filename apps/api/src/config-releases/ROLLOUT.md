@@ -84,13 +84,20 @@ unbootable.
 
 **API side — which release a project's sessions get:**
 1. The base branch's current tip (the normal case, always).
-2. If that release fails in ≥ `PROJECT_QUARANTINE_SESSIONS` (2) **distinct**
-   sessions (`kortix.config_release_failures`), the project quarantines that
-   release ID and falls back to the newest release of the same variant any
-   session has **proven** (`kortix.config_releases.proven_at`).
-   Quarantine is per release ID: a new base commit produces a new release ID
-   and is assignable again immediately.
-3. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
+2. If the tip's release **cannot be built** (the archive is over the limit, a
+   plugin an agent selects is missing, a git error), or it fails in ≥
+   `PROJECT_QUARANTINE_SESSIONS` (2) **distinct** sessions
+   (`kortix.config_release_failures`), the project assigns the newest release
+   of the same variant any session has **proven**
+   (`kortix.config_releases.proven_at`). Quarantine is per release ID: a new
+   base commit produces a new release ID and is assignable again immediately.
+   `GET /config` then reports `release.fallback_reason` ("The base branch's
+   latest agent config (commit …) could not be built: … / failed to load in 2
+   sessions: …. Sessions run the last config that loaded (commit …).") and the
+   web header shows "Config failed to load" with that reason.
+3. With nothing proven to fall back to, an unbuildable tip is assigned no
+   release: each box keeps what it runs, and `fallback_reason` says why.
+4. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
    directory — pre-release behavior.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
@@ -113,6 +120,24 @@ quarantine (`notFromMetaSession` in `quarantine.ts`).
 S3 read/write failure (`[config-releases] store … failed`) makes the archive
 route stream a fresh build from the Git mirror instead of failing the
 request. The store is a cache; the Git mirror is always the source of truth.
+
+## Limits
+
+- The release archive is capped at 32 MiB gzip and 128 MiB uncompressed
+  (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES` in `release-tree.ts`,
+  matched by the daemon's `descriptor.ts` / `boot-config.ts`). It holds the
+  OpenCode config dir, the root `skills/` and the pi config dir. A daemon
+  older than the 32 MiB cap refuses a descriptor over 4 MiB and keeps its
+  running config until it updates.
+- A release holds only those three trees. A config file that points OUTSIDE
+  them — an `instructions` entry such as `../../rules/RULES.md`, or a tool that
+  imports `../../../shared/x` — resolves with the flag off (the checkout has
+  the file) and does not with the flag on. A missing instruction is skipped
+  silently by OpenCode. A missing import fails every tool, so the release
+  fails its proof and the session keeps its last proven config. Keep such
+  files inside the config dir.
+- A project with no OpenCode config dir still gets a release when it has root
+  `skills/` or a pi config dir: they ship on an empty OpenCode config dir.
 
 ## Retention
 

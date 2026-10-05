@@ -2,7 +2,6 @@ import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { captureException, flushSentry } from './lib/sentry';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
-import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from './platform/services/pi-worker-pool';
 import { stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';
@@ -211,10 +210,6 @@ async function startSingletonWorkers() {
   startProviderTransitionWorker();
   startAppDeploymentWorker();
   startAppIdleReaper();
-  // Pi worker pool (P1.8): keep parked worker boxes at target so pi session
-  // creates claim instead of cold-creating. No-op unless
-  // KORTIX_PI_WORKER_POOL_TARGET > 0.
-  startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
   // Weekly partitions of kortix.audit_events, 8 weeks ahead.
@@ -252,7 +247,6 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
-  stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   stopAuditPartitionWorker();
