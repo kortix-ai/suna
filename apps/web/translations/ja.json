@@ -19236,7 +19236,17 @@
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
       "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
-      "confirm": "リンクを作成"
+      "confirm": "リンクを作成",
+      "liveTitle": "公開リンク",
+      "liveDescription": "リンクを知っている人は誰でもサインインせずに閲覧できます。",
+      "liveCount": "{count} 件のリンクがここを指しています。取り消すとすべて無効になります。",
+      "copy": "コピー",
+      "revoke": "{count, plural, other {# 件のリンクを取り消す}}",
+      "createDescription": "リンクを知っている人は誰でもサインインせずにこれを閲覧できます。",
+      "expiresAfter": "有効期限",
+      "cancel": "キャンセル",
+      "expiryNever": "なし",
+      "expiryDays": "{count, plural, other {# 日}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "公開リンク",
