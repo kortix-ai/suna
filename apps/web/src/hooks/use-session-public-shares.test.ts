@@ -2,6 +2,7 @@ import type { SessionPublicShare } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
   findLiveShareFor,
+  findLiveSharesFor,
   isShareLive,
   publicSharesQueryKey,
   publicShareUrl,
@@ -134,5 +135,19 @@ describe('findLiveShareFor — reuse the link that already exists', () => {
 
   test('no input, no match', () => {
     expect(findLiveShareFor([share()], null, NOW)).toBeNull();
+  });
+});
+
+describe('findLiveSharesFor — every live link to one target', () => {
+  test('returns all live links to the file, newest first, skipping revoked ones', () => {
+    const shares = [
+      share({ share_id: 'new', file_path: '/workspace/a.png', created_at: '2026-07-28T10:00:00.000Z' }),
+      share({ share_id: 'mid', file_path: '/workspace/a.png', created_at: '2026-07-28T09:00:00.000Z' }),
+      share({ share_id: 'gone', file_path: '/workspace/a.png', revoked_at: '2026-07-28T09:30:00.000Z' }),
+      share({ share_id: 'other', file_path: '/workspace/b.png' }),
+    ];
+    const input = { mode: 'view' as const, file: { label: 'a', path: '/workspace/a.png' } };
+    expect(findLiveSharesFor(shares, input, NOW).map((s) => s.share_id)).toEqual(['new', 'mid']);
+    expect(findLiveShareFor(shares, input, NOW)?.share_id).toBe('new');
   });
 });

@@ -38,7 +38,7 @@ import { Copy } from '@/features/icon/icons/copy';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import {
-  findLiveShareFor,
+  findLiveSharesFor,
   publicShareUrl,
   useRevokePublicShare,
   useSessionPublicShares,
@@ -298,12 +298,13 @@ function PublicLinkPopover({
   const [expiry, setExpiry] = useState<ExpiryId>('7d');
   const [copied, flashCopied] = useFlash();
   const { shares } = useSessionPublicShares(shareContext?.projectId, shareContext?.sessionId);
-  const { revoke, revokingId } = useRevokePublicShare(
+  const { revokeAll, isRevoking } = useRevokePublicShare(
     shareContext?.projectId,
     shareContext?.sessionId,
   );
 
-  const live = findLiveShareFor(shares, shareInput);
+  const liveShares = findLiveSharesFor(shares, shareInput);
+  const live = liveShares[0] ?? null;
   const url = live ? publicShareUrl(live.public_path) : null;
 
   const copyUrl = async () => {
@@ -345,6 +346,8 @@ function PublicLinkPopover({
               <p className="text-foreground text-sm font-medium">Public link</p>
               <p className="text-muted-foreground text-xs">
                 Anyone with the link can view it without signing in. {expiryLabel(live.expires_at)}.
+                {liveShares.length > 1 &&
+                  ` ${liveShares.length} links point here; revoking turns them all off.`}
               </p>
             </div>
             <div className="bg-muted flex h-8 items-center gap-1 rounded-md pr-1 pl-2">
@@ -359,14 +362,14 @@ function PublicLinkPopover({
               <Button
                 variant="ghost"
                 size="toolbar"
-                disabled={revokingId === live.share_id}
-                onClick={() => revoke(live.share_id)}
+                disabled={isRevoking}
+                onClick={() => revokeAll(liveShares.map((s) => s.share_id))}
                 className="text-destructive"
               >
-                {revokingId === live.share_id && (
+                {isRevoking && (
                   <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />
                 )}
-                Revoke link
+                {liveShares.length > 1 ? `Revoke ${liveShares.length} links` : 'Revoke link'}
               </Button>
             </div>
           </>
