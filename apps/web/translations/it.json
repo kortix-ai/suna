@@ -643,10 +643,17 @@
       "signOutOtherDevicesFailed": "Impossibile disconnettersi da altri dispositivi",
       "currentDevice": "Questo browser",
       "deviceSignedInAt": "Connesso il {date}",
-      "deviceActive": "Attivo",
       "noDevices": "Nessun dispositivo connesso",
       "noDevicesDescription": "Non hai una sessione attiva su nessun dispositivo in questo momento.",
-      "devicesLoadFailed": "Impossibile caricare i tuoi dispositivi connessi"
+      "devicesLoadFailed": "Impossibile caricare i tuoi dispositivi connessi",
+      "deviceName": "{browser} su {os}",
+      "unknownDevice": "Dispositivo sconosciuto",
+      "deviceLastActive": "Ultima attività: {date}",
+      "signOutDevice": "Esci",
+      "signedOutDevice": "Disconnesso da quel dispositivo",
+      "signOutDeviceFailed": "Impossibile disconnettere quel dispositivo",
+      "copyIp": "Copia indirizzo IP",
+      "ipCopied": "Indirizzo IP copiato"
     },
     "appearance": {
       "theme": "Tema",

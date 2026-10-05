@@ -469,10 +469,17 @@
       "signOutOtherDevicesFailed": "Could not sign out other devices",
       "currentDevice": "This browser",
       "deviceSignedInAt": "Signed in {date}",
-      "deviceActive": "Active",
       "noDevices": "No signed-in devices",
       "noDevicesDescription": "You are not signed in on any device right now.",
-      "devicesLoadFailed": "Couldn’t load your signed-in devices"
+      "devicesLoadFailed": "Couldn’t load your signed-in devices",
+      "deviceName": "{browser} on {os}",
+      "unknownDevice": "Unknown device",
+      "deviceLastActive": "Last active {date}",
+      "signOutDevice": "Sign out",
+      "signedOutDevice": "Signed out of that device",
+      "signOutDeviceFailed": "Could not sign out that device",
+      "copyIp": "Copy IP address",
+      "ipCopied": "IP address copied"
     },
     "appearance": {
       "theme": "Theme",
