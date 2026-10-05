@@ -15835,6 +15835,7 @@
       "textb9819d569c9a": "いくつかのサンドボックスをプロビジョニングすると、所要時間と結果がここに表示されます",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "プレビューを利用できません",
+      "showPreviewUnavailableHint": "アプリが応答しませんでした。セッションで起動してから更新してください。",
       "textb9acc1017895": "IdPから送信されたグループごとにKortixグループを作成します — グループ単位のマッピングは不要です。",
       "textb9ad2f00fba7": "変更が必要です",
       "textb9addc023078": "marko@kortix.com",

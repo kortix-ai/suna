@@ -24,7 +24,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
@@ -34,7 +33,7 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { CodeSimpleIcon as Code2, EyeIcon as Eye } from '@phosphor-icons/react';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PanelWidthButton,
@@ -128,37 +127,36 @@ export function FileViewer({
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
       <div className="flex shrink-0 items-center gap-1 border-b px-2.5 py-2">
         <DetailSidebarToggle className="size-7" />
-        {renders && (
-          // Only a file with both a rendered form and a source earns the
-          // toggle — and it sits before the pill, because it changes what the
-          // pill's name is showing you.
-          <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-            <TabsList size="sm" className="h-7">
-              <TabsTrigger
-                size="xs"
-                value="preview"
-                aria-label={tI18nComplete.raw('text324b134f57c7')}
-                className="w-6 px-0"
-              >
-                <Eye className="size-3.5" />
-              </TabsTrigger>
-              <TabsTrigger
-                size="xs"
-                value="source"
-                aria-label={tI18nComplete.raw('text0e570ca6fabe')}
-                className="w-6 px-0"
-              >
-                <Code2 className="size-3.5" />
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        )}
-
         {/* Same actions in the same place for every file — they never move.
             Text is the one kind whose content a clipboard can hold, so `Copy`
             here copies the file itself. */}
+        {/* A file with both a rendered form and a source shows the Preview /
+            Code switch in the pill's icon slot: it changes what the pill's
+            name is showing you, and the type glyph says nothing the name
+            does not. Every other file keeps its type glyph there. */}
         <ViewerPathPill
-          icon={getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
+          icon={
+            renders ? (
+              <span role="radiogroup" className="flex items-center gap-px">
+                <ViewSwitchButton
+                  active={view === 'preview'}
+                  label={tI18nComplete.raw('text324b134f57c7')}
+                  onSelect={() => setView('preview')}
+                >
+                  <Eye className="size-3.5" />
+                </ViewSwitchButton>
+                <ViewSwitchButton
+                  active={view === 'source'}
+                  label={tI18nComplete.raw('text0e570ca6fabe')}
+                  onSelect={() => setView('source')}
+                >
+                  <Code2 className="size-3.5" />
+                </ViewSwitchButton>
+              </span>
+            ) : (
+              getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })
+            )
+          }
           path={path}
           fileName={fileName}
         >
@@ -346,5 +344,38 @@ function FileBody({
     <div className="w-fit min-w-full p-4 [&_code]:text-[13px]">
       <HighlightedCode code={content} language={languageFor(fileName)} />
     </div>
+  );
+}
+
+/** One option of the Preview / Code switch: a 24px square that matches the
+ *  pill's row, filled with the page background when selected. */
+function ViewSwitchButton({
+  active,
+  label,
+  onSelect,
+  children,
+}: {
+  active: boolean;
+  label: string;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      aria-label={label}
+      onClick={onSelect}
+      className={cn(
+        'flex size-6 items-center justify-center rounded-sm transition-colors',
+        'focus-visible:ring-ring outline-none focus-visible:ring-2',
+        active
+          ? 'bg-background text-foreground shadow-xs'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
   );
 }

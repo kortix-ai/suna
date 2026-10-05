@@ -65,7 +65,6 @@ const NOT_WORKERS: Record<string, string> = {
     'renews the lock of one claimed command while its drain lane or inline create runs',
   'projects/session-lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
   'router/config/model-pricing.ts': 'refreshes the in-memory model pricing',
-  'sandbox-proxy/preview-state-page.ts': 'browser JavaScript inside an HTML string',
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
   'shared/access-control-cache.ts': 'refreshes the in-memory access-control cache',
   'snapshots/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',

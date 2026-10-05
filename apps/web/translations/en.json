@@ -15846,6 +15846,7 @@
       "textb9819d569c9a": "Provision a few sandboxes and their timing + outcome will show up here.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Preview unavailable",
+      "showPreviewUnavailableHint": "The app did not answer. Start it in your session, then refresh.",
       "textb9acc1017895": "Create a Kortix group for every group your IdP sends — no per-group mapping.",
       "textb9ad2f00fba7": "changes need",
       "textb9addc023078": "marko@kortix.com",
