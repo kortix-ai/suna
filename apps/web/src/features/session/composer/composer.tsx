@@ -168,7 +168,6 @@ export interface SessionChatInputProps {
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
-  agentSelectorLocked?: boolean;
   /**
    * The agent roster loaded and it is EMPTY for this user — project agents are
    * deny-by-default for a member without an explicit grant.
@@ -359,6 +358,12 @@ export interface SessionChatInputProps {
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
+  /**
+   * A labeled submit button replaces the icon send/stop control, busy or
+   * not. Set while the composer edits a queued message: its send saves the
+   * edit, so Stop is the wrong control there.
+   */
+  submitLabel?: string | null;
   questionCanAct?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;
@@ -464,7 +469,6 @@ function ComposerImpl(props: SessionChatInputProps) {
   agents = EMPTY_AGENTS,
   selectedAgent = null,
   onAgentChange,
-  agentSelectorLocked = false,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
   slashFiles = EMPTY_SLASH_FILES,
@@ -849,13 +853,20 @@ function ComposerImpl(props: SessionChatInputProps) {
     NO_COMMAND_CHIP,
   );
 
+  // One predicate for both switch affordances — the picker's cycle shortcut
+  // and the /switch-agent slash row: with zero or one selectable agent there
+  // is nothing to switch to, and a slash row that highlights, offers "Use",
+  // and does nothing is worse than no row (the `set-scope` lesson).
+  const canSwitchAgent = primaryAgents.length > 1 && Boolean(onAgentChange);
   const cycleAgent = useCallback((): boolean => {
-    if (primaryAgents.length <= 1 || !onAgentChange || agentSelectorLocked) return false;
+    // The `!onAgentChange` re-check is a type guard: `canSwitchAgent` already
+    // implies it, but the captured boolean cannot narrow the callback's closure.
+    if (!canSwitchAgent || !onAgentChange) return false;
     const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
     const nextIdx = (currentIdx + 1) % primaryAgents.length;
     onAgentChange(primaryAgents[nextIdx].name);
     return true;
-  }, [primaryAgents, onAgentChange, agentSelectorLocked, selectedAgent]);
+  }, [canSwitchAgent, primaryAgents, onAgentChange, selectedAgent]);
 
   // Escape no longer has a staged command to cancel: the command is a chip in
   // the document, so Backspace removes it — one keystroke, at the caret, with
@@ -1269,7 +1280,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
     // highlights, offers "Use", and does nothing is worse than no row.
     const available = localizedSlashActions(tI18nComplete).filter((action) => {
-      if (action.id === 'switch-agent') return !agentSelectorLocked;
+      if (action.id === 'switch-agent') return canSwitchAgent;
       if (action.id === 'compact-session') return Boolean(onCompactClick);
       if (action.id === 'show-context') return Boolean(onContextClick);
       return true;
@@ -1285,7 +1296,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       }
       return action;
     });
-  }, [selectedAgent, agentSelectorLocked, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
+  }, [selectedAgent, canSwitchAgent, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {

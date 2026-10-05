@@ -160,6 +160,35 @@ function input(args: Record<string, unknown>): CallInput {
 }
 
 describe('handleCall — computer (tunnel)', () => {
+  for (const discovery of [
+    { path: 'desktop.cua.list_tools', args: {}, data: { tools: 'double_click' }, schema: null },
+    {
+      path: 'desktop.cua.describe', args: { tool: 'double_click' },
+      data: { description: 'Double click coordinates' },
+      schema: { type: 'object', properties: { tool: { type: 'string', description: 'Computer-use tool name to describe.' } }, required: ['tool'] },
+    },
+  ]) {
+    test(`${discovery.path} uses its discovery RPC, not generic call`, async () => {
+      const action = computerCatalog().find((candidate) => candidate.path === discovery.path);
+      expect(action).toBeDefined();
+      if (!action) throw new Error(`Missing discovery action: ${discovery.path}`);
+      expect(action.risk).toBe('read');
+      expect(action.inputSchema).toEqual(discovery.schema);
+      expect(action.binding).toEqual({ kind: 'tunnel', method: discovery.path });
+      const { deps, calls } = makeDeps({ ok: true, data: discovery.data });
+      deps.loadAction = async () => ({ ...action, path: `computer.${action.path}`, relPath: action.path });
+      const result = await handleCall(deps, { ...input(discovery.args), actionPath: discovery.path });
+      expect(result).toEqual({
+        status: 'ok', data: discovery.data, risk: 'read',
+        account: { connection_id: 'conn-account-1', label: 'Studio Mac', owner_type: 'member' },
+      });
+      expect(calls).toEqual([{
+        tunnelId: TUNNEL, accountId: 'acct-1', actorUserId: 'u1', projectId: 'proj-1',
+        sessionId: 'sess-1', method: discovery.path, args: discovery.args,
+      }]);
+    });
+  }
+
   test("relays to the resolved account's machine and echoes the account", async () => {
     const { deps, calls } = makeDeps({ ok: true, data: { content: 'hello' } });
     const res = await handleCall(deps, input({ path: '/tmp/x' }));

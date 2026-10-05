@@ -262,6 +262,26 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     required: [],
   },
   {
+    path: 'desktop.cua.list_tools',
+    method: 'desktop.cua.list_tools',
+    name: 'List desktop tools',
+    description: 'List tools exposed by the installed computer-use driver. Requires an approved desktop computer-use capability.',
+    risk: 'read',
+    properties: {},
+    required: [],
+  },
+  {
+    path: 'desktop.cua.describe',
+    method: 'desktop.cua.describe',
+    name: 'Describe desktop tool',
+    description: 'Describe a tool exposed by the installed computer-use driver. Discovery does not grant permission to run it.',
+    risk: 'read',
+    properties: {
+      tool: { type: 'string', description: 'Computer-use tool name to describe.' },
+    },
+    required: ['tool'],
+  },
+  {
     path: 'desktop.cua.call',
     method: 'desktop.cua.call',
     name: 'Call any desktop tool',

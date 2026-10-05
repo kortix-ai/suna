@@ -584,6 +584,11 @@ handle.close();
 `message.part.updated`, `session.status`, `permission.*`, `question.*`, …),
 the same from OpenCode and pi. Use `useSession()` in React.
 
+Events arrive in batches, 16 ms apart. Consecutive `message.part.delta` events
+for one part field in a batch arrive as one event: `properties.delta` is their
+text joined in order, `id` is the last event's id, and `coalesced` lists the
+events it replaced.
+
 `@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
 
@@ -830,6 +835,7 @@ interface KortixPlatformConfig {
   getToken: () => Promise<string | null>;
   /** @deprecated Inert: the SDK sends no client label. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  clientVersion?: string; // '<surface>/<version>', sent as X-Kortix-Client-Version
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -844,6 +850,12 @@ interface KortixPlatformConfig {
 authenticated (`credential_kind`: browser session, personal access token,
 connected app, agent session, API key, service account), never a label the
 client reports about itself.
+
+Set `clientVersion` to the host's surface and release version, for example
+`cli/0.13.42`. The SDK sends it as `X-Kortix-Client-Version` on every request.
+The API writes it to its request log only, so a route is retired only when no
+supported client version still calls it. It is telemetry: it never reaches the
+audit log and grants nothing. A blank value sends nothing.
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven

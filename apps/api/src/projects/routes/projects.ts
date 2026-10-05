@@ -70,30 +70,29 @@ projectsApp.openapi(
   // Build the project rows + the per-row role label the UI renders. The engine
   // answers yes/no, not "at what tier", so the caller's own direct project
   // assignments are read here — from `role_assignments`, the same store the
-  // verdict above came from.
-  const grants = await projectRoleGrants({
-    accountId: scope.accountId,
-    userId: scope.userId,
-  });
-  const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole]));
-
+  // verdict above came from. Neither this read nor the row read needs the
+  // other, so they run together.
   const baseWhere = and(
     eq(projects.accountId, scope.accountId),
     eq(projects.status, 'active'),
   );
 
-  let rows: Array<typeof projects.$inferSelect>;
-  if (accessible.mode === 'all') {
-    rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
-  } else {
-    // mode === 'allow_only'. The 'none' case was returned above.
-    if (accessible.allowed.size === 0) return c.json([]);
-    rows = await db
+  // mode === 'allow_only' with nothing enumerated. The 'none' case was
+  // returned above.
+  if (accessible.mode !== 'all' && accessible.allowed.size === 0) return c.json([]);
+  const [grants, rows] = await Promise.all([
+    projectRoleGrants({ accountId: scope.accountId, userId: scope.userId }),
+    db
       .select()
       .from(projects)
-      .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
-      .orderBy(desc(projects.updatedAt));
-  }
+      .where(
+        accessible.mode === 'all'
+          ? baseWhere
+          : and(baseWhere, inArray(projects.projectId, [...accessible.allowed])),
+      )
+      .orderBy(desc(projects.updatedAt)),
+  ]);
+  const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole]));
 
   // Heuristic for effective_role label (UI only, NOT auth):
   //   - account-manager → 'manager' (legacy owner/admin gets full label)
@@ -136,10 +135,10 @@ projectsApp.openapi(
       },
     responses: {
         201: json(ProjectSchema, 'The created project'),
-        ...errors(400, 409),
+        ...errors(400, 403, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   // IAM-gated. Engine consults super-admin bypass, direct + group
@@ -228,7 +227,7 @@ projectsApp.openapi(
       ),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
     const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
     return c.json({ configured, provider });
@@ -276,7 +275,7 @@ projectsApp.openapi(
         ...errors(400, 403, 409, 502, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const ctx = await buildProvisionContext(c);
   if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
@@ -336,7 +335,7 @@ projectsApp.openapi(
         ...errors(403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const ctx = await buildProvisionContext(c);
   // Same gate as POST /provision, and it MUST run before the stream opens. An
   // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that

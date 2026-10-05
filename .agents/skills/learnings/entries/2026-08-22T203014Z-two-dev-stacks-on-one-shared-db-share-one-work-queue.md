@@ -51,7 +51,7 @@ default failure mode of a shared DB, not a one-off.
    `prompt_async`) is deliberately unscoped: the browser talks to one stack on
    purpose.
 
-*Incidents:* session `b090016e…` on worktree `timeline-parity` (20:16 UTC,
+*Incidents:* one session on worktree `timeline-parity` (20:16 UTC,
 `mw-perf`'s dead `subdivision-marine-acne-shorter` tunnel) and the same
 worktree at ~23:00 UTC (primary `pnpm dev`'s dead `patches…` tunnel); in both,
 prompts after the owning instance's own env sync succeeded.

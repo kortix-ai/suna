@@ -261,8 +261,9 @@ trivial single-file typo/comment fixes on the current branch.
 
 ## Default delivery: verify in your box, self-merge to `main`, verify on dev
 
-`main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
-It is not a save point.
+`main` is the dev trunk. A merge does not deploy: dev deploys only on a deliberate
+dispatch, but **merging to `main` still lands your change in everyone's next
+deploy and next `main` checkout.** It is not a save point.
 
 **The development machine does the work. CI does not.** Every test, preview,
 and demo for a change runs in your own box: the worktree's local stack, the
@@ -275,9 +276,39 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Where | What runs | Blocks? |
 |---|---|---|
 | Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `main` (after the merge) | `Deploy Dev`, `Tests` six lanes, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
+| Push to `main` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
+| Dispatch or schedule on `main` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
+
+**Tests are attested, not run by CI.** `pnpm test` writes
+`tests/attestations/<branch>.json` on a green run (`/` and every char outside
+`[A-Za-z0-9._-]` become `-`; a detached HEAD writes `detached-<short-sha>.json`):
+`diff_files` + `diff_hash` (the files the PR itself changed —
+`git diff origin/main...HEAD` — and their sha256, minus every attestation file),
+`source_hash` (full-tree fallback for a direct main push), `head`, `passed`,
+per-lane results, `at`. The same write deletes every other file in
+`tests/attestations/` and the legacy `tests/test-attestation.json`. Commit
+`tests/attestations/`. One file per branch means two PRs never edit the same
+path, so a merge to `main` never makes another PR conflict on its attestation.
+The `.githooks/pre-push` hook recomputes the diff from the pushed commit and
+rejects the push when the attestation is stale, red, or missing. Never bypass
+it with `--no-verify`: the merge gate runs
+`pnpm test:verify --rev <head> --branch <headRefName>`: exit `0` green, `1`
+stale/red/missing (`--strict` exits `3` when `db-suites` is skipped). Verify
+reads the attestation file the PR's diff adds or edits under
+`tests/attestations/` (with several, the `--branch` match, else the newest
+`at`), else `<branch>.json` at the rev, else the legacy file. A branch that still
+carries the legacy file and conflicts on it after a merge of `origin/main`:
+delete it and re-run `pnpm test`.
+The attestation stays green after a merge of `origin/main` that touches other
+files; it goes stale only when a file the PR itself changed is edited after the
+run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
+Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
+`skipped-no-db`; on a Kortix sandbox image `packages` records
+`skipped-sandbox-image`. These are the only two skips, and neither is a pass:
+on `main` the DB is gated after the merge (path-gated `DB Migrations`) and by the
+staging promote, and the scheduled clean-runner `Tests` run backs up `packages`.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
@@ -294,7 +325,7 @@ Never add a label by default or from automation. CI otherwise runs in two places
    user's approval.** Speed matters: a verified change that sits unmerged is
    waste. Verified means all of these are true:
    - the relevant local checks ran with real inputs and outputs (rule 2), and
-     they passed;
+     they passed, and `pnpm test:verify` exits `0` on the branch head;
    - the PR is mergeable (no conflict);
    - rule 6 holds when the change touches a client-facing runtime contract.
    A failing check blocks the merge until you fix it or state why it is
@@ -312,22 +343,20 @@ Never add a label by default or from automation. CI otherwise runs in two places
    the whole objective ran through a real session on your local stack, and runs
    again on dev after the merge (rule 8). Green tests are not the bar. Someone
    used it.
-7. After the merge, wait for the **Live on dev** comment on your pull request.
-   Deploy Dev posts it when `/health` on every surface it changed serves the
-   deployed commit, with the time since merge; "Not live on dev yet" names the
-   surface that failed. A successful `/health` response alone is not
-   deployment proof — the comment checks the commit. Deploys queue, they never
-   cancel: a run in flight finishes, then the newest waiting push deploys, so
-   a merge is live within about two deploy lengths. Force a full redeploy with
-   `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
-   checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
-   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
-   A red run comments on the commit. The comment names the failing lanes and
-   every commit since the last green run, because merges land faster than the
-   suite and the red commit is often not the culprit. The author whose commit
-   broke `main` fixes forward. If `main` is still red 1 hour after the comment,
-   anyone may revert the culprit PR. `main` never blocks a merge or a deploy on
-   a red run.
+7. After the merge, deploy dev yourself: `gh workflow run deploy-dev.yml
+   --repo kortix-ai/suna -f surface=changed` (`all` or `frontend` force a
+   rebuild). Deploys queue, they never cancel. Wait for the run to finish.
+   `/health` on every changed surface must serve the merge SHA: a successful
+   `/health` response alone is not deployment proof. The run comments "Live on
+   dev" on the merged pull request, and "Not live on dev yet" names the
+   surface that failed. The surfaces and their checks are in
+   `.github/workflows/deploy-dev.yml`. No suite runs on the merge push: the
+   attestation (`pnpm test:verify`) was the gate, and the scheduled daily
+   `Tests` run on `main` is the backstop. A red scheduled run comments the
+   failing lanes and every commit since the last green run. The author whose
+   commit broke `main` fixes forward. If `main` is still red 1 hour after the
+   comment, anyone may revert the culprit PR. A red run never blocks a merge or
+   a deploy.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -389,8 +418,9 @@ these as standing rules whenever you touch the data/runtime layer:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
   control with `runtimeSupports`. OpenCode lists all ten; pi lists
-  `session.subagents`. pi does not serve rewind, compaction, slash commands,
-  MCP servers, the todo list, shell turns, part edits or `session.attach`.
+  `session.subagents`, `session.compact` and `session.commands`. pi does not
+  serve rewind, MCP servers, the todo list, shell turns, part edits or
+  `session.attach`.
   The harness rules and the pi gap list are in
   `apps/kortix-sandbox-agent-server/src/harness/README.md`.
 - **`apps/web` data modules are shims.** Files such as
@@ -532,11 +562,11 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The six lanes run on every push to `main`, on a pull request into `staging`,
+- The six lanes run daily on `main` (`schedule`), on a pull request into `staging`,
   once when a person adds the `test` label to a pull request, and on manual
-  dispatch. Nothing else. A push-to-`main` run blocks nothing: a
-  red run comments the failing lanes on the commit, and a cancelled run means a
-  newer commit superseded it. A pull request into `prod` runs
+  dispatch. A push to `main` does not run them (Actions minutes, 2026-10-03). A
+  scheduled run blocks nothing: a red run comments the failing lanes on the
+  `main` HEAD commit. A pull request into `prod` runs
   `tests-release.yml` against deployed staging instead.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
@@ -621,11 +651,23 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - `agent-browser doctor` diagnoses launch and recording problems. Recording
   needs ffmpeg with libvpx and libx264.
 
+### API lint gate
+
+- `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
+  are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
+  files, no `(c: any)`, no `process.env` outside `config.ts`, no
+  `console.*`, and a `replica-local:` comment on every empty module-level
+  `Map`/`Set`. Background timers are guarded by
+  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+- `apps/api/eslint-suppressions.json` holds the violations that existed when
+  each rule was added. A new violation fails. A fixed one fails until you run
+  `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
+  absorb a new violation with `--suppress-all`.
+
 ### Frontend type/lint gate
 
 - `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
-  `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
-  `features/file-viewer/preview-fit.test.tsx`,
+  `test.each` errors in 2 test files (`features/file-viewer/preview-fit.test.tsx`,
   `features/session/action-panel/easy/easy-panel-logic.test.ts`).
   The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
   types mismatch (two copies of `@types/react` in one program — `packages/sdk`

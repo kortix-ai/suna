@@ -241,7 +241,7 @@ describe('kortix projects set / rename', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('--manifest <path>');
     expect(r.stdout).toContain('--no-glyph');
-    expect(r.stdout).toContain('project.customize.write');
+    expect(r.stdout).toContain('project.settings.write');
   });
 
   test('writes only the fields passed', async () => {

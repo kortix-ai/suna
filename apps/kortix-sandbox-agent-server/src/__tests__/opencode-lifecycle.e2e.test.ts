@@ -30,7 +30,9 @@ import { join } from 'node:path'
 
 import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import {
+  convergeManagedModelCatalog,
   createOpencodeLifecycle,
+  resetManagedModelsStateForTests,
   waitForOpencodeReady,
   type Opencode,
   type OpencodeLifecycleOptions,
@@ -50,6 +52,10 @@ const ENV_KEYS = [
   'KORTIX_CONTINUATION_DISABLED',
   'KORTIX_LLM_PROXY_URL',
   'KORTIX_LLM_CATALOG_FILE',
+  'KORTIX_LLM_BASE_URL',
+  'KORTIX_TOKEN',
+  'KORTIX_RUNTIME_STATE_DIR',
+  'KORTIX_BAKED_LLM_CATALOG_PATH',
 ] as const
 const savedEnv = new Map<string, string | undefined>()
 
@@ -256,6 +262,10 @@ function rig(
     marks,
     spawned: () => marks.filter((mark) => mark.label === 'runtime-process-spawned').length,
   }
+}
+
+function kortixModels(configFile: string): Record<string, { name?: string; limit?: { context?: number } }> {
+  return JSON.parse(readFileSync(configFile, 'utf8')).provider.kortix.models
 }
 
 async function startReady(r: Rig): Promise<number> {
@@ -781,6 +791,9 @@ describe('agent .md model refs', () => {
   function useGateway(): void {
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:9/v1'
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // A Kortix sandbox carries the image's own baked catalog at the default
+    // baked path; hide it so this rig pins the no-catalog registration set.
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
   }
 
   test('gateway mode routes every .md model through kortix, after the config dir', async () => {
@@ -812,6 +825,22 @@ describe('agent .md model refs', () => {
     expect(spawnEnv(pid).OPENCODE_CONFIG_CONTENT).toBeNull()
   }, 30_000)
 
+  // A prompt that names no model runs on the agent's model, so no turn-start
+  // gate sees it. The provider map must carry it whatever the catalog says.
+  test('an .md model no catalog carries is registered on the kortix provider', async () => {
+    useGateway()
+    const configDir = join(root, 'config')
+    writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6.1-sol')
+    writeAgent(configDir, 'agents/routed.md', 'kortix/brand-new-managed')
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
+    const r = rig()
+    await startReady(r)
+
+    const models = kortixModels(join(root, 'runtime-config.json'))
+    expect(models['codex/gpt-6.1-sol']?.limit?.context).toBeGreaterThan(0)
+    expect(models['brand-new-managed']?.limit?.context).toBeGreaterThan(0)
+  }, 30_000)
+
   // A dispose re-reads config files but not the process env the patch rides.
   test('a changed .md model restarts instead of disposing; an unchanged one disposes', async () => {
     useGateway()
@@ -835,6 +864,81 @@ describe('agent .md model refs', () => {
       agent: { kortix: { model: 'kortix/anthropic/claude-opus-4-8' } },
     })
   }, 60_000)
+})
+
+// ── a model a turn names ─────────────────────────────────────────────────────
+
+/**
+ * Prod 2026-10-02: "Model not found: kortix/codex/gpt-6.1-sol". The box ran an
+ * image catalog older than the model. The repair took a verified restart
+ * (3.3 s on a small local box) and a 5 MB catalog fetch. A dispose re-reads the
+ * provider map on the same process in 3 ms (measured on OpenCode 1.18.23).
+ */
+describe('a model a turn names', () => {
+  const LISTED = { name: 'GPT-6.1 Sol (ChatGPT)', provider: 'codex', limit: { context: 272_000, output: 128_000 } }
+
+  function gatewayBox(listing: () => Response) {
+    const gateway = Bun.serve({
+      port: 0,
+      fetch: (req) =>
+        new URL(req.url).searchParams.get('scope') === 'picker' ? listing() : new Response('not found', { status: 404 }),
+    })
+    process.env.KORTIX_LLM_BASE_URL = `http://127.0.0.1:${gateway.port}/v1`
+    process.env.KORTIX_TOKEN = 'kortix_pat_test'
+    process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // A Kortix box bakes the real catalog at the well-known path; it must not
+    // answer for the absent file above (its model defs would beat the listing).
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
+    process.env.KORTIX_RUNTIME_STATE_DIR = join(root, 'state')
+    resetManagedModelsStateForTests()
+    return gateway
+  }
+
+  test.each([
+    ['the listing carries it', () => Response.json({ models: { 'codex/gpt-6.1-sol': LISTED } }), 272_000],
+    ['the listing fetch fails', () => new Response('down', { status: 503 }), 200_000],
+  ])('is registered by a dispose on the same process when %s', async (_name, listing, context) => {
+    setCtl('dispose', 'json-true')
+    const gateway = gatewayBox(listing)
+    try {
+      const r = rig()
+      const pid = await startReady(r)
+      expect(kortixModels(join(root, 'runtime-config.json'))['codex/gpt-6.1-sol']).toBeUndefined()
+
+      const result = await convergeManagedModelCatalog(r.lifecycle, r.cfg, {
+        model: 'codex/gpt-6.1-sol',
+        catalogTargetFile: join(root, 'session-catalog.json'),
+      })
+
+      expect(result).toMatchObject({ outcome: 'reloaded', modelPresent: true })
+      expect(r.lifecycle.getPid()).toBe(pid)
+      expect(r.spawned()).toBe(1)
+      expect(kortixModels(join(ctl, 'config-at-dispose.json'))['codex/gpt-6.1-sol']?.limit?.context).toBe(context)
+    } finally {
+      gateway.stop(true)
+      resetManagedModelsStateForTests()
+    }
+  }, 30_000)
+
+  test('an OpenCode with no dispose endpoint gets the model by a verified swap', async () => {
+    const gateway = gatewayBox(() => Response.json({ models: { 'codex/gpt-6.1-sol': LISTED } }))
+    try {
+      const r = rig()
+      const pid = await startReady(r)
+
+      const result = await convergeManagedModelCatalog(r.lifecycle, r.cfg, {
+        model: 'codex/gpt-6.1-sol',
+        catalogTargetFile: join(root, 'session-catalog.json'),
+      })
+
+      expect(result).toMatchObject({ outcome: 'restarted', modelPresent: true })
+      expect(r.lifecycle.getPid()).not.toBe(pid)
+      expect(kortixModels(join(root, 'runtime-config.json'))['codex/gpt-6.1-sol']).toMatchObject({ name: LISTED.name })
+    } finally {
+      gateway.stop(true)
+      resetManagedModelsStateForTests()
+    }
+  }, 30_000)
 })
 
 // ── unplanned-respawn hook (orphaned-turn finalize) ──────────────────────────

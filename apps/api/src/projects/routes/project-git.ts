@@ -2,7 +2,6 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { buildDenialError } from '../../iam/denial-message';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { getBackend, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -48,13 +47,11 @@ projectsApp.openapi(
   // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
   // can withhold it, and the agent fold requires it in the token's grant.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
-  // Agents as principals (spec 2026-09-22 §2.4): an agent's authority is its
-  // kortix.yaml entry, and a change to that entry needs a human merge. A raw
-  // provider push credential would let the agent write the default branch
-  // directly — its own grant included — past the session ref policy and the
-  // merge guard. Under the flag an agent session pushes through the Kortix git
-  // proxy only.
-  if (isProjectSessionPrincipal(c) && resolveFeatureFlag(loaded.row.metadata, 'agent_principal')) {
+  // A raw provider push credential would let an agent session write any branch
+  // directly — kortix.yaml included — past the git proxy's ref policy and the
+  // change-request manifest check. An agent session pushes through the Kortix
+  // git proxy only.
+  if (isProjectSessionPrincipal(c)) {
     throw buildDenialError(
       PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
       'agent_human_only_action',
@@ -168,7 +165,7 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             github_username: z.string().openapi({ description: 'GitHub login to invite.' }),
-            permission: z.enum(['read,write']).optional().openapi({ description: 'read or write. Default write.' }),
+            permission: z.enum(['read', 'write']).optional().openapi({ description: 'read or write. Default write.' }),
           }) } } },
       },
     responses: {

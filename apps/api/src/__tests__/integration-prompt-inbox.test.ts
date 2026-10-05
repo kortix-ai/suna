@@ -24,10 +24,13 @@ import {
 } from '../projects/session-lifecycle/consumption';
 import {
   deleteInboxPrompt,
+  editInboxPrompt,
   enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
   releaseInboxHold,
+  sessionHasHoldMark,
   retryInboxPrompt,
 } from '../projects/session-lifecycle/inbox-rows';
 import { remintForRepair } from '../projects/session-lifecycle/inbox-placement';
@@ -704,6 +707,43 @@ describe('the inbox is scoped to prompts the USER made', () => {
     expect(await deleteInboxPrompt(SESSION_ID, mine.commandId)).toEqual({
       outcome: 'delivering',
     });
+  });
+});
+
+describe('what a new send learns about its session inbox in one read', () => {
+  test('an empty inbox holds nothing and has nothing pending', async () => {
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
+  });
+
+  test('a queued prompt and a prompt in delivery are pending; a finished one is not', async () => {
+    const row = await enqueue('q_state_pending');
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: true });
+    await hold(row);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: true });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands SET status = 'succeeded'
+       WHERE command_id = ${row.commandId}::uuid`);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
+  });
+
+  test('a Stop hold is reported, in agreement with the hold-mark read', async () => {
+    await enqueue('q_state_held');
+    await holdInboxPrompts(SESSION_ID, true);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: true, pending: true });
+    expect(await sessionHasHoldMark(SESSION_ID)).toBe(true);
+  });
+
+  test('a row an automation queued is not part of the inbox', async () => {
+    await enqueueContinueSessionCommand({
+      source: 'trigger:cron',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      sessionId: SESSION_ID,
+      actorUserId: null,
+      text: 'scheduled',
+      idempotencyKey: `trigger:${SESSION_ID}:${crypto.randomUUID()}`,
+    });
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
   });
 });
 
@@ -1957,5 +1997,55 @@ describe('the post-Stop settle selects exactly the prompts the Stop paused', () 
                'forwarded_at', to_jsonb(now() - interval '11 minutes'))
        WHERE command_id = ${old.commandId}::uuid`);
     expect(await settleSelected()).toBe(false);
+  });
+});
+
+describe('editing a queued prompt — the queue list pencil', () => {
+  test('replaces the text in place: same row, same place, files kept, nothing released', async () => {
+    const row = await enqueue('q_edit', { clientSentAtMs: Date.now() - 5_000 });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET payload = jsonb_set(payload, '{parts}', ${JSON.stringify([
+           { type: 'text', text: 'say hi' },
+           { type: 'file', mime: 'image/png', url: 'kortix-attachment://a', filename: 'a.png' },
+         ])}::jsonb),
+             result = '{"held": true}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+    const before = await readRow(row.commandId);
+
+    const edited = await editInboxPrompt(SESSION_ID, row.commandId, 'say hello');
+
+    expect(edited.outcome).toBe('edited');
+    const after = await readRow(row.commandId);
+    const payload = after.payload as Record<string, unknown>;
+    expect(payload.text).toBe('say hello');
+    expect(payload.parts).toEqual([
+      { type: 'text', text: 'say hello' },
+      { type: 'file', mime: 'image/png', url: 'kortix-attachment://a', filename: 'a.png' },
+    ]);
+    // Its place, its wire id and its hold are untouched: an edit is not a send.
+    expect(payload.clientSentAtMs).toBe((before.payload as Record<string, unknown>).clientSentAtMs);
+    expect(payload.wireMessageId).toBe(WIRE_ID);
+    expect(after.status).toBe('queued');
+    expect(after.result).toEqual({ held: true });
+  });
+
+  test('a prompt already on the wire answers `delivering` and keeps its text', async () => {
+    const row = await enqueue('q_edit_running');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+    expect(await editInboxPrompt(SESSION_ID, row.commandId, 'too late')).toEqual({
+      outcome: 'delivering',
+    });
+    expect((((await readRow(row.commandId)).payload) as Record<string, unknown>).text).toBe('say hi');
+  });
+
+  test('an automation prompt cannot be edited through the prompt routes', async () => {
+    const automation = await enqueueAutomationPrompt('trigger says hello');
+    expect(await editInboxPrompt(SESSION_ID, automation.commandId, 'x')).toEqual({
+      outcome: 'missing',
+    });
   });
 });

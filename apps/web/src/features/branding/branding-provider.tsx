@@ -15,7 +15,7 @@
  *   2. hand that `AccountBranding | null` to every consumer through context.
  *
  * It reads the same `useAccountsList()` query every other surface already holds
- * (`useEnsureSelectedAccount`, `AccountSwitcher`, `UserMenu`, …), so branding
+ * (`useEnsureSelectedAccount`, `AccountSwitcher`, …), so branding
  * costs no extra request. It renders nothing itself; `KortixLogo` swaps its
  * SVG for the org marks, and `BrandingDocumentEffect` (below) swaps the tab
  * icon and title once the account resolves. Before that — and on every
@@ -120,11 +120,6 @@ export function useBranding(): AccountBranding | null {
   return useContext(BrandingContext);
 }
 
-/** The product name to show in place of "Kortix". */
-export function useAppName(): string {
-  return useBranding()?.app_name ?? 'Kortix';
-}
-
 // ─── Document effect: favicon + title ───────────────────────────────────────
 
 /** What Next rendered for each icon link before we touched it, kept OFF the
@@ -139,7 +134,7 @@ const originals = new WeakMap<HTMLLinkElement, { href: string; media: string | n
  * trade-off (host-based tenancy would be the way to remove it).
  *
  * Title: Next writes `<title>` on every navigation from the route's metadata:
- * the site default (`Kortix – The AI Command Center for Your Company`) on
+ * the site default (`Kortix – The open-source AI Operating System`) on
  * routes with no title of their own, `<page> | Kortix` elsewhere. A
  * `MutationObserver` on `<head>` rewrites whatever Next just wrote, so the
  * swap survives navigation without touching every page's metadata: the site

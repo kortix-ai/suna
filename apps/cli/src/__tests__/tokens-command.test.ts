@@ -5,11 +5,11 @@ import { join } from 'node:path';
 
 import { resolveExpiry } from '../commands/tokens.ts';
 import {
+  type FakeApi,
   runCommand,
   startFakeApi,
   writeConfig,
   writeRunner,
-  type FakeApi,
 } from './support/account-cli-harness.ts';
 
 const ACCOUNT = 'account_1';
@@ -118,6 +118,31 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
       { status: 201 },
     );
   }
+  if (p === '/v1/oauth/grants' && req.method === 'GET') {
+    return Response.json({
+      grants: [
+        {
+          client_id: 'app_verified',
+          name: 'Editor',
+          self_registered: false,
+          redirect_hosts: ['editor.example.test'],
+          granted_at: '2026-07-01T00:00:00.000Z',
+          last_active_at: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          client_id: 'app_self',
+          name: 'Hand-rolled',
+          self_registered: true,
+          redirect_hosts: [],
+          granted_at: '2026-07-15T00:00:00.000Z',
+          last_active_at: null,
+        },
+      ],
+    });
+  }
+  if (p === '/v1/oauth/grants/app_verified' && req.method === 'DELETE') {
+    return Response.json({ revoked_tokens: 2 });
+  }
   if (p === `${IAM}/service-accounts/${SA}/disable` && req.method === 'POST') {
     return Response.json({ disabled: true });
   }
@@ -140,6 +165,9 @@ describe('resolveExpiry', () => {
     expect(resolveExpiry('12h', now)).toBe('2026-08-01T12:00:00.000Z');
     expect(resolveExpiry('2w', now)).toBe('2026-08-15T00:00:00.000Z');
     expect(resolveExpiry('1y', now)).toBe('2027-08-01T00:00:00.000Z');
+    // The span grammar is shared with audit's --since, so the full unit set
+    // (m,h,d,w,y) works on both sides.
+    expect(resolveExpiry('45m', now)).toBe('2026-08-01T00:45:00.000Z');
   });
 
   test('passes an ISO instant through, and rejects nonsense', () => {
@@ -177,6 +205,10 @@ describe('kortix tokens', () => {
     ]) {
       expect(h.stdout).toContain(fragment);
     }
+    // Disable is one-way; the only way back is delete + re-create.
+    expect(h.stdout).toContain('cannot authorize; delete and');
+    expect(h.stdout).toContain('re-create to return');
+    expect(h.stdout).not.toContain('reversible only by');
     const bare = await runCommand(runner, [], { cwd: tmp });
     expect(bare.code).toBe(2);
   });
@@ -209,7 +241,12 @@ describe('kortix tokens', () => {
     expect(r.code).toBe(0);
     const sent = api!.requests[0]!;
     expect(sent).toMatchObject({ method: 'POST', path: '/v1/accounts/tokens' });
-    const body = sent.body as { name: string; account_id: string; expires_at: string; project_id: string };
+    const body = sent.body as {
+      name: string;
+      account_id: string;
+      expires_at: string;
+      project_id: string;
+    };
     // account_id must ride in the body: this route resolves the account from
     // the body, not the query string.
     expect(body.account_id).toBe(ACCOUNT);
@@ -291,6 +328,39 @@ describe('kortix tokens', () => {
       method: 'DELETE',
       path: `${IAM}/service-accounts/${SA}`,
     });
+  });
+
+  test('apps ls lists connected apps; apps rm -y revokes via the grants route', async () => {
+    const config = boot();
+    const ls = await runCommand(runner, ['apps', 'ls'], { cwd: tmp, configFile: config });
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).toContain('Editor');
+    // A self-registered app is flagged in the table...
+    expect(ls.stdout).toContain('(unverified)');
+    expect(ls.stdout).toContain('app_verified');
+
+    const json = await runCommand(runner, ['apps', 'ls', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toHaveLength(2);
+
+    const rm = await runCommand(runner, ['apps', 'rm', 'app_verified', '-y'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(rm.code).toBe(0);
+    expect(api?.requests.at(-1)).toMatchObject({
+      method: 'DELETE',
+      path: '/v1/oauth/grants/app_verified',
+    });
+    expect(rm.stdout).toContain('Revoked');
+    expect(rm.stdout).toContain('2 live tokens');
+
+    const bogus = await runCommand(runner, ['apps', 'bogus'], { cwd: tmp, configFile: config });
+    expect(bogus.code).toBe(2);
+    expect(bogus.stderr).toContain('Use ls or rm');
   });
 
   test('missing required arguments exit 2 without any HTTP call', async () => {

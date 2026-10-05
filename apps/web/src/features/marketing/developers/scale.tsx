@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { m, useReducedMotion } from 'motion/react';
-import { scale } from './content';
+import { useDevelopersCopy } from './use-developers-copy';
 import { SECTION_HEADING } from './shared';
 
 const W = 1280;
@@ -39,6 +39,7 @@ const LANES = [
 const pct = (n: number, of: number) => `${(n / of) * 100}%`;
 
 export function DevelopersScale() {
+  const { scale } = useDevelopersCopy();
   const reduce = useReducedMotion();
   const inView = { once: true, amount: 'some' } as const;
   const summary = `${scale.mainLabel}: ${scale.branches

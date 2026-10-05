@@ -21,6 +21,7 @@ const {
   acceptedPlatinumOrigin,
   platinumJson,
   platinumOriginForSandbox,
+  platinumOriginForRegion,
   PlatinumSandboxNotRunningError,
   PLATINUM_ORIGIN_CACHE_MAX,
   __resetPlatinumSandboxOriginsForTests,
@@ -30,6 +31,9 @@ const US = 'https://us-east.api.platinum.dev';
 const GLOBAL = 'https://api.platinum.dev';
 
 type Call = { url: string; method: string; auth: string | null };
+// Compare the parsed origin, never a URL prefix: a prefix also matches `https://host.evil`.
+const onOrigin = (call: Call, origin: string): boolean => new URL(call.url).origin === origin;
+
 type Reply = { status?: number; body?: unknown; headers?: Record<string, string> } | Error;
 
 const originalFetch = globalThis.fetch;
@@ -73,7 +77,7 @@ afterEach(() => {
 
 test('a forwarded answer names the owner, and the next call for that id goes straight to it', async () => {
   respond = (call) =>
-    call.url.startsWith(GLOBAL)
+    onOrigin(call, GLOBAL)
       ? { body: { id: 'sbx_us', state: 'running' }, headers: { 'x-pt-served-by': US } }
       : { body: { result: { exit_code: 0 } } };
 
@@ -161,14 +165,14 @@ test('an unreachable owner is forgotten and the call is sent once via the global
   respond = (call) => {
     if (call.url === `${GLOBAL}/v1/sandboxes/sbx_us`)
       return { body: { id: 'sbx_us', api_url: US } };
-    if (call.url.startsWith(US)) return networkError('ConnectionRefused');
+    if (onOrigin(call, US)) return networkError('ConnectionRefused');
     return { body: { result: { exit_code: 0 } } };
   };
   await platinumJson('/v1/sandboxes/sbx_us');
   calls = [];
   // The global origin answers this one without naming the owner again.
   respond = (call) =>
-    call.url.startsWith(US)
+    onOrigin(call, US)
       ? networkError('ConnectionRefused')
       : { body: { result: { exit_code: 0 } } };
 
@@ -188,7 +192,7 @@ test('a write that may have reached the owner is not sent twice; a read is', asy
   await platinumJson('/v1/sandboxes/sbx_us');
   calls = [];
   respond = (call) =>
-    call.url.startsWith(US) ? networkError('ECONNRESET') : { body: { id: 'sbx_us', api_url: US } };
+    onOrigin(call, US) ? networkError('ECONNRESET') : { body: { id: 'sbx_us', api_url: US } };
 
   await expect(
     platinumJson('/v1/sandboxes/sbx_us/exec', { method: 'POST', body: '{}' }),
@@ -279,4 +283,75 @@ test('the origin cache is bounded and drops the oldest entry first', async () =>
   expect(platinumOriginForSandbox('sbx_0')).toBe(GLOBAL);
   expect(platinumOriginForSandbox('sbx_1')).toBe(US);
   expect(platinumOriginForSandbox(`sbx_${PLATINUM_ORIGIN_CACHE_MAX}`)).toBe(US);
+});
+
+
+test('a create for a region this process has already seen goes straight to that region', async () => {
+  respond = (call) => {
+    if (call.method === 'GET') return { body: { id: 'sbx_seen', state: 'running', region: 'us-east', api_url: US } };
+    return { status: 201, body: { id: 'sbx_next', state: 'running', region: 'us-east', api_url: US } };
+  };
+
+  await platinumJson('/v1/sandboxes/sbx_seen');
+  expect(platinumOriginForRegion('us-east')).toBe(US);
+  await platinumJson('/v1/sandboxes?wait_for_state=running', {
+    method: 'POST',
+    body: JSON.stringify({ template: 'tpl_x', region: 'us-east' }),
+  });
+  // No region asked for → the home region, through the global origin as before.
+  await platinumJson('/v1/sandboxes?wait_for_state=running', {
+    method: 'POST',
+    body: JSON.stringify({ template: 'tpl_x' }),
+  });
+  // A region nothing has taught yet → global, which forwards.
+  await platinumJson('/v1/sandboxes?wait_for_state=running', {
+    method: 'POST',
+    body: JSON.stringify({ template: 'tpl_x', region: 'ap-south' }),
+  });
+
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `GET ${GLOBAL}/v1/sandboxes/sbx_seen`,
+    `POST ${US}/v1/sandboxes?wait_for_state=running`,
+    `POST ${GLOBAL}/v1/sandboxes?wait_for_state=running`,
+    `POST ${GLOBAL}/v1/sandboxes?wait_for_state=running`,
+  ]);
+});
+
+test('a home-region box teaches nothing, and a foreign api_url never becomes a region origin', async () => {
+  respond = (call) => {
+    if (call.url.endsWith('/sbx_eu')) return { body: { id: 'sbx_eu', region: 'eu-west', api_url: GLOBAL } };
+    if (call.url.endsWith('/sbx_evil')) return { body: { id: 'sbx_evil', region: 'us-east', api_url: 'https://evil.example' } };
+    return { body: {} };
+  };
+  await platinumJson('/v1/sandboxes/sbx_eu');
+  await platinumJson('/v1/sandboxes/sbx_evil');
+  expect(platinumOriginForRegion('eu-west')).toBe(GLOBAL);
+  expect(platinumOriginForRegion('us-east')).toBe(GLOBAL);
+});
+
+test('a regional create whose connection never opened retries once via global and forgets the region', async () => {
+  let first = true;
+  respond = (call) => {
+    if (call.method === 'GET') return { body: { id: 'sbx_seen', region: 'us-east', api_url: US } };
+    if (onOrigin(call, US) && first) {
+      first = false;
+      return networkError('ConnectionRefused');
+    }
+    return { status: 201, body: { id: 'sbx_new', region: 'us-east', api_url: US } };
+  };
+  await platinumJson('/v1/sandboxes/sbx_seen');
+  await platinumJson('/v1/sandboxes', { method: 'POST', body: JSON.stringify({ template: 't', region: 'us-east' }) });
+  expect(calls.slice(1).map((c) => c.url)).toEqual([`${US}/v1/sandboxes`, `${GLOBAL}/v1/sandboxes`]);
+});
+
+test('a regional create reset mid-request is never sent twice', async () => {
+  respond = (call) => {
+    if (call.method === 'GET') return { body: { id: 'sbx_seen', region: 'us-east', api_url: US } };
+    return networkError('ECONNRESET');
+  };
+  await platinumJson('/v1/sandboxes/sbx_seen');
+  await expect(
+    platinumJson('/v1/sandboxes', { method: 'POST', body: JSON.stringify({ template: 't', region: 'us-east' }) }),
+  ).rejects.toThrow();
+  expect(calls.slice(1).map((c) => c.url)).toEqual([`${US}/v1/sandboxes`]);
 });

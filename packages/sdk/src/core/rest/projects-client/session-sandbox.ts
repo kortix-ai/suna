@@ -35,7 +35,13 @@ export type SessionStartStage =
   "provisioning" | "starting" | "ready" | "stopped" | "failed";
 
 export interface SessionStartFailure {
-  category: "provider-capacity" | "git-auth" | "sandbox-provider";
+  category:
+    | 'provider-capacity'
+    | 'git-auth'
+    | 'sandbox-provider'
+    | 'unsupported-secret-delivery'
+    | 'invalid-secret-boundary-policy'
+    | 'snapshot-too-large';
   message: string;
   /** A user action can retry. Automatic polling must still stop. */
   retryable: boolean;
@@ -78,6 +84,12 @@ export interface SessionStartResult {
    */
   runtime_url?: string | null;
   reason?: string;
+  /**
+   * What the session's runtime serves, as the daemon lists it in
+   * `GET /kortix/health`. Present with `stage: 'ready'` on APIs that read it;
+   * `useSession` then knows the list before its own first health probe.
+   */
+  capabilities?: string[];
 
   // ── Session-open envelope. Every field describes THIS call, not the row's
   // accumulated history. Optional: an older API omits them entirely.
@@ -123,6 +135,8 @@ export interface SessionStartResult {
       checked_at: string | null;
     };
   };
+  /** The transport the server selected for the runtime. Only `rest` today. */
+  runtime_transport?: 'rest';
 }
 
 /**

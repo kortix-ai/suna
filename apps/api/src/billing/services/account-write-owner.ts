@@ -7,7 +7,7 @@
  *     Stripe backfill) reconciles what the customer is paying for;
  *   - an OPERATOR (admin routes, trial issue/revoke) records intent the
  *     provider knows nothing about — a contracted Enterprise entitlement, a
- *     managed-models override, a raised session cap, an issued trial.
+ *     managed-models override, a custom compute rate, an issued trial.
  *
  * They collided on `tier`. An operator sets `enterprise_entitled` (or, on the
  * older path, `tier='enterprise'`); the next `customer.subscription.updated`

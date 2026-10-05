@@ -101,7 +101,6 @@ import {
   useQuestionSelfHeal,
   useRuntimeCommands,
   useRuntimeConfig,
-  useRuntimePendingStore,
   useRuntimeSession,
   useRuntimeSessions,
   useSessionMessages,
@@ -150,9 +149,11 @@ import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
 import {
   buildSessionRefsBlock,
+  editResendAttachments,
   interruptedTurnIds,
   rewindHiddenMessageIds,
   webSpace,
+  type MessageAttachment,
 } from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
@@ -279,6 +280,7 @@ const PULL_REFRESH_SPINNER_MS = 800;
 
 /** Keeps the first visible turn in place while older turns prepend (COR-144). */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
  * shows what lies under it; the list ends at the composer, so without this
@@ -922,7 +924,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, []);
 
   const handleEditSend = useCallback(
-    async (messageId: string, text: string) => {
+    async (messageId: string, text: string, kept: MessageAttachment[] = []) => {
       const current = runtimeRef.current;
       if (!current || !runtimeReady || editPendingRef.current) return;
       editPendingRef.current = true;
@@ -951,7 +953,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (agent?.name) options.agent = agent.name;
       if (modelKey) options.model = modelKey;
       if (variant) options.variant = variant;
-      await handleSend(text, options);
+      // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
+      const { fileParts, text: sendText } = editResendAttachments(kept, text);
+      await handleSend(sendText, options, undefined, { fileParts, files: [] });
     },
     [runtimeReady, sessionId, handleSend, toast],
   );
@@ -1661,15 +1665,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
-      if (!runtimeReady) return;
-      // Optimistically remove it. The SDK's pending store remembers answered
-      // ids, so no later read of the runtime's list can bring it back.
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await answerQuestion(requestId, answers);
-      } catch (err: any) {
-        log.error('Failed to reply to question:', err?.message || err);
-      }
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await answerQuestion(requestId, answers);
     },
     [runtimeReady],
   );
@@ -1696,14 +1693,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
-      if (!runtimeReady) return;
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await rejectQuestion(requestId);
-      } catch (err: any) {
-        log.error('Failed to reject question:', err?.message || err);
-      }
-      // Also abort the session (matches frontend behavior)
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await rejectQuestion(requestId);
       handleStop();
     },
     [runtimeReady, handleStop],
@@ -1743,6 +1734,31 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // The room follows the displayed order. Every turn gets `pendingQuestions`
   // (one stable store array) so a pending question tool part is hidden in
   // whichever turn holds it.
+  // Whether the working turn's row is inside the viewport: off screen, its
+  // shimmer and busy dot matrix stop looping (KRTX-1638). RN requires the
+  // callback to be one stable function, so it reads the id through a ref.
+  // ponytail: per turn, not per row. A tall working turn whose top is visible
+  // counts as on screen; go per row if that measurably costs frames.
+  const [workingTurnOnScreen, setWorkingTurnOnScreen] = useState(true);
+  const workingTurnIdRef = useRef(workingTurnId);
+  workingTurnIdRef.current = workingTurnId;
+  // The list re-checks viewability on a data change or the next scroll, but
+  // reports only when the viewable SET changes. This effect is the fallback
+  // for a working-turn change that leaves the set as it was (a turn appended
+  // below the viewport): recompute from the last reported set. Before the
+  // first report the set is unknown and the turn counts as on screen.
+  const viewableKeysRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const keys = viewableKeysRef.current;
+    setWorkingTurnOnScreen(keys == null || workingTurnId == null || keys.has(workingTurnId));
+  }, [workingTurnId]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: { key: string }[] }) => {
+    const keys = new Set(viewableItems.map((v) => v.key));
+    viewableKeysRef.current = keys;
+    const id = workingTurnIdRef.current;
+    setWorkingTurnOnScreen(id == null || keys.has(id));
+  }).current;
+
   const renderTurn = useCallback(
     ({ item, index }: { item: Turn; index: number }) => {
       const id = item.userMessage.info.id;
@@ -1788,12 +1804,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
+            onScreen={isWorkingTurn ? workingTurnOnScreen : true}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1999,6 +2016,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           data={turns}
           renderItem={renderTurn}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={VIEWABILITY_CONFIG}
           initialNumToRender={INITIAL_TURNS_TO_RENDER}
           maxToRenderPerBatch={5}
           windowSize={11}
@@ -2088,7 +2107,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           so it takes no layout space the rest of the time. */}
       {!hasQuestion && (
         <SandboxHealthPill
-          onSwitch={() => router.push('/(settings)/instances')}
           whenReachable={
             liveUpdates.paused ? <LiveUpdatesPausedPill onReconnect={liveUpdates.reconnect} /> : null
           }

@@ -18,9 +18,9 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 
 const CLI_ENTRY = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
 
-const PROJECT_ID = '508bccdd-1edb-4c61-877b-164aceac20e2';
-const SESSION_ID = 'ea985b87-d12c-4ba4-aa12-ee0711dab6f6';
-const ACCOUNT_ID = '3b1fc472-a90e-404f-823f-ca42f6b32e4d';
+const PROJECT_ID = '5a1e0c0a-0000-4000-8000-00000000000a';
+const SESSION_ID = '5a1e0c0b-0000-4000-8000-00000000000b';
+const ACCOUNT_ID = '5a1e0c0c-0000-4000-8000-00000000000c';
 const AGENT_TOKEN = 'kortix_pat_minted_for_osp_vision_route_agent';
 
 let tmp: string;
@@ -54,7 +54,7 @@ function startApi() {
             kortix_cli: ['project.secret.read', 'project.secret.write'],
           },
           accounts: [
-            { account_id: ACCOUNT_ID, slug: '3b1fc472', name: 'SampleCo', role: 'owner' },
+            { account_id: ACCOUNT_ID, slug: '5a1e0c0c', name: 'SampleCo', role: 'owner' },
           ],
         });
       }
@@ -160,12 +160,13 @@ test('a refused session read reports the CLI as authenticated and names the agen
   expect(first.stderr).toContain('agents.osp-vision-route-agent.kortix_permissions');
   expect(first.code).toBe(1);
 
-  // 3. The identity was resolved once and cached, so the NEXT command names the
-  //    agent in its standing line without any further /accounts/me call.
+  // 3. The identity was cached, so the NEXT command names the agent in its
+  //    standing line from the cache. Its denial footer reads the identity live
+  //    once (the grant can change between prompts): exactly one more call.
   const meCallsAfterFirst = requests.filter((r) => r.endsWith('/v1/accounts/me')).length;
   const second = await runCli(['sessions', 'restart', SESSION_ID]);
   expect(second.stderr).toContain('agent osp-vision-route-agent');
-  expect(requests.filter((r) => r.endsWith('/v1/accounts/me')).length).toBe(meCallsAfterFirst);
+  expect(requests.filter((r) => r.endsWith('/v1/accounts/me')).length).toBe(meCallsAfterFirst + 1);
 });
 
 test('the bare landing screen shows the agent row instead of a logged-out host', async () => {

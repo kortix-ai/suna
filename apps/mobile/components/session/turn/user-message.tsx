@@ -22,6 +22,8 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SlackIcon } from '@/components/icons/slack-icon';
+import { TeamsIcon } from '@/components/icons/teams-icon';
 import {
   CaretDownIcon,
   CopyIcon,
@@ -29,17 +31,16 @@ import {
   TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
-  SlackLogoIcon,
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn } from '@/lib/session/types';
 import type { Command } from '@/lib/session/runtime-data';
 import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
+import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
 import { parseTriggerEvent } from '@kortix/shared';
-import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
-import { formatMegabytes } from '@/lib/session/image-load';
+import { formatMegabytes } from '@kortix/sdk/react';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
 import { participantName, type AvatarPerson } from '@/lib/session/participants';
 import {
@@ -59,7 +60,7 @@ import {
   type QueuedPromptState,
 } from '@/lib/session/user-message';
 import { MentionChip } from '../mention-chip';
-import { AttachmentOverflowTile, AttachmentTile } from '../attachment-tile';
+import { AttachmentOverflowTile, AttachmentRemoveButton, AttachmentTile } from '../attachment-tile';
 import { useSandboxImage } from './use-sandbox-image';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
@@ -91,11 +92,27 @@ const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
 const META_TEXT_STYLE = { fontSize: 13, lineHeight: 16 } as const;
 
-// Fixed third-party brand marks for channel cards; they must not follow the app theme.
-const CHANNEL_BRAND_COLOR = {
-  Telegram: 'hsl(198.7 91.9% 56.3%)', // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
-  Slack: 'hsl(339.6 82.2% 51.6%)', // hex-allowlist: Slack pink, web CHANNEL_BRAND_COLOR.Slack hsl(339.6 82.2% 51.6%)
-} as const;
+// A channel card's mark and label, as web draws them (`channel-brand.tsx`). The
+// label colors are the platforms' fixed brand colors, never the app theme. Slack
+// has no hue to tint with: its mark is four colors and its name reads like
+// Slack's wordmark, in the text color.
+const TELEGRAM_BRAND_COLOR = 'hsl(198.7 91.9% 56.3%)'; // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
+const CHANNEL_LABEL_COLOR: Record<ChannelPlatform, string | undefined> = {
+  Slack: undefined,
+  Teams: '#5B5FC7', // hex-allowlist: Microsoft Teams purple #5B5FC7, web CHANNEL_BRAND_COLOR.Teams
+  Telegram: TELEGRAM_BRAND_COLOR,
+};
+const CHANNEL_LABEL: Record<ChannelPlatform, string> = {
+  Slack: 'Slack',
+  Teams: 'Microsoft Teams',
+  Telegram: 'Telegram',
+};
+
+function ChannelMark({ platform, size }: { platform: ChannelPlatform; size: number }) {
+  return platform === 'Teams' ? <TeamsIcon size={size} /> : platform === 'Slack' ? <SlackIcon size={size} /> : (
+    <Icon as={PaperPlaneTiltIcon} size={size} color={TELEGRAM_BRAND_COLOR} />
+  );
+}
 
 /** `isDark` is passed down from SessionTurn. */
 function paletteFor(isDark: boolean) {
@@ -197,7 +214,7 @@ export function UserMessage({
   /** Opens the editor on this message with its prompt text. */
   onEditStart?: (messageId: string, text: string) => void;
   onEditCancel?: () => void;
-  onEditSend?: (messageId: string, text: string) => void;
+  onEditSend?: (messageId: string, text: string, kept: MessageAttachment[]) => void;
   /** Hides Edit (busy session, queued prompts, a rewind in flight). Copy stays. */
   rewindDisabled?: boolean;
   /** Dims the column; `interrupted` also shows a status line. */
@@ -230,7 +247,7 @@ export function UserMessage({
 
   // Both parsers are linear in the prompt: a channel or a webhook chooses this
   // text, and a regex version of each froze the JS thread on a crafted prompt.
-  const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
+  const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
@@ -293,26 +310,24 @@ export function UserMessage({
         <UserMessageEditor
           isDark={isDark}
           initialText={editingText}
+          attachments={attachments}
           pending={editPending}
           onCancel={onEditCancel}
-          onSend={(text) => onEditSend(messageId, text)}
+          onSend={(text, kept) => onEditSend(messageId, text, kept)}
         />
       </View>
     );
   }
 
   if (channelMessageInfo) {
-    const brand = CHANNEL_BRAND_COLOR[channelMessageInfo.platform] ?? CHANNEL_BRAND_COLOR.Slack;
+    const { platform } = channelMessageInfo;
+    const labelColor = CHANNEL_LABEL_COLOR[platform];
     return (
       <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
         <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-          <Icon
-            as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
-            size={webSpace(3.5)}
-            color={brand}
-          />
-          <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
-            {channelMessageInfo.platform}
+          <ChannelMark platform={platform} size={webSpace(3.5)} />
+          <Text style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }, labelColor ? { color: labelColor } : null]}>
+            {CHANNEL_LABEL[platform]}
           </Text>
           <Text variant="muted" style={META_TEXT_STYLE}>
             ·
@@ -685,8 +700,9 @@ export function UserMessageBubble({
 
 /**
  * Replaces the column while a message is edited: the bubble surface at full
- * width (`w-full gap-2 py-3`), the text, then secondary Cancel + primary Send.
- * Send rewinds the session to this message and sends the edited text.
+ * width (`w-full gap-2 py-3`), the message's attachments (each with a remove
+ * dot), the text, then secondary Cancel + primary Send. Send rewinds the
+ * session to this message and sends the edited text with the kept attachments.
  *
  * A raw `TextInput`, not `Textarea`: the editor must focus with the caret at
  * the end, and `Textarea` is not `forwardRef` and draws a border.
@@ -694,22 +710,28 @@ export function UserMessageBubble({
 export function UserMessageEditor({
   isDark,
   initialText,
+  attachments = [],
   pending,
   onCancel,
   onSend,
 }: {
   isDark: boolean;
   initialText: string;
+  /** The message's attachments. The user keeps or removes each; Send carries the kept ones. */
+  attachments?: MessageAttachment[];
   pending?: boolean;
   onCancel: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, kept: MessageAttachment[]) => void;
 }) {
   const palette = paletteFor(isDark);
   const [draft, setDraft] = useState(initialText);
+  const [kept, setKept] = useState(attachments);
   const [selection, setSelection] = useState<{ start: number; end: number } | undefined>({
     start: initialText.length,
     end: initialText.length,
   });
+  // Text is required, attachments or not: a text-less replacement prompt does
+  // not commit the staged rewind, so the original turn would stay (KRTX-962).
   const canSend = Boolean(draft.trim()) && !pending;
 
   return (
@@ -723,6 +745,20 @@ export function UserMessageEditor({
         paddingVertical: webSpace(3),
       }}
     >
+      {kept.length > 0 ? (
+        <View className="flex-row flex-wrap" style={{ gap: webSpace(2) }}>
+          {kept.map((file) => (
+            <View key={file.key} style={{ position: 'relative' }}>
+              <MessageAttachmentTile file={file} />
+              <AttachmentRemoveButton
+                filename={file.filename}
+                disabled={pending}
+                onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
+              />
+            </View>
+          ))}
+        </View>
+      ) : null}
       <TextInput
         value={draft}
         onChangeText={setDraft}
@@ -745,7 +781,7 @@ export function UserMessageEditor({
         <Button variant="secondary" size="sm" disabled={pending} onPress={onCancel}>
           <Text>Cancel</Text>
         </Button>
-        <Button size="sm" disabled={!canSend} onPress={() => canSend && onSend(draft)}>
+        <Button size="sm" disabled={!canSend} onPress={() => canSend && onSend(draft, kept)}>
           {pending ? <KortixLoader customSize={14} /> : null}
           <Text>Send</Text>
         </Button>

@@ -491,7 +491,9 @@ describe('kortix CLI black-box behavior', () => {
       name: 'pdf',
       marketplaceLabel: 'Kortix',
     });
-    expect(result.stderr).toContain('host test');
+    // Machine mode (--json) keeps stderr silent: no human host notice, so a
+    // piped or merged capture parses (see whoami-json.blackbox.test.ts).
+    expect(result.stderr).toBe('');
     expect(requests).toEqual([{
       method: 'GET',
       path: '/v1/marketplace/items?query=pdf&source=kortix',
@@ -994,7 +996,9 @@ describe('kortix CLI black-box behavior', () => {
 
     const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--purge', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(removeProject.code).toBe(0);
-    expect(removeProject.stdout).toContain('Archived');
+    // --purge is the irreversible path: the result line says Purged, never Archived.
+    expect(removeProject.stdout).toContain('Purged');
+    expect(removeProject.stdout).not.toContain('Archived');
     expect(removeProject.stdout).toContain('managed git repo deleted');
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
 

@@ -14,9 +14,9 @@ good lineage deeper on each cycle. User data vanishes with zero errors on any
 surface — the session opens fast and empty. Repair = finalize the wedged
 `env_builds` row (`status='success'`, `finished_at=created_at`), mark the
 stale-branch builds `failed`, resume. Verify the rootfs object exists in the
-`fc-templates` bucket before finalizing. *Incident:* sampleco session
-`70f64114` resumed with an empty transcript on 2026-08-24; wedged build
-`4b583212` (03:34:23Z, during the wake-race window fixed by `b250949eb1`) had
+`fc-templates` bucket before finalizing. *Incident:* a SampleCo session
+resumed with an empty transcript on 2026-08-24; a wedged build
+(03:34:23Z, during the wake-race window fixed by `b250949eb1`) had
 its full 660 MB rootfs in S3 but the status never flipped; 4 stale builds
 stacked on top; a cluster-wide sweep found 71 wedged builds and 11
 silent-rollback victim sandboxes. The transcript was recovered by the repair

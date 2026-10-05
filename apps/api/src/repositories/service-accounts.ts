@@ -6,6 +6,7 @@
 import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
+import { errorSqlstate } from '../shared/error-cause';
 import { createLastUsedTracker } from '../shared/throttled-last-used';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
@@ -194,7 +195,8 @@ export async function ensureAgentServiceAccount(args: {
     if (row) return row.id;
   } catch (err) {
     // Lost a concurrent create race (unique violation) — fall through to re-read.
-    if ((err as { code?: string })?.code !== '23505') throw err;
+    // drizzle wraps the PostgresError, so read the SQLSTATE through the cause.
+    if (errorSqlstate(err) !== '23505') throw err;
   }
   const [winner] = await db
     .select({ id: serviceAccounts.serviceAccountId })

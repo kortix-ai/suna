@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import Loading from '@/components/ui/loading';
 import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
@@ -21,15 +22,16 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import { useTranslations } from '@/i18n/use-translations';
-import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { safeHttpUrl } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import { STATUS_BORDER } from '@/components/ui/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
@@ -50,6 +52,7 @@ import {
   FileTextIcon as FileText,
   FileXlsIcon as FileXls,
   FileZipIcon as FileZip,
+  FolderSimpleIcon,
   GlobeIcon as Globe,
   ImageIcon,
   ArrowsOutSimpleIcon as Maximize2,
@@ -325,6 +328,129 @@ export function ShowFileActions({
   );
 }
 
+/** What a `show` hover card names: the target the card renders. */
+export interface ShowHoverTarget {
+  path?: string;
+  url?: string;
+  title?: string;
+}
+
+/**
+ * Resolves a `show` target to what its hover card prints, or null when there
+ * is nothing to name (inline content with no path or URL). `copy` is the
+ * value the location row's copy button writes.
+ *
+ * - A running port: the site's title (else `localhost:<port>`), then the
+ *   address it serves on. Copy gives the full `http://localhost:<port>/…`.
+ * - A file: its file name, then its full path.
+ * - A web link: its title (else its domain), then the full URL.
+ */
+export function showHoverDetails(target: ShowHoverTarget): {
+  name: string;
+  detail: string;
+  copy: string;
+  Icon: PhosphorIcon;
+} | null {
+  const title = target.title?.trim();
+  const local = target.url && !isAppRouteUrl(target.url) ? parseLocalhostUrl(target.url) : null;
+  if (local) {
+    const address = `localhost:${local.port}${local.path === '/' ? '' : local.path}`;
+    return {
+      name: title || `localhost:${local.port}`,
+      detail: address,
+      copy: local.originalUrl,
+      Icon: AppWindowIcon,
+    };
+  }
+  if (target.path) {
+    return {
+      name: target.path.split('/').pop() || target.path,
+      detail: target.path,
+      copy: target.path,
+      Icon: FolderSimpleIcon,
+    };
+  }
+  const external = target.url ? safeHttpUrl(target.url) : null;
+  if (external) {
+    return {
+      name: title || showDomain(external),
+      detail: external,
+      copy: external,
+      Icon: Globe,
+    };
+  }
+  return null;
+}
+
+/**
+ * The target a `show` card renders, named on hover: a name line, then the
+ * place it lives (folder path, port address, or URL) with a copy button. The card header already carries the
+ * type icon, so the name line has none. Wraps the single-item header and
+ * every carousel tab.
+ */
+export function ShowHoverCard({
+  target,
+  children,
+}: {
+  target: ShowHoverTarget;
+  children: ReactElement;
+}) {
+  const [open, setOpen] = useState(false);
+  // A press means "I am clicking", not "tell me about this file". Radix also
+  // opens on focus, which a click gives the tab, so without this the card pops
+  // up right after every tab switch. Cleared when the pointer leaves.
+  const pressed = useRef(false);
+
+  const details = showHoverDetails(target);
+  if (!details) return children;
+  const { name, detail, copy, Icon } = details;
+
+  return (
+    <HoverCard
+      open={open}
+      onOpenChange={(next) => setOpen(next && !pressed.current)}
+      // Long enough that skimming across a row of tabs to click one never
+      // opens a card; only a deliberate rest on one does.
+      openDelay={700}
+      closeDelay={100}
+    >
+      <HoverCardTrigger
+        asChild
+        onPointerDown={() => {
+          pressed.current = true;
+          setOpen(false);
+        }}
+        onPointerLeave={() => {
+          pressed.current = false;
+        }}
+      >
+        {children}
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        animated={false}
+        className="flex w-max max-w-md flex-col gap-1 px-3 py-2 text-sm"
+      >
+        {/* Neither the name nor the location wraps; a value too long for the
+            card truncates at its end. */}
+        <span className="text-foreground truncate">{name}</span>
+        <div className="text-muted-foreground flex min-w-0 items-center gap-2">
+          <Icon className="size-4 shrink-0" />
+          <span className="min-w-0 truncate">{detail}</span>
+          <CopyButton
+            code={copy}
+            size="sm"
+            hintSide="top"
+            className="text-muted-foreground -mr-1.5 ml-auto shrink-0"
+          />
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
 /**
  * The inline carousel's header: one tab per item, so every output is named up
  * front and one click away. ←/→ move between tabs (WAI-ARIA tablist pattern);
@@ -384,33 +510,35 @@ export function ShowCarouselTabs({
         const active = i === activeIndex;
         const label = getShowCarouselItemLabel(item);
         return (
-          <button
-            key={i}
-            ref={(el) => {
-              tabRefs.current[i] = el;
-            }}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            title={item.title || label}
-            onClick={() => onSelect(i)}
-            className={cn(
-              'flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs font-medium',
-              'transition-[background-color,color,transform] active:scale-[0.96]',
-              '[&>svg]:size-3.5',
-              active
-                ? 'bg-foreground/10 text-foreground'
-                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-            )}
-          >
-            {item.status === 'pending' ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url)
-            )}
-            <span className={cn(label.startsWith(':') && 'tabular-nums')}>{label}</span>
-          </button>
+          <ShowHoverCard key={i} target={item}>
+            <button
+              ref={(el) => {
+                tabRefs.current[i] = el;
+              }}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              // A tab with a hover card is named by it; a native title would stack on it.
+              title={showHoverDetails(item) ? undefined : item.title || label}
+              onClick={() => onSelect(i)}
+              className={cn(
+                'flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs font-medium',
+                'transition-[background-color,color,transform] active:scale-[0.96]',
+                '[&>svg]:size-3.5',
+                active
+                  ? 'bg-foreground/10 text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+              )}
+            >
+              {item.status === 'pending' ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url)
+              )}
+              <span className={cn(label.startsWith(':') && 'tabular-nums')}>{label}</span>
+            </button>
+          </ShowHoverCard>
         );
       })}
     </div>

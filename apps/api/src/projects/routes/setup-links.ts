@@ -162,7 +162,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: lenientBody({
           slug: z.string().openapi({ description: 'Connector slug from the project connectors list.' }),
-          owner: z.enum(['me,project']).optional().openapi({ description: 'Whose account the link authorizes: me (the caller) or project (shared).' }),
+          owner: z.enum(['me', 'project']).optional().openapi({ description: 'Whose account the link authorizes: me (the caller) or project (shared).' }),
           label: z.string().optional().openapi({ description: 'Suggested name for the new connected account.' }),
           expires_in_minutes: z.number().optional().openapi({ description: 'Link lifetime in minutes.' }),
         }) } } },

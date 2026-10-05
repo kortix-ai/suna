@@ -33,6 +33,7 @@ import {
   assertRuntimeHarness,
   bootSession,
   endedAfter,
+  pinnedRoot,
   readTranscript,
   readTurn,
   runtimePath,
@@ -664,79 +665,36 @@ flow(
   },
 );
 
-// ─── SESS-2: concurrency cap — second session at limit 1 → 429 + headers ────
+// ─── SESS-2: no session cap — creates past the old Starter cap (3) → 201 ────
 flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['admin', 'funded', 'daytona'],
+    requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 300_000,
-    routes: [
-      'POST /v1/admin/api/accounts/:id/session-limit',
-      'POST /v1/projects/:projectId/sessions',
-    ],
+    routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
-    if (!ctx.env.adminToken) {
-      throw new Error('SESS-2 requires the run-scoped platform-admin token');
-    }
-    const admin = ctx.client.withBearer(ctx.env.adminToken, 'ADMIN_TOKEN');
-    let previousLimit: number | null | undefined;
     const team = await ctx.fixtures.team();
-
-    await ctx.step('fund the isolated session-limit account', async () => {
+    await ctx.step('fund the isolated account', async () => {
       await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
     });
+    const project = await team.project({ seed: true });
 
-    await ctx.step('set the run account concurrent-session override to 1', async () => {
-      const r = await admin.post(
-        '/v1/admin/api/accounts/:id/session-limit',
-        { max_concurrent_sessions: 1 },
-        { params: { id: team.id } },
-      );
-      r.status(200);
-      previousLimit = r.json<{ previous: number | null }>().previous;
-    });
-
-    try {
-      const project = await team.project({ seed: true });
-      await ctx.step('first session at limit 1 → 201', async () => {
+    for (let n = 1; n <= 4; n += 1) {
+      await ctx.step(`session ${n} of 4 → 201 with no X-RateLimit headers`, async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions',
-            { initial_prompt: 'noop' },
-            { params: { projectId: project.id } },
-          );
+          .post('/v1/projects/:projectId/sessions', {}, { params: { projectId: project.id } });
         r.status(201);
+        const limit = r.header('x-ratelimit-limit');
+        if (limit !== undefined) throw new Error(`session create still sends X-RateLimit-Limit: ${limit}`);
         const body = r.json<{ session_id?: string; id?: string }>();
         const id = body.session_id ?? body.id;
         if (!id) throw new Error(`session create returned no id: ${r.text()}`);
         ctx.track('session', id, { projectId: project.id });
       });
-
-      await ctx.step('second session over limit 1 → 429 + X-RateLimit headers', async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions',
-            { initial_prompt: 'noop' },
-            { params: { projectId: project.id } },
-          );
-        r.status(429).headerExists('x-ratelimit-limit').headerExists('x-ratelimit-remaining');
-      });
-    } finally {
-      if (previousLimit !== undefined) {
-        await ctx.step('restore the previous concurrent-session override', async () => {
-          const r = await admin.post(
-            '/v1/admin/api/accounts/:id/session-limit',
-            { max_concurrent_sessions: previousLimit },
-            { params: { id: team.id } },
-          );
-          r.status(200);
-        });
-      }
     }
   },
 );
@@ -1406,5 +1364,178 @@ harnessFlow(
         .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
       file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
     });
+  },
+);
+
+type RuntimeMessage = { info: Record<string, any>; parts: Array<Record<string, any>> };
+
+/**
+ * The session runtime's own message list (`/kortix/runtime/messages/<root>`),
+ * read through the sandbox proxy. `GET …/transcript` flattens parts to text and
+ * tools; a compaction and an expanded command are visible only here.
+ */
+async function runtimeMessages(ctx: FlowContext, sandboxId: string, root: string): Promise<RuntimeMessage[]> {
+  const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/kortix/runtime/messages/${root}`));
+  r.status(200);
+  return r.json<{ messages?: RuntimeMessage[] }>().messages ?? [];
+}
+
+async function runtimeCapabilities(ctx: FlowContext, sandboxId: string): Promise<string[]> {
+  const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/kortix/health'));
+  r.status(200);
+  return r.json<{ capabilities?: string[] }>().capabilities ?? [];
+}
+
+const messageText = (message: RuntimeMessage): string =>
+  message.parts.map((part) => (part.type === 'text' && typeof part.text === 'string' ? part.text : '')).join('');
+
+// pi keeps the last `keepRecentTokens` (20,000 by default) of a conversation out
+// of a summary, so a two-turn session has nothing to summarize. 1 makes it compactable.
+const PI_COMPACT_FILES = { 'harnesses/pi/settings.json': `${JSON.stringify({ compaction: { keepRecentTokens: 1 } })}\n` };
+
+// ─── RUN-13: a session compacts its conversation on demand ───────────────────
+harnessFlow(
+  'RUN-13',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step(`the project runs ${harness}`, async () => {
+        if (harness !== 'pi') return;
+        await world.setFeature('pi_harness', true);
+        await world.commitToMain(PI_COMPACT_FILES, 'ke2e RUN-13: pi keeps no recent context out of a summary');
+      });
+      const session = await bootSession(ctx, harness, { project });
+      const { projectId, sessionId, sandboxId } = session;
+      const root = await pinnedRoot(ctx, projectId, sessionId);
+
+      await ctx.step('the runtime lists `session.compact`, and the session answers a second prompt', async () => {
+        const capabilities = await runtimeCapabilities(ctx, sandboxId);
+        if (!capabilities.includes('session.compact')) throw new Error(`${harness} lists no session.compact: ${JSON.stringify(capabilities)}`);
+        const marker = `RUN13_BEFORE_${Date.now()}`;
+        await sendPrompt(ctx, projectId, sessionId, echo(marker));
+        await waitForAssistantText(ctx, projectId, sessionId, marker);
+      });
+
+      await ctx.step('summarize is accepted with the model of the last reply', async () => {
+        const last = (await runtimeMessages(ctx, sandboxId, root)).filter((m) => m.info.role === 'assistant' && m.info.modelID).at(-1);
+        if (!last) throw new Error('no assistant message names a model');
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(runtimePath(sandboxId, `/session/${root}/summarize`), { providerID: last.info.providerID, modelID: last.info.modelID });
+        r.status(200);
+      });
+
+      await ctx.step('the conversation carries the compaction request and a finished summary with text', async () => {
+        await waitFor(() => runtimeMessages(ctx, sandboxId, root), {
+          until: (messages) => {
+            const summary = messages.find((m) => m.info.role === 'assistant' && m.info.summary === true);
+            if (summary?.info.error) throw new Error(`the compaction failed on ${harness}: ${JSON.stringify(summary.info.error)}`);
+            return (
+              messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction')) &&
+              Boolean(summary?.info.time?.completed) &&
+              messageText(summary!).trim().length > 0
+            );
+          },
+          timeoutMs: 180_000,
+          intervalMs: 2_000,
+          description: `a finished compaction summary in session ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
+        });
+      });
+
+      await ctx.step('the compacted session answers the next prompt', async () => {
+        const marker = `RUN13_AFTER_${Date.now()}`;
+        await sendPrompt(ctx, projectId, sessionId, echo(marker));
+        await waitForAssistantText(ctx, projectId, sessionId, marker);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+const COMMAND = 'ke2e-echo';
+const COMMAND_LEAD = 'Reply with exactly this single token and nothing else:';
+const COMMAND_TEMPLATE = `---\ndescription: Echo one token (ke2e)\n---\n${COMMAND_LEAD} $ARGUMENTS\n`;
+
+// ─── RUN-14: a project slash command runs its template ───────────────────────
+harnessFlow(
+  'RUN-14',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
+        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
+        await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
+      });
+      const session = await bootSession(ctx, harness, { project });
+      const { projectId, sessionId, sandboxId } = session;
+      const root = await pinnedRoot(ctx, projectId, sessionId);
+
+      await ctx.step('the runtime lists `session.commands` and the command list names the command', async () => {
+        const capabilities = await runtimeCapabilities(ctx, sandboxId);
+        if (!capabilities.includes('session.commands')) throw new Error(`${harness} lists no session.commands: ${JSON.stringify(capabilities)}`);
+        const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/command'));
+        r.status(200);
+        const names = r.json<Array<{ name?: string }>>().map((command) => command.name);
+        if (!names.includes(COMMAND)) throw new Error(`${harness} does not list ${COMMAND}: ${JSON.stringify(names)}`);
+      });
+
+      const marker = `RUN14_${Date.now()}`;
+      await ctx.step('running the command with an argument answers with the argument', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(runtimePath(sandboxId, `/session/${root}/command`), { command: COMMAND, arguments: marker });
+        r.status(200);
+        await waitForAssistantText(ctx, projectId, sessionId, marker);
+      });
+
+      await ctx.step('the user message of that turn is the expanded template', async () => {
+        const expanded = `${COMMAND_LEAD} ${marker}`;
+        const messages = await runtimeMessages(ctx, sandboxId, root);
+        if (!messages.some((m) => m.info.role === 'user' && messageText(m).includes(expanded))) {
+          throw new Error(`no user message carries the expanded template on ${harness}: ${JSON.stringify(messages.filter((m) => m.info.role === 'user').map(messageText))}`);
+        }
+      });
+
+      await ctx.step('a command the project does not have is refused: 400 on pi, 500 on OpenCode', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(runtimePath(sandboxId, `/session/${root}/command`), { command: 'ke2e-no-such-command', arguments: '' });
+        r.status(harness === 'pi' ? 400 : 500);
+      });
+    } finally {
+      await world.close();
+    }
   },
 );

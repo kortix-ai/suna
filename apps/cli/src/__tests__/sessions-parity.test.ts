@@ -117,15 +117,25 @@ function queuedPrompt() {
   };
 }
 
+/** Bytes of each multipart body's file parts, so the fake daemon answers like the real one. */
+const multipartFileBytes = new WeakMap<object, number>();
+
 async function bodyOf(req: Request): Promise<unknown> {
   const type = req.headers.get('content-type') ?? '';
   if (type.includes('application/json')) return req.json().catch(() => null);
   if (type.includes('multipart/form-data')) {
     const form = await req.formData();
     const out: Record<string, unknown> = {};
+    let fileBytes = 0;
     for (const [key, value] of form.entries()) {
-      out[key] = typeof value === 'string' ? value : `<file:${(value as File).name}>`;
+      if (typeof value === 'string') {
+        out[key] = value;
+      } else {
+        out[key] = `<file:${(value as File).name}>`;
+        fileBytes += (value as File).size;
+      }
     }
+    multipartFileBytes.set(out, fileBytes);
     return out;
   }
   return null;
@@ -143,6 +153,13 @@ function startServer(): string {
       seen.push({ method, path: path + url.search, body });
       const project = `/v1/projects/${PROJECT}`;
       const session = `${project}/sessions/${SESSION}`;
+
+      if (method === 'GET' && path === `${session}/config`) {
+        return Response.json({ running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true });
+      }
+      if (method === 'POST' && path === `${session}/reload`) {
+        return Response.json({ applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+      }
 
       // ── control plane ────────────────────────────────────────────────────
       if (method === 'GET' && path === `${project}/sessions/${SESSION}`) {
@@ -328,7 +345,10 @@ function startServer(): string {
         const form = (body ?? {}) as Record<string, unknown>;
         const parent = typeof form.path === 'string' ? form.path : '/workspace';
         const name = typeof form.filename === 'string' ? form.filename : 'uploaded';
-        return Response.json([{ path: `${parent}/${name}`.replace('//', '/'), size: 5 }]);
+        // The real daemon answers with the bytes it wrote (`buffer.byteLength`).
+        return Response.json([
+          { path: `${parent}/${name}`.replace('//', '/'), size: multipartFileBytes.get(form) ?? 0 },
+        ]);
       }
       if (method === 'POST' && path === `${daemon}/session/ses_oc/summarize`) {
         return Response.json({});
@@ -995,5 +1015,30 @@ describe('kortix sessions rm (multiple ids)', () => {
     const r = await runCli(['sessions', 'rm', ...P], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('Pass a session id');
+  });
+});
+
+describe('kortix sessions reload', () => {
+  const cases: { options: string[] }[] = [{ options: [] }, { options: ['--status'] }, { options: ['--force', '--no-repo'] }];
+  test.each(cases)('preserves --json with options %j', async ({ options }) => {
+    const r = await runCli(['sessions', 'reload', SESSION, '--json', ...options, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    const statusOnly = options.includes('--status');
+    expect(JSON.parse(r.stdout)).toEqual(statusOnly
+      ? { running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true }
+      : { applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+    if (!statusOnly) {
+      expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`)).toEqual([
+        { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`, body: { refresh_repo: !options.includes('--no-repo'), force: options.includes('--force') } },
+      ]);
+    }
+  });
+
+  test('keeps human output without --json', async () => {
+    const r = await runCli(['sessions', 'reload', SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Config reloaded.');
+    expect(() => JSON.parse(r.stdout)).toThrow();
   });
 });

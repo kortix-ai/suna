@@ -13,13 +13,14 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { SessionStartResultSchema, projectsApp } from '../lib/app';
+import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '../lib/app';
 import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
+import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -148,7 +149,7 @@ projectsApp.openapi(
     // server holds the request until readiness flips (or a bounded deadline),
     // killing the ~800ms client poll-tick latency. Clamped; omitted = one-shot.
     const waitMsRaw = Number(c.req.query('wait_ms'));
-    const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
+    const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, START_AWAIT_MAX_MS) : 0;
     const result = await startSession({
       source: 'ui',
       loaded,
@@ -205,7 +206,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
@@ -258,7 +259,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
@@ -299,46 +300,6 @@ projectsApp.openapi(
   },
 );
 
-const SessionTurnSchema = z.object({
-  turn_token: z.string(),
-  state: z.enum(['delivering', 'active']),
-  message_id: z.string().nullable(),
-  runtime_session_id: z.string().nullable(),
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: z.string().nullable(),
-  started_at: z.string().nullable(),
-  accepted_at: z.string().nullable(),
-});
-
-const SessionTurnLastEndedSchema = z.object({
-  turn_token: z.string(),
-  message_id: z.string().optional(),
-  end_reason: z.string().nullable(),
-  ended_at: z.string().nullable(),
-  error: z
-    .object({ name: z.string().nullable(), message: z.string().nullable() })
-    .optional(),
-});
-
-const SessionTurnFailureSchema = z.object({
-  message_id: z.string(),
-  ended_at: z.string().nullable(),
-  // Null when the turn failed and nobody named why.
-  error: z.object({ name: z.string().nullable(), message: z.string().nullable() }).nullable(),
-});
-
-const SessionTurnResponseSchema = z.object({
-  // A LIST, not one turn: `activeTurns` is token-keyed exactly so concurrent
-  // prompts (a trigger delivery and a web prompt, say) do not clobber each
-  // other, `beginSandboxTurn` merges into it with no single-turn guard, and
-  // `session_turns` has no unique constraint on `session_id`. Returning only
-  // the newest would make the older — genuinely running — turn look idle to a
-  // caller reconciling by `message_id`.
-  turns: z.array(SessionTurnSchema),
-  last_ended: SessionTurnLastEndedSchema.optional(),
-  recent_failures: z.array(SessionTurnFailureSchema).optional(),
-});
-
 // GET /v1/projects/:projectId/sessions/:sessionId/turn
 // Server truth about which turns are running right now, and how the last one
 // ended. It reads BOTH stores, because neither can answer alone:
@@ -373,11 +334,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(SessionTurnResponseSchema, 'Current turn'),
+      200: json(SessionTurnStatusSchema, 'Current turn'),
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);

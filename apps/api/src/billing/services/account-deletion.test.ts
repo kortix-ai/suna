@@ -1,9 +1,95 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import {
+  accountDeletionRequests,
+  accountMembers,
+  accounts,
+  appDeploymentEvents,
+  appDeployments,
+  changeRequests,
+  connectorCalls,
+  connectorConnections,
+  gatewayRequestLogs,
+  impersonationGrants,
+  kortixApiKeys,
+  legacySandboxMigrations,
+  platformUserRoles,
+  projectSessions,
+  projectSessionConnectorBindings,
+  projectTriggerExecutions,
+  projectTriggerRuntime,
+  projects,
+  providerEvents,
+  reviewItems,
+  sandboxes,
+  sandboxComputeSessions,
+  sessionEnvironments,
+  sessionLifecycleCommands,
+  sessionPendingQuestions,
+  sessionSandboxes,
+  sessionTurns,
+  sunaAccountMigrations,
+  tunnelAuditLogs,
+  tunnelConnections,
+  tunnelDeviceAuthRequests,
+  usageEvents,
+} from '@kortix/db';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
+
+/**
+ * Every table the deletion must sweep that the accounts-row cascade cannot
+ * reach: the pure orphans (an `account_id` column with no foreign key) plus
+ * the child rows whose non-cascading FK edges (NO ACTION / RESTRICT) would
+ * abort the cascade. Kept in the TEST, not imported from the service: a new
+ * orphan table fails this list until its author decides where it belongs.
+ */
+const ORPHAN_ACCOUNT_TABLES = [
+  accountDeletionRequests,
+  appDeploymentEvents,
+  appDeployments,
+  changeRequests,
+  connectorCalls,
+  connectorConnections,
+  gatewayRequestLogs,
+  impersonationGrants,
+  kortixApiKeys,
+  legacySandboxMigrations,
+  platformUserRoles,
+  projectSessionConnectorBindings,
+  projectTriggerExecutions,
+  projectTriggerRuntime,
+  providerEvents,
+  reviewItems,
+  sandboxes,
+  sandboxComputeSessions,
+  sessionEnvironments,
+  sessionLifecycleCommands,
+  sessionPendingQuestions,
+  sessionSandboxes,
+  sessionTurns,
+  sunaAccountMigrations,
+  tunnelAuditLogs,
+  tunnelConnections,
+  tunnelDeviceAuthRequests,
+  usageEvents,
+];
+
+/**
+ * The sweeps scoped through a subquery of the account's project / session /
+ * app ids instead of an account_id column: those tables have no account_id
+ * index to drive the delete, so the sweep follows the parent ids.
+ */
+const SUBQUERY_SCOPED_TABLES = new Set<unknown>([
+  appDeploymentEvents,
+  appDeployments,
+  projectTriggerExecutions,
+  projectTriggerRuntime,
+  reviewItems,
+  sessionPendingQuestions,
+  sessionTurns,
+]);
 
 type SandboxRow = { sandboxId: string; provider: string; externalId: string | null };
 
@@ -16,6 +102,9 @@ let sandboxWhereArg: unknown = null;
 let sessionUpdateWhereArg: unknown = null;
 let sessionsSettled: Array<{ sessionId: string }> = [];
 let sessionUpdateError: Error | null = null;
+
+let deletedRows: Array<{ table: unknown; condition: unknown }> = [];
+let deleteError: Error | null = null;
 
 let stops: string[] = [];
 let removes: string[] = [];
@@ -47,8 +136,26 @@ mock.module('../../shared/supabase', () => ({
  * so the two different SELECTs (owned accounts vs sandboxes) and the session
  * settle UPDATE are told apart by identity rather than by call order.
  */
-mock.module('../../shared/db', () => ({
-  db: {
+mock.module('../../shared/db', () => {
+  interface FakeDb {
+    select: () => {
+      from: (table: unknown) => {
+        where: (cond: unknown) => Promise<unknown[]>;
+      };
+    };
+    update: (table: unknown) => {
+      set: () => {
+        where: (cond: unknown) => {
+          returning: () => Promise<unknown[]>;
+        };
+      };
+    };
+    delete: (table: unknown) => {
+      where: (cond: unknown) => Promise<{ rowCount: number }>;
+    };
+    transaction: <T>(fn: (tx: FakeDb) => Promise<T>) => Promise<T>;
+  }
+  const db: FakeDb = {
     select: () => ({
       from: (table: unknown) => ({
         where: async (cond: unknown) => {
@@ -57,9 +164,15 @@ mock.module('../../shared/db', () => ({
             if (ownedAccountsQueryError) throw ownedAccountsQueryError;
             return ownedAccountRows;
           }
-          sandboxWhereArg = cond;
-          if (sandboxQueryError) throw sandboxQueryError;
-          return sandboxRows;
+          if (table === sessionSandboxes) {
+            sandboxWhereArg = cond;
+            if (sandboxQueryError) throw sandboxQueryError;
+            return sandboxRows;
+          }
+          // Subquery scopes built inside the deletion transaction (projects,
+          // apps, deployments, sessions) resolve to no rows by default; the
+          // tests that need rows set them explicitly.
+          return [];
         },
       }),
     }),
@@ -75,8 +188,20 @@ mock.module('../../shared/db', () => ({
         }),
       }),
     }),
-  },
-}));
+    delete: (table: unknown) => ({
+      where: async (cond: unknown) => {
+        deletedRows.push({ table, condition: cond });
+        if (deleteError) throw deleteError;
+        return { rowCount: 1 };
+      },
+    }),
+    // The fake has no real transaction semantics: the callback runs against
+    // the same fake, which is exactly what the tests assert about (the sweep
+    // statements issued inside one transaction).
+    transaction: <T,>(fn: (tx: FakeDb) => Promise<T>): Promise<T> => fn(db),
+  };
+  return { db };
+});
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
@@ -164,6 +289,8 @@ beforeEach(() => {
   sessionUpdateWhereArg = null;
   sessionsSettled = [];
   sessionUpdateError = null;
+  deletedRows = [];
+  deleteError = null;
   stops = [];
   removes = [];
   stopErrorByExternal = {};
@@ -358,6 +485,57 @@ describe('deleteAccountImmediately — session settle', () => {
     const result = await deleteAccountImmediately('acct-1');
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe('deleteAccountImmediately — account data deletion', () => {
+  test('deletes the account row and sweeps every orphaned account-scoped table', async () => {
+    await deleteAccountImmediately('acct-1', 'user-1');
+
+    const swept = new Map<unknown, unknown>(deletedRows.map((d) => [d.table, d.condition]));
+    // The account row itself is gone; the cascade takes every FK'd table.
+    expect(swept.has(accounts)).toBe(true);
+    expect(whereParams(swept.get(accounts))).toContain('acct-1');
+    for (const table of ORPHAN_ACCOUNT_TABLES) {
+      expect(swept.has(table)).toBe(true);
+    }
+    // Every account_id-bound sweep is bound to the deleting account. The
+    // sweeps scoped through a subquery of the account's project/session/app
+    // ids (these tables have no account_id index) are covered by the
+    // integration suite against real PostgreSQL.
+    for (const d of deletedRows) {
+      if (SUBQUERY_SCOPED_TABLES.has(d.table)) continue;
+      expect(whereParams(d.condition)).toContain('acct-1');
+    }
+  });
+
+  test('the account data is deleted before the auth identity is dropped', async () => {
+    await deleteAccountImmediately('acct-1', 'user-1');
+
+    // A failed sweep must not sign a user out of an account whose data
+    // survived, so the data deletion completes before the identity goes.
+    expect(deletedRows.length).toBeGreaterThan(0);
+    expect(deletedUsers).toEqual(['user-1']);
+  });
+
+  test('a failed sweep aborts the deletion without dropping the auth identity', async () => {
+    deleteError = new Error('sweep failed');
+
+    await expect(deleteAccountImmediately('acct-1', 'user-1')).rejects.toThrow('sweep failed');
+
+    expect(deletedUsers).toEqual([]);
+    expect(completedRequests).toEqual([]);
+  });
+
+  test('a pending request row is swept with the account data', async () => {
+    activeRequest = { id: 'req-1', userId: 'user-1' };
+
+    await deleteAccountImmediately('acct-1', 'user-1');
+
+    const swept = new Map<unknown, unknown>(deletedRows.map((d) => [d.table, d.condition]));
+    expect(swept.has(accountDeletionRequests)).toBe(true);
+    expect(deletedUsers).toEqual(['user-1']);
+    expect(completedRequests).toEqual(['req-1']);
   });
 });
 

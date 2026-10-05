@@ -35,6 +35,10 @@ export interface AccountTokenValidationResult {
    *  session another human prompted, and every non-session token. Read fresh
    *  on every request (this query is not memoized). */
   onBehalfOfUserId?: string | null;
+  /** The agent's standing-identity service account (agent-session tokens),
+   *  else null. Read with the rest of the row so the IAM actor does not read
+   *  the same `account_tokens` row a second time (see `iam/actor.ts`). */
+  serviceAccountId?: string | null;
   error?: string;
   /** True = the credential itself can never come back (missing, revoked,
    *  expired, or its sandbox lease closed). The auth middleware turns this
@@ -471,6 +475,7 @@ async function validateAccountTokenMatching(
         createdAt: accountTokens.createdAt,
         agentGrant: accountTokens.agentGrant,
         onBehalfOfUserId: accountTokens.onBehalfOfUserId,
+        serviceAccountId: accountTokens.serviceAccountId,
         patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
@@ -565,6 +570,7 @@ async function validateAccountTokenMatching(
       sessionId: row.sessionId ?? null,
       agentGrant: readStoredAgentGrant(row.agentGrant),
       onBehalfOfUserId: row.onBehalfOfUserId ?? null,
+      serviceAccountId: row.serviceAccountId ?? null,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

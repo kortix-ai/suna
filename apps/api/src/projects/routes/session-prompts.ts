@@ -9,7 +9,12 @@ import { promptModelOverride } from '../lib/prompt-model';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { projectsApp } from '../lib/app';
+import {
+  CreateSessionPromptResultSchema,
+  SessionPromptListSchema,
+  SessionPromptSchema,
+  projectsApp,
+} from '../lib/app';
 import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
 import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
@@ -17,10 +22,12 @@ import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import {
   deleteInboxPrompt,
+  editInboxPrompt,
   drainSessionLifecycleQueue,
   enqueueContinueSessionCommand,
   enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
   retryInboxPrompt,
 } from '../session-lifecycle';
@@ -60,25 +67,9 @@ import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
 // live turn holds later prompts until its terminal event releases the next row.
 
 const PROMPT_LIST_LIMIT = 200;
-
-const SessionPromptSchema = z.object({
-  placement: z.enum(['transcript', 'composer']).optional(),
-  prompt_id: z.string(),
-  client_message_id: z.string(),
-  message_id: z.string(),
-  wire_message_id: z.string(),
-  client_sent_at_ms: z.number().nullable(),
-  state: z.enum(['queued', 'delivering', 'waiting', 'failed']),
-  reason: z.string().nullable(),
-  text: z.string(),
-  full_text: z.string().optional(),
-  attempts: z.number(),
-  last_error: z.string().nullable(),
-  attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
-  no_reply: z.boolean(),
-  created_at: z.string(),
-  available_at: z.string(),
-});
+/** A POST that arrives within this long of its Enter did not wait on the
+ *  client. Longer, and an older send of the same burst may still be in flight. */
+const LONE_SEND_MAX_AGE_MS = 1_000;
 
 /** Everything `POST .../prompts` needs to re-create ONE removed prompt byte for
  *  byte. Not a subset of `SessionPromptSchema`: that one carries a truncated
@@ -137,19 +128,20 @@ projectsApp.openapi(
           client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
           message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
           parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
-          placement: z.enum(['transcript,composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
+          placement: z.enum(['transcript', 'composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
           overrides: z.object({ agent: z.string().optional(), model: z.object({ providerID: z.string(), modelID: z.string() }).optional(), variant: z.string().optional(), directory: z.string().optional() }).passthrough().optional().optional().openapi({ description: 'Per-prompt agent or model override.' }),
           remint_on_delivery: z.boolean().optional().openapi({ description: 'Assign a fresh wire id when the prompt is delivered.' }),
           client_sent_at_ms: z.number().optional().openapi({ description: 'Client send time, epoch milliseconds.' }),
         }) } }, required: true },
     },
     responses: {
-      200: json(z.any(), 'Already queued (same client_message_id)'),
-      202: json(z.any(), 'Prompt queued'),
+      200: json(CreateSessionPromptResultSchema, 'Already queued (same client_message_id)'),
+      202: json(CreateSessionPromptResultSchema, 'Prompt queued'),
       ...errors(400, 402, 403, 404, 409, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
+    const receivedAtMs = Date.now();
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -187,7 +179,17 @@ projectsApp.openapi(
     const callerSessionId = callerKortixSessionId(c);
     const authorSessionId =
       isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
-    const visible = await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
+    // The reads below use the session id alone and none consumes another's
+    // result. They start together and are awaited in the original order, so
+    // every refusal comes from the same place. They ran one after another: one
+    // database round trip each, before the prompt was even durable.
+    const visibleRead = loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
+    // A failed read is "no hold" (as before) and "may be a burst" (the safe side).
+    const sendState = inboxSendState(sessionId).catch(() => ({ held: false, pending: true }));
+    const thisInstance = currentInstanceId();
+    const boxRead = thisInstance ? loadSandboxMetadataForSessions([sessionId]) : null;
+    boxRead?.catch(() => undefined);
+    const visible = await visibleRead;
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
@@ -200,9 +202,8 @@ projectsApp.openapi(
     // accepted here would stay `queued` for ever when that instance is down.
     // Refuse it while the sender can still read why. The lookup runs only when
     // `KORTIX_INSTANCE_ID` is set.
-    const thisInstance = currentInstanceId();
-    if (thisInstance) {
-      const box = (await loadSandboxMetadataForSessions([sessionId])).get(sessionId);
+    if (thisInstance && boxRead) {
+      const box = (await boxRead).get(sessionId);
       if (box !== undefined && !sandboxBelongsToThisInstance(box)) {
         const owner = sandboxInstanceId(box);
         const message =
@@ -342,8 +343,11 @@ projectsApp.openapi(
       overrides,
       authorSessionId,
     };
-    const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
-      enqueueContinueSessionCommand({ ...send, ...hold }),
+    const enqueued = await enqueueReleasingHold(
+      sessionId,
+      (hold) => enqueueContinueSessionCommand({ ...send, ...hold }),
+      undefined,
+      sendState.then((state) => state.held),
     );
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
@@ -368,7 +372,18 @@ projectsApp.openapi(
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
     // claims by idempotency key so this row does not wait behind older work.
-    void drainSessionLifecycleQueue({ idempotencyKey }).catch(() => undefined);
+    //
+    // A LONE send is claimed at once. The drain's burst wait (250 ms, see
+    // `drainSessionLifecycleQueue`) exists for sends whose POSTs race, and ran
+    // on every prompt. It is kept where a race is possible: another prompt of
+    // this session is queued or in delivery, or this POST waited after Enter
+    // (uploads, an offline queue, a slow link), so an older send may still be
+    // on its way. A caller that sends no `client_sent_at_ms` keeps the wait.
+    const burst =
+      (await sendState).pending ||
+      typeof body.client_sent_at_ms !== 'number' ||
+      receivedAtMs - body.client_sent_at_ms > LONE_SEND_MAX_AGE_MS;
+    void drainSessionLifecycleQueue({ idempotencyKey, burst }).catch(() => undefined);
     return c.json(response, 202);
   },
 );
@@ -384,14 +399,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(
-        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
-        'Pending prompts',
-      ),
+      200: json(SessionPromptListSchema, 'Pending prompts'),
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -439,7 +451,7 @@ projectsApp.openapi(
       ...errors(400, 404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
@@ -523,6 +535,70 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
+    method: 'patch',
+    path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
+    tags: ['sessions'],
+    summary: 'Edit a queued prompt',
+    description:
+      'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent.',
+    ...auth,
+    request: {
+      params: z.object({
+        projectId: z.string(),
+        sessionId: z.string(),
+        promptId: z.string(),
+      }),
+      body: { content: { 'application/json': { schema: lenientBody({
+          text: z.string().openapi({ description: 'The new text of the prompt.' }),
+        }) } }, required: true },
+    },
+    responses: {
+      200: json(SessionPromptSchema, 'Prompt edited'),
+      ...errors(400, 404, 409),
+    },
+  }),
+  async (c) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    const promptId = c.req.param('promptId');
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
+
+    // Floor 'session' — see the POST /prompts gate comment. Editing your own
+    // queued message is running the session, not editing the project.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+    );
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readJsonObject(c);
+    // The same limits a sent text part meets.
+    const sanitized = sanitizeInboxPromptParts([{ type: 'text', text: body.text }]);
+    if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
+    const text = flattenPromptText(sanitized.parts);
+    if (!text.trim()) return c.json({ error: 'text is required' }, 400);
+
+    // No drain kick and no hold release: an edit changes a waiting message,
+    // it does not send one. `POST /prompts` would do both.
+    const outcome = await editInboxPrompt(sessionId, promptId, text);
+    if (outcome.outcome === 'edited') return c.json(serializePrompt(outcome.row), 200);
+    if (outcome.outcome === 'delivering') {
+      return c.json({ error: 'Prompt is already with the agent' }, 409);
+    }
+    return c.json({ error: 'Not found' }, 404);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}/retry',
     tags: ['sessions'],
@@ -540,7 +616,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
@@ -608,7 +684,7 @@ projectsApp.openapi(
   // clears turn authority — exactly the message the user pressed Stop to get
   // ahead of. A hold is released by an action (any new send, or "send now" on a
   // row), never by a timer.
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
