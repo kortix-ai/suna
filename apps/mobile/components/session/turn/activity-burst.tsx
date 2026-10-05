@@ -10,7 +10,8 @@
  * Mobile departs from web on purpose: the burst never expands inline. Tapping
  * the summary line opens the activity sheet (`useActivitySheetStore`, shown by
  * `ActivitySheetHost`), a timeline of every step with a detail view per step.
- * While this row owns the open sheet it republishes its live view to the store.
+ * While this row owns the open sheet it republishes its live view to the store
+ * and its summary draws still: the sheet's running step is the one that shimmers.
  *
  * - every burst is this line, even ONE thought or ONE call ("Completed 1
  *   step"): web shows those bare, mobile never expands a step inline
@@ -110,7 +111,7 @@ function ActivityBurstImpl({
       onPress={openSheet}
       style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}
     >
-      {view.running ? (
+      {view.running && !ownsSheet ? (
         <TextShimmer variant="muted" tone="muted" style={[TURN_TYPE.sm, TABULAR]} numberOfLines={1}>
           {view.title}
         </TextShimmer>

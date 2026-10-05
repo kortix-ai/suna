@@ -5,6 +5,8 @@
  * `SessionTurnImpl` (turn root `space-y-2.5`):
  *
  *   1. user message
+ *   (One text shimmer per turn: only the LAST segment, or the inline content when
+ *   there is no segments block, may sweep; see `LoopMotionContext`.)
  *   2. segments (`space-y-3`) — bursts (`ActivityBurst`: thinking, tool rows,
  *      file chips), standalone tools (`ToolPartRenderer`: deliverables,
  *      sub-agents, calls with a pending permission), and prose between bursts
@@ -26,6 +28,7 @@
 
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
+import { LoopMotionContext } from '@/components/kortix/text-shimmer';
 import { useColorScheme } from 'nativewind';
 import type { AvatarPerson } from '@/lib/session/participants';
 import {
@@ -333,30 +336,33 @@ function SessionTurnImpl({
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {segments.map((segment, index) => {
+            const shimmerSegment = index === segments.length - 1;
             if (segment.kind === 'burst') {
               return (
-                <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
-                  segment={segment}
-                  turnLive={working}
-                  isTrailing={index === segments.length - 1}
-                  sessionId={sessionId}
-                  onOpenFile={onFileMention}
-                  toDisplayPath={displayPath}
-                  onPermissionReply={onPermissionReply}
-                />
+                <LoopMotionContext.Provider key={`burst-${segment.parts[0]?.id ?? 'empty'}`} value={shimmerSegment}>
+                  <ActivityBurst
+                    segment={segment}
+                    turnLive={working}
+                    isTrailing={shimmerSegment}
+                    sessionId={sessionId}
+                    onOpenFile={onFileMention}
+                    toDisplayPath={displayPath}
+                    onPermissionReply={onPermissionReply}
+                  />
+                </LoopMotionContext.Provider>
               );
             }
             if (segment.kind === 'standalone') {
               if (!shouldShowToolPart(segment.part)) return null;
               return (
-                <ToolPartRenderer
-                  key={segment.part.id}
-                  part={segment.part}
-                  sessionId={sessionId}
-                  permission={getPermissionForTool(permissions, segment.part.callID)}
-                  onPermissionReply={onPermissionReply}
-                />
+                <LoopMotionContext.Provider key={segment.part.id} value={shimmerSegment}>
+                  <ToolPartRenderer
+                    part={segment.part}
+                    sessionId={sessionId}
+                    permission={getPermissionForTool(permissions, segment.part.callID)}
+                    onPermissionReply={onPermissionReply}
+                  />
+                </LoopMotionContext.Provider>
               );
             }
             // A text-only turn renders its response below instead.
@@ -403,17 +409,21 @@ function SessionTurnImpl({
         }
       }
     }
+    // Inline tools sweep only when no segments block already owns the turn's shimmer.
+    const inlineShimmer = body.length === 0;
     body.push(
-      <View key="inline" style={{ gap: SEGMENT_STACK_GAP }}>
-        {inlineItems.map((item, index) => {
-          if (item.type === 'text') {
-            const streaming = index === lastTextIndex;
-            const text = streaming ? item.part.text ?? '' : (item.part.text ?? '').trim();
-            return <TextPartBlock key={item.id} text={text} isDark={isDark} isStreaming={streaming} />;
-          }
-          return <ToolPartRenderer key={item.id} part={item.part} sessionId={sessionId} turnLive={working} />;
-        })}
-      </View>,
+      <LoopMotionContext.Provider key="inline" value={inlineShimmer}>
+        <View style={{ gap: SEGMENT_STACK_GAP }}>
+          {inlineItems.map((item, index) => {
+            if (item.type === 'text') {
+              const streaming = index === lastTextIndex;
+              const text = streaming ? item.part.text ?? '' : (item.part.text ?? '').trim();
+              return <TextPartBlock key={item.id} text={text} isDark={isDark} isStreaming={streaming} />;
+            }
+            return <ToolPartRenderer key={item.id} part={item.part} sessionId={sessionId} turnLive={working} />;
+          })}
+        </View>
+      </LoopMotionContext.Provider>,
     );
   } else {
     if (!working && !hasSteps && response) {

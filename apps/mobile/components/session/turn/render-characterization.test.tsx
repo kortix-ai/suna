@@ -57,7 +57,7 @@ mock.module('@/components/kortix/pressable-surface', () => ({
     return React.createElement('rn-pressable-surface', props, children);
   },
 }));
-mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer') }));
+mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer'), LoopMotionContext: React.createContext(true) }));
 mock.module('@/components/ui/separator', () => ({ Separator: passthrough('rn-separator') }));
 mock.module('@/components/ui/text', () => ({ Text: passthrough('rn-text') }));
 mock.module('@/components/ui/button', () => ({

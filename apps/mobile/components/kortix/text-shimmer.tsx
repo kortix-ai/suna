@@ -6,7 +6,8 @@
  * - background 250% of the text width, `background-position` 100% → 0% linear
  *   over `duration` (2s), then a 0.5s hold, looping;
  * - band half-width (`--spread`) = text length × `spread` px (2px);
- * - reduced motion: base colour only, no sweep.
+ * - reduced motion (the live OS toggle), or a `LoopMotionContext` of `false`:
+ *   base colour only, no sweep. A turn lets ONE label sweep at a time.
  *
  * The text width is MEASURED (`onLayout` on the real label), never estimated
  * from the character count, so the sweep covers exactly the rendered glyphs,
@@ -35,13 +36,13 @@ import Animated, {
   Easing,
   cancelAnimation,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withRepeat,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { useReduceMotion } from '@/components/session/dot-matrix/use-reduce-motion';
 import { Text } from '@/components/ui/text';
 import { SHIMMER, shimmerBandCenter, shimmerSpread } from '@/lib/session/activity';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -82,6 +83,13 @@ export interface TextShimmerProps {
  */
 export const ToolMotionContext = createContext(true);
 
+/**
+ * Whether looping decorative motion (text shimmer, dot matrix) may run here.
+ * A turn provides `true` only to the one element that owns the motion; the rest
+ * draw still. Unlike `ToolMotionContext`, it does not gate `RunningLoader`.
+ */
+export const LoopMotionContext = createContext(true);
+
 /** The Lottie twin of `TextShimmer`: while motion is off it keeps the box and draws nothing. */
 export function RunningLoader({ size }: { size: number }) {
   return useContext(ToolMotionContext) ? <KortixLoader customSize={size} /> : <View style={{ width: size, height: size }} />;
@@ -107,7 +115,6 @@ function TextShimmerSweep({
 }: TextShimmerProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const reduceMotion = useReducedMotion();
   const { base, highlight } = useMemo(() => shimmerColors(tone, isDark), [tone, isDark]);
   const band = shimmerSpread(children, spread);
 
@@ -124,7 +131,6 @@ function TextShimmerSweep({
   );
 
   useEffect(() => {
-    if (reduceMotion) return;
     const sweepMs = duration * 1000;
     progress.value = withRepeat(
       withSequence(
@@ -137,13 +143,13 @@ function TextShimmerSweep({
       false,
     );
     return () => cancelAnimation(progress);
-  }, [duration, progress, reduceMotion]);
+  }, [duration, progress]);
 
   const bandStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shimmerBandCenter(progress.value, width.value) - band }],
   }));
 
-  const animate = measured && !reduceMotion;
+  const animate = measured;
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -197,7 +203,7 @@ function TextShimmerStill({ children, variant, style, numberOfLines, tone = 'def
 }
 
 function TextShimmerImpl(props: TextShimmerProps) {
-  const motion = useContext(ToolMotionContext);
+  const motion = useContext(ToolMotionContext) && useContext(LoopMotionContext) && !useReduceMotion();
   return motion ? <TextShimmerSweep {...props} /> : <TextShimmerStill {...props} />;
 }
 
