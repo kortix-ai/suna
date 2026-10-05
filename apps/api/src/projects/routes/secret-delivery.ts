@@ -271,7 +271,7 @@ export function registerSecretDeliveryRoutes(): void {
             projectId,
             actorUserId: loaded.userId,
             actorType,
-            source: inferAuditSource(c, actorType),
+            source: inferAuditSource(c.get('authType'), actorType),
             action: 'secret.strategy.changed',
             resourceType: 'project_secret',
             resourceId: existing.secretId,

@@ -16,7 +16,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { buildFilters } from '../../accounts/audit-filters';
-import { requireEntitlement } from '../../accounts/iam/helpers';
+import { requireEntitlement } from '../../accounts/iam/http-helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { PROJECT_ACTIONS } from '../../iam';
 import { logger as appLogger } from '../../lib/logger';
@@ -49,7 +49,7 @@ import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-gu
 import { isUuid } from '../../shared/validate';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { readSessionAuditActions } from '../lib/session-audit-read';

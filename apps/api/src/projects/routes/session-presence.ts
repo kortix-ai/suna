@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { extendSandboxDeadline, previewGrantMs } from '../sandbox-deadline';

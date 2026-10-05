@@ -1,7 +1,7 @@
 /**
  * Bounded, batched, asynchronous writer for `kortix.audit_events`.
  *
- * Why this exists: `auditApiRequest` (shared/audit.ts) runs on every `/v1/*`
+ * Why this exists: `auditApiRequest` (middleware/audit.ts) runs on every `/v1/*`
  * request and used to `await` a single-row INSERT into a 14-index table before
  * the response was released. On staging that put the audit write on the
  * critical path of every authenticated request: pg_stat_statements measured the

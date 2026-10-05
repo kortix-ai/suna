@@ -15,9 +15,9 @@
 // with no extra wiring.
 
 import type { Context } from 'hono';
-import { recordAuditEvent } from './audit';
-import { credentialFromContext } from './audit-credential';
-import { createFirstInWindow } from './audit-dedupe';
+import { recordAuditEvent } from '../shared/audit';
+import { credentialFromContext } from '../shared/audit-credential';
+import { createFirstInWindow } from '../shared/audit-dedupe';
 import { requestClientIp } from './client-ip';
 
 function userAgent(c: Context): string | null {

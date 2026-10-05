@@ -59,7 +59,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';

@@ -30,7 +30,7 @@ import {
   normalizeApprovalNote,
 } from '../lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../channels/approval-card-relay';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 
 export function registerApprovalsRoutes(): void {
   // GET /v1/projects/:projectId/approvals
@@ -355,7 +355,7 @@ export function registerApprovalsRoutes(): void {
         decision,
         note,
         actorUserId: loaded.userId,
-        auditSource: inferAuditSource(c, 'human'),
+        auditSource: inferAuditSource(c.get('authType'), 'human'),
         resume: 'queue',
         updateStaleCard: () =>
           markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),

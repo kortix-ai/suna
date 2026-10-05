@@ -18,7 +18,7 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { mountLlmGateway } = await import('./wire');
-const { resetRateLimiters } = await import('../shared/rate-limit');
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 let fetched = 0;
 function stubUpstream(body = '{"models":{}}') {

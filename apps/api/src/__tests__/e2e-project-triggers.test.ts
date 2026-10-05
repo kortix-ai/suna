@@ -794,7 +794,7 @@ const {
   runProjectTriggerSweep,
 } = await import('../projects/index');
 registerAllProjectRoutes();
-const { resetRateLimiters } = await import('../shared/rate-limit');
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 function createApp() {
   const app = new Hono();

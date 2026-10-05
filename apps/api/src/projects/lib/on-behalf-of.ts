@@ -20,12 +20,15 @@
  * Readers: `getRequestOnBehalfOf(c)` (fresh, per request, from the auth
  * middleware) or the token row itself. No memo carries it: it changes per turn.
  */
-import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { accountTokens, projectSessions } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { membershipExistsSql, membershipRow } from '../../iam/membership-read';
+
+// The request reader `getRequestOnBehalfOf` lives in `middleware/on-behalf-of.ts`.
+// Re-exported here so every importer and mock keeps working.
+export { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 
 /** Session metadata key stamped when a prompt cleared `on_behalf_of`. A
  *  re-mint of the session credential reads it and never restores the value. */
@@ -238,9 +241,4 @@ export async function bindSessionTurnIdentity(input: {
     select token_id from changed
   `);
   return changed.length > 0;
-}
-
-/** Fresh per-request value set by the auth middleware; null for non-session tokens. */
-export function getRequestOnBehalfOf(c: Context): string | null {
-  return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
 }

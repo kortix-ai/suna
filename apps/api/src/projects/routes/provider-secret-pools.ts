@@ -14,7 +14,7 @@ import { mayChangeSessionModel } from '../lib/session-model-change';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 
 const Params = z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid(), providerId: z.string().min(1).max(100) });

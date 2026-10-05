@@ -12,7 +12,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { buildProjectAccessView } from '../lib/project-access-view';
 import { SESSION_PARTICIPANT_LIMIT, buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
 

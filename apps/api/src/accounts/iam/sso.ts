@@ -28,7 +28,7 @@ import {
   SsoProviderSchema,
   SsoMappingSchema,
 } from './app';
-import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
+import { auditIam, isUniqueViolation, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import {
   deleteSupabaseSamlProvider,

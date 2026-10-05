@@ -21,7 +21,7 @@ import { isDemoEnterprise } from '../../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../../billing/services/account-write-owner';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from './helpers';
+import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 
 const DemoStateSchema = z.object({ enabled: z.boolean() }).openapi('EnterpriseDemoState');

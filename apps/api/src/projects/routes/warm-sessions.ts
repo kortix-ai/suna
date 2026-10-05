@@ -27,7 +27,7 @@ import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { GitOperationError } from '../git/mirror';
 import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';

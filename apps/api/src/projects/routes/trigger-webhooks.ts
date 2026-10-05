@@ -17,10 +17,7 @@ import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,
 } from '../lib/webhook-secret-policy';
-import {
-  consumeProjectWebhookManifestRefreshBudget,
-  createProjectWebhookRateLimitMiddleware,
-} from '../../shared/rate-limit';
+import { consumeProjectWebhookManifestRefreshBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 export function registerTriggerWebhooksRoutes(): void {
@@ -123,7 +120,7 @@ export function registerTriggerWebhooksRoutes(): void {
     (c as any).set('accountId', project.accountId);
 
     const payload = {
-      ...webhookPayload(c, rawBody),
+      ...webhookPayload((name) => c.req.header(name), rawBody),
       trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
       fired_at: new Date().toISOString(),
     };

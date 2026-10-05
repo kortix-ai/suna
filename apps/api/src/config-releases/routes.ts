@@ -29,7 +29,7 @@ import {
   projectCapabilityAllowed,
 } from '../projects/lib/access';
 import { projectsApp } from '../projects/lib/app';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
+import { callerKortixSessionId } from '../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-session';
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { isUuid } from '../shared/validate';

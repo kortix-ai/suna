@@ -24,7 +24,7 @@ import {
   recordAuditEvent,
 } from '../shared/audit';
 import { auditCredentialNames } from '../shared/audit-credential-names';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../middleware/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -45,7 +45,7 @@ import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
-import { requireEntitlement } from './iam/helpers';
+import { requireEntitlement } from './iam/http-helpers';
 import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();

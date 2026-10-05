@@ -18,7 +18,7 @@ import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForRole } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { registerPolicyListRoute, registerPolicyWriteRoutes, systemRoleWireId, isSystemRoleId, systemRoleByWireId, loadCustomRole } from './custom-roles-policy';
-import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
+import { auditIam, isUniqueViolation, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import { loadConfigWithFilesCached } from '../../projects/lib/project-resources';

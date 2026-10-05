@@ -22,7 +22,7 @@ import { hasDatabase } from '../shared/db';
 import { computeEtag, etagMatches } from '../shared/http-cache';
 import { readJsonObject } from '../shared/http-body';
 import { getPlatformRole } from '../shared/platform-roles';
-import { createDemoRequestRateLimitMiddleware } from '../shared/rate-limit';
+import { createDemoRequestRateLimitMiddleware } from '../middleware/rate-limit';
 
 export function registerPlatformEndpoints(app: OpenAPIHono) {
 // Also expose system status at root for backward compat with frontend

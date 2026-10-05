@@ -13,7 +13,7 @@ import type { ScopeType } from '../../iam/catalog';
 import { customRoleBindings, legacyToCanonicalPrincipal, type CustomRoleBinding } from '../../iam/read-models';
 import { invalidateIamCacheForPolicyPrincipal } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, requireEntitlement } from './helpers';
+import { auditIam, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { loadSystemRoles } from '../../iam/catalog';
 

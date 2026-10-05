@@ -23,7 +23,7 @@ mock.module('../iam', () => ({
   },
 }));
 mock.module('../iam/actor', () => ({ actorOf: async () => ({ userId: USER_ID, accountId: ACCOUNT_ID }) }));
-mock.module('../accounts/iam/helpers', () => ({
+mock.module('../accounts/iam/http-helpers', () => ({
   auditIam: async (_c: unknown, args: Record<string, unknown>) => {
     audits.push(args);
   },

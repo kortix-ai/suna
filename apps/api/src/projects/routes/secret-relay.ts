@@ -22,7 +22,7 @@
  * every head-side security check runs against complete data in
  * `prepareRelayHead` — the same function the buffered route uses. This route
  * adds no policy logic of its own: authorization, framing, substitution and
- * the hop loop all live in the relay engine (`projects/secrets/relay-hop.ts`),
+ * the hop loop all live in the relay engine (`projects/secrets/http-relay-hop.ts`),
  * which this file calls once per request.
  *
  * ## The one rule a reader must not lose
@@ -46,7 +46,7 @@ import { auth, errors } from '../../openapi';
 import { requestEgressIp, verifySandboxEgressIp } from '../../platform/services/sandbox-egress-pin';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { prepareRelayRequest, refuse, runRelayHops } from '../secrets/relay-hop';
+import { prepareRelayRequest, refuse, runRelayHops } from '../secrets/http-relay-hop';
 
 export function registerSecretRelayRoutes(): void {
   projectsApp.openapi(

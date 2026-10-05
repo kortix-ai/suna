@@ -34,12 +34,13 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './discovery';
 import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from '../middleware/client-ip';
 import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
 import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
 import { resolveAccountId } from '../shared/resolve-account';
+import { bearerToken } from '../shared/bearer-token';
 
 // ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
@@ -55,10 +56,10 @@ function checkTokenRateLimit(clientId: string): boolean {
 
 async function oauthTokenAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = bearerToken(authHeader);
+  if (token === null) {
     throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
   }
-  const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
   const tokenHash = await hashSecretKeyAsync(token);

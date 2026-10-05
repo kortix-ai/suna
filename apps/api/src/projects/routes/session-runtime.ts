@@ -12,7 +12,7 @@ import {
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '../lib/app';
 import {
   sessionUsesCurrentRepository,

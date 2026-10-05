@@ -56,7 +56,7 @@ import {
   summarizeDeliverySync,
 } from '../lib/secret-writes';
 import { resolveSecretWriteInput } from '../lib/secret-write-input';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { loadConnectionSharing } from '../lib/connection-sharing';
 import {
   clearSecretAudience,
@@ -458,7 +458,7 @@ export function registerSecretsRoutes(): void {
           projectId,
           actorUserId: loaded.userId,
           actorType,
-          source: inferAuditSource(c, actorType),
+          source: inferAuditSource(c.get('authType'), actorType),
           action: existing ? 'secret.updated' : 'secret.created',
           resourceType: 'project_secret',
           resourceId,
@@ -639,7 +639,7 @@ export function registerSecretsRoutes(): void {
           projectId,
           actorUserId: loaded.userId,
           actorType,
-          source: inferAuditSource(c, actorType),
+          source: inferAuditSource(c.get('authType'), actorType),
           action: 'secret.deleted',
           resourceType: 'project_secret',
           resourceId: existing.secretId,

@@ -26,7 +26,7 @@ import {
 } from '../../repositories/oauth-clients';
 import { OAUTH_SCOPES } from '../../oauth/access-token';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from './helpers';
+import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 

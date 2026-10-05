@@ -4,7 +4,7 @@
 
 import { Context } from 'hono';
 import { recordAuditEvent } from '../../shared/audit';
-import { requestClientIp } from '../../shared/client-ip';
+import { requestClientIp } from '../../middleware/client-ip';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import type { TierEntitlements } from '../../types';
 

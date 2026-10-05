@@ -609,6 +609,8 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+}));
+mock.module('../middleware/resolve-account', () => ({
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 

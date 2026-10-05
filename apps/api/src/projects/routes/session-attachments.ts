@@ -11,7 +11,7 @@ import {
   loadVisibleSession,
   sessionIsTombstoned,
 } from "../lib/access";
-import { callerKortixSessionId } from "../lib/caller-session";
+import { callerKortixSessionId } from "../../middleware/caller-session";
 import { sessionAttachmentStore } from "../lib/session-attachments";
 import { isUuid } from '../../shared/validate';
 

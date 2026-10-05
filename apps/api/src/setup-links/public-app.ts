@@ -9,7 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from '../middleware/client-ip';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -31,7 +31,8 @@ import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-a
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../shared/db';
 import { projectAccountMembershipRows } from '../iam/membership-read';
-import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
+import { TokenBucketRateLimiter } from '../shared/rate-limit';
+import { enforceRateLimit } from '../middleware/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';

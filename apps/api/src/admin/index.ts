@@ -13,7 +13,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../middleware/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { analyticsApp } from './analytics';

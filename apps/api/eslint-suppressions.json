@@ -82,7 +82,7 @@
       "count": 10
     }
   },
-  "src/accounts/iam/helpers.ts": {
+  "src/accounts/iam/http-helpers.ts": {
     "no-console": {
       "count": 1
     }
@@ -240,7 +240,7 @@
   },
   "src/apps/routes.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     },
     "no-console": {
       "count": 2
@@ -286,11 +286,6 @@
     "no-console": {
       "count": 2
     },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/billing/require-billing-write.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -861,7 +856,7 @@
   },
   "src/config-releases/routes.ts": {
     "kortix-api/projects-surface": {
-      "count": 7
+      "count": 6
     },
     "no-restricted-imports": {
       "count": 2
@@ -959,7 +954,7 @@
   },
   "src/connectors/db-deps-principal.ts": {
     "kortix-api/projects-surface": {
-      "count": 5
+      "count": 3
     },
     "no-console": {
       "count": 1
@@ -978,6 +973,11 @@
   "src/connectors/gateway.ts": {
     "kortix-api/projects-surface": {
       "count": 1
+    }
+  },
+  "src/connectors/http-principal.ts": {
+    "kortix-api/projects-surface": {
+      "count": 4
     }
   },
   "src/connectors/manifest-crud.ts": {
@@ -1193,11 +1193,6 @@
       "count": 1
     }
   },
-  "src/iam/session-gate.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/iam/session-oversight.ts": {
     "no-console": {
       "count": 1
@@ -1400,6 +1395,11 @@
       "count": 1
     }
   },
+  "src/middleware/auth-audit.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
   "src/middleware/auth-combined.ts": {
     "no-console": {
       "count": 1
@@ -1428,9 +1428,24 @@
       "count": 2
     }
   },
+  "src/middleware/rate-limit.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/middleware/request-audit.ts": {
+    "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
   "src/middleware/request-deadline.ts": {
     "no-restricted-properties": {
       "count": 1
+    }
+  },
+  "src/middleware/session-gate.ts": {
+    "no-console": {
+      "count": 2
     }
   },
   "src/notifications/routes.ts": {
@@ -1975,9 +1990,6 @@
   "src/projects/provision-core.ts": {
     "no-console": {
       "count": 6
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/projects/reaper-constants.ts": {
@@ -3005,7 +3017,7 @@
   },
   "src/sandbox-proxy/routes/preview.ts": {
     "kortix-api/projects-surface": {
-      "count": 2
+      "count": 1
     }
   },
   "src/sandbox-proxy/routes/public-share.ts": {
@@ -3074,7 +3086,7 @@
   },
   "src/setup-links/approval-app.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     }
   },
   "src/setup-links/connector-completion-watch.ts": {
@@ -3196,11 +3208,6 @@
       "count": 3
     }
   },
-  "src/shared/auth-audit.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/shared/instance.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -3264,11 +3271,6 @@
     },
     "no-console": {
       "count": 3
-    }
-  },
-  "src/shared/rate-limit.ts": {
-    "no-console": {
-      "count": 1
     }
   },
   "src/shared/resolve-account.ts": {

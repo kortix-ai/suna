@@ -6,8 +6,8 @@ import { previewConfig } from './routes/preview-config';
 import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
-import { prefetchSandbox } from './prefetch';
-import { createSandboxProxyRateLimitMiddleware } from '../shared/rate-limit';
+import { prefetchSandbox } from './http-prefetch';
+import { createSandboxProxyRateLimitMiddleware } from '../middleware/rate-limit';
 import { makeOpenApiApp } from '../openapi';
 import type { Context, Next } from 'hono';
 
@@ -36,7 +36,7 @@ sandboxProxyApp.route('/public-share', publicShareApp);
 
 // ── Path-based proxy ────────────────────────────────────────────────────────
 // Order is load-bearing: authenticate, then rate-limit, and only then start
-// reading the sandbox row (prefetch.ts). A row read on a miss falls back to a
+// reading the sandbox row (http-prefetch.ts). A row read on a miss falls back to a
 // case-insensitive `external_id` scan, so it must never be reachable by an
 // unauthenticated or over-limit caller. Started here, the read overlaps the
 // rest of the request before `forwardToSandbox` needs it (the body read).

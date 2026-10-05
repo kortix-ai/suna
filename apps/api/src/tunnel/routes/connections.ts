@@ -22,7 +22,7 @@ import {
   isTunnelToken,
   verifySecretKey,
 } from '../../shared/crypto';
-import { requestClientKey } from '../../shared/client-ip';
+import { requestClientKey } from '../../middleware/client-ip';
 import { isUuid } from '../../shared/validate';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import type { AppEnv } from '../../types';
@@ -32,6 +32,7 @@ import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 import { effectiveMachineCapabilities } from '../core/rpc-core';
 import { readJsonObject } from '../../shared/http-body';
 import { uniqueComputerLabel } from '../../connectors/computers';
+import { bearerToken } from '../../shared/bearer-token';
 import { unpairMachine } from '../registrations';
 
 export {
@@ -324,7 +325,7 @@ export function createTunnelSelfRouter() {
       }
       const tunnelId = c.req.header('x-tunnel-id') ?? '';
       const header = c.req.header('authorization') ?? '';
-      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      const token = bearerToken(header)?.trim() ?? '';
       if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
       // Look the machine up before the costly verifier, as the WS handshake does.
       const [machine] = isTunnelToken(token)

@@ -14,7 +14,7 @@ import {
   revokeScimToken,
 } from '../../repositories/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
-import { auditIam, requireEntitlement } from './helpers';
+import { auditIam, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 
