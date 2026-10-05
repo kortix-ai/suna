@@ -63,6 +63,15 @@ export function useMfa() {
 
   const startEnrollMutation = useMutation({
     mutationFn: async () => {
+      // An unverified factor is an enrollment someone walked away from (a
+      // closed tab, a reload). It can never sign anyone in, and it holds the
+      // friendly name the new one wants, so clear it before starting over.
+      const { data: listed } = await supabase.auth.mfa.listFactors();
+      for (const stale of listed?.all ?? []) {
+        if (stale.factor_type === 'totp' && stale.status === 'unverified') {
+          await supabase.auth.mfa.unenroll({ factorId: stale.id });
+        }
+      }
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
         friendlyName: `Authenticator (${new Date().toISOString().slice(0, 10)})`,
