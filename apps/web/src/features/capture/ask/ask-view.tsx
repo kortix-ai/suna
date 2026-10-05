@@ -375,6 +375,12 @@ function ScopeItem({
 }
 
 /** The answer's paragraphs, each `[n]` a button that selects its source. */
+const LIST_ITEM = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
+/**
+ * The answer: paragraphs, `- ` / `1.` lists and **bold** (the model's light
+ * markdown), each `[n]` a button that selects its source.
+ */
 function Answer({
   text,
   selected,
@@ -385,41 +391,72 @@ function Answer({
   onCite: (n: number) => void;
 }) {
   const t = useTranslations('capture.ask');
+  const inline = (line: string) =>
+    line.split(/(\[\d+\]|\*\*[^*\n]+\*\*)/g).map((part, i) => {
+      if (/^\*\*[^*\n]+\*\*$/.test(part))
+        return (
+          <strong key={i} className="font-medium">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      const match = /^\[(\d+)\]$/.exec(part);
+      if (!match) return <Fragment key={i}>{part}</Fragment>;
+      const n = Number(match[1]);
+      return (
+        <button
+          key={i}
+          type="button"
+          aria-label={t('citation', { n })}
+          aria-pressed={selected === n}
+          onClick={() => onCite(n)}
+          className={cn(
+            'mx-0.5 inline-flex h-4.5 min-w-5 items-center justify-center rounded-sm px-1 align-baseline font-mono text-xs transition-colors',
+            selected === n
+              ? 'bg-foreground text-background'
+              : 'bg-muted text-foreground hover:bg-foreground/15',
+          )}
+        >
+          {n}
+        </button>
+      );
+    });
+  // Group lines into paragraphs and lists: a run of list lines is one list.
+  const blocks: { list: boolean; ordered: boolean; lines: string[] }[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) {
+      blocks.push({ list: false, ordered: false, lines: [] });
+      continue;
+    }
+    const isItem = LIST_ITEM.test(line);
+    const last = blocks[blocks.length - 1];
+    if (last && last.lines.length && last.list === isItem) last.lines.push(line);
+    else blocks.push({ list: isItem, ordered: isItem && /^\s*\d/.test(line), lines: [line] });
+  }
   return (
     <div className="text-foreground flex flex-col gap-3 text-sm leading-relaxed">
-      {text.split(/\n{2,}/).map((paragraph, p) => (
-        <p key={p} className="text-pretty whitespace-pre-wrap">
-          {paragraph.split(/(\[\d+\]|\*\*[^*\n]+\*\*)/g).map((part, i) => {
-            // The model writes **bold** for names; show it bold, not as asterisks.
-            if (/^\*\*[^*\n]+\*\*$/.test(part))
-              return (
-                <strong key={i} className="font-medium">
-                  {part.slice(2, -2)}
-                </strong>
-              );
-            const match = /^\[(\d+)\]$/.exec(part);
-            if (!match) return <Fragment key={i}>{part}</Fragment>;
-            const n = Number(match[1]);
-            return (
-              <button
-                key={i}
-                type="button"
-                aria-label={t('citation', { n })}
-                aria-pressed={selected === n}
-                onClick={() => onCite(n)}
-                className={cn(
-                  'mx-0.5 inline-flex h-4.5 min-w-5 items-center justify-center rounded-sm px-1 align-baseline font-mono text-xs transition-colors',
-                  selected === n
-                    ? 'bg-foreground text-background'
-                    : 'bg-muted text-foreground hover:bg-foreground/15',
-                )}
-              >
-                {n}
-              </button>
-            );
-          })}
-        </p>
-      ))}
+      {blocks
+        .filter((block) => block.lines.length)
+        .map((block, b) =>
+          block.list ? (
+            block.ordered ? (
+              <ol key={b} className="flex list-decimal flex-col gap-1 pl-5 text-pretty">
+                {block.lines.map((line, i) => (
+                  <li key={i}>{inline(line.replace(LIST_ITEM, ''))}</li>
+                ))}
+              </ol>
+            ) : (
+              <ul key={b} className="flex list-disc flex-col gap-1 pl-5 text-pretty">
+                {block.lines.map((line, i) => (
+                  <li key={i}>{inline(line.replace(LIST_ITEM, ''))}</li>
+                ))}
+              </ul>
+            )
+          ) : (
+            <p key={b} className="text-pretty whitespace-pre-wrap">
+              {inline(block.lines.join('\n'))}
+            </p>
+          ),
+        )}
     </div>
   );
 }
