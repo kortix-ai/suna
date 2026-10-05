@@ -19,12 +19,14 @@ import {
   pickDesktopAsset,
 } from '@/features/marketing/download/releases';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
-import { marketingMetadata } from '@/lib/seo/metadata';
+import { localizedMarketingMetadata } from '@/lib/seo/metadata';
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
 import { headers } from 'next/headers';
 
-export const metadata: Metadata = marketingMetadata('/download');
+export function generateMetadata(): Promise<Metadata> {
+  return localizedMarketingMetadata('/download');
+}
 
 const DESKTOP_MARKS: Record<DesktopOs, CardRow['Mark']> = {
   macos: AppleMark,

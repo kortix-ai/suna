@@ -7,6 +7,7 @@
  * and response knowledge inside the SDK.
  */
 
+import { retiredEndpointError } from '../../http/api/errors';
 import { auditFilterQuery } from '../projects-client/audit-filter';
 import { platformApiBase } from './shared';
 
@@ -442,44 +443,33 @@ export async function downloadAccountAudit(
   };
 }
 
+/**
+ * @deprecated The API deleted `POST /v1/admin/stress-test/run` with the ops
+ * console. Always rejects with `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export async function openStressTestStream(
-  input: Record<string, unknown>,
-  options: HostRequestOptions,
+  _input: Record<string, unknown>,
+  _options: HostRequestOptions,
 ): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(`${platformApiBase(options.backendUrl)}/admin/stress-test/run`, {
-    method: 'POST',
-    headers: requestHeaders(options, true),
-    body: JSON.stringify(input),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
-  if (!response.ok) {
-    const body = await parseResponseBody(response);
-    throw new HostBoundaryError(errorMessage(response, body), response.status, body);
-  }
-  if (!response.body) {
-    throw new HostBoundaryError('No response body', response.status, null);
-  }
-  return response.body;
+  throw retiredEndpointError('openStressTestStream');
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function buildPublicTemplateUrl(backendUrl: string, shareId: string): URL | null {
-  if (!UUID_PATTERN.test(shareId)) return null;
-  return new URL(`templates/public/${shareId.toLowerCase()}`, `${platformApiBase(backendUrl)}/`);
+/**
+ * @deprecated The API serves no public template route (`/v1/templates/public/:id`).
+ * Always throws `ENDPOINT_RETIRED`. Removed in the next major.
+ */
+export function buildPublicTemplateUrl(_backendUrl: string, _shareId: string): URL | null {
+  throw retiredEndpointError('buildPublicTemplateUrl');
 }
 
+/**
+ * @deprecated The API serves no public template route (`/v1/templates/public/:id`).
+ * Always rejects with `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export async function getPublicTemplate<T>(
-  backendUrl: string,
-  shareId: string,
-  signal?: AbortSignal,
+  _backendUrl: string,
+  _shareId: string,
+  _signal?: AbortSignal,
 ): Promise<T> {
-  const url = buildPublicTemplateUrl(backendUrl, shareId);
-  if (!url) throw new HostBoundaryError('Invalid shareId parameter', 400, null);
-  const response = await fetch(url, { signal });
-  const body = await parseResponseBody(response);
-  if (!response.ok) {
-    throw new HostBoundaryError(errorMessage(response, body), response.status, body);
-  }
-  return body as T;
+  throw retiredEndpointError('getPublicTemplate');
 }

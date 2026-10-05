@@ -19,6 +19,7 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
 let mergeable = true;
+let upToDate = false;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -84,6 +85,17 @@ function startServer(): string {
         return Response.json({ change_request: changeRequest() });
       }
       if (url.pathname === `${base}/change-requests/${CR_ID}/merge-preview`) {
+        if (upToDate) {
+          return Response.json({
+            base_sha: 'b',
+            head_sha: 'h',
+            merge_base: 'm',
+            can_fast_forward: false,
+            can_merge: false,
+            conflicts: [],
+            is_up_to_date: true,
+          });
+        }
         return Response.json(
           mergeable
             ? {
@@ -106,7 +118,10 @@ function startServer(): string {
               },
         );
       }
-      if (url.pathname === `${base}/change-requests/${CR_ID}/request-changes` && req.method === 'POST') {
+      if (
+        url.pathname === `${base}/change-requests/${CR_ID}/request-changes` &&
+        req.method === 'POST'
+      ) {
         if (!(body as { feedback?: string })?.feedback) {
           return Response.json({ error: 'feedback is required' }, { status: 400 });
         }
@@ -155,7 +170,17 @@ async function runCli(args: string[], configFile?: string) {
     KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     KORTIX_CONFIG_FILE: configFile,
   };
-  for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'KORTIX_BRANCH_NAME', 'KORTIX_HEAD_REF', 'KORTIX_SESSION_ID', 'BASH_ENV']) {
+  for (const key of [
+    'KORTIX_API_URL',
+    'KORTIX_CLI_TOKEN',
+    'KORTIX_FRONTEND_URL',
+    'KORTIX_PROJECT_ID',
+    'KORTIX_TOKEN',
+    'KORTIX_BRANCH_NAME',
+    'KORTIX_HEAD_REF',
+    'KORTIX_SESSION_ID',
+    'BASH_ENV',
+  ]) {
     delete env[key];
   }
   const proc = Bun.spawn({
@@ -180,6 +205,7 @@ describe('kortix cr — review parity', () => {
     process.env = { ...ORIGINAL_ENV };
     calls = [];
     mergeable = true;
+    upToDate = false;
   });
 
   afterEach(() => {
@@ -192,7 +218,12 @@ describe('kortix cr — review parity', () => {
   test('--help documents the three new subcommands', async () => {
     const r = await runCli(['cr', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['merge-preview <cr>', 'request-changes <cr>', 'version-diff --from', 'project.review.act']) {
+    for (const fragment of [
+      'merge-preview <cr>',
+      'request-changes <cr>',
+      'version-diff --from',
+      'project.review.act',
+    ]) {
       expect(r.stdout).toContain(fragment);
     }
   });
@@ -228,7 +259,10 @@ describe('kortix cr — review parity', () => {
 
   test('request-changes POSTs {feedback} and reports delivery', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'request-changes', CR_ID, '--message', 'Rename it first', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'request-changes', CR_ID, '--message', 'Rename it first', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
@@ -249,7 +283,10 @@ describe('kortix cr — review parity', () => {
 
   test('version-diff sends from/into and prints the summary', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'version-diff', '--from', 'feature/x', '--into', 'main', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'version-diff', '--from', 'feature/x', '--into', 'main', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'GET',
@@ -263,7 +300,10 @@ describe('kortix cr — review parity', () => {
 
   test('version-diff says so when there is nothing to propose', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'version-diff', '--from', 'empty', '--into', 'main', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'version-diff', '--from', 'empty', '--into', 'main', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('No changes');
   });
@@ -278,9 +318,51 @@ describe('kortix cr — review parity', () => {
 
   test('an unknown CR number reports it without hitting the write route', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'request-changes', '99', '--message', 'x', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'request-changes', '99', '--message', 'x', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('No CR #99');
     expect(calls.every((c) => c.method === 'GET')).toBe(true);
+  });
+
+  // `show` and `merge-preview` must render the merge verdict through ONE
+  // code path — these pin the verdict bytes (including the trailing blank
+  // line) at the end of both outputs, for all three verdicts.
+  test('show and merge-preview end with the SAME mergeable verdict bytes', async () => {
+    const config = writeConfig(startServer());
+    const preview = await runCli(['cr', 'merge-preview', CR_ID, '--project', PROJECT], config);
+    const show = await runCli(['cr', 'show', CR_ID, '--project', PROJECT], config);
+    const verdict = '  ✓ Mergeable cleanly (fast-forward).\n\n';
+    expect(preview.code).toBe(0);
+    expect(show.code).toBe(0);
+    expect(preview.stdout.endsWith(verdict)).toBe(true);
+    expect(show.stdout.endsWith(verdict)).toBe(true);
+  });
+
+  test('show and merge-preview end with the SAME conflicts verdict bytes', async () => {
+    const config = writeConfig(startServer());
+    mergeable = false;
+    const preview = await runCli(['cr', 'merge-preview', CR_ID, '--project', PROJECT], config);
+    const show = await runCli(['cr', 'show', CR_ID, '--project', PROJECT], config);
+    const verdict = '  ⚠ Conflicts in 2 files:\n    src/a.ts\n    src/b.ts\n\n';
+    // The conflicted verdict is the one that changes the exit code.
+    expect(preview.code).toBe(1);
+    expect(show.code).toBe(0);
+    expect(preview.stdout.endsWith(verdict)).toBe(true);
+    expect(show.stdout.endsWith(verdict)).toBe(true);
+  });
+
+  test('show and merge-preview end with the SAME already-up-to-date verdict bytes', async () => {
+    const config = writeConfig(startServer());
+    upToDate = true;
+    const preview = await runCli(['cr', 'merge-preview', CR_ID, '--project', PROJECT], config);
+    const show = await runCli(['cr', 'show', CR_ID, '--project', PROJECT], config);
+    const verdict = '  Already at base — nothing to merge.\n\n';
+    expect(preview.code).toBe(0);
+    expect(show.code).toBe(0);
+    expect(preview.stdout.endsWith(verdict)).toBe(true);
+    expect(show.stdout.endsWith(verdict)).toBe(true);
   });
 });

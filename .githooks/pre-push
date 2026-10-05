@@ -32,11 +32,20 @@ fi
 # No customer data in the pushed commits, their messages, or the ref names.
 printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" push
 
-# Tests ran locally on exactly this source. `pnpm test` writes
-# tests/test-attestation.json; verify-attestation.mjs recomputes source_hash
-# from the pushed commit's tree. db-suites may be skipped-no-db (no Docker):
-# fine for a PR branch, never for main (--strict). The merge gate holds a
-# DB-touching PR on it. Deletions, tags, and scratch/* branches are exempt.
+# No crash dumps or files over 20 MB in the pushed commits, including commits
+# made with --no-verify.
+printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-binary-dumps.sh" push
+
+# Tests ran locally on the files this PR changed. `pnpm test` writes
+# tests/attestations/<branch>.json; verify-attestation.mjs finds the file the
+# pushed commit's diff adds (else <pushed branch>.json, else the legacy
+# tests/test-attestation.json) and recomputes the PR diff
+# (git diff origin/main...HEAD) from the pushed commit, so a merge of origin/main
+# that touches other files keeps it green. Sanctioned skips: db-suites may be
+# skipped-no-db (no Docker) and packages may be skipped-sandbox-image (a Kortix
+# sandbox image) — fine for a PR branch, never for main (--strict). The merge
+# gate holds a DB-touching PR on the db skip. Deletions, tags, and scratch/*
+# branches are exempt.
 root=$(cd "$(dirname "$0")/.." && pwd)
 bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
@@ -45,10 +54,11 @@ bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ "${remote_ref#refs/heads/scratch/}" = "$remote_ref" ] || continue
   strict=""
   [ "$remote_ref" = refs/heads/main ] && strict="--strict"
-  node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" $strict >&2 || echo "$remote_ref"
+  node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" \
+    --branch "${remote_ref#refs/heads/}" $strict >&2 || echo "$remote_ref"
 done)
 if [ -n "$bad" ]; then
-  echo "pre-push: tests/test-attestation.json is stale or red — run \`pnpm test\` and commit the attestation before pushing." >&2
+  echo "pre-push: the test attestation is missing, stale, or red — run \`pnpm test\` and commit tests/attestations/ before pushing." >&2
   echo "  Rejected: $bad. Do not bypass with --no-verify: the merge gate runs \`pnpm test:verify\` on the PR head." >&2
   exit 1
 fi

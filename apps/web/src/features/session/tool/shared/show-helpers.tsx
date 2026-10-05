@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import Loading from '@/components/ui/loading';
 import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
@@ -28,7 +29,7 @@ import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useQueryClient } from '@tanstack/react-query';
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { STATUS_BORDER } from '@/components/ui/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
@@ -50,6 +51,7 @@ import {
   FileTextIcon as FileText,
   FileXlsIcon as FileXls,
   FileZipIcon as FileZip,
+  FolderSimpleIcon,
   GlobeIcon as Globe,
   ImageIcon,
   ArrowsOutSimpleIcon as Maximize2,
@@ -326,6 +328,62 @@ export function ShowFileActions({
 }
 
 /**
+ * The file a `show` card renders, named on hover: the full file name, then
+ * its full path. Nothing else — the card header already carries the title.
+ * Wraps the single-item header and every carousel tab.
+ */
+export function ShowFileHoverCard({ path, children }: { path: string; children: ReactElement }) {
+  const [open, setOpen] = useState(false);
+  // A press means "I am clicking", not "tell me about this file". Radix also
+  // opens on focus, which a click gives the tab, so without this the card pops
+  // up right after every tab switch. Cleared when the pointer leaves.
+  const pressed = useRef(false);
+
+  if (!path) return children;
+  const name = path.split('/').pop() || path;
+
+  return (
+    <HoverCard
+      open={open}
+      onOpenChange={(next) => setOpen(next && !pressed.current)}
+      // Long enough that skimming across a row of tabs to click one never
+      // opens a card; only a deliberate rest on one does.
+      openDelay={700}
+      closeDelay={100}
+    >
+      <HoverCardTrigger
+        asChild
+        onPointerDown={() => {
+          pressed.current = true;
+          setOpen(false);
+        }}
+        onPointerLeave={() => {
+          pressed.current = false;
+        }}
+      >
+        {children}
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        animated={false}
+        className="flex w-max max-w-md flex-col gap-1 px-3 py-2 text-sm"
+      >
+        {/* The name, then a folder row with the full path. The header already
+            shows the type icon, so the card carries none. Neither line wraps;
+            a path too long for the card truncates at its end. */}
+        <span className="text-foreground truncate">{name}</span>
+        <div className="text-muted-foreground flex min-w-0 items-center gap-2">
+          <FolderSimpleIcon className="size-4 shrink-0" />
+          <span className="truncate">{path}</span>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+/**
  * The inline carousel's header: one tab per item, so every output is named up
  * front and one click away. ←/→ move between tabs (WAI-ARIA tablist pattern);
  * the strip scrolls sideways when the names overflow the header.
@@ -384,33 +442,35 @@ export function ShowCarouselTabs({
         const active = i === activeIndex;
         const label = getShowCarouselItemLabel(item);
         return (
-          <button
-            key={i}
-            ref={(el) => {
-              tabRefs.current[i] = el;
-            }}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            title={item.title || label}
-            onClick={() => onSelect(i)}
-            className={cn(
-              'flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs font-medium',
-              'transition-[background-color,color,transform] active:scale-[0.96]',
-              '[&>svg]:size-3.5',
-              active
-                ? 'bg-foreground/10 text-foreground'
-                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-            )}
-          >
-            {item.status === 'pending' ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url)
-            )}
-            <span className={cn(label.startsWith(':') && 'tabular-nums')}>{label}</span>
-          </button>
+          <ShowFileHoverCard key={i} path={item.path || ''}>
+            <button
+              ref={(el) => {
+                tabRefs.current[i] = el;
+              }}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              // A file tab is named by its hover card; a native title would stack on it.
+              title={item.path ? undefined : item.title || label}
+              onClick={() => onSelect(i)}
+              className={cn(
+                'flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs font-medium',
+                'transition-[background-color,color,transform] active:scale-[0.96]',
+                '[&>svg]:size-3.5',
+                active
+                  ? 'bg-foreground/10 text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+              )}
+            >
+              {item.status === 'pending' ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url)
+              )}
+              <span className={cn(label.startsWith(':') && 'tabular-nums')}>{label}</span>
+            </button>
+          </ShowFileHoverCard>
         );
       })}
     </div>

@@ -1,9 +1,9 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
-import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
-import { type ConnectorSharing, unwrap } from './shared';
 import type { AuditEvent } from './audit';
+import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -67,7 +67,8 @@ export interface ProjectSession {
   branch_name: string;
   base_ref: string;
   sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
-  sandbox_id: string;
+  /** Null until the session has a sandbox. */
+  sandbox_id: string | null;
   sandbox_url: string | null;
   /** The session's root conversation in its runtime. Served by APIs since W4. */
   runtime_session_id?: string | null;
@@ -399,10 +400,7 @@ export async function listProjectSessionsPage(
  * nothing had to learn an envelope. It returns ONE page — use
  * `listProjectSessionsPage` when you need to know whether more follow.
  */
-export async function listProjectSessions(
-  projectId: string,
-  options?: ListProjectSessionsOptions,
-) {
+export async function listProjectSessions(projectId: string, options?: ListProjectSessionsOptions) {
   return unwrap(
     await backendApi.get<ProjectSession[]>(
       `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
@@ -525,6 +523,34 @@ export interface CreateSessionPublicShareInput {
 }
 
 /**
+ * The copyable URL of one public share, best-effort.
+ *
+ * `public_url` first: it is the share's own origin, already absolute. The
+ * others are paths on the API origin and only work where no preview domain is
+ * configured, so a relative path resolves against `origin` — the caller's own
+ * `window.location.origin` in a browser, or nothing outside one (Node, RN),
+ * where the raw path comes back untouched.
+ *
+ * Pure: pass a share from `listSessionPublicShares`.
+ */
+export function resolvePublicShareUrl(
+  share: Pick<SessionPublicShare, 'public_url' | 'public_path' | 'proxy_path' | 'public_token'>,
+  origin?: string,
+): string {
+  const raw = share.public_url ?? share.public_path ?? share.proxy_path ?? share.public_token ?? '';
+  if (!raw) return '';
+  if (/^https?:\/\//.test(raw)) return raw;
+  if (origin) {
+    try {
+      return new URL(raw, origin).toString();
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+/**
  * The live transcript share among a session's shares (newest first), or null.
  * Live means not revoked and not expired at `now`. Pure: pass the `shares`
  * from `listSessionPublicShares`.
@@ -631,8 +657,7 @@ export interface EnsureWarmProjectSessionOptions {
  * Speculative by contract: the caller ignores every failure and falls through to
  * `createProjectSession`, which re-evaluates every gate and surfaces the real
  * error. `showErrors: false` keeps the recoverable `409 WARM_SESSION_UNAVAILABLE`
- * — an account with no concurrent-session headroom, a project whose repo cannot
- * be read — out of the global error sink, where it became a toast on an ordinary
+ * — a project whose repo cannot be read, say — out of the global error sink, where it became a toast on an ordinary
  * project page view.
  */
 export async function ensureWarmProjectSession(
@@ -1056,14 +1081,45 @@ export type SessionOpenBundleModels =
  *  audit-queue flush and answers "show me history", not "what's blocking this
  *  run"). Byte-identical to `SessionAudit` minus `events`/`next_cursor`. */
 export type SessionOpenBundleAudit =
-  | ({
+  | {
       known: true;
       session_id: string;
       agent: string | null;
       audit_access: boolean;
       count: number;
       actions: SessionAuditAction[];
-    })
+    }
+  | SessionOpenBundleUnknown;
+
+/** = the runtime projection the daemon last pushed (or the API pulled).
+ *  `fresh: false` means the identity or age check failed: paint, then verify. */
+export type SessionOpenBundleRuntime =
+  | {
+      known: true;
+      fresh: boolean;
+      source: 'daemon_push' | 'api_pull';
+      captured_at: string;
+      age_ms: number;
+      runtime_running: boolean;
+      /** The daemon stream cursor at capture. */
+      epoch: string | null;
+      seq: number | null;
+      identity: {
+        schema: string | null;
+        harness: string | null;
+        runtime_session_id: string | null;
+        harness_version: string | null;
+        /** @deprecated The pre-W5 name of `runtime_session_id`. */
+        opencode_session_id: string | null;
+        /** @deprecated The pre-W5 name of `harness_version`. */
+        opencode_version: string | null;
+        daemon_build: number | null;
+        agent_config_etag: string | null;
+        head_seq: Record<string, number> | null;
+      };
+      /** The runtime state document, verbatim. */
+      state: Record<string, unknown>;
+    }
   | SessionOpenBundleUnknown;
 
 export interface SessionOpenBundle {
@@ -1077,6 +1133,9 @@ export interface SessionOpenBundle {
   transcript: SessionOpenBundleTranscript;
   config: SessionOpenBundleConfig;
   models: SessionOpenBundleModels;
+  /** The runtime projection: the agent roster and state a stopped session
+   *  can paint without a sandbox. Absent from servers older than this leg. */
+  runtime?: SessionOpenBundleRuntime;
   audit: SessionOpenBundleAudit;
 }
 
@@ -1186,6 +1245,9 @@ export interface SessionPrompt {
   /** The sender tab's clock at Enter, when the producer supplied it. */
   client_sent_at_ms?: number | null;
   attempts: number;
+  /** Automatic re-attempts a runtime-unreachable park has spent. Absent from
+   *  servers older than this field. */
+  runtime_retries?: number;
   last_error: string | null;
   /** This prompt's files, by NAME and TYPE only — never their bytes.
    *
@@ -1933,14 +1995,22 @@ export async function setProjectSessionModel(
  * project default. The pin is stored under the pre-W4 metadata key
  * `opencode_model`; read it through this function, not from `metadata`.
  */
-export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }): string | null {
+export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }):
+  | string
+  | null {
   const stored = session.metadata?.opencode_model;
   return typeof stored === 'string' && stored.trim() ? stored.trim() : null;
 }
 
 /** Who wrote one message: a project member, or another session's agent. */
 export type SessionMessageAuthor =
-  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url?: string | null }
+  | {
+      kind: 'member';
+      user_id: string;
+      name: string;
+      email: string | null;
+      avatar_url?: string | null;
+    }
   /** `name` is the session title; `agent` is the agent that session runs. */
   | { kind: 'session'; session_id: string; name: string; agent?: string };
 

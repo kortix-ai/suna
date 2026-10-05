@@ -75,9 +75,19 @@ export function groupChangeRequestsBySession(
 }
 
 /** Whether the session list should keep polling — true while any session is
- *  still mid-provisioning (queued/branching/provisioning). */
+ *  still mid-provisioning (queued/branching/provisioning).
+ *
+ *  A warm row (pre-created, never prompted) is skipped: the API reports its
+ *  idle, billed shell as `provisioning` for as long as the box lives
+ *  (KRTX-1466), and polling that static status 5s-fast for up to the warm
+ *  grant would buy nothing — the next real change is the marker drop at the
+ *  first accepted turn, which the open-session interval covers. */
 export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
-  return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
+  return (sessions ?? []).some(
+    (session) =>
+      LIVE_SESSION_STATUSES.includes(session.status) &&
+      (session.metadata as Record<string, unknown> | null)?.warm !== true,
+  );
 }
 
 /** Fast poll: a provisioning session changes status within seconds. */

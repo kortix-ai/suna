@@ -21,7 +21,7 @@ const GERMAN_SESSION = `base64-${Buffer.from(
 
 describe('locale rewrite onto app/[locale]', () => {
   test('unprefixed public pages render in English', async () => {
-    for (const path of ['/pricing', '/blog/some-post', '/legal', '/auth', '/game-of-life']) {
+    for (const path of ['/pricing', '/legal', '/auth', '/game-of-life']) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBe(`${ORIGIN}/en${path}`);
       expect(response.headers.get('x-middleware-request-x-next-intl-locale')).toBe('en');
@@ -73,6 +73,8 @@ describe('locale rewrite onto app/[locale]', () => {
       '/download/macos',
       '/auth/callback',
       '/scim/v2/Users',
+      '/blog',
+      '/blog/some-post',
     ]) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBeNull();

@@ -118,7 +118,6 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
     revenuecatPendingChangeDate: null,
     planType: null,
     seatCount: null,
-    maxConcurrentSessions: null,
     ...overrides,
   };
 }
@@ -176,7 +175,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       amount: expect.any(Number),
     });
     expect(state.instances).toEqual([]);
-    expect(state.limits?.concurrent_sessions.active).toBe(0);
+    expect('limits' in state).toBe(false);
     expect(state.billing_model).toBe('legacy');
     expect(state.member_count).toBe(3);
     expect(state.billing_state).toBe('active');
@@ -297,19 +296,6 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
     expect(state.plan?.sublabel).toBe('$200/mo · grandfathered');
   });
 
-  test('the concurrent-session ceiling shown is the trial plan’s, not free’s', async () => {
-    account = trialing();
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.limits?.concurrent_sessions.limit).toBe(
-      getTier(TRIAL_TIER).concurrentSessionLimit,
-    );
-    expect(state.limits?.concurrent_sessions.limit).not.toBe(
-      getTier('free').concurrentSessionLimit,
-    );
-  });
-
   test('credit purchases follow the resolved plan — the same predicate the purchase route gates on', async () => {
     account = trialing();
 
@@ -326,12 +312,45 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
 
     expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
   });
+});
 
-  test('a per-account session override still wins over the resolved plan cap', async () => {
-    account = trialing({ maxConcurrentSessions: 7 });
+/**
+ * Pending cancellation (`subscription.cancel_at_period_end`).
+ *
+ * Stripe is the truth; `payment_status: 'cancelling'` is its mirror on the
+ * credit row (the `customer.subscription.updated` webhook writes it, and the
+ * cancel route writes it eagerly so the UI flips without waiting on webhook
+ * latency). account-state hardcoded `cancel_at_period_end: false`, so a
+ * subscription the customer had cancelled kept rendering as if it renewed
+ * forever and the app had no state to show a pending cancellation against.
+ * These pin the mirror both ways.
+ */
+describe('buildMinimalAccountState — reports a pending cancellation from paymentStatus', () => {
+  function cancelling(overrides: Record<string, unknown> = {}) {
+    return creditAccount({
+      tier: 'per_seat',
+      billingModel: 'per_seat',
+      stripeSubscriptionId: 'sub_cancelling',
+      stripeSubscriptionStatus: 'active',
+      ...overrides,
+    });
+  }
+
+  test('paymentStatus cancelling → cancel_at_period_end true, subscription still live', async () => {
+    account = cancelling({ paymentStatus: 'cancelling' });
 
     const state = await buildMinimalAccountState('acct-1');
 
-    expect(state.limits?.concurrent_sessions.limit).toBe(7);
+    expect(state.subscription.cancel_at_period_end).toBe(true);
+    expect(state.subscription.subscription_id).toBe('sub_cancelling');
+    expect(state.has_active_subscription).toBe(true);
+  });
+
+  test('paymentStatus active → cancel_at_period_end false', async () => {
+    account = cancelling({ paymentStatus: 'active' });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.subscription.cancel_at_period_end).toBe(false);
   });
 });

@@ -1,6 +1,24 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
+import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProfileTabView } from './profile-tab';
+
+// The app's Bun tests have no DOM and Radix's portal renders nothing under
+// `renderToStaticMarkup`; the dialog-content tests below need that markup, so
+// the portal-based `Modal` is replaced by a flat stand-in — the same handling
+// as `sub-session-modal.characterization.test.tsx`. The real modal behavior
+// is exercised by the browser journeys.
+mock.module('@/components/ui/modal', () => ({
+  Modal: ({ open, children }: { open: boolean; children: ReactNode }) =>
+    open ? <div>{children}</div> : null,
+  ModalBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ModalContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ModalFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ModalTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+// Imported after the mock so the module binds to the stand-in.
+const { ProfileTabView } = await import('./profile-tab');
 
 /** Section titles in document order, read from the h2s the pane emits — the
  *  page heading (`SettingsTabHeader`) plus each section label. Row labels are
@@ -126,6 +144,38 @@ describe('ProfileTabView', () => {
 
   test('renders no password-change control', () => {
     expect(html().toLowerCase()).not.toContain('password');
+  });
+
+  /** KRTX-1403: with the 30-day option selected the banner read "Your account
+   *  is scheduled for deletion…" — present tense, an already-done state —
+   *  while GET /v1/account/deletion-status concurrently reported
+   *  `has_pending_deletion:false`. The line must describe what CHOOSING the
+   *  option does, so it carries "will be scheduled" and never the
+   *  present-tense form again. */
+  test('the grace-period banner states the consequence, not an already-scheduled deletion', () => {
+    const out = renderToStaticMarkup(<ProfileTabView showDeleteDialog />);
+    expect(out).toContain('will be scheduled for deletion after a 30-day grace period');
+    expect(out).not.toContain('is scheduled for deletion after a 30-day grace period');
+  });
+
+  /** The immediate option's banner was already conditional; pin it so the two
+   *  options stay in the same voice. */
+  test('the immediate banner states the consequence of the option', () => {
+    const out = renderToStaticMarkup(
+      <ProfileTabView showDeleteDialog deletionType="immediate" />,
+    );
+    expect(out).toContain('deletes your account right away');
+  });
+
+  /** KRTX-1403: the confirm input rendered the literal word "delete" as its
+   *  placeholder on every open, so the dialog never looked empty and the word
+   *  read as a carried-over confirmation. The label above the input already
+   *  names the word; the field itself must render bare. */
+  test('the confirm input renders without a placeholder word', () => {
+    const out = renderToStaticMarkup(<ProfileTabView showDeleteDialog />);
+    const input = out.match(/<input[^>]*id="profile-delete-confirm"[^>]*>/);
+    expect(input).toBeTruthy();
+    expect(input?.[0]).not.toContain('placeholder=');
   });
 });
 

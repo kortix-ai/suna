@@ -9,9 +9,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { classifyModelChange } from '@/lib/mid-session-change';
 import { qk } from '@/lib/query-keys';
+import { authHeaders } from '@/lib/session';
 import { getSessionToken } from '@/lib/session';
+import { sessionModelKey, useSessionModel } from '@/lib/session-model';
 import { useProjectModels } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -36,32 +38,18 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
 
   // The switcher reads its OWN current model through the neutral route, so no
   // caller has to touch the runtime-named field to render it.
-  const current = useQuery({
-    queryKey: ['session-model', projectId, sessionId],
-    queryFn: async () => {
-      const token = getSessionToken();
-      const res = await fetch(
-        `/api/session-model?projectId=${encodeURIComponent(projectId)}&sessionId=${encodeURIComponent(sessionId)}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-      );
-      if (!res.ok) return { model: null as string | null };
-      return (await res.json()) as { model: string | null };
-    },
-    staleTime: 30_000,
-    retry: false,
-  });
+  const current = useSessionModel(projectId, sessionId);
   const currentModel = current.data?.model ?? null;
 
   const change = useMutation({
     mutationFn: async (model: string) => {
-      const token = getSessionToken();
       const res = await fetch(
         `/api/session-model?projectId=${encodeURIComponent(projectId)}&sessionId=${encodeURIComponent(sessionId)}`,
         {
           method: 'PUT',
           headers: {
             'content-type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...authHeaders(getSessionToken()),
           },
           body: JSON.stringify({ model }),
         },
@@ -78,7 +66,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
     },
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
-      qc.invalidateQueries({ queryKey: ['session-model', projectId, sessionId] });
+      qc.invalidateQueries({ queryKey: sessionModelKey(projectId, sessionId) });
       // Three outcomes, not two — a stored-but-not-pushed change is NOT a
       // success, and saying so is the whole point of this switcher's doc
       // comment above. See classifyModelChange.

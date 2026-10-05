@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { UNKNOWN_DAEMON_ROUTE_ERROR } from '@kortix/api-contract/runtime-relay'
 import type { DaemonServer } from '@/harness/contract/server'
 import type { ServerWebSocket } from 'bun'
 import type { Config } from '@/lib/config/config'
@@ -136,7 +137,7 @@ export function buildDaemonApp(
   kortixRouter.route('/env-rpc/', envRpcRouter)
 
   // Terminate daemon-owned paths before the OpenCode SPA catch-all.
-  kortixRouter.all('*', (c) => c.json({ error: 'unknown kortix route' }, 404))
+  kortixRouter.all('*', (c) => c.json({ error: UNKNOWN_DAEMON_ROUTE_ERROR }, 404))
   app.route('/kortix', kortixRouter)
   // Auth gate for everything except /kortix/*. Spec §3.5: the daemon MUST
   // validate X-Kortix-User-Context (HMAC-signed by the API with KORTIX_TOKEN)

@@ -9,23 +9,23 @@
  * Direct mode forwards the caller's Kortix token through the server SDK.
  */
 
+import { bearerFromHeader, getRequestSession } from '@/server/auth';
+import { consumeRateLimit } from '@/server/rate-limit';
+import { upstreamBase } from '@/server/upstream-path';
+import { isOwner, isValidProjectId, isValidSessionId } from '@/server/users';
 import {
   ApiError,
+  type CreatedProjectCliToken,
   appendPreviewToken,
   isProxiableLocalhostUrl,
-  type CreatedProjectCliToken,
 } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
-import { getRequestSession } from '@/server/auth';
-import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner, isValidProjectId } from '@/server/users';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PATH_LENGTH = 4096;
 const MAX_TARGET_LENGTH = 8192;
 
@@ -39,20 +39,6 @@ interface PreviewRequest {
   targetUrl?: unknown;
 }
 
-function upstreamBase(): string {
-  return (
-    process.env.KORTIX_UPSTREAM ??
-    process.env.NEXT_PUBLIC_KORTIX_API_URL ??
-    'https://api.kortix.com/v1'
-  ).replace(/\/+$/, '');
-}
-
-function bearerToken(req: Request): string | null {
-  const header = req.headers.get('authorization');
-  if (!header?.startsWith('Bearer ')) return null;
-  return header.slice('Bearer '.length).trim() || null;
-}
-
 function errorResponse(status: number, error: string) {
   return Response.json({ error }, { status });
 }
@@ -64,7 +50,7 @@ function parseRequest(body: PreviewRequest): {
 } | null {
   const projectId = typeof body.projectId === 'string' ? body.projectId : '';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-  if (!isValidProjectId(projectId) || !UUID_RE.test(sessionId)) return null;
+  if (!isValidProjectId(projectId) || !isValidSessionId(sessionId)) return null;
 
   if (typeof body.targetUrl === 'string') {
     const url = body.targetUrl.trim();
@@ -94,7 +80,7 @@ function parseRequest(body: PreviewRequest): {
 export async function POST(req: NextRequest) {
   const wrapperKey = process.env.KORTIX_API_KEY?.trim() || null;
   const appSession = wrapperKey ? getRequestSession(req) : null;
-  const directToken = wrapperKey ? null : bearerToken(req);
+  const directToken = wrapperKey ? null : bearerFromHeader(req);
 
   if (wrapperKey && !appSession) return errorResponse(401, 'Not authenticated');
   if (!wrapperKey && !directToken) return errorResponse(401, 'Not authenticated');

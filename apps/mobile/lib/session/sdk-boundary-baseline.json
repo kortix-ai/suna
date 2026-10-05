@@ -1,0 +1,22 @@
+[
+  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/deletion-status`",
+  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/request-deletion`",
+  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/cancel-deletion`",
+  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/delete-immediately`",
+  "host-kortix-network\tlib/billing/api.ts\t`${API_URL}${endpoint}`",
+  "host-kortix-network\tlib/billing/checkout.ts\t`${API_URL}${endpoint}`",
+  "host-kortix-network\tlib/billing/revenuecat.ts\t`${API_URL}/billing/revenuecat/sync`",
+  "host-kortix-network\tlib/billing/usage-api.ts\t`${API_URL}${endpoint}`",
+  "host-kortix-network\tlib/billing/use-credit-usage.ts\t`${API_URL}/billing/credit-usage?${params.toString()}`",
+  "host-kortix-network\tlib/legacy/use-legacy-threads.ts\t`${API_URL}/legacy${path}`",
+  "host-kortix-network\tlib/network/use-online-status.ts\tAPI_URL.replace(/\\/v1\\/?$/, '') || API_URL",
+  "host-kortix-network\tlib/notifications/api.ts\t`${API_URL}${endpoint}`",
+  "host-kortix-network\tlib/platform/client.ts\t`${API_URL}/platform/sandbox/version/latest`",
+  "host-kortix-network\tlib/platform/client.ts\t`${API_URL}/platform/sandbox/version/all`",
+  "host-kortix-network\tlib/platform/client.ts\t`${API_URL}/platform/sandbox/version/changelog`",
+  "host-kortix-api\tlib/projects/projects-client.ts\tbackendApi",
+  "host-kortix-network\tlib/projects/projects-client.ts\t`${API_URL}${path}`",
+  "host-kortix-api\tlib/projects/projects-client.ts\tbackendApi",
+  "host-kortix-api\tlib/projects/projects-client.ts\tbackendApi",
+  "host-kortix-api\tlib/projects/projects-client.ts\tbackendApi"
+]
