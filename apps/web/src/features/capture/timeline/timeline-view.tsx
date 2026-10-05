@@ -49,7 +49,7 @@ import {
   deviceName,
   deviceOs,
   useCaptureArea,
-  useCapturePeople,
+  useCaptureDirectory,
 } from '../area/use-capture-area';
 import { indexAtOrBefore, localTimeZone } from '../capture-time';
 import { deviceStatus } from '../devices/device-status';
@@ -136,7 +136,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   const tDevices = useTranslations('capture.devices');
   const locale = useLocale();
   const area = useCaptureArea(accountId);
-  const people = useCapturePeople(accountId, area.readsEveryone);
+  const people = useCaptureDirectory(accountId, area.readsEveryone);
   const person = people.personOf(device.user_id);
   // Your own device reads as you; another member's is read (and audited) by user_id.
   const userId = person.isYou ? undefined : device.user_id;

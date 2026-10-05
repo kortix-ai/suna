@@ -37,7 +37,7 @@ import {
   deviceName,
   deviceOs,
   useCaptureArea,
-  useCapturePeople,
+  useCaptureDirectory,
 } from '../area/use-capture-area';
 import { relativeTime } from '../capture-time';
 import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
@@ -214,7 +214,7 @@ function DeviceTable({
   const t = useTranslations('capture.devices');
   const locale = useLocale();
   const statusNote = useStatusNote();
-  const people = useCapturePeople(accountId, showPerson);
+  const people = useCaptureDirectory(accountId, showPerson);
   return (
     <Table className="min-w-4xl">
       <TableHeader>

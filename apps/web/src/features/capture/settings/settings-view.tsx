@@ -33,7 +33,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { CapturePage } from '../area/capture-area-shell';
-import { useCaptureArea, useCapturePeople } from '../area/use-capture-area';
+import { useCaptureArea, useCaptureDirectory } from '../area/use-capture-area';
 import { relativeTime } from '../capture-time';
 
 function SwitchRow({
@@ -279,7 +279,7 @@ function SwitchSection({ accountId }: { accountId: string }) {
 function RolesSection({ accountId }: { accountId: string }) {
   const t = useTranslations('capture.settings');
   const members = useCaptureMembers(accountId);
-  const people = useCapturePeople(accountId, true);
+  const people = useCaptureDirectory(accountId, true);
   const setRole = useSetCaptureMemberRole(accountId);
   const [pending, setPending] = useState<string | null>(null);
   const change = (userId: string, role: CaptureRole | null) => {

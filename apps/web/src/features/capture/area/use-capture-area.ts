@@ -123,7 +123,7 @@ export interface CapturePerson {
  * Who a `user_id` is. Capture rows carry ids only; the account member list
  * has the emails. A member who may not read that list still knows themselves.
  */
-export function useCapturePeople(accountId: string, enabled: boolean) {
+export function useCaptureDirectory(accountId: string, enabled: boolean) {
   const { user } = useAuth();
   const members = useAccountMembers(accountId, enabled);
   const byId = useMemo(
