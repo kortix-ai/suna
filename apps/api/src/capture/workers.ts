@@ -90,6 +90,25 @@ export function enqueueMining(accountId: string, slotMs = 10 * 60_000): Promise<
   return enqueueJob(MINE_QUEUE, `${accountId}:${slot}`, { accountId }, { runAt: new Date(slot * slotMs), maxAttempts: 6 });
 }
 
+/**
+ * Run the pipelines now (an admin's "run" button): every closed or failed detected range of the
+ * account is queued for episodes, then mining; or mining alone. Idempotent per call.
+ */
+export async function runIntelligence(accountId: string, opts: { miningOnly?: boolean } = {}): Promise<{ episodes_queued: number; mining_queued: boolean }> {
+  const stamp = Date.now();
+  let episodes = 0;
+  if (!opts.miningOnly) {
+    const ranges = await db
+      .select({ rangeId: timelineRanges.rangeId, accountId: timelineRanges.accountId, endAt: timelineRanges.endAt })
+      .from(timelineRanges)
+      .where(and(eq(timelineRanges.accountId, accountId), eq(timelineRanges.source, 'detected'), inArray(timelineRanges.status, ['closed', 'failed'])));
+    for (const range of ranges) if (await enqueueEpisodes(range, `:run-${stamp}`)) episodes++;
+  }
+  // With episodes queued, each finished range queues mining itself; else mine now.
+  const mining = episodes ? false : await enqueueJob(MINE_QUEUE, `${accountId}:run-${stamp}`, { accountId }, { maxAttempts: 6 });
+  return { episodes_queued: episodes, mining_queued: mining || episodes > 0 };
+}
+
 export function enqueueManifest(key: string): Promise<boolean> {
   return enqueueJob(INGEST_QUEUE, key, { key });
 }

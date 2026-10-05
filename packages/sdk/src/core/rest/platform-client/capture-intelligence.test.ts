@@ -15,6 +15,7 @@ import {
   listCaptureExports,
   listCaptureWorkflows,
   reviewCaptureWorkflow,
+  runCaptureIntelligence,
   type CaptureAskEvent,
 } from './capture-intelligence';
 
@@ -56,11 +57,23 @@ test('workflows: list with filters and counts, one with its procedure, review, s
   expect(last()).toMatchObject({ method: 'GET', url: `${A}/workflows/w1` });
   await reviewCaptureWorkflow('a1', 'w1', { name: 'Refund a claim', goal: 'Refund damaged orders' });
   expect(last()).toMatchObject({ method: 'POST', url: `${A}/workflows/w1/review`, body: { name: 'Refund a claim', goal: 'Refund damaged orders' } });
-  next = () => Response.json({ name: 'refund-a-claim', markdown: '---', inputs: ['order_id'], checks: [] });
-  expect((await draftCaptureSkill('a1', 'w1')).name).toBe('refund-a-claim');
+  next = () => Response.json({ name: 'refund-a-claim', markdown: '---', inputs: ['order_id'], workflow_updated_at: '2026-10-05T17:50:47.000Z', checks: [] });
+  const draft = await draftCaptureSkill('a1', 'w1');
+  expect(draft.name).toBe('refund-a-claim');
+  // The workflow version the draft read: a host re-drafts when the workflow's updated_at moves past it.
+  const version: string = draft.workflow_updated_at;
+  expect(version).toBe('2026-10-05T17:50:47.000Z');
   expect(last()).toMatchObject({ method: 'POST', url: `${A}/workflows/w1/skill-draft`, body: {} });
   await exportCaptureSkill('a1', 'w1', { project_id: 'p1', name: 'refund-a-claim', markdown: '# x' });
   expect(last()).toMatchObject({ method: 'POST', url: `${A}/workflows/w1/skill`, body: { project_id: 'p1', name: 'refund-a-claim', markdown: '# x' } });
+});
+
+test('run: an admin queues the pipelines now (every untraced range + mining), or mining alone', async () => {
+  next = () => Response.json({ episodes_queued: 3, mining_queued: true }, { status: 202 });
+  expect(await runCaptureIntelligence('a1')).toEqual({ episodes_queued: 3, mining_queued: true });
+  expect(last()).toMatchObject({ method: 'POST', url: `${A}/intelligence/run`, body: {} });
+  await runCaptureIntelligence('a1', { mining_only: true });
+  expect(last()).toMatchObject({ method: 'POST', url: `${A}/intelligence/run`, body: { mining_only: true } });
 });
 
 test('episodes: yours, a member’s or the account’s, by workflow and window, paged by cursor; one with its steps', async () => {

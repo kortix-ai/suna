@@ -63,7 +63,7 @@ const endDay = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUT
 const { persons, truth } = generate({ seed: Number(args.seed), days: Number(args.days), endDay });
 
 const owner = await user('capture-eval-admin@example.test');
-const accountId: string = (await http('POST', '/accounts', owner.token, { name: `Capture Eval ${new Date().toISOString().slice(0, 16)}` })).json.account_id;
+const accountId: string = (await http('POST', '/accounts', owner.token, { name: process.env.CAPTURE_EVAL_NAME ?? `Capture Eval ${new Date().toISOString().slice(0, 16)}` })).json.account_id;
 await http('PATCH', `/accounts/${accountId}/capture`, owner.token, { enabled: true });
 await http('PUT', `/accounts/${accountId}/capture/policy`, owner.token, {
   policy: { layers: { screen: true, actions: true, audio: false }, retention: { local_hours: 24, remote_days: 90 }, notice: 'Capture eval: synthetic recordings only.' },

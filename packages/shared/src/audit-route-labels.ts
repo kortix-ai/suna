@@ -655,6 +655,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/accounts/:accountId/capture/exports': { action: 'capture.export.create', title: 'Started a Capture export' },
   'GET /v1/accounts/:accountId/capture/exports': { action: 'capture.export.list', title: 'Listed Capture exports' },
   'GET /v1/accounts/:accountId/capture/exports/:exportId': { action: 'capture.export.read', title: 'Viewed a Capture export' },
+  'POST /v1/accounts/:accountId/capture/intelligence/run': { action: 'capture.intelligence.run', title: 'Ran the Capture pipelines' },
   'GET /v1/capture/me/timeline': { action: 'capture.timeline.read', title: 'Viewed a capture timeline', events: ['capture.agent_read'] },
   'GET /v1/capture/me/search': { action: 'capture.search', title: 'Searched a capture timeline', events: ['capture.agent_read'] },
   'GET /v1/capture/me/frames/:frameId': { action: 'capture.frame.read', title: 'Viewed a capture frame', events: ['capture.agent_read'] },

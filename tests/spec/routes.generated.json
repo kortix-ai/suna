@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 767,
+  "count": 768,
   "routes": [
     {
       "method": "GET",
@@ -325,6 +325,10 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/frames/:frameId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/intelligence/run"
     },
     {
       "method": "GET",

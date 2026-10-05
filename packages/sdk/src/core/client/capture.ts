@@ -48,6 +48,8 @@ export function bindAccountCapture(accountId: string) {
     people: (query?: Parameters<typeof C.getCapturePeople>[1]) => C.getCapturePeople(accountId, query),
     /** Intelligence: hours recorded, automatable hours a week, top and new workflows, trend (admins, viewers). */
     overview: (window?: { from?: string; to?: string }) => I.getCaptureOverview(accountId, window),
+    /** Run the pipelines now (Capture admins). */
+    runIntelligence: (input?: I.CaptureIntelligenceRunInput) => I.runCaptureIntelligence(accountId, input),
     workflows: {
       list: (query?: I.CaptureWorkflowQuery) => I.listCaptureWorkflows(accountId, query),
       get: (workflowId: string) => I.getCaptureWorkflow(accountId, workflowId),

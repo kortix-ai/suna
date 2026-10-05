@@ -86,6 +86,8 @@ export interface Moment {
   did: string[];
   frameId: string | null;
   actionId: string | null;
+  /** Input actions in this moment (not screenshots), in order: steps at this moment take their time from them. */
+  inputs: Array<{ actionId: string; ts: number }>;
   screenshot: string | null;
 }
 
@@ -106,7 +108,7 @@ export function buildMoments(frames: FrameRow[], actions: ActionRow[]): Moment[]
   for (const e of events) {
     let m = moments[moments.length - 1];
     if (!m || m.app !== e.app || (e.title && m.title !== e.title) || e.ts - m.end > MOMENT_GAP_MS) {
-      m = { n: moments.length + 1, start: e.ts, end: e.ts, app: e.app, title: e.title, url: e.url, text: '', did: [], frameId: null, actionId: null, screenshot: null };
+      m = { n: moments.length + 1, start: e.ts, end: e.ts, app: e.app, title: e.title, url: e.url, text: '', did: [], frameId: null, actionId: null, inputs: [], screenshot: null };
       moments.push(m);
     }
     m.end = e.ts;
@@ -118,6 +120,7 @@ export function buildMoments(frames: FrameRow[], actions: ActionRow[]): Moment[]
     if (e.action) {
       m.actionId ??= e.action.actionId;
       if (e.action.screenshot) m.screenshot ??= e.action.screenshot;
+      if (e.action.kind !== 'screenshot') m.inputs.push({ actionId: e.action.actionId, ts: e.ts });
       const line = did(e.action);
       if (line && m.did.length < 6) m.did.push(line.slice(0, 120));
     }
@@ -197,7 +200,7 @@ Rules:
 - A short unrelated detour inside a task (a chat reply, a glance at mail) stays inside that task: it is not a step.
 - Idle gaps and switches to unrelated work usually start a new task. Switching apps for the same goal does not.
 - "procedural": true when the task is a goal-directed procedure someone could hand to an assistant (processing a ticket, an invoice, an order); false for reading news, chatting, browsing, inbox triage.
-- Steps: one per meaningful action, in order, at the moment it happens. "verb" is one of: ${VERBS.join(', ')}. "app" is the app. "object" is what the verb acts on, in a few generic words (e.g. "refund with reason Damaged", "order by number"), no literal values. "params" (optional): where or how, e.g. "Orders › Search". "variables": snake_case names of the literal values the step reads or writes (e.g. ["order_id"]), never the values themselves.
+- Steps: one per meaningful action, in order, at the moment it happens. "verb" is one of: ${VERBS.join(', ')}. "app" is the app. "object" is what the verb acts on, in a few generic words (e.g. "refund with reason Damaged", "order by number"), no literal values. "params" (optional): where or how, e.g. "Orders › Search". "variables": snake_case names of the values that change from run to run and that the step reads or writes: ids, numbers, emails, amounts, dates, names (e.g. ["order_id", "refund_amount"]); never a document or object ("budget_forecast" is not a variable), never the values themselves.
 - "label": 3-7 words, imperative, generic (e.g. "Refund a damaged order"). "goal": one sentence. "outcome": one sentence on what was achieved. Never put literal values (ids, numbers, names, addresses) in label, goal, outcome, object or params: describe the kind of task, not this instance.
 - "outcome_status": succeeded, failed, abandoned (the task stopped before its end: no final send, save or status change), or unknown.
 
@@ -205,6 +208,18 @@ Activity:
 ${lines}
 
 Return ONLY JSON: {"episodes":[{"first":1,"last":9,"label":"…","goal":"…","outcome":"…","outcome_status":"succeeded","procedural":true,"steps":[{"moment":1,"verb":"Open","app":"…","object":"…","params":null,"variables":["…"]}]}]}`;
+}
+
+/** Words that make a variable name a value that changes from run to run (an id, an amount, a person's email). */
+const VALUE_WORDS = new Set([
+  'id', 'ids', 'number', 'no', 'num', 'email', 'phone', 'amount', 'total', 'price', 'cost', 'fee', 'date', 'time', 'slot', 'slots',
+  'week', 'month', 'year', 'address', 'name', 'sku', 'code', 'quantity', 'qty', 'reference', 'ref', 'reason', 'url', 'account',
+  'iban', 'count', 'percent', 'rate', 'tracking', 'customer', 'vendor', 'supplier', 'contact', 'zip', 'postcode', 'city',
+]);
+
+/** A variable stays when its name says it holds a value (`order_id`, `refund_amount`), not a thing (`budget_forecast`). */
+export function isValueVariable(name: string): boolean {
+  return name.split('_').some((part) => VALUE_WORDS.has(part));
 }
 
 const VERB_SET = new Map(VERBS.map((v) => [v.toLowerCase(), v]));
@@ -255,10 +270,24 @@ export function placeEpisodes(chunk: Moment[], raw: ModelEpisode[]) {
       const first = clamp(Math.min(e.first, e.last));
       const last = clamp(Math.max(e.first, e.last));
       const steps = e.steps
-        .map((s) => ({ ...s, moment: clamp(s.moment), verb: normalizeVerb(s.verb), object: scrubLiterals(s.object).slice(0, 200), params: s.params ? scrubLiterals(s.params) || null : null, variables: [...new Set(s.variables.map((v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '_')).filter(Boolean))] }))
+        .map((s) => ({ ...s, moment: clamp(s.moment), verb: normalizeVerb(s.verb), object: scrubLiterals(s.object).slice(0, 200), params: s.params ? scrubLiterals(s.params) || null : null, variables: [...new Set(s.variables.map((v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '_')).filter(isValueVariable))] }))
         .filter((s) => s.moment >= first && s.moment <= last && s.object)
         .sort((a, b) => a.moment - b.moment);
-      return { ...e, first, last, start: byN.get(first)!.start, end: byN.get(last)!.end, steps: steps.map((s) => ({ ...s, at: byN.get(s.moment)! })) };
+      // Each step gets its own time: the k-th step at a moment takes the moment's k-th input action, else
+      // an even share of the moment; times strictly increase, so a player can follow the steps.
+      let prev = -Infinity;
+      const used = new Map<number, number>();
+      const timed = steps.map((s) => {
+        const at = byN.get(s.moment)!;
+        const k = used.get(s.moment) ?? 0;
+        used.set(s.moment, k + 1);
+        const sharing = steps.filter((x) => x.moment === s.moment).length;
+        const input = sharing > 1 ? at.inputs[k] : undefined;
+        const ts = Math.max(input?.ts ?? (sharing > 1 ? at.start + Math.round(((at.end - at.start) * k) / sharing) : at.start), prev + 1);
+        prev = ts;
+        return { ...s, at, ts, actionId: input?.actionId ?? at.actionId };
+      });
+      return { ...e, first, last, start: byN.get(first)!.start, end: Math.max(byN.get(last)!.end, prev), steps: timed };
     })
     .sort((a, b) => a.first - b.first);
 }
@@ -308,14 +337,14 @@ export async function traceRange(rangeId: string, caller?: Caller): Promise<{ ep
       const steps = e.steps.map((s, index) => ({
         accountId: range.accountId,
         index,
-        ts: new Date(s.at.start),
+        ts: new Date(s.ts),
         verb: s.verb,
         app: s.app ?? s.at.app ?? null,
         object: s.object,
         params: s.params,
         variables: s.variables,
         keyframeFrameId: s.at.frameId,
-        actionId: s.at.actionId,
+        actionId: s.actionId,
       }));
       rows.push({
         episode: {

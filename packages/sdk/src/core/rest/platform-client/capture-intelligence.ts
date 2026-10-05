@@ -65,6 +65,8 @@ export interface CaptureWorkflowVariant {
   /** 1-based indexes of the steps that differ from the canonical path. */
   differs: number[];
   note: string;
+  /** The decision that leads to this variant, as a condition ("the order is older than 30 days"); absent on A. */
+  question?: string;
 }
 
 export interface CaptureWorkflowDetail extends CaptureWorkflowSummary {
@@ -111,6 +113,8 @@ export interface CaptureSkillDraft {
   name: string;
   markdown: string;
   inputs: string[];
+  /** The workflow version this draft reads (its `updated_at`): re-draft when the workflow moves past it. */
+  workflow_updated_at: string;
   /** What to check before publishing, e.g. every variant covered, no literal customer values. */
   checks: { ok: boolean; label: string }[];
 }
@@ -242,6 +246,18 @@ export type CaptureAskEvent =
   | ({ type: 'done' } & CaptureAskResult)
   | { type: 'error'; code: string; error: string };
 
+export interface CaptureIntelligenceRunInput {
+  /** Only re-mine workflows; skip re-tracing ranges. */
+  mining_only?: boolean;
+}
+
+export interface CaptureIntelligenceRun {
+  /** Closed or failed detected ranges queued for episodes (L1/L2). */
+  episodes_queued: number;
+  /** Mining (L3) queued; false when a run is already queued for this slot. */
+  mining_queued: boolean;
+}
+
 export interface CaptureExportInput {
   format: 'jsonl' | 'parquet';
   from?: string;
@@ -294,6 +310,11 @@ export async function getCaptureWorkflow(accountId: string, workflowId: string) 
 /** Rename, restate, edit the steps; the workflow reads as reviewed (Capture admins). */
 export async function reviewCaptureWorkflow(accountId: string, workflowId: string, review: CaptureWorkflowReview) {
   return unwrap(await backendApi.post<CaptureWorkflowDetail>(`${base(accountId)}/workflows/${workflowId}/review`, review));
+}
+
+/** Run the pipelines now instead of waiting for the next range close or the nightly mining (Capture admins). */
+export async function runCaptureIntelligence(accountId: string, input: CaptureIntelligenceRunInput = {}) {
+  return unwrap(await backendApi.post<CaptureIntelligenceRun>(`${base(accountId)}/intelligence/run`, input));
 }
 
 /** A SKILL.md drafted from the workflow, with checks to read before publishing (Capture admins). */

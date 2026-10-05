@@ -171,6 +171,29 @@ export function startedWorkflow(run: Group, workflows: Array<{ group: Group }>):
   return best;
 }
 
+/** Verbs of a step that changes something; a path that differs only in other verbs is the same way of working. */
+const MUTATING = new Set(['create', 'update', 'set', 'send', 'approve', 'reject', 'delete', 'submit', 'schedule', 'upload', 'import', 'export', 'attach']);
+
+/** Whether two paths differ in at least one step that changes something (multiset difference of verb@app). */
+export function changesSomething(a: string[], b: string[]): boolean {
+  const diff = [...minus(a, b), ...minus(b, a)];
+  return diff.some((t) => MUTATING.has(t.split('@')[0]!));
+}
+
+/** Items of `a` left after removing one match per item of `b` (by verb@app for steps). */
+function minus<T>(a: T[], b: T[]): T[] {
+  const key = (x: T) => (typeof x === 'string' ? x : `${(x as { verb: string }).verb.toLowerCase()}@${((x as { app: string | null }).app ?? '').toLowerCase()}`);
+  const left = new Map<string, number>();
+  for (const x of b) left.set(key(x), (left.get(key(x)) ?? 0) + 1);
+  return a.filter((x) => {
+    const n = left.get(key(x)) ?? 0;
+    if (n) left.set(key(x), n - 1);
+    return !n;
+  });
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 export function percentile(sorted: number[], p: number): number {
   if (!sorted.length) return 0;
   const idx = (sorted.length - 1) * p;
@@ -249,7 +272,14 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
     })
     .sort((a, b) => b.runs.length - a.runs.length);
   const minRuns = Math.max(2, Math.ceil(VARIANT_SHARE * finished.length));
-  const named = sub.filter((p, i) => i === 0 || p.runs.length >= minRuns).slice(0, 5);
+  // A path that differs from the most common one only in steps that change nothing (open, read,
+  // copy, fill…) is the same way of working, traced at another grain: it folds into A.
+  const folded: typeof sub = [];
+  for (const p of sub) {
+    if (folded.length && !changesSomething(folded[0]!.tokens, p.tokens)) folded[0] = { ...folded[0]!, runs: [...folded[0]!.runs, ...p.runs] };
+    else folded.push(p);
+  }
+  const named = folded.filter((p, i) => i === 0 || p.runs.length >= minRuns).slice(0, 5);
   const paths = named.map((p, i) => ({ ...p, key: String.fromCharCode(65 + i) }));
   const canonical = paths[0]!;
   const steps: WorkflowStep[] = canonical.representative.steps.map((s, index) => ({
@@ -261,18 +291,29 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
     variables: s.variables,
     decision: null,
   }));
-  const variants: WorkflowVariant[] = paths.map((p) => ({
-    key: p.key,
-    name: p.key === 'A' ? 'Canonical path' : `Variant ${p.key}`,
-    runs: p.runs.length,
-    share: Math.round((p.runs.length / runs.length) * 1000) / 1000,
-    steps_count: p.tokens.length,
-    differs: p.key === 'A' ? [] : differingSteps(canonical.tokens, p.tokens),
-    note: '',
-  }));
+  const variants: Array<WorkflowVariant & { question: string }> = paths.map((p) => {
+    // Until the model names it: a variant is named by the first step it adds, else by the step it skips.
+    const added = minus(p.representative.steps, canonical.representative.steps);
+    const skipped = minus(canonical.representative.steps, p.representative.steps);
+    const lead = added[0] ?? skipped[0];
+    const phrase = (x: Run['steps'][number]) => `${x.verb.toLowerCase()} ${x.object}`;
+    return {
+      key: p.key,
+      name: p.key === 'A' ? 'Canonical path' : lead ? `${added.length ? '' : 'Skip: '}${capitalize(phrase(lead))}` : `Path ${p.key}`,
+      runs: p.runs.length,
+      share: Math.round((p.runs.length / finished.length || 0) * 1000) / 1000,
+      steps_count: p.tokens.length,
+      differs: p.key === 'A' ? [] : differingSteps(canonical.tokens, p.tokens),
+      note:
+        p.key === 'A'
+          ? 'The most common path.'
+          : [added.length && `Adds: ${added.map(phrase).join(' → ')}.`, skipped.length && `Skips: ${skipped.map(phrase).join(' → ')}.`].filter(Boolean).join(' '),
+      question: lead ? `the run needs to ${added.length ? phrase(lead) : `go without the step "${phrase(lead)}"`}` : `the case differs from path A`,
+    };
+  });
   for (const v of variants.slice(1)) {
     const at = Math.max(0, Math.min(steps.length - 1, v.differs[0]! - 2));
-    if (!steps[at]!.decision) steps[at]!.decision = { question: `the case calls for variant ${v.key}`, variant: v.key, share: v.share };
+    if (!steps[at]!.decision) steps[at]!.decision = { question: v.question, variant: v.key, share: v.share };
   }
   const done = runs.filter((r) => r.outcomeStatus !== 'abandoned');
   const durations = done.map((r) => (r.end.getTime() - r.start.getTime()) / 1000).sort((a, b) => a - b);
@@ -322,7 +363,12 @@ const describeRun = (r: Run) => `"${r.label}" — ${r.steps.map((s) => `${s.verb
 
 function namePrompt(w: MinedWorkflow): string {
   const samples = w.runs.slice(-6).map((r) => `- ${r.label}: ${r.goal ?? ''} → ${r.outcome ?? ''}`).join('\n');
-  const paths = w.paths.map((p) => `${p.key} (${p.runs.length} runs): ${describeRun(p.representative)}`).join('\n');
+  const paths = w.paths
+    .map((p) => {
+      const v = w.variants.find((x) => x.key === p.key);
+      return `${p.key} (${p.runs.length} runs): ${describeRun(p.representative)}${p.key === 'A' ? '' : `\n   differs from A: ${v?.note || 'other steps'}`}`;
+    })
+    .join('\n');
   return `These are runs of one procedure people repeat at work, mined from their recorded activity.
 
 Sample runs (label: goal → outcome):
@@ -331,7 +377,7 @@ ${samples}
 Paths (A = the most common; others are variants):
 ${paths}
 
-Name the procedure and its variants. "name": 3-7 words, imperative, generic (e.g. "Refund a damaged-order claim"). "goal" and "outcome": one sentence each. For each variant except A: "name" (2-5 words, the case it handles, e.g. "Outside the return window"), "note" (one sentence: what differs), "question" (the decision that leads to it, phrased as a condition, e.g. "the order is older than 30 days"). No literal values (names, numbers, emails).
+Name the procedure and its variants. "name": 3-7 words, imperative, generic (e.g. "Refund a damaged-order claim"). "goal" and "outcome": one sentence each. For each variant except A: "name" (2-5 words, the case it handles, named by the steps where it differs from A, e.g. "Outside the return window"), "note" (one sentence: what differs from A), "question" (the decision that leads to it, phrased as a condition, e.g. "the order is older than 30 days"). No literal values (names, numbers, emails).
 
 Return ONLY JSON: {"name":"…","goal":"…","outcome":"…","variants":[{"key":"B","name":"…","note":"…","question":"…"}]}`;
 }
@@ -437,11 +483,13 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
     if (merged.size < mined.length) mined = [...merged.values()].map((rs) => describeCluster(rs, now));
   }
 
-  // 3b. Abandoned runs join the workflow they started.
+  // 3b. A workflow needs MIN_RUNS finished runs. Abandoned runs, and the runs of smaller clusters,
+  // join the workflow they started (its canonical path holds most of their steps in order); else none.
   const real = mined.filter((m) => m.runs.length >= MIN_RUNS);
+  const strays = mined.filter((m) => m.runs.length < MIN_RUNS).flatMap((m) => m.runs);
   const joins = new Map<number, Run[]>();
   const canon = real.map((m) => ({ group: workflowGroup(m) }));
-  for (const g of groupRuns(abandoned)) {
+  for (const g of groupRuns([...abandoned, ...strays])) {
     const at = startedWorkflow(g, canon);
     if (at >= 0) joins.set(at, [...(joins.get(at) ?? []), ...g.runs]);
   }
@@ -488,17 +536,31 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
       .set({ workflowId: null, variantKey: null })
       .where(and(eq(captureEpisodes.accountId, accountId), sql`${captureEpisodes.workflowId} IS NOT NULL`));
     const used = new Set<string>();
+    // Names are unique per account: a repeat gets " (2)", " (3)"…, after the names kept rows hold.
+    const taken = new Set(existing.filter((w) => !claimed.has(w.workflowId)).map((w) => w.name.toLowerCase()));
+    const uniqueName = (name: string) => {
+      let out = name;
+      for (let k = 2; taken.has(out.toLowerCase()); k++) out = `${name} (${k})`;
+      taken.add(out.toLowerCase());
+      return out;
+    };
     for (const p of plan) {
       const named = names.get(p.m);
       const keepNames = p.keep && !named;
+      // Names: the model's, else the kept workflow's (same differing steps), else the derived ones.
       const variants = p.m.variants.map((v) => {
         const n = named?.variants.find((x) => x.key === v.key);
-        const old = (p.keep?.variants as unknown as WorkflowVariant[] | undefined)?.find((x) => x.key === v.key);
-        return { ...v, name: v.key === 'A' ? 'Canonical path' : n?.name ?? old?.name ?? v.name, note: n?.note ?? old?.note ?? v.note };
+        const old = (p.keep?.variants as unknown as WorkflowVariant[] | undefined)?.find((x) => x.key === v.key && x.differs.join() === v.differs.join());
+        return {
+          ...v,
+          name: v.key === 'A' ? 'Canonical path' : n?.name?.trim() || old?.name || v.name,
+          note: n?.note?.trim() || old?.note || v.note,
+          question: v.key === 'A' ? undefined : n?.question?.trim() || old?.question || v.question,
+        };
       });
       const steps = p.m.steps.map((s) => {
         if (!s.decision) return s;
-        const q = named?.variants.find((x) => x.key === s.decision!.variant)?.question;
+        const q = variants.find((x) => x.key === s.decision!.variant)?.question;
         return { ...s, decision: { ...s.decision, question: q ?? s.decision.question } };
       });
       let signature = p.m.signature;
@@ -506,7 +568,7 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
       used.add(signature);
       const values = {
         accountId,
-        name: keepNames ? p.keep!.name : (named?.name ?? 'Unnamed workflow').slice(0, 200),
+        name: uniqueName(keepNames ? p.keep!.name : (named?.name?.trim() || 'Unnamed workflow').slice(0, 190)),
         goal: keepNames ? p.keep!.goal : (named?.goal ?? null),
         outcome: keepNames ? p.keep!.outcome : (named?.outcome ?? null),
         signature,

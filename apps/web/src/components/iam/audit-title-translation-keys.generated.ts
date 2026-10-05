@@ -400,6 +400,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Ran connector call': 'text4571b6091ba2',
   'Ran free-tier credit rotation': 'text1862d48f5fb6',
   'Ran gateway playground request': 'text2d1bcf9e946c',
+  'Ran the Capture pipelines': 'text93e6a1db9e27',
   'Ran trial expiry sweep': 'textdc67a3ef3fa4',
   'Ran yearly credit rotation': 'text2f117e01e356',
   'Rate-limited session audit events': 'text83ab3fb9b2a2',

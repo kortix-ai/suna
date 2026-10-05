@@ -9,6 +9,7 @@
  *   GET  episodes · GET episodes/:id               yours; anyone's for admins and viewers (audited)
  *   POST ask                                       text/event-stream; yours, or the account for admins and viewers
  *   POST exports · GET exports · GET exports/:id   admins
+ *   POST intelligence/run                          admins: run the pipelines now
  *
  * Every route answers 403 `capture_disabled` while Capture is off.
  */
@@ -36,6 +37,7 @@ import {
 } from './intelligence';
 import { draftSkill, publishSkill, skillSlug } from './skills';
 import { captureStoreConfigured } from './store';
+import { runIntelligence } from './workers';
 
 const params = z.object({ accountId: z.string().uuid() });
 const ok = (description: string) => ({ 200: json(z.any(), description), ...errors(400, 403, 404) });
@@ -154,6 +156,30 @@ export function registerCaptureIntelligenceRoutes() {
       const w = await workflowInAccount(access.accountId, c.req.valid('param').workflowId);
       if (!w) return c.json({ error: 'Not found' }, 404);
       return c.json(await workflowDetail(await reviewWorkflow(w, c.req.valid('json'), access.viewer)), 200);
+    },
+  );
+
+  accountsRouter.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{accountId}/capture/intelligence/run',
+      tags,
+      summary: 'Run the pipelines now (Capture admins): queue episodes for every closed or failed range, then mining; or mining alone',
+      ...auth,
+      request: {
+        params,
+        body: { content: { 'application/json': { schema: z.object({ mining_only: z.boolean().optional() }) } }, required: false },
+      },
+      responses: { 202: json(z.object({ episodes_queued: z.number(), mining_queued: z.boolean() }), 'Queued'), ...errors(403, 404) },
+    }),
+    async (c) => {
+      const access = await captureAccess(c, { accountWide: true });
+      if (isResponse(access)) return access as never;
+      const denied = adminOnly(c, access);
+      if (denied) return denied as never;
+      if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot start the pipelines') as never;
+      const body = (await c.req.json().catch(() => ({}))) as { mining_only?: boolean };
+      return c.json(await runIntelligence(access.accountId, { miningOnly: body?.mining_only === true }), 202);
     },
   );
 

@@ -1,6 +1,6 @@
 /** The pure parts of Capture Intelligence: masking, moments, episode placement, clustering, variants, stats. */
 import { describe, expect, test } from 'bun:test';
-import { buildMoments, chunkMoments, maskText, scrubLiterals, momentLines, normalizeVerb, placeEpisodes, signatureOf, type Moment } from './episodes';
+import { buildMoments, chunkMoments, isValueVariable, maskText, scrubLiterals, momentLines, normalizeVerb, placeEpisodes, signatureOf, type Moment } from './episodes';
 import { agglomerate, commonSubsequence, describeCluster, differingSteps, editDistance, groupRuns, percentile, sequenceSimilarity, startedWorkflow, words, workflowGroup } from './mining';
 
 const t0 = Date.UTC(2026, 8, 1, 9);
@@ -47,14 +47,14 @@ describe('moments', () => {
   });
 
   test('chunks hold at most the limit and cut at the widest gap of the last third', () => {
-    const ms: Moment[] = Array.from({ length: 10 }, (_, i) => ({ n: i + 1, start: i * 10_000 + (i >= 8 ? 600_000 : 0), end: i * 10_000 + 5_000 + (i >= 8 ? 600_000 : 0), app: 'A', title: '', url: null, text: '', did: [], frameId: null, actionId: null, screenshot: null }));
+    const ms: Moment[] = Array.from({ length: 10 }, (_, i) => ({ n: i + 1, start: i * 10_000 + (i >= 8 ? 600_000 : 0), end: i * 10_000 + 5_000 + (i >= 8 ? 600_000 : 0), app: 'A', title: '', url: null, text: '', did: [], frameId: null, actionId: null, inputs: [], screenshot: null }));
     const chunks = chunkMoments(ms, 9);
     expect(chunks.map((c) => c.length)).toEqual([8, 2]);
   });
 });
 
 describe('episode placement', () => {
-  const ms: Moment[] = [1, 2, 3, 4].map((n) => ({ n, start: n * 1000, end: n * 1000 + 500, app: 'ERP', title: '', url: null, text: '', did: [], frameId: `f${n}`, actionId: null, screenshot: null }));
+  const ms: Moment[] = [1, 2, 3, 4].map((n) => ({ n, start: n * 1000, end: n * 1000 + 500, app: 'ERP', title: '', url: null, text: '', did: [], frameId: `f${n}`, actionId: null, inputs: n === 2 ? [{ actionId: 'a2', ts: 2100 }, { actionId: 'a3', ts: 2300 }] : [], screenshot: null }));
   test('spans clamp to the chunk, verbs normalize, steps outside the span drop, variables become snake_case names', () => {
     const [e] = placeEpisodes(ms, [
       { first: 0, last: 9, label: 'Refund', goal: null, outcome: null, outcome_status: 'succeeded', procedural: true, steps: [
@@ -65,7 +65,21 @@ describe('episode placement', () => {
     expect([e!.first, e!.last, e!.start, e!.end]).toEqual([1, 4, 1000, 4500]);
     expect(e!.steps.map((s) => [s.moment, s.verb, s.variables])).toEqual([[1, 'Create', []], [3, 'Search', ['order_id']]]);
     expect(normalizeVerb('Find')).toBe('Search');
+    expect(normalizeVerb('Reply')).toBe('Send');
+    expect(normalizeVerb('Review')).toBe('Read');
     expect(signatureOf([{ verb: 'Open', app: 'Help Desk' }, { verb: 'Send', app: null }])).toBe('open@help_desk send@');
+  });
+});
+
+describe('step times and variables', () => {
+  const ms: Moment[] = [1, 2].map((n) => ({ n, start: n * 1000, end: n * 1000 + 900, app: 'ERP', title: '', url: null, text: '', did: [], frameId: `f${n}`, actionId: `first${n}`, inputs: n === 1 ? [{ actionId: 'a1', ts: 1200 }, { actionId: 'a2', ts: 1500 }] : [], screenshot: null }));
+  const step = (moment: number, verb: string, variables: string[] = []) => ({ moment, verb, app: 'ERP', object: 'x', params: null, variables });
+  test('steps at one moment take its input actions in order, else an even share; times strictly increase', () => {
+    const [e] = placeEpisodes(ms, [{ first: 1, last: 2, label: 'T', goal: null, outcome: null, outcome_status: null, procedural: true, steps: [step(1, 'Open'), step(1, 'Copy'), step(1, 'Fill'), step(2, 'Send'), step(2, 'Set')] }]);
+    expect(e!.steps.map((s) => [s.ts, s.actionId])).toEqual([[1200, 'a1'], [1500, 'a2'], [1600, 'first1'], [2000, 'first2'], [2450, 'first2']]);
+  });
+  test('only value-like variables stay', () => {
+    expect(['order_id', 'refund_amount', 'customer_email', 'callback_slot', 'budget_forecast', 'forecast_update', 'chat_message', 'match_status'].filter(isValueVariable)).toEqual(['order_id', 'refund_amount', 'customer_email', 'callback_slot']);
   });
 });
 
@@ -133,5 +147,39 @@ describe('mining', () => {
     expect(startedWorkflow(partial, [{ group: workflowGroup(refund) }, { group: workflowGroup(escalate) }])).toBe(1);
     const stray = groupRuns([run(8, ['read@chat', 'send@chat'], 'Chat', 'abandoned')])[0]!;
     expect(startedWorkflow(stray, [{ group: workflowGroup(refund) }])).toBe(-1);
+  });
+});
+
+describe('skill draft', () => {
+  test('reads the persisted workflow: clean sentences, conditions on decisions, every variant named, no literals', async () => {
+    const { draftSkill } = await import('./skills');
+    const w = {
+      workflowId: 'w1', name: 'Refund a damaged-order claim', goal: 'Refund a damaged item.', outcome: 'The customer has the refund.', apps: ['Helpdesk', 'ERP', 'Mail'], runsTotal: 140, updatedAt: new Date('2026-10-05T17:50:47Z'),
+      steps: [
+        { index: 1, verb: 'Open', object: 'damaged-in-transit ticket', app: 'Helpdesk', params: null, variables: ['ticket_id'] },
+        { index: 2, verb: 'Search', object: 'order by number', app: 'ERP', params: 'Orders.', variables: ['order_id'], decision: { question: 'the case calls for variant B', variant: 'B', share: 0.2 } },
+        { index: 3, verb: 'Create', object: 'refund with reason Damaged', app: 'ERP', params: null, variables: ['refund_amount'] },
+      ],
+      variants: [
+        { key: 'A', name: 'Canonical path', runs: 100, share: 0.75, steps_count: 3, differs: [], note: 'The most common path.' },
+        { key: 'B', name: 'Outside the return window', runs: 27, share: 0.2, steps_count: 3, differs: [3], note: 'Sends a denial instead of a refund.', question: 'the order is older than 30 days.' },
+      ],
+    } as never;
+    const draft = draftSkill(w);
+    expect(draft.markdown).toContain('description: "Refund a damaged item. Use when asked to refund a damaged-order claim."');
+    expect(draft.markdown).toContain('2. Search order by number ({order_id}) in ERP › Orders.\n   If the order is older than 30 days, follow variant B (Outside the return window) below.');
+    expect(draft.markdown).toContain('- **B · Outside the return window** (20% of runs), when the order is older than 30 days: Sends a denial instead of a refund.');
+    expect(draft.markdown).toContain('Learned from 140 recorded runs');
+    expect(draft.markdown).not.toMatch(/\.\.(?!\.)/);
+    expect(draft.workflow_updated_at).toBe('2026-10-05T17:50:47.000Z');
+    expect(draft.checks.every((c) => c.ok)).toBe(true);
+  });
+});
+
+describe('variant folding', () => {
+  test('paths that differ only in steps that change nothing are one path', async () => {
+    const { changesSomething } = await import('./mining');
+    expect(changesSomething(['open@helpdesk', 'search@erp', 'send@mail'], ['open@helpdesk', 'copy@helpdesk', 'search@erp', 'read@erp', 'send@mail'])).toBe(false);
+    expect(changesSomething(['open@helpdesk', 'create@erp', 'send@mail'], ['open@helpdesk', 'send@mail', 'set@helpdesk'])).toBe(true);
   });
 });
