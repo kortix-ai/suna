@@ -4,7 +4,7 @@
  * These pin the response ENVELOPE of each orchestration branch at the handler
  * level — the payload `/start` serves a polling client — so a structural split
  * of `routes/shared.ts` (KRTX-274) is provably behavior-preserving. The file
- * imports `openSession` through `./shared` (the facade path every consumer
+ * imports `openSession` through `./index` (the facade path every consumer
  * uses) before and after the split; if an envelope field moves, these fail.
  *
  * The six branches are the ones `runOpenSession` serves without touching a
@@ -130,7 +130,7 @@ mock.module('../lib/session-model-repair', () => ({
   repairRetiredSessionModelOnOpen: async () => {},
 }));
 
-const { openSession } = await import('./shared');
+const { openSession } = await import('./index');
 
 /** The envelope's `observedAt` is the real clock; fixtures are relative to it. */
 const NOW_MS = () => Date.now();

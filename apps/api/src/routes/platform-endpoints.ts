@@ -2,7 +2,12 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../openapi';
 import { supabaseAuth } from '../middleware/auth';
 import { sendDemoRequestNotification } from '../lib/demo-request-email';
-import { createCachedPlatformSetting } from '../platform/services/platform-setting-cache';
+import {
+  DEFAULT_MAINTENANCE,
+  MaintenanceSchema,
+  maintenanceSetting,
+  type MaintenanceConfigValue,
+} from '../platform/services/maintenance-setting';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -18,55 +23,6 @@ import { computeEtag, etagMatches } from '../shared/http-cache';
 import { readJsonObject } from '../shared/http-body';
 import { getPlatformRole } from '../shared/platform-roles';
 import { createDemoRequestRateLimitMiddleware } from '../shared/rate-limit';
-
-// ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
-// One row in kortix.platform_settings under 'maintenance_config'. GET is public
-// (banner + maintenance page read it); PUT is admin-only. Set via /admin/utils.
-const MAINTENANCE_KEY = 'maintenance_config';
-
-const MaintenanceSchema = z
-  .object({
-    level: z.string(),
-    title: z.string(),
-    message: z.string(),
-    startTime: z.string().nullable(),
-    endTime: z.string().nullable(),
-    statusUrl: z.string().nullable(),
-    affectedServices: z.array(z.string()),
-    updatedAt: z.string(),
-  })
-  .partial()
-  .openapi('MaintenanceConfig');
-
-type MaintenanceConfigValue = Required<z.infer<typeof MaintenanceSchema>>;
-
-const DEFAULT_MAINTENANCE: MaintenanceConfigValue = {
-  level: 'none',
-  title: '',
-  message: '',
-  startTime: null,
-  endTime: null,
-  statusUrl: null,
-  affectedServices: [],
-  updatedAt: new Date(0).toISOString(),
-};
-
-function parseMaintenance(value: unknown): MaintenanceConfigValue {
-  if (!value || typeof value !== 'object') return DEFAULT_MAINTENANCE;
-  return { ...DEFAULT_MAINTENANCE, ...(value as Partial<MaintenanceConfigValue>) };
-}
-
-// The config is one singleton row that changes only when an admin flips it, but
-// the GET is public and polled. Read it through the shared cached
-// platform-setting reader, so the route never blocks on a DB round trip. The
-// admin PUT writes through the cache, so the writing process serves the new
-// value at once; other replicas converge within the reader's TTL.
-const maintenanceSetting = createCachedPlatformSetting<MaintenanceConfigValue>(
-  MAINTENANCE_KEY,
-  parseMaintenance,
-);
-
-export { maintenanceSetting };
 
 export function registerPlatformEndpoints(app: OpenAPIHono) {
 // Also expose system status at root for backward compat with frontend

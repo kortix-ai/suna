@@ -23,14 +23,9 @@ import {
 } from '../../lib/webhooks/standard-webhooks';
 import { errors, json } from '../../openapi';
 import { authEmailHookApp } from './app';
-import { parseSendEmailHookPayload, type SendEmailHookPayload } from './payload';
+import { authVerifyBaseUrl, parseSendEmailHookPayload, type SendEmailHookPayload } from './payload';
 import { renderAuthEmail } from './templates';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
-
-/** Public Supabase origin for the verification link — see buildVerifyUrl(). */
-export function authVerifyBaseUrl(): string {
-  return (config.SUPABASE_PUBLIC_URL || config.SUPABASE_URL || '').trim();
-}
 
 export function registerSendEmailHookRoutes(): void {
   authEmailHookApp.openapi(

@@ -10,7 +10,8 @@
  * registrations live in ./routes/*, one file per domain (projects, secrets,
  * connections, triggers, channels, sessions, change requests, ...); each
  * exports a register<Name>Routes() function. This file calls them in route
- * order and re-exports the public surface that external importers use.
+ * order. The service surface that other domains use lives in ./surface.ts;
+ * this file re-exports it.
  */
 
 import { projectWebhooksApp, projectsApp } from './lib/app';
@@ -164,38 +165,5 @@ export function registerAllProjectRoutes(): void {
 // The Hono app instances. app.ts registers their routes and mounts them.
 export { projectsApp, projectWebhooksApp };
 
-// Git-proxy public API (consumed by ../git-proxy).
-export {
-  withProjectGitAuth,
-  resolveProjectUpstream,
-  authorizeGitProxy,
-  RETRYABLE_GIT_AUTH_REASONS,
-  type GitProxyAuth,
-} from './lib/git';
-
-// Session helpers (consumed by channels and provisioning).
-export {
-  buildSessionSandboxEnvVars,
-  createProjectSession,
-} from './lib/sessions';
-
-export {
-  createSession,
-  startSession,
-  continueSession,
-  drainSessionLifecycleQueue,
-  resolveProjectAutomationActor,
-} from './session-lifecycle';
-
-// Trigger + manifest helpers (consumed by channels / connector / the boot
-// sequence in src/index.ts).
-export {
-  drainTriggerExecutionQueue,
-  runProjectTriggerSweep,
-  resolveGitTriggerActor,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
-  schedulerSweepIsStale,
-  loadManifestForEdit,
-  commitManifest,
-} from './lib/triggers';
+// The service surface (git-proxy, session, trigger and manifest helpers).
+export * from './surface';

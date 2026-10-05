@@ -14,7 +14,7 @@
 import type { sessionSandboxes } from '@kortix/db';
 import { describe, expect, test } from 'bun:test';
 import { RUNTIME_IDENTITY_UNAVAILABLE } from '../runtime-identity';
-import { ADMISSION_REPLACE_MAX_PER_WINDOW, replaceRefusedRuntimeOnOpen } from './shared';
+import { ADMISSION_REPLACE_MAX_PER_WINDOW, replaceRefusedRuntimeOnOpen } from './index';
 
 const RUNNING_ROW = {
   sandboxId: 'sess-1',

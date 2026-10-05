@@ -108,14 +108,14 @@ mock.module('../sandbox-proxy/backend', () => ({
   wakeSandbox: async () => {},
 }));
 
-// `projects/routes/shared` is imported LAST, after every other stub is in
+// `projects/session-open/index` is imported LAST, after every other stub is in
 // place. Its graph evaluates `sandbox-proxy/forward/turn-start.ts`, which binds
 // `REAL_PRE_PROMPT_DEPS` (the env sync and token re-mint) by VALUE at module
 // evaluation. A static import here would evaluate it before `mock.module` ran,
 // and every prompt would hit the real re-mint (a git read of a repo that does
 // not exist → 503) instead of the stub.
-const realShared = await import('../projects/routes/shared');
-mock.module('../projects/routes/shared', () => ({
+const realShared = await import('../projects/session-open');
+mock.module('../projects/session-open', () => ({
   ...realShared,
   resumeStoppedSandboxByExternalId: async () => true,
 }));

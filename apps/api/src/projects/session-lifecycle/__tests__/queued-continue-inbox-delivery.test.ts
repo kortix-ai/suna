@@ -194,7 +194,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async (input: { sessionId: string }) => {
     events.push(`open:${input.sessionId}`);
     const delay = openDelayBySession[input.sessionId];

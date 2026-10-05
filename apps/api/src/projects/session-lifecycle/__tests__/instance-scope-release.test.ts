@@ -75,7 +75,7 @@ mock.module('../../../shared/db', () => ({
 mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => ({
     stage: 'ready',
     sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },

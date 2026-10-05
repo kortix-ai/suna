@@ -36,7 +36,7 @@ mock.module('../runtime-identity', () => ({
   },
 }));
 
-const { preserveEstablishedRuntimeOnOpen } = await import('./shared');
+const { preserveEstablishedRuntimeOnOpen } = await import('./index');
 
 const ROW = {
   sandboxId: 'sess-1',
