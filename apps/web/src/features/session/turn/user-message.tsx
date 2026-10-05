@@ -54,6 +54,7 @@ import {
   type TextPart,
 } from '@/ui';
 import {
+  AttachmentRemoveButton,
   AttachmentTile,
   TILE_INTERACTIVE,
   TILE_SURFACE,
@@ -65,6 +66,8 @@ import {
   sentAttachmentPreview,
   type SentAttachment,
 } from '../sent-attachment-previews';
+import type { AttachedFile } from '../composer/types';
+import { uploadedFileRefXml } from '../uploaded-file-refs';
 import {
   buildMentionSegments,
   type MentionSegment,
@@ -721,6 +724,38 @@ export function editablePromptText(
   return stripKortixSystemTags(withoutSessions).trim();
 }
 
+/**
+ * What an edited prompt sends again for the attachments the editor kept.
+ *
+ * A saved copy (`kortix-attachment://`) or a native file part rides as a URL
+ * part; the API writes a saved copy into the sandbox again. An upload whose
+ * saved copy is missing is still in the sandbox, so its `<file>` ref is resent
+ * as text, joined under the trimmed `text` (refs alone when the text is blank).
+ * A tile with neither source has nothing to resend.
+ */
+export function editResendAttachments(
+  kept: readonly NormalizedAttachment[],
+  text: string,
+): {
+  files: AttachedFile[];
+  text: string;
+} {
+  const files: AttachedFile[] = [];
+  const refs: string[] = [];
+  for (const { src, path, filename, mime: kind } of kept) {
+    const mime = kind || 'application/octet-stream';
+    if (src && (isSessionAttachmentRef(src) || !path)) {
+      const isImage = isPreviewableImage(filename, mime);
+      files.push({ kind: 'remote', url: src, filename, mime, isImage });
+    } else if (path) {
+      refs.push(uploadedFileRefXml({ path, mime, filename }));
+    }
+  }
+  const joined = refs.join('\n');
+  const body = text.trim();
+  return { files, text: joined ? (body ? `${body}\n\n${joined}` : joined) : text };
+}
+
 // ============================================================================
 // The bubble
 // ============================================================================
@@ -1001,19 +1036,25 @@ export function UserMessageActions({
  */
 export function UserMessageEditor({
   initialText,
+  attachments = [],
   pending,
   onCancel,
   onSend,
 }: {
   initialText: string;
+  /** The message's attachments. The user keeps or removes each; Send carries the kept ones. */
+  attachments?: NormalizedAttachment[];
   /** The staged rewind is on the wire — hold both buttons. */
   pending?: boolean;
   onCancel: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, kept: NormalizedAttachment[]) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [draft, setDraft] = useState(initialText);
+  const [kept, setKept] = useState(attachments);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  // Text is required, attachments or not: a text-less replacement prompt does
+  // not commit the staged rewind, so the original turn would stay (KRTX-962).
   const canSend = Boolean(draft.trim()) && !pending;
 
   // Focus with the caret at the END on mount — autofocus alone puts it at the
@@ -1037,6 +1078,27 @@ export function UserMessageEditor({
 
   return (
     <div className={cn(BUBBLE_SURFACE, 'w-full gap-2 py-3 select-text')}>
+      {kept.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {kept.map((file) => (
+            <li key={file.key} className="contents">
+              <div className="group relative">
+                {isImageAttachment(file) ? (
+                  <AttachmentImage file={file} />
+                ) : (
+                  <AttachmentTile filename={file.filename} mime={file.mime} />
+                )}
+                {!pending && (
+                  <AttachmentRemoveButton
+                    filename={file.filename}
+                    onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
+                  />
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       <textarea
         ref={editorRef}
         value={draft}
@@ -1052,7 +1114,7 @@ export function UserMessageEditor({
           // from firing the send.
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            if (canSend) onSend(draft);
+            if (canSend) onSend(draft, kept);
           }
         }}
         aria-label={tI18nComplete.raw('text9757ccd5ef12')}
@@ -1069,7 +1131,7 @@ export function UserMessageEditor({
           type="button"
           size="sm"
           disabled={!canSend}
-          onClick={() => canSend && onSend(draft)}
+          onClick={() => canSend && onSend(draft, kept)}
         >
           {pending && <Loading variant="spokes" className="size-3.5 shrink-0" />}
           {tI18nComplete.raw('textf6f4688ff23d')}
@@ -1135,7 +1197,7 @@ export function UserMessage({
   editPending?: boolean;
   onEditCancel?: () => void;
   /** Send the edit: stage the rewind at this message and deliver `text`. */
-  onEditSend?: (messageId: string, text: string) => void;
+  onEditSend?: (messageId: string, text: string, kept: NormalizedAttachment[]) => void;
   /** See `UserMessageActions.leadingStatus`. */
   leadingStatus?: React.ReactNode;
   /**
@@ -1514,9 +1576,10 @@ export function UserMessage({
     return (
       <UserMessageEditor
         initialText={editingText}
+        attachments={allAttachments}
         pending={editPending}
         onCancel={onEditCancel}
-        onSend={(text) => onEditSend(message.info.id, text)}
+        onSend={(text, kept) => onEditSend(message.info.id, text, kept)}
       />
     );
   }
