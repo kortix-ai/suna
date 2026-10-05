@@ -23,7 +23,6 @@ import {
   reviewItems,
   sandboxes,
   sandboxComputeSessions,
-  sessionEnvironments,
   sessionLifecycleCommands,
   sessionPendingQuestions,
   sessionSandboxes,
@@ -522,7 +521,6 @@ async function deleteAccountData(accountId: string): Promise<void> {
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
     await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
     await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
-    await tx.delete(sessionEnvironments).where(eq(sessionEnvironments.accountId, accountId));
     await tx.delete(sessionTurns).where(inArray(sessionTurns.sessionId, accountSessions));
     await tx.delete(sessionPendingQuestions).where(inArray(sessionPendingQuestions.sessionId, accountSessions));
     await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));

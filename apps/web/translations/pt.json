@@ -1166,10 +1166,6 @@
           "name": "Segredos de provedor compartilhados",
           "description": "Os membros conectam as próprias assinaturas do ChatGPT e chaves de provedor, compartilham quando necessário e escolhem quais cada sessão usa."
         },
-        "pi_worker": {
-          "name": "Ambiente do worker Pi (compilado)",
-          "description": "Execute sessões com o ambiente experimental do worker Pi."
-        },
         "pi_harness": {
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
@@ -9473,7 +9469,6 @@
       "text016cec7c484d": "Conector revogado",
       "text017245d54fdb": "no Slack.",
       "text018069eabbfd": "A definição",
-      "text018912e44371": "Checkout compilado do projeto baixado",
       "text019929eebb12": "Atribua funções em Membros (conta) ou Projetos (por projeto). As funções personalizadas aparecem no mesmo seletor das funções integradas.",
       "text01a556bb9792": "A função da pessoa e a permissão declarada do agente precisam autorizar a ação.",
       "text01b50fe973da": "Atualizar saúde do provisionamento",
@@ -17693,7 +17688,6 @@
       "texted13dee8f1f7": "O repositório é a empresa. Faça um fork, crie uma branch, reverta ou entregue-o a uma nova máquina — toda a configuração vem junto.",
       "texted1596a9787f": "Usar um token de acesso",
       "texted1d87390f65": "Emita um atributo de grupo (por exemplo, chamado groups) que liste os grupos do usuário.",
-      "texted21e91b4d87": "Runtime compilado do worker pi baixado",
       "texted26c1af81cf": "Ferramentas de escrita",
       "texted2d94ab1136": "Entre no centro de administração do Microsoft Entra (entra.microsoft.com) como administrador do seu tenant.",
       "texted2e59c337d0": "Narrativa",
@@ -17872,7 +17866,6 @@
       "textf27a58a42762": "Não foi possível carregar o arquivo",
       "textf27bcbb5e1e2": "Dispensável",
       "textf27c4fdb823a": "O Cloudflare Access transmite o email por padrão. Adicione os outros atributos lidos pelo Kortix — id, firstName, lastName — como \"SAML attribute statements\": cada um é um Name associado à declaração do IdP upstream (um menu com as declarações do seu método de login).",
-      "textf27e24caeef3": "Runtime compilado da sessão baixado",
       "textf29674479db4": "Conectando ao OpenAI…",
       "textf297f631ba78": "Ele reúne o que cada entrevistador escreveu, organizado pelo scorecard, não por quem digitou mais, e destaca onde dois entrevistadores discordaram. Expor a discordância é o objetivo. Resol­vê-la é tarefa do painel.",
       "textf29ad8b8092c": "O nome do atributo (groups) deve corresponder à declaração de grupo do Kortix, preenchida previamente na etapa de conexão. O Cloudflare repassa os NOMES dos grupos enviados pelo IdP upstream.",
@@ -18836,9 +18829,7 @@
       "textb0f59e5a2722": "Login OAuth do provedor de modelos iniciado",
       "text0dd455816ef6": "Recriação do snapshot de sandbox iniciada",
       "text40cef5fd1dbd": "Build do modelo de sandbox iniciado",
-      "text09917783e494": "Ambiente da sessão iniciado",
       "text18065b39fc81": "Kortix App interrompido",
-      "textb88830cc18af": "Ambiente da sessão interrompido",
       "text464b0b69fd48": "Eventos do túnel do computador transmitidos",
       "text970caaaceccc": "Solicitação transmitida via relay de segredos",
       "text64a93d38e11a": "Resposta do relay de segredos transmitida",
@@ -18997,7 +18988,6 @@
       "text5ed3e15fac9f": "Transição do provedor de sandbox visualizada",
       "text70a61d85334a": "Sessão visualizada",
       "textd7aa05eaf609": "Livro-razão de custos da sessão visualizado",
-      "text4e22b3354b8f": "Ambiente da sessão visualizado",
       "text48b65bbc9863": "Política de sessão visualizada",
       "text7c649f4bf685": "Pool de segredos de provedor da sessão visualizado",
       "text3fd349f95ce2": "Escopo da sessão visualizado",
