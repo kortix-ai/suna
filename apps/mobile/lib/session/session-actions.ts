@@ -1,7 +1,7 @@
 /**
  * The session actions sheet's rules (COR-148) — pure, so every rule has a test.
  *
- * `SessionActionsSheet` puts three rows above Rename · Share · …:
+ * `SessionActionsSheet` puts four rows above Rename · Share · …:
  *   1. Open change request — `OpenCRSheet` prefilled with the session's
  *      branch (`branch_name` → `base_ref`). A project API call, so it works
  *      for any session that carries its own branch.
@@ -9,7 +9,11 @@
  *      `/vcs/diff?mode=branch` (web `useSessionChanges`: the working tree plus
  *      every commit this branch carries over its base). Needs the live
  *      runtime, so only the open thread shows it.
- *   3. Compact — the runtime's summarize call (`useSummarizeRuntimeSession`). Needs the
+ *   3. Files — the session's Recent files sheet in its composer
+ *      (`SessionFilesSheet`). The list derives from the thread's messages, so
+ *      it needs no live runtime: shown for the open thread even when the
+ *      sandbox is asleep.
+ *   4. Compact — the runtime's summarize call (`useSummarizeRuntimeSession`). Needs the
  *      live runtime, one that serves `session.compact` (not pi), and never
  *      runs while the session works.
  *
@@ -174,6 +178,7 @@ export interface SessionActionRowsInput {
 export interface SessionActionRows {
   openChangeRequest: ActionRowState;
   viewChanges: ActionRowState;
+  files: ActionRowState;
   compact: ActionRowState;
 }
 
@@ -198,6 +203,9 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
     else viewChanges = { visible: true, enabled: true, value: changedFilesLabel(n) };
   }
 
+  // The files sheet lives in the open thread's composer; its list needs no runtime.
+  const files: ActionRowState = input.isOpenThread ? { visible: true, enabled: true } : HIDDEN;
+
   let compact: ActionRowState = HIDDEN;
   if (live && input.canManageLifecycle && input.canCompact) {
     if (input.compacting) compact = { visible: true, enabled: false, value: 'Compacting…' };
@@ -205,5 +213,5 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
     else compact = { visible: true, enabled: true };
   }
 
-  return { openChangeRequest, viewChanges, compact };
+  return { openChangeRequest, viewChanges, files, compact };
 }

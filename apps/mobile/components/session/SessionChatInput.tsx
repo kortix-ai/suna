@@ -38,6 +38,7 @@ import { useRecoverPendingPick } from './useRecoverPendingPick';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
+import { useSessionFilesRequestStore } from '@/stores/session-files-request-store';
 import { useToolFilePreviewStore } from './tool/shared/navigation';
 
 import type { Agent, FlatModel, Command } from '@/lib/session/runtime-data';
@@ -242,6 +243,12 @@ function SessionChatInputImpl({
   const [showAutoSheet, setShowAutoSheet] = useState(false);
   const attachSheetRef = useRef<AttachSheetRef>(null);
   const filesSheetRef = useRef<SheetRef>(null);
+  // The session actions sheet's Files row asks this thread to open Recent files.
+  const filesRequest = useSessionFilesRequestStore((s) => s.request);
+  useEffect(() => {
+    if (!currentSessionId || filesRequest?.sessionId !== currentSessionId) return;
+    if (useSessionFilesRequestStore.getState().take(currentSessionId)) filesSheetRef.current?.open();
+  }, [filesRequest, currentSessionId]);
 
   // ── File attachments ─────────────────────────────────────────────────────
 
