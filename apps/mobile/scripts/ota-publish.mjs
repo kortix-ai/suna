@@ -89,13 +89,23 @@ function lastUpdateCommit(channel, platform, runtime) {
   return easJson(['update:view', group.group]).find((u) => u.platform === platform)?.gitCommitHash ?? null;
 }
 
+/**
+ * The app id this checkout builds for a platform. Only builds of that id are
+ * compared: a channel also carries builds of a retired id (the old Android
+ * `com.kortix.app` APKs), and their native code never matches today's.
+ */
+export function appIdentifier(expo, platform) {
+  return platform === 'ios' ? expo.ios?.bundleIdentifier : expo.android?.package;
+}
+
 /** Why this platform must not publish, or null when it may. */
 export function skipReason(channel, platform, runtime) {
+  const appId = appIdentifier(JSON.parse(readFileSync(join(MOBILE, 'app.json'), 'utf8')).expo, platform);
   const builds = easJson([
-    'build:list', '--channel', channel, '--platform', platform,
+    'build:list', '--channel', channel, '--platform', platform, '--app-identifier', appId,
     '--status', 'finished', '--runtime-version', runtime, '--limit', '50',
   ]);
-  if (builds.length === 0) return `no finished ${platform} build on channel "${channel}" has runtime ${runtime}`;
+  if (builds.length === 0) return `no finished ${platform} build of ${appId} on channel "${channel}" has runtime ${runtime}`;
 
   // The newest build of each distribution (STORE, INTERNAL) is the binary its
   // users run: Apple closes a version once it ships, so a released iOS build is
