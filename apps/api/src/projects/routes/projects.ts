@@ -12,8 +12,9 @@ import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager } from '../access';
 import { getBackend, hasBackend } from '../git-backends';
-import { buildProvisionContext, runProvision } from '../provision-core';
+import { runProvision, type ProvisionContext } from '../provision-core';
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
@@ -31,6 +32,18 @@ import {
   serializeProject,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+
+/**
+ * Reads the request body and resolves the caller's account scope — the part
+ * of the old `POST /provision` handler that runs BEFORE the
+ * `PROJECT_CREATE` authorization check. Kept out of `runProvision` itself so
+ * a caller (either route) can still 403 before any provisioning work starts.
+ */
+async function buildProvisionContext(c: Context): Promise<ProvisionContext> {
+  const body = await readJsonObject(c);
+  const scope = await resolveProjectAccount(c, body);
+  return { body, scope };
+}
 
 export function registerProjectsRoutes(): void {
   projectsApp.use('/*', supabaseAuth);

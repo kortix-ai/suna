@@ -1074,6 +1074,11 @@
       "count": 1
     }
   },
+  "src/middleware/auth-audit.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
   "src/middleware/auth-combined.ts": {
     "no-console": {
       "count": 1
@@ -1100,6 +1105,11 @@
   "src/middleware/impersonation.ts": {
     "no-console": {
       "count": 2
+    }
+  },
+  "src/middleware/rate-limit.ts": {
+    "no-console": {
+      "count": 1
     }
   },
   "src/middleware/request-deadline.ts": {
@@ -1622,9 +1632,6 @@
   "src/projects/provision-core.ts": {
     "no-console": {
       "count": 6
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/projects/reaper-constants.ts": {
@@ -2846,11 +2853,6 @@
       "count": 3
     }
   },
-  "src/middleware/auth-audit.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/shared/instance.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -2908,11 +2910,6 @@
     },
     "no-console": {
       "count": 3
-    }
-  },
-  "src/middleware/rate-limit.ts": {
-    "no-console": {
-      "count": 1
     }
   },
   "src/shared/resolve-account.ts": {
