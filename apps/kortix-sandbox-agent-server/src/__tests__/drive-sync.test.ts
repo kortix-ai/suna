@@ -30,7 +30,7 @@ afterEach(() => {
 })
 
 function api() {
-  return createHttpDriveSyncApi({ apiUrl: fake.url, projectId: fake.projectId, sessionId: fake.sessionId, token: fake.token })
+  return createHttpDriveSyncApi({ apiUrl: `${fake.url}/v1`, projectId: fake.projectId, sessionId: fake.sessionId, token: fake.token })
 }
 
 function mount(opts: { readOnly?: boolean; subdir?: string; settleMs?: number } = {}) {
@@ -238,7 +238,7 @@ describe('drive sync in the daemon', () => {
     const { KORTIX_USER_CONTEXT_HEADER } = await import('@/lib/kortix-api/kortix-user-context')
     fake.mounts = [{ driveId: DRIVE, name: 'Agent', mountPath: '/drives/agent', readOnly: false }]
     fake.write(DRIVE, '/brief.md', 'from the web app')
-    const cfg = { apiUrl: fake.url, projectId: fake.projectId, sandboxToken: fake.token } as Parameters<typeof startDriveSyncFromEnv>[0]
+    const cfg = { apiUrl: `${fake.url}/v1`, projectId: fake.projectId, sandboxToken: fake.token } as Parameters<typeof startDriveSyncFromEnv>[0]
     const env = {
       KORTIX_DRIVE_SYNC: '1',
       KORTIX_SESSION_ID: fake.sessionId,

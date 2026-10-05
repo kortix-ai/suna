@@ -91,7 +91,9 @@ export function createHttpDriveSyncApi(opts: {
   token: string
   fetchTimeoutMs?: number
 }): DriveSyncApi {
-  const base = `${opts.apiUrl.replace(/\/$/, '')}/v1/projects/${encodeURIComponent(opts.projectId)}/sessions/${encodeURIComponent(opts.sessionId)}/drive-sync`
+  // KORTIX_API_URL is the API's /v1 base (as the API sets it); accept a bare origin too.
+  const origin = opts.apiUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '')
+  const base = `${origin}/v1/projects/${encodeURIComponent(opts.projectId)}/sessions/${encodeURIComponent(opts.sessionId)}/drive-sync`
   const timeout = opts.fetchTimeoutMs ?? 120_000
 
   const req = async (path: string, init: RequestInit = {}, okStatuses: number[] = []): Promise<Response> => {
