@@ -340,7 +340,7 @@ describe('status and tray', () => {
       permissions: { screen: true, accessibility: false, microphone: true },
       sync: { state: 'ok', pending: 2, lastUploadMs: 5, error: null },
     });
-    expect(capture.captureLabel(view)).toBe('Capture: Recording · Screen, Actions');
+    expect(capture.captureLabel(view)).toBe('Recording · Screen, Actions');
   });
 
   test('refused, signed out, off, crashed: the state says which', () => {
@@ -372,22 +372,32 @@ describe('status and tray', () => {
     expect(capture.captureStatusFrom({ available: false, error: 'no engine' })).toEqual({ available: false, error: 'no engine' });
   });
 
-  test('tray items: nothing until set up; status, policy notice, pause, timeline, settings while recording', () => {
-    const actions = { pause() {}, resume() {}, timeline() {}, settings() {} };
-    expect(capture.captureTrayItems({ available: true, signedIn: false, signInRequired: false }, actions)).toEqual([]);
-    expect(capture.captureTrayItems({ available: false }, actions)).toEqual([]);
+  test('tray section: none until set up; status, policy notice, pause, timeline, settings while recording', () => {
+    const actions = { pause() {}, resume() {}, timeline() {}, settings() {}, logs() {} };
+    expect(capture.captureTraySection({ available: true, signedIn: false, signInRequired: false }, actions)).toBeNull();
+    expect(capture.captureTraySection({ available: false }, actions)).toBeNull();
     const view = capture.captureStatusFrom({ available: true, desktop: { on: true, actions: true }, status, sync, children: running });
-    expect(capture.captureTrayItems(view, actions).map((i) => i.id)).toEqual([
-      'capture-status',
-      'capture-notice',
-      'capture-pause',
-      'capture-timeline',
-      'capture-settings',
+    const section = capture.captureTraySection(view, actions);
+    expect(section).toMatchObject({ id: 'capture', title: 'Capture', keepsRunning: true, logs: actions.logs });
+    expect(section.items.map((i) => i.label)).toEqual([
+      'Recording · Screen, Actions',
+      'Policy: Recorded for the support team',
+      'Pause for 1 hour',
+      'Open timeline',
+      'Settings…',
     ]);
-    const paused = { ...view, state: 'paused' };
-    expect(capture.captureTrayItems(paused, actions).map((i) => i.id)).toContain('capture-resume');
+    // No item repeats the section's name.
+    expect(section.items.filter((i) => /capture/i.test(i.label))).toEqual([]);
+    expect(capture.captureTraySection({ ...view, state: 'paused' }, actions).items.map((i) => i.label)).toContain('Resume');
     const refused = { ...view, signedIn: false, signInRequired: true, state: 'signInRequired' };
-    expect(capture.captureTrayItems(refused, actions).map((i) => i.label)).toEqual(['Capture: Sign in again', 'Policy: Recorded for the support team', 'Sign in to Capture again…']);
+    const again = capture.captureTraySection(refused, actions);
+    expect(again.items.map((i) => i.label)).toEqual(['Sign in again', 'Policy: Recorded for the support team', 'Sign in again…']);
+    expect(again.keepsRunning).toBe(false);
+    // Switched off, or stopped outside the app: nothing keeps running after Quit, no pause.
+    expect(capture.captureTraySection({ ...view, on: false, state: 'off' }, actions)).toMatchObject({ keepsRunning: false });
+    const stopped = capture.captureTraySection({ ...view, state: 'stopped' }, actions);
+    expect(stopped.keepsRunning).toBe(false);
+    expect(stopped.items.map((i) => i.label)).toEqual(['Stopped', 'Policy: Recorded for the support team', 'Settings…']);
   });
 });
 

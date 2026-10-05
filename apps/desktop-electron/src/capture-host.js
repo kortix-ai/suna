@@ -330,6 +330,7 @@ function setupCapture(deps) {
     resume: () => void invoke('capture_resume').catch((e) => console.warn(`[kortix] capture resume: ${e}`)),
     timeline: () => void openTimeline().catch((e) => console.warn(`[kortix] capture timeline: ${e}`)),
     settings: () => deps.openSettings(),
+    logs: () => void invoke('capture_open_logs').catch((e) => console.warn(`[kortix] capture logs: ${e}`)),
   };
 
   function start() {
@@ -342,7 +343,7 @@ function setupCapture(deps) {
   return {
     start,
     invoke,
-    trayItems: () => capture.captureTrayItems(view, trayActions),
+    traySection: () => capture.captureTraySection(view, trayActions),
   };
 }
 

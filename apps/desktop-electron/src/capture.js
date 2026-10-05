@@ -453,33 +453,44 @@ const STATE_WORDS = {
   signedOut: 'Not set up',
 };
 
-/** Tray line: `Capture: Recording · Screen, Actions`. */
+/** Capture's state for the tray: `Recording · Screen, Actions`. */
 function captureLabel(view) {
   const word = STATE_WORDS[view.state] || 'Not recording';
-  if (view.state !== 'recording') return `Capture: ${word}`;
+  if (view.state !== 'recording') return word;
   const layers = ['screen', 'actions', 'audio']
     .filter((key) => view.layers[key] && view.policy?.layers?.[key] !== false)
     .map((key) => key[0].toUpperCase() + key.slice(1));
-  return `Capture: ${word}${layers.length ? ` · ${layers.join(', ')}` : ''}`;
+  return `${word}${layers.length ? ` · ${layers.join(', ')}` : ''}`;
 }
 
-/** The Capture items of the tray menu; empty while Capture is not set up here. */
-function captureTrayItems(view, actions) {
-  if (!view?.available || !view.signedIn && !view.signInRequired) return [];
+/**
+ * The tray's "Capture" section, for tray-menu.js; null while this build has
+ * no engine or Capture is not set up here. It keeps running after Quit while
+ * it is on and its service was not stopped.
+ */
+function captureTraySection(view, actions) {
+  if (!view?.available || (!view.signedIn && !view.signInRequired)) return null;
   const paused = view.state === 'paused' || Boolean(view.pausedUntilMs && view.pausedUntilMs > Date.now());
-  return [
-    { id: 'capture-status', label: captureLabel(view), enabled: false },
-    ...(view.policy?.notice ? [{ id: 'capture-notice', label: `Policy: ${view.policy.notice}`.slice(0, 80), enabled: false }] : []),
-    ...(view.on && view.signedIn
-      ? [
-          paused
-            ? { id: 'capture-resume', label: 'Resume Capture', click: actions.resume }
-            : { id: 'capture-pause', label: 'Pause Capture for 1 hour', click: actions.pause },
-          { id: 'capture-timeline', label: 'Open Capture Timeline', click: actions.timeline },
-        ]
-      : []),
-    { id: 'capture-settings', label: view.signInRequired ? 'Sign in to Capture again…' : 'Capture…', click: actions.settings },
-  ];
+  const on = Boolean(view.on && view.signedIn);
+  return {
+    id: 'capture',
+    title: 'Capture',
+    logs: actions.logs,
+    keepsRunning: on && view.state !== 'stopped',
+    items: [
+      { id: 'capture-status', label: captureLabel(view), enabled: false },
+      ...(view.policy?.notice ? [{ id: 'capture-notice', label: `Policy: ${view.policy.notice}`.slice(0, 80), enabled: false }] : []),
+      ...(on && view.state !== 'stopped'
+        ? [
+            paused
+              ? { id: 'capture-resume', label: 'Resume', click: actions.resume }
+              : { id: 'capture-pause', label: 'Pause for 1 hour', click: actions.pause },
+            { id: 'capture-timeline', label: 'Open timeline', click: actions.timeline },
+          ]
+        : []),
+      { id: 'capture-settings', label: view.signInRequired ? 'Sign in again…' : 'Settings…', click: actions.settings },
+    ],
+  };
 }
 
 /** System Settings panes for the engine's permissions (macOS). */
@@ -496,7 +507,7 @@ module.exports = {
   PERMISSION_PANES,
   captureLabel,
   captureStatusFrom,
-  captureTrayItems,
+  captureTraySection,
   desiredChildren,
   policyOf,
   engineConfigYaml,

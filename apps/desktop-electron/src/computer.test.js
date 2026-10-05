@@ -327,45 +327,46 @@ describe('tray', () => {
   const access = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
   const opts = { openAtLogin: true, loginItemSupported: true, keepAwakeSupported: true, now: Date.parse('2030-01-01T12:00:00.000Z') };
 
-  test('lists the computer and access controls in order (A5)', () => {
-    const items = computer.trayMenuTemplate(online, access, opts, actions);
-    expect(items.filter((item) => item.id).map((item) => item.label)).toEqual([
-      'Computer connected',
-      'Open Kortix',
+  test('the "Your computer" section: status, access, keep awake, pause, disconnect (A5)', () => {
+    const section = computer.computerTraySection(online, access, opts, actions);
+    expect(section).toMatchObject({ id: 'computer', title: 'Your computer', keepsRunning: true });
+    expect(section.items.map((item) => item.label)).toEqual([
+      'Connected',
       'Access',
-      'Keep this computer awake while plugged in',
+      'Keep awake while plugged in',
       'Pause computer access',
-      'Show logs',
-      'Open at login',
-      'Disconnect this computer…',
-      'Quit Kortix (your computer stays connected)',
+      'Disconnect…',
     ]);
-    const modes = items.find((item) => item.id === 'access').submenu;
+    const modes = section.items.find((item) => item.id === 'access').submenu;
     expect(modes.map((item) => [item.label, item.checked])).toEqual([
       ['Ask each time', true],
       ['Always allowed', false],
       ['Off', false],
     ]);
-    expect(items.find((item) => item.id === 'login').checked).toBe(true);
+  });
+
+  test('not paired: no section', () => {
+    expect(computer.computerTraySection({ paired: false }, access, opts, actions)).toBeNull();
+    expect(computer.computerTraySection(null, access, opts, actions)).toBeNull();
   });
 
   test('an active grant shows its end and a Revoke now item', () => {
     const granted = { ...access, grantedUntil: '2030-01-01T14:32:00.000Z' };
-    const items = computer.trayMenuTemplate(online, granted, opts, actions);
+    const items = computer.computerTraySection(online, granted, opts, actions).items;
     const grant = items.find((item) => item.id === 'grant');
     expect(grant.label).toMatch(/^Allowed until /);
     expect(items.find((item) => item.id === 'revoke').label).toBe('Revoke now');
-    expect(computer.trayMenuTemplate(online, access, opts, actions).find((item) => item.id === 'revoke')).toBeUndefined();
+    expect(computer.computerTraySection(online, access, opts, actions).items.find((item) => item.id === 'revoke')).toBeUndefined();
   });
 
-  test('a paused computer offers Resume; Linux has no login item; Windows says keep-awake is unavailable', () => {
+  test('a paused computer offers Resume and does not keep running; Windows says keep-awake is unavailable', () => {
     const paused = { ...online, paused: true, serviceActive: false, status: 'offline', state: 'offline' };
-    const items = computer.trayMenuTemplate(paused, access, { ...opts, loginItemSupported: false, keepAwakeSupported: false }, actions);
-    expect(items[0].label).toBe('Computer access paused');
-    expect(items.find((item) => item.id === 'pause').label).toBe('Resume computer access');
-    expect(items.find((item) => item.id === 'login')).toBeUndefined();
-    expect(items.find((item) => item.id === 'keepAwake')).toMatchObject({ label: 'Keep awake: not available on Windows yet', enabled: false });
-    expect(items.find((item) => item.id === 'quit').label).toBe('Quit Kortix');
+    const section = computer.computerTraySection(paused, access, { ...opts, keepAwakeSupported: false }, actions);
+    expect(section.items[0].label).toBe('Access paused');
+    expect(section.keepsRunning).toBe(false);
+    expect(section.items.find((item) => item.id === 'pause').label).toBe('Resume computer access');
+    expect(section.items.find((item) => item.id === 'keepAwake')).toMatchObject({ label: 'Keep awake: not available on Windows yet', enabled: false });
+    expect(computer.statusLabel(paused)).toBe('Computer access paused');
   });
 
   test('a refused credential reads as Needs reconnect', () => {

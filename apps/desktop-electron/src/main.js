@@ -1254,7 +1254,7 @@ if (!gotLock) {
       getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
       openMainWindow,
       backgroundColor: currentBackgroundColor,
-      captureMenu: () => captureShell?.trayItems() ?? [],
+      captureSection: () => captureShell?.traySection() ?? null,
     });
     captureShell = setupCapture({
       backend: () => computerShell.backend(),

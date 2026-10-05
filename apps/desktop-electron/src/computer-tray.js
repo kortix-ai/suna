@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const computer = require('./computer');
+const { composeTrayMenu } = require('./tray-menu');
 const { isApprovalDialogPath } = require('./nav-rules');
 
 const FULL_REFRESH_MS = 60_000;
@@ -40,7 +41,7 @@ const WATCHED_FILES = ['state.json', 'config.json', 'access.json', 'access-reque
  *   getMainWindow: () => import('electron').BrowserWindow | null,
  *   openMainWindow: () => void,
  *   backgroundColor: () => string,
- *   captureMenu?: () => object[],
+ *   captureSection?: () => object | null,
  * }} deps
  */
 function setupComputer(deps) {
@@ -393,10 +394,14 @@ function setupComputer(deps) {
   };
 
   function renderTray() {
-    // Kortix Capture brings its own menu group (capture-host.js); the
-    // computer's menu below is unchanged and only shows while it is paired.
-    const capture = deps.captureMenu?.() ?? [];
-    if (!status?.paired && capture.length === 0) {
+    // One menu, one section per feature (tray-menu.js): the computer's section
+    // shows while it is paired, Capture's (capture-host.js) while it is set up.
+    const loginItemSupported = process.platform === 'darwin' || process.platform === 'win32';
+    const sections = [
+      computer.computerTraySection(status, access, { keepAwakeSupported: computer.keepAwakeSupported(process.platform) }, actions),
+      deps.captureSection?.() ?? null,
+    ];
+    if (!sections.some(Boolean)) {
       tray?.destroy();
       tray = null;
       return;
@@ -407,23 +412,8 @@ function setupComputer(deps) {
       if (process.platform !== 'darwin') tray.on('click', actions.open);
     }
     tray.setToolTip(status?.paired ? `Kortix — ${computer.statusLabel(status)}` : 'Kortix');
-    const computerMenu = status?.paired
-      ? computer.trayMenuTemplate(
-          status,
-          access,
-          {
-            openAtLogin: app.getLoginItemSettings().openAtLogin,
-            loginItemSupported: process.platform === 'darwin' || process.platform === 'win32',
-            keepAwakeSupported: computer.keepAwakeSupported(process.platform),
-          },
-          actions,
-        )
-      : [
-          { id: 'open', label: 'Open Kortix', click: actions.open },
-          { type: 'separator' },
-          { id: 'quit', label: 'Quit Kortix', click: actions.quit },
-        ];
-    tray.setContextMenu(Menu.buildFromTemplate(capture.length ? [...capture, { type: 'separator' }, ...computerMenu] : computerMenu));
+    const menu = composeTrayMenu({ sections, openAtLogin: app.getLoginItemSettings().openAtLogin, loginItemSupported, actions });
+    tray.setContextMenu(Menu.buildFromTemplate(menu));
   }
 
   function renderTraySafely() {
