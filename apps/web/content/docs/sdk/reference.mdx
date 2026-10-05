@@ -640,7 +640,7 @@ React hooks for the project surface (`@kortix/sdk/react`), one per read and
 write above: `useCaptureDevices` (polls every 10 s for live status),
 `useRevokeCaptureDevice`, `useSyncCaptureDevice`, `useCaptureDays`,
 `useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`,
-`useCaptureFrame`, `useCaptureRanges`, `useCaptureRange` (polls every 5 s while
+`useCaptureFrame`, `useCaptureChunkMedia` (an item's signed media URLs, read again every 4 min), `useCaptureRanges`, `useCaptureRange` (polls every 5 s while
 the range's pipelines are queued or running), `useSaveCaptureRange`,
 `useProcessCaptureRange`, `useCapturePolicy`, `useSetCapturePolicy` and
 `useCapturePeople`. A `null` project, query or id sends no request. A saved

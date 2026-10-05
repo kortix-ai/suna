@@ -136,6 +136,7 @@ export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export {
   useApproveCaptureDevice,
+  useCaptureChunkMedia,
   useCaptureDays,
   useCaptureDeviceGrant,
   useCaptureDevices,

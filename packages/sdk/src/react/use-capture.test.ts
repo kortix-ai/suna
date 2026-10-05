@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configureKortix } from '../core/http/config';
 import {
   useApproveCaptureDevice,
+  useCaptureChunkMedia,
   useCaptureDays,
   useCaptureDeviceGrant,
   useCaptureDevices,
@@ -226,4 +227,18 @@ test('policy: read, then a write replaces the cached record without a refetch; p
   await h.settle();
   expect(read!.data?.policy.notice).toBe('Changed');
   expect(h.calls.filter((c) => c === 'GET http://test.local/projects/p1/capture/policy').length).toBe(1);
+});
+
+test('chunk media: one signed URL read per chunk, for a member too; a null chunk sends nothing', async () => {
+  const h = harness();
+  h.bodies['GET /chunks/c1/media'] = { chunk_id: 'c1', kind: 'chunk', video: { url: 'https://s3.test/v', expires_at: 'x', encrypted: false }, audio: null };
+  let media: ReturnType<typeof useCaptureChunkMedia>;
+  function Probe() {
+    media = useCaptureChunkMedia('p1', 'c1', { userId: 'u2' });
+    useCaptureChunkMedia('p1', null);
+    return null;
+  }
+  await h.mount(Probe);
+  expect(media!.data?.video?.url).toBe('https://s3.test/v');
+  expect(h.calls).toEqual(['GET http://test.local/projects/p1/capture/chunks/c1/media?user_id=u2']);
 });

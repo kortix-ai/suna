@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   approveCaptureDeviceGrant,
   denyCaptureDeviceGrant,
+  getCaptureChunkMedia,
   getCaptureDays,
   getCaptureDeviceGrant,
   getCaptureFrame,
@@ -147,6 +148,26 @@ export function useCaptureFrame(projectId: ProjectId, frameId: string | null | u
     queryFn: () => getCaptureFrame(projectId as string, frameId as string, opts),
     enabled: !!projectId && !!frameId,
     ...contract(FRESHNESS.captureTimeline),
+  });
+}
+
+/**
+ * Signed URLs (5 min) of one indexed item's video or audio. A timeline seeks
+ * inside one chunk's video while it scrubs, so it reads this once per chunk.
+ */
+export function useCaptureChunkMedia(
+  projectId: ProjectId,
+  chunkId: string | null | undefined,
+  opts: { userId?: string } = {},
+) {
+  return useQuery({
+    queryKey: qk.project.captureTimelineRead(projectId ?? '', 'media', { chunkId, userId: opts.userId ?? null }),
+    queryFn: () => getCaptureChunkMedia(projectId as string, chunkId as string, opts),
+    enabled: !!projectId && !!chunkId,
+    ...contract(FRESHNESS.captureTimeline),
+    // The URLs expire after 300 s; read them again before that.
+    staleTime: 240_000,
+    refetchInterval: 240_000,
   });
 }
 

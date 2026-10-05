@@ -1420,6 +1420,7 @@
     "useCanonicalOpenCodeSession",
     "useCanonicalRuntimeSession",
     "useCans",
+    "useCaptureChunkMedia",
     "useCaptureDays",
     "useCaptureDeviceGrant",
     "useCaptureDevices",
