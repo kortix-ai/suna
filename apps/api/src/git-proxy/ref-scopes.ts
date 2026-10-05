@@ -24,14 +24,19 @@
  * the ungoverned projects this whole change exists to protect. So a session
  * principal must find the leaf EXPLICITLY listed in its grant; absent is denied.
  */
-import type { Context } from 'hono';
+import type { AgentGrant } from '@kortix/db';
 
 import { holdsEveryGrant } from '../iam/agent-grant-ceiling';
-import { getAgentGrant } from '../iam/agent-scope';
-import { actorForToken } from '../iam/actor';
+import { actorForToken, type RequestContext } from '../iam/actor';
 import { authorize } from '../iam/authorize';
-import { deriveRequestContext } from '../middleware/iam-request-context';
 import type { GitPrincipal, GitRefScope } from './ref-policy';
+
+/** What the ref-scope checks read from the request: the session's agent grant
+ *  and the IAM request context (IP / MFA AAL, folded into the authorize cache key). */
+export interface RefScopeCaller {
+  agentGrant: AgentGrant | null;
+  ctx: RequestContext;
+}
 
 /**
  * True when the principal holds `scope`.
@@ -47,7 +52,7 @@ import type { GitPrincipal, GitRefScope } from './ref-policy';
  * `internal` is server-side machinery, gated at its own routes.
  */
 export async function principalHoldsRefScope(
-  c: Context,
+  caller: RefScopeCaller,
   principal: GitPrincipal,
   project: { projectId: string; accountId: string },
   scope: GitRefScope,
@@ -66,7 +71,7 @@ export async function principalHoldsRefScope(
       if (!principal.userId) return true;
       const verdict = await authorize(
         await actorForToken(principal.userId, project.accountId, principal.tokenId, {
-          ctx: deriveRequestContext(c),
+          ctx: caller.ctx,
         }),
         scope,
         { type: 'project', id: project.projectId },
@@ -74,7 +79,7 @@ export async function principalHoldsRefScope(
       return verdict.allowed;
     }
     case 'session': {
-      const grant = getAgentGrant(c);
+      const grant = caller.agentGrant;
       if (!grant) return false; // Default-deny — see the header note.
       if (grant.permissions !== 'all' && !grant.permissions.includes(scope)) return false;
       if (!principal.userId || !principal.tokenId) return false;
@@ -83,7 +88,7 @@ export async function principalHoldsRefScope(
       // narrow that identity's role; it cannot widen it.
       const verdict = await authorize(
         await actorForToken(principal.userId, project.accountId, principal.tokenId, {
-          ctx: deriveRequestContext(c),
+          ctx: caller.ctx,
         }),
         scope,
         { type: 'project', id: project.projectId },
@@ -104,16 +109,16 @@ export async function principalHoldsRefScope(
  * sessions that borrow a person's authority are unaffected.
  */
 export async function sessionMayBypassGrantReview(
-  c: Context,
+  caller: RefScopeCaller,
   principal: GitPrincipal,
   project: { projectId: string; accountId: string },
 ): Promise<boolean> {
   if (principal.kind !== 'session') return true;
-  const grant = getAgentGrant(c);
+  const grant = caller.agentGrant;
   // A null grant or a session without a token is default-denied by the scope check already.
   if (!grant || !principal.userId || !principal.tokenId) return true;
   const actor = await actorForToken(principal.userId, project.accountId, principal.tokenId, {
-    ctx: deriveRequestContext(c),
+    ctx: caller.ctx,
   });
   const credential = actor.credential as { kind?: string; agentPrincipal?: boolean };
   if (!(credential.kind === 'agent_session' && credential.agentPrincipal === true)) return true;
@@ -130,7 +135,7 @@ export async function sessionMayBypassGrantReview(
  * names scopes stands unless the principal holds EVERY one of them.
  */
 export async function denialsAfterScopes<T extends { requires?: GitRefScope[] }>(
-  c: Context,
+  caller: RefScopeCaller,
   principal: GitPrincipal,
   project: { projectId: string; accountId: string },
   denials: T[],
@@ -147,7 +152,7 @@ export async function denialsAfterScopes<T extends { requires?: GitRefScope[] }>
     // not pay for a second authorization round trip.
     let holdsAll = true;
     for (const scope of denial.requires) {
-      if (!(await principalHoldsRefScope(c, principal, project, scope))) {
+      if (!(await principalHoldsRefScope(caller, principal, project, scope))) {
         holdsAll = false;
         break;
       }
