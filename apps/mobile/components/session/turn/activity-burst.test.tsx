@@ -63,7 +63,7 @@ describe('ActivityBurst running summary', () => {
   const summary = () =>
     create(React.createElement(ActivityBurst, { segment: { kind: 'burst', parts: [running, { ...running, id: 'run-2', callID: 'c2' } as Part] }, turnLive: true, isTrailing: true }));
 
-  test('shimmers the summary line while it does not own the open sheet', () => {
+  test('shimmers "Working · N steps" while running', () => {
     let tree: ReturnType<typeof create>;
     act(() => { tree = summary(); });
     expect(tree!.root.findAllByType('shimmer' as never)).toHaveLength(1);

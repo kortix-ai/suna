@@ -85,8 +85,9 @@ export const ToolMotionContext = createContext(true);
 
 /**
  * Whether looping decorative motion (text shimmer, dot matrix) may run here.
- * A turn provides `true` only to the one element that owns the motion; the rest
- * draw still. Unlike `ToolMotionContext`, it does not gate `RunningLoader`.
+ * A turn provides `true` to its running bursts' summaries and to its trailing
+ * segment only, and `false` to everything while it is off screen; the rest draw
+ * still. Unlike `ToolMotionContext`, it does not gate `RunningLoader`.
  */
 export const LoopMotionContext = createContext(true);
 
