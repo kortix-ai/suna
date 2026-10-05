@@ -343,14 +343,17 @@ function SessionTurnImpl({
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {segments.map((segment, index) => {
-            const shimmerSegment = onScreen && index === segments.length - 1;
+            // Trailing is structural (`burstIsRunning` keeps the trailing burst
+            // running between calls); only loop motion follows the viewport.
+            const trailing = index === segments.length - 1;
+            const shimmerSegment = onScreen && trailing;
             if (segment.kind === 'burst') {
               return (
                 <LoopMotionContext.Provider key={`burst-${segment.parts[0]?.id ?? 'empty'}`} value={shimmerSegment}>
                   <ActivityBurst
                     segment={segment}
                     turnLive={working}
-                    isTrailing={shimmerSegment}
+                    isTrailing={trailing}
                     sessionId={sessionId}
                     onOpenFile={onFileMention}
                     toDisplayPath={displayPath}
