@@ -12,6 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import {
+  type CreateSessionPublicShareInput,
   type SessionPublicShare,
   listSessionPublicShares,
   revokeSessionPublicShare,
@@ -50,6 +51,41 @@ export function isShareLive(share: SessionPublicShare, now: number = Date.now())
   if (!share.expires_at) return true;
   const expiresAt = new Date(share.expires_at).getTime();
   return Number.isNaN(expiresAt) ? true : expiresAt > now;
+}
+
+/** A file path as the API stores it: always `/workspace/<relative path>`. */
+function workspaceFilePath(path: string): string {
+  const rel = path.replace(/^\/?workspace\/?/, '').split('/').filter(Boolean).join('/');
+  return `/workspace/${rel}`;
+}
+
+/**
+ * The live share that already exposes what `input` would share, or null.
+ *
+ * Only transcripts are reused by the API; a file or preview mint always makes
+ * a new token. So a surface that offers "Copy link" looks here first and shows
+ * the existing link instead of minting a second public URL to the same thing.
+ */
+export function findLiveShareFor(
+  shares: readonly SessionPublicShare[],
+  input: CreateSessionPublicShareInput | null,
+  now: number = Date.now(),
+): SessionPublicShare | null {
+  if (!input) return null;
+  const live = shares.filter((share) => isShareLive(share, now));
+  if (input.file) {
+    const filePath = workspaceFilePath(input.file.path);
+    return live.find((s) => s.resource_type === 'file' && s.file_path === filePath) ?? null;
+  }
+  if (input.preview?.port) {
+    const path = input.preview.path || '/';
+    return (
+      live.find(
+        (s) => s.resource_type === 'preview' && s.port === input.preview!.port && s.path === path,
+      ) ?? null
+    );
+  }
+  return null;
 }
 
 /**

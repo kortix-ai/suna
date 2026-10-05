@@ -9,69 +9,51 @@ import { useTranslations } from '@/i18n/use-translations';
  * output and the next. That contract only holds if they render the SAME
  * controls, not three copies that drift apart the first time any is touched.
  *
- * ─── Why one split button plus one Download button ────────────────────────
+ * ─── The address pill ──────────────────────────────────────────────────────
  *
- * This bar used to be six flat icon peers — ask for changes, copy, open in a
- * new tab, copy link, download, full screen — plus close. Seven glyphs with no
- * hierarchy: every action shouted at the same volume, so none of them read as
- * *the* action, and three of them ("copy" vs "copy link" vs "open in a tab")
- * were mutually indistinguishable at 14px.
+ * The header is one filled pill that names the output, plus the panel's own
+ * controls outside it:
  *
- * Now there is one labelled control with a caret, and Download beside it:
+ *     ( 📄 src / pages / Home.tsx        ↻  ⧉  🔗 )   [⬇]   [⤢]   [✕]
+ *     ←  →  ( 🌐 http://localhost:5000/      ↻  🔗 )   [↗]   [⤢]   [✕]
  *
- *     [  Copy  |ᵛ]   [⬇]   [⤢]   [✕]
+ * The actions that act on the thing the pill names — reload it, copy it, copy
+ * a link to it — sit inside the pill, at its trailing edge. Download, open in
+ * a new tab, full screen and close sit outside: they take the output out of
+ * the panel or act on the panel itself.
  *
- * `Copy` says in words what it does, so it needs no tooltip, no icon, and
- * cannot be confused with its neighbours. The word alone also carries the
- * confirmation — it flips to `Copied`. `Copy link` is its fallback, and when
- * both exist it waits behind the caret.
- *
- * Download is never behind the caret. It is the action people reach for most
- * after reading a file, so it is always a visible, single-click icon button —
- * the same `ViewerDownloadButton` every file renderer's own toolbar uses, so
- * there is exactly one Download control per viewer. Full screen and close stay
- * outside too — they act on the panel, not on the output.
- *
- * ─── The one rule that decides the split button ────────────────────────────
- *
- * The primary is the first of these the surface can actually do:
- *
- *   1. `Copy`      — the output's own content (a file's text, an image's pixels)
- *   2. `Copy link` — a public, view-only link
- *
- * and the menu holds the one it did NOT take, plus any extra menu items. A
- * split button with no menu items drops its caret; a surface with neither
- * action shows no split button at all. `planViewerActions` is that rule,
- * written once and unit-tested.
+ * Inside the pill every action is an icon with a tooltip. Copy and Copy link
+ * confirm in place: the glyph flips to a check for 2s, so no toast is needed.
+ * There is no menu: each action is one click, and a surface simply omits the
+ * actions it cannot do.
  */
 
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { downloadFile } from '@/features/files/api/runtime-files';
-import { PublicShareLinkConfirm } from '@/components/projects/public-share-link-confirm';
+import { Copy } from '@/features/icon/icons/copy';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
+import {
+  findLiveShareFor,
+  publicShareUrl,
+  useRevokePublicShare,
+  useSessionPublicShares,
+} from '@/hooks/use-session-public-shares';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import {
   ArrowClockwiseIcon,
-  CaretDownIcon,
-  DotsThreeIcon,
   LinkSimpleIcon,
   ArrowsOutSimpleIcon as Maximize2,
   ArrowsInSimpleIcon as Minimize2,
 } from '@phosphor-icons/react';
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** Project-session ids a share link is scoped to. */
 export interface ShareContext {
@@ -87,7 +69,7 @@ export interface ShareContext {
  */
 export interface ViewerCopy {
   run: () => void | Promise<void>;
-  /** For screen readers, where the button's own word is only ever "Copy". */
+  /** Tooltip and screen-reader label, e.g. "Copy file contents". */
   ariaLabel: string;
 }
 
@@ -97,37 +79,8 @@ export interface ViewerDownload {
   fileName: string;
 }
 
-/**
- * Download fetches the file's real bytes before the browser's save dialog can
- * appear, so on anything bigger than a note there is a real wait. Without a
- * pending state the control looks broken and gets invoked again — which starts
- * a second fetch. The spinner renders on the Download button itself.
- */
-function useDownload(download?: ViewerDownload) {
-  const [pending, setPending] = useState(false);
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-
-  const run = useCallback(async () => {
-    if (!download || pending) return;
-    setPending(true);
-    try {
-      await downloadFile(download.path, download.fileName);
-      track('deliverable_downloaded', { scope: 'one' });
-    } catch {
-      // The browser reports its own failure; the control just needs to recover.
-    } finally {
-      if (alive.current) setPending(false);
-    }
-  }, [download, pending]);
-
-  return { pending, run };
-}
+/** Size and shape of every icon button inside the address pill. */
+export const PILL_ICON_BUTTON = 'size-6 shrink-0 rounded-sm active:scale-[0.96]';
 
 /**
  * What a public share for a workspace file describes. Both file toolbars build
@@ -141,56 +94,119 @@ export function fileShareInput(
   return path ? { mode: 'view', file: { label, path } } : null;
 }
 
-export type ViewerPrimaryKind = 'copy' | 'link';
-export type ViewerMenuItemKind = 'link' | 'extra';
-
-export interface ViewerActionsPlan {
-  /** The split button's labelled half, or null when there is no split button. */
-  primary: ViewerPrimaryKind | null;
-  /** What sits behind the caret, in order. Empty means no caret. */
-  menu: ViewerMenuItemKind[];
-  /** Download is its own visible button — never a menu item. */
-  download: boolean;
-}
-
 /**
- * The layout rule from this file's header, as a pure function so it can be
- * pinned by tests without rendering a menu (Radix only mounts menu content
- * once it is open, so static markup cannot show what a menu holds).
+ * The folders above a file, as the pill shows them: `/workspace/src/pages/Home.tsx`
+ * → `['src', 'pages']`. The sandbox root is implied, so it is never shown.
  */
-export function planViewerActions({
-  canCopy,
-  canCopyLink,
-  canDownload,
-  hasExtraMenuItems,
-}: {
-  canCopy: boolean;
-  canCopyLink: boolean;
-  canDownload: boolean;
-  hasExtraMenuItems: boolean;
-}): ViewerActionsPlan {
-  const primary: ViewerPrimaryKind | null = canCopy ? 'copy' : canCopyLink ? 'link' : null;
-  const menu: ViewerMenuItemKind[] = [];
-  if (canCopyLink && primary !== 'link') menu.push('link');
-  if (hasExtraMenuItems) menu.push('extra');
-  return { primary, menu, download: canDownload };
+export function pathCrumbs(path: string | undefined): string[] {
+  if (!path) return [];
+  const parts = path.replace(/^\/workspace(?=\/|$)/, '').split('/').filter(Boolean);
+  return parts.slice(0, -1);
 }
 
 /**
- * `Copy` / `Copy link` as one split button, and Download as a visible button
- * beside it.
+ * The filled pill a file viewer's header is built around: the file's icon, its
+ * folders and its name, with the file's own actions at the trailing edge.
+ * Folders truncate before the name does — the name is what tells two open
+ * files apart.
+ */
+export function ViewerPathPill({
+  icon,
+  path,
+  fileName,
+  children,
+}: {
+  icon: React.ReactNode;
+  path?: string;
+  fileName: string;
+  /** The file's actions — `RefreshButton`, `ViewerActions`. */
+  children?: React.ReactNode;
+}) {
+  const crumbs = pathCrumbs(path);
+  return (
+    <span className="bg-muted flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md px-1">
+      <span className="flex size-6 shrink-0 items-center justify-center">{icon}</span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm" title={path}>
+        {crumbs.length > 0 && (
+          <span className="text-muted-foreground min-w-0 shrink-[3] truncate">
+            {crumbs.join(' / ')} /
+          </span>
+        )}
+        <span className="text-foreground min-w-0 truncate font-medium">{fileName}</span>
+      </span>
+      {children && <span className="flex shrink-0 items-center gap-0.5">{children}</span>}
+    </span>
+  );
+}
+
+/**
+ * `true` for 2s after `flash()` — the window a copy button shows its check.
+ */
+function useFlash() {
+  const [on, setOn] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  const flash = useCallback(() => {
+    setOn(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setOn(false), 2000);
+  }, []);
+  return [on, flash] as const;
+}
+
+/** One icon button inside the pill: a glyph that flips to a check once done. */
+function PillIconButton({
+  label,
+  done,
+  busy = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  done: boolean;
+  busy?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Hint label={done ? 'Copied' : label} side="bottom">
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={onClick}
+        disabled={busy}
+        aria-label={done ? 'Copied' : label}
+        aria-busy={busy}
+        className={cn(PILL_ICON_BUTTON, 'disabled:opacity-100')}
+      >
+        {busy ? (
+          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
+        ) : done ? (
+          <SolidCheckIcon className="size-3.5" />
+        ) : (
+          children
+        )}
+      </Button>
+    </Hint>
+  );
+}
+
+/**
+ * `Copy` and `Copy link` as icons inside the address pill.
  *
- * Self-gating: hand it whatever the surface has and it works out the shape. A
- * split button with exactly one action renders a lone button and no caret — a
- * menu holding a single item is a click for nothing.
+ * Self-gating: hand it whatever the surface has. `Copy` needs content a
+ * clipboard can hold; `Copy link` needs a share context and a share input.
+ * With neither it renders nothing.
  */
 export function ViewerActions({
   copy,
   shareContext,
   shareInput,
-  download,
-  extraMenuItems,
-  className,
 }: {
   /** Omit where the output has no content a clipboard can hold — a PDF, a
    *  spreadsheet, a running app. */
@@ -201,13 +217,6 @@ export function ViewerActions({
   /** What the public share describes. Null suppresses `Copy link` for the same
    *  reason `shareContext` does. */
   shareInput: CreateSessionPublicShareInput | null;
-  /** Omit where there are no bytes to save — a running app. */
-  download?: ViewerDownload;
-  /** Rendered at the end of the menu. `AppPreview` puts "Open in a new tab"
-   *  here: it is the only surface where a real browser tab shows something the
-   *  panel cannot. */
-  extraMenuItems?: React.ReactNode;
-  className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const share = usePublicShareLink({
@@ -215,16 +224,7 @@ export function ViewerActions({
     sessionId: shareContext?.sessionId,
     input: shareInput,
   });
-  const dl = useDownload(download);
-
-  const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    },
-    [],
-  );
+  const [copied, flashCopied] = useFlash();
 
   const runCopy = useCallback(async () => {
     if (!copy) return;
@@ -234,159 +234,233 @@ export function ViewerActions({
       // Clipboard denied — the button simply doesn't confirm.
       return;
     }
-    setCopied(true);
-    if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopied(false), 2000);
-  }, [copy]);
+    flashCopied();
+  }, [copy, flashCopied]);
 
-  const plan = planViewerActions({
-    canCopy: Boolean(copy),
-    canCopyLink: share.canShare,
-    canDownload: Boolean(download),
-    hasExtraMenuItems: Boolean(extraMenuItems),
-  });
-  const { primary } = plan;
-
-  const menu = plan.menu.map((item) =>
-    item === 'link' ? (
-      <DropdownMenuItem
-        key="link"
-        disabled={share.isPending}
-        onSelect={() => {
-          track('deliverable_link_copied');
-          share.copyLink();
-        }}
-      >
-        <LinkSimpleIcon />
-        {tI18nComplete.raw('textdbf362d4f210')}
-      </DropdownMenuItem>
-    ) : (
-      <Fragment key="extra">{extraMenuItems}</Fragment>
-    ),
-  );
-
-  // Download is always its own visible button, right of the split button.
-  // Never a menu item.
-  const downloadButton = plan.download ? (
-    <ViewerDownloadButton onDownload={() => void dl.run()} pending={dl.pending} />
-  ) : null;
-
-  // No split button on two kinds of surface: a file in a session with no
-  // project context (nothing to copy, no link to mint — Download alone), and
-  // an app in such a session, where "Open in a new tab" still works. A lone
-  // menu keeps that reachable rather than blanking the toolbar.
-  if (!primary) {
-    if (menu.length === 0 && !downloadButton) return null;
-    return (
-      <span className={cn('flex shrink-0 items-center gap-1', className)}>
-        {menu.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label={tI18nComplete.raw('textf8d46c2570e7')}
-                className="shrink-0 active:scale-[0.96]"
-              >
-                <DotsThreeIcon className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-40">
-              {menu}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-        {downloadButton}
-        <PublicShareLinkConfirm confirmation={share.confirmation} />
-      </span>
-    );
-  }
-
-  // `Copy link` reports its mint in exactly one place: on the primary when it
-  // IS the primary, on the caret when it lives in the menu (by which point the
-  // menu has closed and the caret is the only thing left on screen).
-  // Download reports on its own button.
-  const primaryBusy = primary === 'link' && share.isPending;
-  const menuBusy = primary !== 'link' && share.isPending;
-
-  // ─── The primary is a word, and only a word. ───────────────────────────
-  // No icon: an icon beside a label that already says "Copy" is decoration,
-  // and it was decoration that made this toolbar unreadable in the first
-  // place. That leaves the label itself to carry the confirmation — it flips
-  // to "Copied", which is louder and clearer than a 14px check ever was, and
-  // reads to a screen reader without a live region.
-  //
-  // The group is right-anchored inside a `justify-between` row, so the extra
-  // two characters extend the button's LEFT edge; the caret, Download, full
-  // screen and close do not move.
-  const justDone = primary === 'copy' ? copied : share.copied;
-  const primaryLabel = justDone ? 'Copied' : primary === 'copy' ? 'Copy' : 'Copy link';
-
-  const onPrimary = () => {
-    if (primary === 'copy') return void runCopy();
-    track('deliverable_link_copied');
-    return share.copyLink();
-  };
-
-  const primaryButton = (
-    <Button
-      variant="outline"
-      size="toolbar"
-      onClick={onPrimary}
-      disabled={primaryBusy}
-      aria-label={justDone || primary !== 'copy' ? primaryLabel : copy!.ariaLabel}
-      aria-busy={primaryBusy}
-      className="active:scale-[0.96] disabled:opacity-100"
-    >
-      {/* `Loading` is the one thing that still renders inside the button, and
-          it is a spinner rather than an icon: a fetch the user is waiting on
-          has to say so. */}
-      {primaryBusy && (
-        <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
-      )}
-      {primaryLabel}
-    </Button>
-  );
-
-  // A lone action needs no caret — an empty menu is a click that leads nowhere.
-  const split =
-    menu.length === 0 ? (
-      primaryButton
-    ) : (
-      <ButtonGroup className="shrink-0">
-        {primaryButton}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={tI18nComplete.raw('textf8d46c2570e7')}
-              className="active:scale-[0.96]"
-            >
-              {/* The caret carries the pending state for a link minted from
-                  the menu — by then the menu itself has closed. */}
-              {menuBusy ? (
-                <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
-              ) : (
-                <CaretDownIcon className="size-3.5" />
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-40">
-            {menu}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </ButtonGroup>
-    );
+  if (!copy && !share.canShare) return null;
 
   return (
-    <span className={cn('flex shrink-0 items-center gap-1', className)}>
-      {split}
-      {downloadButton}
-      <PublicShareLinkConfirm confirmation={share.confirmation} />
-    </span>
+    <>
+      {copy && (
+        <PillIconButton label={copy.ariaLabel} done={copied} onClick={() => void runCopy()}>
+          <Copy className="size-3.5" />
+        </PillIconButton>
+      )}
+      {share.canShare && (
+        <PublicLinkPopover share={share} shareContext={shareContext} shareInput={shareInput} />
+      )}
+    </>
   );
 }
+
+const EXPIRY_OPTIONS = [
+  { id: 'never', label: 'Never', days: null },
+  { id: '1d', label: '1 day', days: 1 },
+  { id: '7d', label: '7 days', days: 7 },
+  { id: '30d', label: '30 days', days: 30 },
+] as const;
+type ExpiryId = (typeof EXPIRY_OPTIONS)[number]['id'];
+
+function expiryLabel(expiresAt: string | null): string {
+  if (!expiresAt) return 'Never expires';
+  const date = new Date(expiresAt);
+  return Number.isNaN(date.getTime())
+    ? 'Never expires'
+    : `Expires ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+}
+
+/**
+ * `Copy link` and everything about the link behind it, in one popover.
+ *
+ * A file or app mint always makes a NEW public token (only transcripts are
+ * reused server-side), so the popover reads the session's live shares first:
+ *
+ *   - a live link for this exact file or port → show it, copy it, see when it
+ *     expires, revoke it;
+ *   - none → confirm creating one, with an expiry. A public link needs no
+ *     sign-in, so it is a decision, not a copy.
+ *
+ * After a create the share list refetches and the open popover turns into the
+ * first state — the link it just made.
+ */
+function PublicLinkPopover({
+  share,
+  shareContext,
+  shareInput,
+}: {
+  share: ReturnType<typeof usePublicShareLink>;
+  shareContext?: ShareContext;
+  shareInput: CreateSessionPublicShareInput | null;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const [open, setOpen] = useState(false);
+  const [expiry, setExpiry] = useState<ExpiryId>('7d');
+  const [copied, flashCopied] = useFlash();
+  const { shares } = useSessionPublicShares(shareContext?.projectId, shareContext?.sessionId);
+  const { revoke, revokingId } = useRevokePublicShare(
+    shareContext?.projectId,
+    shareContext?.sessionId,
+  );
+
+  const live = findLiveShareFor(shares, shareInput);
+  const url = live ? publicShareUrl(live.public_path) : null;
+
+  const copyUrl = async () => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      return;
+    }
+    track('deliverable_link_copied');
+    flashCopied();
+  };
+
+  const create = () => {
+    const days = EXPIRY_OPTIONS.find((o) => o.id === expiry)?.days ?? null;
+    share.confirmation.onConfirm(
+      days === null ? null : new Date(Date.now() + days * 86_400_000).toISOString(),
+    );
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(next) => !share.isPending && setOpen(next)}>
+      <PopoverAnchor asChild>
+        <span className="flex">
+          <PillIconButton
+            label={tI18nComplete.raw('textdbf362d4f210')}
+            done={copied || share.copied}
+            busy={share.isPending}
+            onClick={() => setOpen((o) => !o)}
+          >
+            <LinkSimpleIcon className="size-3.5" />
+          </PillIconButton>
+        </span>
+      </PopoverAnchor>
+      <PopoverContent align="end" className="flex flex-col gap-3">
+        {live && url ? (
+          <>
+            <div className="flex flex-col gap-1">
+              <p className="text-foreground text-sm font-medium">Public link</p>
+              <p className="text-muted-foreground text-xs">
+                Anyone with the link can view it without signing in. {expiryLabel(live.expires_at)}.
+              </p>
+            </div>
+            <div className="bg-muted flex h-8 items-center gap-1 rounded-md pr-1 pl-2">
+              <span className="text-foreground min-w-0 flex-1 truncate text-xs" title={url}>
+                {url}
+              </span>
+              <PillIconButton label="Copy" done={copied} onClick={() => void copyUrl()}>
+                <Copy className="size-3.5" />
+              </PillIconButton>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="toolbar"
+                disabled={revokingId === live.share_id}
+                onClick={() => revoke(live.share_id)}
+                className="text-destructive"
+              >
+                {revokingId === live.share_id && (
+                  <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />
+                )}
+                Revoke link
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1">
+              <p className="text-foreground text-sm font-medium">
+                {tHardcodedUi.raw('publicShareConfirm.title')}
+              </p>
+              <p className="text-muted-foreground text-xs">
+                Anyone with the link can view this without signing in.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-muted-foreground text-xs">Expires after</p>
+              <div className="bg-muted flex rounded-md p-0.5" role="radiogroup">
+                {EXPIRY_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={expiry === option.id}
+                    onClick={() => setExpiry(option.id)}
+                    className={cn(
+                      'h-6 flex-1 rounded-sm text-xs transition-colors',
+                      expiry === option.id
+                        ? 'bg-background text-foreground shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="toolbar"
+                disabled={share.isPending}
+                onClick={() => setOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button size="toolbar" disabled={share.isPending} onClick={create}>
+                {share.isPending && <Loading className="size-3.5 shrink-0 motion-reduce:animate-none" />}
+                {tHardcodedUi.raw('publicShareConfirm.confirm')}
+              </Button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Download, outside the pill: it takes the bytes out of the panel.
+ *
+ * Download fetches the file's real bytes before the browser's save dialog can
+ * appear, so on anything bigger than a note there is a real wait. Without a
+ * pending state the control looks broken and gets invoked again — which starts
+ * a second fetch. The spinner renders on the button itself.
+ */
+export function ViewerDownloadAction({ download }: { download?: ViewerDownload }) {
+  const [pending, setPending] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  if (!download) return null;
+
+  const run = async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      await downloadFile(download.path, download.fileName);
+      track('deliverable_downloaded', { scope: 'one' });
+    } catch {
+      // The browser reports its own failure; the control just needs to recover.
+    } finally {
+      if (alive.current) setPending(false);
+    }
+  };
+
+  // Ghost, like full screen and close beside it: outside the pill every
+  // control carries the same weight.
+  return <ViewerDownloadButton variant="ghost" onDownload={() => void run()} pending={pending} />;
+}
+
 
 /**
  * Re-read the open file from the sandbox now.
@@ -394,7 +468,7 @@ export function ViewerActions({
  * The safety net under the automatic refresh: the agent's turn end already
  * refetches every open file, so this is for edits the turn end cannot see — a
  * terminal, another tab, a stylesheet an HTML page loads. It acts on the file,
- * not the panel, so it sits before Download with the file's other actions. The
+ * so it sits inside the address pill with the file's other actions. The
  * glyph gives way to the product's one spinner while the read is in flight.
  */
 export function RefreshButton({
@@ -411,12 +485,12 @@ export function RefreshButton({
     <Hint label={label} side="bottom">
       <Button
         variant="ghost"
-        size="icon"
+        size="icon-xs"
         onClick={onRefresh}
         disabled={refreshing}
         aria-label={label}
         aria-busy={refreshing}
-        className="size-7 shrink-0 active:scale-[0.96]"
+        className={PILL_ICON_BUTTON}
       >
         {refreshing ? (
           <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
