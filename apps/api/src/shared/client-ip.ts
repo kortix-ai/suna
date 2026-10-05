@@ -54,3 +54,22 @@ export function clientIpFromHeaders(
 export function clientKeyFromHeaders(header: HeaderReader): string {
   return clientIpFromHeaders(header) ?? 'unknown';
 }
+
+/**
+ * The caller's address as this deployment sees it, from its request headers.
+ *
+ * `cf-connecting-ip` is read FIRST because the edge OVERWRITES it on every
+ * request. `x-forwarded-for` is not overwritten — Cloudflare appends to what
+ * the client sent, so its first hop is attacker-controlled. A caller who
+ * exfiltrated a session token can therefore set `x-forwarded-for` to the pinned
+ * sandbox address and replay the token from anywhere; they cannot forge
+ * `cf-connecting-ip`. The xff/x-real-ip fallback stays for deployments that do
+ * not sit behind Cloudflare.
+ */
+export function egressIpFromHeaders(header: HeaderReader): string | null {
+  const cf = header('cf-connecting-ip')?.trim();
+  if (cf) return cf;
+  const xff = header('x-forwarded-for');
+  const first = xff ? xff.split(',')[0]?.trim() : undefined;
+  return first || header('x-real-ip')?.trim() || null;
+}

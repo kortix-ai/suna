@@ -1,7 +1,7 @@
 /**
  * Tripwire: request primitives have one implementation each.
  *
- *   client address   → shared/client-ip.ts (requestClientIp, requestClientKey)
+ *   client address   → shared/client-ip.ts (clientIpFromHeaders, clientKeyFromHeaders)
  *   UUID shape check → shared/validate.ts  (isUuid)
  *   JSON object body → shared/http-body.ts (readJsonObject)
  *   HTML escaping    → shared/html.ts      (escapeHtml)
@@ -60,9 +60,9 @@ function staleAllowlist(pattern: RegExp, allow: Record<string, string>): string[
 // header does not match.
 const XFF_READ = /[([]\s*['"`]x-forwarded-for['"`]/i;
 const XFF_ALLOW: Record<string, string> = {
+  // Also `egressIpFromHeaders`, which reads cf-connecting-ip first for the
+  // sandbox egress pin: a deliberate special case of the address rule.
   'shared/client-ip.ts': 'the one implementation',
-  'platform/services/sandbox-egress-pin.ts':
-    'reads cf-connecting-ip first and pins the sandbox egress address; a deliberate special case',
   'auth/gotrue.ts': 'sets the header on an outbound request to GoTrue',
   // TODO(follow-up): convert once the SCIM identity work lands on main.
   'scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
