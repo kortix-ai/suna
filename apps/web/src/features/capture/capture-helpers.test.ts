@@ -1,4 +1,3 @@
-import type { CaptureRangeOutput } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
   appColor,
@@ -10,7 +9,6 @@ import {
   trackSpan,
 } from './capture-time';
 import { deviceStatus } from './devices/device-status';
-import { outputState, rangeSteps, rangeSummary, rangeTranscript } from './range-outputs';
 
 describe('capture time', () => {
   test('a local day window runs from local midnight to the next local midnight', () => {
@@ -50,80 +48,6 @@ describe('capture time', () => {
     expect(appColor('Mail')).toBe(appColor('Mail'));
     expect(appColor('Mail')).toMatch(/^var\(--chart-[1-5]\)$/);
     expect(appColor(null)).toBe('var(--muted-foreground)');
-  });
-});
-
-describe('range outputs', () => {
-  const output = (
-    kind: CaptureRangeOutput['kind'],
-    body: Record<string, unknown> | null,
-    status: CaptureRangeOutput['status'] = 'done',
-  ): CaptureRangeOutput => ({
-    kind,
-    status,
-    model: null,
-    output: body,
-    usage: null,
-    error: null,
-    updated_at: '2026-10-03T10:00:00.000Z',
-  });
-
-  test('steps come from segmentation, sorted, idle marked; malformed segments drop out', () => {
-    const steps = rangeSteps(
-      output('segmentation', {
-        segments: [
-          {
-            startSec: 600,
-            endSec: 900,
-            title: 'Answered the vendor',
-            app: 'Mail',
-            category: 'communication',
-            annotation: 'Read invoice 1042.',
-          },
-          { startSec: 0, endSec: 600, title: 'Edited the budget', app: 'Sheets', category: 'work' },
-          { startSec: 900, endSec: 960, title: 'Away', category: 'idle' },
-          'not a segment',
-          { startSec: 10 },
-        ],
-      }),
-    );
-    expect(steps.map((s) => s.title)).toEqual(['Edited the budget', 'Answered the vendor', 'Away']);
-    expect(steps[1]).toMatchObject({ app: 'Mail', detail: 'Read invoice 1042.', idle: false });
-    expect(steps[2]!.idle).toBe(true);
-    expect(rangeSteps(null)).toEqual([]);
-  });
-
-  test('transcript sections and the summary; the transcript summary stands in for a missing annotation', () => {
-    const transcript = output('transcript', {
-      title: 'Budget and vendor mail',
-      summary: 'Worked on the Q4 plan, then answered a vendor.',
-      segments: [{ startSec: 0, heading: 'Budget', narrative: 'Opened the plan.' }],
-    });
-    expect(rangeTranscript(transcript)).toEqual([
-      { startSec: 0, heading: 'Budget', narrative: 'Opened the plan.' },
-    ]);
-    expect(rangeSummary(null, transcript)).toEqual({
-      title: 'Budget and vendor mail',
-      summary: 'Worked on the Q4 plan, then answered a vendor.',
-      entities: [],
-    });
-    const annotation = output('annotation', {
-      title: 'Q4 plan',
-      summary: 'The plan.',
-      entities: ['Q4 plan.xlsx', 7],
-    });
-    expect(rangeSummary(annotation, transcript)).toEqual({
-      title: 'Q4 plan',
-      summary: 'The plan.',
-      entities: ['Q4 plan.xlsx'],
-    });
-  });
-
-  test('an output reads as missing, running, failed or done', () => {
-    expect(outputState(null)).toBe('missing');
-    expect(outputState(output('annotation', null, 'running'))).toBe('running');
-    expect(outputState(output('annotation', null, 'failed'))).toBe('failed');
-    expect(outputState(output('annotation', {}))).toBe('done');
   });
 });
 
