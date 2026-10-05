@@ -39,21 +39,20 @@ mock.module('../capture/store', () => ({
     objects.has(key) ? { status: 'ok', body: objects.get(key)!, etag: createHash('md5').update(objects.get(key)!).digest('hex') } : { status: 'missing' },
 }));
 
-const { accounts, captureDevices, projects, rangeOutputs, timelineChunks, timelineRanges } = await import('@kortix/db');
+const { accounts, captureDevices, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } = await import('@kortix/db');
 const { and, eq, sql } = await import('drizzle-orm');
 const { db } = await import('../shared/db');
 const { ingestManifest, extendDetectedRange } = await import('../capture/ingest');
 const { processRange, applyIdleWindows, computeIdleWindows, normalizeSegments } = await import('../capture/processing');
 const { applyRetention, closeQuietRanges, pollDevice } = await import('../capture/workers');
-const { writeProjectPolicy } = await import('../capture/policy');
+const { writeAccountPolicy } = await import('../capture/policy');
 const { frameOf, frameVideoOffsetMs, recordedDays } = await import('../capture/reads');
-const { DEFAULT_POLICY, projectPrefix } = await import('../capture/format');
+const { DEFAULT_POLICY, accountPrefix } = await import('../capture/format');
 const { vendoredDevice } = await import('../../../../tests/src/fixtures/capture');
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
-const PREFIX = projectPrefix(ACCOUNT, PROJECT);
+const PREFIX = accountPrefix(ACCOUNT);
 let deviceId = '';
 const MACHINE = 'b'.repeat(64);
 
@@ -66,22 +65,16 @@ async function count(table: string, where = sql`TRUE`): Promise<number> {
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'capture-test-acct' });
-  await db.insert(projects).values({
-    projectId: PROJECT,
-    accountId: ACCOUNT,
-    name: 'capture-test-project',
-    repoUrl: 'https://example.test/capture.git',
-    metadata: { experimental: { capture: true } },
-  });
+  // Capture's tenant is the account: its workspace row is the switch. No project anywhere.
+  await db.insert(captureWorkspaces).values({ accountId: ACCOUNT, enabled: true });
   const [device] = await db
     .insert(captureDevices)
-    .values({ accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, machineKeySha256: MACHINE })
+    .values({ accountId: ACCOUNT, userId: MEMBER, machineKeySha256: MACHINE })
     .returning();
   deviceId = device!.deviceId;
 });
 
 afterAll(async () => {
-  await db.delete(projects).where(eq(projects.projectId, PROJECT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
@@ -110,7 +103,7 @@ describe('ingestion', () => {
     expect(await count('timeline_actions')).toBe(day.expected.actions);
     expect(await count('timeline_audio')).toBe(0);
 
-    await writeProjectPolicy({ projectId: PROJECT, accountId: ACCOUNT }, { ...DEFAULT_POLICY, layers: { screen: true, actions: true, audio: true } }, MEMBER);
+    await writeAccountPolicy(ACCOUNT, { ...DEFAULT_POLICY, layers: { screen: true, actions: true, audio: true } }, MEMBER);
     expect(JSON.parse(new TextDecoder().decode(objects.get(`${PREFIX}/policy.json`)!)).layers.audio).toBe(true);
     const audioKey = day.manifestKeys.find((key) => /-a\d+\.manifest\.json$/.test(key))!;
     expect((await ingestManifest(audioKey)).status).toBe('indexed');
@@ -128,7 +121,7 @@ describe('ingestion', () => {
       .map((object) => JSON.parse(new TextDecoder().decode(object.body)) as { kind: string; start_ms: number; end_ms: number });
     const screenSeconds = Math.round(manifests.filter((m) => m.kind === 'chunk').reduce((sum, m) => sum + (m.end_ms - m.start_ms) / 1000, 0));
     for (const tz of ['UTC', 'Pacific/Kiritimati']) {
-      const days = await recordedDays(PROJECT, MEMBER, { tz });
+      const days = await recordedDays(ACCOUNT, MEMBER, { tz });
       // The fixture's span may cross midnight in either zone: compare against the zone's own dates.
       expect(days.map((d) => d.day)).toEqual([...new Set([localDay(day.endMs, tz), localDay(day.startMs, tz)])]);
       expect(days[0]!.end_at).toBe(new Date(day.endMs).toISOString());
@@ -136,8 +129,8 @@ describe('ingestion', () => {
       // Screen chunks only; audio and actions items do not count.
       expect(days.reduce((sum, d) => sum + d.screen_seconds, 0)).toBe(screenSeconds);
     }
-    expect(await recordedDays(PROJECT, crypto.randomUUID(), { tz: 'UTC' })).toEqual([]);
-    expect(await recordedDays(PROJECT, MEMBER, { tz: 'UTC', deviceId: crypto.randomUUID() })).toEqual([]);
+    expect(await recordedDays(ACCOUNT, crypto.randomUUID(), { tz: 'UTC' })).toEqual([]);
+    expect(await recordedDays(ACCOUNT, MEMBER, { tz: 'UTC', deviceId: crypto.randomUUID() })).toEqual([]);
   });
 
   test('a frame seeks to frame_index seconds in its 1 fps chunk video, not to its wall-clock offset; without an index, to its position', async () => {
@@ -145,10 +138,10 @@ describe('ingestion', () => {
     const frameId = rows[0]!.frame_id;
     // The recorder samples every ~2 s, but the chunk video holds frame i at t = i s (capture-format.md).
     await db.execute(sql`UPDATE kortix.timeline_frames f SET ts = c.start_at + interval '4.7 seconds' FROM kortix.timeline_chunks c WHERE f.frame_id = ${frameId}::uuid AND c.chunk_id = f.chunk_id`);
-    const found = await frameOf(PROJECT, MEMBER, frameId);
+    const found = await frameOf(ACCOUNT, MEMBER, frameId);
     expect(await frameVideoOffsetMs(found!.frame)).toBe(2000);
     await db.execute(sql`UPDATE kortix.timeline_frames SET frame_index = NULL WHERE frame_id = ${frameId}::uuid`);
-    const unindexed = await frameOf(PROJECT, MEMBER, frameId);
+    const unindexed = await frameOf(ACCOUNT, MEMBER, frameId);
     const [{ n }] = Array.from(await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM kortix.timeline_frames WHERE chunk_id = ${unindexed!.frame.chunk_id as string}::uuid AND ts < ${unindexed!.frame.ts as string}::timestamptz`));
     expect(await frameVideoOffsetMs(unindexed!.frame)).toBe(n * 1000);
     await db.execute(sql`UPDATE kortix.timeline_frames SET frame_index = 2 WHERE frame_id = ${frameId}::uuid`);
@@ -159,7 +152,7 @@ describe('ingestion', () => {
     expect(only).toMatchObject({ source: 'detected', status: 'open' });
     expect(only!.startAt.getTime()).toBe(day.startMs);
     expect(only!.endAt.getTime()).toBe(day.endMs);
-    const device = { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, deviceId };
+    const device = { accountId: ACCOUNT, userId: MEMBER, deviceId };
     const later = new Date(day.endMs + 40 * 60_000);
     await extendDetectedRange(device, later, new Date(later.getTime() + 60_000));
     let ranges = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId)).orderBy(timelineRanges.startAt);
@@ -192,16 +185,16 @@ describe('ingestion', () => {
     expect((await ingestManifest('kortix-capture/elsewhere/x.manifest.json')).status).toBe('ignored');
   });
 
-  test('a project with capture off indexes nothing', async () => {
-    await db.update(projects).set({ metadata: { experimental: { capture: false } } }).where(eq(projects.projectId, PROJECT));
+  test('an account with Capture off indexes nothing', async () => {
+    await db.update(captureWorkspaces).set({ enabled: false }).where(eq(captureWorkspaces.accountId, ACCOUNT));
     const key = day.manifestKeys[0]!;
     // Forget the item entirely (its lines too), as if it had never been indexed.
     const [gone] = await db.delete(timelineChunks).where(eq(timelineChunks.manifestKey, key)).returning({ chunkId: timelineChunks.chunkId });
     for (const table of ['timeline_frames', 'timeline_actions', 'timeline_audio']) {
       await db.execute(sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id = ${gone!.chunkId}::uuid`);
     }
-    expect(await ingestManifest(key)).toEqual({ status: 'skipped', reason: 'capture is off for the project' });
-    await db.update(projects).set({ metadata: { experimental: { capture: true } } }).where(eq(projects.projectId, PROJECT));
+    expect(await ingestManifest(key)).toEqual({ status: 'skipped', reason: 'capture is off for the account' });
+    await db.update(captureWorkspaces).set({ enabled: true }).where(eq(captureWorkspaces.accountId, ACCOUNT));
     expect((await ingestManifest(key)).status).toBe('indexed');
   });
 });
@@ -314,7 +307,7 @@ describe('forget', () => {
 
 describe('retention', () => {
   test('items older than remote_days lose their objects first, then their rows', async () => {
-    await writeProjectPolicy({ projectId: PROJECT, accountId: ACCOUNT }, { ...DEFAULT_POLICY, retention: { local_hours: 0, remote_days: 1 } }, MEMBER);
+    await writeAccountPolicy(ACCOUNT, { ...DEFAULT_POLICY, retention: { local_hours: 0, remote_days: 1 } }, MEMBER);
     // The fixture day is in the past: keep every item but the action segments inside the window.
     await db.execute(sql`UPDATE kortix.timeline_chunks SET end_at = CASE WHEN kind = 'actions' THEN now() - interval '2 days' ELSE now() END WHERE device_id = ${deviceId}::uuid`);
     const actionChunks = await db.select().from(timelineChunks).where(and(eq(timelineChunks.deviceId, deviceId), eq(timelineChunks.kind, 'actions')));

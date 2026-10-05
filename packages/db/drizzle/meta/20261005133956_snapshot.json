@@ -1,5 +1,5 @@
 {
-  "id": "469233aa-1eda-46a2-84e2-3407e9d8d42f",
+  "id": "35337789-600a-42ed-806f-d64c7b776903",
   "prevId": "49d6de72-b0d2-4a37-8f98-641f1b8c84f5",
   "version": "7",
   "dialect": "postgresql",
@@ -4901,8 +4901,8 @@
           "notNull": true,
           "default": "'pending'"
         },
-        "project_id": {
-          "name": "project_id",
+        "account_id": {
+          "name": "account_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -4987,16 +4987,16 @@
         }
       },
       "foreignKeys": {
-        "capture_device_grants_project_id_projects_project_id_fk": {
-          "name": "capture_device_grants_project_id_projects_project_id_fk",
+        "capture_device_grants_account_id_accounts_account_id_fk": {
+          "name": "capture_device_grants_account_id_accounts_account_id_fk",
           "tableFrom": "capture_device_grants",
-          "tableTo": "projects",
+          "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "project_id"
+            "account_id"
           ],
           "columnsTo": [
-            "project_id"
+            "account_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -5030,12 +5030,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "user_id": {
           "name": "user_id",
           "type": "uuid",
@@ -5047,12 +5041,6 @@
           "type": "varchar(64)",
           "primaryKey": false,
           "notNull": true
-        },
-        "machine_id": {
-          "name": "machine_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
         },
         "token_hash": {
           "name": "token_hash",
@@ -5178,7 +5166,7 @@
           "name": "idx_capture_devices_identity",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5216,11 +5204,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_capture_devices_project_user": {
-          "name": "idx_capture_devices_project_user",
+        "idx_capture_devices_account_user": {
+          "name": "idx_capture_devices_account_user",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5239,16 +5227,16 @@
         }
       },
       "foreignKeys": {
-        "capture_devices_project_id_projects_project_id_fk": {
-          "name": "capture_devices_project_id_projects_project_id_fk",
+        "capture_devices_account_id_accounts_account_id_fk": {
+          "name": "capture_devices_account_id_accounts_account_id_fk",
           "tableFrom": "capture_devices",
-          "tableTo": "projects",
+          "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "project_id"
+            "account_id"
           ],
           "columnsTo": [
-            "project_id"
+            "account_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -5260,27 +5248,40 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.capture_policies": {
-      "name": "capture_policies",
+    "kortix.capture_members": {
+      "name": "capture_members",
       "schema": "kortix",
       "columns": {
-        "project_id": {
-          "name": "project_id",
+        "account_id": {
+          "name": "account_id",
           "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "policy": {
-          "name": "policy",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
-        "updated_by": {
-          "name": "updated_by",
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
         "updated_at": {
           "name": "updated_at",
@@ -5292,16 +5293,97 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "capture_policies_project_id_projects_project_id_fk": {
-          "name": "capture_policies_project_id_projects_project_id_fk",
-          "tableFrom": "capture_policies",
-          "tableTo": "projects",
+        "capture_members_account_id_accounts_account_id_fk": {
+          "name": "capture_members_account_id_accounts_account_id_fk",
+          "tableFrom": "capture_members",
+          "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "project_id"
+            "account_id"
           ],
           "columnsTo": [
-            "project_id"
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "capture_members_pkey": {
+          "name": "capture_members_pkey",
+          "columns": [
+            "account_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "capture_members_role": {
+          "name": "capture_members_role",
+          "value": "\"kortix\".\"capture_members\".\"role\" in ('admin', 'member', 'viewer')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.capture_workspaces": {
+      "name": "capture_workspaces",
+      "schema": "kortix",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "policy": {
+          "name": "policy",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "capture_workspaces_account_id_accounts_account_id_fk": {
+          "name": "capture_workspaces_account_id_accounts_account_id_fk",
+          "tableFrom": "capture_workspaces",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -20816,8 +20898,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "project_id": {
-          "name": "project_id",
+        "account_id": {
+          "name": "account_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -20872,11 +20954,11 @@
         }
       },
       "indexes": {
-        "idx_timeline_actions_project_user_ts": {
-          "name": "idx_timeline_actions_project_user_ts",
+        "idx_timeline_actions_account_user_ts": {
+          "name": "idx_timeline_actions_account_user_ts",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -20974,8 +21056,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "project_id": {
-          "name": "project_id",
+        "account_id": {
+          "name": "account_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -21000,11 +21082,11 @@
         }
       },
       "indexes": {
-        "idx_timeline_audio_project_user_ts": {
-          "name": "idx_timeline_audio_project_user_ts",
+        "idx_timeline_audio_account_user_ts": {
+          "name": "idx_timeline_audio_account_user_ts",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -21090,12 +21172,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "device_id": {
           "name": "device_id",
           "type": "uuid",
@@ -21176,11 +21252,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_timeline_chunks_project_user_start": {
-          "name": "idx_timeline_chunks_project_user_start",
+        "idx_timeline_chunks_account_user_start": {
+          "name": "idx_timeline_chunks_account_user_start",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -21226,16 +21302,16 @@
         }
       },
       "foreignKeys": {
-        "timeline_chunks_project_id_projects_project_id_fk": {
-          "name": "timeline_chunks_project_id_projects_project_id_fk",
+        "timeline_chunks_account_id_accounts_account_id_fk": {
+          "name": "timeline_chunks_account_id_accounts_account_id_fk",
           "tableFrom": "timeline_chunks",
-          "tableTo": "projects",
+          "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "project_id"
+            "account_id"
           ],
           "columnsTo": [
-            "project_id"
+            "account_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -21289,8 +21365,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "project_id": {
-          "name": "project_id",
+        "account_id": {
+          "name": "account_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -21364,11 +21440,11 @@
         }
       },
       "indexes": {
-        "idx_timeline_frames_project_user_ts": {
-          "name": "idx_timeline_frames_project_user_ts",
+        "idx_timeline_frames_account_user_ts": {
+          "name": "idx_timeline_frames_account_user_ts",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -21454,12 +21530,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "user_id": {
           "name": "user_id",
           "type": "uuid",
@@ -21525,11 +21595,11 @@
         }
       },
       "indexes": {
-        "idx_timeline_ranges_project_user_start": {
-          "name": "idx_timeline_ranges_project_user_start",
+        "idx_timeline_ranges_account_user_start": {
+          "name": "idx_timeline_ranges_account_user_start",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -21570,16 +21640,16 @@
         }
       },
       "foreignKeys": {
-        "timeline_ranges_project_id_projects_project_id_fk": {
-          "name": "timeline_ranges_project_id_projects_project_id_fk",
+        "timeline_ranges_account_id_accounts_account_id_fk": {
+          "name": "timeline_ranges_account_id_accounts_account_id_fk",
           "tableFrom": "timeline_ranges",
-          "tableTo": "projects",
+          "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "project_id"
+            "account_id"
           ],
           "columnsTo": [
-            "project_id"
+            "account_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

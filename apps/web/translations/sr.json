@@ -1182,10 +1182,6 @@
         "us_region": {
           "name": "Регион САД",
           "description": "Покрените нове сесије овог пројекта у региону Исток САД. Сесија која је у току задржава свој регион до поновног покретања."
-        },
-        "capture": {
-          "name": "Capture",
-          "description": "Omogućava članovima da prijave Kortix Capture desktop aplikaciju na ovaj projekat. Njihov ekran, radnje i dozvoljeni zvuk postaju vremenska linija koju mogu pretraživati samo oni i menadžeri projekta. Agenti u sopstvenim sesijama člana mogu pretraživati njegovu vremensku liniju."
         }
       }
     },
@@ -19259,10 +19255,16 @@
       "text532c9ccb5e9d": "Ponovo obrađen Capture opseg",
       "texte9c3e69646f7": "Pregledan Capture pregled osoba",
       "text976ea5cbcc50": "Pregledani Capture podaci člana",
-      "text4d2eb8231235": "Pregledani Capture podaci projekta",
       "textafa16172b21b": "Agent je pročitao Capture vremensku liniju osobe za koju radi",
       "textec9dc2164abe": "Sinhronizovan Capture uređaj",
-      "textba3a78850415": "Pregledao dane Capture vremenske linije"
+      "textba3a78850415": "Pregledao dane Capture vremenske linije",
+      "textb71f504f3410": "Прегледан Capture радни простор",
+      "textba3d3f6932af": "Capture је укључен или искључен",
+      "textf59b3ee7819d": "Наведене Capture улоге",
+      "textc49fa88cff11": "Промењена Capture улога",
+      "text10a01973feb8": "Прегледани Capture подаци налога",
+      "textab4c24c38193": "Capture је укључен",
+      "text6bdc49eed8c9": "Capture је искључен"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

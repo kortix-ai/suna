@@ -348,18 +348,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
   },
-  {
-    key: 'capture',
-    name: 'Capture',
-    description:
-      "Let members sign in the Kortix Capture desktop app to this project. Their screen, actions and (when the policy allows) audio upload to the project's capture store, are indexed into a searchable timeline, and agents in their own sessions can search their timeline. Members see only their own devices; project managers set the capture policy and see the project.",
-    stability: 'experimental',
-    available: () => true,
-    // Recording people is never on by default.
-    platformDefault: () => false,
-    // Routes 403 `feature_disabled` (capture/*); credentials and ingestion stop for a project with it off.
-    enforcement: 'routes',
-  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

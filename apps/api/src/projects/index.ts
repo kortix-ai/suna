@@ -58,8 +58,6 @@ import './routes/warm-sessions';
 import './routes/project-sessions';
 import './routes/session-environment';
 import './routes/session-transcripts';
-// Kortix Capture, project-scoped reads/writes (devices, timeline, search, ranges, policy, people).
-import '../capture/project-routes';
 import './routes/session-attachments';
 import './routes/session-open-bundle';
 import './routes/session-stream';

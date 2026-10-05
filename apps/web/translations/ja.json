@@ -1182,10 +1182,6 @@
         "us_region": {
           "name": "米国リージョン",
           "description": "このプロジェクトの新しいセッションを米国東部リージョンで実行します。実行中のセッションは再起動するまで現在のリージョンのままです。"
-        },
-        "capture": {
-          "name": "Capture",
-          "description": "メンバーが Kortix Capture デスクトップアプリをこのプロジェクトにサインインできるようにします。画面、操作、許可された音声は検索可能なタイムラインになり、本人とプロジェクトマネージャーだけが閲覧できます。メンバー自身のセッションのエージェントは、そのメンバーのタイムラインを検索できます。"
         }
       }
     },
@@ -19259,10 +19255,16 @@
       "text532c9ccb5e9d": "Capture の範囲を再処理",
       "texte9c3e69646f7": "Capture のメンバー概要を表示",
       "text976ea5cbcc50": "メンバーの Capture データを表示",
-      "text4d2eb8231235": "プロジェクトの Capture データを表示",
       "textafa16172b21b": "エージェントが代理する人物の Capture タイムラインを読み取った",
       "textec9dc2164abe": "Capture デバイスを同期",
-      "textba3a78850415": "Capture タイムラインの日付を表示しました"
+      "textba3a78850415": "Capture タイムラインの日付を表示しました",
+      "textb71f504f3410": "Capture のワークスペースを表示しました",
+      "textba3d3f6932af": "Capture をオンまたはオフにしました",
+      "textf59b3ee7819d": "Capture のロールを一覧表示しました",
+      "textc49fa88cff11": "Capture のロールを変更しました",
+      "text10a01973feb8": "アカウントの Capture データを表示しました",
+      "textab4c24c38193": "Capture をオンにしました",
+      "text6bdc49eed8c9": "Capture をオフにしました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

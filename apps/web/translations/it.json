@@ -1182,10 +1182,6 @@
         "us_region": {
           "name": "Regione USA",
           "description": "Esegui le nuove sessioni di questo progetto nella regione USA Est. Una sessione in corso mantiene la sua regione fino al riavvio."
-        },
-        "capture": {
-          "name": "Capture",
-          "description": "Consente ai membri di collegare l'app desktop Kortix Capture a questo progetto. Schermo, azioni e audio consentito diventano una timeline ricercabile che possono leggere solo loro e i responsabili del progetto. Gli agenti nelle sessioni di un membro possono cercare nella sua timeline."
         }
       }
     },
@@ -19259,10 +19255,16 @@
       "text532c9ccb5e9d": "Rielaborato un intervallo di Capture",
       "texte9c3e69646f7": "Visualizzato il riepilogo persone di Capture",
       "text976ea5cbcc50": "Visualizzati i dati Capture di un membro",
-      "text4d2eb8231235": "Visualizzati i dati Capture di un progetto",
       "textafa16172b21b": "Un agente ha letto la timeline di Capture della persona per cui agisce",
       "textec9dc2164abe": "Sincronizzato un dispositivo Capture",
-      "textba3a78850415": "Ha visualizzato i giorni di una timeline di Capture"
+      "textba3a78850415": "Ha visualizzato i giorni di una timeline di Capture",
+      "textb71f504f3410": "Ha visualizzato lo spazio di lavoro di Capture",
+      "textba3d3f6932af": "Ha attivato o disattivato Capture",
+      "textf59b3ee7819d": "Ha elencato i ruoli di Capture",
+      "textc49fa88cff11": "Ha modificato un ruolo di Capture",
+      "text10a01973feb8": "Ha visualizzato i dati di Capture di un account",
+      "textab4c24c38193": "Ha attivato Capture",
+      "text6bdc49eed8c9": "Ha disattivato Capture"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

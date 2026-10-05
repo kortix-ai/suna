@@ -1182,10 +1182,6 @@
         "us_region": {
           "name": "US-Region",
           "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
-        },
-        "capture": {
-          "name": "Capture",
-          "description": "Mitglieder können die Kortix-Capture-Desktop-App bei diesem Projekt anmelden. Bildschirm, Aktionen und erlaubtes Audio werden zu einer durchsuchbaren Zeitleiste, die nur sie selbst und Projektmanager lesen können. Agenten in den eigenen Sitzungen eines Mitglieds können dessen Zeitleiste durchsuchen."
         }
       }
     },
@@ -19259,10 +19255,16 @@
       "text532c9ccb5e9d": "Capture-Zeitraum neu verarbeitet",
       "texte9c3e69646f7": "Capture-Personenübersicht angesehen",
       "text976ea5cbcc50": "Capture-Daten eines Mitglieds angesehen",
-      "text4d2eb8231235": "Capture-Daten eines Projekts angesehen",
       "textafa16172b21b": "Ein Agent hat die Capture-Zeitleiste der Person gelesen, für die er handelt",
       "textec9dc2164abe": "Capture-Gerät synchronisiert",
-      "textba3a78850415": "Tage einer Capture-Zeitleiste angesehen"
+      "textba3a78850415": "Tage einer Capture-Zeitleiste angesehen",
+      "textb71f504f3410": "Capture-Arbeitsbereich angesehen",
+      "textba3d3f6932af": "Capture ein- oder ausgeschaltet",
+      "textf59b3ee7819d": "Capture-Rollen aufgelistet",
+      "textc49fa88cff11": "Eine Capture-Rolle geändert",
+      "text10a01973feb8": "Capture-Daten eines Kontos angesehen",
+      "textab4c24c38193": "Capture eingeschaltet",
+      "text6bdc49eed8c9": "Capture ausgeschaltet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

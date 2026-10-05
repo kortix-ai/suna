@@ -31,13 +31,6 @@ class TunnelRateLimiter {
     deviceAuthApprove: { limit: 10, windowMs: 60_000 },
     deviceAuthDeny: { limit: 10, windowMs: 60_000 },
     selfUnpair: { limit: 10, windowMs: 60_000 },
-    // Kortix Capture device sign-in and credentials (capture/device-routes.ts).
-    captureAuthorizeGlobal: { limit: 100, windowMs: 60_000 },
-    captureAuthorize: { limit: 10, windowMs: 60_000 },
-    capturePoll: { limit: 30, windowMs: 60_000 },
-    captureCredentials: { limit: 30, windowMs: 60_000 },
-    captureGrantRead: { limit: 30, windowMs: 60_000 },
-    captureGrantDecide: { limit: 10, windowMs: 60_000 },
   };
 
   check(endpoint: string, key: string): { allowed: boolean; retryAfterMs?: number } {
