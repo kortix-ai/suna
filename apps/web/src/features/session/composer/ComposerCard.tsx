@@ -15,7 +15,6 @@ import type {
 import { lazy, Suspense, useRef } from 'react';
 
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
-import { ServedModelBar } from './served-model-bar';
 import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import { AttachmentTiles } from './attachment-tiles';
 import {
@@ -188,12 +187,6 @@ export function ComposerCard({
 
   return (
     <>
-    {/*
-      Above the card, as its previous sibling: the strip hangs behind the
-      card's top edge the way `ModelConnectionBar` hangs behind its bottom.
-      Only where a model selector exists, since it explains that selector.
-    */}
-    <ServedModelBar notice={onModelChange ? (servedModel ?? null) : null} />
     <div
       ref={cardRef}
       onDragEnter={handleDragEnter}
@@ -213,7 +206,8 @@ export function ComposerCard({
         'motion-reduce:transition-none',
         cardClassName,
         isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
-        notice && 'rounded-t-none',
+        // A strip above (`ComposerAboveCard`) owns the top corners.
+        (notice || (onModelChange && servedModel)) && 'rounded-t-none',
       )}
     >
       {/* What the dimmed card is asking for. Without it the drag state said

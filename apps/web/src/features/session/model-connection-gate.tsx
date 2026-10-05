@@ -6,7 +6,6 @@ import { useState, type ReactNode } from 'react';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
@@ -103,25 +102,17 @@ export function ImagesUnsupportedBar({ modelName }: { modelName: string | null }
   );
 }
 
-/**
- * The tray the composer strips share. See `ModelConnectionBar` for why it hangs
- * behind the card. `top` mirrors it: the tray sits above the card, slides up
- * from behind it, and the card's top edge is the seam.
- */
-export function ComposerTray({
+/** The tray both strips share. See `ModelConnectionBar` for why it hangs behind the card. */
+function ComposerTray({
   show,
   trayKey,
-  placement = 'bottom',
   children,
 }: {
   show: boolean;
   trayKey: string;
-  placement?: 'top' | 'bottom';
   children: ReactNode;
 }) {
   const reduceMotion = useReducedMotion();
-  const top = placement === 'top';
-  const hidden = top ? '100%' : '-100%';
 
   return (
     <AnimatePresence initial={false}>
@@ -139,21 +130,18 @@ export function ComposerTray({
               ? { opacity: 0, transition: { duration: 0.15 } }
               : { height: 0, transition: BAR_EXIT }
           }
-          className={cn('relative z-0 overflow-hidden', top ? '-mb-4' : '-mt-4')}
+          className="relative z-0 -mt-4 overflow-hidden"
         >
           <m.div
-            initial={reduceMotion ? false : { y: hidden }}
+            initial={reduceMotion ? false : { y: '-100%' }}
             animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
-            exit={reduceMotion ? undefined : { y: hidden, transition: BAR_EXIT }}
+            exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
             // `border-t-0`: the card's own bottom border is the seam. Drawing
             // one here too would put a second hairline under a card that
             // already has one. `rounded-b-xl` matches the card's radius so
             // the two share one silhouette; the top corners are square
             // because they live behind the card and are never seen.
-            className={cn(
-              'border-border bg-muted border',
-              top ? 'rounded-t-xl border-b-0 pb-4' : 'rounded-b-xl border-t-0 pt-4',
-            )}
+            className="border-border bg-muted rounded-b-xl border border-t-0 pt-4"
           >
             <div className="flex items-center justify-between gap-3 px-3 py-1.5">{children}</div>
           </m.div>

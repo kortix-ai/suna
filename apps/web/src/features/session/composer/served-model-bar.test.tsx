@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import messages from '../../../../translations/en.json';
 import { ServedModelBar } from './served-model-bar';
 
-function render(notice: { served: string; fallbackFrom: string } | null): string {
+function render(notice: { served: string; fallbackFrom: string }): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages}>
       <ServedModelBar notice={notice} />
@@ -23,9 +23,7 @@ describe('ServedModelBar', () => {
     expect(html).toContain('GPT-6.1 Sol (ChatGPT) did not answer the last request');
     // Not color alone: a glyph and the words carry it.
     expect(html).toContain('<svg');
-  });
-
-  test('renders nothing when the selected model answered', () => {
-    expect(render(null)).not.toContain('served-model-bar');
+    // It appears on its own: a screen reader must announce it.
+    expect(html).toContain('role="status"');
   });
 });
