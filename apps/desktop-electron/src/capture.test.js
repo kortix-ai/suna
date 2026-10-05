@@ -381,7 +381,7 @@ describe('status and tray', () => {
     expect(capture.captureTrayItems({ available: false }, actions)).toEqual([]);
     const view = capture.captureStatusFrom({ available: true, desktop: { on: true, actions: true }, status, sync, children: running });
     const labels = (v) => capture.captureTrayItems(v, actions).filter((i) => i.type !== 'separator').map((i) => i.label);
-    expect(labels(view)).toEqual(['Recording · Screen, Actions', 'Notice: Recorded for the support team', 'Pause for 1 hour', 'Open Capture…', 'Show logs']);
+    expect(labels(view)).toEqual(['Recording · Screen, Actions', 'Notice: Recorded for the support team', 'Pause for 1 hour', 'Open Kortix Capture…', 'Show logs']);
     expect(capture.captureTrayItems(view, actions).find((i) => i.id === 'capture-open').click).toBe(actions.open);
     expect(capture.captureKeepsRunning(view)).toBe(true);
     expect(labels({ ...view, state: 'paused' })).toContain('Resume recording');
@@ -391,7 +391,7 @@ describe('status and tray', () => {
     // Switched off, or stopped outside the app: nothing keeps recording after Quit, no pause.
     expect(capture.captureKeepsRunning({ ...view, on: false, state: 'off' })).toBe(false);
     expect(capture.captureKeepsRunning({ ...view, state: 'stopped' })).toBe(false);
-    expect(labels({ ...view, state: 'stopped' })).toEqual(['Stopped', 'Notice: Recorded for the support team', 'Open Capture…', 'Show logs']);
+    expect(labels({ ...view, state: 'stopped' })).toEqual(['Stopped', 'Notice: Recorded for the support team', 'Open Kortix Capture…', 'Show logs']);
   });
 
   test('backendFromRuntimeConfig: the instance publishes its backend; https, or http on localhost only', () => {

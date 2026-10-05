@@ -532,7 +532,7 @@ function captureTrayItems(view, actions) {
             : { id: 'capture-pause', label: 'Pause for 1 hour', click: actions.pause },
         ]
       : []),
-    { id: 'capture-open', label: view.signInRequired ? 'Sign in again…' : 'Open Capture…', click: actions.open },
+    { id: 'capture-open', label: view.signInRequired ? 'Sign in again…' : 'Open Kortix Capture…', click: actions.open },
     { id: 'capture-logs', label: 'Show logs', click: actions.logs },
   ];
 }

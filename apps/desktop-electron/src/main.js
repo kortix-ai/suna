@@ -915,7 +915,7 @@ function buildMenu() {
                 accelerator: 'CommandOrControl+,',
                 click: () => sendDesktopCommand('open-settings'),
               },
-              { id: 'kx-app-capture', label: 'Capture…', visible: captureBundled(), click: () => openCapture() },
+              { id: 'kx-app-capture', label: 'Kortix Capture…', visible: captureBundled(), click: () => openCapture() },
               {
                 label: 'Check for Updates…',
                 click: () => checkForUpdatesInteractive(),
@@ -966,7 +966,7 @@ function buildMenu() {
                 accelerator: 'CommandOrControl+,',
                 click: () => sendDesktopCommand('open-settings'),
               },
-              { id: 'kx-file-capture', label: 'Capture…', visible: captureBundled(), click: () => openCapture() },
+              { id: 'kx-file-capture', label: 'Kortix Capture…', visible: captureBundled(), click: () => openCapture() },
             ]
           : []),
       ],

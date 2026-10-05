@@ -20818,6 +20818,7 @@
       "tryAgain": "Tentar novamente"
     },
     "dialog": {
+      "product": "Kortix Capture",
       "title": "Gravar este computador",
       "status": {
         "off": "Desativado",
@@ -20834,7 +20835,7 @@
         "captureOff": "Desativado para sua organização"
       },
       "unavailable": "Este app de desktop não inclui o Kortix Capture. Atualize o Kortix para a versão mais recente.",
-      "orgOff": "O Capture não está ativado para {org}. Quem gerencia pode ativá-lo.",
+      "orgOff": "O Kortix Capture não está ativado para {org}. Quem gerencia pode ativá-lo.",
       "intro": "Grava este computador para {org}, para que você e seus agentes possam pesquisar o que você fez. Você e quem gerencia {org} podem ver.",
       "layersTitle": "O que é gravado",
       "layers": {
@@ -20855,15 +20856,15 @@
       "otherOrg": "Este computador grava agora para outra organização. Começar aqui o move para {org}.",
       "signInRequired": {
         "title": "A sessão deste computador foi encerrada",
-        "hint": "O Capture pode estar desativado para sua organização, ou alguém removeu este computador. Entre novamente para gravar."
+        "hint": "O Kortix Capture pode estar desativado para sua organização, ou alguém removeu este computador. Entre novamente para gravar."
       },
       "error": {
-        "title": "O Capture parou",
+        "title": "O Kortix Capture parou",
         "fallback": "A gravação parou. Tente de novo ou abra os logs."
       },
       "permissions": {
         "title": "Permita que o Kortix grave",
-        "hint": "O macOS pede cada permissão uma vez. Elas vão para o Kortix, assim o Capture grava sem pedir de novo.",
+        "hint": "O macOS pede cada permissão uma vez. Elas vão para o Kortix, assim o Kortix Capture grava sem pedir de novo.",
         "needed": "Ainda não permitido",
         "waiting": "Aguardando você",
         "allowed": "Permitido",
@@ -20890,11 +20891,11 @@
         "more": "Mais ações",
         "showLogs": "Mostrar logs",
         "stop": "Parar de gravar",
-        "signOut": "Sair do Capture…"
+        "signOut": "Sair do Kortix Capture…"
       },
       "signOut": {
-        "title": "Sair do Capture?",
-        "description": "O Capture para neste computador, e este computador perde o acesso ao projeto. As gravações ficam no projeto. Para gravar de novo, comece a gravar de novo.",
+        "title": "Sair do Kortix Capture?",
+        "description": "O Kortix Capture para neste computador, e este computador perde o acesso a {org}. As gravações ficam em {org}. Para gravar de novo, comece a gravar novamente.",
         "confirm": "Sair"
       },
       "toast": {
@@ -20902,7 +20903,7 @@
         "stopped": "Gravação parada",
         "paused": "Gravação em pausa",
         "resumed": "Gravação retomada",
-        "signedOut": "Você saiu do Capture"
+        "signedOut": "Você saiu do Kortix Capture"
       },
       "pausedByOrgHint": "Quem gerencia {org} pausou a gravação. Ela retoma quando a pausa for removida."
     }

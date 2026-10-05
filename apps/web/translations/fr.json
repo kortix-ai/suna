@@ -20818,6 +20818,7 @@
       "tryAgain": "Réessayer"
     },
     "dialog": {
+      "product": "Kortix Capture",
       "title": "Enregistrer cet ordinateur",
       "status": {
         "off": "Désactivé",
@@ -20834,7 +20835,7 @@
         "captureOff": "Désactivé pour votre organisation"
       },
       "unavailable": "Cette app de bureau n’inclut pas Kortix Capture. Mettez Kortix à jour vers la dernière version.",
-      "orgOff": "Capture n’est pas activé pour {org}. Les personnes qui le gèrent peuvent l’activer.",
+      "orgOff": "Kortix Capture n’est pas activé pour {org}. Les personnes qui le gèrent peuvent l’activer.",
       "intro": "Enregistre cet ordinateur pour {org}, afin que vous et vos agents puissiez rechercher ce que vous avez fait. Vous et les personnes qui gèrent {org} pouvez le voir.",
       "layersTitle": "Ce qui est enregistré",
       "layers": {
@@ -20855,15 +20856,15 @@
       "otherOrg": "Cet ordinateur enregistre maintenant pour une autre organisation. Démarrer ici le passe à {org}.",
       "signInRequired": {
         "title": "Cet ordinateur a été déconnecté",
-        "hint": "Capture est peut-être désactivé pour votre organisation, ou quelqu’un a retiré cet ordinateur. Reconnectez-vous pour enregistrer."
+        "hint": "Kortix Capture est peut-être désactivé pour votre organisation, ou quelqu’un a retiré cet ordinateur. Reconnectez-vous pour enregistrer."
       },
       "error": {
-        "title": "Capture s’est arrêté",
+        "title": "Kortix Capture s’est arrêté",
         "fallback": "L’enregistrement s’est arrêté. Réessayez ou ouvrez les journaux."
       },
       "permissions": {
         "title": "Autoriser Kortix à enregistrer",
-        "hint": "macOS demande chaque autorisation une fois. Elles vont à Kortix, pour que Capture enregistre sans redemander.",
+        "hint": "macOS demande chaque autorisation une fois. Elles vont à Kortix, pour que Kortix Capture enregistre sans redemander.",
         "needed": "Pas encore autorisé",
         "waiting": "En attente",
         "allowed": "Autorisé",
@@ -20890,11 +20891,11 @@
         "more": "Plus d’actions",
         "showLogs": "Afficher les journaux",
         "stop": "Arrêter l’enregistrement",
-        "signOut": "Se déconnecter de Capture…"
+        "signOut": "Se déconnecter de Kortix Capture…"
       },
       "signOut": {
-        "title": "Se déconnecter de Capture ?",
-        "description": "Capture s’arrête sur cet ordinateur, et cet ordinateur perd l’accès au projet. Les enregistrements restent dans le projet. Pour enregistrer à nouveau, redémarrez l’enregistrement.",
+        "title": "Se déconnecter de Kortix Capture ?",
+        "description": "Kortix Capture s’arrête sur cet ordinateur, et cet ordinateur perd l’accès à {org}. Les enregistrements restent dans {org}. Pour enregistrer à nouveau, relancez l’enregistrement.",
         "confirm": "Se déconnecter"
       },
       "toast": {
@@ -20902,7 +20903,7 @@
         "stopped": "Enregistrement arrêté",
         "paused": "Enregistrement en pause",
         "resumed": "Enregistrement repris",
-        "signedOut": "Déconnecté de Capture"
+        "signedOut": "Déconnecté de Kortix Capture"
       },
       "pausedByOrgHint": "Les personnes qui gèrent {org} ont mis l’enregistrement en pause. Il reprend quand elles lèvent la pause."
     }

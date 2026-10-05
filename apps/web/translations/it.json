@@ -20818,6 +20818,7 @@
       "tryAgain": "Riprova"
     },
     "dialog": {
+      "product": "Kortix Capture",
       "title": "Registra questo computer",
       "status": {
         "off": "Disattivato",
@@ -20834,7 +20835,7 @@
         "captureOff": "Disattivato per la tua organizzazione"
       },
       "unavailable": "Questa app desktop non include Kortix Capture. Aggiorna Kortix all’ultima versione.",
-      "orgOff": "Capture non è attivo per {org}. Chi lo gestisce può attivarlo.",
+      "orgOff": "Kortix Capture non è attivo per {org}. Chi lo gestisce può attivarlo.",
       "intro": "Registra questo computer per {org}, così tu e i tuoi agenti potete cercare ciò che hai fatto. Tu e chi gestisce {org} potete vederlo.",
       "layersTitle": "Cosa viene registrato",
       "layers": {
@@ -20855,15 +20856,15 @@
       "otherOrg": "Questo computer ora registra per un’altra organizzazione. Avviare qui lo sposta su {org}.",
       "signInRequired": {
         "title": "Questo computer è stato disconnesso",
-        "hint": "Capture potrebbe essere disattivato per la tua organizzazione, oppure qualcuno ha rimosso questo computer. Accedi di nuovo per registrare."
+        "hint": "Kortix Capture potrebbe essere disattivato per la tua organizzazione, oppure qualcuno ha rimosso questo computer. Accedi di nuovo per registrare."
       },
       "error": {
-        "title": "Capture si è fermato",
+        "title": "Kortix Capture si è fermato",
         "fallback": "La registrazione si è fermata. Riprova o apri i log."
       },
       "permissions": {
         "title": "Consenti a Kortix di registrare",
-        "hint": "macOS chiede ogni autorizzazione una volta. Vanno a Kortix, così Capture registra senza chiedere di nuovo.",
+        "hint": "macOS chiede ogni autorizzazione una volta. Vanno a Kortix, così Kortix Capture registra senza chiedere di nuovo.",
         "needed": "Non ancora consentito",
         "waiting": "In attesa",
         "allowed": "Consentito",
@@ -20890,11 +20891,11 @@
         "more": "Altre azioni",
         "showLogs": "Mostra log",
         "stop": "Interrompi registrazione",
-        "signOut": "Disconnetti da Capture…"
+        "signOut": "Disconnetti da Kortix Capture…"
       },
       "signOut": {
-        "title": "Disconnettersi da Capture?",
-        "description": "Capture si ferma su questo computer, e questo computer perde l’accesso al progetto. Le registrazioni restano nel progetto. Per registrare di nuovo, avvia di nuovo la registrazione.",
+        "title": "Disconnettersi da Kortix Capture?",
+        "description": "Kortix Capture si ferma su questo computer, e questo computer perde l’accesso a {org}. Le registrazioni restano in {org}. Per registrare di nuovo, riavvia la registrazione.",
         "confirm": "Disconnetti"
       },
       "toast": {
@@ -20902,7 +20903,7 @@
         "stopped": "Registrazione interrotta",
         "paused": "Registrazione in pausa",
         "resumed": "Registrazione ripresa",
-        "signedOut": "Disconnesso da Capture"
+        "signedOut": "Disconnesso da Kortix Capture"
       },
       "pausedByOrgHint": "Chi gestisce {org} ha messo in pausa la registrazione. Riprende quando toglie la pausa."
     }

@@ -20818,6 +20818,7 @@
       "tryAgain": "再試行"
     },
     "dialog": {
+      "product": "Kortix Capture",
       "title": "このコンピュータを記録",
       "status": {
         "off": "オフ",
@@ -20834,7 +20835,7 @@
         "captureOff": "組織でオフ"
       },
       "unavailable": "このデスクトップアプリには Kortix Capture が含まれていません。Kortix を最新版に更新してください。",
-      "orgOff": "{org}では Capture がオンになっていません。管理者がオンにできます。",
+      "orgOff": "{org}では Kortix Capture がオンになっていません。管理者がオンにできます。",
       "intro": "このコンピュータを{org}のために記録し、あなたとエージェントが行ったことを検索できるようにします。あなたと{org}の管理者が閲覧できます。",
       "layersTitle": "記録される内容",
       "layers": {
@@ -20855,15 +20856,15 @@
       "otherOrg": "このコンピュータは現在、別の組織のために記録しています。ここで開始すると{org}に切り替わります。",
       "signInRequired": {
         "title": "このコンピューターはサインアウトされました",
-        "hint": "組織で Capture がオフになっているか、誰かがこのコンピュータを削除した可能性があります。記録するにはもう一度サインインしてください。"
+        "hint": "組織で Kortix Capture がオフになっているか、誰かがこのコンピュータを削除した可能性があります。記録するにはもう一度サインインしてください。"
       },
       "error": {
-        "title": "Capture が停止しました",
+        "title": "Kortix Capture が停止しました",
         "fallback": "記録が停止しました。もう一度試すか、ログを開いてください。"
       },
       "permissions": {
         "title": "Kortix に記録を許可",
-        "hint": "macOS は各権限を一度だけ確認します。権限は Kortix に付与され、Capture は再確認なしで記録します。",
+        "hint": "macOS は各権限を一度だけ確認します。権限は Kortix に付与され、Kortix Capture は再確認なしで記録します。",
         "needed": "まだ許可されていません",
         "waiting": "あなたを待っています",
         "allowed": "許可済み",
@@ -20890,11 +20891,11 @@
         "more": "その他の操作",
         "showLogs": "ログを表示",
         "stop": "記録を停止",
-        "signOut": "Capture からサインアウト…"
+        "signOut": "Kortix Capture からサインアウト…"
       },
       "signOut": {
-        "title": "Capture からサインアウトしますか?",
-        "description": "このコンピューターで Capture が停止し、このコンピューターはプロジェクトへのアクセスを失います。記録はプロジェクトに残ります。再び記録するには、もう一度記録を開始します。",
+        "title": "Kortix Capture からサインアウトしますか?",
+        "description": "このコンピュータで Kortix Capture が停止し、このコンピュータは {org} へのアクセスを失います。記録は {org} に残ります。再び記録するには、もう一度記録を開始してください。",
         "confirm": "サインアウト"
       },
       "toast": {
@@ -20902,7 +20903,7 @@
         "stopped": "記録を停止しました",
         "paused": "記録を一時停止しました",
         "resumed": "記録を再開しました",
-        "signedOut": "Capture からサインアウトしました"
+        "signedOut": "Kortix Capture からサインアウトしました"
       },
       "pausedByOrgHint": "{org}の管理者が記録を一時停止しました。一時停止が解除されると再開します。"
     }

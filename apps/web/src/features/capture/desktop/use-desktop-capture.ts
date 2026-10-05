@@ -38,15 +38,12 @@ export function useDesktopCaptureStatus({ poll = false }: { poll?: boolean } = {
 }
 
 /**
- * The organization (Kortix account, Capture's tenant) this computer records
- * for: the selected account, else the first. Capture takes no project.
+ * A Kortix account as Kortix Capture's tenant: its name and whether Kortix
+ * Capture is on for it. Capture takes no project.
  */
-export function useCaptureOrganization() {
+export function useCaptureOrganization(accountId: string | null) {
   const accounts = useAccountsList();
-  const selected = useCurrentAccountStore((state) => state.selectedAccountId);
-  const list = accounts.data ?? [];
-  const account = list.find((candidate) => candidate.account_id === selected) ?? list[0] ?? null;
-  const accountId = account?.account_id ?? null;
+  const account = (accounts.data ?? []).find((candidate) => candidate.account_id === accountId) ?? null;
   const workspace = useCaptureWorkspace(accountId);
   return {
     accountId,
@@ -55,6 +52,29 @@ export function useCaptureOrganization() {
     loading: accounts.isLoading || (!!accountId && workspace.isLoading),
   };
 }
+
+/**
+ * The account "This computer" opens for: the one this computer is signed in
+ * to, else the selected account, else the first. `null` while unknown.
+ */
+export function useThisComputerAccountId(): string | null {
+  const status = useDesktopCaptureStatus();
+  const accounts = useAccountsList();
+  const selected = useCurrentAccountStore((state) => state.selectedAccountId);
+  const list = accounts.data ?? [];
+  return (
+    status.data?.accountId ??
+    list.find((candidate) => candidate.account_id === selected)?.account_id ??
+    list[0]?.account_id ??
+    null
+  );
+}
+
+/** The routes of Kortix Capture's top-level area. */
+export const captureRoutes = {
+  thisComputer: (accountId: string) => `/capture/${accountId}/this-computer`,
+  device: (accountId: string, deviceId: string) => `/capture/${accountId}/devices/${deviceId}`,
+};
 
 /**
  * Every Capture action of "This computer". Turning on is the engine's own
