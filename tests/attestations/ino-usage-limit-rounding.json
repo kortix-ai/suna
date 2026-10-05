@@ -1,0 +1,16 @@
+{
+  "source_hash": "3280ce218cf17cc9c31e8412ad66bb46de82eb29f3ecdc83048f307839a41165",
+  "diff_files": [
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.test.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.ts"
+  ],
+  "diff_hash": "18f5f0af9f7ee08ced4c137e5b67add148309fbe0d2c4dd9198655688ed32629",
+  "head": "480ba7e1ab7d12db4a1360bc29a08e07a1e72c61",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-05T12:03:50.419Z"
+}

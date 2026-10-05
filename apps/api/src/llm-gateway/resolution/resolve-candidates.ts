@@ -102,8 +102,9 @@ function chatGptAccountsResting(subject: string, retryAfterSeconds: number | und
     return new GatewayResolutionError('provider_pool_rate_limited', `${subject} are cooling down.`, suggestion, retryAfterSeconds);
   }
   const hours = retryAfterSeconds / 3600;
-  const wait = hours >= 48 ? `${Math.floor(hours / 24)} days`
-    : hours >= 2 ? `${Math.floor(hours)} hours`
+  // Rounded: a floor read 4 days less a few seconds as "3 days".
+  const wait = hours >= 48 ? `${Math.round(hours / 24)} days`
+    : hours >= 2 ? `${Math.round(hours)} hours`
     : `${Math.ceil(retryAfterSeconds / 60)} minutes`;
   return new GatewayResolutionError('provider_pool_rate_limited',
     `${subject} reached their usage limit. The first resets in ${wait}.`,
