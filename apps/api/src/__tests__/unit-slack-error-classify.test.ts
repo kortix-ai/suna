@@ -35,7 +35,7 @@ describe('classifyTurnError', () => {
       code: 'provider_pool_rate_limited',
       suggestion: 'Choose another model, or connect another ChatGPT account.',
     });
-    const info = { name: 'UnknownError', statusCode: 429, code: 'rate_limit', message: `429: ${body}` };
+    const info = { name: 'UnknownError', statusCode: 429, code: 'rate_limit' as const, message: `429: ${body}` };
     const slack = classifyTurnError(info);
     expect(slack.title).toBe('Usage limit reached');
     expect(slack.text).toContain('ChatGPT usage limit');
