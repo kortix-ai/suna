@@ -386,7 +386,7 @@ describe('status and tray', () => {
     expect(capture.captureKeepsRunning(view)).toBe(true);
     expect(labels({ ...view, state: 'paused' })).toContain('Resume recording');
     const refused = { ...view, signedIn: false, signInRequired: true, state: 'signInRequired' };
-    expect(labels(refused)).toEqual(['Sign in again', 'Notice: Recorded for the support team', 'Sign in again…', 'Show logs']);
+    expect(labels(refused)).toEqual(['Signed out', 'Notice: Recorded for the support team', 'Sign in again…', 'Show logs']);
     expect(capture.captureKeepsRunning(refused)).toBe(false);
     // Switched off, or stopped outside the app: nothing keeps recording after Quit, no pause.
     expect(capture.captureKeepsRunning({ ...view, on: false, state: 'off' })).toBe(false);

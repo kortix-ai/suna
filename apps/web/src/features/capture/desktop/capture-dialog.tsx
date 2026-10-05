@@ -16,7 +16,7 @@ export function CaptureDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     <Modal open={open} onOpenChange={onOpenChange}>
       {/* A column: on a short window only the body scrolls. No initial focus:
           events open it (the tray), and a focused first control reads as selected. */}
-      <ModalContent className="flex flex-col lg:max-w-lg" onOpenAutoFocus={(event) => event.preventDefault()}>
+      <ModalContent className="flex flex-col outline-none lg:max-w-lg" onOpenAutoFocus={(event) => event.preventDefault()}>
         {open ? <CaptureThisComputer /> : null}
       </ModalContent>
     </Modal>

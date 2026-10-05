@@ -493,7 +493,7 @@ const STATE_WORDS = {
   crashed: 'Stopped after repeated crashes',
   off: 'Off',
   stopped: 'Stopped',
-  signInRequired: 'Sign in again',
+  signInRequired: 'Signed out',
   signedOut: 'Not set up',
 };
 
