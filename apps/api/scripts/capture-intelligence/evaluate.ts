@@ -169,6 +169,8 @@ const drafts = await Promise.all(
       // Inside the steps, every line is a numbered step or its "If …" decision line.
       ((d.markdown.split('## Steps')[1] ?? '').split(/\n## |\nNeeds:/)[0]!.split('\n').some((l: string) => l.trim() && !/^(\d+\. |If )/.test(l.trim()))) && 'stray fragment line',
       variants.some((v) => !v.name || /^(Variant|Path) [A-Z]$/.test(v.name)) && 'unnamed variant',
+      new Set((w.variants as any[]).map((v) => String(v.name).toLowerCase())).size !== (w.variants as any[]).length && 'duplicate variant names',
+      (w.variants as any[]).some((v) => v.key === 'A' && (/^canonical path$/i.test(v.name) || /^the most common path\.?$/i.test(v.note ?? ''))) && 'generic name for A',
       variants.some((v) => !v.question) && 'variant without condition',
       /If the case calls for variant/.test(d.markdown) && 'bare decision',
       !d.markdown.includes(`Learned from ${w.runs_total} recorded runs`) && 'run count differs from the workflow',

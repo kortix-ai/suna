@@ -120,6 +120,8 @@ export interface CaptureAskTurn {
   /** The answer so far, then the whole answer. */
   answer: string;
   sources: CaptureAskSource[];
+  /** The tools the agent called for this turn, in order. */
+  tools: Array<{ name: string; args: Record<string, unknown> }>;
   citations: CaptureAskSource[];
   status: 'streaming' | 'done' | 'error';
   error?: string;
@@ -143,11 +145,16 @@ export function useCaptureAsk(accountId: Id, scope?: CaptureAskInput['scope']) {
           { role: 'assistant' as const, content: t.answer },
         ]);
       const index = turns.length;
-      setTurns((all) => [...all, { question, answer: '', sources: [], citations: [], status: 'streaming' }]);
+      setTurns((all) => [...all, { question, answer: '', sources: [], tools: [], citations: [], status: 'streaming' }]);
       let text = '';
+      const tools: CaptureAskTurn['tools'] = [];
       try {
         const result = await askCapture(accountId, { question, history, scope }, (event) => {
           if (event.type === 'sources') update(index, { sources: event.sources });
+          if (event.type === 'tool') {
+            tools.push({ name: event.name, args: event.args });
+            update(index, { tools: [...tools] });
+          }
           if (event.type === 'delta') {
             text += event.text;
             update(index, { answer: text });

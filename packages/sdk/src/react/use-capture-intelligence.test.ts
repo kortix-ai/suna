@@ -132,3 +132,28 @@ test('useCaptureAsk keeps the turns: the question, streamed text, then the cited
   expect(chat!.turns.map((t) => [t.question, t.answer, t.status])).toEqual([['Say hello', 'Hello', 'done']]);
   expect(h.calls).toEqual([`POST ${A}/ask`]);
 });
+
+test('useCaptureAsk follows the agent: each tool it calls, and the sources as they grow', async () => {
+  const workflow = { n: 1, kind: 'workflow' as const, workflow_id: 'w1', label: 'Refund', detail: 'd' };
+  const frames = [
+    { type: 'sources', sources: [] },
+    { type: 'tool', name: 'list_workflows', args: { sort: 'runs' } },
+    { type: 'sources', sources: [workflow] },
+    { type: 'delta', text: 'Refund [1].' },
+    { type: 'done', answer: 'Refund [1].', citations: [workflow], model: 'm', cost_usd: 0 },
+  ];
+  const h = harness(() =>
+    new Response(new ReadableStream({ start(c) { for (const f of frames) c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(f)}\n\n`)); c.close(); } }), { headers: { 'content-type': 'text/event-stream' } }),
+  );
+  let chat: ReturnType<typeof useCaptureAsk>;
+  function Probe() {
+    chat = useCaptureAsk('a1');
+    return null;
+  }
+  await h.mount(Probe);
+  await act(async () => { await chat!.ask('Which workflow runs most?'); });
+  const turn = chat!.turns[0]!;
+  expect(turn.tools).toEqual([{ name: 'list_workflows', args: { sort: 'runs' } }]);
+  expect(turn.sources).toEqual([workflow]);
+  expect(turn.citations).toEqual([workflow]);
+});

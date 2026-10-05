@@ -180,6 +180,12 @@ export function changesSomething(a: string[], b: string[]): boolean {
   return diff.some((t) => MUTATING.has(t.split('@')[0]!));
 }
 
+/** The changing steps a path adds and skips against `a`, as one comparable key. */
+function changeKey(a: string[], b: string[]): string {
+  const changing = (t: string) => MUTATING.has(t.split('@')[0]!);
+  return `+${minus(b, a).filter(changing).sort().join(',')}|-${minus(a, b).filter(changing).sort().join(',')}`;
+}
+
 /** Items of `a` left after removing one match per item of `b` (by verb@app for steps). */
 function minus<T>(a: T[], b: T[]): T[] {
   const key = (x: T) => (typeof x === 'string' ? x : `${(x as { verb: string }).verb.toLowerCase()}@${((x as { app: string | null }).app ?? '').toLowerCase()}`);
@@ -276,10 +282,17 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
   // copy, fill…) is the same way of working, traced at another grain: it folds into A.
   const folded: typeof sub = [];
   for (const p of sub) {
-    if (folded.length && !changesSomething(folded[0]!.tokens, p.tokens)) folded[0] = { ...folded[0]!, runs: [...folded[0]!.runs, ...p.runs] };
+    if (folded.length && !changesSomething(folded[0]!.tokens, p.tokens)) {
+      folded[0] = { ...folded[0]!, runs: [...folded[0]!.runs, ...p.runs] };
+      continue;
+    }
+    // Two paths that add and skip the same changing steps against A are one variant at two grains.
+    const same = folded.findIndex((q, i) => i > 0 && changeKey(folded[0]!.tokens, q.tokens) === changeKey(folded[0]!.tokens, p.tokens));
+    if (same > 0) folded[same] = { ...folded[same]!, runs: [...folded[same]!.runs, ...p.runs] };
     else folded.push(p);
   }
-  const named = folded.filter((p, i) => i === 0 || p.runs.length >= minRuns).slice(0, 5);
+  const ordered = [folded[0]!, ...folded.slice(1).sort((a, b) => b.runs.length - a.runs.length)];
+  const named = ordered.filter((p, i) => i === 0 || p.runs.length >= minRuns).slice(0, 5);
   const paths = named.map((p, i) => ({ ...p, key: String.fromCharCode(65 + i) }));
   const canonical = paths[0]!;
   const steps: WorkflowStep[] = canonical.representative.steps.map((s, index) => ({
@@ -297,16 +310,19 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
     const skipped = minus(canonical.representative.steps, p.representative.steps);
     const lead = added[0] ?? skipped[0];
     const phrase = (x: Run['steps'][number]) => `${x.verb.toLowerCase()} ${x.object}`;
+    // A is named by what it does that the variants do not (else its last changing step).
+    const own = paths.slice(1).flatMap((q) => minus(canonical.representative.steps, q.representative.steps));
+    const signature = own[0] ?? [...canonical.representative.steps].reverse().find((x) => MUTATING.has(x.verb.toLowerCase())) ?? canonical.representative.steps[canonical.representative.steps.length - 1];
     return {
       key: p.key,
-      name: p.key === 'A' ? 'Canonical path' : lead ? `${added.length ? '' : 'Skip: '}${capitalize(phrase(lead))}` : `Path ${p.key}`,
+      name: p.key === 'A' ? `Standard: ${signature ? phrase(signature) : 'the usual steps'}` : lead ? `${added.length ? '' : 'Skip: '}${capitalize(phrase(lead))}` : `Path ${p.key}`,
       runs: p.runs.length,
       share: Math.round((p.runs.length / finished.length || 0) * 1000) / 1000,
       steps_count: p.tokens.length,
       differs: p.key === 'A' ? [] : differingSteps(canonical.tokens, p.tokens),
       note:
         p.key === 'A'
-          ? 'The most common path.'
+          ? `The usual way, ${Math.round((p.runs.length / Math.max(1, finished.length)) * 100)}% of runs: ${canonical.representative.steps.map(phrase).join(' → ')}.`
           : [added.length && `Adds: ${added.map(phrase).join(' → ')}.`, skipped.length && `Skips: ${skipped.map(phrase).join(' → ')}.`].filter(Boolean).join(' '),
       question: lead ? `the run needs to ${added.length ? phrase(lead) : `go without the step "${phrase(lead)}"`}` : `the case differs from path A`,
     };
@@ -378,9 +394,9 @@ ${samples}
 Paths (A = the most common; others are variants):
 ${paths}
 
-Name the procedure and its variants. "name": 3-7 words, imperative, generic (e.g. "Refund a damaged-order claim"). "goal" and "outcome": one sentence each. For each variant except A: "name" (2-5 words, the case it handles, named by the steps where it differs from A, e.g. "Outside the return window"), "note" (one sentence: what differs from A), "question" (the decision that leads to it, phrased as a condition, e.g. "the order is older than 30 days"). No literal values (names, numbers, emails).
+Name the procedure and each path. "name": 3-7 words, imperative, generic (e.g. "Refund a damaged-order claim"). "goal" and "outcome": one sentence each. For every path, A included: "name" (2-5 words, distinct per path; A by what it does, e.g. "Standard: refund to original payment"; the others by the case they handle, from the steps where they differ from A, e.g. "Outside the return window"), "note" (one sentence: what this path does; for the others, what differs from A). For each path except A also "question" (the decision that leads to it, as a condition, e.g. "the order is older than 30 days"). No literal values (names, numbers, emails).
 
-Return ONLY JSON: {"name":"…","goal":"…","outcome":"…","variants":[{"key":"B","name":"…","note":"…","question":"…"}]}`;
+Return ONLY JSON: {"name":"…","goal":"…","outcome":"…","variants":[{"key":"A","name":"…","note":"…"},{"key":"B","name":"…","note":"…","question":"…"}]}`;
 }
 
 function judgePrompt(pairs: Array<[MinedWorkflow, MinedWorkflow]>): string {
@@ -453,7 +469,7 @@ export async function refreshWorkflows(workflowIds: string[], now = Date.now()):
       .set({
         ...(own ? { name: [...labels].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Unnamed workflow', goal: latest.goal, outcome: latest.outcome, model: null } : {}),
         steps: m.steps as unknown as Record<string, unknown>[],
-        variants: m.variants.map((v) => ({ ...v, name: v.key === 'A' ? 'Canonical path' : v.name, note: v.note })) as unknown as Record<string, unknown>[],
+        variants: m.variants as unknown as Record<string, unknown>[],
         apps: m.apps,
         runsTotal: m.stats.runsTotal,
         runsPerWeek: m.stats.runsPerWeek.toFixed(2),
@@ -614,12 +630,17 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
       const named = names.get(p.m);
       const keepNames = p.keep && !named;
       // Names: the model's, else the kept workflow's (same differing steps), else the derived ones.
+      const usedNames = new Set<string>();
       const variants = p.m.variants.map((v) => {
         const n = named?.variants.find((x) => x.key === v.key);
-        const old = (p.keep?.variants as unknown as WorkflowVariant[] | undefined)?.find((x) => x.key === v.key && x.differs.join() === v.differs.join());
+        const old = (p.keep?.variants as unknown as WorkflowVariant[] | undefined)?.find((x) => x.key === v.key && x.differs.join() === v.differs.join() && x.name !== 'Canonical path');
+        // Names are distinct within a workflow: a repeat falls back to the derived name, then a key suffix.
+        let name = n?.name?.trim() || old?.name || v.name;
+        if (usedNames.has(name.toLowerCase())) name = usedNames.has(v.name.toLowerCase()) ? `${name} (${v.key})` : v.name;
+        usedNames.add(name.toLowerCase());
         return {
           ...v,
-          name: v.key === 'A' ? 'Canonical path' : n?.name?.trim() || old?.name || v.name,
+          name,
           note: n?.note?.trim() || old?.note || v.note,
           question: v.key === 'A' ? undefined : n?.question?.trim() || old?.question || v.question,
         };

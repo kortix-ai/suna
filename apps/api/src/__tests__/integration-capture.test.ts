@@ -39,7 +39,7 @@ mock.module('../capture/store', () => ({
     objects.has(key) ? { status: 'ok', body: objects.get(key)!, etag: createHash('md5').update(objects.get(key)!).digest('hex') } : { status: 'missing' },
 }));
 
-const { accounts, captureDevices, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } = await import('@kortix/db');
+const { accounts, captureDevices, captureEpisodes: captureEpisodesTable, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } = await import('@kortix/db');
 const { and, eq, sql } = await import('drizzle-orm');
 const { db } = await import('../shared/db');
 const { ingestManifest, extendDetectedRange } = await import('../capture/ingest');
@@ -379,6 +379,35 @@ describe('intelligence: episodes (L1/L2) and mining (L3)', () => {
     expect(run.mining_queued).toBe(true);
     expect((await runIntelligence(ACCOUNT, { miningOnly: true })).episodes_queued).toBe(0);
     await db.update(timelineRanges).set({ status: 'processed' }).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
+  });
+
+  test('Ask is a tool-calling agent: it calls a tool in the asker\'s scope, gets numbered sources, and answers with citations; a member\'s tools see only the member', async () => {
+    const { ask, runTool } = await import('../capture/ask');
+    const bodies: Array<Record<string, any>> = [];
+    const sse = (frames: unknown[]) => new Response(`${frames.map((f) => `data: ${JSON.stringify(f)}`).join('\n\n')}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+    const transport = async (body: Record<string, unknown>) => {
+      bodies.push(body);
+      if (bodies.length === 1) return sse([{ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'list_workflows', arguments: '{"sort":"runs"}' } }] } }] }, { usage: { cost: 0.0001 } }]);
+      const tool = JSON.parse(String((body.messages as Array<{ role: string; content: string }>).at(-1)!.content)) as Array<{ source: number; name: string }>;
+      return sse([{ choices: [{ delta: { content: `${tool[0]!.name} runs most [${tool[0]!.source}].` } }] }, { usage: { cost: 0.0002 } }]);
+    };
+    const events: Array<Record<string, any>> = [];
+    await ask({ accountId: ACCOUNT, viewer: MEMBER, subject: null, accountWide: true }, { question: 'Which workflow runs most?' }, (e) => events.push(e), transport);
+    expect(events.map((e) => e.type)).toEqual(['sources', 'tool', 'sources', 'delta', 'done']);
+    expect(bodies[0]!.tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(['search_moments', 'list_episodes', 'get_episode', 'list_workflows', 'get_workflow', 'stats']);
+    expect(bodies[1]!.messages.at(-1).role).toBe('tool');
+    const done = events.at(-1)!;
+    expect(done.citations.length).toBe(1);
+    expect(done.citations[0].kind).toBe('workflow');
+    expect(done.answer).toContain(`[${done.citations[0].n}]`);
+    expect(done.cost_usd).toBeCloseTo(0.0003);
+    // A member's agent has no workflow tools, and its episode tool reads the member only.
+    const memberScope = { accountId: ACCOUNT, viewer: MEMBER, subject: MEMBER, accountWide: false };
+    expect(await runTool(memberScope, 'list_workflows', {}, (x) => ({ ...x, n: 0 }) as never)).toEqual({ error: 'workflows and stats are for Capture admins and viewers' });
+    const listed = (await runTool(memberScope, 'list_episodes', { user_id: crypto.randomUUID() }, (x) => ({ ...x, n: 1 }) as never)) as Array<{ episode_id: string }>;
+    const owners = await db.select({ userId: captureEpisodesTable.userId }).from(captureEpisodesTable).where(sql`${captureEpisodesTable.episodeId} IN (${sql.join(listed.map((e) => sql`${e.episode_id}::uuid`), sql`, `)})`);
+    expect(listed.length).toBeGreaterThan(0);
+    expect(owners.every((o) => o.userId === MEMBER)).toBe(true);
   });
 });
 

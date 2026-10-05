@@ -241,7 +241,10 @@ export interface CaptureAskResult {
 }
 
 export type CaptureAskEvent =
+  /** Every numbered source so far: first a seed retrieval, then again after each tool round. */
   | { type: 'sources'; sources: CaptureAskSource[] }
+  /** The agent called one of its tools (search_moments, list_episodes, get_episode, list_workflows, get_workflow, stats). */
+  | { type: 'tool'; name: string; args: Record<string, unknown> }
   | { type: 'delta'; text: string }
   | ({ type: 'done' } & CaptureAskResult)
   | { type: 'error'; code: string; error: string };

@@ -183,3 +183,40 @@ describe('variant folding', () => {
     expect(changesSomething(['open@helpdesk', 'create@erp', 'send@mail'], ['open@helpdesk', 'send@mail', 'set@helpdesk'])).toBe(true);
   });
 });
+
+describe('variants', () => {
+  test('two paths that add and skip the same changing steps are one variant; A is named by what it does', () => {
+    const now = Date.UTC(2026, 8, 29);
+    const run = (i: number, path: string[]) => ({
+      episodeId: `v${i}`, userId: 'u1', start: new Date(now - (i + 1) * 3_600_000), end: new Date(now - (i + 1) * 3_600_000 + 600_000), label: 'Refund', goal: null, outcome: null, outcomeStatus: 'succeeded', workflowId: null,
+      signature: path.map((p) => `${p.toLowerCase()}@erp`).join(' '), steps: path.map((verb) => ({ verb, app: 'ERP', object: verb === 'Create' ? 'refund' : verb === 'Reject' ? 'claim' : 'order', params: null, variables: [] })),
+    });
+    const runs = [
+      ...Array.from({ length: 8 }, (_, i) => run(i, ['Open', 'Search', 'Create', 'Send'])),
+      ...Array.from({ length: 3 }, (_, i) => run(10 + i, ['Open', 'Search', 'Reject'])),
+      ...Array.from({ length: 2 }, (_, i) => run(20 + i, ['Open', 'Copy', 'Read', 'Search', 'Reject'])),
+    ];
+    const w = describeCluster(runs, now);
+    expect(w.paths.map((p) => [p.key, p.runs.length])).toEqual([['A', 8], ['B', 5]]);
+    expect(w.variants[0]!.name).toBe('Standard: create refund');
+    expect(w.variants[0]!.note).toContain('62% of runs');
+    expect(w.variants[1]!.name).toBe('Reject claim');
+  });
+});
+
+describe('ask stream', () => {
+  test('a streamed round yields its text and its tool calls assembled by index', async () => {
+    const { readRound } = await import('./ask');
+    const frames = [
+      { choices: [{ delta: { content: 'Look' } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'list_', arguments: '{"que' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'episodes', arguments: 'ry":"refund"}' } }, { index: 1, function: { name: 'stats', arguments: '{}' } }] } }] },
+      { usage: { cost: 0.0004 } },
+    ];
+    const body = new Response(frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join('') + 'data: [DONE]\n\n').body!;
+    const seen: string[] = [];
+    const round = await readRound(body, (t) => seen.push(t));
+    expect(seen).toEqual(['Look']);
+    expect(round).toEqual({ content: 'Look', cost: 0.0004, toolCalls: [{ id: 'c1', name: 'list_episodes', arguments: '{"query":"refund"}' }, { id: 'call_1', name: 'stats', arguments: '{}' }] });
+  });
+});
