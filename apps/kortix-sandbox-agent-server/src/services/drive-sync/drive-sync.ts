@@ -1,4 +1,4 @@
-import { accessSync, constants, mkdirSync } from 'node:fs'
+import { type FSWatcher, accessSync, constants, mkdirSync, watch } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Config } from '@/lib/config/config'
@@ -37,6 +37,9 @@ export class DriveSyncService {
   private written: string | null = null
   private readonly notices: string[] = []
   private tick: Promise<void> | null = null
+  private watcher: FSWatcher | null = null
+  private kickTimer: ReturnType<typeof setTimeout> | null = null
+  private kickAgain = false
 
   constructor(private readonly opts: DriveSyncServiceOptions) {
     this.root = opts.root ?? DRIVES_PREFIX
@@ -146,6 +149,8 @@ export class DriveSyncService {
   start(): void {
     const loop = async () => {
       if (this.stopped) return
+      if (this.timer) clearTimeout(this.timer)
+      this.timer = null
       this.tick = (async () => {
         try {
           if (await this.refreshMounts()) await this.syncOnce()
@@ -155,9 +160,58 @@ export class DriveSyncService {
       })()
       await this.tick
       this.tick = null
-      if (!this.stopped) this.timer = setTimeout(loop, this.intervalMs)
+      if (this.stopped) return
+      if (this.kickAgain) {
+        this.kickAgain = false
+        this.timer = setTimeout(loop, this.opts.settleMs ?? 2_000)
+      } else this.timer = setTimeout(loop, this.intervalMs)
     }
+    this.runLoop = loop
+    this.watchLocal()
     void loop()
+  }
+
+  private runLoop: (() => Promise<void>) | null = null
+
+  /**
+   * A local write starts a pass as soon as it has settled, instead of at the
+   * next poll: a change reaches the drive a moment after the file goes quiet.
+   * The poll still runs (pulls, and any change the watcher missed).
+   */
+  private watchLocal(): void {
+    try {
+      this.watcher = watch(this.root, { recursive: true }, (_event, name) => {
+        const file = String(name ?? '')
+        const base = file.split('/').pop() ?? ''
+        if (base.startsWith('.kortix-sync-') || file === 'README.md' || file.startsWith('.detached')) return
+        this.kick()
+      })
+      this.watcher.on('error', () => this.unwatch())
+    } catch (err) {
+      logger.warn('[drive-sync] cannot watch the drives folder; changes go up on the next poll', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  private unwatch(): void {
+    this.watcher?.close()
+    this.watcher = null
+  }
+
+  /** Run a pass once local changes have been quiet for the settle time. */
+  private kick(): void {
+    if (this.stopped || !this.runLoop) return
+    if (this.kickTimer) clearTimeout(this.kickTimer)
+    const settle = this.opts.settleMs ?? 2_000
+    this.kickTimer = setTimeout(() => {
+      this.kickTimer = null
+      if (this.tick) {
+        this.kickAgain = true
+        return
+      }
+      void this.runLoop?.()
+    }, settle + 100)
   }
 
   /**
@@ -183,6 +237,8 @@ export class DriveSyncService {
   stop(): void {
     this.stopped = true
     if (this.timer) clearTimeout(this.timer)
+    if (this.kickTimer) clearTimeout(this.kickTimer)
+    this.unwatch()
   }
 }
 

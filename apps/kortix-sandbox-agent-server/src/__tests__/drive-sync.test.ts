@@ -213,6 +213,24 @@ describe('drive sync service', () => {
     expect(fake.read(DRIVE, '/last-words.md')).toBe('written just before stop')
   })
 
+  test('a local write goes up once it settles, not at the next poll', async () => {
+    fake.mounts = [{ driveId: DRIVE, name: 'Agent', mountPath: '/drives/agent', readOnly: false }]
+    // A poll far in the future: only the watcher can start the pass in time.
+    const svc = new DriveSyncService({ api: api(), root: dir, stateDir: join(dir, '.state'), settleMs: 300, intervalMs: 60_000 })
+    svc.start()
+    try {
+      for (let i = 0; i < 100 && !existsSync(join(dir, 'agent')); i++) await Bun.sleep(20)
+      await Bun.sleep(100)
+      writeFileSync(join(dir, 'agent', 'note.md'), 'quick')
+      const t0 = Date.now()
+      while (Date.now() - t0 < 5_000 && fake.read(DRIVE, '/note.md') === null) await Bun.sleep(20)
+      expect(fake.read(DRIVE, '/note.md')).toBe('quick')
+      expect(Date.now() - t0).toBeLessThan(2_000)
+    } finally {
+      svc.stop()
+    }
+  })
+
   test('waits for the boot to record the drives, writes the notes, and drops a drive that left the session', async () => {
     fake.ready = false
     const svc = service(0)
