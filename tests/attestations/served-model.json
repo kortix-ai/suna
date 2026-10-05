@@ -1,5 +1,5 @@
 {
-  "source_hash": "c288d1bf372593b3afd65c89df60e113fdf9ff4c9100dad2a4110cf0d2854d1b",
+  "source_hash": "5243c8c1c7c1f37f66ff7daa9d119b185ec41758be104fff61f2d172deb3ef48",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-02T170219Z-show-the-model-that-answered-and-the-cost-that-was-billed-fr.md",
@@ -54,13 +54,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/session-model-usage.flow.ts"
   ],
-  "diff_hash": "a21a722f32e53b348b0d18ec4ddb0fb82330d13c87986894233b398e2d50a549",
-  "head": "e3b011c730035a1ae8ac98d64ea7f7554b127b24",
+  "diff_hash": "0660eb69a2b861365082883dfbd21effe5e52e41e930f660c72dd2003bb76fe4",
+  "head": "309853b4f3f7eb6b94eda4dbf5dca8fe304ad378",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-05T21:49:47.827Z"
+  "at": "2026-10-05T23:18:54.075Z"
 }
