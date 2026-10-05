@@ -20933,7 +20933,9 @@
         "bodyMember": "Замолите админа ове организације да га укључи.",
         "turnOn": "Укључи Kortix Capture",
         "failed": "Укључивање Kortix Capture није успело"
-      }
+      },
+      "loadFailed": "Kortix Capture није могао да се отвори.",
+      "tryAgain": "Покушај поново"
     },
     "overview": {
       "title": "Преглед",
@@ -21121,7 +21123,9 @@
       "empty": "Нема шта да се извезе у овом периоду.",
       "failed": "Извоз није успео",
       "download": "Преузми",
-      "close": "Затвори"
+      "close": "Затвори",
+      "table": "Табела",
+      "tableHint": "Parquet датотека садржи једну табелу. Извезите поново за другу."
     },
     "ask": {
       "title": "Питајте о снимљеном раду",
@@ -21163,7 +21167,19 @@
         "moment": "Тренутак"
       },
       "openWorkflow": "Отвори радни ток",
-      "openTimeline": "Отвори на временској линији"
+      "openTimeline": "Отвори на временској линији",
+      "lookedAt": "Прегледано: {list}",
+      "looking": "Прегледа {what}…",
+      "tool": {
+        "searchMoments": "тренуци",
+        "searchMomentsFor": "тренуци за „{query}“",
+        "listWorkflows": "радни токови",
+        "listWorkflowsFor": "радни токови за „{query}“",
+        "getWorkflow": "један радни ток",
+        "listEpisodes": "епизоде",
+        "getEpisode": "једна епизода",
+        "stats": "статистика"
+      }
     },
     "thisComputer": {
       "title": "Овај рачунар",

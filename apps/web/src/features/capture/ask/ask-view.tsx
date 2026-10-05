@@ -194,6 +194,7 @@ export function AskView({ accountId }: { accountId: string }) {
                         : t('searching')}
                     </p>
                   )}
+                  {item.tools.length > 0 ? <ToolLine tools={item.tools} /> : null}
                   {item.status === 'done' ? (
                     <p className="text-muted-foreground text-xs">
                       {t('cited', { count: item.citations.length })}
@@ -388,7 +389,14 @@ function Answer({
     <div className="text-foreground flex flex-col gap-3 text-sm leading-relaxed">
       {text.split(/\n{2,}/).map((paragraph, p) => (
         <p key={p} className="text-pretty whitespace-pre-wrap">
-          {paragraph.split(/(\[\d+\])/g).map((part, i) => {
+          {paragraph.split(/(\[\d+\]|\*\*[^*\n]+\*\*)/g).map((part, i) => {
+            // The model writes **bold** for names; show it bold, not as asterisks.
+            if (/^\*\*[^*\n]+\*\*$/.test(part))
+              return (
+                <strong key={i} className="font-medium">
+                  {part.slice(2, -2)}
+                </strong>
+              );
             const match = /^\[(\d+)\]$/.exec(part);
             if (!match) return <Fragment key={i}>{part}</Fragment>;
             const n = Number(match[1]);
@@ -522,4 +530,37 @@ function SourceRow({
       </div>
     </li>
   );
+}
+
+type AskTool = { name: string; args: Record<string, unknown> };
+type AskT = ReturnType<typeof useTranslations>;
+
+/** One tool call in words: "workflows", "moments for “invoice”", "an episode". */
+function describeTool(t: AskT, tool: AskTool): string {
+  const query = typeof tool.args.query === 'string' ? tool.args.query.trim() : '';
+  switch (tool.name) {
+    case 'search_moments':
+      return query ? t('tool.searchMomentsFor', { query }) : t('tool.searchMoments');
+    case 'list_workflows':
+      return query ? t('tool.listWorkflowsFor', { query }) : t('tool.listWorkflows');
+    case 'get_workflow':
+      return t('tool.getWorkflow');
+    case 'list_episodes':
+      return t('tool.listEpisodes');
+    case 'get_episode':
+      return t('tool.getEpisode');
+    case 'stats':
+      return t('tool.stats');
+    default:
+      return tool.name;
+  }
+}
+
+/** What the agent looked at for this answer, once each, in order. */
+function ToolLine({ tools }: { tools: readonly AskTool[] }) {
+  const t = useTranslations('capture.ask');
+  const locale = useLocale();
+  const items = [...new Set(tools.map((tool) => describeTool(t, tool)))];
+  const list = new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(items);
+  return <p className="text-muted-foreground text-xs text-pretty">{t('lookedAt', { list })}</p>;
 }

@@ -20933,7 +20933,9 @@
         "bodyMember": "Ask an admin of this organization to turn it on.",
         "turnOn": "Turn on Kortix Capture",
         "failed": "Could not turn on Kortix Capture"
-      }
+      },
+      "loadFailed": "Could not open Kortix Capture.",
+      "tryAgain": "Try again"
     },
     "overview": {
       "title": "Overview",
@@ -21121,7 +21123,9 @@
       "empty": "Nothing to export in this range.",
       "failed": "The export failed",
       "download": "Download",
-      "close": "Close"
+      "close": "Close",
+      "table": "Table",
+      "tableHint": "A Parquet file holds one table. Export again for another."
     },
     "ask": {
       "title": "Ask about recorded work",
@@ -21163,7 +21167,19 @@
         "moment": "Moment"
       },
       "openWorkflow": "Open workflow",
-      "openTimeline": "Open in timeline"
+      "openTimeline": "Open in timeline",
+      "lookedAt": "Looked at: {list}",
+      "looking": "Looking at {what}…",
+      "tool": {
+        "searchMoments": "moments",
+        "searchMomentsFor": "moments for “{query}”",
+        "listWorkflows": "workflows",
+        "listWorkflowsFor": "workflows for “{query}”",
+        "getWorkflow": "a workflow",
+        "listEpisodes": "episodes",
+        "getEpisode": "an episode",
+        "stats": "statistics"
+      }
     },
     "thisComputer": {
       "title": "This computer",

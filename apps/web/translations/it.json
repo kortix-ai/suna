@@ -20933,7 +20933,9 @@
         "bodyMember": "Chiedi a un admin di questa organizzazione di attivarlo.",
         "turnOn": "Attiva Kortix Capture",
         "failed": "Impossibile attivare Kortix Capture"
-      }
+      },
+      "loadFailed": "Impossibile aprire Kortix Capture.",
+      "tryAgain": "Riprova"
     },
     "overview": {
       "title": "Panoramica",
@@ -21121,7 +21123,9 @@
       "empty": "Niente da esportare in questo intervallo.",
       "failed": "Esportazione non riuscita",
       "download": "Scarica",
-      "close": "Chiudi"
+      "close": "Chiudi",
+      "table": "Tabella",
+      "tableHint": "Un file Parquet contiene una tabella. Esporta di nuovo per un’altra."
     },
     "ask": {
       "title": "Chiedi del lavoro registrato",
@@ -21163,7 +21167,19 @@
         "moment": "Momento"
       },
       "openWorkflow": "Apri workflow",
-      "openTimeline": "Apri nella timeline"
+      "openTimeline": "Apri nella timeline",
+      "lookedAt": "Consultato: {list}",
+      "looking": "Consultazione di {what}…",
+      "tool": {
+        "searchMoments": "momenti",
+        "searchMomentsFor": "momenti per «{query}»",
+        "listWorkflows": "workflow",
+        "listWorkflowsFor": "workflow per «{query}»",
+        "getWorkflow": "un workflow",
+        "listEpisodes": "episodi",
+        "getEpisode": "un episodio",
+        "stats": "statistiche"
+      }
     },
     "thisComputer": {
       "title": "Questo computer",

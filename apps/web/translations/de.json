@@ -20933,7 +20933,9 @@
         "bodyMember": "Bitte einen Admin dieser Organisation, es einzuschalten.",
         "turnOn": "Kortix Capture einschalten",
         "failed": "Kortix Capture konnte nicht eingeschaltet werden"
-      }
+      },
+      "loadFailed": "Kortix Capture konnte nicht geöffnet werden.",
+      "tryAgain": "Erneut versuchen"
     },
     "overview": {
       "title": "Übersicht",
@@ -21121,7 +21123,9 @@
       "empty": "In diesem Zeitraum gibt es nichts zu exportieren.",
       "failed": "Der Export ist fehlgeschlagen",
       "download": "Herunterladen",
-      "close": "Schließen"
+      "close": "Schließen",
+      "table": "Tabelle",
+      "tableHint": "Eine Parquet-Datei enthält eine Tabelle. Exportiere erneut für eine weitere."
     },
     "ask": {
       "title": "Zur aufgezeichneten Arbeit fragen",
@@ -21163,7 +21167,19 @@
         "moment": "Moment"
       },
       "openWorkflow": "Workflow öffnen",
-      "openTimeline": "In Zeitleiste öffnen"
+      "openTimeline": "In Zeitleiste öffnen",
+      "lookedAt": "Angesehen: {list}",
+      "looking": "Sieht {what} an…",
+      "tool": {
+        "searchMoments": "Momente",
+        "searchMomentsFor": "Momente zu „{query}“",
+        "listWorkflows": "Workflows",
+        "listWorkflowsFor": "Workflows zu „{query}“",
+        "getWorkflow": "einen Workflow",
+        "listEpisodes": "Episoden",
+        "getEpisode": "eine Episode",
+        "stats": "Statistiken"
+      }
     },
     "thisComputer": {
       "title": "Dieser Computer",

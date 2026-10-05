@@ -20933,7 +20933,9 @@
         "bodyMember": "この組織の管理者にオンにするよう依頼してください。",
         "turnOn": "Kortix Capture をオンにする",
         "failed": "Kortix Capture をオンにできませんでした"
-      }
+      },
+      "loadFailed": "Kortix Capture を開けませんでした。",
+      "tryAgain": "再試行"
     },
     "overview": {
       "title": "概要",
@@ -21121,7 +21123,9 @@
       "empty": "この期間にエクスポートするものはありません。",
       "failed": "エクスポートに失敗しました",
       "download": "ダウンロード",
-      "close": "閉じる"
+      "close": "閉じる",
+      "table": "テーブル",
+      "tableHint": "Parquet ファイルには 1 つのテーブルが入ります。別のテーブルはもう一度エクスポートしてください。"
     },
     "ask": {
       "title": "録画された作業について質問",
@@ -21163,7 +21167,19 @@
         "moment": "時点"
       },
       "openWorkflow": "ワークフローを開く",
-      "openTimeline": "タイムラインで開く"
+      "openTimeline": "タイムラインで開く",
+      "lookedAt": "参照したもの: {list}",
+      "looking": "{what}を確認中…",
+      "tool": {
+        "searchMoments": "モーメント",
+        "searchMomentsFor": "「{query}」のモーメント",
+        "listWorkflows": "ワークフロー",
+        "listWorkflowsFor": "「{query}」のワークフロー",
+        "getWorkflow": "ワークフロー 1 件",
+        "listEpisodes": "エピソード",
+        "getEpisode": "エピソード 1 件",
+        "stats": "統計"
+      }
     },
     "thisComputer": {
       "title": "このコンピュータ",
