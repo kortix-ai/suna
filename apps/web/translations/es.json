@@ -626,7 +626,6 @@
       "manualSecret": "¿No puede escanear? Introduzca esta clave",
       "codeTitle": "Introduzca el código",
       "codeDescription": "Escriba los 6 dígitos que muestra su aplicación. Se verifica solo.",
-      "worksWith": "Funciona con",
       "verifyAndEnable": "Verificar",
       "cancel": "Cancelar",
       "removeFactorTitle": "¿Eliminar este factor?",

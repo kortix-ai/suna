@@ -178,6 +178,9 @@ describe('formatSecret', () => {
   test('groups a TOTP secret in fours', () => {
     expect(formatSecret('JBSWY3DPEHPK3PXP')).toBe('JBSW Y3DP EHPK 3PXP');
     expect(formatSecret('ABCDEF')).toBe('ABCD EF');
+    expect(formatSecret('GEMUX5K72V6OB2V2N3GNFH4O5U5NXCWS')).toBe(
+      'GEMU X5K7 2V6O B2V2\nN3GN FH4O 5U5N XCWS',
+    );
   });
 });
 

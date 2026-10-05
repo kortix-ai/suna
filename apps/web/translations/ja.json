@@ -626,7 +626,6 @@
       "manualSecret": "スキャンできない場合はこのキーを入力",
       "codeTitle": "コードを入力",
       "codeDescription": "アプリに表示される6桁を入力してください。自動で確認されます。",
-      "worksWith": "対応アプリ",
       "verifyAndEnable": "確認",
       "cancel": "キャンセル",
       "removeFactorTitle": "この要素を削除しますか?",

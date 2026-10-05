@@ -626,7 +626,6 @@
       "manualSecret": "Impossible de scanner ? Saisissez cette clé",
       "codeTitle": "Saisissez le code",
       "codeDescription": "Tapez les 6 chiffres affichés par votre application. La vérification est automatique.",
-      "worksWith": "Compatible avec",
       "verifyAndEnable": "Vérifier",
       "cancel": "Annuler",
       "removeFactorTitle": "Supprimer ce facteur ?",

@@ -626,7 +626,6 @@
       "manualSecret": "无法扫描？请输入此密钥",
       "codeTitle": "输入验证码",
       "codeDescription": "输入应用显示的 6 位数字，输入完成后自动验证。",
-      "worksWith": "支持的应用",
       "verifyAndEnable": "验证",
       "cancel": "取消",
       "removeFactorTitle": "去掉这个因素？",

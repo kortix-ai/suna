@@ -626,7 +626,6 @@
       "manualSecret": "Não consegue escanear? Digite esta chave",
       "codeTitle": "Digite o código",
       "codeDescription": "Digite os 6 dígitos que seu aplicativo mostra. A verificação é automática.",
-      "worksWith": "Funciona com",
       "verifyAndEnable": "Verificar",
       "cancel": "Cancelar",
       "removeFactorTitle": "Remover esse fator?",

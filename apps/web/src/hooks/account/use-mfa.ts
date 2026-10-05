@@ -124,9 +124,17 @@ export function useMfa() {
 
   const cancelEnroll = () => {
     // Abandoning enrollment leaves an unverified factor behind — clean it up
-    // so the list doesn't accumulate ghosts.
-    if (enrolling) removeFactorMutation.mutate(enrolling.factorId);
+    // so the list doesn't accumulate ghosts. Silently: the person cancelled,
+    // they did not remove a factor, so no "Factor removed" toast. A failed
+    // cleanup is harmless — the next enrollment clears unverified factors.
+    if (enrolling) {
+      void supabaseMFAService
+        .unenrollFactor(enrolling.factorId)
+        .catch(() => {})
+        .finally(() => queryClient.invalidateQueries({ queryKey: MFA_FACTORS_QUERY_KEY }));
+    }
     setEnrolling(null);
+    setEnrollCode('');
   };
 
   return {

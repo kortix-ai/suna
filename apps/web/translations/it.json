@@ -626,7 +626,6 @@
       "manualSecret": "Non riesci a scansionare? Inserisci questa chiave",
       "codeTitle": "Inserisci il codice",
       "codeDescription": "Digita le 6 cifre mostrate dalla tua app. La verifica è automatica.",
-      "worksWith": "Funziona con",
       "verifyAndEnable": "Verifica",
       "cancel": "Annulla",
       "removeFactorTitle": "Rimuovere questo fattore?",

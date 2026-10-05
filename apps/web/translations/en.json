@@ -452,7 +452,6 @@
       "manualSecret": "Can’t scan? Enter this key",
       "codeTitle": "Enter the code",
       "codeDescription": "Type the 6 digits your app shows. It verifies on its own.",
-      "worksWith": "Works with",
       "verifyAndEnable": "Verify",
       "cancel": "Cancel",
       "removeFactorTitle": "Remove this factor?",

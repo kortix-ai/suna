@@ -39,8 +39,10 @@ import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { inputSurfaceClasses, inputTransitionClasses } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
@@ -113,15 +115,13 @@ export function FactorRow({
 }
 
 const CODE_LENGTH = 6;
-const AUTHENTICATOR_APPS = [
-  { mark: '1P', name: '1Password' },
-  { mark: 'G', name: 'Google Authenticator' },
-  { mark: 'A', name: 'Authy' },
-];
 
-/** Groups a TOTP secret in fours, the way authenticator apps print it. */
+/** Groups a TOTP secret in fours, the way authenticator apps print it,
+ *  four groups to a line so a 32-character key splits into two even rows. */
 export function formatSecret(secret: string): string {
-  return secret.replace(/(.{4})(?=.)/g, '$1 ');
+  return secret
+    .replace(/(.{4})(?=.)/g, '$1 ')
+    .replace(/((?:\S{4} ){3}\S{4}) /g, '$1\n');
 }
 
 /** The enrollment dialog: scan on the left, type the code on the right.
@@ -146,13 +146,19 @@ export function EnrollDialog({
   copy: SecurityTabCopy;
 }) {
   return (
-    <Dialog open={enrolling !== null} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-[40rem]">
+    <Modal open={enrolling !== null} onOpenChange={(open) => !open && onCancel()}>
+      <ModalContent
+        // modal.tsx centres only from `lg`. From `sm` (640px, every tablet in
+        // portrait) this is the same centred two-column window as desktop;
+        // phones keep the bottom sheet.
+        className="overflow-hidden border-0 sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:h-auto sm:w-[calc(100%-3rem)] sm:max-w-[46rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl lg:h-auto lg:max-w-[46rem]"
+        modalClassName="space-y-0"
+      >
         {enrolling ? (
           <div className="flex flex-col sm:flex-row">
             {/* `dark` scopes the dark tokens to this panel in both themes. */}
-            <div className="dark bg-background text-foreground border-border flex shrink-0 flex-col gap-6 border-b p-6 sm:w-[16.25rem] sm:border-e sm:border-b-0">
-              <div className="space-y-1">
+            <div className="dark bg-background text-foreground border-border flex shrink-0 flex-col gap-5 border-b p-6 sm:w-[44%] sm:gap-6 sm:border-e sm:border-b-0 md:w-[21rem]">
+              <div className="space-y-1 pe-8 sm:pe-0">
                 <h3 className="text-lg font-semibold tracking-tight">{copy.scanTitle}</h3>
                 <p className="text-muted-foreground text-sm text-pretty">{copy.scanDescription}</p>
               </div>
@@ -160,39 +166,30 @@ export function EnrollDialog({
               <img
                 src={totpQrSrc(enrolling.qr)}
                 alt={copy.qrAlt}
-                className="aspect-square w-full max-w-[13.25rem] self-center rounded-lg bg-white p-3"
+                className="aspect-square w-full max-w-64 self-center rounded-lg bg-white p-3 sm:max-w-none"
               />
-              {enrolling.secret ? (
-                <div className="space-y-2">
-                  <div className="text-muted-foreground text-xs font-medium">
-                    {copy.manualSecret}
-                  </div>
-                  <div className="border-border bg-muted/40 flex min-h-10 items-center justify-between gap-2 rounded-md border py-1.5 ps-3 pe-1">
-                    <code className="min-w-0 font-mono text-xs leading-5 font-medium tracking-tight">
-                      {formatSecret(enrolling.secret)}
-                    </code>
-                    <CopyButton code={enrolling.secret} className="shrink-0" />
-                  </div>
-                </div>
-              ) : null}
             </div>
 
             <div className="flex min-w-0 flex-1 flex-col gap-6 p-6">
               <div className="space-y-1 pe-8">
-                <DialogTitle className="text-lg leading-7">{copy.codeTitle}</DialogTitle>
-                <DialogDescription>{copy.codeDescription}</DialogDescription>
+                <ModalTitle className="text-lg leading-7 tracking-tight">{copy.codeTitle}</ModalTitle>
+                <ModalDescription className="text-pretty">{copy.codeDescription}</ModalDescription>
               </div>
 
-              <label className="relative flex items-center justify-between">
+              <label className="group relative flex items-center justify-between gap-2 sm:gap-0">
                 <span className="sr-only">{copy.codeTitle}</span>
                 {Array.from({ length: CODE_LENGTH }, (_, i) => (
                   <span
                     key={i}
                     aria-hidden
                     className={cn(
-                      'border-border bg-background flex h-14 w-[15%] items-center justify-center rounded-md border font-mono text-2xl font-medium tracking-tight',
+                      inputSurfaceClasses,
+                      inputTransitionClasses,
+                      'text-foreground flex h-14 w-[15%] items-center justify-center font-mono text-2xl font-medium tracking-tight',
+                      // The real input is invisible; the cell it is typing into
+                      // wears the Input focus treatment while the field has focus.
                       i === Math.min(code.length, CODE_LENGTH - 1) &&
-                        'border-foreground ring-foreground/10 ring-2',
+                        'group-focus-within:border-ring group-focus-within:ring-ring/15 group-focus-within:ring-3',
                     )}
                   >
                     {code[i] ?? ''}
@@ -212,19 +209,19 @@ export function EnrollDialog({
                 />
               </label>
 
-              <div className="border-border flex-1 space-y-3 border-t pt-5">
-                <div className="text-muted-foreground text-xs font-medium">{copy.worksWith}</div>
-                <ul className="space-y-2">
-                  {AUTHENTICATOR_APPS.map((app) => (
-                    <li key={app.name} className="flex items-center gap-3 text-sm">
-                      <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold tracking-tight">
-                        {app.mark}
-                      </span>
-                      {app.name}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {enrolling.secret ? (
+                <div className="border-border flex-1 space-y-2 border-t pt-5">
+                  <div className="text-muted-foreground text-xs font-medium">
+                    {copy.manualSecret}
+                  </div>
+                  <div className="border-border bg-muted/40 flex min-h-10 items-center justify-between gap-2 rounded-md border py-1.5 ps-3 pe-1">
+                    <code className="min-w-0 font-mono text-xs leading-5 font-medium tracking-tight whitespace-pre-line">
+                      {formatSecret(enrolling.secret)}
+                    </code>
+                    <CopyButton code={enrolling.secret} className="shrink-0" />
+                  </div>
+                </div>
+              ) : null}
 
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={onCancel}>
@@ -235,15 +232,15 @@ export function EnrollDialog({
                   disabled={code.length !== CODE_LENGTH || isVerifying}
                   className="gap-1.5"
                 >
-                  {isVerifying ? <Loading className="size-4" /> : null}
+                  {isVerifying ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
                   {copy.verifyAndEnable}
                 </Button>
               </div>
             </div>
           </div>
         ) : null}
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -305,7 +302,6 @@ export interface SecurityTabCopy {
   manualSecret: string;
   codeTitle: string;
   codeDescription: string;
-  worksWith: string;
   verifyAndEnable: string;
   cancel: string;
   removeFactorTitle: string;
@@ -347,7 +343,6 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
   manualSecret: 'Can’t scan? Enter this key',
   codeTitle: 'Enter the code',
   codeDescription: 'Type the 6 digits your app shows. It verifies on its own.',
-  worksWith: 'Works with',
   verifyAndEnable: 'Verify',
   cancel: 'Cancel',
   removeFactorTitle: 'Remove this factor?',
@@ -596,7 +591,6 @@ export function SecurityTab() {
     manualSecret: t('manualSecret'),
     codeTitle: t('codeTitle'),
     codeDescription: t('codeDescription'),
-    worksWith: t('worksWith'),
     verifyAndEnable: t('verifyAndEnable'),
     cancel: t('cancel'),
     removeFactorTitle: t('removeFactorTitle'),
