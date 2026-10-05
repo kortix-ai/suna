@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { nativeDiff, normalizePaths } from './ota-publish.mjs';
+import appJson from '../app.json';
+import { appIdentifier, nativeDiff, normalizePaths } from './ota-publish.mjs';
 
 // Shapes copied from `eas fingerprint:compare --build-id <id> --json` on the
 // 1.4.3 store build: the build side reaches node_modules from a temporary copy
@@ -25,6 +26,12 @@ function fingerprint(nm: string, overrides: { svg?: string; patches?: string; ea
 }
 
 describe('OTA native-change guard', () => {
+  test('compares only builds of the app id this checkout builds', () => {
+    // A stale com.kortix.app APK on the channel must not block the Play app.
+    expect(appIdentifier(appJson.expo, 'android')).toBe('com.kortix.application');
+    expect(appIdentifier(appJson.expo, 'ios')).toBe('com.kortix.app');
+  });
+
   test('normalizes both path forms to the same node_modules path', () => {
     expect(normalizePaths(`${BUILD_NM}${SVG}`)).toBe(`node_modules/${SVG}`);
     expect(normalizePaths(`${LOCAL_NM}${SVG}`)).toBe(`node_modules/${SVG}`);
