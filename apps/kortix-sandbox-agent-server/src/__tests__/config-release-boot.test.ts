@@ -387,6 +387,24 @@ describe('valve B: the store or the API could not be reached', () => {
     expect(run.result.fallbackReason).toMatch(/the API could not be asked/)
   })
 
+  // 2026-10-05: the API sends `release_id: null` with governance when it
+  // cannot build the release (a composed archive over the limit carries no
+  // tree either). The box derived a governance-only ID from it and ran the
+  // image default with `fallback_reason: null` — every project tool, skill
+  // and plugin gone, reported as healthy.
+  test('a descriptor with no release keeps the last proven copy and states the API reason', async () => {
+    const dir = await installProvenRelease()
+    const reason = 'config dir harnesses/opencode with skills/ and the pi config dir exceeds the 33554432-byte archive limit'
+    api.respond({
+      status: 200,
+      json: { ...release.descriptor, release_id: null, config_tree_id: null, archive: null, files: null, reason },
+    })
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir, source: 'release', releaseId: release.descriptor.release_id, proven: true })
+    expect(run.result.fallbackReason).toContain(reason)
+    expect(configReleaseReport().desired_release_id).toBeNull()
+  })
+
   test('an archive the store cannot serve falls back without quarantining the release', async () => {
     await installProvenRelease()
     const previousDir = releaseDir(store, release.descriptor.release_id!)

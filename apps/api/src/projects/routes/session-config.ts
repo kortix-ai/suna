@@ -196,6 +196,10 @@ projectsApp.openapi(
         running.release,
         desired ? desired.descriptor.release_id : undefined,
       );
+      // The box reports why IT stepped down; the API says why the project's
+      // tip is not assigned at all (unbuildable or quarantined). Either one
+      // makes the header show the fallback instead of "up to date".
+      release.fallback_reason ??= desired?.fallbackReason ?? null;
       return c.json({
         base_ref: baseRef,
         running_etag: running.etag,
@@ -203,7 +207,9 @@ projectsApp.openapi(
         commit_sha: running.commitSha,
         // `running_release_id !== desired_release_id`. `null` when the API
         // could not build the desired release or neither side has one.
-        stale: isReleaseStale(release, desired !== null),
+        // No assignable release (an unbuildable tip with nothing proven to
+        // fall back to) is nothing to reload into, never "stale".
+        stale: isReleaseStale(release, desired !== null && desired.descriptor.release_id !== null),
         sandbox_reachable: running.reachable,
         release,
         managed_catalog: managedCatalog,

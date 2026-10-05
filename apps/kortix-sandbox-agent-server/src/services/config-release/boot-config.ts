@@ -49,8 +49,8 @@ export function bootConfigRoot(): string {
 const POINTER_FILE = 'current.json'
 const QUARANTINE_FILE = 'quarantine.json'
 
-/** Decompressed archive ceiling. The compressed archive is capped at 4 MiB. */
-const MAX_EXTRACTED_BYTES = 64 * 1024 * 1024
+/** Decompressed archive ceiling: the API's `MAX_CONFIG_TAR_BYTES`. The compressed archive is capped at `MAX_CONFIG_ARCHIVE_BYTES`. */
+const MAX_EXTRACTED_BYTES = 128 * 1024 * 1024
 
 const RELEASE_ID = /^[0-9a-f]{64}$/
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/

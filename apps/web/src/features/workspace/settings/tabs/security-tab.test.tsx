@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { FactorRow, SecurityTabView, totpQrSrc } from './security-tab';
+import { FactorRow, SecurityTabView, formatSecret, totpQrSrc } from './security-tab';
 
 const headings = (html: string): string[] =>
   [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
@@ -166,7 +166,7 @@ describe('totpQrSrc', () => {
 });
 
 describe('FactorRow', () => {
-  test('verified authenticator renders name, type, and verified badge', () => {
+  test('verified authenticator renders name and type, with no status badge', () => {
     const factorHtml = renderToStaticMarkup(
       <FactorRow
         factor={{ id: 'f1', friendly_name: 'My phone', factor_type: 'totp', status: 'verified' }}
@@ -174,7 +174,8 @@ describe('FactorRow', () => {
       />,
     );
     expect(factorHtml).toContain('My phone');
-    expect(factorHtml).toContain('verified');
+    expect(factorHtml).toContain('Authenticator app (TOTP)');
+    expect(factorHtml).not.toContain('>verified<');
     expect(factorHtml).toContain('Remove factor');
   });
 
@@ -187,5 +188,27 @@ describe('FactorRow', () => {
     );
     expect(factorHtml).toContain('Authenticator app');
     expect(factorHtml).toContain('unverified');
+  });
+});
+
+describe('formatSecret', () => {
+  test('groups a TOTP secret in fours', () => {
+    expect(formatSecret('JBSWY3DPEHPK3PXP')).toBe('JBSW Y3DP EHPK 3PXP');
+    expect(formatSecret('ABCDEF')).toBe('ABCD EF');
+    expect(formatSecret('GEMUX5K72V6OB2V2N3GNFH4O5U5NXCWS')).toBe(
+      'GEMU X5K7 2V6O B2V2\nN3GN FH4O 5U5N XCWS',
+    );
+  });
+});
+
+describe('two-factor row status', () => {
+  test('a verified factor shows the On status, never the old session badge', () => {
+    const out = renderToStaticMarkup(
+      <SecurityTabView
+        factors={[{ id: 'f1', friendly_name: 'My phone', factor_type: 'totp', status: 'verified' }]}
+      />,
+    );
+    expect(out).toContain('On · Asked at sign-in and before sensitive changes');
+    expect(out).not.toContain('Session verified');
   });
 });
