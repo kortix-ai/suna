@@ -1742,11 +1742,19 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const [workingTurnOnScreen, setWorkingTurnOnScreen] = useState(true);
   const workingTurnIdRef = useRef(workingTurnId);
   workingTurnIdRef.current = workingTurnId;
-  // A new working turn starts on screen; the next viewability event corrects it.
-  useEffect(() => setWorkingTurnOnScreen(true), [workingTurnId]);
+  // The list reports only when the viewable SET changes, so a new working turn
+  // appended below the viewport fires no event: recompute from the last set.
+  // Before the first event the set is unknown and the turn counts as on screen.
+  const viewableKeysRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const keys = viewableKeysRef.current;
+    setWorkingTurnOnScreen(keys == null || workingTurnId == null || keys.has(workingTurnId));
+  }, [workingTurnId]);
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: { key: string }[] }) => {
+    const keys = new Set(viewableItems.map((v) => v.key));
+    viewableKeysRef.current = keys;
     const id = workingTurnIdRef.current;
-    setWorkingTurnOnScreen(id == null || viewableItems.some((v) => v.key === id));
+    setWorkingTurnOnScreen(id == null || keys.has(id));
   }).current;
 
   const renderTurn = useCallback(

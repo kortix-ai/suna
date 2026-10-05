@@ -1407,6 +1407,22 @@ describe('SessionPage render work', () => {
     expect(working().onScreen).toBe(true);
   });
 
+  test('a new working turn below the viewport stays paused without a new viewability event', async () => {
+    const first = userMsg('one');
+    seedRows([first, assistantMsg('done', first.info.id)]);
+    await renderPage();
+    await act(async () => listProps.onViewableItemsChanged({ viewableItems: [{ key: first.info.id }] }));
+    const next = userMsg('two');
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await act(async () => {
+      appendMessages([next, assistantMsg('partial', next.info.id)]);
+      await sleep(15);
+    });
+    const working = turnProps.findLast((p) => p.isWorkingTurn);
+    expect(working.turn.userMessage.info.id).toBe(next.info.id);
+    expect(working.onScreen).toBe(false);
+  });
+
   test('a stream delta and a new runtime object keep renderItem and Stop, and a stranded prompt stays interrupted', async () => {
     const user = userMsg('one');
     const reply = assistantMsg('partial', user.info.id);
