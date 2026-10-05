@@ -755,11 +755,6 @@
       "count": 1
     }
   },
-  "src/connectors/manifest-crud.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    }
-  },
   "src/connectors/notify-session.ts": {
     "no-console": {
       "count": 2
@@ -807,9 +802,6 @@
     }
   },
   "src/connectors/sync.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 3
     }
