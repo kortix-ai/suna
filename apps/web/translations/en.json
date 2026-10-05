@@ -20689,6 +20689,7 @@
         "getDesktop": "Get the Kortix desktop app"
       },
       "saveRange": "Save range",
+      "trackLabel": "Moment on the timeline",
       "unknownApp": "Unknown app",
       "search": {
         "open": "Search",

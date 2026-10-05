@@ -20689,6 +20689,7 @@
         "getDesktop": "Kortix Desktop-App holen"
       },
       "saveRange": "Zeitraum speichern",
+      "trackLabel": "Moment auf der Zeitleiste",
       "unknownApp": "Unbekannte App",
       "search": {
         "open": "Suchen",

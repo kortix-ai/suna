@@ -20689,6 +20689,7 @@
         "getDesktop": "获取 Kortix 桌面应用"
       },
       "saveRange": "保存片段",
+      "trackLabel": "时间线上的时刻",
       "unknownApp": "未知应用",
       "search": {
         "open": "搜索",

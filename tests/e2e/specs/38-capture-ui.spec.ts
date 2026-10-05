@@ -43,7 +43,7 @@ async function anon<T>(
 }
 
 test.describe("38 — Capture UI", () => {
-  test("gates on the flag; a recorded day plays, searches, saves a range; devices and the policy read back", async ({
+  test("gates on the flag; the device timeline plays, jumps runs, searches, saves a range; the policy reads back", async ({
     page,
   }) => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
@@ -164,47 +164,66 @@ test.describe("38 — Capture UI", () => {
         )
         .toBe(day.expected.chunks);
 
-      // The sidebar entry opens the timeline on the newest recorded day, at its last moment.
+      // No sidebar entry even with the flag on: the timeline opens from its URL
+      // (the desktop app and the tray link here) on the device that recorded last, at its last moment.
       await page.goto(`/projects/${projectId}`, {
         waitUntil: "domcontentloaded",
       });
-      const nav = page.getByRole("link", { name: "Capture", exact: true });
-      await expect(nav).toBeVisible({ timeout: 60_000 });
+      await expect(
+        page.getByRole("link", { name: "Customize", exact: true }),
+      ).toBeVisible({ timeout: 60_000 });
+      await expect(
+        page.getByRole("link", { name: "Capture", exact: true }),
+      ).toHaveCount(0);
       const daysRead = page.waitForResponse(
         (r) =>
           r.url().includes(`/v1/projects/${projectId}/capture/days?tz=`) &&
           r.status() === 200,
       );
-      await nav.click();
-      await expect(page).toHaveURL(
-        new RegExp(`/projects/${projectId}/capture$`),
-      );
+      await page.goto(`/projects/${projectId}/capture`, {
+        waitUntil: "domcontentloaded",
+      });
       await daysRead;
-      for (const tab of [
-        "Timeline",
-        "Ask",
-        "Ranges",
-        "Computers",
-        "People",
-        "Settings",
-      ]) {
-        await expect(
-          page.getByRole("tab", { name: tab, exact: true }),
-        ).toBeVisible();
-      }
+      await expect(page.getByRole("tab")).toHaveCount(0);
+      const picker = page.getByRole("button", { name: "Choose a computer" });
+      await expect(picker).toContainText("Fixture Computer", {
+        timeout: 30_000,
+      });
       const track = page.getByRole("slider", {
         name: "Moment on the timeline",
       });
       await expect(track).toBeVisible({ timeout: 30_000 });
-      expect(Number(await track.getAttribute("aria-valuenow"))).toBe(day.endMs);
-      await expect(page.locator("video")).toHaveCount(1);
+      await expect
+        .poll(async () => Number(await track.getAttribute("aria-valuenow")))
+        .toBe(day.endMs);
+      await expect(page.getByLabel(/^Screen recording of /)).toBeVisible({
+        timeout: 30_000,
+      });
 
-      // Search: one screen hit; picking it moves the moment and clears the search.
+      // Cmd/Ctrl+Left moves the playhead back to the start of the app run under it.
+      await track.focus();
+      await page.keyboard.press("ControlOrMeta+ArrowLeft");
+      await expect
+        .poll(async () => Number(await track.getAttribute("aria-valuenow")))
+        .toBeLessThan(day.endMs);
+
+      // The device picker lists the computer with its live status.
+      await picker.click();
+      const row = page
+        .getByRole("list", { name: "Computers" })
+        .getByRole("listitem")
+        .filter({ hasText: "Fixture Computer" });
+      await expect(row).toBeVisible();
+      await expect(row).toContainText("Recording");
+      await page.keyboard.press("Escape");
+
+      // Search ("/"): one screen hit; picking it moves the playhead and closes the panel.
+      await page.keyboard.press("/");
       const searched = page.waitForResponse((r) =>
         r.url().includes("/capture/search?q=%22incident+review%22"),
       );
       await page
-        .getByRole("textbox", { name: "Search the timeline" })
+        .getByRole("textbox", { name: "Search recordings" })
         .fill('"incident review"');
       expect((await searched).status()).toBe(200);
       const hit = page
@@ -213,11 +232,14 @@ test.describe("38 — Capture UI", () => {
         .first();
       await expect(hit).toContainText("Editor");
       await hit.click();
-      await expect(track).toBeVisible();
+      await expect(
+        page.getByRole("list", { name: "Search results" }),
+      ).toHaveCount(0);
       await expect(page).toHaveURL(/at=/);
 
-      // Save range: the POST carries the span, and the range page opens with its three tabs.
-      await page.getByRole("button", { name: "Save range" }).click();
+      // More → Save range: the POST carries the span, and the range page opens with its three tabs.
+      await page.getByRole("button", { name: "More", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Save range" }).click();
       await page.getByLabel("Name").fill("Incident review");
       const saved = page.waitForResponse(
         (r) =>
@@ -239,14 +261,14 @@ test.describe("38 — Capture UI", () => {
       for (const tab of ["Steps", "Transcript", "Summary"])
         await expect(page.getByRole("tab", { name: tab })).toBeVisible();
 
-      // Computers: one row, live.
-      await page.getByRole("tab", { name: "Computers", exact: true }).click();
-      const row = page.getByRole("row", { name: /Fixture Computer/ });
-      await expect(row).toBeVisible();
-      await expect(row).toContainText("Recording");
-
-      // Settings: turning audio off writes the policy and reads back.
-      await page.getByRole("tab", { name: "Settings", exact: true }).click();
+      // Back to the timeline, then More → Settings: turning audio off writes the policy and reads back.
+      await page.getByRole("link", { name: "Timeline" }).click();
+      await expect(track).toBeVisible({ timeout: 30_000 });
+      await page.getByRole("button", { name: "More", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Settings" }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/projects/${projectId}/capture/settings`),
+      );
       await page.getByRole("switch", { name: "Audio" }).click();
       const put = page.waitForResponse(
         (r) =>

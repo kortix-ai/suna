@@ -728,7 +728,18 @@ export function TimelineView({ projectId }: { projectId: string }) {
               </Button>
             </div>
           </div>
-          <div onPointerDown={interact}>
+          {/* ←/→ and Cmd/Ctrl+←/→ reach the window's key handler; the slider exposes the playhead. */}
+          <div
+            role="slider"
+            tabIndex={0}
+            aria-label={t('trackLabel')}
+            aria-valuemin={bounds?.first}
+            aria-valuemax={bounds?.last}
+            aria-valuenow={Math.round(view.T)}
+            aria-valuetext={new Date(view.T).toLocaleString(locale)}
+            className="focus-visible:ring-ring rounded-sm outline-none focus-visible:ring-2"
+            onPointerDown={interact}
+          >
             <TrackCanvas
               scrubber={scrubber}
               runs={runs}
@@ -739,9 +750,6 @@ export function TimelineView({ projectId }: { projectId: string }) {
               onWidth={setTrackW}
             />
           </div>
-          <p className="sr-only" aria-live="polite">
-            {new Date(view.T).toLocaleString(locale)}
-          </p>
         </footer>
 
         {searchOpen && deviceId ? (
