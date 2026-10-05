@@ -233,7 +233,7 @@ function Workflow({
             <ol>
               {w.steps.map((step) => (
                 <li key={step.index} className="flex gap-3 border-t px-4 py-3">
-                  <span className="text-muted-foreground w-5 shrink-0 pt-0.5 font-mono text-xs tabular-nums">
+                  <span className="text-muted-foreground w-5 shrink-0 pt-0.5 text-xs tabular-nums">
                     {step.index}
                   </span>
                   <div className="min-w-0 flex-1 space-y-1">
@@ -266,9 +266,7 @@ function Workflow({
                     ) : null}
                   </div>
                   {step.app ? (
-                    <Badge variant="muted" size="sm" className="h-fit shrink-0 normal-case">
-                      {step.app}
-                    </Badge>
+                    <span className="text-muted-foreground shrink-0 text-xs">{step.app}</span>
                   ) : null}
                 </li>
               ))}
@@ -290,7 +288,7 @@ function Workflow({
                   <span className="text-foreground text-sm font-medium">
                     {v.key} · {v.name}
                   </span>
-                  <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                  <span className="text-muted-foreground text-xs tabular-nums">
                     {percent(v.share)}
                   </span>
                 </div>
@@ -368,12 +366,14 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 px-4 py-3">
       <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="text-foreground truncate text-base font-medium tabular-nums">{value}</dd>
+      <dd className="text-foreground text-base font-medium text-pretty tabular-nums">{value}</dd>
     </div>
   );
 }
 
-/** Every run of the workflow; each opens its device timeline at the run's start. */
+const RUNS_PAGE = 20;
+
+/** Every run of the workflow, newest first, 20 at a time; each opens its device timeline at the run's start. */
 function RunsSection({
   accountId,
   workflow,
@@ -395,7 +395,9 @@ function RunsSection({
   });
   const devices = useCaptureDevices(accountId, { scope: 'account' });
   const deviceById = new Map((devices.data?.devices ?? []).map((d) => [d.device_id, d]));
-  const rows = episodes.data?.episodes ?? [];
+  const all = episodes.data?.episodes ?? [];
+  const [shown, setShown] = useState(RUNS_PAGE);
+  const rows = all.slice(0, shown);
   const grid =
     'grid grid-cols-[minmax(10rem,1fr)_minmax(8rem,10rem)_9rem_5rem_minmax(7rem,1fr)_minmax(8rem,1fr)_8rem] items-center gap-4';
   return (
@@ -417,7 +419,7 @@ function RunsSection({
             <Skeleton key={i} className="h-9 rounded-md" />
           ))}
         </div>
-      ) : rows.length === 0 ? (
+      ) : all.length === 0 ? (
         <div className="border-t px-4 py-8">
           <EmptyState size="sm" title={t('noRuns')} />
         </div>
@@ -451,7 +453,7 @@ function RunsSection({
                     <span className="text-muted-foreground truncate">
                       {device ? deviceName(device, tDevices('unnamed')) : '–'}
                     </span>
-                    <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                    <span className="text-muted-foreground text-xs tabular-nums">
                       {new Date(ep.start_at).toLocaleString(locale, {
                         day: 'numeric',
                         month: 'short',
@@ -459,9 +461,7 @@ function RunsSection({
                         minute: '2-digit',
                       })}
                     </span>
-                    <span className="font-mono text-xs tabular-nums">
-                      {duration(ep.duration_s)}
-                    </span>
+                    <span className="text-xs tabular-nums">{duration(ep.duration_s)}</span>
                     <span className="truncate">{variantName(ep.variant_key)}</span>
                     <span className="text-muted-foreground truncate text-xs">
                       {ep.outcome ?? '–'}
@@ -487,6 +487,13 @@ function RunsSection({
               })}
             </ul>
           </div>
+          {all.length > shown ? (
+            <div className="border-t px-4 py-2.5">
+              <Button variant="ghost" size="sm" onClick={() => setShown((n) => n + RUNS_PAGE)}>
+                {t('moreRuns', { count: Math.min(RUNS_PAGE, all.length - shown) })}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </section>

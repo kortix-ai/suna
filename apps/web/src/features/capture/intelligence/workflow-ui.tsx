@@ -5,6 +5,7 @@ import type { CaptureWorkflowStatus } from '@kortix/sdk';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 
 /** `7 m 40 s`, `26 m`, `1 h 5 m`: one run's length. */
 export function useRunDuration() {
@@ -64,7 +65,7 @@ export function ShareBar({
   return (
     <span
       aria-hidden
-      className={`bg-muted flex h-1.5 min-w-12 flex-1 overflow-hidden rounded-full ${className ?? ''}`}
+      className={cn('bg-muted flex h-1.5 min-w-12 flex-1 overflow-hidden rounded-full', className)}
     >
       <span className="bg-foreground rounded-full" style={{ width: `${width}%` }} />
     </span>

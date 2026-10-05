@@ -19,7 +19,7 @@ export function FrameStage({
   children,
 }: {
   /** Shown when the browser cannot play the chunk (a broken or unsupported file). */
-  failedLabel: string;
+  failedLabel: string | null;
   /** The chunk's signed video URL; null shows only `children`. */
   src: string | null;
   /** Seek position in the chunk's video. */
@@ -100,7 +100,7 @@ export function FrameStage({
           }
         />
       ))}
-      {src && failed === base(src) ? (
+      {failedLabel && src && failed === base(src) ? (
         <p className="text-muted-foreground absolute top-1/2 left-1/2 z-10 max-w-sm -translate-x-1/2 -translate-y-1/2 px-6 text-center text-sm text-balance">
           {failedLabel}
         </p>
