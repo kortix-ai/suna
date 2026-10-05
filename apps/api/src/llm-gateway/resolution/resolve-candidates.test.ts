@@ -690,8 +690,17 @@ describe('resolveCandidates — codex + unknown provider', () => {
     pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 414_374, secrets: [] };
     const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
     expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined });
-    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 4 days.');
+    // 414374 s is 4.8 days: rounded, not floored.
+    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 5 days.');
     expect(refusal.suggestion).toBe('Choose another model, or connect another ChatGPT account.');
+  });
+
+  // Dev showed "resets in 3 days" for a rest of 4 days less a few seconds.
+  test('a rest just under a whole number of days reads as that number', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 4 * 86_400 - 30, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 4 days.');
   });
 
   test('every shared ChatGPT account resting for hours names the hours', async () => {
