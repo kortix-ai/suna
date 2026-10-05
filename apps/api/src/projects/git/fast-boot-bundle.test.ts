@@ -2,9 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { buildProjectSeedFiles } from '../seed-files';
 import { resolveCommitShaAt } from './commits';
 import {
   buildScaffoldDeltaBundle,
