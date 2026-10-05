@@ -300,9 +300,7 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
  * - `mine`: the machines the caller paired, where this machine cannot pair in
  *   one click (a browser, or a desktop build without the agent). The dot is
  *   online when any of them is.
- * - `connect`: the connect dialog, in a browser with nothing to show yet.
- *   The desktop app opens `this` even unpaired: it connects there in one
- *   click, and My Capture lives there too.
+ * - `connect`: the connect dialog, when there is nothing to show yet.
  */
 export function yourComputerMenu({
   tunnelId,
@@ -316,8 +314,6 @@ export function yourComputerMenu({
   owned: readonly { isLive: boolean }[];
 }): { dialog: 'this' | 'mine' | 'connect'; dot: ComputerState | null } {
   if (tunnelId) return { dialog: 'this', dot: state ?? null };
-  // The desktop app: "Your computer" connects this machine in one click and holds My Capture.
-  if (oneClickHere) return { dialog: 'this', dot: null };
   if (!oneClickHere && owned.length > 0) {
     return { dialog: 'mine', dot: owned.some((machine) => machine.isLive) ? 'online' : 'offline' };
   }
@@ -365,7 +361,7 @@ export function ComputerGlyph({ className }: { className?: string }) {
   );
 }
 
-export const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Icon }[] = [
+const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Icon }[] = [
   { key: 'filesystem', icon: FolderIcon },
   { key: 'shell', icon: TerminalWindowIcon },
   { key: 'desktop', icon: CursorClickIcon },

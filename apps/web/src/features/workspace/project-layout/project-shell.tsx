@@ -18,7 +18,6 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useCustomizePrefetch } from '@/features/workspace/capabilities/shared/use-customize-prefetch';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
-import { ComputerHubHost } from '@/features/tunnel/local-computer-modal';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import { SessionRouteCache } from '@/features/workspace/project-layout/session-route-cache';
@@ -261,10 +260,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         </div>
 
         <SettingsPanel projectId={projectId} />
-
-        {/* "Your computer": the desktop app's hub for this computer (agent access, My Capture).
-            Closed until a desktop event opens it. */}
-        <ComputerHubHost projectId={projectId} />
 
         <Suspense fallback={null}>
           <PresentationViewerWrapper />

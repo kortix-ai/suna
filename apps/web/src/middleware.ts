@@ -188,6 +188,9 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/oauth',
   '/checkout',
   '/tunnel',
+  // Kortix Capture's own area (`/capture/[accountId]/…`), opened by the app
+  // menu's "Kortix Capture…" and its menu bar item.
+  '/capture',
   '/github',
   '/cli',
   '/marketplace',

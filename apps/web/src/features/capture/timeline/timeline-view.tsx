@@ -765,7 +765,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
         />
       ) : null}
       {desktop.data?.available ? (
-        <CaptureDialog projectId={projectId} open={recordOpen} onOpenChange={setRecordOpen} />
+        <CaptureDialog open={recordOpen} onOpenChange={setRecordOpen} />
       ) : null}
     </div>
   );

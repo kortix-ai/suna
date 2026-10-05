@@ -5,10 +5,10 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { ComputerRow, ComputerSection, GrantState } from '@/features/tunnel/computer-rows';
 import { useTranslations } from '@/i18n/use-translations';
 import type { DesktopCaptureStatus } from '@/lib/desktop';
 
+import { CaptureRow, CaptureRowSection, GrantState } from './capture-rows';
 import { missingGrants, type CaptureGrant } from './capture-state';
 
 const ICONS: Record<CaptureGrant, Icon> = {
@@ -44,7 +44,7 @@ export function CapturePermissions({
   if (shown.length === 0) return null;
 
   return (
-    <ComputerSection
+    <CaptureRowSection
       title={t('title')}
       action={
         missing.length > 0 ? (
@@ -66,7 +66,7 @@ export function CapturePermissions({
       {shown.map((grant) => {
         const allowed = !missing.includes(grant);
         return (
-          <ComputerRow
+          <CaptureRow
             key={grant}
             icon={ICONS[grant]}
             title={t(grant)}
@@ -75,6 +75,6 @@ export function CapturePermissions({
           />
         );
       })}
-    </ComputerSection>
+    </CaptureRowSection>
   );
 }

@@ -446,8 +446,7 @@ export interface DesktopCaptureStatus {
   /** The account's policy; a layer set to false is off whatever the person chose. */
   policy?: { layers: Record<DesktopCaptureLayer, boolean>; notice: string; paused: boolean } | null;
   pausedUntilMs?: number | null;
-  /** macOS grants Kortix holds for Capture; null elsewhere. */
-  /** `inputMonitoring` only from engines that report it (the action recorder's listener). */
+  /** macOS grants Kortix holds for Capture; null elsewhere. `inputMonitoring` only from engines that report it. */
   permissions?: (Record<'screen' | 'accessibility' | 'microphone', boolean> & { inputMonitoring?: boolean }) | null;
   sync?: { state: string; pending: number; lastUploadMs: number | null; error: string | null };
 }
@@ -484,8 +483,8 @@ export const desktopCaptureOpenLogs = () => desktopAction<null>('capture_open_lo
 /** Removes the Capture service and forgets the device token on this computer. */
 export const desktopCaptureSignOut = () => desktopAction<DesktopCaptureStatus>('capture_sign_out');
 
-/** The desktop app's tray ("Capture…") asks the page to open the Capture dialog. */
-export const DESKTOP_CAPTURE_SETTINGS_COMMAND = 'capture-settings';
+/** The desktop app's menu ("Capture…") and Capture's tray ask the page to open Capture's "This computer". */
+export const DESKTOP_CAPTURE_OPEN_COMMAND = 'capture-open';
 
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and

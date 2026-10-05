@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  BatteryChargingIcon,
   CaretRightIcon,
   CursorClickIcon,
   DotsThreeIcon,
@@ -9,12 +8,13 @@ import {
   HandPalmIcon,
   MonitorIcon,
   PlusIcon,
+  ScrollIcon,
   WarningIcon,
   type Icon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -39,10 +38,11 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsList, TabsListCompact, TabsTrigger, TabsTriggerCompact } from '@/components/ui/tabs';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { CaptureSection, useMyCapture } from '@/features/capture/desktop/capture-section';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   useDeleteTunnelConnection,
@@ -51,7 +51,6 @@ import {
 } from '@/hooks/tunnel/use-tunnel';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
-  DESKTOP_CAPTURE_SETTINGS_COMMAND,
   desktopComputerAccessGet,
   desktopComputerAccessSet,
   desktopComputerDisconnect,
@@ -62,10 +61,9 @@ import {
   desktopComputerResume,
 } from '@/lib/desktop';
 import { relativeTime } from '@/lib/relative-time';
-
+import { cn } from '@/lib/utils';
 import {
-  CAPABILITIES,
-  COMPUTER_SETUP_EVENT,
+  ComputerCapabilities,
   computerDisplayName,
   ComputerGlyph,
   ComputerStateDot,
@@ -78,7 +76,6 @@ import {
   useThisComputerState,
   type ComputerState,
 } from './computer-connect';
-import { ComputerRow, ComputerSection, GrantState, StatusDot } from './computer-rows';
 
 const DESKTOP_ACCESS_KEY = ['desktop-computer-access'] as const;
 const DESKTOP_GRANTS_KEY = ['desktop-computer-grants'] as const;
@@ -97,170 +94,47 @@ export function activeGrant(access: Pick<ComputerAccess, 'mode' | 'grantedUntil'
 
 const clock = (date: Date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-export type ComputerHubTab = 'agents' | 'capture';
-
-const OPEN_COMPUTER_HUB_EVENT = 'kortix:open-computer-hub';
-
-/** Opens "Your computer" at a section. The project shell's `ComputerHubHost` owns the dialog. */
-export function openComputerHub(tab: ComputerHubTab = 'agents') {
-  window.dispatchEvent(new CustomEvent<ComputerHubTab>(OPEN_COMPUTER_HUB_EVENT, { detail: tab }));
-}
-
 /**
- * The one "Your computer" dialog of a project window, mounted by the project
- * shell so it opens whether or not the sidebar is on screen (a narrow window
- * keeps the sidebar closed). Opened by the workspace menu, by the tray's
- * Capture "Settings…" (a desktop command), and right after this computer
- * pairs (`COMPUTER_SETUP_EVENT`).
- */
-export function ComputerHubHost({ projectId }: { projectId: string }) {
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<ComputerHubTab>('agents');
-  useEffect(() => {
-    const show = (next: ComputerHubTab) => {
-      setTab(next);
-      setOpen(true);
-    };
-    const onOpen = (event: Event) => show((event as CustomEvent<ComputerHubTab>).detail ?? 'agents');
-    const onSetup = () => show('agents');
-    const onCommand = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === DESKTOP_CAPTURE_SETTINGS_COMMAND) show('capture');
-    };
-    window.addEventListener(OPEN_COMPUTER_HUB_EVENT, onOpen);
-    window.addEventListener(COMPUTER_SETUP_EVENT, onSetup);
-    window.addEventListener('kortix-desktop-command', onCommand);
-    return () => {
-      window.removeEventListener(OPEN_COMPUTER_HUB_EVENT, onOpen);
-      window.removeEventListener(COMPUTER_SETUP_EVENT, onSetup);
-      window.removeEventListener('kortix-desktop-command', onCommand);
-    };
-  }, []);
-  // The content mounts on open, so each open starts at `tab`.
-  return <LocalComputerModal projectId={projectId} open={open} onOpenChange={setOpen} initialTab={tab} />;
-}
-
-/**
- * "Your computer" (desktop app only): one place for this computer, with two
- * independent sections under one header.
- *
- * - Agent access: the computer agent (the tunnel). Pairing, when Kortix may
- *   use it, what it may use, its background service.
- * - My Capture: Kortix Capture on this computer, recording into the current
- *   project. Shown only when this app bundles the engine and the project has
- *   its `capture` flag on.
- *
- * Tabs, not stacked sections: each section has its own primary action in
- * the footer, and the dialog must fit a 720 × 480 window. Turning one on never
- * touches the other.
+ * "Your computer" (desktop app only): this machine's pairing, when Kortix may
+ * use it (decided here, on the machine), what it may use, and its background
+ * service. It follows its owner into every project; sharing it with a project
+ * is the `computer` connector's Accounts tab, linked from the footer.
  */
 export function LocalComputerModal({
   projectId,
   open,
   onOpenChange,
-  initialTab = 'agents',
 }: {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialTab?: ComputerHubTab;
 }) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      {/* A column: on a short window only the body scrolls; header, tabs and footer stay.
-          No initial focus: it is opened by events too (the tray), and a focused
-          first control there reads as selected. */}
-      <ModalContent className="flex flex-col lg:max-w-lg" onOpenAutoFocus={(event) => event.preventDefault()}>
+      {/* A column: on a short window only the body scrolls; header and footer stay. */}
+      <ModalContent className="flex flex-col lg:max-w-lg">
         {open ? (
-          <ComputerHub projectId={projectId} initialTab={initialTab} onClose={() => onOpenChange(false)} />
+          <LocalComputerContent projectId={projectId} onClose={() => onOpenChange(false)} />
         ) : null}
       </ModalContent>
     </Modal>
   );
 }
 
-function ComputerHub({
-  projectId,
-  initialTab,
-  onClose,
-}: {
-  projectId: string;
-  initialTab: ComputerHubTab;
-  onClose: () => void;
-}) {
-  const t = useTranslations('computers');
-  const agent = useThisComputerState({ poll: true });
-  const capture = useMyCapture(projectId, { poll: true });
-  const [tab, setTab] = useState<ComputerHubTab>(initialTab);
-  const active: ComputerHubTab = capture.visible ? tab : 'agents';
-  const paired = Boolean(agent.tunnelId && agent.state);
-  // The machine's name once paired; until then "This computer", without the badge that says the same.
-  const machineName = paired ? computerDisplayName(agent.machine?.name, agent.machine?.machineInfo) : '';
-  const name = machineName || t('thisComputer');
-  const agentState: ComputerState | null = paired ? (agent.state ?? 'offline') : null;
-
+/** Glyph, name, and one status line. */
+function ComputerHeader({ name, status }: { name: string; status: ReactNode }) {
   return (
-    <>
-      <ModalHeader className="flex-row items-center gap-3 pr-12">
-        <ComputerGlyph />
-        <div className="min-w-0 space-y-0.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <ModalTitle className="truncate">{name}</ModalTitle>
-            {machineName ? (
-              <Badge variant="outline" size="xs" className="shrink-0">
-                {t('thisComputerBadge')}
-              </Badge>
-            ) : null}
-          </div>
-          <ModalDescription className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs">
-            <HeaderStatus
-              label={t('hub.agents')}
-              dot={agentState ? <ComputerStateDot state={agentState} /> : <StatusDot tone="idle" />}
-              word={agentState ? t(`state.${agentState}`) : t('notConnected')}
-            />
-            {capture.visible ? (
-              <>
-                <span aria-hidden>·</span>
-                <HeaderStatus label={t('hub.capture')} dot={<StatusDot tone={capture.tone} />} word={capture.word} />
-              </>
-            ) : null}
-          </ModalDescription>
-        </div>
-      </ModalHeader>
-
-      {capture.visible ? (
-        <Tabs value={active} onValueChange={(next) => setTab(next as ComputerHubTab)} className="px-5">
-          <TabsList type="underline" className="w-full justify-start gap-5">
-            <TabsTrigger value="agents" className="w-fit flex-none px-0">
-              {t('hub.tabAgents')}
-            </TabsTrigger>
-            <TabsTrigger value="capture" className="w-fit flex-none px-0">
-              {t('hub.tabCapture')}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      ) : null}
-
-      {active === 'capture' ? (
-        <CaptureSection projectId={projectId} onClose={onClose} />
-      ) : (
-        <AgentAccess projectId={projectId} onClose={onClose} />
-      )}
-    </>
+    <ModalHeader className="flex-row items-center gap-3 pr-12">
+      <ComputerGlyph />
+      <div className="min-w-0 space-y-0.5">
+        <ModalTitle className="truncate">{name}</ModalTitle>
+        <ModalDescription className="flex items-center gap-1.5 text-xs">{status}</ModalDescription>
+      </div>
+    </ModalHeader>
   );
 }
 
-function HeaderStatus({ label, dot, word }: { label: string; dot: ReactNode; word: string }) {
-  return (
-    <span className="flex shrink-0 items-center gap-1.5">
-      <span>{label}</span>
-      {dot}
-      <span className="text-foreground">{word}</span>
-    </span>
-  );
-}
-
-/** Agent access: the computer agent's pairing, access, capabilities and service. */
-function AgentAccess({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+function LocalComputerContent({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const t = useTranslations('computers');
   const locale = useLocale();
   const queryClient = useQueryClient();
@@ -313,19 +187,29 @@ function AgentAccess({ projectId, onClose }: { projectId: string; onClose: () =>
     onSettled: refreshStatus,
   });
 
+  const name = computerDisplayName(machine?.name, machine?.machineInfo) || t('thisComputer');
+
   if (desktop.isPending) {
     return (
-      <ModalBody>
-        <Loading className="size-4 shrink-0" />
-      </ModalBody>
+      <>
+        <ComputerHeader name={t('localComputerTitle')} status={t('state.connecting')} />
+        <ModalBody>
+          <Loading className="size-4 shrink-0" />
+        </ModalBody>
+      </>
     );
   }
 
   if (!status?.available) {
     return (
-      <ModalBody>
-        <p className="text-muted-foreground text-sm text-pretty">{status?.error || t('desktopUnavailable')}</p>
-      </ModalBody>
+      <>
+        <ComputerHeader name={t('localComputerTitle')} status={t('notConnected')} />
+        <ModalBody>
+          <p className="text-muted-foreground text-sm text-pretty">
+            {status?.error || t('desktopUnavailable')}
+          </p>
+        </ModalBody>
+      </>
     );
   }
 
@@ -334,124 +218,128 @@ function AgentAccess({ projectId, onClose }: { projectId: string; onClose: () =>
     const reconnect = state === 'needsReconnect';
     return (
       <>
-        <ModalBody className="min-h-0 space-y-5 overflow-y-auto">
-          {reconnect ? <InfoBanner tone="warning" icon={WarningIcon} title={t('needsReconnectHint')} /> : null}
-          <p className="text-muted-foreground text-sm text-pretty">{t('connectDescription')}</p>
-          <ComputerSection title={t('capabilitiesTitle')} hint={t('scopeLine')}>
-            {CAPABILITIES.map(({ key, icon }) => (
-              <ComputerRow
-                key={key}
-                icon={icon}
-                title={t(`capability.${key}`)}
-                description={t(`capability.${key}Description`)}
-              />
-            ))}
-          </ComputerSection>
-        </ModalBody>
-        <ModalFooter className="border-t py-3">
-          <Button disabled={connect.isPending} onClick={() => connect.mutate({ reauth: stale || reconnect })}>
+        <ComputerHeader
+          name={reconnect ? name : t('localComputerTitle')}
+          status={reconnect ? <StatusText state="needsReconnect" /> : t('notConnected')}
+        />
+        <ModalBody className="space-y-5">
+          {reconnect ? (
+            <InfoBanner tone="warning" icon={WarningIcon} title={t('needsReconnectHint')} />
+          ) : null}
+          <section className="space-y-2">
+            <ComputerCapabilities />
+            <p className="text-muted-foreground text-xs text-pretty">{t('scopeLine')}</p>
+          </section>
+          <Button
+            className="w-full"
+            disabled={connect.isPending}
+            onClick={() => connect.mutate({ reauth: stale || reconnect })}
+          >
             {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            {connect.isPending ? t('connecting') : reconnect ? t('connectAgain') : t('connectThisComputer')}
+            {connect.isPending
+              ? t('connecting')
+              : reconnect
+                ? t('connectAgain')
+                : t('connectThisComputer')}
           </Button>
-        </ModalFooter>
+        </ModalBody>
       </>
     );
   }
 
-  const paused = state === 'paused';
   const lastSeen =
-    state === 'offline' && machine?.lastHeartbeatAt ? relativeTime(machine.lastHeartbeatAt, locale) : '';
+    state === 'offline' && machine?.lastHeartbeatAt
+      ? relativeTime(machine.lastHeartbeatAt, locale)
+      : '';
   const platform = platformName(machine?.machineInfo?.platform);
-  const needsSetup = capabilitiesNeedingSetup(grants.data?.missing);
-  const granted = machine?.capabilities ?? [];
-  const meta = [
-    lastSeen ? t('lastSeen', { time: lastSeen }) : '',
-    platform && state !== 'offline' ? platform : '',
-    user?.email ? t('pairedWith', { email: user.email }) : '',
-  ].filter(Boolean);
 
   return (
     <>
-      <ModalBody className="min-h-0 space-y-5 overflow-y-auto">
-        {paused ? <p className="text-muted-foreground text-sm text-pretty">{t('hub.pausedHint')}</p> : null}
+      <ComputerHeader
+        name={name}
+        status={
+          <>
+            <StatusText state={state ?? 'offline'} />
+            {lastSeen ? <span>· {t('lastSeen', { time: lastSeen })}</span> : null}
+            {platform && state !== 'offline' ? <span>· {platform}</span> : null}
+          </>
+        }
+      />
+      <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
         <ComputerSetup />
         {access.current?.mode === 'ask' && access.current.pendingRequest ? (
-          <AccessRequestBanner capability={access.current.pendingRequest.capability} update={access.update} />
+          <AccessRequestBanner
+            capability={access.current.pendingRequest.capability}
+            update={access.update}
+          />
         ) : null}
-        {access.current ? <AccessSection access={access.current} now={access.now} update={access.update} /> : null}
-        <ComputerSection title={t('capabilitiesTitle')} hint={t('capabilitiesHint')}>
-          {CAPABILITIES.map(({ key, icon }) => {
-            const allowed = granted.includes(key) && !needsSetup.includes(key);
-            const pending = granted.includes(key) && needsSetup.includes(key);
-            return (
-              <ComputerRow
-                key={key}
-                icon={icon}
-                title={t(`capability.${key}`)}
-                description={t(`capability.${key}Description`)}
-                trailing={
-                  <GrantState
-                    allowed={allowed}
-                    label={allowed ? t('capability.allowed') : pending ? t('capability.needsSetup') : t('capability.notAllowed')}
-                  />
-                }
-              />
-            );
-          })}
-        </ComputerSection>
-        {access.current?.keepAwakeSupported ? (
-          <ComputerSection title={t('hub.thisComputer')}>
-            <ComputerRow
-              icon={BatteryChargingIcon}
-              title={t('access.keepAwake')}
-              description={t('access.keepAwakeDescription')}
-              trailing={
-                <Switch
-                  checked={access.current.keepAwake}
-                  disabled={access.update.isPending}
-                  onCheckedChange={(keepAwake) => access.update.mutate({ keepAwake })}
-                  aria-label={t('access.keepAwake')}
-                />
-              }
+        {access.current ? (
+          <AccessSection access={access.current} now={access.now} update={access.update} />
+        ) : null}
+        <section className="space-y-2">
+          <Label>{t('capabilitiesTitle')}</Label>
+          <ComputerCapabilities
+            granted={machine?.capabilities ?? []}
+            needsSetup={capabilitiesNeedingSetup(grants.data?.missing)}
+          />
+          <p className="text-muted-foreground text-xs text-pretty">{t('capabilitiesHint')}</p>
+        </section>
+        <SettingsRowGroup>
+          <SettingsRow label={t('runInBackground')} description={t('runInBackgroundDescription')}>
+            <Switch
+              checked={state !== 'paused'}
+              disabled={toggleService.isPending}
+              onCheckedChange={(run) => toggleService.mutate(run)}
+              aria-label={t('runInBackground')}
             />
-          </ComputerSection>
+          </SettingsRow>
+          {access.current?.keepAwakeSupported ? (
+            <SettingsRow
+              label={t('access.keepAwake')}
+              description={t('access.keepAwakeDescription')}
+            >
+              <Switch
+                checked={access.current.keepAwake}
+                disabled={access.update.isPending}
+                onCheckedChange={(keepAwake) => access.update.mutate({ keepAwake })}
+                aria-label={t('access.keepAwake')}
+              />
+            </SettingsRow>
+          ) : null}
+        </SettingsRowGroup>
+        {user?.email ? (
+          <p className="text-muted-foreground text-xs">{t('pairedWith', { email: user.email })}</p>
         ) : null}
-        {meta.length > 0 ? <p className="text-muted-foreground text-xs text-pretty">{meta.join(' · ')}</p> : null}
       </ModalBody>
       <ModalFooter className="border-t py-3 sm:justify-between">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t('hub.more')}>
-              <DotsThreeIcon className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52">
-            <DropdownMenuItem
-              onSelect={() => void desktopComputerOpenLogs().catch((error: Error) => errorToast(error.message))}
+        <div className="flex w-full items-center gap-1 sm:w-auto">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-1.5"
+            onClick={() =>
+              void desktopComputerOpenLogs().catch((error: Error) => errorToast(error.message))
+            }
+          >
+            <ScrollIcon className="size-3.5 shrink-0" />
+            {t('showLogs')}
+          </Button>
+          <Button size="sm" variant="ghost" asChild>
+            <Link
+              href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(manageSlug)}`}
+              onClick={onClose}
             >
-              {t('showLogs')}
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link
-                href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(manageSlug)}`}
-                onClick={onClose}
-              >
-                {t('manageInProject')}
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDisconnect(true)}>
-              {t('disconnectEllipsis')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {t('manageInProject')}
+            </Link>
+          </Button>
+        </div>
         <Button
-          variant={paused ? 'default' : 'secondary'}
-          disabled={toggleService.isPending}
-          onClick={() => toggleService.mutate(paused)}
+          size="sm"
+          variant="ghost"
+          className="text-kortix-red hover:bg-kortix-red/15 hover:text-kortix-red w-full sm:w-auto"
+          onClick={() => setConfirmDisconnect(true)}
         >
-          {toggleService.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          {paused ? t('hub.resumeAccess') : t('hub.pauseAccess')}
+          {t('disconnectEllipsis')}
         </Button>
       </ModalFooter>
 
@@ -509,11 +397,11 @@ function useComputerGrants() {
 
 /**
  * Setup, right after connecting: every macOS permission the approved access
- * needs, asked for with one "Allow access", so no prompt interrupts an agent
- * later. Files need Desktop, Documents, and Downloads; Screen & keyboard needs
- * Accessibility and Screen Recording. All of them go to Kortix. Each row turns
- * "Allowed" as macOS answers; quiet once nothing is missing and nothing was
- * missing while the dialog was open.
+ * needs, asked for on the spot with one button, so no prompt interrupts an
+ * agent later. Files need Desktop, Documents, and Downloads; Screen & keyboard
+ * needs Accessibility and Screen Recording. All of them go to Kortix. Each row
+ * turns green as macOS answers; the desktop app restarts the agent once
+ * Screen & keyboard is ready.
  */
 function ComputerSetup() {
   const t = useTranslations('computers');
@@ -527,8 +415,8 @@ function ComputerSetup() {
     onSettled: () => void grants.refetch(),
   });
   const missing = grants.data?.missing ?? [];
-  // Every step that was missing while this dialog was open stays in view, so a
-  // step that turns "Allowed" stays. Adjusted during render.
+  // The steps shown: every one that was missing while this dialog was open, so
+  // a step that turns green stays in view. Adjusted during render.
   const [steps, setSteps] = useState<readonly SetupStep[]>([]);
   const added = missing.filter((step) => !steps.includes(step));
   if (added.length > 0) setSteps([...steps, ...added]);
@@ -536,36 +424,52 @@ function ComputerSetup() {
   const done = missing.length === 0;
 
   return (
-    <ComputerSection
-      title={done ? t('setup.doneTitle') : t('setup.title')}
-      action={
-        done ? null : (
-          <Button size="sm" disabled={request.isPending} onClick={() => request.mutate()}>
+    <section className="space-y-3 rounded-md border p-4">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">{done ? t('setup.doneTitle') : t('setup.title')}</p>
+        <p className="text-muted-foreground text-xs text-pretty">
+          {done ? t('setup.doneHint') : t('setup.hint')}
+        </p>
+      </div>
+      <ul className="divide-border divide-y">
+        {SETUP_STEPS.filter(({ key }) => steps.includes(key)).map(({ key, icon: StepIcon }) => {
+          const allowed = !missing.includes(key);
+          return (
+            <li key={key} className="flex items-center gap-3 py-2.5">
+              <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-sm">
+                <StepIcon className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="text-sm">{t(`setup.${key}`)}</p>
+                <p className="text-muted-foreground truncate text-xs">
+                  {t(`setup.${key}Description`)}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 text-xs',
+                  allowed ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
+                {allowed ? t('capability.allowed') : asked ? t('setup.waiting') : t('setup.needed')}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {done ? null : (
+        <div className="space-y-2">
+          <Button className="w-full" disabled={request.isPending} onClick={() => request.mutate()}>
             {request.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            {t('hub.allowAccess')}
+            {t('setup.allowAll')}
           </Button>
-        )
-      }
-      hint={done ? t('setup.doneHint') : asked ? t('setup.settingsHint') : t('setup.hint')}
-    >
-      {SETUP_STEPS.filter(({ key }) => steps.includes(key)).map(({ key, icon }) => {
-        const allowed = !missing.includes(key);
-        return (
-          <ComputerRow
-            key={key}
-            icon={icon}
-            title={t(`setup.${key}`)}
-            description={t(`setup.${key}Description`)}
-            trailing={
-              <GrantState
-                allowed={allowed}
-                label={allowed ? t('capability.allowed') : asked ? t('setup.waiting') : t('setup.needed')}
-              />
-            }
-          />
-        );
-      })}
-    </ComputerSection>
+          {asked ? (
+            <p className="text-muted-foreground text-xs text-pretty">{t('setup.settingsHint')}</p>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -603,13 +507,19 @@ function AccessRequestBanner({ capability, update }: { capability: string; updat
     <InfoBanner
       tone="info"
       icon={HandPalmIcon}
-      title={t(`access.request.${REQUEST_CAPABILITIES.includes(capability) ? capability : 'other'}`)}
+      title={t(
+        `access.request.${REQUEST_CAPABILITIES.includes(capability) ? capability : 'other'}`,
+      )}
     >
       <div className="space-y-2.5">
         <p>{t('access.requestHint')}</p>
         {/* Below the text, not beside it: the title needs the full width. */}
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={update.isPending} onClick={() => update.mutate({ grantMinutes: 60 })}>
+          <Button
+            size="sm"
+            disabled={update.isPending}
+            onClick={() => update.mutate({ grantMinutes: 60 })}
+          >
             {t('access.allowHour')}
           </Button>
           <Button
@@ -620,7 +530,12 @@ function AccessRequestBanner({ capability, update }: { capability: string; updat
           >
             {t('access.allowDay')}
           </Button>
-          <Button size="sm" variant="ghost" disabled={update.isPending} onClick={() => update.mutate({ deny: true })}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={update.isPending}
+            onClick={() => update.mutate({ deny: true })}
+          >
             {t('access.deny')}
           </Button>
         </div>
@@ -630,7 +545,15 @@ function AccessRequestBanner({ capability, update }: { capability: string; updat
 }
 
 /** Ask each time · Always · Off, and one line that says what that means now. */
-function AccessSection({ access, now, update }: { access: ComputerAccess; now: number; update: AccessUpdate }) {
+function AccessSection({
+  access,
+  now,
+  update,
+}: {
+  access: ComputerAccess;
+  now: number;
+  update: AccessUpdate;
+}) {
   const t = useTranslations('computers');
   const grant = activeGrant(access, now);
   const denied =
@@ -638,8 +561,8 @@ function AccessSection({ access, now, update }: { access: ComputerAccess; now: n
       ? new Date(access.deniedUntil)
       : null;
   return (
-    <section className="space-y-1">
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Label>{t('access.title')}</Label>
         {/* `manual`: a click sends one change. The default also fires on the
             focus that follows the click, and "Always" asks the owner natively. */}
@@ -663,8 +586,15 @@ function AccessSection({ access, now, update }: { access: ComputerAccess; now: n
       <p className="text-muted-foreground flex min-h-7 flex-wrap items-center gap-x-2 text-xs">
         {grant ? (
           <>
-            <span className="text-foreground">{t('access.allowedUntil', { time: clock(grant) })}</span>
-            <Button size="xs" variant="ghost" disabled={update.isPending} onClick={() => update.mutate({ revoke: true })}>
+            <span className="text-foreground">
+              {t('access.allowedUntil', { time: clock(grant) })}
+            </span>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={update.isPending}
+              onClick={() => update.mutate({ revoke: true })}
+            >
               {t('access.revokeNow')}
             </Button>
           </>

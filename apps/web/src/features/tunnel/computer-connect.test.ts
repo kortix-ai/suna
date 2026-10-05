@@ -164,16 +164,15 @@ describe('yourComputerMenu', () => {
     });
   });
 
-  test('a browser with nothing paired opens the connect dialog', () => {
+  test('nothing paired, or a desktop that can pair itself, opens the connect dialog', () => {
     expect(yourComputerMenu({ oneClickHere: false, owned: [] })).toEqual({
       dialog: 'connect',
       dot: null,
     });
-  });
-
-  test('a desktop that can pair itself opens "Your computer" (Connect, and My Capture), with no dot', () => {
-    expect(yourComputerMenu({ oneClickHere: true, owned: [live] })).toEqual({ dialog: 'this', dot: null });
-    expect(yourComputerMenu({ oneClickHere: true, owned: [] })).toEqual({ dialog: 'this', dot: null });
+    expect(yourComputerMenu({ oneClickHere: true, owned: [live] })).toEqual({
+      dialog: 'connect',
+      dot: null,
+    });
   });
 });
 

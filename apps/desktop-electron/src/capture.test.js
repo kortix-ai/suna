@@ -375,32 +375,32 @@ describe('status and tray', () => {
     expect(capture.captureStatusFrom({ available: false, error: 'no engine' })).toEqual({ available: false, error: 'no engine' });
   });
 
-  test('tray section: none until set up; status, policy notice, pause, timeline, settings while recording', () => {
-    const actions = { pause() {}, resume() {}, timeline() {}, settings() {}, logs() {} };
-    expect(capture.captureTraySection({ available: true, signedIn: false, signInRequired: false }, actions)).toBeNull();
-    expect(capture.captureTraySection({ available: false }, actions)).toBeNull();
+  test('Capture\'s own tray: nothing until set up; status, notice, pause, Open Capture, logs', () => {
+    const actions = { pause() {}, resume() {}, open() {}, logs() {} };
+    expect(capture.captureTrayItems({ available: true, signedIn: false, signInRequired: false }, actions)).toEqual([]);
+    expect(capture.captureTrayItems({ available: false }, actions)).toEqual([]);
     const view = capture.captureStatusFrom({ available: true, desktop: { on: true, actions: true }, status, sync, children: running });
-    const section = capture.captureTraySection(view, actions);
-    expect(section).toMatchObject({ id: 'capture', title: 'Capture', keepsRunning: true, logs: actions.logs });
-    expect(section.items.map((i) => i.label)).toEqual([
-      'Recording · Screen, Actions',
-      'Policy: Recorded for the support team',
-      'Pause for 1 hour',
-      'Open timeline',
-      'Settings…',
-    ]);
-    // No item repeats the section's name.
-    expect(section.items.filter((i) => /capture/i.test(i.label))).toEqual([]);
-    expect(capture.captureTraySection({ ...view, state: 'paused' }, actions).items.map((i) => i.label)).toContain('Resume');
+    const labels = (v) => capture.captureTrayItems(v, actions).filter((i) => i.type !== 'separator').map((i) => i.label);
+    expect(labels(view)).toEqual(['Recording · Screen, Actions', 'Notice: Recorded for the support team', 'Pause for 1 hour', 'Open Kortix Capture…', 'Show logs']);
+    expect(capture.captureTrayItems(view, actions).find((i) => i.id === 'capture-open').click).toBe(actions.open);
+    expect(capture.captureKeepsRunning(view)).toBe(true);
+    expect(labels({ ...view, state: 'paused' })).toContain('Resume recording');
     const refused = { ...view, signedIn: false, signInRequired: true, state: 'signInRequired' };
-    const again = capture.captureTraySection(refused, actions);
-    expect(again.items.map((i) => i.label)).toEqual(['Sign in again', 'Policy: Recorded for the support team', 'Sign in again…']);
-    expect(again.keepsRunning).toBe(false);
-    // Switched off, or stopped outside the app: nothing keeps running after Quit, no pause.
-    expect(capture.captureTraySection({ ...view, on: false, state: 'off' }, actions)).toMatchObject({ keepsRunning: false });
-    const stopped = capture.captureTraySection({ ...view, state: 'stopped' }, actions);
-    expect(stopped.keepsRunning).toBe(false);
-    expect(stopped.items.map((i) => i.label)).toEqual(['Stopped', 'Policy: Recorded for the support team', 'Settings…']);
+    expect(labels(refused)).toEqual(['Signed out', 'Notice: Recorded for the support team', 'Sign in again…', 'Show logs']);
+    expect(capture.captureKeepsRunning(refused)).toBe(false);
+    // Switched off, or stopped outside the app: nothing keeps recording after Quit, no pause.
+    expect(capture.captureKeepsRunning({ ...view, on: false, state: 'off' })).toBe(false);
+    expect(capture.captureKeepsRunning({ ...view, state: 'stopped' })).toBe(false);
+    expect(labels({ ...view, state: 'stopped' })).toEqual(['Stopped', 'Notice: Recorded for the support team', 'Open Kortix Capture…', 'Show logs']);
+  });
+
+  test('backendFromRuntimeConfig: the instance publishes its backend; https, or http on localhost only', () => {
+    const script = (url) => `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify({ BACKEND_URL: url })};`;
+    expect(capture.backendFromRuntimeConfig(script('https://api.example.test/v1/'), 'https://app.example.test')).toEqual({ ok: true, url: 'https://api.example.test/v1' });
+    expect(capture.backendFromRuntimeConfig(script('/v1'), 'http://localhost:3000')).toEqual({ ok: true, url: 'http://localhost:3000/v1' });
+    expect(capture.backendFromRuntimeConfig(script('http://api.example.test/v1'), 'https://app.example.test').ok).toBe(false);
+    expect(capture.backendFromRuntimeConfig(script('https://u:p@api.example.test/v1'), 'https://app.example.test').ok).toBe(false);
+    expect(capture.backendFromRuntimeConfig('', 'https://app.example.test').ok).toBe(false);
   });
 });
 

@@ -1,26 +1,49 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect } from 'react';
 
-import { DESKTOP_CAPTURE_SETTINGS_COMMAND } from '@/lib/desktop';
+import { DESKTOP_CAPTURE_OPEN_COMMAND, isDesktop } from '@/lib/desktop';
 
-/**
- * Opens "Your computer" at My Capture: the same event the desktop tray's
- * "Settings…" sends. The workspace menu owns that dialog.
- */
-export function openMyCapture() {
-  window.dispatchEvent(new CustomEvent('kortix-desktop-command', { detail: DESKTOP_CAPTURE_SETTINGS_COMMAND }));
+import { captureRoutes, useThisComputerAccountId } from './use-desktop-capture';
+
+/** Goes to "This computer" for the account this computer records for (or the selected one). */
+function useOpenThisComputer() {
+  const router = useRouter();
+  const accountId = useThisComputerAccountId();
+  return useCallback(() => {
+    if (accountId) router.push(captureRoutes.thisComputer(accountId));
+  }, [router, accountId]);
 }
 
 /**
- * "Record this computer" on the Capture pages: hands off to My Capture in
- * "Your computer" and closes at once.
+ * The desktop app's "Kortix Capture…" (app menu) and "Open Kortix Capture…"
+ * (its menu bar item) send `capture-open`; this navigates the window to
+ * "This computer". Mounted once for every app route (the (app) layout).
  */
-export function CaptureDialog({ open, onOpenChange }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CaptureDesktopHost() {
+  const open = useOpenThisComputer();
+  useEffect(() => {
+    if (!isDesktop()) return;
+    const onCommand = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === DESKTOP_CAPTURE_OPEN_COMMAND) open();
+    };
+    window.addEventListener('kortix-desktop-command', onCommand);
+    return () => window.removeEventListener('kortix-desktop-command', onCommand);
+  }, [open]);
+  return null;
+}
+
+/**
+ * "Record this computer" on the Capture pages: opens the "This computer" page
+ * and closes at once.
+ */
+export function CaptureDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const go = useOpenThisComputer();
   useEffect(() => {
     if (!open) return;
-    openMyCapture();
+    go();
     onOpenChange(false);
-  }, [open, onOpenChange]);
+  }, [open, go, onOpenChange]);
   return null;
 }

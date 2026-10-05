@@ -8,11 +8,11 @@ import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { cn } from '@/lib/utils';
 
 /**
- * The row grammar of "Your computer": every capability, layer, permission and
- * setting is one row (tile, title, one muted line, one trailing control), and
- * rows sit in flat titled sections. No box inside the dialog's box.
+ * The row grammar of Capture's "This computer": every layer and permission is
+ * one row (tile, title, one muted line, one trailing control), and rows sit in
+ * flat titled sections. No box inside the dialog's box.
  */
-export function ComputerSection({
+export function CaptureRowSection({
   title,
   action,
   hint,
@@ -37,7 +37,7 @@ export function ComputerSection({
   );
 }
 
-export function ComputerRow({
+export function CaptureRow({
   icon: RowIcon,
   title,
   description,
@@ -75,7 +75,7 @@ export function GrantState({ allowed, label }: { allowed: boolean; label: string
   );
 }
 
-/** The status dot of the header and the tabs. */
+/** The status dot of the header. */
 export type StatusTone = 'good' | 'attention' | 'bad' | 'idle';
 const TONE: Record<StatusTone, string> = {
   good: 'bg-kortix-green',

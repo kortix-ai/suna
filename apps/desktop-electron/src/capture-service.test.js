@@ -1,4 +1,4 @@
-// The Capture service: unit files per OS (the tunnel's drivers), the
+// The Capture service: unit files per OS (capture-os-service.js), the
 // desktop app's reconcile policy, and the service process itself, run as a
 // real child process against a fake engine (shell scripts).
 
@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const service = require('./capture-service');
 const capture = require('./capture');
-const drivers = require('../../../packages/agent-tunnel/src/agent/service-drivers');
+const drivers = require('./capture-os-service');
 
 const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), `capture-service-${name}-`));
 const opts = (home, platform) => ({
@@ -22,7 +22,7 @@ const opts = (home, platform) => ({
   home,
 });
 
-describe('unit files (the agent tunnel drivers, Capture label and logs)', () => {
+describe('unit files (Capture\'s own supervisors, label and logs)', () => {
   test('macOS: a valid LaunchAgent with its own label that runs the Kortix binary as Node', () => {
     const home = tmp('mac');
     const plist = service.control('render', opts(home, 'darwin'));
@@ -62,7 +62,33 @@ describe('unit files (the agent tunnel drivers, Capture label and logs)', () => 
     expect(xml).toContain('<LogonTrigger>');
   });
 
-  test('one service per library; the tunnel keeps its own label', () => {
+  test('pause keeps it stopped across logins (launchctl disable); resume enables and loads it', () => {
+    const home = tmp('pause');
+    const calls = [];
+    const original = drivers.supervisor.run;
+    drivers.supervisor.run = (command, args) => (calls.push([command, ...args].join(' ')), { ok: true, detail: '' });
+    try {
+      const label = service.servicePaths(path.join(home, 'lib'), home).label;
+      service.control('install', opts(home, 'darwin'));
+      calls.length = 0;
+      service.control('pause', opts(home, 'darwin'));
+      expect(calls.filter((c) => !c.includes('print'))).toEqual([expect.stringMatching(new RegExp(`^launchctl disable gui/\\d+/${label.replace(/\./g, '\\.')}$`)), expect.stringMatching(/^launchctl bootout /)]);
+      calls.length = 0;
+      service.control('resume', opts(home, 'darwin'));
+      expect(calls.filter((c) => !c.includes('print'))).toEqual([expect.stringMatching(/^launchctl enable /), expect.stringMatching(/^launchctl bootstrap /)]);
+    } finally {
+      drivers.supervisor.run = original;
+    }
+  });
+
+  test('Capture shares no module with the computer agent', () => {
+    for (const file of ['capture.js', 'capture-service.js', 'capture-host.js', 'capture-os-service.js', 'capture-tray.js']) {
+      const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
+      expect(source).not.toMatch(/require\(['"]\.\/computer(-tray)?['"]\)|agent-tunnel\/src/);
+    }
+  });
+
+  test('one service per library', () => {
     expect(service.servicePaths('/a').label).not.toBe(service.servicePaths('/b').label);
     expect(service.servicePaths('/a').label).toBe(service.servicePaths('/a/').label);
   });

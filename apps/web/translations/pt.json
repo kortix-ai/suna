@@ -20510,6 +20510,8 @@
       "notAllowed": "Não permitido",
       "needsSetup": "Requer configuração"
     },
+    "runInBackground": "Executar em segundo plano",
+    "runInBackgroundDescription": "Desligado pausa a conexão, mesmo depois de reiniciar.",
     "manageInProject": "Gerenciar no projeto",
     "disconnectEllipsis": "Desconectar…",
     "yourComputersTitle": "Seus computadores",
@@ -20532,6 +20534,7 @@
       "screenRecordingDescription": "Ver o que está na tela",
       "needed": "Ainda não permitido",
       "waiting": "Aguardando você",
+      "allowAll": "Permitir tudo",
       "settingsHint": "Se os Ajustes do Sistema abrirem, ative o Kortix na lista. Isto se atualiza sozinho.",
       "doneTitle": "Seu computador está pronto",
       "doneHint": "O Kortix tem todas as permissões necessárias. Agentes já podem usar este computador."
@@ -20544,18 +20547,6 @@
       "removeAll": "Remover todas",
       "confirmTitle": "Remover todas as conexões antigas?",
       "confirmDescription": "O Kortix as remove com suas contas de todos os projetos. Um computador que ainda use uma pode se conectar de novo."
-    },
-    "hub": {
-      "agents": "Agentes",
-      "capture": "Capture",
-      "tabAgents": "Acesso dos agentes",
-      "tabCapture": "Meu Capture",
-      "thisComputer": "Este computador",
-      "more": "Mais ações",
-      "allowAccess": "Permitir acesso",
-      "pauseAccess": "Pausar acesso",
-      "resumeAccess": "Retomar acesso",
-      "pausedHint": "Pausado. Os agentes não podem usar este computador até você retomar, mesmo após reiniciar."
     }
   },
   "messageFrom": {
@@ -20839,6 +20830,8 @@
       "tryAgain": "Tentar novamente"
     },
     "dialog": {
+      "product": "Kortix Capture",
+      "title": "Gravar este computador",
       "status": {
         "off": "Desativado",
         "turningOn": "Iniciando",
@@ -20847,15 +20840,15 @@
         "needsPermission": "Precisa de permissão",
         "paused": "Em pausa",
         "pausedUntil": "Em pausa até {time}",
-        "pausedByProject": "Pausado pelo projeto",
+        "pausedByOrg": "Pausado pela sua organização",
         "starting": "Iniciando",
         "recording": "Gravando",
         "unavailable": "Indisponível",
-        "projectOff": "Desativado neste projeto"
+        "captureOff": "Desativado para sua organização"
       },
       "unavailable": "Este app de desktop não inclui o Kortix Capture. Atualize o Kortix para a versão mais recente.",
-      "projectOff": "O Capture está desativado neste projeto. Quem gerencia o projeto pode ativá-lo em Configurações → Recursos experimentais.",
-      "intro": "Grava este computador em {project}, para que você e seus agentes possam pesquisar o que você fez. Você e quem gerencia o projeto podem ver.",
+      "orgOff": "O Kortix Capture não está ativado para {org}. Quem gerencia pode ativá-lo.",
+      "intro": "Grava este computador para {org}, para que você e seus agentes possam pesquisar o que você fez. Você e quem gerencia {org} podem ver.",
       "layersTitle": "O que é gravado",
       "layers": {
         "screen": "Tela",
@@ -20867,23 +20860,23 @@
       },
       "noLayers": "Nada é gravado: todas as camadas estão desativadas.",
       "turningOn": {
-        "progress": "Conectando este computador a {project}…",
+        "progress": "Conectando este computador a {org}…",
         "waitingOnPage": "Aprove o login na página que abriu no seu navegador."
       },
-      "layerOffByPolicy": "Desativado neste projeto",
-      "notice": "De quem gerencia {project}",
-      "otherProject": "Este computador grava em outro projeto agora. Iniciar aqui o move para este.",
+      "layerOffByPolicy": "Desativado para sua organização",
+      "notice": "De quem gerencia {org}",
+      "otherOrg": "Este computador grava agora para outra organização. Começar aqui o move para {org}.",
       "signInRequired": {
         "title": "A sessão deste computador foi encerrada",
-        "hint": "O Capture pode estar desativado no projeto, ou alguém removeu este computador. Entre de novo para gravar."
+        "hint": "O Kortix Capture pode estar desativado para sua organização, ou alguém removeu este computador. Entre novamente para gravar."
       },
       "error": {
-        "title": "O Capture parou",
+        "title": "O Kortix Capture parou",
         "fallback": "A gravação parou. Tente de novo ou abra os logs."
       },
       "permissions": {
         "title": "Permita que o Kortix grave",
-        "hint": "O macOS pede cada permissão uma vez. Elas vão para o Kortix, assim o Capture grava sem pedir de novo.",
+        "hint": "O macOS pede cada permissão uma vez. Elas vão para o Kortix, assim o Kortix Capture grava sem pedir de novo.",
         "needed": "Ainda não permitido",
         "waiting": "Aguardando você",
         "allowed": "Permitido",
@@ -20910,11 +20903,11 @@
         "more": "Mais ações",
         "showLogs": "Mostrar logs",
         "stop": "Parar de gravar",
-        "signOut": "Sair do Capture…"
+        "signOut": "Sair do Kortix Capture…"
       },
       "signOut": {
-        "title": "Sair do Capture?",
-        "description": "O Capture para neste computador, e este computador perde o acesso ao projeto. As gravações ficam no projeto. Para gravar de novo, comece a gravar de novo.",
+        "title": "Sair do Kortix Capture?",
+        "description": "O Kortix Capture para neste computador, e este computador perde o acesso a {org}. As gravações ficam em {org}. Para gravar de novo, comece a gravar novamente.",
         "confirm": "Sair"
       },
       "toast": {
@@ -20922,9 +20915,9 @@
         "stopped": "Gravação parada",
         "paused": "Gravação em pausa",
         "resumed": "Gravação retomada",
-        "signedOut": "Você saiu do Capture"
+        "signedOut": "Você saiu do Kortix Capture"
       },
-      "pausedByProjectHint": "Quem gerencia o projeto pausou a gravação. Ela volta quando a pausa for retirada."
+      "pausedByOrgHint": "Quem gerencia {org} pausou a gravação. Ela retoma quando a pausa for removida."
     }
   }
 }
