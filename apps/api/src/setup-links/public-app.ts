@@ -30,7 +30,8 @@ import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../shared/db';
-import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
+import { TokenBucketRateLimiter } from '../shared/rate-limit';
+import { enforceRateLimit } from '../middleware/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';

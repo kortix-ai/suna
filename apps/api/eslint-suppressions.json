@@ -2910,7 +2910,7 @@
       "count": 3
     }
   },
-  "src/shared/rate-limit.ts": {
+  "src/middleware/rate-limit.ts": {
     "no-console": {
       "count": 1
     }

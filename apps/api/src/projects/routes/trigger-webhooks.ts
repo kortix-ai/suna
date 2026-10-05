@@ -17,10 +17,7 @@ import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,
 } from '../lib/webhook-secret-policy';
-import {
-  consumeProjectWebhookManifestRefreshBudget,
-  createProjectWebhookRateLimitMiddleware,
-} from '../../shared/rate-limit';
+import { consumeProjectWebhookManifestRefreshBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 export function registerTriggerWebhooksRoutes(): void {

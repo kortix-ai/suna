@@ -17,7 +17,7 @@ import { hasDatabase } from '../shared/db';
 import { computeEtag, etagMatches } from '../shared/http-cache';
 import { readJsonObject } from '../shared/http-body';
 import { getPlatformRole } from '../shared/platform-roles';
-import { createDemoRequestRateLimitMiddleware } from '../shared/rate-limit';
+import { createDemoRequestRateLimitMiddleware } from '../middleware/rate-limit';
 
 // ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public

@@ -7,7 +7,7 @@ import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
 import { prefetchSandbox } from './prefetch';
-import { createSandboxProxyRateLimitMiddleware } from '../shared/rate-limit';
+import { createSandboxProxyRateLimitMiddleware } from '../middleware/rate-limit';
 import { makeOpenApiApp } from '../openapi';
 import type { Context, Next } from 'hono';
 
