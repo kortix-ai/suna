@@ -48,7 +48,7 @@ describe('the release instructions plugin', () => {
     const release = join(root, 'config', ID)
     mkdirSync(join(release, 'harnesses', 'opencode'), { recursive: true })
     const out = await runHook(join(release, 'harnesses', 'opencode'), [
-      'docs/RULES.md',
+      'rules/RULES.md',
       'rules/*.md',
       './AGENTS.md',
       '/tmp/kortix/config-release.md',
@@ -57,7 +57,7 @@ describe('the release instructions plugin', () => {
       '**/CONTRIBUTING.md',
     ])
     expect(out).toEqual([
-      join(release, 'docs/RULES.md'),
+      join(release, 'rules/RULES.md'),
       join(release, 'rules/*.md'),
       join(release, 'AGENTS.md'),
       '/tmp/kortix/config-release.md',
@@ -70,7 +70,7 @@ describe('the release instructions plugin', () => {
   test('off the release path (the working tree, the image default) nothing changes', async () => {
     const workspace = join(root, 'workspace', 'harnesses', 'opencode')
     mkdirSync(workspace, { recursive: true })
-    expect(await runHook(workspace, ['docs/RULES.md'])).toEqual(['docs/RULES.md'])
+    expect(await runHook(workspace, ['rules/RULES.md'])).toEqual(['rules/RULES.md'])
     expect(await runHook(workspace, undefined)).toBeUndefined()
   })
 })

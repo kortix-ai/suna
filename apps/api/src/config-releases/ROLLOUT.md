@@ -142,7 +142,7 @@ request. The store is a cache; the Git mirror is always the source of truth.
   directory (`/workspace`), not its config dir. While OpenCode serves a release,
   the platform plugin `kortix-release-instructions.js`
   (`harness/open-code/release-instructions.ts`) rewrites each relative entry to
-  the release root, so `"docs/RULES.md"` reads the base branch's file. URLs,
+  the release root, so `"rules/RULES.md"` reads the base branch's file. URLs,
   `~/`, absolute paths and globs in a directory part keep OpenCode's own
   resolution. The project's `AGENTS.md` is OpenCode's own lookup from
   `/workspace` and is not rewritten.
