@@ -198,9 +198,9 @@ export interface Usage {
   duration_ms?: number;
 }
 
-const emptyUsage = (): Usage => ({ requests: 0, prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 });
+export const emptyUsage = (): Usage => ({ requests: 0, prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 });
 
-interface Caller {
+export interface Caller {
   model: string;
   call<S extends z.ZodTypeAny>(schema: S, prompt: string, images: RangeInput['images'], usage: Usage): Promise<z.output<S>>;
 }

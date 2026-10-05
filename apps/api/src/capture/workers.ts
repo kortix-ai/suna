@@ -1,8 +1,9 @@
 /**
  * Kortix Capture background work.
  *
- * Every replica: the job handlers (`capture.ingest`, `capture.process`) run in
- * the shared job worker (shared/job-queue.ts).
+ * Every replica: the job handlers (`capture.ingest`, `capture.process`,
+ * `capture.episodes`, `capture.mine`, `capture.export`) run in the shared job
+ * worker (shared/job-queue.ts).
  *
  * Leader only (startCaptureWorkers):
  *   - events reader: long-polls the SQS queue of the bucket's `*.manifest.json`
@@ -13,7 +14,7 @@
  *     forgot it, or the device's retention removed it). Works on any S3 store,
  *     events or not; enqueue is idempotent, so the two readers never double-index;
  *   - maintenance: closes detected ranges after RANGE_GAP_MS of silence and
- *     queues their processing, keeps monthly partitions 3 months ahead, applies
+ *     queues their episodes (L1/L2), queues each account's nightly mining (L3), keeps monthly partitions 3 months ahead, applies
  *     remote retention, prunes expired sign-ins and finished jobs.
  */
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
@@ -29,6 +30,9 @@ import './exports';
 import { RANGE_GAP_MS, ingestManifest } from './ingest';
 import { readWorkspace } from './workspace';
 import { processRange } from './processing';
+import { CaptureBudgetExceeded } from './budget';
+import { EPISODES_QUEUE, traceRange } from './episodes';
+import { MINE_QUEUE, mineAccount } from './mining';
 import { captureRegion, captureStore, captureStoreConfigured, getCaptureObjectIfChanged } from './store';
 
 export const INGEST_QUEUE = 'capture.ingest';
@@ -40,6 +44,50 @@ registerJobHandler(INGEST_QUEUE, async (job) => {
 });
 // A range pipeline makes many model calls; give it a long claim.
 registerJobHandler(PROCESS_QUEUE, async (job) => processRange(String(job.payload.rangeId)), 30 * 60_000);
+
+// Episodes: one model call per chunk of a range; 8 at once per replica.
+registerJobHandler(
+  EPISODES_QUEUE,
+  async (job) => {
+    const rangeId = String(job.payload.rangeId);
+    try {
+      await traceRange(rangeId);
+    } catch (error) {
+      if (!(error instanceof CaptureBudgetExceeded)) throw error;
+      await enqueueJob(EPISODES_QUEUE, `${job.jobKey}:next-day`, job.payload, { runAt: nextUtcDay() });
+      return;
+    }
+    await enqueueMining(String(job.payload.accountId));
+  },
+  15 * 60_000,
+  8,
+);
+registerJobHandler(
+  MINE_QUEUE,
+  async (job) => {
+    try {
+      await mineAccount(String(job.payload.accountId));
+    } catch (error) {
+      if (!(error instanceof CaptureBudgetExceeded)) throw error;
+      await enqueueJob(MINE_QUEUE, `${job.jobKey}:next-day`, job.payload, { runAt: nextUtcDay() });
+    }
+  },
+  15 * 60_000,
+  1,
+);
+
+const nextUtcDay = () => new Date(Math.floor(Date.now() / 86_400_000 + 1) * 86_400_000 + 60_000);
+
+/** Queue tracing of one closed detected range. A new end time is a new run. */
+export function enqueueEpisodes(range: { rangeId: string; accountId: string; endAt: Date }, suffix = ''): Promise<boolean> {
+  return enqueueJob(EPISODES_QUEUE, `${range.rangeId}:${range.endAt.getTime()}${suffix}`, { rangeId: range.rangeId, accountId: range.accountId }, { maxAttempts: 3 });
+}
+
+/** Queue mining of an account, debounced: one run per 10-minute slot, at its end. */
+export function enqueueMining(accountId: string, slotMs = 10 * 60_000): Promise<boolean> {
+  const slot = Math.floor(Date.now() / slotMs) + 1;
+  return enqueueJob(MINE_QUEUE, `${accountId}:${slot}`, { accountId }, { runAt: new Date(slot * slotMs), maxAttempts: 3 });
+}
 
 export function enqueueManifest(key: string): Promise<boolean> {
   return enqueueJob(INGEST_QUEUE, key, { key });
@@ -223,7 +271,7 @@ async function receiveEvents(): Promise<void> {
 
 // ─── Maintenance ─────────────────────────────────────────────────────────────
 
-/** Close detected ranges silent for RANGE_GAP_MS and queue their processing. */
+/** Close detected ranges silent for RANGE_GAP_MS and queue their episodes. */
 export async function closeQuietRanges(): Promise<number> {
   const closed = await db
     .update(timelineRanges)
@@ -235,8 +283,8 @@ export async function closeQuietRanges(): Promise<number> {
         lt(timelineRanges.endAt, new Date(Date.now() - RANGE_GAP_MS)),
       ),
     )
-    .returning({ rangeId: timelineRanges.rangeId, endAt: timelineRanges.endAt });
-  for (const range of closed) await enqueueRangeProcessing(range);
+    .returning({ rangeId: timelineRanges.rangeId, accountId: timelineRanges.accountId, endAt: timelineRanges.endAt });
+  for (const range of closed) await enqueueEpisodes(range);
   return closed.length;
 }
 
@@ -279,6 +327,11 @@ async function maintenance(): Promise<void> {
   const today = utcDay(Date.now());
   if (lastPartitionDay !== today) {
     await db.execute(sql`SELECT kortix.capture_timeline_ensure_partitions((now() AT TIME ZONE 'UTC')::date, 3)`);
+    // Nightly mining of every account with episodes in the last day.
+    const active = await db.execute<{ account_id: string }>(
+      sql`SELECT DISTINCT account_id FROM kortix.capture_episodes WHERE updated_at > now() - interval '1 day'`,
+    );
+    for (const row of active) await enqueueJob(MINE_QUEUE, `${row.account_id}:nightly:${today}`, { accountId: row.account_id }, { maxAttempts: 3 });
     lastPartitionDay = today;
   }
   await closeQuietRanges();
