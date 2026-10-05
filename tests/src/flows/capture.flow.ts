@@ -19,6 +19,11 @@
  * calls are proved outside this profile: the session policy in
  * apps/api/src/capture/credentials.test.ts, the pipelines in
  * apps/api/src/__tests__/integration-capture.test.ts.
+ *
+ * CAP-4 covers the Capture Intelligence routes. The profile has no model, so the
+ * workflow it reviews, drafts and publishes is written as the miner writes it
+ * (one SQL insert); the model-made episodes and workflows are measured by the
+ * eval harness in apps/api/scripts/capture-intelligence/ against ground truth.
  */
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
@@ -58,6 +63,20 @@ const R = {
   range: `GET ${A}/ranges/:rangeId`,
   process: `POST ${A}/ranges/:rangeId/process`,
   people: `GET ${A}/people`,
+  overview: `GET ${A}/overview`,
+  workflows: `GET ${A}/workflows`,
+  workflow: `GET ${A}/workflows/:workflowId`,
+  review: `POST ${A}/workflows/:workflowId/review`,
+  skillDraft: `POST ${A}/workflows/:workflowId/skill-draft`,
+  skill: `POST ${A}/workflows/:workflowId/skill`,
+  episodes: `GET ${A}/episodes`,
+  episode: `GET ${A}/episodes/:episodeId`,
+  ask: `POST ${A}/ask`,
+  exportsCreate: `POST ${A}/exports`,
+  exportsList: `GET ${A}/exports`,
+  exportGet: `GET ${A}/exports/:exportId`,
+  run: `POST ${A}/intelligence/run`,
+  fileContent: 'GET /v1/projects/:projectId/files/content',
   meSearch: 'GET /v1/capture/me/search',
   meTimeline: 'GET /v1/capture/me/timeline',
   meFrame: 'GET /v1/capture/me/frames/:frameId',
@@ -509,3 +528,127 @@ flow(
   },
 );
 
+flow(
+  'CAP-4',
+  {
+    domain: 'capture',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [R.overview, R.workflows, R.workflow, R.review, R.skillDraft, R.skill, R.episodes, R.episode, R.ask, R.exportsCreate, R.exportsList, R.exportGet, R.run, R.saveRange, R.fileContent],
+  },
+  async (ctx) => {
+    const { team, member, day, asMember } = await ingestedWorld(ctx, 'cap4');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { accountId: team.id };
+    let episodeId = '';
+    let workflowId = '';
+
+    await ctx.step('overview and workflows are for Capture admins and viewers: the owner → 200 with zero workflows; the member → 403 capture_forbidden', async () => {
+      (await owner.get(path(R.overview), { params })).status(200).body().has('$.workflows.total', 0);
+      (await owner.get(path(R.workflows), { params })).status(200).body().has('$.counts.all', 0);
+      (await asMember.get(path(R.overview), { params })).status(403).body().has('$.code', 'capture_forbidden');
+      (await asMember.get(path(R.workflows), { params })).status(403).body().has('$.code', 'capture_forbidden');
+    });
+
+    await ctx.step('a saved range is a pinned episode: the member lists it (source saved, label = title, closed) and opens it with no steps; the owner sees it account-wide', async () => {
+      (await asMember.post(path(R.saveRange), { start_at: new Date(day.startMs).toISOString(), end_at: new Date(day.endMs).toISOString(), title: 'Quarterly close' }, { params })).status(201);
+      const mine = (await asMember.get(path(R.episodes), { params })).status(200).json<{ episodes: Array<{ episode_id: string; source: string; label: string; status: string; user_id: string }> }>().episodes;
+      const pinned = mine.find((e) => e.source === 'saved' && e.label === 'Quarterly close');
+      if (!pinned || pinned.status !== 'closed' || pinned.user_id !== member.userId) throw new Error(`pinned episode: ${JSON.stringify(mine).slice(0, 300)}`);
+      episodeId = pinned.episode_id;
+      (await asMember.get(path(R.episode), { params: { ...params, episodeId } })).status(200).body().has('$.episode_id', episodeId).has('$.steps', []);
+      const all = (await owner.get(path(R.episodes), { params, query: { scope: 'account' } })).status(200).json<{ episodes: Array<{ episode_id: string }> }>().episodes;
+      if (!all.some((e) => e.episode_id === episodeId)) throw new Error('the owner does not see the member episode account-wide');
+      (await asMember.get(path(R.episodes), { params, query: { scope: 'account' } })).status(403);
+    });
+
+    await ctx.step('run the pipelines: the member → 403; the owner → 202, mining queued (the open range has nothing to trace yet)', async () => {
+      (await asMember.post(path(R.run), {}, { params })).status(403);
+      (await owner.post(path(R.run), {}, { params })).status(202).body().has('$.episodes_queued', 0).has('$.mining_queued', true);
+      (await owner.post(path(R.run), { mining_only: true }, { params })).status(202).body().has('$.mining_queued', true);
+    });
+
+    await ctx.step('a mined workflow (as the miner writes it) lists with its stats; the detail has steps, variants and people; the member → 403', async () => {
+      const db = await openDb(ctx);
+      try {
+        const steps = [
+          { index: 1, verb: 'Open', object: 'expense report', app: 'Billing', params: null, variables: ['expense_id'], decision: null },
+          { index: 2, verb: 'Read', object: 'receipts', app: 'Billing', params: null, variables: [], decision: { question: 'a receipt is missing', variant: 'B', share: 0.25 } },
+          { index: 3, verb: 'Approve', object: 'expense report', app: 'Billing', params: 'Expenses', variables: ['expense_total'], decision: null },
+        ];
+        const variants = [
+          { key: 'A', name: 'Canonical path', runs: 6, share: 0.75, steps_count: 3, differs: [], note: 'The most common path.' },
+          { key: 'B', name: 'Missing receipt', runs: 2, share: 0.25, steps_count: 3, differs: [3], note: 'Rejects the report with a note.', question: 'a receipt is missing' },
+        ];
+        const row = await db.query<{ workflow_id: string }>(
+          `INSERT INTO kortix.capture_workflows (account_id, name, goal, outcome, signature, steps, variants, apps, runs_total, runs_per_week, duration_p50_s, duration_p90_s, people_count, success_rate, determinism, automation_hours_per_week, first_seen_at, last_seen_at, model)
+           VALUES ($1, 'Approve an expense report', 'Approve a colleague expense report after checking its receipts', 'The report is approved', 'open@billing read@billing approve@billing', $2, $3, '["Billing"]', 8, 4, 300, 420, 1, 1, 1, 0.33, now() - interval '7 days', now(), 'scripted') RETURNING workflow_id`,
+          [team.id, JSON.stringify(steps), JSON.stringify(variants)],
+        );
+        workflowId = row.rows[0]!.workflow_id;
+        await db.query(`UPDATE kortix.capture_episodes SET workflow_id = $1, variant_key = 'A' WHERE episode_id = $2`, [workflowId, episodeId]);
+      } finally {
+        await db.end();
+      }
+      (await owner.get(path(R.workflows), { params, query: { sort: 'hours' } })).status(200).body().has('$.counts.detected', 1).has('$.workflows[0].workflow_id', workflowId).has('$.workflows[0].runs_total', 8);
+      const detail = (await owner.get(path(R.workflow), { params: { ...params, workflowId } })).status(200).json<{ steps: unknown[]; variants: unknown[]; people: Array<{ user_id: string }> }>();
+      if (detail.steps.length !== 3 || detail.variants.length !== 2 || detail.people[0]?.user_id !== member.userId) throw new Error(`detail: ${JSON.stringify(detail).slice(0, 300)}`);
+      (await asMember.get(path(R.workflow), { params: { ...params, workflowId } })).status(403);
+    });
+
+    await ctx.step('review renames it and marks it reviewed (member → 403); the skill draft reads the same row: its name, steps, the condition on the decision, 8 runs, clean checks', async () => {
+      (await asMember.post(path(R.review), { name: 'x' }, { params: { ...params, workflowId } })).status(403);
+      (await owner.post(path(R.review), { name: 'Approve a colleague expense report' }, { params: { ...params, workflowId } })).status(200).body().has('$.status', 'reviewed').has('$.name', 'Approve a colleague expense report');
+      const draft = (await owner.post(path(R.skillDraft), {}, { params: { ...params, workflowId } })).status(200).json<{ name: string; markdown: string; inputs: string[]; checks: Array<{ ok: boolean; label: string }>; workflow_updated_at: string }>();
+      if (draft.name !== 'approve-a-colleague-expense-report') throw new Error(`draft name ${draft.name}`);
+      for (const text of ['If a receipt is missing, follow variant B (Missing receipt) below.', '3. Approve expense report ({expense_total}) in Billing › Expenses.', 'Learned from 8 recorded runs']) {
+        if (!draft.markdown.includes(text)) throw new Error(`draft lacks "${text}":\n${draft.markdown}`);
+      }
+      if (draft.checks.some((c) => !c.ok) || !draft.workflow_updated_at) throw new Error(`draft checks: ${JSON.stringify(draft.checks)}`);
+    });
+
+    await ctx.step('publishing the skill commits skills/<name>/SKILL.md to a project of the account (the file reads back); a bad name → 400; a project of another account → 404', async () => {
+      const project = await team.project({ managedGit: true });
+      const markdown = '---\nname: approve-a-colleague-expense-report\ndescription: "Approve expense reports"\n---\n\n# Approve a colleague expense report\n';
+      (await owner.post(path(R.skill), { project_id: project.id, name: 'Bad Name', markdown }, { params: { ...params, workflowId } })).status(400).body().has('$.code', 'capture_bad_skill_name');
+      const other = await ctx.fixtures.project({ managedGit: true });
+      (await owner.post(path(R.skill), { project_id: other.id, name: 'approve-a-colleague-expense-report', markdown }, { params: { ...params, workflowId } })).status(404);
+      (await owner.post(path(R.skill), { project_id: project.id, name: 'approve-a-colleague-expense-report', markdown }, { params: { ...params, workflowId } }))
+        .status(200)
+        .body()
+        .has('$.status', 'exported')
+        .has('$.skill.path', 'skills/approve-a-colleague-expense-report/SKILL.md');
+      const file = await waitFor(
+        async () => owner.get(path(R.fileContent), { params: { projectId: project.id }, query: { path: 'skills/approve-a-colleague-expense-report/SKILL.md' } }),
+        { until: (r) => r.statusCode === 200, timeoutMs: 30_000, intervalMs: 1_000, description: 'the published SKILL.md in the project' },
+      );
+      if (!String(file.json<{ content: string }>().content).includes('# Approve a colleague expense report')) throw new Error('SKILL.md content');
+      (await owner.get(path(R.workflow), { params: { ...params, workflowId } })).status(200).body().has('$.status', 'exported');
+    });
+
+    await ctx.step('bulk export: parquet → 400 capture_export_format_unavailable; the member → 403; the owner exports JSONL, polls it to done, and the signed download holds the workflow and the pinned episode', async () => {
+      (await owner.post(path(R.exportsCreate), { format: 'parquet' }, { params })).status(400).body().has('$.code', 'capture_export_format_unavailable');
+      (await asMember.post(path(R.exportsCreate), { format: 'jsonl' }, { params })).status(403);
+      const created = (await owner.post(path(R.exportsCreate), { format: 'jsonl' }, { params })).status(202).json<{ export_id: string }>();
+      const done = await waitFor(
+        async () => (await owner.get(path(R.exportGet), { params: { ...params, exportId: created.export_id } })).json<{ status: string; rows: number; download: { url: string } | null }>(),
+        { until: (e) => e.status === 'done' || e.status === 'failed', timeoutMs: 60_000, intervalMs: 1_000, description: 'the export job' },
+      );
+      if (done.status !== 'done' || !done.download?.url) throw new Error(`export: ${JSON.stringify(done)}`);
+      const lines = (await (await fetch(done.download.url)).text()).trim().split('\n').map((l) => JSON.parse(l) as { type: string; workflow_id?: string; episode_id?: string });
+      if (!lines.some((l) => l.type === 'workflow' && l.workflow_id === workflowId) || !lines.some((l) => l.type === 'episode' && l.episode_id === episodeId)) throw new Error(`export lines: ${lines.length}`);
+      const listed = (await owner.get(path(R.exportsList), { params })).status(200).json<{ exports: Array<{ export_id: string }> }>().exports;
+      if (!listed.some((e) => e.export_id === created.export_id)) throw new Error('export not listed');
+    });
+
+    await ctx.step('ask streams server-sent events: the sources event first (the pinned episode among them), then done or a typed error (this profile has no model); a member cannot ask account-wide', async () => {
+      const res = (await asMember.post(path(R.ask), { question: 'What did I do in the quarterly close?' }, { params })).status(200);
+      if (!res.header('content-type')?.includes('text/event-stream')) throw new Error(`content-type ${res.header('content-type')}`);
+      const events = res.text().split('\n\n').filter((f) => f.startsWith('data: ')).map((f) => JSON.parse(f.slice(6)) as { type: string; sources?: Array<{ kind: string; episode_id?: string }>; code?: string });
+      if (events[0]?.type !== 'sources' || !events[0].sources?.some((s) => s.kind === 'episode' && s.episode_id === episodeId)) throw new Error(`first event: ${JSON.stringify(events[0]).slice(0, 300)}`);
+      const last = events[events.length - 1]!;
+      if (last.type !== 'done' && !(last.type === 'error' && last.code)) throw new Error(`last event: ${JSON.stringify(last)}`);
+      (await asMember.post(path(R.ask), { question: 'Who works on what?', scope: { user_id: ctx.P.OWNER.userId! } }, { params })).status(403);
+    });
+  },
+);

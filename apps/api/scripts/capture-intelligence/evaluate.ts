@@ -159,6 +159,24 @@ for (let i = 0; i < pairs.length; i++) {
   }
 }
 
+// ── L4: draft a skill from every workflow and lint it ───────────────────────
+const drafts = await Promise.all(
+  workflows.map(async (w) => {
+    const d: any = await (await fetch(`${API}/accounts/${accountId}/capture/workflows/${w.workflow_id}/skill-draft`, { method: 'POST', headers: auth, body: '{}' })).json();
+    const variants = (w.variants as any[]).filter((v) => v.key !== 'A');
+    const problems = [
+      /\.\.(?!\.)/.test(d.markdown) && 'double period',
+      /^\s*[A-Z][\w ›]*\.\s*$/m.test(d.markdown.split('## Steps')[1] ?? '') && 'stray fragment line',
+      variants.some((v) => !v.name || /^(Variant|Path) [A-Z]$/.test(v.name)) && 'unnamed variant',
+      variants.some((v) => !v.question) && 'variant without condition',
+      /If the case calls for variant/.test(d.markdown) && 'bare decision',
+      !d.markdown.includes(`Learned from ${w.runs_total} recorded runs`) && 'run count differs from the workflow',
+      ...(d.checks ?? []).filter((c: any) => !c.ok).map((c: any) => `check: ${c.label}`),
+    ].filter(Boolean);
+    return { workflow: w.name, problems };
+  }),
+);
+
 const report = {
   account: accountId,
   data: { people: Object.keys(people).length, workdays: new Set(truth.map((r) => new Date(r.start).toISOString().slice(0, 10))).size, truth_runs: truth.length, truth_workflows: truthIds.length, truth_variants_3plus: variantTruth.length },
@@ -187,6 +205,7 @@ const report = {
     per_truth_workflow: perTruth,
     list: perWorkflow.sort((a, b) => b.runs - a.runs),
   },
+  skill_drafts: { drafted: drafts.length, clean: drafts.filter((d) => !d.problems.length).length, problems: drafts.filter((d) => d.problems.length) },
   model_cost_usd: { episodes: Math.round(episodes.reduce((s, e) => s + Number(e.cost_usd || 0), 0) * 1e4) / 1e4 },
 };
 await Bun.write(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
